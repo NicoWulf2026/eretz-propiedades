@@ -25,12 +25,13 @@ import queue
 import random
 import re
 import threading
+import unicodedata
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import urljoin, urlparse
+from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -150,7 +151,7 @@ def get_tipo_cambio() -> float:
     if _tc_cache["valor"] and ahora - _tc_cache["ts"] < 3600:
         return _tc_cache["valor"]
     try:
-        r = requests.get("https://dolarapi.com/v1/dolares/blue", timeout=5, verify=False)
+        r = requests.get("https://dolarapi.com/v1/dolares/blue", timeout=3, verify=False)
         tc = float(r.json().get("venta", 0))
         if tc > 0:
             _tc_cache["valor"] = tc
@@ -159,7 +160,9 @@ def get_tipo_cambio() -> float:
             return tc
     except Exception:
         pass
-    return _tc_cache["valor"] or 1200.0
+    _tc_cache["valor"] = _tc_cache["valor"] or 1200.0
+    _tc_cache["ts"] = ahora
+    return _tc_cache["valor"]
 
 def convertir_precio(precio: Optional[float], moneda: str) -> Tuple[Optional[float], Optional[float]]:
     """
@@ -212,7 +215,10 @@ def normalizar_precio(raw: Any) -> Tuple[Optional[float], str]:
         else:
             digits = digits.replace(",", "")   # separador de miles
     else:
-        digits = digits.replace(".", "") if digits.count(".") > 1 else digits
+        if "." in digits:
+            parts = digits.split(".")
+            if digits.count(".") > 1 or (len(parts) == 2 and len(parts[1]) == 3):
+                digits = digits.replace(".", "")
     try:
         return float(digits), moneda
     except ValueError:
@@ -329,6 +335,52 @@ def clasificar_error(e: Exception) -> str:
     return "error_desconocido"
 
 
+def _normalize_text_key(value: Any) -> str:
+    if value is None:
+        return ""
+    text = unicodedata.normalize("NFKD", str(value).lower())
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = re.sub(r"\b(s[\s.]?r[\s.]?l|s[\s.]?a[\s.]?s|s[\s.]?a)\b", " ", text)
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    stop_words = {
+        "inmobiliaria", "inmobiliarias", "propiedad", "propiedades",
+        "negocios", "gestion", "real", "estate", "sa", "srl",
+        "sas", "ci", "mat", "y", "de", "del", "la", "el",
+    }
+    return " ".join(part for part in text.split() if part not in stop_words)
+
+
+def _normalize_web_key(value: Any) -> str:
+    if not value:
+        return ""
+    raw = str(value).strip().lower()
+    if not raw:
+        return ""
+    if not re.match(r"^https?://", raw):
+        raw = f"http://{raw.lstrip('/')}"
+    try:
+        parsed = urlparse(raw)
+        host = (parsed.netloc or parsed.path.split("/")[0]).split("@")[-1]
+        host = host.split(":")[0].strip().lower()
+        if host.startswith("www."):
+            host = host[4:]
+        return host.rstrip("/")
+    except Exception:
+        raw = re.sub(r"^https?://", "", raw)
+        raw = raw.split("/")[0].split(":")[0]
+        return raw[4:] if raw.startswith("www.") else raw
+
+
+def _same_location(candidate: Dict, ciudad: Any, provincia: Any) -> bool:
+    ciudad_key = _normalize_text_key(ciudad)
+    provincia_key = _normalize_text_key(provincia)
+    cand_ciudad = _normalize_text_key(candidate.get("ciudad"))
+    cand_provincia = _normalize_text_key(candidate.get("provincia"))
+    city_ok = not ciudad_key or not cand_ciudad or ciudad_key == cand_ciudad
+    province_ok = not provincia_key or not cand_provincia or provincia_key == cand_provincia
+    return city_ok and province_ok
+
+
 # ---------------------------------------------------------------------------
 # Supabase client
 # ---------------------------------------------------------------------------
@@ -337,6 +389,58 @@ class SupabasePropiedades:
     """Cliente Supabase orientado a las tablas propiedades y scraping_jobs."""
 
     _CHUNK = 50
+    _PROPERTY_COLUMNS = {
+        "id",
+        "inmobiliaria_id",
+        "url",
+        "id_externo",
+        "hash_dedup",
+        "titulo",
+        "descripcion",
+        "precio",
+        "moneda",
+        "precio_usd",
+        "expensas",
+        "expensas_moneda",
+        "tipo_propiedad",
+        "operacion",
+        "ambientes",
+        "dormitorios",
+        "banos",
+        "toilettes",
+        "cocheras",
+        "antiguedad",
+        "piso",
+        "superficie_total",
+        "superficie_cubierta",
+        "superficie_terreno",
+        "direccion",
+        "barrio",
+        "ciudad",
+        "provincia",
+        "pais",
+        "latitud",
+        "longitud",
+        "imagenes",
+        "video_url",
+        "plano_url",
+        "amenities",
+        "agente_nombre",
+        "agente_telefono",
+        "fuente_extraccion",
+        "cms_origen",
+        "fecha_publicacion",
+        "estado",
+        "created_at",
+        "updated_at",
+        "precio_ars",
+        "apto_credito",
+    }
+    _OPTIONAL_PROPERTY_COLUMNS = {"calidad_score"}
+    _property_columns_cache: Optional[set] = None
+    _SCRAPING_AGENCY_COLUMNS = {"id", "nombre", "web", "ciudad", "provincia"}
+    _OPTIONAL_SCRAPING_AGENCY_COLUMNS = {"pais", "fuente", "estado_scraping"}
+    _scraping_agency_columns_cache: Optional[set] = None
 
     def __init__(self) -> None:
         if not SUPABASE_URL or not SUPABASE_KEY:
@@ -394,6 +498,146 @@ class SupabasePropiedades:
         )
         r.raise_for_status()
         return r.json()
+
+    def _get_scraping_agency_columns(self) -> set:
+        if SupabasePropiedades._scraping_agency_columns_cache is not None:
+            return SupabasePropiedades._scraping_agency_columns_cache
+
+        columns = set(self._SCRAPING_AGENCY_COLUMNS)
+        for column in self._OPTIONAL_SCRAPING_AGENCY_COLUMNS:
+            try:
+                r = self.session.get(
+                    f"{SUPABASE_URL}/rest/v1/inmobiliarias_scraping",
+                    headers=self._headers,
+                    params={"select": column, "limit": 1},
+                    timeout=10,
+                )
+                if r.status_code == 200:
+                    columns.add(column)
+            except Exception:
+                pass
+
+        SupabasePropiedades._scraping_agency_columns_cache = columns
+        return columns
+
+    def _sanitize_scraping_agency_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        columns = self._get_scraping_agency_columns()
+        return {key: value for key, value in payload.items() if key in columns and value is not None}
+
+    def _load_scraping_agencies_by_web(self, web: Any) -> List[Dict]:
+        web_key = _normalize_web_key(web)
+        if not web_key:
+            return []
+        try:
+            r = self.session.get(
+                f"{SUPABASE_URL}/rest/v1/inmobiliarias_scraping",
+                headers=self._headers,
+                params={
+                    "select": "id,nombre,web,ciudad,provincia",
+                    "web": f"ilike.*{web_key}*",
+                    "limit": 25,
+                },
+                timeout=20,
+            )
+            if r.status_code == 200:
+                return r.json()
+        except Exception as exc:
+            logger.debug("resolve inmobiliaria web lookup error: %s", exc)
+        return []
+
+    def _load_scraping_agencies_by_location(self, ciudad: Any, provincia: Any) -> List[Dict]:
+        params: Dict[str, Any] = {
+            "select": "id,nombre,web,ciudad,provincia",
+            "limit": 1000,
+        }
+        if ciudad:
+            params["ciudad"] = f"ilike.*{str(ciudad).strip()}*"
+        if provincia:
+            params["provincia"] = f"ilike.*{str(provincia).strip()}*"
+        try:
+            r = self.session.get(
+                f"{SUPABASE_URL}/rest/v1/inmobiliarias_scraping",
+                headers=self._headers,
+                params=params,
+                timeout=30,
+            )
+            if r.status_code == 200:
+                return r.json()
+        except Exception as exc:
+            logger.debug("resolve inmobiliaria name lookup error: %s", exc)
+        return []
+
+    def resolve_scraping_agency(self, item: Dict[str, Any]) -> Dict[str, Any]:
+        main_id = item.get("inmobiliaria_id")
+        nombre = item.get("inmobiliaria_nombre") or item.get("nombre")
+        web = item.get("web") or item.get("url_listado")
+        ciudad = item.get("ciudad")
+        provincia = item.get("provincia")
+        web_key = _normalize_web_key(web)
+
+        if web_key:
+            candidates = self._load_scraping_agencies_by_web(web)
+            for candidate in candidates:
+                if _normalize_web_key(candidate.get("web")) == web_key:
+                    return {
+                        "inmobiliaria_main_id": main_id,
+                        "inmobiliaria_scraping_id": candidate["id"],
+                        "metodo_resolucion": "web_match",
+                    }
+            if len(candidates) == 1:
+                candidate = candidates[0]
+                return {
+                    "inmobiliaria_main_id": main_id,
+                    "inmobiliaria_scraping_id": candidate["id"],
+                    "metodo_resolucion": "web_match",
+                }
+
+        nombre_key = _normalize_text_key(nombre)
+        if nombre_key:
+            for candidate in self._load_scraping_agencies_by_location(ciudad, provincia):
+                candidate_key = _normalize_text_key(candidate.get("nombre"))
+                if candidate_key == nombre_key and _same_location(candidate, ciudad, provincia):
+                    return {
+                        "inmobiliaria_main_id": main_id,
+                        "inmobiliaria_scraping_id": candidate["id"],
+                        "metodo_resolucion": "name_city_match",
+                    }
+
+        payload = self._sanitize_scraping_agency_payload({
+            "nombre": nombre or f"Inmobiliaria main {main_id}",
+            "web": web,
+            "ciudad": ciudad,
+            "provincia": provincia,
+            "pais": "Argentina",
+            "fuente": "inmobiliarias_main",
+            "estado_scraping": "pendiente",
+        })
+        r = self.session.post(
+            f"{SUPABASE_URL}/rest/v1/inmobiliarias_scraping",
+            headers=self._headers,
+            json=payload,
+            timeout=30,
+        )
+        if r.status_code not in {200, 201}:
+            # Si hubo carrera por una web unica, reintentar lectura por web antes de fallar.
+            if web_key and r.status_code == 409:
+                candidates = self._load_scraping_agencies_by_web(web)
+                for candidate in candidates:
+                    if _normalize_web_key(candidate.get("web")) == web_key:
+                        return {
+                            "inmobiliaria_main_id": main_id,
+                            "inmobiliaria_scraping_id": candidate["id"],
+                            "metodo_resolucion": "web_match",
+                        }
+            raise RuntimeError(f"No se pudo crear inmobiliarias_scraping: {r.status_code} {r.text[:300]}")
+
+        created = r.json()
+        row = created[0] if isinstance(created, list) and created else created
+        return {
+            "inmobiliaria_main_id": main_id,
+            "inmobiliaria_scraping_id": row["id"],
+            "metodo_resolucion": "created_scraping_agency",
+        }
 
     # ------ Jobs ------
 
@@ -627,8 +871,47 @@ class SupabasePropiedades:
                 existing.update(row["hash_dedup"] for row in r2.json())
         return existing
 
+    def _get_property_columns(self) -> set:
+        if SupabasePropiedades._property_columns_cache is not None:
+            return SupabasePropiedades._property_columns_cache
+
+        columns = set(self._PROPERTY_COLUMNS)
+        for column in self._OPTIONAL_PROPERTY_COLUMNS:
+            try:
+                r = self.session.get(
+                    f"{SUPABASE_URL}/rest/v1/propiedades",
+                    headers=self._headers,
+                    params={"select": column, "limit": 1},
+                    timeout=10,
+                )
+                if r.status_code == 200:
+                    columns.add(column)
+            except Exception:
+                pass
+
+        SupabasePropiedades._property_columns_cache = columns
+        return columns
+
+    def _sanitize_property_payload(self, prop: Dict) -> Dict:
+        columns = self._get_property_columns()
+        clean = dict(prop)
+
+        if "calidad_score" in columns and "calidad_score" not in clean and "score_calidad" in clean:
+            clean["calidad_score"] = clean["score_calidad"]
+
+        filtered = {key: value for key, value in clean.items() if key in columns}
+        dropped = sorted(set(clean) - set(filtered))
+        if dropped:
+            logger.debug("Campos omitidos en propiedades: %s", ", ".join(dropped))
+        return filtered
+
     def save_propiedades(self, propiedades: List[Dict]) -> Tuple[int, int]:
         """Guarda en batch con upsert on hash_dedup. Retorna (total, nuevas)."""
+        if not propiedades:
+            return 0, 0
+
+        propiedades = [self._sanitize_property_payload(p) for p in propiedades]
+        propiedades = [p for p in propiedades if p.get("hash_dedup")]
         if not propiedades:
             return 0, 0
 
@@ -1256,6 +1539,366 @@ def strategy_tokko_api(inmob: Dict, session: requests.Session) -> List[Dict]:
     return resultados
 
 
+TOKKO_HTML_EXTRACTOR_VERSION = "tokko_html_v2"
+
+_TOKKO_LISTING_PATHS = [
+    "/Propiedades", "/propiedades",
+    "/Venta", "/venta",
+    "/Alquiler", "/alquiler",
+    "/Ventas", "/ventas",
+    "/Alquileres", "/alquileres",
+    "/buscar", "/",
+]
+
+_TOKKO_LISTING_KEYWORDS = (
+    "propiedades", "propiedad", "venta", "ventas", "alquiler",
+    "alquileres", "inmuebles", "buscar",
+)
+
+
+def _is_tokko_html(html: str) -> bool:
+    low = (html or "").lower()
+    return (
+        "tokkobroker" in low
+        or "static.tokkobroker.com" in low
+        or "loaded_props_ids" in low
+        or "resultados-list" in low
+        or "prop-id=" in low
+    )
+
+
+def _tokko_base_url(inmob: Dict, fallback_url: str = "") -> str:
+    raw = inmob.get("web") or fallback_url or inmob.get("url_listado") or ""
+    parsed = urlparse(raw)
+    if parsed.scheme and parsed.netloc:
+        return f"{parsed.scheme}://{parsed.netloc}"
+    return raw.rstrip("/")
+
+
+def _add_query_param(url: str, key: str, value: Any) -> str:
+    parsed = urlparse(url)
+    params = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    params[key] = str(value)
+    return urlunparse(parsed._replace(query=urlencode(params)))
+
+
+def _extract_tokko_internal_listing_links(html: str, current_url: str) -> List[str]:
+    soup = BeautifulSoup(html or "", "html.parser")
+    parsed = urlparse(current_url)
+    domain = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else current_url.rstrip("/")
+    links: List[str] = []
+    for a in soup.select("nav a[href], header a[href], #menu a[href], a[href]"):
+        href = (a.get("href") or "").strip()
+        text = a.get_text(" ", strip=True).lower()
+        href_low = href.lower()
+        if not href or href.startswith(("#", "javascript:", "mailto:", "tel:")):
+            continue
+        if not any(kw in href_low or kw in text for kw in _TOKKO_LISTING_KEYWORDS):
+            continue
+        full = urljoin(domain + "/", href)
+        if urlparse(full).netloc == urlparse(domain).netloc and full not in links:
+            links.append(full)
+    return links
+
+
+def _tokko_candidate_urls(inmob: Dict, first_html: str = "", first_url: str = "") -> List[str]:
+    urls: List[str] = []
+
+    def add(url: Optional[str]) -> None:
+        if not url:
+            return
+        clean = str(url).strip()
+        if not clean:
+            return
+        if not re.match(r"^https?://", clean, re.IGNORECASE):
+            clean = "https://" + clean.lstrip("/")
+        if clean not in urls:
+            urls.append(clean)
+
+    add(inmob.get("url_listado"))
+    add(inmob.get("web"))
+    if first_html and first_url:
+        for link in _extract_tokko_internal_listing_links(first_html, first_url):
+            add(link)
+
+    base = _tokko_base_url(inmob, first_url)
+    if base:
+        for path in _TOKKO_LISTING_PATHS:
+            add(urljoin(base + "/", path.lstrip("/")))
+
+    return urls[:16]
+
+
+def _parse_tokko_markers(html: str) -> Dict[str, Tuple[float, float]]:
+    markers: Dict[str, Tuple[float, float]] = {}
+    pattern = re.compile(
+        r"add_new_marker\(\s*['\"](?P<id>\d+)['\"]\s*,\s*"
+        r"(?P<lat>-?\d+(?:\.\d+)?)\s*,\s*(?P<lon>-?\d+(?:\.\d+)?)\s*\)",
+        re.I,
+    )
+    for match in pattern.finditer(html or ""):
+        try:
+            markers[match.group("id")] = (float(match.group("lat")), float(match.group("lon")))
+        except Exception:
+            pass
+    return markers
+
+
+def _tokko_direct_price_text(card) -> str:
+    price_el = card.select_one(".prop-valor-nro, [class*='prop-valor'], [class*='precio'], [class*='price']")
+    if not price_el:
+        return ""
+    direct = " ".join(
+        text.strip()
+        for text in price_el.find_all(string=True, recursive=False)
+        if text and text.strip()
+    )
+    if direct:
+        return direct
+    text = price_el.get_text(" ", strip=True)
+    match = re.search(r"(?:USD|US\$|U\$S|\$)\s*[\d.,]+", text, re.I)
+    return match.group(0) if match else text
+
+
+def _parse_tokko_type_operation_location(text: str, inmob: Dict) -> Tuple[str, str, str, str]:
+    tipo = normalizar_tipo(text)
+    operacion = normalizar_operacion(text)
+    barrio = ""
+    ciudad = inmob.get("ciudad", "") or ""
+
+    match = re.search(
+        r"^\s*(?P<tipo>.+?)\s+en\s+(?P<op>venta|alquiler|temporario)\s+en\s+(?P<loc>.+)$",
+        text or "",
+        re.I,
+    )
+    if match:
+        tipo = normalizar_tipo(match.group("tipo"))
+        operacion = normalizar_operacion(match.group("op"))
+        location = re.sub(r"\s+", " ", match.group("loc")).strip()
+        parts = [p.strip() for p in location.split(",") if p.strip()]
+        if parts:
+            barrio = parts[0]
+        if len(parts) >= 2:
+            ciudad = parts[-1]
+
+    return tipo, operacion, barrio, ciudad
+
+
+def _parse_tokko_listing_cards(html: str, source_url: str, inmob: Dict) -> List[Dict]:
+    soup = BeautifulSoup(html or "", "html.parser")
+    markers = _parse_tokko_markers(html)
+    cards = (
+        soup.select("#propiedades > li[prop-id]")
+        or soup.select("ul.resultados-list > li[prop-id]")
+        or soup.select("#prop-list li[prop-id]")
+        or soup.select("li[prop-id]")
+    )
+
+    propiedades: List[Dict] = []
+    for card in cards:
+        try:
+            prop_id = str(card.get("prop-id") or "").strip()
+            link = card.select_one('a[href^="/p/"], a[href*="/p/"], a[href]')
+            href = (link.get("href") if link else "") or ""
+            url_prop = urljoin(source_url, href) if href else urljoin(source_url, f"/p/{prop_id}")
+            if not prop_id:
+                m = re.search(r"/p/(\d+)", url_prop)
+                prop_id = m.group(1) if m else ""
+            if not prop_id and not url_prop:
+                continue
+
+            tipo_ub = ""
+            tipo_el = card.select_one(".prop-desc-tipo-ub, [class*='tipo-ub'], [class*='tipo']")
+            if tipo_el:
+                tipo_ub = tipo_el.get_text(" ", strip=True)
+            direccion = ""
+            dir_el = card.select_one(".prop-desc-dir, [class*='desc-dir'], [class*='direccion']")
+            if dir_el:
+                direccion = dir_el.get_text(" ", strip=True)
+
+            img = card.select_one("img.dest-img, .prop-img img, img")
+            imagenes: List[str] = []
+            img_title = ""
+            if img:
+                src = (img.get("src") or img.get("data-src") or img.get("data-original") or "").strip()
+                if src:
+                    imagenes.append(urljoin(source_url, src))
+                img_title = (img.get("title") or img.get("alt") or "").strip()
+
+            title = img_title
+            title = re.sub(r"^Foto\s+", "", title, flags=re.I).strip()
+            if not title:
+                title = " ".join(part for part in (tipo_ub, direccion) if part).strip()
+            if not title:
+                title = urlparse(url_prop).path.rstrip("/").split("/")[-1].replace("-", " ").title()
+
+            precio_raw = _tokko_direct_price_text(card)
+            precio, moneda = normalizar_precio(precio_raw)
+            precio_ars, precio_usd = convertir_precio(precio, moneda)
+
+            tipo, operacion, barrio, ciudad = _parse_tokko_type_operation_location(tipo_ub, inmob)
+            if not tipo or tipo == "otro":
+                tipo = normalizar_tipo(title)
+            if not barrio:
+                barrio = inmob.get("ciudad", "") or ""
+            if not ciudad:
+                ciudad = inmob.get("ciudad", "") or ""
+
+            data_texts = [
+                el.get_text(" ", strip=True)
+                for el in card.select(".prop-data, .prop-data2, [class*='prop-data']")
+                if el.get_text(" ", strip=True)
+            ]
+            total_area = None
+            rooms = None
+            for txt in data_texts:
+                if total_area is None and re.search(r"m\s*(?:2|Â²|²)", txt, re.I):
+                    total_area = normalizar_superficie(txt)
+                elif rooms is None:
+                    maybe_room = normalizar_int(txt)
+                    if maybe_room and 0 < maybe_room < 20:
+                        rooms = maybe_room
+
+            lat = lon = None
+            if prop_id in markers:
+                lat, lon = markers[prop_id]
+
+            prop = {
+                "inmobiliaria_id":     inmob["id"],
+                "url":                 url_prop or None,
+                "id_externo":          prop_id,
+                "hash_dedup":          hash_propiedad(inmob["id"], prop_id, url_prop),
+                "titulo":              title,
+                "descripcion":         limpiar_descripcion(" - ".join(p for p in (tipo_ub, direccion) if p)),
+                "precio":              precio,
+                "moneda":              moneda,
+                "precio_ars":          precio_ars,
+                "precio_usd":          precio_usd,
+                "tipo_propiedad":      tipo,
+                "operacion":           operacion,
+                "ambientes":           rooms,
+                "superficie_total":    total_area,
+                "direccion":           direccion,
+                "barrio":              barrio,
+                "ciudad":              ciudad,
+                "provincia":           inmob.get("provincia", ""),
+                "pais":                "Argentina",
+                "latitud":             lat,
+                "longitud":            lon,
+                "imagenes":            imagenes or None,
+                "fuente_extraccion":   "tokko_html",
+                "cms_origen":          "tokko",
+                "estado":              "activo",
+                "raw_json":            {"source": "tokko_html_card", "prop_id": prop_id},
+            }
+            prop["score_calidad"] = calcular_score(prop)
+            propiedades.append(prop)
+        except Exception as exc:
+            logger.debug("Tokko HTML card parse error: %s", exc)
+
+    return propiedades
+
+
+def _dedupe_props(props: List[Dict]) -> List[Dict]:
+    seen: set = set()
+    deduped: List[Dict] = []
+    for prop in props:
+        key = prop.get("hash_dedup") or prop.get("url") or prop.get("id_externo")
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        deduped.append(prop)
+    return deduped
+
+
+def strategy_tokko_html(inmob: Dict, session: requests.Session) -> List[Dict]:
+    url_inicial = inmob.get("url_listado") or inmob.get("web", "")
+    if not url_inicial:
+        raise ValueError("sin_url_listado")
+
+    urls_probadas: List[str] = []
+    errores_relevantes: List[str] = []
+    resultados: List[Dict] = []
+    paginas_leidas = 0
+    first_html = ""
+
+    try:
+        r0 = _http_get(url_inicial, session, timeout=25)
+        first_html = r0.text if r0.status_code == 200 else ""
+    except Exception as exc:
+        errores_relevantes.append(f"{url_inicial}: {type(exc).__name__}: {str(exc)[:180]}")
+
+    candidates = _tokko_candidate_urls(inmob, first_html=first_html, first_url=url_inicial)
+
+    for candidate in candidates:
+        if candidate in urls_probadas:
+            continue
+        urls_probadas.append(candidate)
+        try:
+            if candidate == url_inicial and first_html:
+                html = first_html
+            else:
+                r = _http_get(candidate, session, timeout=25)
+                if r.status_code != 200:
+                    errores_relevantes.append(f"{candidate}: HTTP {r.status_code}")
+                    continue
+                html = r.text
+
+            if not _is_tokko_html(html):
+                continue
+
+            page_props = _parse_tokko_listing_cards(html, candidate, inmob)
+            if page_props:
+                paginas_leidas += 1
+                resultados.extend(page_props)
+
+                max_pages = min(int(inmob.get("paginas_estimadas") or 12), 30)
+                for page_num in range(2, max_pages + 1):
+                    next_url = _add_query_param(candidate, "p", page_num)
+                    urls_probadas.append(next_url)
+                    try:
+                        pr = _http_get(next_url, session, timeout=20)
+                        if pr.status_code != 200 or "--NoMoreProperties--" in pr.text:
+                            break
+                        more_props = _parse_tokko_listing_cards(pr.text, next_url, inmob)
+                        if not more_props:
+                            break
+                        before = len(resultados)
+                        resultados.extend(more_props)
+                        resultados = _dedupe_props(resultados)
+                        paginas_leidas += 1
+                        if len(resultados) == before:
+                            break
+                    except Exception as exc:
+                        errores_relevantes.append(f"{next_url}: {type(exc).__name__}: {str(exc)[:180]}")
+                        break
+
+                resultados = _dedupe_props(resultados)
+                inmob["_scraper_metadata"] = {
+                    "urls_probadas": urls_probadas,
+                    "cantidad_paginas": paginas_leidas,
+                    "extractor_tokko_version": TOKKO_HTML_EXTRACTOR_VERSION,
+                    "errores_relevantes": errores_relevantes[-5:],
+                }
+                logger.info(
+                    "  Tokko HTML: %d propiedades en %d paginas (%s)",
+                    len(resultados), paginas_leidas, candidate,
+                )
+                return resultados
+
+        except Exception as exc:
+            errores_relevantes.append(f"{candidate}: {type(exc).__name__}: {str(exc)[:180]}")
+            continue
+
+    inmob["_scraper_metadata"] = {
+        "urls_probadas": urls_probadas,
+        "cantidad_paginas": paginas_leidas,
+        "extractor_tokko_version": TOKKO_HTML_EXTRACTOR_VERSION,
+        "errores_relevantes": errores_relevantes[-5:],
+    }
+    raise RuntimeError("sin_propiedades: tokko_html no encontro propiedades")
+
+
 # ---------------------------------------------------------------------------
 # Strategy 2: Network Interception (Playwright)
 # ---------------------------------------------------------------------------
@@ -1345,7 +1988,7 @@ def _generic_map_json(item: Dict, inmob: Dict) -> Dict:
     return prop
 
 
-_TOKKO_KEY_RE = re.compile(r"[?&]key=([a-zA-Z0-9]{20,60})")
+_TOKKO_KEY_RE = re.compile(r"[?&](?:key|api_key)=([a-zA-Z0-9_\-]{20,80})")
 
 
 def strategy_network_intercept(inmob: Dict, pw_context, session: Optional[requests.Session] = None) -> List[Dict]:
@@ -1365,7 +2008,7 @@ def strategy_network_intercept(inmob: Dict, pw_context, session: Optional[reques
         resp_url = response.url
 
         # Detectar llamadas a Tokko API
-        if "api.tokkobroker.com" in resp_url and detected_tokko_key is None:
+        if "tokkobroker.com" in resp_url and "/api/" in resp_url and detected_tokko_key is None:
             m = _TOKKO_KEY_RE.search(resp_url)
             if m:
                 with lock:
@@ -1396,6 +2039,12 @@ def strategy_network_intercept(inmob: Dict, pw_context, session: Optional[reques
         _playwright_goto(page, url_listado)
         _human_scroll(page)
         page.wait_for_load_state("networkidle", timeout=15000)
+
+        if not detected_tokko_key:
+            try:
+                detected_tokko_key = _buscar_tokko_key_en_html(page.content())
+            except Exception:
+                pass
 
         # Si detectamos Tokko key, usamos la API completa
         if detected_tokko_key:
@@ -1937,6 +2586,8 @@ def _make_playwright_context(pw, headless: bool = True):
 # ---------------------------------------------------------------------------
 
 _CARD_SELECTORS = [
+    "#propiedades > li[prop-id]", "ul.resultados-list > li[prop-id]",
+    "#prop-list li[prop-id]", "li[prop-id]",
     ".property-card", ".propiedad", ".listing-item", ".property-item",
     ".real-estate-item", "article.property", "[class*='property-card']",
     "[class*='listing-card']", "[class*='prop-card']", "[class*='inmueble']",
@@ -2256,20 +2907,26 @@ def strategy_html_playwright(inmob: Dict, pw_context) -> List[Dict]:
 # ---------------------------------------------------------------------------
 
 _TOKKO_KEY_HTML_RE = re.compile(
-    r'api\.tokkobroker\.com[^\'"<]{0,300}[?&]key=([a-zA-Z0-9]{20,60})',
+    r'tokkobroker\.com[^\'"<]{0,300}/api/[^\'"<]{0,300}[?&](?:key|api_key)=([a-zA-Z0-9_\-]{20,80})',
     re.I,
 )
 _TOKKO_KEY_JS_RE = re.compile(
-    r'(?:tokko[_\-\s]*(?:key|broker[_\-\s]*key)|api[_\-\s]*key)\s*[=:]\s*["\']([a-zA-Z0-9]{20,60})["\']',
+    r'(?:tokko[_\-\s]*(?:key|broker[_\-\s]*key)|api[_\-\s]*key)\s*[=:]\s*["\']([a-zA-Z0-9_\-]{20,80})["\']',
+    re.I,
+)
+_TOKKO_UUID_RE = re.compile(
+    r'tokko[^\'"]{0,60}[\'"]([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})[\'"]',
     re.I,
 )
 _LISTING_PATHS = [
-    "/propiedades", "/propiedades/", "/venta", "/venta/",
+    "/Propiedades", "/propiedades", "/propiedades/", "/Venta", "/venta", "/venta/",
     "/alquiler", "/alquiler/", "/ventas", "/ventas/",
     "/inmuebles", "/inmuebles/", "/listings", "/listings/",
-    "/properties", "/properties/",
+    "/properties", "/properties/", "/buscar", "/",
 ]
 _CARD_SELECTORS_DETECT = [
+    "#propiedades > li[prop-id]", "ul.resultados-list > li[prop-id]",
+    "#prop-list li[prop-id]", "li[prop-id]",
     ".property-card", ".propiedad-card", ".prop-card", ".listing-card",
     ".property-item", ".propiedad-item", ".prop-item",
     ".property-list-item", ".propiedad-list-item",
@@ -2287,9 +2944,20 @@ def _buscar_tokko_key_en_html(content: str) -> Optional[str]:
     m = _TOKKO_KEY_HTML_RE.search(content)
     if m:
         return m.group(1)
+    m = _TOKKO_UUID_RE.search(content)
+    if m:
+        return m.group(1)
     m = _TOKKO_KEY_JS_RE.search(content)
     if m:
         return m.group(1)
+    soup = BeautifulSoup(content or "", "html.parser")
+    for tag in soup.find_all("script", src=True):
+        src = tag.get("src") or ""
+        if "tokko" not in src.lower():
+            continue
+        m = _TOKKO_KEY_RE.search(src)
+        if m:
+            return m.group(1)
     return None
 
 
@@ -2461,6 +3129,12 @@ def run_best_strategy(inmob: Dict, session: requests.Session, pw_context) -> Tup
     Si no, prueba en orden hasta encontrar una que funcione.
     """
     estrategia_guardada = inmob.get("estrategia_scraping")
+    is_tokko_candidate = (
+        str(inmob.get("cms_detectado") or "").lower() == "tokko"
+        or estrategia_guardada in {"tokko_api", "tokko_html"}
+        or "tokko" in str(inmob.get("web") or "").lower()
+        or "tokko" in str(inmob.get("url_listado") or "").lower()
+    )
 
     # --- Ir directo a la estrategia guardada (con fallback automático) ---
     if estrategia_guardada == "tokko_api" and inmob.get("tokko_api_key"):
@@ -2515,6 +3189,14 @@ def run_best_strategy(inmob: Dict, session: requests.Session, pw_context) -> Tup
             except Exception:
                 pass
 
+    if estrategia_guardada == "tokko_html":
+        logger.info("  -> Tokko HTML (guardada)")
+        try:
+            props = strategy_tokko_html(inmob, session)
+            return props, "tokko_html"
+        except Exception as e:
+            logger.warning("  Tokko HTML fallo: %s", e)
+
     if estrategia_guardada == "sin_estrategia":
         # Dar una última oportunidad con Network Intercept
         try:
@@ -2541,6 +3223,14 @@ def run_best_strategy(inmob: Dict, session: requests.Session, pw_context) -> Tup
         return props, "network_intercept"
     except Exception as e:
         logger.warning("  Network Intercept falló: %s", e)
+
+    if is_tokko_candidate:
+        try:
+            logger.info("  -> Tokko HTML")
+            props = strategy_tokko_html(inmob, session)
+            return props, "tokko_html"
+        except Exception as e:
+            logger.warning("  Tokko HTML fallo: %s", e)
 
     # 3. JSON-LD
     try:
@@ -2847,8 +3537,10 @@ def _queue_candidate_urls(item: Dict) -> List[str]:
 
 def _strategy_from_cms(cms_detectado: Optional[str]) -> Optional[str]:
     cms = (cms_detectado or "").strip().lower()
-    if cms in {"tokko", "tokko_api", "tokko broker"}:
+    if cms in {"tokko_api"}:
         return "tokko_api"
+    if cms in {"tokko", "tokko broker"}:
+        return "tokko_html"
     if cms in {"json_ld", "schema", "schema_org"}:
         return "json_ld"
     if cms == "sitemap":
@@ -2917,7 +3609,7 @@ def _scrape_queue_item(
     session: requests.Session,
     pw_context,
     started_at: float,
-) -> Tuple[List[Dict], str, str, List[str]]:
+) -> Tuple[List[Dict], str, str, List[str], Dict[str, Any]]:
     urls = _queue_candidate_urls(item)
     if not urls:
         metadata = _queue_metadata(
@@ -2942,8 +3634,11 @@ def _scrape_queue_item(
 
         try:
             props, estrategia = run_best_strategy(inmob, session, pw_context)
+            strategy_meta = dict(inmob.get("_scraper_metadata") or {})
+            if strategy_meta.get("errores_relevantes"):
+                errores_relevantes.extend(strategy_meta["errores_relevantes"])
             if props or idx == len(urls):
-                return props, estrategia, url_usada, errores_relevantes
+                return props, estrategia, url_usada, errores_relevantes, strategy_meta
             errores_relevantes.append(f"{url_usada}: sin propiedades detectadas; probando fallback")
             logger.warning("Sin propiedades en URL principal; probando fallback si existe")
         except Exception as exc:
@@ -2959,6 +3654,7 @@ def _scrape_queue_item(
                     estrategia_usada="sin_estrategia",
                     cantidad_paginas=0,
                     errores_relevantes=errores_relevantes,
+                    extra=dict(inmob.get("_scraper_metadata") or {}),
                 )
                 raise ScrapingControlError(
                     str(exc)[:1000],
@@ -2983,7 +3679,20 @@ def _scrape_queue_item(
     )
 
 
-def _save_queue_properties(db: SupabasePropiedades, inmob_id: Any, props: List[Dict]) -> Dict[str, int]:
+def _save_queue_properties(db: SupabasePropiedades, item: Dict, props: List[Dict]) -> Dict[str, Any]:
+    agency_resolution = db.resolve_scraping_agency(item)
+    main_id = agency_resolution.get("inmobiliaria_main_id")
+    scraping_id = agency_resolution["inmobiliaria_scraping_id"]
+    method = agency_resolution["metodo_resolucion"]
+    logger.info(
+        "Resolucion inmobiliaria: main_id=%s scraping_id=%s metodo=%s",
+        main_id, scraping_id, method,
+    )
+
+    for prop in props:
+        prop["inmobiliaria_id"] = scraping_id
+        prop["hash_dedup"] = hash_propiedad(scraping_id, prop.get("id_externo"), prop.get("url"))
+
     hashes = [p.get("hash_dedup") for p in props if p.get("hash_dedup")]
     existing_hashes = db.get_existing_hashes(hashes)
     expected_new = sum(1 for h in hashes if h not in existing_hashes)
@@ -3014,9 +3723,9 @@ def _save_queue_properties(db: SupabasePropiedades, inmob_id: Any, props: List[D
                     pass
 
     inactivos = 0
-    if props and inmob_id:
+    if props and scraping_id:
         active_hashes = {p["hash_dedup"] for p in props if p.get("hash_dedup")}
-        inactivos = db.mark_inactivos(int(inmob_id), active_hashes)
+        inactivos = db.mark_inactivos(int(scraping_id), active_hashes)
 
     return {
         "propiedades_detectadas": len(props),
@@ -3026,6 +3735,9 @@ def _save_queue_properties(db: SupabasePropiedades, inmob_id: Any, props: List[D
         "propiedades_error": propiedades_error,
         "geocodificadas": geo_count,
         "propiedades_inactivas_marcadas": inactivos,
+        "inmobiliaria_main_id": main_id,
+        "inmobiliaria_scraping_id": scraping_id,
+        "metodo_resolucion_inmobiliaria": method,
     }
 
 
@@ -3042,24 +3754,32 @@ def _process_scraping_control_item(
 
     db.start_scraping_item(item_id)
 
-    props, estrategia, url_usada, errores_relevantes = _scrape_queue_item(
+    props, estrategia, url_usada, errores_relevantes, strategy_meta = _scrape_queue_item(
         item=item,
         session=session,
         pw_context=pw_context,
         started_at=started_at,
     )
-    counts = _save_queue_properties(db, item.get("inmobiliaria_id"), props)
+    counts = _save_queue_properties(db, item, props)
+    metadata_extra = {
+        "geocodificadas": counts["geocodificadas"],
+        "propiedades_inactivas_marcadas": counts["propiedades_inactivas_marcadas"],
+        "inmobiliaria_main_id": counts["inmobiliaria_main_id"],
+        "inmobiliaria_scraping_id": counts["inmobiliaria_scraping_id"],
+        "metodo_resolucion_inmobiliaria": counts["metodo_resolucion_inmobiliaria"],
+    }
+    for key, value in strategy_meta.items():
+        if key not in {"cantidad_paginas", "errores_relevantes"}:
+            metadata_extra[key] = value
+    combined_errors = errores_relevantes + list(strategy_meta.get("errores_relevantes") or [])
     metadata = _queue_metadata(
         item=item,
         started_at=started_at,
         url_usada=url_usada,
         estrategia_usada=estrategia,
-        cantidad_paginas=1 if url_usada else 0,
-        errores_relevantes=errores_relevantes,
-        extra={
-            "geocodificadas": counts["geocodificadas"],
-            "propiedades_inactivas_marcadas": counts["propiedades_inactivas_marcadas"],
-        },
+        cantidad_paginas=int(strategy_meta.get("cantidad_paginas") or (1 if url_usada else 0)),
+        errores_relevantes=combined_errors,
+        extra=metadata_extra,
     )
 
     return {
