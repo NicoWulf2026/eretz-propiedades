@@ -30,7 +30,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
 import requests
@@ -78,6 +78,21 @@ USER_AGENTS: List[str] = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15",
 ]
+
+CONTROL_ITEM_TIMEOUT_SECONDS = 180
+STRATEGY_TIMEOUT_SECONDS: Dict[str, int] = {
+    "tokko_api": 45,
+    "tokko_html": 45,
+    "network_intercept": 30,
+    "json_ld": 20,
+    "sitemap": 20,
+    "html_scraper": 45,
+}
+PLAYWRIGHT_LAUNCH_TIMEOUT_MS = 15000
+PLAYWRIGHT_NAV_TIMEOUT_MS = 12000
+PLAYWRIGHT_LOAD_TIMEOUT_MS = 8000
+PLAYWRIGHT_ACTION_TIMEOUT_MS = 2500
+PLAYWRIGHT_CLOSE_TIMEOUT_SECONDS = 3.0
 
 def _make_http_session() -> requests.Session:
     s = requests.Session()
@@ -318,6 +333,10 @@ def hash_propiedad(inmob_id: Any, id_externo: Any, url: Any) -> str:
 # Error classification
 # ---------------------------------------------------------------------------
 
+class StrategyTimeoutError(TimeoutError):
+    """Timeout controlado de item o estrategia."""
+
+
 def clasificar_error(e: Exception) -> str:
     msg = str(e).lower()
     if "timeout" in msg or "timed out" in msg:
@@ -333,6 +352,107 @@ def clasificar_error(e: Exception) -> str:
     if "navigation" in msg or "net::" in msg or "connection" in msg:
         return "nav_error"
     return "error_desconocido"
+
+
+def _deadline_remaining_seconds(deadline: Optional[float]) -> float:
+    if deadline is None:
+        return float("inf")
+    return max(deadline - time.time(), 0.0)
+
+
+def _check_deadline(deadline: Optional[float], label: str) -> None:
+    if deadline is not None and time.time() >= deadline:
+        raise StrategyTimeoutError(f"timeout_{label}: excedio el limite configurado")
+
+
+def _strategy_deadline(inmob: Dict) -> Optional[float]:
+    deadline = inmob.get("_strategy_deadline")
+    return float(deadline) if deadline else None
+
+
+def _check_strategy_deadline(inmob: Dict, label: Optional[str] = None) -> None:
+    _check_deadline(_strategy_deadline(inmob), label or str(inmob.get("_strategy_name") or "strategy"))
+
+
+def _bounded_http_timeout(inmob: Dict, requested: int) -> float:
+    deadline = _strategy_deadline(inmob)
+    _check_deadline(deadline, str(inmob.get("_strategy_name") or "strategy"))
+    remaining = _deadline_remaining_seconds(deadline)
+    if remaining == float("inf"):
+        return requested
+    return max(1.0, min(float(requested), remaining))
+
+
+def _bounded_playwright_timeout_ms(inmob: Dict, requested_ms: int) -> int:
+    deadline = _strategy_deadline(inmob)
+    _check_deadline(deadline, str(inmob.get("_strategy_name") or "strategy"))
+    remaining_ms = int(_deadline_remaining_seconds(deadline) * 1000)
+    if remaining_ms <= 0:
+        raise StrategyTimeoutError(f"timeout_{inmob.get('_strategy_name') or 'strategy'}: sin tiempo disponible")
+    return max(500, min(requested_ms, remaining_ms))
+
+
+def _run_strategy_with_deadline(
+    strategy_name: str,
+    inmob: Dict,
+    item_deadline: Optional[float],
+    func: Callable[[], List[Dict]],
+) -> List[Dict]:
+    strategy_seconds = STRATEGY_TIMEOUT_SECONDS.get(strategy_name, 45)
+    now = time.time()
+    strategy_deadline = now + strategy_seconds
+    if item_deadline is not None:
+        strategy_deadline = min(strategy_deadline, item_deadline)
+    if strategy_deadline <= now:
+        raise StrategyTimeoutError(f"timeout_{strategy_name}: item sin tiempo disponible")
+
+    previous_deadline = inmob.get("_strategy_deadline")
+    previous_name = inmob.get("_strategy_name")
+    inmob["_strategy_deadline"] = strategy_deadline
+    inmob["_strategy_name"] = strategy_name
+    try:
+        result = func()
+        _check_deadline(strategy_deadline, strategy_name)
+        return result
+    finally:
+        if previous_deadline is None:
+            inmob.pop("_strategy_deadline", None)
+        else:
+            inmob["_strategy_deadline"] = previous_deadline
+        if previous_name is None:
+            inmob.pop("_strategy_name", None)
+        else:
+            inmob["_strategy_name"] = previous_name
+
+
+def _close_playwright_safely(resource: Any, label: str, timeout: float = PLAYWRIGHT_CLOSE_TIMEOUT_SECONDS) -> bool:
+    if resource is None:
+        return True
+    close_fn = getattr(resource, "close", None) or getattr(resource, "stop", None)
+    if not callable(close_fn):
+        return True
+
+    done = threading.Event()
+    errors: List[BaseException] = []
+
+    def _close() -> None:
+        try:
+            close_fn()
+        except BaseException as exc:
+            errors.append(exc)
+        finally:
+            done.set()
+
+    thread = threading.Thread(target=_close, name=f"close-{label}", daemon=True)
+    thread.start()
+    thread.join(timeout)
+    if not done.is_set():
+        logger.warning("%s no cerro en %.1fs; se continua sin bloquear", label, timeout)
+        return False
+    if errors:
+        logger.debug("%s close error: %s", label, errors[0])
+        return False
+    return True
 
 
 def _normalize_text_key(value: Any) -> str:
@@ -740,7 +860,7 @@ class SupabasePropiedades:
     # ------ Scraping control queue ------
 
     def _rpc(self, function_name: str, payload: Optional[Dict[str, Any]] = None,
-             timeout: int = 30) -> Any:
+             timeout: int = 15) -> Any:
         r = self.session.post(
             f"{SUPABASE_URL}/rest/v1/rpc/{function_name}",
             headers=self._headers_rpc,
@@ -757,7 +877,7 @@ class SupabasePropiedades:
             return r.text
 
     def _rpc_with_parameter_fallback(self, function_name: str, payload: Dict[str, Any],
-                                     timeout: int = 30) -> Any:
+                                     timeout: int = 15) -> Any:
         try:
             return self._rpc(function_name, payload, timeout=timeout)
         except RuntimeError as exc:
@@ -768,7 +888,7 @@ class SupabasePropiedades:
             return self._rpc(function_name, prefixed_payload, timeout=timeout)
 
     def claim_next_scraping_item(self) -> Optional[Dict]:
-        data = self._rpc("claim_next_scraping_item", {}, timeout=30)
+        data = self._rpc("claim_next_scraping_item", {}, timeout=10)
         if isinstance(data, list):
             if not data:
                 return None
@@ -783,7 +903,7 @@ class SupabasePropiedades:
         return self._rpc_with_parameter_fallback(
             "start_scraping_item",
             {"item_id": item_id},
-            timeout=20,
+            timeout=10,
         )
 
     def finish_scraping_item_success(
@@ -810,7 +930,7 @@ class SupabasePropiedades:
         return self._rpc_with_parameter_fallback(
             "finish_scraping_item_success",
             payload,
-            timeout=60,
+            timeout=15,
         )
 
     def finish_scraping_item_error(
@@ -833,14 +953,14 @@ class SupabasePropiedades:
         return self._rpc_with_parameter_fallback(
             "finish_scraping_item_error",
             payload,
-            timeout=60,
+            timeout=15,
         )
 
     def close_scraping_run_if_finished(self, run_id: Any) -> Any:
         return self._rpc_with_parameter_fallback(
             "close_scraping_run_if_finished",
             {"run_id": run_id},
-            timeout=30,
+            timeout=10,
         )
 
     # ------ Properties ------
@@ -1020,7 +1140,8 @@ def _scraperapi_get(url: str, session: requests.Session, timeout: int = 30, js_r
     if js_render:
         params["render"] = "true"
     api_url = "https://api.scraperapi.com/"
-    return session.get(api_url, params=params, timeout=timeout + 15, verify=False)
+    scraper_timeout = timeout if timeout <= 12 else timeout + 15
+    return session.get(api_url, params=params, timeout=scraper_timeout, verify=False)
 
 
 _GMAPS_RE = re.compile(
@@ -1468,11 +1589,14 @@ def _map_tokko_property(obj: Dict, inmob: Dict) -> Dict:
     return prop
 
 
-def _fetch_tokko_detail(obj_id: str, key: str, session: requests.Session) -> Optional[Dict]:
+def _fetch_tokko_detail(obj_id: str, key: str, session: requests.Session, inmob: Optional[Dict] = None) -> Optional[Dict]:
     """Obtiene datos completos de una propiedad individual via Tokko API."""
     try:
+        if inmob is not None and _strategy_deadline(inmob) is not None:
+            _check_strategy_deadline(inmob, str(inmob.get("_strategy_name") or "tokko_api"))
         url = f"{TOKKO_API_BASE}{obj_id}/?key={key}&format=json&lang=es"
-        r = _http_get(url, session, timeout=20)
+        timeout = _bounded_http_timeout(inmob, 6) if inmob is not None and _strategy_deadline(inmob) is not None else 20
+        r = _http_get(url, session, timeout=timeout)
         if r.status_code == 200:
             return r.json()
     except Exception:
@@ -1490,12 +1614,15 @@ def strategy_tokko_api(inmob: Dict, session: requests.Session) -> List[Dict]:
     total_count = None
 
     while True:
+        if _strategy_deadline(inmob) is not None:
+            _check_strategy_deadline(inmob, "tokko_api")
         url = (
             f"{TOKKO_API_BASE}?key={key}&limit={TOKKO_LIMIT}"
             f"&offset={offset}&format=json&lang=es"
         )
         try:
-            r = _http_get(url, session, timeout=30)
+            timeout = _bounded_http_timeout(inmob, 12) if _strategy_deadline(inmob) is not None else 30
+            r = _http_get(url, session, timeout=timeout)
             r.raise_for_status()
             data = r.json()
         except Exception as e:
@@ -1510,7 +1637,7 @@ def strategy_tokko_api(inmob: Dict, session: requests.Session) -> List[Dict]:
                 obj_id = str(obj.get("id", ""))
                 # Enriquecer con detalle si faltan campos clave
                 if obj_id and (not obj.get("description") or not obj.get("latitude")):
-                    detail = _fetch_tokko_detail(obj_id, key, session)
+                    detail = _fetch_tokko_detail(obj_id, key, session, inmob)
                     if detail and isinstance(detail, dict):
                         # Merge: el detalle prevalece para campos vacíos
                         for field in ("description", "latitude", "longitude",
@@ -1527,8 +1654,22 @@ def strategy_tokko_api(inmob: Dict, session: requests.Session) -> List[Dict]:
                 return None
 
         # Fetch detail en paralelo (5 workers)
-        with ThreadPoolExecutor(max_workers=5) as ex:
-            mapped = list(ex.map(_fetch_and_map, objects))
+        mapped: List[Optional[Dict]] = []
+        executor = ThreadPoolExecutor(max_workers=5)
+        try:
+            futures = [executor.submit(_fetch_and_map, obj) for obj in objects]
+            timeout = None
+            if _strategy_deadline(inmob) is not None:
+                timeout = max(1.0, _deadline_remaining_seconds(_strategy_deadline(inmob)))
+            for future in as_completed(futures, timeout=timeout):
+                try:
+                    mapped.append(future.result())
+                except Exception:
+                    pass
+        except TimeoutError as exc:
+            raise StrategyTimeoutError("timeout_tokko_api: excedio el limite configurado") from exc
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
         resultados.extend(p for p in mapped if p is not None)
 
         offset += TOKKO_LIMIT
@@ -1816,6 +1957,7 @@ def strategy_tokko_html(inmob: Dict, session: requests.Session) -> List[Dict]:
     if not url_inicial:
         raise ValueError("sin_url_listado")
 
+    _check_strategy_deadline(inmob, "tokko_html")
     urls_probadas: List[str] = []
     errores_relevantes: List[str] = []
     resultados: List[Dict] = []
@@ -1823,7 +1965,7 @@ def strategy_tokko_html(inmob: Dict, session: requests.Session) -> List[Dict]:
     first_html = ""
 
     try:
-        r0 = _http_get(url_inicial, session, timeout=25)
+        r0 = _http_get(url_inicial, session, timeout=_bounded_http_timeout(inmob, 20))
         first_html = r0.text if r0.status_code == 200 else ""
     except Exception as exc:
         errores_relevantes.append(f"{url_inicial}: {type(exc).__name__}: {str(exc)[:180]}")
@@ -1831,6 +1973,7 @@ def strategy_tokko_html(inmob: Dict, session: requests.Session) -> List[Dict]:
     candidates = _tokko_candidate_urls(inmob, first_html=first_html, first_url=url_inicial)
 
     for candidate in candidates:
+        _check_strategy_deadline(inmob, "tokko_html")
         if candidate in urls_probadas:
             continue
         urls_probadas.append(candidate)
@@ -1838,7 +1981,7 @@ def strategy_tokko_html(inmob: Dict, session: requests.Session) -> List[Dict]:
             if candidate == url_inicial and first_html:
                 html = first_html
             else:
-                r = _http_get(candidate, session, timeout=25)
+                r = _http_get(candidate, session, timeout=_bounded_http_timeout(inmob, 15))
                 if r.status_code != 200:
                     errores_relevantes.append(f"{candidate}: HTTP {r.status_code}")
                     continue
@@ -1854,10 +1997,11 @@ def strategy_tokko_html(inmob: Dict, session: requests.Session) -> List[Dict]:
 
                 max_pages = min(int(inmob.get("paginas_estimadas") or 12), 30)
                 for page_num in range(2, max_pages + 1):
+                    _check_strategy_deadline(inmob, "tokko_html")
                     next_url = _add_query_param(candidate, "p", page_num)
                     urls_probadas.append(next_url)
                     try:
-                        pr = _http_get(next_url, session, timeout=20)
+                        pr = _http_get(next_url, session, timeout=_bounded_http_timeout(inmob, 10))
                         if pr.status_code != 200 or "--NoMoreProperties--" in pr.text:
                             break
                         more_props = _parse_tokko_listing_cards(pr.text, next_url, inmob)
@@ -1998,6 +2142,7 @@ def strategy_network_intercept(inmob: Dict, pw_context, session: Optional[reques
     if not url_listado:
         raise ValueError("sin_url_listado")
 
+    _check_strategy_deadline(inmob, "network_intercept")
     captured: List[Dict] = []
     detected_api_url: Optional[str] = None
     detected_tokko_key: Optional[str] = None
@@ -2035,20 +2180,23 @@ def strategy_network_intercept(inmob: Dict, pw_context, session: Optional[reques
 
     page = pw_context.new_page()
     try:
+        page.set_default_timeout(PLAYWRIGHT_ACTION_TIMEOUT_MS)
+        page.set_default_navigation_timeout(PLAYWRIGHT_NAV_TIMEOUT_MS)
         page.on("response", handle_response)
-        _playwright_goto(page, url_listado)
-        _human_scroll(page)
-        page.wait_for_load_state("networkidle", timeout=15000)
+        _playwright_goto(page, url_listado, retries=2, timeout_ms=_bounded_playwright_timeout_ms(inmob, PLAYWRIGHT_NAV_TIMEOUT_MS))
+        _human_scroll(page, deadline=_strategy_deadline(inmob))
+        page.wait_for_load_state("networkidle", timeout=_bounded_playwright_timeout_ms(inmob, PLAYWRIGHT_LOAD_TIMEOUT_MS))
 
         if not detected_tokko_key:
             try:
+                _check_strategy_deadline(inmob, "network_intercept")
                 detected_tokko_key = _buscar_tokko_key_en_html(page.content())
             except Exception:
                 pass
 
         # Si detectamos Tokko key, usamos la API completa
         if detected_tokko_key:
-            page.close()
+            _close_playwright_safely(page, "network_intercept page")
             # Guardar la key para futuras ejecuciones
             inmob["tokko_api_key"] = detected_tokko_key
             try:
@@ -2069,6 +2217,7 @@ def strategy_network_intercept(inmob: Dict, pw_context, session: Optional[reques
         if detected_api_url and captured:
             page_num = 2
             while page_num <= 50:
+                _check_strategy_deadline(inmob, "network_intercept")
                 next_url = _guess_next_api_url(detected_api_url, page_num)
                 if not next_url:
                     break
@@ -2079,10 +2228,7 @@ def strategy_network_intercept(inmob: Dict, pw_context, session: Optional[reques
                     break
                 page_num += 1
     finally:
-        try:
-            page.close()
-        except Exception:
-            pass
+        _close_playwright_safely(page, "network_intercept page")
 
     if not captured:
         raise RuntimeError("sin_propiedades: network intercept no encontró datos")
@@ -2204,6 +2350,7 @@ def strategy_json_ld(inmob: Dict, session: requests.Session) -> List[Dict]:
     if not url_listado:
         raise ValueError("sin_url_listado")
 
+    _check_strategy_deadline(inmob, "json_ld")
     resultados: List[Dict] = []
     detail_urls: List[str] = []
 
@@ -2234,16 +2381,17 @@ def strategy_json_ld(inmob: Dict, session: requests.Session) -> List[Dict]:
             if PROPERTY_URL_PATTERNS.search(href) and href not in detail_urls:
                 detail_urls.append(href)
 
-    r = _http_get(url_listado, session, timeout=25)
+    r = _http_get(url_listado, session, timeout=_bounded_http_timeout(inmob, 12))
     r.raise_for_status()
     _extract_from_html(r.text, url_listado)
 
     # Visit detail pages to get JSON-LD
     visited = 0
     for durl in detail_urls[:200]:
+        _check_strategy_deadline(inmob, "json_ld")
         try:
             time.sleep(0.3)
-            dr = _http_get(durl, session, timeout=20)
+            dr = _http_get(durl, session, timeout=_bounded_http_timeout(inmob, 6))
             if dr.status_code == 200:
                 _extract_from_html(dr.text, durl)
             visited += 1
@@ -2268,11 +2416,14 @@ SITEMAP_PATHS = [
 ]
 
 
-def _fetch_sitemap_urls(base: str, session: requests.Session) -> List[str]:
+def _fetch_sitemap_urls(base: str, session: requests.Session, inmob: Optional[Dict] = None) -> List[str]:
     prop_urls: List[str] = []
     for path in SITEMAP_PATHS:
+        if inmob is not None:
+            _check_strategy_deadline(inmob, "sitemap")
         try:
-            r = _http_get(urljoin(base, path), session, timeout=20)
+            timeout = _bounded_http_timeout(inmob, 8) if inmob is not None else 20
+            r = _http_get(urljoin(base, path), session, timeout=timeout)
             if r.status_code != 200:
                 continue
             root = ET.fromstring(r.text)
@@ -2282,7 +2433,10 @@ def _fetch_sitemap_urls(base: str, session: requests.Session) -> List[str]:
                 sub_url = sitemap_tag.text.strip() if sitemap_tag.text else ""
                 if sub_url:
                     try:
-                        sub_r = _http_get(sub_url, session, timeout=20)
+                        if inmob is not None:
+                            _check_strategy_deadline(inmob, "sitemap")
+                        timeout = _bounded_http_timeout(inmob, 6) if inmob is not None else 20
+                        sub_r = _http_get(sub_url, session, timeout=timeout)
                         if sub_r.status_code == 200:
                             sub_root = ET.fromstring(sub_r.text)
                             for loc in sub_root.findall(".//sm:url/sm:loc", ns):
@@ -2305,20 +2459,24 @@ def _fetch_sitemap_urls(base: str, session: requests.Session) -> List[str]:
 
 def _extract_detail_page(url: str, inmob: Dict, session: requests.Session) -> Optional[Dict]:
     """Extrae datos de una página de detalle. Usa ScraperAPI si falla, AI si todo falla."""
+    if inmob.get("_strategy_name") == "sitemap":
+        _check_strategy_deadline(inmob, "sitemap")
     raw_html = None
 
     # Intento 1: request directo
     try:
-        r = _http_get(url, session, timeout=20)
+        timeout = _bounded_http_timeout(inmob, 6) if inmob.get("_strategy_name") == "sitemap" else 20
+        r = _http_get(url, session, timeout=timeout)
         if r.status_code == 200:
             raw_html = r.text
     except Exception:
         pass
 
     # Intento 2: ScraperAPI si falló o bloqueado
-    if not raw_html and SCRAPERAPI_KEY:
+    if not raw_html and SCRAPERAPI_KEY and inmob.get("_strategy_name") != "sitemap":
         try:
-            r2 = _scraperapi_get(url, session, timeout=30, js_render=False)
+            timeout = _bounded_http_timeout(inmob, 8) if inmob.get("_strategy_name") == "sitemap" else 30
+            r2 = _scraperapi_get(url, session, timeout=timeout, js_render=False)
             if r2.status_code == 200:
                 raw_html = r2.text
                 logger.debug("ScraperAPI OK para %s", url)
@@ -2492,11 +2650,12 @@ def _html_extract_detail(soup: BeautifulSoup, url: str, inmob: Dict,
 
 
 def strategy_sitemap(inmob: Dict, session: requests.Session) -> List[Dict]:
+    _check_strategy_deadline(inmob, "sitemap")
     base = inmob.get("web", "")
     parsed = urlparse(base)
     base = f"{parsed.scheme}://{parsed.netloc}"
 
-    urls = _fetch_sitemap_urls(base, session)
+    urls = _fetch_sitemap_urls(base, session, inmob)
     if not urls:
         raise RuntimeError("sin_propiedades: sitemap sin URLs de propiedades")
 
@@ -2504,21 +2663,29 @@ def strategy_sitemap(inmob: Dict, session: requests.Session) -> List[Dict]:
 
     def _fetch_one(url: str) -> Optional[Dict]:
         try:
+            _check_strategy_deadline(inmob, "sitemap")
             prop = _extract_detail_page(url, inmob, session)
             time.sleep(random.uniform(0.2, 0.5))
             return prop
+        except StrategyTimeoutError:
+            raise
         except Exception:
             return None
 
-    with ThreadPoolExecutor(max_workers=5) as executor:
+    executor = ThreadPoolExecutor(max_workers=5)
+    try:
         futures = {executor.submit(_fetch_one, u): u for u in urls[:500]}
-        for future in as_completed(futures):
+        for future in as_completed(futures, timeout=max(1.0, _deadline_remaining_seconds(_strategy_deadline(inmob)))):
             try:
                 prop = future.result()
                 if prop:
                     resultados.append(prop)
             except Exception:
                 pass
+    except TimeoutError:
+        logger.warning("  Sitemap timeout: se corta extraccion de detalles")
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
 
     if not resultados:
         raise RuntimeError("sin_propiedades: sitemap URLs encontradas pero sin datos extraíbles")
@@ -2529,26 +2696,27 @@ def strategy_sitemap(inmob: Dict, session: requests.Session) -> List[Dict]:
 # Playwright helpers
 # ---------------------------------------------------------------------------
 
-def _playwright_goto(page: Page, url: str, retries: int = 3) -> None:
+def _playwright_goto(page: Page, url: str, retries: int = 2, timeout_ms: int = PLAYWRIGHT_NAV_TIMEOUT_MS) -> None:
     for attempt in range(retries):
         try:
-            page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
             return
         except PlaywrightError as e:
             if attempt == retries - 1:
                 raise
-            wait = 2 ** attempt + random.uniform(0, 1)
+            wait = min(2 ** attempt + random.uniform(0, 1), 3)
             logger.debug("goto retry %d: %s — esperando %.1fs", attempt + 1, e, wait)
             time.sleep(wait)
 
 
-def _human_scroll(page: Page) -> None:
+def _human_scroll(page: Page, deadline: Optional[float] = None) -> None:
     """Simula scroll humano para evitar detección."""
     try:
         page.mouse.move(random.randint(100, 800), random.randint(100, 600))
-        for _ in range(random.randint(3, 6)):
+        for _ in range(random.randint(2, 4)):
+            _check_deadline(deadline, "playwright_scroll")
             page.evaluate(f"window.scrollBy(0, {random.randint(200, 500)})")
-            time.sleep(random.uniform(0.3, 0.8))
+            time.sleep(random.uniform(0.2, 0.5))
     except Exception:
         pass
 
@@ -2556,6 +2724,7 @@ def _human_scroll(page: Page) -> None:
 def _make_playwright_context(pw, headless: bool = True):
     browser = pw.chromium.launch(
         headless=headless,
+        timeout=PLAYWRIGHT_LAUNCH_TIMEOUT_MS,
         args=[
             "--disable-blink-features=AutomationControlled",
             "--no-sandbox",
@@ -2571,6 +2740,8 @@ def _make_playwright_context(pw, headless: bool = True):
         extra_http_headers={"Accept-Language": "es-AR,es;q=0.9"},
         ignore_https_errors=True,  # ignorar certs vencidos/mal configurados
     )
+    context.set_default_timeout(PLAYWRIGHT_ACTION_TIMEOUT_MS)
+    context.set_default_navigation_timeout(PLAYWRIGHT_NAV_TIMEOUT_MS)
     # Block heavy resources
     context.route(
         "**/*",
@@ -2617,9 +2788,16 @@ _PAGINATION_URL_PATTERNS = [
 ]
 
 
+def _count_selector(page: Page, selector: str) -> int:
+    try:
+        return int(page.eval_on_selector_all(selector, "els => els.length"))
+    except Exception:
+        return 0
+
+
 def _infer_card_selector(page: Page) -> Optional[str]:
     for sel in _CARD_SELECTORS:
-        count = page.locator(sel).count()
+        count = _count_selector(page, sel)
         if count >= 3:
             return sel
     return None
@@ -2628,17 +2806,18 @@ def _infer_card_selector(page: Page) -> Optional[str]:
 def _extract_cards_from_page(page: Page, card_sel: str, inmob: Dict, base_url: str) -> List[str]:
     """Extrae URLs de propiedades de los cards en la página actual."""
     urls: List[str] = []
-    cards = page.locator(card_sel).all()
-    for card in cards:
-        try:
-            link = card.locator("a").first
-            href = link.get_attribute("href") if link else None
-            if href:
-                full = urljoin(base_url, href)
-                if PROPERTY_URL_PATTERNS.search(full) or urlparse(full).netloc == urlparse(base_url).netloc:
-                    urls.append(full)
-        except Exception:
-            pass
+    _check_strategy_deadline(inmob, "html_scraper")
+    try:
+        hrefs = page.eval_on_selector_all(
+            f"{card_sel} a[href]",
+            "els => els.map(el => el.getAttribute('href')).filter(Boolean)",
+        )
+    except Exception:
+        hrefs = []
+    for href in hrefs:
+        full = urljoin(base_url, href)
+        if PROPERTY_URL_PATTERNS.search(full) or urlparse(full).netloc == urlparse(base_url).netloc:
+            urls.append(full)
     return list(dict.fromkeys(urls))
 
 
@@ -2670,8 +2849,8 @@ def _handle_click_pagination(page: Page) -> bool:
         try:
             btn = page.locator(sel).first
             if btn.is_visible(timeout=2000):
-                btn.click(timeout=5000)
-                page.wait_for_load_state("networkidle", timeout=15000)
+                btn.click(timeout=PLAYWRIGHT_ACTION_TIMEOUT_MS)
+                page.wait_for_load_state("networkidle", timeout=PLAYWRIGHT_LOAD_TIMEOUT_MS)
                 return True
         except Exception:
             pass
@@ -2683,18 +2862,19 @@ def _playwright_extract_detail(page: Page, url: str, inmob: Dict) -> Optional[Di
     # Habilitar imágenes para esta página
     page.unroute("**/*")
     try:
-        _playwright_goto(page, url)
-        _human_scroll(page)
-        page.wait_for_load_state("networkidle", timeout=15000)
+        _check_strategy_deadline(inmob, "html_scraper")
+        _playwright_goto(page, url, retries=1, timeout_ms=_bounded_playwright_timeout_ms(inmob, PLAYWRIGHT_NAV_TIMEOUT_MS))
+        _human_scroll(page, deadline=_strategy_deadline(inmob))
+        page.wait_for_load_state("networkidle", timeout=_bounded_playwright_timeout_ms(inmob, PLAYWRIGHT_LOAD_TIMEOUT_MS))
 
         def find_text(*sels):
             for sel in sels:
                 try:
+                    _check_strategy_deadline(inmob, "html_scraper")
                     el = page.locator(sel).first
-                    if el.count() > 0:
-                        t = el.inner_text(timeout=3000).strip()
-                        if t:
-                            return t
+                    t = el.inner_text(timeout=_bounded_playwright_timeout_ms(inmob, PLAYWRIGHT_ACTION_TIMEOUT_MS)).strip()
+                    if t:
+                        return t
                 except Exception:
                     pass
             return ""
@@ -2727,7 +2907,7 @@ def _playwright_extract_detail(page: Page, url: str, inmob: Dict) -> Optional[Di
 
         # Apto crédito
         try:
-            page_text_lower = page.inner_text("body", timeout=3000).lower()
+            page_text_lower = page.inner_text("body", timeout=_bounded_playwright_timeout_ms(inmob, PLAYWRIGHT_ACTION_TIMEOUT_MS)).lower()
         except Exception:
             page_text_lower = ""
         apto_credito = bool(re.search(r"apto\s+cr[eé]dito|acepta\s+cr[eé]dito|cr[eé]dito\s+hipotecario", page_text_lower))
@@ -2813,15 +2993,18 @@ def strategy_html_playwright(inmob: Dict, pw_context) -> List[Dict]:
     if not url_listado:
         raise ValueError("sin_url_listado")
 
+    _check_strategy_deadline(inmob, "html_scraper")
     tipo_pag = inmob.get("tipo_paginacion", "url") or "url"
     resultados: List[Dict] = []
     detail_urls: List[str] = []
 
     page = pw_context.new_page()
     try:
-        _playwright_goto(page, url_listado)
-        _human_scroll(page)
-        page.wait_for_load_state("networkidle", timeout=15000)
+        page.set_default_timeout(PLAYWRIGHT_ACTION_TIMEOUT_MS)
+        page.set_default_navigation_timeout(PLAYWRIGHT_NAV_TIMEOUT_MS)
+        _playwright_goto(page, url_listado, retries=2, timeout_ms=_bounded_playwright_timeout_ms(inmob, PLAYWRIGHT_NAV_TIMEOUT_MS))
+        _human_scroll(page, deadline=_strategy_deadline(inmob))
+        page.wait_for_load_state("networkidle", timeout=_bounded_playwright_timeout_ms(inmob, PLAYWRIGHT_LOAD_TIMEOUT_MS))
 
         card_sel = _infer_card_selector(page)
         if not card_sel:
@@ -2833,6 +3016,7 @@ def strategy_html_playwright(inmob: Dict, pw_context) -> List[Dict]:
         page_num = 1
 
         while page_num <= max_pages:
+            _check_strategy_deadline(inmob, "html_scraper")
             new_urls = _extract_cards_from_page(page, card_sel, inmob, current_url)
             before = len(detail_urls)
             for u in new_urls:
@@ -2849,9 +3033,10 @@ def strategy_html_playwright(inmob: Dict, pw_context) -> List[Dict]:
 
             # Paginación
             if tipo_pag == "scroll_infinito":
+                _check_strategy_deadline(inmob, "html_scraper")
                 prev_height = page.evaluate("document.body.scrollHeight")
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                time.sleep(2)
+                time.sleep(min(1.0, max(0.1, _deadline_remaining_seconds(_strategy_deadline(inmob)))))
                 new_height = page.evaluate("document.body.scrollHeight")
                 if new_height == prev_height:
                     break
@@ -2864,21 +3049,21 @@ def strategy_html_playwright(inmob: Dict, pw_context) -> List[Dict]:
                 if not next_url or next_url == current_url:
                     break
                 try:
-                    _playwright_goto(page, next_url)
-                    _human_scroll(page)
-                    page.wait_for_load_state("networkidle", timeout=15000)
+                    _playwright_goto(page, next_url, retries=1, timeout_ms=_bounded_playwright_timeout_ms(inmob, PLAYWRIGHT_NAV_TIMEOUT_MS))
+                    _human_scroll(page, deadline=_strategy_deadline(inmob))
+                    page.wait_for_load_state("networkidle", timeout=_bounded_playwright_timeout_ms(inmob, PLAYWRIGHT_LOAD_TIMEOUT_MS))
                     # Verificar que la página cargó contenido
-                    if page.locator(card_sel).count() == 0:
+                    if _count_selector(page, card_sel) == 0:
                         break
                     current_url = page.url
                 except Exception:
                     break
 
             page_num += 1
-            time.sleep(random.uniform(1.0, 2.5))
+            time.sleep(min(random.uniform(0.5, 1.2), max(0.1, _deadline_remaining_seconds(_strategy_deadline(inmob)))))
 
     finally:
-        page.close()
+        _close_playwright_safely(page, "html_scraper listing page")
 
     if not detail_urls:
         raise RuntimeError("sin_propiedades: html_scraper no encontró URLs")
@@ -2886,16 +3071,19 @@ def strategy_html_playwright(inmob: Dict, pw_context) -> List[Dict]:
     # Visitar páginas de detalle
     detail_page = pw_context.new_page()
     try:
+        detail_page.set_default_timeout(PLAYWRIGHT_ACTION_TIMEOUT_MS)
+        detail_page.set_default_navigation_timeout(PLAYWRIGHT_NAV_TIMEOUT_MS)
         for durl in detail_urls[:300]:
+            _check_strategy_deadline(inmob, "html_scraper")
             try:
                 prop = _playwright_extract_detail(detail_page, durl, inmob)
                 if prop:
                     resultados.append(prop)
-                time.sleep(random.uniform(0.5, 1.5))
+                time.sleep(min(random.uniform(0.3, 0.8), max(0.1, _deadline_remaining_seconds(_strategy_deadline(inmob)))))
             except Exception as exc:
                 logger.debug("detail extract error %s: %s", durl, exc)
     finally:
-        detail_page.close()
+        _close_playwright_safely(detail_page, "html_scraper detail page")
 
     if not resultados:
         raise RuntimeError("sin_propiedades: html_scraper extrajo URLs pero no datos")
@@ -2964,7 +3152,7 @@ def _buscar_tokko_key_en_html(content: str) -> Optional[str]:
 def _tiene_cards(page, min_cards: int = 3) -> bool:
     for sel in _CARD_SELECTORS_DETECT:
         try:
-            if page.locator(sel).count() >= min_cards:
+            if _count_selector(page, sel) >= min_cards:
                 return True
         except Exception:
             pass
@@ -3042,13 +3230,15 @@ def detect_strategy(inmob: Dict, session: requests.Session, pw_context) -> Dict:
 
     page = pw_context.new_page()
     try:
+        page.set_default_timeout(PLAYWRIGHT_ACTION_TIMEOUT_MS)
+        page.set_default_navigation_timeout(PLAYWRIGHT_NAV_TIMEOUT_MS)
         page.on("response", handle_resp)
 
         # Cargar la URL original
-        _playwright_goto(page, url)
+        _playwright_goto(page, url, retries=2, timeout_ms=PLAYWRIGHT_NAV_TIMEOUT_MS)
         _human_scroll(page)
         try:
-            page.wait_for_load_state("networkidle", timeout=10000)
+            page.wait_for_load_state("networkidle", timeout=PLAYWRIGHT_LOAD_TIMEOUT_MS)
         except Exception:
             pass
 
@@ -3068,9 +3258,9 @@ def detect_strategy(inmob: Dict, session: requests.Session, pw_context) -> Dict:
                 if listing_url.rstrip("/") == url.rstrip("/"):
                     continue
                 try:
-                    _playwright_goto(page, listing_url)
+                    _playwright_goto(page, listing_url, retries=1, timeout_ms=PLAYWRIGHT_NAV_TIMEOUT_MS)
                     try:
-                        page.wait_for_load_state("networkidle", timeout=8000)
+                        page.wait_for_load_state("networkidle", timeout=PLAYWRIGHT_LOAD_TIMEOUT_MS)
                     except Exception:
                         pass
                     if detected_tokko_key:
@@ -3097,10 +3287,7 @@ def detect_strategy(inmob: Dict, session: requests.Session, pw_context) -> Dict:
             resultado["estrategia_scraping"] = "sin_estrategia"
 
     finally:
-        try:
-            page.close()
-        except Exception:
-            pass
+        _close_playwright_safely(page, "detect_strategy page")
 
     return resultado
 
@@ -3122,7 +3309,13 @@ def _save_estrategia(db: "SupabasePropiedades", inmob_id: int, fields: Dict) -> 
         logger.debug("_save_estrategia error: %s", e)
 
 
-def run_best_strategy(inmob: Dict, session: requests.Session, pw_context) -> Tuple[List[Dict], str]:
+def run_best_strategy(
+    inmob: Dict,
+    session: requests.Session,
+    pw_context,
+    allow_playwright_fallback: bool = True,
+    item_deadline: Optional[float] = None,
+) -> Tuple[List[Dict], str]:
     """
     Ejecuta la mejor estrategia para una agencia.
     Si ya tiene estrategia_scraping guardada, va directo a ella.
@@ -3135,17 +3328,22 @@ def run_best_strategy(inmob: Dict, session: requests.Session, pw_context) -> Tup
         or "tokko" in str(inmob.get("web") or "").lower()
         or "tokko" in str(inmob.get("url_listado") or "").lower()
     )
+    tokko_html_failed = False
+
+    def call(strategy_name: str, func: Callable[[], List[Dict]]) -> List[Dict]:
+        _check_deadline(item_deadline, "item")
+        return _run_strategy_with_deadline(strategy_name, inmob, item_deadline, func)
 
     # --- Ir directo a la estrategia guardada (con fallback automático) ---
     if estrategia_guardada == "tokko_api" and inmob.get("tokko_api_key"):
         logger.info("  → Tokko API (guardada)")
         try:
-            props = strategy_tokko_api(inmob, session)
+            props = call("tokko_api", lambda: strategy_tokko_api(inmob, session))
             return props, "tokko_api"
         except Exception as e:
             logger.warning("  Tokko falló: %s — probando Network Intercept", e)
             try:
-                props = strategy_network_intercept(inmob, pw_context, session)
+                props = call("network_intercept", lambda: strategy_network_intercept(inmob, pw_context, session))
                 return props, "network_intercept"
             except Exception:
                 pass
@@ -3153,12 +3351,12 @@ def run_best_strategy(inmob: Dict, session: requests.Session, pw_context) -> Tup
     if estrategia_guardada == "json_ld":
         logger.info("  → JSON-LD (guardada)")
         try:
-            props = strategy_json_ld(inmob, session)
+            props = call("json_ld", lambda: strategy_json_ld(inmob, session))
             return props, "json_ld"
         except Exception as e:
             logger.warning("  JSON-LD falló: %s — probando Sitemap", e)
             try:
-                props = strategy_sitemap(inmob, session)
+                props = call("sitemap", lambda: strategy_sitemap(inmob, session))
                 return props, "sitemap"
             except Exception:
                 pass
@@ -3166,25 +3364,30 @@ def run_best_strategy(inmob: Dict, session: requests.Session, pw_context) -> Tup
     if estrategia_guardada == "sitemap":
         logger.info("  → Sitemap (guardada)")
         try:
-            props = strategy_sitemap(inmob, session)
+            props = call("sitemap", lambda: strategy_sitemap(inmob, session))
             return props, "sitemap"
         except Exception as e:
             logger.warning("  Sitemap falló: %s — probando JSON-LD", e)
             try:
-                props = strategy_json_ld(inmob, session)
+                props = call("json_ld", lambda: strategy_json_ld(inmob, session))
                 return props, "json_ld"
             except Exception:
                 pass
 
+    if estrategia_guardada == "html" and not allow_playwright_fallback:
+        logger.info("  HTML Playwright omitido por configuracion (--allow-playwright-fallback no activo)")
+        inmob.setdefault("_scraper_metadata", {})["playwright_fallback_skipped"] = True
+        estrategia_guardada = None
+
     if estrategia_guardada == "html":
         logger.info("  → HTML Playwright (guardada)")
         try:
-            props = strategy_html_playwright(inmob, pw_context)
+            props = call("html_scraper", lambda: strategy_html_playwright(inmob, pw_context))
             return props, "html_scraper"
         except Exception as e:
             logger.warning("  HTML falló: %s — probando Network Intercept", e)
             try:
-                props = strategy_network_intercept(inmob, pw_context, session)
+                props = call("network_intercept", lambda: strategy_network_intercept(inmob, pw_context, session))
                 return props, "network_intercept"
             except Exception:
                 pass
@@ -3192,15 +3395,16 @@ def run_best_strategy(inmob: Dict, session: requests.Session, pw_context) -> Tup
     if estrategia_guardada == "tokko_html":
         logger.info("  -> Tokko HTML (guardada)")
         try:
-            props = strategy_tokko_html(inmob, session)
+            props = call("tokko_html", lambda: strategy_tokko_html(inmob, session))
             return props, "tokko_html"
         except Exception as e:
+            tokko_html_failed = True
             logger.warning("  Tokko HTML fallo: %s", e)
 
     if estrategia_guardada == "sin_estrategia":
         # Dar una última oportunidad con Network Intercept
         try:
-            props = strategy_network_intercept(inmob, pw_context, session)
+            props = call("network_intercept", lambda: strategy_network_intercept(inmob, pw_context, session))
             return props, "network_intercept"
         except Exception:
             raise RuntimeError("sin_propiedades: sitio sin estrategia viable confirmada")
@@ -3211,7 +3415,7 @@ def run_best_strategy(inmob: Dict, session: requests.Session, pw_context) -> Tup
     if inmob.get("tokko_api_key"):
         try:
             logger.info("  → Tokko API")
-            props = strategy_tokko_api(inmob, session)
+            props = call("tokko_api", lambda: strategy_tokko_api(inmob, session))
             return props, "tokko_api"
         except Exception as e:
             logger.warning("  Tokko falló: %s", e)
@@ -3219,23 +3423,24 @@ def run_best_strategy(inmob: Dict, session: requests.Session, pw_context) -> Tup
     # 2. Network Interception (detecta Tokko key on-the-fly)
     try:
         logger.info("  → Network Interception")
-        props = strategy_network_intercept(inmob, pw_context, session)
+        props = call("network_intercept", lambda: strategy_network_intercept(inmob, pw_context, session))
         return props, "network_intercept"
     except Exception as e:
         logger.warning("  Network Intercept falló: %s", e)
 
-    if is_tokko_candidate:
+    if is_tokko_candidate and not tokko_html_failed:
         try:
             logger.info("  -> Tokko HTML")
-            props = strategy_tokko_html(inmob, session)
+            props = call("tokko_html", lambda: strategy_tokko_html(inmob, session))
             return props, "tokko_html"
         except Exception as e:
+            tokko_html_failed = True
             logger.warning("  Tokko HTML fallo: %s", e)
 
     # 3. JSON-LD
     try:
         logger.info("  → JSON-LD")
-        props = strategy_json_ld(inmob, session)
+        props = call("json_ld", lambda: strategy_json_ld(inmob, session))
         return props, "json_ld"
     except Exception as e:
         logger.warning("  JSON-LD falló: %s", e)
@@ -3243,14 +3448,19 @@ def run_best_strategy(inmob: Dict, session: requests.Session, pw_context) -> Tup
     # 4. Sitemap
     try:
         logger.info("  → Sitemap")
-        props = strategy_sitemap(inmob, session)
+        props = call("sitemap", lambda: strategy_sitemap(inmob, session))
         return props, "sitemap"
     except Exception as e:
         logger.warning("  Sitemap falló: %s", e)
 
     # 5. HTML Playwright (último recurso)
     logger.info("  → HTML Playwright (último recurso)")
-    props = strategy_html_playwright(inmob, pw_context)
+    if not allow_playwright_fallback:
+        inmob.setdefault("_scraper_metadata", {})["playwright_fallback_skipped"] = True
+        if is_tokko_candidate:
+            raise RuntimeError("sin_propiedades: tokko sin datos tras tokko_html/network/json_ld/sitemap; html_playwright omitido")
+        raise RuntimeError("sin_propiedades: html_playwright omitido por configuracion")
+    props = call("html_scraper", lambda: strategy_html_playwright(inmob, pw_context))
     return props, "html_scraper"
 
 
@@ -3491,10 +3701,8 @@ def worker_fn(
                 finally:
                     job_queue.task_done()
         finally:
-            try:
-                browser.close()
-            except Exception:
-                pass
+            _close_playwright_safely(pw_context, "legacy playwright context")
+            _close_playwright_safely(browser, "legacy playwright browser")
 
 
 # ---------------------------------------------------------------------------
@@ -3609,6 +3817,7 @@ def _scrape_queue_item(
     session: requests.Session,
     pw_context,
     started_at: float,
+    allow_playwright_fallback: bool = False,
 ) -> Tuple[List[Dict], str, str, List[str], Dict[str, Any]]:
     urls = _queue_candidate_urls(item)
     if not urls:
@@ -3625,15 +3834,23 @@ def _scrape_queue_item(
     errores_relevantes: List[str] = []
     last_exc: Optional[BaseException] = None
     last_url: Optional[str] = None
+    item_deadline = started_at + CONTROL_ITEM_TIMEOUT_SECONDS
 
     for idx, url_usada in enumerate(urls, start=1):
+        _check_deadline(item_deadline, "item")
         last_url = url_usada
         inmob = _queue_item_to_inmob(item, url_usada)
         logger.info("URL usada: %s", url_usada)
         logger.info("CMS detectado: %s", item.get("cms_detectado") or "sin dato")
 
         try:
-            props, estrategia = run_best_strategy(inmob, session, pw_context)
+            props, estrategia = run_best_strategy(
+                inmob,
+                session,
+                pw_context,
+                allow_playwright_fallback=allow_playwright_fallback,
+                item_deadline=item_deadline,
+            )
             strategy_meta = dict(inmob.get("_scraper_metadata") or {})
             if strategy_meta.get("errores_relevantes"):
                 errores_relevantes.extend(strategy_meta["errores_relevantes"])
@@ -3746,20 +3963,25 @@ def _process_scraping_control_item(
     item: Dict,
     session: requests.Session,
     pw_context,
+    allow_playwright_fallback: bool = False,
 ) -> Dict[str, Any]:
     started_at = time.time()
+    item_deadline = started_at + CONTROL_ITEM_TIMEOUT_SECONDS
     item_id = item.get("scraping_run_item_id")
     if not item_id:
         raise ScrapingControlError("Item sin scraping_run_item_id")
 
     db.start_scraping_item(item_id)
+    _check_deadline(item_deadline, "item")
 
     props, estrategia, url_usada, errores_relevantes, strategy_meta = _scrape_queue_item(
         item=item,
         session=session,
         pw_context=pw_context,
         started_at=started_at,
+        allow_playwright_fallback=allow_playwright_fallback,
     )
+    _check_deadline(item_deadline, "item")
     counts = _save_queue_properties(db, item, props)
     metadata_extra = {
         "geocodificadas": counts["geocodificadas"],
@@ -3790,7 +4012,7 @@ def _process_scraping_control_item(
     }
 
 
-def run_controlled_queue(max_items: Optional[int] = None) -> None:
+def run_controlled_queue(max_items: Optional[int] = None, allow_playwright_fallback: bool = False) -> None:
     """
     Ejecuta el scraper usando el sistema de control de Supabase:
     claim_next_scraping_item -> start -> success/error -> close run.
@@ -3800,6 +4022,7 @@ def run_controlled_queue(max_items: Optional[int] = None) -> None:
     processed = 0
     success = 0
     failed = 0
+    interrupted = False
 
     if max_items is not None and max_items <= 0:
         elapsed = time.time() - t_inicio
@@ -3815,7 +4038,8 @@ def run_controlled_queue(max_items: Optional[int] = None) -> None:
 
     session = SupabasePropiedades._make_session()
 
-    with sync_playwright() as pw:
+    pw = sync_playwright().start()
+    try:
         browser, pw_context = _make_playwright_context(pw)
         try:
             while max_items is None or processed < max_items:
@@ -3828,6 +4052,7 @@ def run_controlled_queue(max_items: Optional[int] = None) -> None:
                 item_id = item.get("scraping_run_item_id")
                 run_id = item.get("scraping_run_id")
                 nombre = item.get("inmobiliaria_nombre") or f"inmobiliaria {item.get('inmobiliaria_id')}"
+                item_started_at = time.time()
 
                 logger.info("=" * 60)
                 logger.info("Inmobiliaria tomada: %s", nombre)
@@ -3836,7 +4061,13 @@ def run_controlled_queue(max_items: Optional[int] = None) -> None:
                 logger.info("Prioridad scraping: %s", item.get("prioridad_scraping_score"))
 
                 try:
-                    result = _process_scraping_control_item(db, item, session, pw_context)
+                    result = _process_scraping_control_item(
+                        db,
+                        item,
+                        session,
+                        pw_context,
+                        allow_playwright_fallback=allow_playwright_fallback,
+                    )
                     db.finish_scraping_item_success(
                         item_id=item_id,
                         propiedades_detectadas=result["propiedades_detectadas"],
@@ -3854,6 +4085,30 @@ def run_controlled_queue(max_items: Optional[int] = None) -> None:
                     logger.info("Sin cambios: %d", result["propiedades_sin_cambios"])
                     logger.info("Errores: %d", result["propiedades_error"])
                     logger.info("Estado final: success")
+                except KeyboardInterrupt:
+                    interrupted = True
+                    failed += 1
+                    metadata = _queue_metadata(
+                        item=item,
+                        started_at=item_started_at,
+                        url_usada=item.get("url_listado") or item.get("web"),
+                        estrategia_usada="manual_interrupt",
+                        cantidad_paginas=0,
+                        errores_relevantes=["Interrumpido manualmente"],
+                    )
+                    logger.warning("Estado final: manual_interrupt")
+                    try:
+                        db.finish_scraping_item_error(
+                            item_id=item_id,
+                            error_message="Interrumpido manualmente",
+                            error_type="manual_interrupt",
+                            http_status=None,
+                            final_url=item.get("url_listado") or item.get("web"),
+                            metadata_json=metadata,
+                        )
+                    except Exception as close_exc:
+                        logger.error("No se pudo registrar interrupcion del item %s: %s", item_id, close_exc)
+                    break
                 except Exception as exc:
                     failed += 1
                     control_exc = exc if isinstance(exc, ScrapingControlError) else None
@@ -3862,7 +4117,7 @@ def run_controlled_queue(max_items: Optional[int] = None) -> None:
                         if control_exc
                         else _queue_metadata(
                             item=item,
-                            started_at=t_inicio,
+                            started_at=item_started_at,
                             url_usada=None,
                             estrategia_usada="error",
                             cantidad_paginas=0,
@@ -3890,17 +4145,19 @@ def run_controlled_queue(max_items: Optional[int] = None) -> None:
                     except Exception as close_exc:
                         logger.error("No se pudo registrar error del item %s: %s", item_id, close_exc)
                 finally:
-                    if run_id:
+                    if run_id and not interrupted:
                         try:
                             db.close_scraping_run_if_finished(run_id)
                         except Exception as exc:
                             logger.warning("No se pudo cerrar run %s si estaba finalizado: %s", run_id, exc)
+                    elif run_id and interrupted:
+                        logger.info("Interrupcion manual: se omite cierre de run %s para no bloquear", run_id)
 
         finally:
-            try:
-                browser.close()
-            except Exception:
-                pass
+            _close_playwright_safely(pw_context, "playwright context")
+            _close_playwright_safely(browser, "playwright browser")
+    finally:
+        _close_playwright_safely(pw, "playwright driver")
 
     elapsed = time.time() - t_inicio
     logger.info("=" * 60)
@@ -4151,6 +4408,8 @@ if __name__ == "__main__":
                         help="Solo scrapear agencias no actualizadas en las últimas 6 horas")
     parser.add_argument("--max-items",    type=int, default=None,
                         help="Limite de items a procesar desde scraping_run_items (ej: 5)")
+    parser.add_argument("--allow-playwright-fallback", action="store_true",
+                        help="Permitir fallback HTML Playwright en modo cola (default: desactivado)")
     parser.add_argument("--legacy-jobs",  action="store_true",
                         help="Usar el flujo anterior basado en scraping_jobs")
     args = parser.parse_args()
@@ -4164,4 +4423,7 @@ if __name__ == "__main__":
             refresh_horas=6 if args.incremental else 24,
         )
     else:
-        run_controlled_queue(max_items=args.max_items)
+        run_controlled_queue(
+            max_items=args.max_items,
+            allow_playwright_fallback=args.allow_playwright_fallback,
+        )
