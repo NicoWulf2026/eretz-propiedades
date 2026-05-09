@@ -432,27 +432,12 @@ def _close_playwright_safely(resource: Any, label: str, timeout: float = PLAYWRI
     if not callable(close_fn):
         return True
 
-    done = threading.Event()
-    errors: List[BaseException] = []
-
-    def _close() -> None:
-        try:
-            close_fn()
-        except BaseException as exc:
-            errors.append(exc)
-        finally:
-            done.set()
-
-    thread = threading.Thread(target=_close, name=f"close-{label}", daemon=True)
-    thread.start()
-    thread.join(timeout)
-    if not done.is_set():
-        logger.warning("%s no cerro en %.1fs; se continua sin bloquear", label, timeout)
+    try:
+        close_fn()
+        return True
+    except BaseException as exc:
+        logger.debug("%s close error: %s", label, exc)
         return False
-    if errors:
-        logger.debug("%s close error: %s", label, errors[0])
-        return False
-    return True
 
 
 def _normalize_text_key(value: Any) -> str:
@@ -2141,15 +2126,20 @@ def strategy_network_intercept(inmob: Dict, pw_context, session: Optional[reques
     url_listado = inmob.get("url_listado") or inmob.get("web", "")
     if not url_listado:
         raise ValueError("sin_url_listado")
+    if pw_context is None:
+        raise RuntimeError("network_intercept deshabilitado: Playwright no inicializado")
 
     _check_strategy_deadline(inmob, "network_intercept")
     captured: List[Dict] = []
     detected_api_url: Optional[str] = None
     detected_tokko_key: Optional[str] = None
     lock = threading.Lock()
+    stop_capture = threading.Event()
 
     def handle_response(response):
         nonlocal detected_api_url, detected_tokko_key
+        if stop_capture.is_set():
+            return
         resp_url = response.url
 
         # Detectar llamadas a Tokko API
@@ -2196,7 +2186,6 @@ def strategy_network_intercept(inmob: Dict, pw_context, session: Optional[reques
 
         # Si detectamos Tokko key, usamos la API completa
         if detected_tokko_key:
-            _close_playwright_safely(page, "network_intercept page")
             # Guardar la key para futuras ejecuciones
             inmob["tokko_api_key"] = detected_tokko_key
             try:
@@ -2228,6 +2217,11 @@ def strategy_network_intercept(inmob: Dict, pw_context, session: Optional[reques
                     break
                 page_num += 1
     finally:
+        stop_capture.set()
+        try:
+            page.remove_listener("response", handle_response)
+        except Exception:
+            pass
         _close_playwright_safely(page, "network_intercept page")
 
     if not captured:
@@ -3314,6 +3308,7 @@ def run_best_strategy(
     session: requests.Session,
     pw_context,
     allow_playwright_fallback: bool = True,
+    allow_network_interception: bool = True,
     item_deadline: Optional[float] = None,
 ) -> Tuple[List[Dict], str]:
     """
@@ -3334,6 +3329,18 @@ def run_best_strategy(
         _check_deadline(item_deadline, "item")
         return _run_strategy_with_deadline(strategy_name, inmob, item_deadline, func)
 
+    def network_available() -> bool:
+        if allow_network_interception and pw_context is not None:
+            return True
+        inmob.setdefault("_scraper_metadata", {})["network_interception_skipped"] = True
+        logger.info("  Network Interception omitido por configuracion (--allow-network-interception no activo)")
+        return False
+
+    def call_network() -> List[Dict]:
+        if not network_available():
+            raise RuntimeError("network_intercept omitido por configuracion")
+        return call("network_intercept", lambda: strategy_network_intercept(inmob, pw_context, session))
+
     # --- Ir directo a la estrategia guardada (con fallback automático) ---
     if estrategia_guardada == "tokko_api" and inmob.get("tokko_api_key"):
         logger.info("  → Tokko API (guardada)")
@@ -3342,11 +3349,12 @@ def run_best_strategy(
             return props, "tokko_api"
         except Exception as e:
             logger.warning("  Tokko falló: %s — probando Network Intercept", e)
-            try:
-                props = call("network_intercept", lambda: strategy_network_intercept(inmob, pw_context, session))
-                return props, "network_intercept"
-            except Exception:
-                pass
+            if network_available():
+                try:
+                    props = call_network()
+                    return props, "network_intercept"
+                except Exception:
+                    pass
 
     if estrategia_guardada == "json_ld":
         logger.info("  → JSON-LD (guardada)")
@@ -3386,11 +3394,12 @@ def run_best_strategy(
             return props, "html_scraper"
         except Exception as e:
             logger.warning("  HTML falló: %s — probando Network Intercept", e)
-            try:
-                props = call("network_intercept", lambda: strategy_network_intercept(inmob, pw_context, session))
-                return props, "network_intercept"
-            except Exception:
-                pass
+            if network_available():
+                try:
+                    props = call_network()
+                    return props, "network_intercept"
+                except Exception:
+                    pass
 
     if estrategia_guardada == "tokko_html":
         logger.info("  -> Tokko HTML (guardada)")
@@ -3403,11 +3412,13 @@ def run_best_strategy(
 
     if estrategia_guardada == "sin_estrategia":
         # Dar una última oportunidad con Network Intercept
-        try:
-            props = call("network_intercept", lambda: strategy_network_intercept(inmob, pw_context, session))
-            return props, "network_intercept"
-        except Exception:
-            raise RuntimeError("sin_propiedades: sitio sin estrategia viable confirmada")
+        if network_available():
+            try:
+                props = call_network()
+                return props, "network_intercept"
+            except Exception:
+                pass
+        raise RuntimeError("sin_propiedades: sitio sin estrategia viable confirmada")
 
     # --- Fallback completo: probar todas en orden (primera vez o re-detección) ---
 
@@ -3423,7 +3434,7 @@ def run_best_strategy(
     # 2. Network Interception (detecta Tokko key on-the-fly)
     try:
         logger.info("  → Network Interception")
-        props = call("network_intercept", lambda: strategy_network_intercept(inmob, pw_context, session))
+        props = call_network()
         return props, "network_intercept"
     except Exception as e:
         logger.warning("  Network Intercept falló: %s", e)
@@ -3458,7 +3469,9 @@ def run_best_strategy(
     if not allow_playwright_fallback:
         inmob.setdefault("_scraper_metadata", {})["playwright_fallback_skipped"] = True
         if is_tokko_candidate:
-            raise RuntimeError("sin_propiedades: tokko sin datos tras tokko_html/network/json_ld/sitemap; html_playwright omitido")
+            if allow_network_interception:
+                raise RuntimeError("sin_propiedades: tokko sin datos tras tokko_html/network/json_ld/sitemap; html_playwright omitido")
+            raise RuntimeError("sin_propiedades: tokko sin datos tras tokko_html/json_ld/sitemap; network_intercept/html_playwright omitidos")
         raise RuntimeError("sin_propiedades: html_playwright omitido por configuracion")
     props = call("html_scraper", lambda: strategy_html_playwright(inmob, pw_context))
     return props, "html_scraper"
@@ -3818,6 +3831,7 @@ def _scrape_queue_item(
     pw_context,
     started_at: float,
     allow_playwright_fallback: bool = False,
+    allow_network_interception: bool = False,
 ) -> Tuple[List[Dict], str, str, List[str], Dict[str, Any]]:
     urls = _queue_candidate_urls(item)
     if not urls:
@@ -3849,6 +3863,7 @@ def _scrape_queue_item(
                 session,
                 pw_context,
                 allow_playwright_fallback=allow_playwright_fallback,
+                allow_network_interception=allow_network_interception,
                 item_deadline=item_deadline,
             )
             strategy_meta = dict(inmob.get("_scraper_metadata") or {})
@@ -3964,6 +3979,7 @@ def _process_scraping_control_item(
     session: requests.Session,
     pw_context,
     allow_playwright_fallback: bool = False,
+    allow_network_interception: bool = False,
 ) -> Dict[str, Any]:
     started_at = time.time()
     item_deadline = started_at + CONTROL_ITEM_TIMEOUT_SECONDS
@@ -3980,6 +3996,7 @@ def _process_scraping_control_item(
         pw_context=pw_context,
         started_at=started_at,
         allow_playwright_fallback=allow_playwright_fallback,
+        allow_network_interception=allow_network_interception,
     )
     _check_deadline(item_deadline, "item")
     counts = _save_queue_properties(db, item, props)
@@ -4012,7 +4029,11 @@ def _process_scraping_control_item(
     }
 
 
-def run_controlled_queue(max_items: Optional[int] = None, allow_playwright_fallback: bool = False) -> None:
+def run_controlled_queue(
+    max_items: Optional[int] = None,
+    allow_playwright_fallback: bool = False,
+    allow_network_interception: bool = False,
+) -> None:
     """
     Ejecuta el scraper usando el sistema de control de Supabase:
     claim_next_scraping_item -> start -> success/error -> close run.
@@ -4037,10 +4058,15 @@ def run_controlled_queue(max_items: Optional[int] = None, allow_playwright_fallb
         return
 
     session = SupabasePropiedades._make_session()
+    use_playwright = allow_playwright_fallback or allow_network_interception
 
-    pw = sync_playwright().start()
-    try:
+    pw = None
+    browser = None
+    pw_context = None
+    if use_playwright:
+        pw = sync_playwright().start()
         browser, pw_context = _make_playwright_context(pw)
+    try:
         try:
             while max_items is None or processed < max_items:
                 item = db.claim_next_scraping_item()
@@ -4067,6 +4093,7 @@ def run_controlled_queue(max_items: Optional[int] = None, allow_playwright_fallb
                         session,
                         pw_context,
                         allow_playwright_fallback=allow_playwright_fallback,
+                        allow_network_interception=allow_network_interception,
                     )
                     db.finish_scraping_item_success(
                         item_id=item_id,
@@ -4154,10 +4181,12 @@ def run_controlled_queue(max_items: Optional[int] = None, allow_playwright_fallb
                         logger.info("Interrupcion manual: se omite cierre de run %s para no bloquear", run_id)
 
         finally:
-            _close_playwright_safely(pw_context, "playwright context")
-            _close_playwright_safely(browser, "playwright browser")
+            if use_playwright:
+                _close_playwright_safely(pw_context, "playwright context")
+                _close_playwright_safely(browser, "playwright browser")
     finally:
-        _close_playwright_safely(pw, "playwright driver")
+        if use_playwright:
+            _close_playwright_safely(pw, "playwright driver")
 
     elapsed = time.time() - t_inicio
     logger.info("=" * 60)
@@ -4408,6 +4437,8 @@ if __name__ == "__main__":
                         help="Solo scrapear agencias no actualizadas en las últimas 6 horas")
     parser.add_argument("--max-items",    type=int, default=None,
                         help="Limite de items a procesar desde scraping_run_items (ej: 5)")
+    parser.add_argument("--allow-network-interception", action="store_true",
+                        help="Permitir Network Interception con Playwright en modo cola (default: desactivado)")
     parser.add_argument("--allow-playwright-fallback", action="store_true",
                         help="Permitir fallback HTML Playwright en modo cola (default: desactivado)")
     parser.add_argument("--legacy-jobs",  action="store_true",
@@ -4426,4 +4457,5 @@ if __name__ == "__main__":
         run_controlled_queue(
             max_items=args.max_items,
             allow_playwright_fallback=args.allow_playwright_fallback,
+            allow_network_interception=args.allow_network_interception,
         )
