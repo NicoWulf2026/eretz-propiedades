@@ -1,0 +1,12 @@
+.env
+.venv/
+frontend/
+data/
+Viejo/
+__pycache__/
+*.pyc
+*.log
+*.csv
+*.xlsx
+*.db
+node_modules/
