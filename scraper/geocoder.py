@@ -1,186 +1,309 @@
+from __future__ import annotations
+
+import argparse
+import json
 import logging
+import os
 import re
 import time
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
+from dotenv import load_dotenv
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
-from clients import SupabaseClient
-from config import SUPABASE_SERVICE_ROLE_KEY, SUPABASE_TABLE, SUPABASE_URL
+load_dotenv()
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+    format="%(asctime)s | %(levelname)-8s | %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
 
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
+SUPABASE_KEY = (
+    os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    or os.getenv("SUPABASE_KEY")
+    or os.getenv("SUPABASE_ANON_KEY", "")
+)
+
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
-NOMINATIM_DELAY = 1.2
-USER_AGENT = "InmoLink/1.0 (contacto@inmolink.com.ar)"
-
-SKIP_KEYWORDS = [
-    "club de campo", "country", "barrio privado", "loteo", "quiloazas",
-    "altos del sauce", "solares del paucke", "nuevos aires", "villa california",
-    "entre ríos",
-]
+NOMINATIM_DELAY_SECONDS = 1.2
+USER_AGENT = os.getenv(
+    "GEOCODER_USER_AGENT",
+    "InmocapitalGeocoder/1.0 (geocoding@inmocapital.local)",
+)
 
 
-class Geocoder:
-    def __init__(self, supabase: SupabaseClient) -> None:
-        self.supabase = supabase
+@dataclass
+class GeocodingResult:
+    latitud: Optional[float]
+    longitud: Optional[float]
+    precision_geocoding: Optional[str]
+    proveedor: str
+    raw_response: Any
+    status: str
+    error_message: Optional[str] = None
+
+
+class SupabaseGeocodingClient:
+    def __init__(self, url: str, key: str) -> None:
+        if not url or not key:
+            raise RuntimeError("Faltan SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY/SUPABASE_KEY en .env")
+        self.url = url
+        self.key = key
+        self.session = self._make_session()
+        self.headers = {
+            "apikey": key,
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "Prefer": "return=representation",
+        }
+        self.headers_minimal = {
+            "apikey": key,
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal",
+        }
+
+    @staticmethod
+    def _make_session() -> requests.Session:
+        session = requests.Session()
+        retry = Retry(
+            total=3,
+            backoff_factor=0.5,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["GET", "POST"],
+        )
+        adapter = HTTPAdapter(max_retries=retry)
+        session.mount("https://", adapter)
+        session.mount("http://", adapter)
+        return session
+
+    def get_pending_batch(self, limit: int) -> List[Dict[str, Any]]:
+        response = self.session.get(
+            f"{self.url}/rest/v1/v_next_geocoding_batch",
+            headers=self.headers,
+            params={"select": "*", "limit": limit},
+            timeout=30,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def existing_result(self, propiedad_id: Any, direccion_geocoding: str) -> Optional[Dict[str, Any]]:
+        response = self.session.get(
+            f"{self.url}/rest/v1/geocoding_results",
+            headers=self.headers,
+            params={
+                "select": "propiedad_id,direccion_geocoding,status",
+                "propiedad_id": f"eq.{propiedad_id}",
+                "direccion_geocoding": f"eq.{direccion_geocoding}",
+                "limit": 1,
+            },
+            timeout=15,
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data[0] if data else None
+
+    def save_result(self, payload: Dict[str, Any]) -> str:
+        response = self.session.post(
+            f"{self.url}/rest/v1/geocoding_results",
+            headers=self.headers,
+            json=payload,
+            timeout=20,
+        )
+        if response.status_code in {200, 201}:
+            return "saved"
+        if response.status_code == 409:
+            return "duplicate"
+        raise RuntimeError(
+            f"geocoding_results insert {response.status_code}: {response.text[:500]}"
+        )
+
+
+class NominatimProvider:
+    name = "nominatim"
+
+    def __init__(self) -> None:
         self.session = requests.Session()
-        self.session.headers.update({"User-Agent": USER_AGENT})
+        self.session.headers.update({
+            "User-Agent": USER_AGENT,
+            "Accept-Language": "es-AR,es;q=0.9",
+        })
 
-    def clean_direccion(self, direccion: str) -> str:
-        """Limpia la dirección para mejorar los resultados de Nominatim."""
-        # Sacar todo lo que viene después de un guión
-        direccion = direccion.split("-")[0].strip()
-        # Sacar todo lo que viene después de un punto
-        direccion = direccion.split(".")[0].strip()
-        # Sacar palabras que confunden a Nominatim
-        noise = [
-            "GALERÍA", "GALERIA", "COLONIAL", "FLORIDA", "TORRE",
-            "EDIFICIO", "LOCAL", "PISO", "DPTO", "S/N",
-        ]
-        for word in noise:
-            direccion = re.sub(rf"\b{word}\b", "", direccion, flags=re.IGNORECASE)
-        # Normalizar espacios
-        direccion = re.sub(r"\s+", " ", direccion).strip()
-        return direccion
-
-    def should_skip(self, direccion: str) -> bool:
-        """Detecta direcciones que Nominatim no puede geocodificar."""
-        lower = direccion.lower()
-        return any(kw in lower for kw in SKIP_KEYWORDS)
-
-    def geocode(self, query: str) -> tuple[float, float] | None:
+    def geocode(self, query: str) -> GeocodingResult:
         try:
             response = self.session.get(
                 NOMINATIM_URL,
-                params={"q": query, "format": "json", "limit": 1, "countrycodes": "AR"},
-                timeout=10,
+                params={
+                    "q": query,
+                    "format": "jsonv2",
+                    "limit": 1,
+                    "countrycodes": "ar",
+                    "addressdetails": 1,
+                },
+                timeout=15,
             )
-
             if response.status_code == 429:
-                logger.warning("Rate limit de Nominatim — esperando 10 segundos")
-                time.sleep(10)
-                return None
-
+                return GeocodingResult(
+                    None, None, None, self.name, {"status_code": 429},
+                    "error", "Rate limit de Nominatim",
+                )
             if response.status_code == 403:
-                logger.error("Nominatim bloqueó el User-Agent.")
-                return None
-
+                return GeocodingResult(
+                    None, None, None, self.name, {"status_code": 403},
+                    "error", "Nominatim bloqueo el User-Agent",
+                )
             response.raise_for_status()
             data = response.json()
-
             if not data:
-                logger.debug(f"Sin resultado: {query}")
-                return None
+                return GeocodingResult(
+                    None, None, None, self.name, [],
+                    "error", "Sin resultados de geocoding",
+                )
 
-            lat = float(data[0]["lat"])
-            lon = float(data[0]["lon"])
-            logger.info(f"OK: {query} → ({lat:.5f}, {lon:.5f})")
-            return lat, lon
-
+            first = data[0]
+            lat = float(first["lat"])
+            lon = float(first["lon"])
+            return GeocodingResult(
+                lat,
+                lon,
+                _infer_precision(first),
+                self.name,
+                first,
+                "success",
+                None,
+            )
         except requests.RequestException as exc:
-            logger.error(f"Error HTTP: {exc}")
-            return None
-        except (KeyError, ValueError, IndexError) as exc:
-            logger.error(f"Error parseando respuesta: {exc}")
-            return None
+            return GeocodingResult(None, None, None, self.name, _safe_error(exc), "error", str(exc)[:500])
+        except (KeyError, TypeError, ValueError, IndexError) as exc:
+            return GeocodingResult(None, None, None, self.name, _safe_error(exc), "error", f"Respuesta invalida: {exc}")
         finally:
-            time.sleep(NOMINATIM_DELAY)
+            time.sleep(NOMINATIM_DELAY_SECONDS)
 
-    def geocode_with_fallback(self, direccion: str, barrio: str, ciudad: str) -> tuple[float, float] | None:
-        """
-        Intenta geocodificar con distintas estrategias:
-        1. Dirección limpia + ciudad
-        2. Dirección limpia sola
-        3. Barrio + ciudad (fallback)
-        """
-        ciudad_str = ciudad or "Santa Fe"
 
-        if direccion:
-            # Estrategia 1: dirección limpia + ciudad
-            dir_limpia = self.clean_direccion(direccion)
-            if self.should_skip(dir_limpia):
-                logger.debug(f"Skipping country/barrio privado: {dir_limpia}")
-                return None
+def _infer_precision(item: Dict[str, Any]) -> str:
+    addresstype = str(item.get("addresstype") or "").lower()
+    osm_type = str(item.get("type") or "").lower()
+    place_rank = item.get("place_rank")
+    if addresstype in {"house", "building"} or osm_type in {"house", "building"}:
+        return "exact"
+    if addresstype in {"road", "street"} or osm_type in {"residential", "tertiary", "secondary", "primary"}:
+        return "street"
+    if addresstype in {"neighbourhood", "suburb", "quarter", "city", "town"}:
+        return "area"
+    try:
+        if place_rank is not None and int(place_rank) >= 26:
+            return "street"
+    except (TypeError, ValueError):
+        pass
+    return "approximate"
 
-            result = self.geocode(f"{dir_limpia}, {ciudad_str}, Argentina")
-            if result:
-                return result
 
-            # Estrategia 2: solo la primera parte de la dirección
-            primera_parte = dir_limpia.split(" ")[0:3]
-            if len(primera_parte) >= 2:
-                result = self.geocode(f"{' '.join(primera_parte)}, {ciudad_str}, Argentina")
-                if result:
-                    return result
+def _safe_error(exc: BaseException) -> Dict[str, Any]:
+    return {"error": type(exc).__name__, "message": str(exc)[:500]}
 
-        # Estrategia 3: barrio + ciudad
-        if barrio and barrio.lower() not in ["santa fe", "null", ""]:
-            if not self.should_skip(barrio):
-                result = self.geocode(f"{barrio}, {ciudad_str}, Argentina")
-                if result:
-                    return result
 
-        return None
+def normalize_query(row: Dict[str, Any]) -> str:
+    base = str(row.get("direccion_geocoding_limpia") or "").strip()
+    ciudad = str(row.get("ciudad_final") or "").strip()
+    provincia = str(row.get("provincia_final") or "").strip()
+    parts = [base]
+    lower = base.lower()
+    if ciudad and ciudad.lower() not in lower:
+        parts.append(ciudad)
+    if provincia and provincia.lower() not in lower:
+        parts.append(provincia)
+    if "argentina" not in lower:
+        parts.append("Argentina")
+    query = ", ".join(part for part in parts if part)
+    return re.sub(r"\s+", " ", query).strip(" ,")
 
-    def run(self, limit: int = 500) -> None:
-        rows = self.supabase.get_unspecified_locations(limit=limit)
 
-        if not rows:
-            logger.info("No hay propiedades pendientes de geocodificación.")
-            return
+def build_payload(row: Dict[str, Any], query: str, result: GeocodingResult) -> Dict[str, Any]:
+    return {
+        "propiedad_id": row.get("propiedad_id"),
+        "direccion_geocoding": query,
+        "latitud": result.latitud,
+        "longitud": result.longitud,
+        "precision_geocoding": result.precision_geocoding,
+        "proveedor": result.proveedor,
+        "raw_response": result.raw_response,
+        "status": result.status,
+        "error_message": result.error_message,
+    }
 
-        logger.info(f"{len(rows)} propiedades a geocodificar.")
-        ok = 0
-        fail = 0
 
-        for row in rows:
-            url = row.get("url")
-            titulo = row.get("titulo") or ""
-            direccion = row.get("direccion") or ""
-            barrio = row.get("barrio") or ""
-            ciudad = row.get("ciudad") or "Santa Fe"
+def run(limit: int, dry_run: bool = False) -> None:
+    client = SupabaseGeocodingClient(SUPABASE_URL, SUPABASE_KEY)
+    provider = NominatimProvider()
+    rows = client.get_pending_batch(limit)
 
-            # Si no hay dirección, intentar usar el título
-            if not direccion and titulo:
-                direccion = titulo
+    if not rows:
+        logger.info("No hay propiedades pendientes en v_next_geocoding_batch.")
+        return
 
-            if not url:
+    logger.info("Propiedades pendientes recibidas: %d | dry_run=%s", len(rows), dry_run)
+    ok = 0
+    failed = 0
+    skipped = 0
+
+    for row in rows:
+        propiedad_id = row.get("propiedad_id")
+        query = normalize_query(row)
+        logger.info("propiedad_id=%s | direccion=%s", propiedad_id, query or "-")
+
+        if not query:
+            result = GeocodingResult(None, None, None, provider.name, None, "error", "direccion_geocoding_limpia vacia")
+            if dry_run:
+                logger.info("[dry-run] status=error | %s", result.error_message)
+                failed += 1
                 continue
+            client.save_result(build_payload(row, "", result))
+            failed += 1
+            continue
 
-            result = self.geocode_with_fallback(direccion, barrio, ciudad)
+        existing = client.existing_result(propiedad_id, query)
+        if existing:
+            skipped += 1
+            logger.info("skip=duplicate | status_existente=%s", existing.get("status"))
+            continue
 
-            if not result:
-                logger.debug(f"Sin resultado para: {direccion or barrio}")
-                fail += 1
-                continue
+        if dry_run:
+            logger.info("[dry-run] se geocodificaria con proveedor=%s", provider.name)
+            continue
 
-            lat, lon = result
-            try:
-                self.supabase.update_location(url, lat, lon)
-                ok += 1
-            except Exception as exc:
-                logger.error(f"Error guardando {url}: {exc}")
-                fail += 1
+        result = provider.geocode(query)
+        payload = build_payload(row, query, result)
+        save_status = client.save_result(payload)
 
-        logger.info(f"Geocodificación finalizada. OK: {ok} | Fallos: {fail}")
+        if result.status == "success":
+            ok += 1
+            logger.info(
+                "status=success | lat=%.6f | lon=%.6f | precision=%s | save=%s",
+                result.latitud,
+                result.longitud,
+                result.precision_geocoding,
+                save_status,
+            )
+        else:
+            failed += 1
+            logger.info("status=error | error=%s | save=%s", result.error_message, save_status)
+
+    logger.info("Geocoding finalizado | success=%d | error=%d | skipped=%d", ok, failed, skipped)
 
 
 def main() -> None:
-    session = requests.Session()
-    supabase = SupabaseClient(
-        session,
-        SUPABASE_URL,
-        SUPABASE_SERVICE_ROLE_KEY,
-        SUPABASE_TABLE,
-    )
-    geocoder = Geocoder(supabase)
-    geocoder.run()
+    parser = argparse.ArgumentParser(description="Geocoder de Inmocapital basado en cola Supabase")
+    parser.add_argument("--limit", type=int, default=20, help="Cantidad maxima de propiedades a leer de v_next_geocoding_batch")
+    parser.add_argument("--dry-run", action="store_true", help="Leer pendientes y mostrar acciones sin llamar proveedor ni guardar")
+    args = parser.parse_args()
+    run(limit=max(args.limit, 0), dry_run=args.dry_run)
 
 
 if __name__ == "__main__":
-    main() 
+    main()
