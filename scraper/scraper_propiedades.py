@@ -138,6 +138,40 @@ FALSE_IMAGE_PATTERNS = (
     "tracking",
 )
 
+PROTECTED_UPDATE_FIELDS = {
+    "latitud",
+    "longitud",
+    "imagenes",
+    "precio",
+    "moneda",
+    "precio_usd",
+    "precio_ars",
+    "superficie_total",
+    "superficie_cubierta",
+    "superficie_terreno",
+    "dormitorios",
+    "banos",
+    "ambientes",
+    "direccion",
+    "barrio",
+    "ciudad",
+    "provincia",
+    "inmobiliaria_id",
+}
+PROTECTED_POSITIVE_NUMBER_FIELDS = {
+    "precio",
+    "precio_usd",
+    "precio_ars",
+    "superficie_total",
+    "superficie_cubierta",
+    "superficie_terreno",
+    "dormitorios",
+    "banos",
+    "ambientes",
+}
+PROTECTED_TEXT_FIELDS = {"moneda", "direccion", "barrio", "ciudad", "provincia"}
+COORDINATE_FIELDS = {"latitud", "longitud"}
+
 def _make_http_session() -> requests.Session:
     s = requests.Session()
     retry = Retry(total=3, backoff_factor=0.5, status_forcelist=[429, 500, 502, 503, 504],
@@ -595,6 +629,7 @@ class SupabasePropiedades:
         if not SUPABASE_URL or not SUPABASE_KEY:
             raise RuntimeError("SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY son requeridas en .env")
         self.session = self._make_session()
+        self.last_save_protection_stats = _new_update_protection_stats()
         self._headers = {
             "apikey": SUPABASE_KEY,
             "Authorization": f"Bearer {SUPABASE_KEY}",
@@ -1020,6 +1055,40 @@ class SupabasePropiedades:
                 existing.update(row["hash_dedup"] for row in r2.json())
         return existing
 
+    def get_existing_properties_by_hash(self, hashes: List[str]) -> Dict[str, Dict[str, Any]]:
+        if not hashes:
+            return {}
+        columns = self._get_property_columns()
+        select_columns = ["hash_dedup"]
+        for column in sorted(PROTECTED_UPDATE_FIELDS | {"id"}):
+            if column in columns and column not in select_columns:
+                select_columns.append(column)
+
+        existing: Dict[str, Dict[str, Any]] = {}
+        unique_hashes = sorted({h for h in hashes if h})
+        for i in range(0, len(unique_hashes), 100):
+            chunk = unique_hashes[i : i + 100]
+            quoted = ",".join(f'"{h}"' for h in chunk)
+            try:
+                r = self.session.get(
+                    f"{SUPABASE_URL}/rest/v1/propiedades",
+                    headers=self._headers,
+                    params={
+                        "select": ",".join(select_columns),
+                        "hash_dedup": f"in.({quoted})",
+                    },
+                    timeout=20,
+                )
+                if r.status_code == 200:
+                    for row in r.json():
+                        if row.get("hash_dedup"):
+                            existing[row["hash_dedup"]] = row
+                else:
+                    logger.warning("get_existing_properties_by_hash %s: %s", r.status_code, r.text[:200])
+            except Exception as exc:
+                logger.warning("get_existing_properties_by_hash fallo: %s", str(exc)[:200])
+        return existing
+
     def _get_property_columns(self) -> set:
         if SupabasePropiedades._property_columns_cache is not None:
             return SupabasePropiedades._property_columns_cache
@@ -1062,19 +1131,22 @@ class SupabasePropiedades:
         return filtered
 
     def save_propiedades(self, propiedades: List[Dict]) -> Tuple[int, int]:
-        """Guarda en batch con upsert on hash_dedup. Retorna (total, nuevas)."""
+        """Guarda nuevas y actualiza existentes sin degradar datos valiosos."""
         if not propiedades:
             return 0, 0
 
+        self.last_save_protection_stats = _new_update_protection_stats()
         propiedades = [self._sanitize_property_payload(p) for p in propiedades]
         propiedades = [p for p in propiedades if p.get("hash_dedup")]
         if not propiedades:
             return 0, 0
 
+        columns = self._get_property_columns()
         hashes = [p["hash_dedup"] for p in propiedades]
         existing = self.get_existing_hashes(hashes)
         nuevas = [p for p in propiedades if p["hash_dedup"] not in existing]
         actualizadas = [p for p in propiedades if p["hash_dedup"] in existing]
+        existing_props = self.get_existing_properties_by_hash([p["hash_dedup"] for p in actualizadas])
 
         inserted = 0
         for i in range(0, len(nuevas), self._CHUNK):
@@ -1090,16 +1162,37 @@ class SupabasePropiedades:
             else:
                 inserted += len(chunk)
 
-        for i in range(0, len(actualizadas), self._CHUNK):
-            chunk = actualizadas[i : i + self._CHUNK]
-            r = self.session.post(
-                f"{SUPABASE_URL}/rest/v1/propiedades?on_conflict=hash_dedup",
-                headers=self._headers,
-                json=chunk,
-                timeout=40,
+        updated = 0
+        for prop in actualizadas:
+            hash_dedup = prop.get("hash_dedup")
+            update_payload = build_protected_update_payload(
+                incoming=prop,
+                existing=existing_props.get(hash_dedup, {}),
+                columns=columns,
+                stats=self.last_save_protection_stats,
             )
-            if r.status_code not in {200, 201}:
-                logger.warning("save_propiedades upsert %s: %s", r.status_code, r.text[:200])
+            if not update_payload:
+                continue
+            r = self.session.patch(
+                f"{SUPABASE_URL}/rest/v1/propiedades?hash_dedup=eq.{hash_dedup}",
+                headers=self._headers_minimal,
+                json=update_payload,
+                timeout=20,
+            )
+            if r.status_code not in {200, 204}:
+                logger.warning("save_propiedades safe update %s: %s", r.status_code, r.text[:200])
+            else:
+                updated += 1
+
+        self.last_save_protection_stats["actualizaciones_seguras"] = updated
+        protected_fields = int(self.last_save_protection_stats.get("campos_protegidos_de_null") or 0)
+        if protected_fields:
+            logger.info(
+                "  Proteccion update: %d campos conservados (%d props con coords, %d props con imagenes)",
+                protected_fields,
+                int(self.last_save_protection_stats.get("coordenadas_conservadas") or 0),
+                int(self.last_save_protection_stats.get("imagenes_conservadas") or 0),
+            )
 
         return len(propiedades), inserted
 
@@ -1579,6 +1672,162 @@ def clean_property_images(
             if len(examples) < TOKKO_REAL_IMAGE_EXAMPLES_LIMIT:
                 examples.append(url)
     return real_images[:60]
+
+
+def _new_update_protection_stats() -> Dict[str, Any]:
+    return {
+        "actualizaciones_seguras": 0,
+        "coordenadas_conservadas": 0,
+        "imagenes_conservadas": 0,
+        "campos_protegidos_de_null": 0,
+        "campos_invalidos_omitidos": 0,
+        "campos_protegidos_por_nombre": {},
+    }
+
+
+def _is_blank_value(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    if isinstance(value, (list, tuple, set, dict)):
+        return len(value) == 0
+    return False
+
+
+def _positive_number(value: Any) -> bool:
+    if value is None or isinstance(value, bool):
+        return False
+    try:
+        return float(value) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _useful_text(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _valid_coordinate_pair(values: Dict[str, Any]) -> bool:
+    try:
+        lat = float(values.get("latitud"))
+        lon = float(values.get("longitud"))
+    except (TypeError, ValueError):
+        return False
+    return -90 <= lat <= 90 and -180 <= lon <= 180 and not (lat == 0 and lon == 0)
+
+
+def _has_real_images(value: Any) -> bool:
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, list):
+        return False
+    return bool(clean_property_images(value))
+
+
+def _is_existing_value_useful(field: str, value: Any) -> bool:
+    if field in COORDINATE_FIELDS:
+        return value is not None
+    if field == "imagenes":
+        return _has_real_images(value)
+    if field == "inmobiliaria_id":
+        return _positive_number(value)
+    if field in PROTECTED_POSITIVE_NUMBER_FIELDS:
+        return _positive_number(value)
+    if field in PROTECTED_TEXT_FIELDS:
+        return _useful_text(value)
+    return not _is_blank_value(value)
+
+
+def _is_new_value_safe(field: str, value: Any, incoming: Dict[str, Any]) -> bool:
+    if field in COORDINATE_FIELDS:
+        return _valid_coordinate_pair(incoming)
+    if field == "imagenes":
+        return _has_real_images(value)
+    if field == "inmobiliaria_id":
+        existing_id = incoming.get("_existing_inmobiliaria_id")
+        if _positive_number(existing_id) and _positive_number(value):
+            return int(float(existing_id)) == int(float(value))
+        return _positive_number(value)
+    if field in PROTECTED_POSITIVE_NUMBER_FIELDS:
+        return _positive_number(value)
+    if field in PROTECTED_TEXT_FIELDS:
+        if field == "moneda" and not _positive_number(incoming.get("precio")):
+            return False
+        return _useful_text(value)
+    return not _is_blank_value(value)
+
+
+def _record_protected_field(stats: Optional[Dict[str, Any]], field: str, had_existing_value: bool) -> None:
+    if stats is None:
+        return
+    if had_existing_value:
+        stats["campos_protegidos_de_null"] = int(stats.get("campos_protegidos_de_null") or 0) + 1
+        by_name = stats.setdefault("campos_protegidos_por_nombre", {})
+        by_name[field] = int(by_name.get(field) or 0) + 1
+    else:
+        stats["campos_invalidos_omitidos"] = int(stats.get("campos_invalidos_omitidos") or 0) + 1
+
+
+def build_protected_update_payload(
+    incoming: Dict[str, Any],
+    existing: Dict[str, Any],
+    columns: Optional[set] = None,
+    stats: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Arma un PATCH que nunca degrada campos valiosos existentes."""
+    payload = {
+        key: value
+        for key, value in incoming.items()
+        if key not in {"id", "hash_dedup", "created_at"}
+    }
+    if columns is not None:
+        payload = {key: value for key, value in payload.items() if key in columns}
+
+    existing_for_rules = dict(existing or {})
+    payload["_existing_inmobiliaria_id"] = existing_for_rules.get("inmobiliaria_id")
+
+    if any(field in payload for field in COORDINATE_FIELDS) and not _valid_coordinate_pair(payload):
+        protected_coord = False
+        for field in COORDINATE_FIELDS:
+            if field in payload:
+                had_existing = _is_existing_value_useful(field, existing_for_rules.get(field))
+                protected_coord = protected_coord or had_existing
+                _record_protected_field(stats, field, had_existing)
+                payload.pop(field, None)
+        if protected_coord and stats is not None:
+            stats["coordenadas_conservadas"] = int(stats.get("coordenadas_conservadas") or 0) + 1
+
+    if "precio" in payload and not _positive_number(payload.get("precio")):
+        for field in ("precio", "moneda", "precio_usd", "precio_ars"):
+            if field not in payload:
+                continue
+            had_existing = _is_existing_value_useful(field, existing_for_rules.get(field))
+            _record_protected_field(stats, field, had_existing)
+            payload.pop(field, None)
+
+    for field in sorted(PROTECTED_UPDATE_FIELDS - COORDINATE_FIELDS):
+        if field not in payload:
+            continue
+        if field == "imagenes":
+            raw_images = payload.get(field)
+            if isinstance(raw_images, str):
+                raw_images = [raw_images]
+            elif not isinstance(raw_images, list):
+                raw_images = []
+            cleaned = clean_property_images(raw_images)
+            payload[field] = cleaned or None
+        safe_incoming = _is_new_value_safe(field, payload.get(field), payload)
+        if safe_incoming:
+            continue
+        had_existing = _is_existing_value_useful(field, existing_for_rules.get(field))
+        _record_protected_field(stats, field, had_existing)
+        if field == "imagenes" and had_existing and stats is not None:
+            stats["imagenes_conservadas"] = int(stats.get("imagenes_conservadas") or 0) + 1
+        payload.pop(field, None)
+
+    payload.pop("_existing_inmobiliaria_id", None)
+    return payload
 
 
 def _collect_json_image_values(value: Any, out: List[str]) -> None:
@@ -4607,6 +4856,7 @@ def _save_queue_properties(db: SupabasePropiedades, item: Dict, props: List[Dict
     expected_existing = sum(1 for h in hashes if h in existing_hashes)
 
     total_ext, nuevas = db.save_propiedades(props)
+    save_protection = dict(getattr(db, "last_save_protection_stats", {}) or {})
     propiedades_error = max(len(props) - total_ext, 0)
 
     geo_count = 0
@@ -4646,6 +4896,7 @@ def _save_queue_properties(db: SupabasePropiedades, item: Dict, props: List[Dict
         "inmobiliaria_main_id": main_id,
         "inmobiliaria_scraping_id": scraping_id,
         "metodo_resolucion_inmobiliaria": method,
+        "proteccion_actualizacion": save_protection,
     }
 
 
@@ -4682,6 +4933,7 @@ def _process_scraping_control_item(
         "inmobiliaria_main_id": counts["inmobiliaria_main_id"],
         "inmobiliaria_scraping_id": counts["inmobiliaria_scraping_id"],
         "metodo_resolucion_inmobiliaria": counts["metodo_resolucion_inmobiliaria"],
+        "proteccion_actualizacion": counts.get("proteccion_actualizacion", {}),
     }
     for key, value in strategy_meta.items():
         if key not in {"cantidad_paginas", "errores_relevantes"}:
