@@ -89,9 +89,14 @@ STRATEGY_TIMEOUT_SECONDS: Dict[str, int] = {
     "tokko_html": 45,
     "wordpress_html": 35,
     "network_intercept": 30,
+    "static_html": 35,
+    "static_html_detail": 45,
+    "static_html_tokko_detail": 45,
+    "wordpress_sitemap_detail": 90,
     "json_ld": 20,
     "sitemap": 20,
     "html_scraper": 45,
+    "playwright_html": 45,
 }
 PLAYWRIGHT_LAUNCH_TIMEOUT_MS = 15000
 PLAYWRIGHT_NAV_TIMEOUT_MS = 12000
@@ -120,8 +125,15 @@ FALSE_IMAGE_PATTERNS = (
     "sin-imagen",
     "sin_imagen",
     "logo",
+    "isotipo",
+    "imagotipo",
     "brand",
     "favicon",
+    "/web-images/",
+    "/users/",
+    "_thumbnail",
+    "pinterest.com",
+    "pin/create",
     "marker",
     "mapa",
     "map",
@@ -174,6 +186,7 @@ COORDINATE_FIELDS = {"latitud", "longitud"}
 
 def _make_http_session() -> requests.Session:
     s = requests.Session()
+    s.trust_env = False
     retry = Retry(total=3, backoff_factor=0.5, status_forcelist=[429, 500, 502, 503, 504],
                   allowed_methods=["GET"])
     adapter = HTTPAdapter(max_retries=retry)
@@ -417,10 +430,22 @@ class StrategyTimeoutError(TimeoutError):
 
 def clasificar_error(e: Exception) -> str:
     msg = str(e).lower()
+    if "site_down" in msg or "dominio_caido" in msg:
+        return "site_down"
+    if "requires_network_interception" in msg or "network_interception_requerida" in msg:
+        return "requires_network_interception"
+    if "requires_playwright" in msg or "playwright_requerido" in msg:
+        return "requires_playwright"
+    if "no_property_links" in msg or "sin_links_propiedad" in msg:
+        return "no_property_links"
+    if "unsupported_cms" in msg:
+        return "unsupported_cms"
+    if "empty_site" in msg or "sitio_vacio" in msg:
+        return "empty_site"
+    if "blocked" in msg or "captcha" in msg or "403" in msg or "429" in msg:
+        return "blocked"
     if "timeout" in msg or "timed out" in msg:
         return "timeout"
-    if "403" in msg or "429" in msg or "blocked" in msg or "captcha" in msg:
-        return "blocked"
     if "ssl" in msg or "certificate" in msg:
         return "ssl_error"
     if "sin_propiedades" in msg or "no properties" in msg:
@@ -490,7 +515,8 @@ def _run_strategy_with_deadline(
     inmob["_strategy_name"] = strategy_name
     try:
         result = func()
-        _check_deadline(strategy_deadline, strategy_name)
+        if not result:
+            _check_deadline(strategy_deadline, strategy_name)
         return result
     finally:
         if previous_deadline is None:
@@ -652,6 +678,7 @@ class SupabasePropiedades:
     @staticmethod
     def _make_session() -> requests.Session:
         s = requests.Session()
+        s.trust_env = False
         retry = Retry(
             total=3,
             backoff_factor=0.5,
@@ -1255,6 +1282,30 @@ def _http_get(url: str, session: requests.Session, timeout: int = 20,
         logger.debug("Bloqueado (%s) → reintentando con ScraperAPI: %s", r.status_code, url)
         r = _scraperapi_get(url, session, timeout)
     return r
+
+
+def _decode_response_text(response: requests.Response) -> str:
+    """Devuelve HTML con encoding razonable para evitar mojibake tipo Ã³."""
+    try:
+        if not response.encoding or response.encoding.lower() in {"iso-8859-1", "windows-1252"}:
+            response.encoding = response.apparent_encoding or "utf-8"
+    except Exception:
+        pass
+    return _fix_mojibake_text(response.text)
+
+
+def _fix_mojibake_text(value: Any) -> str:
+    if value is None:
+        return ""
+    text = str(value).replace("\xa0", " ")
+    if "Ã" in text or "Â" in text or "â" in text:
+        try:
+            repaired = text.encode("latin1", errors="ignore").decode("utf-8", errors="ignore")
+            if repaired and len(repaired.strip()) >= max(3, int(len(text.strip()) * 0.6)):
+                text = repaired
+        except Exception:
+            pass
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def _scraperapi_get(url: str, session: requests.Session, timeout: int = 30, js_render: bool = False) -> requests.Response:
@@ -3089,6 +3140,88 @@ def strategy_json_ld(inmob: Dict, session: requests.Session) -> List[Dict]:
     return resultados
 
 
+def _sitemap_detail_urls_for_base(base_url: str, session: requests.Session, inmob: Dict) -> List[str]:
+    parsed = urlparse(base_url)
+    base = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else base_url.rstrip("/")
+    return [url for url in _fetch_sitemap_urls(base, session, inmob) if _looks_like_real_property_url(url)]
+
+
+def strategy_wordpress_sitemap_detail(inmob: Dict, session: requests.Session) -> List[Dict]:
+    """Extractor WordPress/Houzez: prioriza sitemap y parsea fichas de detalle por HTTP."""
+    _check_strategy_deadline(inmob, "wordpress_sitemap_detail")
+    base_candidates = _url_host_variants(inmob.get("web") or inmob.get("url_listado"))
+    if inmob.get("url_listado"):
+        base_candidates.extend(_url_host_variants(inmob.get("url_listado")))
+    base_candidates = list(dict.fromkeys(base_candidates))
+
+    urls_probadas: List[str] = []
+    detail_urls: List[str] = []
+    errores_relevantes: List[str] = []
+
+    for base in base_candidates[:6]:
+        _check_strategy_deadline(inmob, "wordpress_sitemap_detail")
+        if not base or base in urls_probadas:
+            continue
+        urls_probadas.append(base)
+        try:
+            for detail_url in _sitemap_detail_urls_for_base(base, session, inmob):
+                if detail_url not in detail_urls:
+                    detail_urls.append(detail_url)
+        except Exception as exc:
+            errores_relevantes.append(f"{base}: {type(exc).__name__}: {str(exc)[:180]}")
+        if detail_urls:
+            break
+
+    if not detail_urls:
+        raise RuntimeError("no_property_links: wordpress_sitemap_detail sin URLs de propiedades")
+
+    resultados: List[Dict] = []
+
+    def _fetch_one(detail_url: str) -> Optional[Dict]:
+        try:
+            _check_strategy_deadline(inmob, "wordpress_sitemap_detail")
+            prop = _extract_detail_page(detail_url, inmob, session)
+            if prop:
+                prop["fuente_extraccion"] = "wordpress_sitemap_detail"
+                prop["cms_origen"] = inmob.get("cms_detectado") or "wordpress"
+            time.sleep(random.uniform(0.12, 0.3))
+            return prop
+        except StrategyTimeoutError:
+            raise
+        except Exception:
+            return None
+
+    max_urls = min(len(detail_urls), 300)
+    executor = ThreadPoolExecutor(max_workers=6)
+    try:
+        futures = {executor.submit(_fetch_one, detail_url): detail_url for detail_url in detail_urls[:max_urls]}
+        timeout = max(1.0, _deadline_remaining_seconds(_strategy_deadline(inmob)))
+        for future in as_completed(futures, timeout=timeout):
+            try:
+                prop = future.result()
+                if prop:
+                    resultados.append(prop)
+            except Exception:
+                pass
+    except TimeoutError:
+        errores_relevantes.append("wordpress_sitemap_detail_detenido_por_timeout")
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+
+    resultados = _dedupe_props(resultados)
+    inmob["_scraper_metadata"] = {
+        **dict(inmob.get("_scraper_metadata") or {}),
+        "wordpress_sitemap_urls_probadas": urls_probadas,
+        "wordpress_sitemap_urls_detectadas": len(detail_urls),
+        "cantidad_paginas": len(detail_urls),
+        "errores_relevantes": errores_relevantes[-8:],
+    }
+    if not resultados:
+        raise RuntimeError("parsing_failed: wordpress_sitemap_detail encontro URLs pero no datos extraibles")
+    logger.info("  WordPress sitemap detail: %d propiedades desde %d URLs", len(resultados), len(detail_urls))
+    return resultados
+
+
 # ---------------------------------------------------------------------------
 # Strategy 4: Sitemap crawler
 # ---------------------------------------------------------------------------
@@ -3145,7 +3278,14 @@ def _fetch_sitemap_urls(base: str, session: requests.Session, inmob: Optional[Di
 
 def _extract_detail_page(url: str, inmob: Dict, session: requests.Session) -> Optional[Dict]:
     """Extrae datos de una página de detalle. Usa ScraperAPI si falla, AI si todo falla."""
-    bounded_strategy = inmob.get("_strategy_name") in {"sitemap", "wordpress_html"}
+    bounded_strategy = inmob.get("_strategy_name") in {
+        "sitemap",
+        "wordpress_html",
+        "static_html",
+        "static_html_detail",
+        "static_html_tokko_detail",
+        "wordpress_sitemap_detail",
+    }
     if bounded_strategy:
         _check_strategy_deadline(inmob, str(inmob.get("_strategy_name") or "detail"))
     raw_html = None
@@ -3155,7 +3295,7 @@ def _extract_detail_page(url: str, inmob: Dict, session: requests.Session) -> Op
         timeout = _bounded_http_timeout(inmob, 6) if bounded_strategy else 20
         r = _http_get(url, session, timeout=timeout)
         if r.status_code == 200:
-            raw_html = r.text
+            raw_html = _decode_response_text(r)
     except Exception:
         pass
 
@@ -3164,7 +3304,7 @@ def _extract_detail_page(url: str, inmob: Dict, session: requests.Session) -> Op
         try:
             r2 = _scraperapi_get(url, session, timeout=30, js_render=False)
             if r2.status_code == 200:
-                raw_html = r2.text
+                raw_html = _decode_response_text(r2)
                 logger.debug("ScraperAPI OK para %s", url)
         except Exception:
             pass
@@ -3200,6 +3340,123 @@ def _extract_detail_page(url: str, inmob: Dict, session: requests.Session) -> Op
     return prop
 
 
+_GENERIC_BAD_TITLES = {
+    "descripcion",
+    "descripción",
+    "detalle",
+    "propiedad",
+    "sin titulo",
+    "sin título",
+    "propiedad sin titulo",
+    "propiedad sin título",
+    "los resultados de su busqueda",
+    "los resultados de su búsqueda",
+}
+
+
+_PROPERTY_TITLE_HINTS = re.compile(
+    r"(venta|alquiler|casa|departamento|depto|monoambiente|terreno|lote|local|cochera|"
+    r"galpon|galp[oó]n|oficina|ph|ambiente|dormitorio|m2|pozo)",
+    re.I,
+)
+
+
+def _looks_like_agency_title(value: Any) -> bool:
+    text = _fix_mojibake_text(value)
+    low = text.lower()
+    if _PROPERTY_TITLE_HINTS.search(low):
+        return False
+    return any(marker in low for marker in (
+        "inmobiliaria",
+        "propiedades",
+        "bienes raices",
+        "bienes raíces",
+        "operaciones inmobiliarias",
+        "real estate",
+    ))
+
+
+def _is_useful_scraped_title(value: Any) -> bool:
+    text = _fix_mojibake_text(value)
+    if len(text) < 5:
+        return False
+    if _looks_like_agency_title(text):
+        return False
+    key = _normalize_text_key(text)
+    if key in {_normalize_text_key(title) for title in _GENERIC_BAD_TITLES}:
+        return False
+    if re.fullmatch(r"(descripcion|descripci[oó]n|detalle|propiedad)\s*:?", text, re.I):
+        return False
+    return True
+
+
+def _title_from_detail_url(url: str) -> str:
+    path = unquote(urlparse(url).path or "")
+    slug = path.rstrip("/").split("/")[-1]
+    slug = re.sub(r"^(propiedad|property|inmueble|ficha|detalle)[-_]?\d*[-_/]?", "", slug, flags=re.I)
+    slug = re.sub(r"\b\d{4,}\b", " ", slug)
+    slug = re.sub(r"[-_]+", " ", slug)
+    slug = _fix_mojibake_text(slug)
+    return slug.title() if _is_useful_scraped_title(slug) else ""
+
+
+def _first_meta_content(soup: BeautifulSoup, *selectors: str) -> str:
+    for selector in selectors:
+        el = soup.select_one(selector)
+        if el:
+            content = el.get("content") or el.get("value") or ""
+            content = _fix_mojibake_text(content)
+            if content:
+                return content
+    return ""
+
+
+def _extract_price_from_text(text: str) -> Tuple[Optional[float], str]:
+    fixed = _fix_mojibake_text(text)
+    patterns = [
+        r"(?:U\$S|US\$|USD)\s*[\d.,]{3,}",
+        r"\$\s*[\d.,]{4,}",
+        r"(?:ARS|Pesos?)\s*[\d.,]{4,}",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, fixed, flags=re.I)
+        if not match:
+            continue
+        precio, moneda = normalizar_precio(match.group(0))
+        if precio and precio > 0:
+            return precio, moneda
+    return None, "ARS"
+
+
+def _normalizar_precio_detalle(raw: Any) -> Tuple[Optional[float], str]:
+    fixed = _fix_mojibake_text(raw)
+    if not fixed:
+        return None, "ARS"
+    precise_price, precise_currency = _extract_price_from_text(fixed)
+    if precise_price:
+        if precise_currency == "USD" and precise_price < 1000:
+            return None, precise_currency
+        if precise_currency == "ARS" and precise_price < 10000:
+            return None, precise_currency
+        return precise_price, precise_currency
+    # Evita convertir textos largos con direccion/superficie/telefono en un precio concatenado.
+    if len(fixed) > 80 or len(re.findall(r"\d+", fixed)) > 2:
+        return None, "ARS"
+    price, currency = normalizar_precio(fixed)
+    if price and ((currency == "USD" and price < 1000) or (currency == "ARS" and price < 10000)):
+        return None, currency
+    return price, currency
+
+
+def _extract_address_from_text(text: str) -> str:
+    fixed = _fix_mojibake_text(text)
+    match = re.search(
+        r"\b([A-ZÁÉÍÓÚÑa-záéíóúñ][A-ZÁÉÍÓÚÑa-záéíóúñ.\s]{2,35}\s+\d{2,5}(?:\s*[A-Z]{0,2})?)\b",
+        fixed,
+    )
+    return _fix_mojibake_text(match.group(1)) if match else ""
+
+
 def _html_extract_detail(soup: BeautifulSoup, url: str, inmob: Dict,
                          raw_html: str = "") -> Optional[Dict]:
     """Extracción heurística de datos de detalle desde HTML."""
@@ -3207,30 +3464,42 @@ def _html_extract_detail(soup: BeautifulSoup, url: str, inmob: Dict,
         for sel in selectors:
             el = soup.select_one(sel)
             if el:
-                return el.get_text(strip=True)
+                text = _fix_mojibake_text(el.get_text(" ", strip=True))
+                if text:
+                    return text
         return ""
 
-    title = find_text(
-        "h1", ".property-title", ".titulo", '[class*="title"]',
-        '[class*="titulo"]', ".listing-title",
-    )
+    title_candidates = [
+        find_text("h1", ".property-title", ".titulo", ".listing-title"),
+        _title_from_detail_url(url),
+        _first_meta_content(soup, "meta[property='og:title']", "meta[name='twitter:title']"),
+        find_text("title"),
+    ]
+    title = next((candidate for candidate in title_candidates if _is_useful_scraped_title(candidate)), "")
     desc = find_text(
         ".description", ".descripcion", '[class*="description"]',
         '[class*="descripcion"]', ".property-description", "article p",
     )
+    if not desc:
+        desc = _first_meta_content(soup, "meta[property='og:description']", "meta[name='description']")
     precio_raw = find_text(
-        ".price", ".precio", '[class*="price"]', '[class*="precio"]',
-        ".property-price", ".listing-price",
+        ".property-price", ".listing-price", ".price", ".precio",
+        '[class*="precio"]', '[class*="price"]', "[itemprop='price']",
     )
-    precio, moneda = normalizar_precio(precio_raw)
+    precio, moneda = _normalizar_precio_detalle(precio_raw)
+    page_text = _fix_mojibake_text(soup.get_text(" ", strip=True))
+    if not precio:
+        precio, moneda = _normalizar_precio_detalle(page_text)
 
-    tipo_raw = find_text('[class*="tipo"]', '[class*="type"]', ".property-type")
-    op_raw   = find_text('[class*="operaci"]', '[class*="operation"]')
+    tipo_raw = find_text('[class*="tipo"]', '[class*="type"]', ".property-type") or title or page_text[:300]
+    op_raw   = find_text('[class*="operaci"]', '[class*="operation"]') or title or url
 
     address_raw = find_text(
         ".address", ".direccion", ".location", '[class*="address"]',
         '[class*="direccion"]', '[class*="location"]',
     )
+    if not address_raw:
+        address_raw = _extract_address_from_text(page_text)
 
     ambientes    = normalizar_int(find_text('[class*="ambiente"]', '[class*="room"]', '[class*="environment"]'))
     dormitorios  = normalizar_int(find_text('[class*="dormitor"]', '[class*="bedroom"]', '[class*="suite"]', '[class*="habitac"]'))
@@ -3248,7 +3517,7 @@ def _html_extract_detail(soup: BeautifulSoup, url: str, inmob: Dict,
 
     piso = find_text('[class*="piso"]', '[class*="floor"]', '[class*="planta"]') or None
 
-    page_text_lower = soup.get_text(" ").lower()
+    page_text_lower = page_text.lower()
     apto_credito      = bool(re.search(r"apto\s+cr[eé]dito|acepta\s+cr[eé]dito|cr[eé]dito\s+hipotecario", page_text_lower))
     apto_profesional  = bool(re.search(r"apto\s+profesional|uso\s+profesional", page_text_lower))
 
@@ -3287,7 +3556,10 @@ def _html_extract_detail(soup: BeautifulSoup, url: str, inmob: Dict,
     if m:
         id_ext = m.group(1)
 
-    if not title and not precio:
+    if not _is_useful_scraped_title(title) and precio:
+        title = _title_from_detail_url(url) or "Propiedad"
+
+    if not _is_useful_scraped_title(title) and not precio:
         return None
 
     precio_ars, precio_usd = convertir_precio(precio, moneda)
@@ -3327,7 +3599,7 @@ def _html_extract_detail(soup: BeautifulSoup, url: str, inmob: Dict,
         "amenities":           amenities,
         "agente_nombre":       agente_nombre,
         "agente_telefono":     agente_telefono,
-        "fuente_extraccion":   "sitemap",
+        "fuente_extraccion":   str(inmob.get("_strategy_name") or "static_html"),
         "cms_origen":          inmob.get("cms_detectado", ""),
         "estado":              "activo",
     }
@@ -3441,6 +3713,8 @@ def _wordpress_candidate_urls(inmob: Dict, first_html: str = "", first_url: str 
         if not url:
             return
         clean = _normalize_queue_url(str(url).split("#", 1)[0])
+        if _is_noise_property_url(clean):
+            return
         if clean and clean not in urls:
             urls.append(clean)
 
@@ -3475,6 +3749,239 @@ def _extract_wordpress_property_links(html: str, current_url: str) -> List[str]:
             if urlparse(full).netloc == urlparse(current_url).netloc and full not in links:
                 links.append(full)
     return links[:300]
+
+
+_UNIVERSAL_LISTING_KEYWORDS = (
+    "propiedades", "propiedad", "inmuebles", "inmueble", "venta", "ventas",
+    "alquiler", "alquileres", "emprendimiento", "emprendimientos",
+    "desarrollo", "desarrollos", "buscar", "resultado", "listado",
+    "ficha", "detalle", "ver-mas", "ver-más", "ver mas", "ver más",
+)
+
+_UNIVERSAL_LISTING_PATHS = [
+    "/", "/propiedades", "/propiedades/", "/propiedad", "/inmuebles",
+    "/inmuebles/", "/venta", "/Venta", "/ventas", "/Ventas",
+    "/alquiler", "/Alquiler", "/alquileres", "/buscar", "/busqueda",
+    "/emprendimientos", "/desarrollos",
+]
+
+_NON_PROPERTY_URL_PATTERNS = re.compile(
+    r"(subi-tu-propiedad|publica(?:r)?-tu-propiedad|tasacion|tasaciones|contacto|"
+    r"nosotros|quienes-somos|blog|noticia|servicio|equipo|staff|login|wp-admin|"
+    r"whatsapp|wa\.me|facebook|instagram|linkedin|youtube|twitter|x\.com|"
+    r"mapa|maps|property-outside|tr_uuid|[?&]fp=)",
+    re.I,
+)
+
+
+def _is_noise_property_url(url: str) -> bool:
+    if not url:
+        return True
+    low = unquote(str(url).strip().lower())
+    if not low:
+        return True
+    if low.startswith(("mailto:", "tel:", "whatsapp:", "javascript:", "#")):
+        return True
+    parsed = urlparse(low)
+    if parsed.netloc in {
+        "wa.me",
+        "api.whatsapp.com",
+        "web.whatsapp.com",
+        "facebook.com",
+        "www.facebook.com",
+        "instagram.com",
+        "www.instagram.com",
+        "linkedin.com",
+        "www.linkedin.com",
+        "youtube.com",
+        "www.youtube.com",
+        "x.com",
+        "twitter.com",
+    }:
+        return True
+    if _NON_PROPERTY_URL_PATTERNS.search(low):
+        return True
+    query_keys = {key.lower() for key, _ in parse_qsl(parsed.query, keep_blank_values=True)}
+    if query_keys & {"tr_uuid", "fp", "fbclid", "gclid", "utm_source", "utm_medium", "utm_campaign"}:
+        return True
+    return False
+
+
+def _looks_like_real_property_url(url: str) -> bool:
+    if _is_noise_property_url(url):
+        return False
+    parsed = urlparse(str(url))
+    path = unquote((parsed.path or "").lower()).strip("/")
+    if not path:
+        return False
+    if path in {
+        "propiedades", "propiedad", "inmuebles", "inmueble", "venta", "ventas",
+        "alquiler", "alquileres", "buscar", "busqueda", "emprendimientos", "desarrollos",
+    }:
+        return False
+    if re.search(r"^(estado|tipo-propiedad|property-type|categoria|category)/", path):
+        return False
+    detail_patterns = (
+        r"(^|/)p/\d{3,}",
+        r"(^|/)propiedad[-/]\d{3,}",
+        r"(^|/)property[-/]\d{3,}",
+        r"(^|/)inmueble[-/]\d{3,}",
+        r"(^|/)ficha[-/]\d{3,}",
+        r"(^|/)detalle[-/]\d{3,}",
+        r"(^|/)propiedades/[^/]{8,}",
+        r"(^|/)inmuebles/[^/]{8,}",
+    )
+    return any(re.search(pattern, path, re.I) for pattern in detail_patterns)
+
+
+def _extract_generic_property_links(html: str, current_url: str) -> List[str]:
+    soup = BeautifulSoup(html or "", "html.parser")
+    current_netloc = urlparse(current_url).netloc
+    links: List[str] = []
+    selectors = [
+        "a[href*='propiedad']", "a[href*='propiedades']",
+        "a[href*='inmueble']", "a[href*='inmuebles']",
+        "a[href*='ficha']", "a[href*='detalle']",
+        "a[href*='/p/']", "a[href*='venta']", "a[href*='alquiler']",
+        "[class*='property'] a[href]", "[class*='propiedad'] a[href]",
+        "[class*='inmueble'] a[href]", "[class*='listing'] a[href]",
+        "[class*='resultado'] a[href]", "article a[href]", ".card a[href]",
+    ]
+    for selector in selectors:
+        for a in soup.select(selector):
+            href = (a.get("href") or "").strip()
+            if not href or href.startswith(("#", "javascript:", "mailto:", "tel:")):
+                continue
+            full = urljoin(current_url, href)
+            parsed = urlparse(full)
+            if parsed.netloc != current_netloc:
+                continue
+            text = a.get_text(" ", strip=True).lower()
+            combined = f"{full.lower()} {text}"
+            if _looks_like_real_property_url(full) or (
+                PROPERTY_URL_PATTERNS.search(full)
+                and not _is_noise_property_url(full)
+                and any(word in combined for word in ("venta", "alquiler", "dormitorio", "ambiente", "terreno", "casa", "departamento"))
+            ):
+                if full not in links:
+                    links.append(full)
+    return links[:400]
+
+
+def _generic_candidate_urls(inmob: Dict, first_html: str = "", first_url: str = "") -> List[str]:
+    urls: List[str] = []
+
+    def add(url: Optional[str]) -> None:
+        if not url:
+            return
+        clean = _normalize_queue_url(str(url).split("#", 1)[0])
+        if clean and clean not in urls:
+            urls.append(clean)
+
+    for variant in _url_host_variants(inmob.get("url_listado")):
+        add(variant)
+    for variant in _url_host_variants(inmob.get("web")):
+        add(variant)
+    if first_html and first_url:
+        for link in _extract_keyword_internal_links(first_html, first_url, _UNIVERSAL_LISTING_KEYWORDS):
+            add(link)
+    for base in _url_host_variants(inmob.get("web") or first_url):
+        for path in _UNIVERSAL_LISTING_PATHS:
+            add(urljoin(base.rstrip("/") + "/", path.lstrip("/")))
+    return urls[:50]
+
+
+def strategy_static_html(inmob: Dict, session: requests.Session) -> List[Dict]:
+    """Extractor HTTP genérico: descubre links internos y parsea detalles sin browser."""
+    url_inicial = inmob.get("url_listado") or inmob.get("web", "")
+    if not url_inicial:
+        raise ValueError("sin_url_listado")
+
+    _check_strategy_deadline(inmob, "static_html")
+    urls_probadas: List[str] = []
+    detail_urls: List[str] = []
+    errores_relevantes: List[str] = []
+    first_html = ""
+    http_statuses: List[int] = []
+
+    try:
+        r0 = _http_get(url_inicial, session, timeout=_bounded_http_timeout(inmob, 10))
+        http_statuses.append(r0.status_code)
+        first_html = r0.text if r0.status_code == 200 else ""
+    except Exception as exc:
+        errores_relevantes.append(f"{url_inicial}: {type(exc).__name__}: {str(exc)[:180]}")
+
+    candidates = _generic_candidate_urls(inmob, first_html=first_html, first_url=url_inicial)
+    for candidate in candidates:
+        _check_strategy_deadline(inmob, "static_html")
+        if _deadline_remaining_seconds(_strategy_deadline(inmob)) <= 8:
+            errores_relevantes.append("static_html_detenido_por_presupuesto")
+            break
+        if candidate in urls_probadas:
+            continue
+        urls_probadas.append(candidate)
+        try:
+            if candidate == url_inicial and first_html:
+                html = first_html
+                status = 200
+            else:
+                r = _http_get(candidate, session, timeout=_bounded_http_timeout(inmob, 8))
+                status = r.status_code
+                http_statuses.append(status)
+                if status != 200:
+                    continue
+                html = r.text
+            for link in _extract_generic_property_links(html, candidate):
+                if link not in detail_urls:
+                    detail_urls.append(link)
+            if len(detail_urls) >= 80:
+                break
+        except Exception as exc:
+            errores_relevantes.append(f"{candidate}: {type(exc).__name__}: {str(exc)[:180]}")
+
+    resultados: List[Dict] = []
+    for durl in detail_urls[:120]:
+        _check_strategy_deadline(inmob, "static_html")
+        if _deadline_remaining_seconds(_strategy_deadline(inmob)) <= 4:
+            errores_relevantes.append("static_html_detalles_detenidos_por_presupuesto")
+            break
+        try:
+            prop = _extract_detail_page(durl, inmob, session)
+            if prop:
+                prop["fuente_extraccion"] = "static_html"
+                resultados.append(prop)
+        except Exception as exc:
+            if len(errores_relevantes) < 8:
+                errores_relevantes.append(f"{durl}: {type(exc).__name__}: {str(exc)[:180]}")
+
+    inmob["_scraper_metadata"] = {
+        **dict(inmob.get("_scraper_metadata") or {}),
+        "static_html_urls_probadas": urls_probadas,
+        "static_html_links_propiedad_detectados": len(detail_urls),
+        "static_html_http_statuses": http_statuses[-10:],
+        "errores_relevantes": errores_relevantes[-8:],
+    }
+
+    if not detail_urls:
+        raise RuntimeError("no_property_links: static_html no encontro links de propiedades")
+    if not resultados:
+        raise RuntimeError("parsing_failed: static_html encontro links pero no datos extraibles")
+    return _dedupe_props(resultados)
+
+
+def strategy_static_html_detail(inmob: Dict, session: requests.Session) -> List[Dict]:
+    props = strategy_static_html(inmob, session)
+    for prop in props:
+        prop["fuente_extraccion"] = "static_html_detail"
+    return props
+
+
+def strategy_static_html_tokko_detail(inmob: Dict, session: requests.Session) -> List[Dict]:
+    props = strategy_static_html(inmob, session)
+    for prop in props:
+        prop["fuente_extraccion"] = "static_html_tokko_detail"
+        prop["cms_origen"] = "tokko"
+    return props
 
 
 def _wordpress_rest_links(base_url: str, session: requests.Session, inmob: Dict) -> Tuple[List[str], List[str]]:
@@ -4203,6 +4710,476 @@ def _save_estrategia(db: "SupabasePropiedades", inmob_id: int, fields: Dict) -> 
         logger.debug("_save_estrategia error: %s", e)
 
 
+def _count_html_cards(html: str) -> int:
+    soup = BeautifulSoup(html or "", "html.parser")
+    max_count = 0
+    for selector in _CARD_SELECTORS_DETECT:
+        try:
+            max_count = max(max_count, len(soup.select(selector)))
+        except Exception:
+            continue
+    return max_count
+
+
+def _html_requires_js(html: str, property_links_count: int = 0, cards_count: int = 0) -> bool:
+    low = (html or "").lower()
+    js_markers = (
+        "__next_data__", "next/static", "data-reactroot", "id=\"root\"",
+        "id=\"app\"", "vue", "nuxt", "window.__initial_state__",
+        "apollo-state", "webpack", "vite", "chunk.js",
+    )
+    if any(marker in low for marker in js_markers) and property_links_count == 0 and cards_count == 0:
+        return True
+    body_text = BeautifulSoup(html or "", "html.parser").get_text(" ", strip=True)
+    return len(body_text) < 300 and len(re.findall(r"<script\b", html or "", re.I)) >= 5
+
+
+def _jsonld_type_count(html: str) -> int:
+    count = 0
+    soup = BeautifulSoup(html or "", "html.parser")
+    for tag in soup.find_all("script", type="application/ld+json"):
+        try:
+            data = json.loads(tag.string or "")
+        except Exception:
+            continue
+        items = data if isinstance(data, list) else [data]
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            schema_type = item.get("@type", "")
+            if isinstance(schema_type, list):
+                schema_type = schema_type[0] if schema_type else ""
+            if schema_type in _JSONLD_TYPES:
+                count += 1
+    return count
+
+
+def classify_diagnostic_failure(
+    diagnostic: Dict[str, Any],
+    allow_playwright: bool = False,
+    allow_network_interception: bool = False,
+) -> str:
+    status = diagnostic.get("http_status")
+    if status is None or diagnostic.get("site_down"):
+        return "site_down"
+    if isinstance(status, int) and status >= 500:
+        return "site_down"
+    if status in {403, 429} or diagnostic.get("blocked"):
+        return "blocked"
+    if diagnostic.get("html_empty"):
+        return "empty_site"
+
+    technologies = set(diagnostic.get("tecnologias_detectadas") or [])
+    property_links_count = int(diagnostic.get("property_links_count") or 0)
+    sitemap_count = int(diagnostic.get("sitemap_property_urls_count") or 0)
+    plugin = str(diagnostic.get("wordpress_plugin_detectado") or "").strip().lower()
+
+    if "tokko_html" in technologies and property_links_count > 0:
+        return "scrapeable_tokko"
+    if "tokko_api" in technologies:
+        return "scrapeable_tokko_api"
+    if "wordpress" in technologies and sitemap_count > 0:
+        return "scrapeable_wordpress_sitemap"
+    if "wordpress" in technologies and property_links_count > 0:
+        if plugin and plugin not in {"unknown", "wordpress_generic"}:
+            return f"scrapeable_wordpress_{plugin}"
+        return "scrapeable_wordpress_html"
+    if property_links_count > 0:
+        return "scrapeable_static_html"
+    if sitemap_count > 0:
+        return "scrapeable_sitemap"
+
+    if diagnostic.get("requires_network_interception") and not allow_network_interception:
+        return "requires_network_interception"
+    if diagnostic.get("requires_playwright") and not allow_playwright:
+        return "requires_playwright"
+    if property_links_count == 0 and sitemap_count == 0:
+        return "no_property_links"
+    if diagnostic.get("unsupported_cms"):
+        return "unsupported_cms"
+    return "parsing_failed"
+
+
+def diagnose_inmob(
+    inmob: Dict,
+    session: requests.Session,
+    pw_context=None,
+    allow_playwright: bool = False,
+    allow_network_interception: bool = False,
+) -> Dict[str, Any]:
+    """Diagnostico universal sin guardar propiedades ni consumir cola."""
+    url_inicial = inmob.get("url_listado") or inmob.get("web", "")
+    diagnostic: Dict[str, Any] = {
+        "url_inicial": url_inicial,
+        "url_normalizada": _normalize_queue_url(url_inicial),
+        "tecnologias_detectadas": [],
+        "extractores_posibles": [],
+        "posibles_urls_listado": [],
+        "posibles_urls_detalle": [],
+        "property_links_count": 0,
+        "cards_posibles": 0,
+        "json_ld_property_items": 0,
+        "sitemap_property_urls_count": 0,
+        "requires_js": False,
+        "requires_playwright": False,
+        "requires_network_interception": False,
+        "blocked": False,
+        "site_down": False,
+        "html_empty": False,
+        "http_statuses": [],
+    }
+    if not url_inicial:
+        diagnostic["classification"] = "site_down"
+        return diagnostic
+
+    first_html = ""
+    final_url = diagnostic["url_normalizada"]
+    candidates = _generic_candidate_urls(inmob, first_url=final_url)
+    diagnostic["posibles_urls_listado"] = candidates[:20]
+
+    for candidate in candidates[:8]:
+        try:
+            response = _http_get(candidate, session, timeout=10, use_scraper_on_block=False)
+            diagnostic["http_statuses"].append(response.status_code)
+            diagnostic["http_status"] = response.status_code
+            final_url = response.url or candidate
+            diagnostic["final_url"] = final_url
+            if response.status_code in {403, 429}:
+                diagnostic["blocked"] = True
+            if response.status_code >= 500:
+                diagnostic["site_down"] = True
+            if response.status_code == 200 and response.text:
+                first_html = response.text
+                break
+        except Exception as exc:
+            diagnostic.setdefault("errores_http", []).append(f"{candidate}: {type(exc).__name__}: {str(exc)[:180]}")
+
+    if not first_html:
+        diagnostic["html_empty"] = True
+        diagnostic["classification"] = classify_diagnostic_failure(diagnostic, allow_playwright, allow_network_interception)
+        return diagnostic
+
+    key = _buscar_tokko_key_en_html(first_html)
+    if key:
+        diagnostic["tokko_api_key_detectada"] = True
+        diagnostic["tecnologias_detectadas"].append("tokko_api")
+        diagnostic["extractores_posibles"].append("tokko_api")
+    if _is_tokko_html(first_html):
+        diagnostic["tecnologias_detectadas"].append("tokko_html")
+        diagnostic["extractores_posibles"].append("tokko_html")
+
+    wp_plugin = _detect_wordpress_plugin(first_html)
+    if wp_plugin != "unknown":
+        diagnostic["wordpress_plugin_detectado"] = wp_plugin
+        diagnostic["tecnologias_detectadas"].append("wordpress")
+        diagnostic["extractores_posibles"].append("wordpress_html")
+
+    property_links = _extract_generic_property_links(first_html, final_url)
+    listing_links = [
+        link for link in _extract_keyword_internal_links(first_html, final_url, _UNIVERSAL_LISTING_KEYWORDS)
+        if not _is_noise_property_url(link)
+    ]
+    diagnostic["property_links_count"] = len(property_links)
+    diagnostic["posibles_urls_detalle"] = property_links[:20]
+    diagnostic["posibles_urls_listado"] = list(dict.fromkeys(diagnostic["posibles_urls_listado"] + listing_links))[:30]
+    if property_links:
+        diagnostic["extractores_posibles"].append("static_html")
+
+    cards_count = _count_html_cards(first_html)
+    diagnostic["cards_posibles"] = cards_count
+    if cards_count >= 3 and "static_html" not in diagnostic["extractores_posibles"]:
+        diagnostic["extractores_posibles"].append("static_html")
+
+    jsonld_count = _jsonld_type_count(first_html)
+    diagnostic["json_ld_property_items"] = jsonld_count
+    if jsonld_count:
+        diagnostic["extractores_posibles"].append("json_ld")
+
+    parsed = urlparse(final_url)
+    base = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else final_url
+    try:
+        sitemap_urls = [url for url in _fetch_sitemap_urls(base, session, None) if _looks_like_real_property_url(url)]
+        diagnostic["sitemap_property_urls_count"] = len(sitemap_urls)
+        if sitemap_urls:
+            diagnostic["extractores_posibles"].append("sitemap")
+            diagnostic["posibles_urls_detalle"] = list(dict.fromkeys(diagnostic["posibles_urls_detalle"] + sitemap_urls[:20]))[:30]
+    except Exception as exc:
+        diagnostic.setdefault("errores_http", []).append(f"sitemap: {type(exc).__name__}: {str(exc)[:180]}")
+
+    requires_js = _html_requires_js(first_html, len(property_links), cards_count)
+    diagnostic["requires_js"] = requires_js
+    diagnostic["requires_playwright"] = requires_js and not property_links and not jsonld_count and not diagnostic["sitemap_property_urls_count"]
+    diagnostic["requires_network_interception"] = (
+        "tokko" in " ".join(diagnostic["tecnologias_detectadas"])
+        and not key
+        and diagnostic["requires_playwright"]
+    )
+
+    if allow_playwright and pw_context is not None:
+        page = None
+        try:
+            page = pw_context.new_page()
+            page.set_default_timeout(PLAYWRIGHT_ACTION_TIMEOUT_MS)
+            page.set_default_navigation_timeout(PLAYWRIGHT_NAV_TIMEOUT_MS)
+            _playwright_goto(page, final_url, retries=1, timeout_ms=PLAYWRIGHT_NAV_TIMEOUT_MS)
+            _human_scroll(page)
+            try:
+                page.wait_for_load_state("networkidle", timeout=PLAYWRIGHT_LOAD_TIMEOUT_MS)
+            except Exception:
+                pass
+            rendered_html = page.content()
+            rendered_links = _extract_generic_property_links(rendered_html, page.url)
+            diagnostic["playwright_cards_posibles"] = _count_html_cards(rendered_html)
+            diagnostic["playwright_property_links_count"] = len(rendered_links)
+            if rendered_links:
+                diagnostic["requires_playwright"] = True
+                diagnostic["extractores_posibles"].append("html_scraper")
+                diagnostic["posibles_urls_detalle"] = list(dict.fromkeys(diagnostic["posibles_urls_detalle"] + rendered_links[:20]))[:30]
+        except Exception as exc:
+            diagnostic["playwright_error"] = f"{type(exc).__name__}: {str(exc)[:180]}"
+        finally:
+            _close_playwright_safely(page, "diagnose page")
+
+    diagnostic["extractores_posibles"] = list(dict.fromkeys(diagnostic["extractores_posibles"]))
+    diagnostic["tecnologias_detectadas"] = list(dict.fromkeys(diagnostic["tecnologias_detectadas"])) or ["unknown"]
+    diagnostic["classification"] = classify_diagnostic_failure(diagnostic, allow_playwright, allow_network_interception)
+    return diagnostic
+
+
+def _strategy_plan_noop(reason: str, diagnostic: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "primary_strategy": None,
+        "fallback_strategies": [],
+        "reason": reason,
+        "expected_property_count": int(
+            max(
+                diagnostic.get("sitemap_property_urls_count") or 0,
+                diagnostic.get("property_links_count") or 0,
+                diagnostic.get("cards_posibles") or 0,
+            )
+        ),
+        "confidence": "high",
+        "requires_playwright": bool(diagnostic.get("requires_playwright")),
+        "requires_network_interception": bool(diagnostic.get("requires_network_interception")),
+        "should_save_strategy_for_future": False,
+        "classification": diagnostic.get("classification"),
+        "discarded_extractors": diagnostic.get("extractores_posibles") or [],
+    }
+
+
+def _detail_urls_have_tokko_classic_shape(diagnostic: Dict[str, Any]) -> bool:
+    urls = diagnostic.get("posibles_urls_detalle") or []
+    return any(re.search(r"/p/\d{3,}", str(url), re.I) for url in urls)
+
+
+def _detail_urls_have_real_property_shape(diagnostic: Dict[str, Any]) -> bool:
+    return any(_looks_like_real_property_url(str(url)) for url in (diagnostic.get("posibles_urls_detalle") or []))
+
+
+def select_best_scraping_strategy(diagnostic: Dict[str, Any], history: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Selecciona una estrategia principal a partir del diagnostico, sin ejecutar extractores al azar."""
+    history = history or {}
+    classification = str(diagnostic.get("classification") or "")
+    technologies = set(diagnostic.get("tecnologias_detectadas") or [])
+    extractores_posibles = list(diagnostic.get("extractores_posibles") or [])
+    property_links = int(diagnostic.get("property_links_count") or 0)
+    sitemap_count = int(diagnostic.get("sitemap_property_urls_count") or 0)
+    cards = int(diagnostic.get("cards_posibles") or 0)
+    plugin = str(diagnostic.get("wordpress_plugin_detectado") or "").strip().lower()
+    expected = max(sitemap_count, property_links, cards)
+
+    no_scrapeable = {
+        "site_down", "blocked", "empty_site", "no_property_links",
+        "unsupported_cms", "tracking_only",
+    }
+    if classification in no_scrapeable:
+        return _strategy_plan_noop(classification, diagnostic)
+
+    primary: Optional[str] = None
+    fallbacks: List[str] = []
+    reason = ""
+    confidence = "medium"
+
+    saved_strategy = history.get("best_scraping_strategy") or history.get("last_successful_strategy")
+    if saved_strategy in {
+        "tokko_html",
+        "static_html_tokko_detail",
+        "wordpress_sitemap_detail",
+        "static_html_detail",
+        "playwright_html",
+        "network_interception",
+    }:
+        primary = str(saved_strategy)
+        reason = f"estrategia historica: {saved_strategy}"
+        confidence = "high"
+
+    if primary is None and "wordpress" in technologies:
+        if sitemap_count > 0:
+            primary = "wordpress_sitemap_detail"
+            fallbacks = ["wordpress_html", "static_html_detail"]
+            reason = f"wordpress/{plugin or 'generic'} con sitemap de propiedades ({sitemap_count} URLs)"
+            confidence = "high" if sitemap_count >= 20 else "medium"
+        elif property_links > 0:
+            primary = "wordpress_html"
+            fallbacks = ["static_html_detail"]
+            reason = f"wordpress con links HTML de propiedades ({property_links})"
+            confidence = "medium"
+
+    if primary is None and "tokko_api" in technologies:
+        primary = "tokko_api"
+        fallbacks = ["tokko_html", "static_html_tokko_detail"]
+        reason = "Tokko API key detectada"
+        confidence = "high"
+
+    if primary is None and "tokko_html" in technologies:
+        if _detail_urls_have_tokko_classic_shape(diagnostic) and cards >= 3:
+            primary = "tokko_html"
+            fallbacks = ["static_html_tokko_detail", "json_ld", "sitemap"]
+            reason = f"Tokko clasico con cards HTML ({cards}) y URLs /p/"
+            confidence = "high"
+        elif property_links > 0 or _detail_urls_have_real_property_shape(diagnostic):
+            primary = "static_html_tokko_detail"
+            fallbacks = ["tokko_html", "static_html_detail", "json_ld"]
+            reason = "Tokko custom/estatico: hay fichas reales pero no cards clasicas suficientes"
+            confidence = "medium"
+
+    if primary is None and sitemap_count > 0:
+        primary = "sitemap"
+        fallbacks = ["static_html_detail", "json_ld"]
+        reason = f"sitemap con URLs de propiedades ({sitemap_count})"
+        confidence = "medium"
+
+    if primary is None and property_links > 0 and _detail_urls_have_real_property_shape(diagnostic):
+        primary = "static_html_detail"
+        fallbacks = ["json_ld"]
+        reason = f"HTML estatico con links reales de propiedades ({property_links})"
+        confidence = "medium"
+
+    if primary is None and diagnostic.get("requires_playwright"):
+        primary = "playwright_html"
+        fallbacks = ["network_interception"] if diagnostic.get("requires_network_interception") else []
+        reason = "HTML requiere renderizado JS"
+        confidence = "low"
+
+    if primary is None and diagnostic.get("requires_network_interception"):
+        primary = "network_interception"
+        fallbacks = ["playwright_html"]
+        reason = "diagnostico sugiere APIs/XHR como fuente principal"
+        confidence = "low"
+
+    if primary is None:
+        return _strategy_plan_noop(classification or "no_property_links", diagnostic)
+
+    ordered = []
+    for strategy in [primary] + fallbacks:
+        if strategy and strategy not in ordered:
+            ordered.append(strategy)
+    primary = ordered[0]
+    fallbacks = ordered[1:]
+    discarded = [extractor for extractor in extractores_posibles if extractor not in ordered]
+    return {
+        "primary_strategy": primary,
+        "fallback_strategies": fallbacks,
+        "reason": reason,
+        "expected_property_count": int(expected),
+        "confidence": confidence,
+        "requires_playwright": primary == "playwright_html" or "playwright_html" in fallbacks,
+        "requires_network_interception": primary == "network_interception" or "network_interception" in fallbacks,
+        "should_save_strategy_for_future": confidence in {"high", "medium"} and primary not in {"playwright_html", "network_interception"},
+        "classification": classification,
+        "discarded_extractors": discarded,
+    }
+
+
+def _is_absurd_property_price(prop: Dict[str, Any]) -> bool:
+    price = prop.get("precio")
+    if not _positive_number(price):
+        return False
+    value = float(price)
+    currency = str(prop.get("moneda") or "ARS").upper()
+    if currency == "USD":
+        return value < 1000 or value > 50_000_000
+    if currency == "ARS":
+        return value < 10_000 or value > 100_000_000_000
+    return value < 1000 or value > 100_000_000_000
+
+
+def _ratio(count: int, total: int) -> float:
+    return round(count / total, 3) if total else 0.0
+
+
+def evaluate_scrape_quality(
+    props: List[Dict],
+    strategy_plan: Dict[str, Any],
+    diagnostic: Dict[str, Any],
+) -> Dict[str, Any]:
+    total = len(props or [])
+    expected = int(strategy_plan.get("expected_property_count") or 0)
+    if total == 0:
+        return {
+            "accepted": False,
+            "score": 0,
+            "total": 0,
+            "issues": ["sin_propiedades"],
+            "expected_property_count": expected,
+        }
+
+    url_real_count = sum(1 for prop in props if _looks_like_real_property_url(str(prop.get("url") or "")))
+    useful_title_count = sum(1 for prop in props if _is_useful_scraped_title(prop.get("titulo")))
+    valid_price_count = sum(1 for prop in props if _positive_number(prop.get("precio")))
+    image_count = sum(1 for prop in props if _has_real_images(prop.get("imagenes")))
+    address_count = sum(1 for prop in props if _useful_text(prop.get("direccion")) or _useful_text(prop.get("barrio")))
+    generic_title_count = total - useful_title_count
+    absurd_price_count = sum(1 for prop in props if _is_absurd_property_price(prop))
+
+    url_ratio = _ratio(url_real_count, total)
+    title_ratio = _ratio(useful_title_count, total)
+    price_ratio = _ratio(valid_price_count, total)
+    image_ratio = _ratio(image_count, total)
+    address_ratio = _ratio(address_count, total)
+
+    issues: List[str] = []
+    if expected >= 50 and total < max(10, int(expected * 0.1)):
+        issues.append(f"too_few_vs_expected:{total}/{expected}")
+    if url_ratio < 0.6:
+        issues.append("urls_invalidas")
+    if title_ratio < 0.5:
+        issues.append("titulos_genericos")
+    if price_ratio < 0.2:
+        issues.append("precios_insuficientes")
+    if absurd_price_count:
+        issues.append("precios_absurdos")
+    if image_ratio == 0:
+        issues.append("sin_fotos_reales")
+
+    score = 0
+    score += min(20, total * 2)
+    score += int(url_ratio * 15)
+    score += int(title_ratio * 20)
+    score += int(price_ratio * 15)
+    score += int(image_ratio * 10)
+    score += int(address_ratio * 10)
+    score += 10 if absurd_price_count == 0 else 0
+    accepted = score >= 55 and "too_few_vs_expected" not in " ".join(issues) and url_ratio >= 0.6 and title_ratio >= 0.5
+    if absurd_price_count:
+        accepted = False
+
+    return {
+        "accepted": bool(accepted),
+        "score": int(score),
+        "total": total,
+        "expected_property_count": expected,
+        "url_real_ratio": url_ratio,
+        "useful_title_ratio": title_ratio,
+        "valid_price_ratio": price_ratio,
+        "real_images_ratio": image_ratio,
+        "address_ratio": address_ratio,
+        "generic_title_count": generic_title_count,
+        "absurd_price_count": absurd_price_count,
+        "issues": issues,
+    }
+
+
 def run_best_strategy(
     inmob: Dict,
     session: requests.Session,
@@ -4231,10 +5208,32 @@ def run_best_strategy(
         or "wp-content" in str(inmob.get("web") or "").lower()
     )
     tokko_html_failed = False
+    attempts: List[Dict[str, Any]] = []
+    inmob.setdefault("_scraper_metadata", {})["extractores_intentados"] = attempts
 
     def call(strategy_name: str, func: Callable[[], List[Dict]]) -> List[Dict]:
         _check_deadline(item_deadline, "item")
-        return _run_strategy_with_deadline(strategy_name, inmob, item_deadline, func)
+        started = time.time()
+        try:
+            result = _run_strategy_with_deadline(strategy_name, inmob, item_deadline, func)
+            attempts.append({
+                "extractor": strategy_name,
+                "status": "success",
+                "propiedades": len(result),
+                "tiempo_segundos": round(time.time() - started, 2),
+            })
+            inmob.setdefault("_scraper_metadata", {})["extractores_intentados"] = attempts
+            return result
+        except Exception as exc:
+            attempts.append({
+                "extractor": strategy_name,
+                "status": "error",
+                "error_type": clasificar_error(exc),
+                "error_message": str(exc)[:240],
+                "tiempo_segundos": round(time.time() - started, 2),
+            })
+            inmob.setdefault("_scraper_metadata", {})["extractores_intentados"] = attempts
+            raise
 
     def network_available() -> bool:
         if allow_network_interception and pw_context is not None:
@@ -4247,6 +5246,117 @@ def run_best_strategy(
         if not network_available():
             raise RuntimeError("network_intercept omitido por configuracion")
         return call("network_intercept", lambda: strategy_network_intercept(inmob, pw_context, session))
+
+    def execute_selected_strategy(strategy_name: str) -> List[Dict]:
+        if strategy_name == "tokko_api":
+            return call("tokko_api", lambda: strategy_tokko_api(inmob, session))
+        if strategy_name == "tokko_html":
+            return call("tokko_html", lambda: strategy_tokko_html(inmob, session))
+        if strategy_name == "static_html_tokko_detail":
+            return call("static_html_tokko_detail", lambda: strategy_static_html_tokko_detail(inmob, session))
+        if strategy_name == "static_html_detail":
+            return call("static_html_detail", lambda: strategy_static_html_detail(inmob, session))
+        if strategy_name == "static_html":
+            return call("static_html", lambda: strategy_static_html(inmob, session))
+        if strategy_name == "wordpress_sitemap_detail":
+            return call("wordpress_sitemap_detail", lambda: strategy_wordpress_sitemap_detail(inmob, session))
+        if strategy_name == "wordpress_html":
+            return call("wordpress_html", lambda: strategy_wordpress_html(inmob, session))
+        if strategy_name == "json_ld":
+            return call("json_ld", lambda: strategy_json_ld(inmob, session))
+        if strategy_name == "sitemap":
+            return call("sitemap", lambda: strategy_sitemap(inmob, session))
+        if strategy_name == "network_interception":
+            return call_network()
+        if strategy_name == "playwright_html":
+            if not allow_playwright_fallback or pw_context is None:
+                inmob.setdefault("_scraper_metadata", {})["playwright_fallback_skipped"] = True
+                raise RuntimeError("requires_playwright: playwright_html omitido por configuracion")
+            return call("playwright_html", lambda: strategy_html_playwright(inmob, pw_context))
+        raise RuntimeError(f"unsupported_cms: estrategia no implementada {strategy_name}")
+
+    diagnostic = diagnose_inmob(
+        inmob,
+        session,
+        pw_context=pw_context if allow_playwright_fallback else None,
+        allow_playwright=allow_playwright_fallback,
+        allow_network_interception=allow_network_interception,
+    )
+    strategy_plan = select_best_scraping_strategy(
+        diagnostic,
+        history={
+            "best_scraping_strategy": inmob.get("best_scraping_strategy"),
+            "last_successful_strategy": inmob.get("last_successful_strategy"),
+        },
+    )
+    metadata = inmob.setdefault("_scraper_metadata", {})
+    metadata.update({
+        "diagnostico_inicial": diagnostic,
+        "strategy_plan": strategy_plan,
+        "estrategia_elegida": strategy_plan.get("primary_strategy"),
+        "motivo_eleccion_estrategia": strategy_plan.get("reason"),
+        "extractores_descartados": strategy_plan.get("discarded_extractors", []),
+        "extractores_ejecutados": attempts,
+    })
+
+    primary_strategy = strategy_plan.get("primary_strategy")
+    if not primary_strategy:
+        classification = strategy_plan.get("classification") or diagnostic.get("classification") or "no_property_links"
+        raise RuntimeError(f"{classification}: sin estrategia scrapeable segun diagnostico")
+
+    logger.info("  Diagnostico: %s", diagnostic.get("classification"))
+    logger.info("  Estrategia elegida: %s (%s)", primary_strategy, strategy_plan.get("reason"))
+
+    candidate_strategies = [primary_strategy] + list(strategy_plan.get("fallback_strategies") or [])
+    quality_results: List[Dict[str, Any]] = []
+    last_error: Optional[BaseException] = None
+    for index, strategy_name in enumerate(candidate_strategies):
+        if strategy_name == "network_interception" and not allow_network_interception:
+            attempts.append({
+                "extractor": strategy_name,
+                "status": "skipped",
+                "reason": "allow_network_interception_false",
+            })
+            continue
+        if strategy_name == "playwright_html" and (not allow_playwright_fallback or pw_context is None):
+            attempts.append({
+                "extractor": strategy_name,
+                "status": "skipped",
+                "reason": "allow_playwright_false",
+            })
+            continue
+
+        try:
+            logger.info("  -> Ejecutando estrategia %s", strategy_name)
+            props = execute_selected_strategy(strategy_name)
+            quality = evaluate_scrape_quality(props, strategy_plan, diagnostic)
+            quality["strategy"] = strategy_name
+            quality_results.append(quality)
+            metadata["resultado_calidad"] = quality
+            metadata["resultados_calidad_por_estrategia"] = quality_results
+            if quality.get("accepted"):
+                metadata["fallback_usado"] = index > 0
+                metadata["estrategia_final"] = strategy_name
+                metadata["should_save_strategy_for_future"] = bool(strategy_plan.get("should_save_strategy_for_future"))
+                logger.info("  Calidad aceptada: score=%s props=%s", quality.get("score"), len(props))
+                return props, strategy_name
+            logger.warning(
+                "  Calidad insuficiente en %s: score=%s issues=%s",
+                strategy_name,
+                quality.get("score"),
+                quality.get("issues"),
+            )
+        except Exception as exc:
+            last_error = exc
+            logger.warning("  Estrategia %s fallo: %s", strategy_name, str(exc)[:240])
+            continue
+
+    metadata["resultado_calidad"] = quality_results[-1] if quality_results else None
+    metadata["resultados_calidad_por_estrategia"] = quality_results
+    if last_error and not quality_results:
+        raise last_error
+    issues = (quality_results[-1].get("issues") if quality_results else []) or []
+    raise RuntimeError(f"parsing_failed: ninguna estrategia alcanzo calidad minima; issues={issues}")
 
     # --- Ir directo a la estrategia guardada (con fallback automático) ---
     if estrategia_guardada == "tokko_api" and inmob.get("tokko_api_key"):
@@ -4325,6 +5435,14 @@ def run_best_strategy(
         except Exception as e:
             logger.warning("  WordPress HTML fallo: %s", e)
 
+    if estrategia_guardada == "static_html":
+        logger.info("  -> Static HTML (guardada)")
+        try:
+            props = call("static_html", lambda: strategy_static_html(inmob, session))
+            return props, "static_html"
+        except Exception as e:
+            logger.warning("  Static HTML fallo: %s", e)
+
     if estrategia_guardada == "sin_estrategia":
         # Dar una última oportunidad con Network Intercept
         if network_available():
@@ -4371,6 +5489,13 @@ def run_best_strategy(
         except Exception as e:
             logger.warning("  WordPress HTML fallo: %s", e)
 
+    try:
+        logger.info("  -> Static HTML")
+        props = call("static_html", lambda: strategy_static_html(inmob, session))
+        return props, "static_html"
+    except Exception as e:
+        logger.warning("  Static HTML fallo: %s", e)
+
     # 3. JSON-LD
     try:
         logger.info("  → JSON-LD")
@@ -4391,11 +5516,17 @@ def run_best_strategy(
     logger.info("  → HTML Playwright (último recurso)")
     if not allow_playwright_fallback:
         inmob.setdefault("_scraper_metadata", {})["playwright_fallback_skipped"] = True
-        if is_tokko_candidate:
-            if allow_network_interception:
-                raise RuntimeError("sin_propiedades: tokko sin datos tras tokko_html/network/json_ld/sitemap; html_playwright omitido")
-            raise RuntimeError("sin_propiedades: tokko sin datos tras tokko_html/json_ld/sitemap; network_intercept/html_playwright omitidos")
-        raise RuntimeError("sin_propiedades: html_playwright omitido por configuracion")
+        diagnostic = diagnose_inmob(
+            inmob,
+            session,
+            pw_context=None,
+            allow_playwright=False,
+            allow_network_interception=allow_network_interception,
+        )
+        diagnostic["extractores_intentados"] = attempts
+        inmob.setdefault("_scraper_metadata", {})["diagnostico_universal"] = diagnostic
+        classification = diagnostic.get("classification") or "requires_playwright"
+        raise RuntimeError(f"{classification}: html_playwright omitido por configuracion")
     props = call("html_scraper", lambda: strategy_html_playwright(inmob, pw_context))
     return props, "html_scraper"
 
@@ -4407,6 +5538,7 @@ def run_best_strategy(
 def _make_detect_session() -> requests.Session:
     """Sesión HTTP para detección: sin reintentos en DNS/conexión, falla rápido."""
     s = requests.Session()
+    s.trust_env = False
     retry = Retry(
         total=0,              # sin reintentos — falla rápido
         connect=0,
@@ -5424,6 +6556,67 @@ def test_single_url(
             _close_playwright_safely(pw, "test-url playwright driver")
 
 
+def diagnose_single_url(
+    url: str,
+    cms: Optional[str] = None,
+    allow_playwright: bool = False,
+    allow_network_interception: bool = False,
+) -> None:
+    """Diagnostica una URL sin consumir cola ni guardar propiedades."""
+    session = SupabasePropiedades._make_session()
+    estrategia = _strategy_from_cms(cms)
+    inmob: Dict[str, Any] = {
+        "id": 0,
+        "nombre": "diagnose-url",
+        "web": url,
+        "url_listado": url,
+        "cms_detectado": cms,
+        "ciudad": "",
+        "provincia": "",
+    }
+    if estrategia:
+        inmob["estrategia_scraping"] = estrategia
+
+    pw = browser = pw_context = None
+    try:
+        if allow_playwright:
+            pw = sync_playwright().start()
+            browser, pw_context = _make_playwright_context(pw)
+        diagnostic = diagnose_inmob(
+            inmob,
+            session,
+            pw_context=pw_context,
+            allow_playwright=allow_playwright,
+            allow_network_interception=allow_network_interception,
+        )
+        strategy_plan = select_best_scraping_strategy(diagnostic)
+        logger.info("=" * 60)
+        logger.info("DIAGNOSTICO URL")
+        logger.info("URL: %s", url)
+        logger.info("Tecnologia detectada: %s", ", ".join(diagnostic.get("tecnologias_detectadas") or []))
+        logger.info("Extractores posibles: %s", ", ".join(diagnostic.get("extractores_posibles") or []))
+        logger.info("HTTP status: %s", diagnostic.get("http_status"))
+        logger.info("Final URL: %s", diagnostic.get("final_url"))
+        logger.info("Links propiedad: %s", diagnostic.get("property_links_count"))
+        logger.info("Cards posibles: %s", diagnostic.get("cards_posibles"))
+        logger.info("Sitemap propiedades: %s", diagnostic.get("sitemap_property_urls_count"))
+        logger.info("JSON-LD items: %s", diagnostic.get("json_ld_property_items"))
+        logger.info("Requiere JS: %s", diagnostic.get("requires_js"))
+        logger.info("Requiere Playwright: %s", diagnostic.get("requires_playwright"))
+        logger.info("Requiere Network Interception: %s", diagnostic.get("requires_network_interception"))
+        logger.info("Clasificacion: %s", diagnostic.get("classification"))
+        logger.info("Estrategia sugerida: %s", strategy_plan.get("primary_strategy"))
+        logger.info("Motivo estrategia: %s", strategy_plan.get("reason"))
+        logger.info("Detalle JSON: %s", json.dumps(diagnostic, ensure_ascii=False)[:5000])
+        logger.info("Strategy plan JSON: %s", json.dumps(strategy_plan, ensure_ascii=False)[:3000])
+        logger.info("=" * 60)
+    finally:
+        if allow_playwright:
+            _close_playwright_safely(pw_context, "diagnose-url playwright context")
+            _close_playwright_safely(browser, "diagnose-url playwright browser")
+            _close_playwright_safely(pw, "diagnose-url playwright driver")
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -5443,6 +6636,8 @@ if __name__ == "__main__":
                         help="Limite de items a procesar desde scraping_run_items (ej: 5)")
     parser.add_argument("--test-url",     type=str, default=None,
                         help="Probar una URL puntual sin consumir cola")
+    parser.add_argument("--diagnose-url", type=str, default=None,
+                        help="Diagnosticar una URL sin consumir cola ni guardar propiedades")
     parser.add_argument("--technical-review", action="store_true",
                         help="Modo tecnico: habilita Network Interception y fallback Playwright con timeouts")
     parser.add_argument("--retry-errors", action="store_true",
@@ -5451,15 +6646,24 @@ if __name__ == "__main__":
                         help="Permitir Network Interception con Playwright en modo cola (default: desactivado)")
     parser.add_argument("--allow-playwright-fallback", action="store_true",
                         help="Permitir fallback HTML Playwright en modo cola (default: desactivado)")
+    parser.add_argument("--allow-playwright", action="store_true",
+                        help="Alias de --allow-playwright-fallback")
     parser.add_argument("--legacy-jobs",  action="store_true",
                         help="Usar el flujo anterior basado en scraping_jobs")
     args = parser.parse_args()
 
     technical_mode = args.technical_review or args.retry_errors
     allow_network = args.allow_network_interception or technical_mode
-    allow_playwright = args.allow_playwright_fallback or technical_mode
+    allow_playwright = args.allow_playwright_fallback or args.allow_playwright or technical_mode
 
-    if args.test_url:
+    if args.diagnose_url:
+        diagnose_single_url(
+            url=args.diagnose_url,
+            cms=args.cms,
+            allow_playwright=allow_playwright,
+            allow_network_interception=allow_network,
+        )
+    elif args.test_url:
         test_single_url(
             url=args.test_url,
             cms=args.cms,
