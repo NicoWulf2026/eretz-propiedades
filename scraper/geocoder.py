@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import time
+import unicodedata
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -37,6 +38,15 @@ USER_AGENT = os.getenv(
     "InmocapitalGeocoder/1.0 (geocoding@inmocapital.local)",
 )
 
+CITY_BOUNDS = {
+    "rosario": (-33.10, -32.80, -60.85, -60.50),
+    "santa fe": (-31.80, -31.45, -60.90, -60.45),
+    "rafaela": (-31.40, -31.10, -61.70, -61.30),
+    "funes": (-33.00, -32.80, -60.90, -60.70),
+    "roldan": (-33.00, -32.80, -61.00, -60.80),
+    "san jose del rincon": (-31.70, -31.50, -60.65, -60.45),
+}
+
 
 @dataclass
 class GeocodingResult:
@@ -47,6 +57,8 @@ class GeocodingResult:
     raw_response: Any
     status: str
     error_message: Optional[str] = None
+    matched_query: Optional[str] = None
+    attempted_queries: Optional[List[str]] = None
 
 
 class SupabaseGeocodingClient:
@@ -76,7 +88,7 @@ class SupabaseGeocodingClient:
             total=3,
             backoff_factor=0.5,
             status_forcelist=[429, 500, 502, 503, 504],
-            allowed_methods=["GET", "POST"],
+            allowed_methods=["GET", "POST", "PATCH"],
         )
         adapter = HTTPAdapter(max_retries=retry)
         session.mount("https://", adapter)
@@ -123,6 +135,68 @@ class SupabaseGeocodingClient:
         raise RuntimeError(
             f"geocoding_results insert {response.status_code}: {response.text[:500]}"
         )
+
+    def get_success_results_batch(self, limit: int) -> List[Dict[str, Any]]:
+        response = self.session.get(
+            f"{self.url}/rest/v1/geocoding_results",
+            headers=self.headers,
+            params={
+                "select": "propiedad_id,direccion_geocoding,latitud,longitud,precision_geocoding,proveedor,raw_response,status",
+                "status": "eq.success",
+                "latitud": "not.is.null",
+                "longitud": "not.is.null",
+                "order": "propiedad_id.asc",
+                "limit": limit,
+            },
+            timeout=20,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def update_property_coordinates(self, propiedad_id: Any, latitud: float, longitud: float) -> str:
+        response = self.session.patch(
+            f"{self.url}/rest/v1/propiedades",
+            headers=self.headers_minimal,
+            params={"id": f"eq.{propiedad_id}"},
+            json={"latitud": latitud, "longitud": longitud},
+            timeout=20,
+        )
+        if response.status_code in {200, 204}:
+            return "updated"
+        raise RuntimeError(
+            f"propiedades update {response.status_code}: {response.text[:500]}"
+        )
+
+    def get_property_location_context(self, propiedad_id: Any) -> Dict[str, Any]:
+        response = self.session.get(
+            f"{self.url}/rest/v1/propiedades",
+            headers=self.headers,
+            params={
+                "select": "id,ciudad,provincia",
+                "id": f"eq.{propiedad_id}",
+                "limit": 1,
+            },
+            timeout=15,
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data[0] if data else {}
+
+    def get_properties_with_coordinates(self, limit: int) -> List[Dict[str, Any]]:
+        response = self.session.get(
+            f"{self.url}/rest/v1/propiedades",
+            headers=self.headers,
+            params={
+                "select": "id,titulo,direccion,barrio,ciudad,provincia,latitud,longitud",
+                "latitud": "not.is.null",
+                "longitud": "not.is.null",
+                "order": "updated_at.desc",
+                "limit": limit,
+            },
+            timeout=20,
+        )
+        response.raise_for_status()
+        return response.json()
 
 
 class NominatimProvider:
@@ -208,6 +282,27 @@ def _safe_error(exc: BaseException) -> Dict[str, Any]:
     return {"error": type(exc).__name__, "message": str(exc)[:500]}
 
 
+def normalize_place_key(value: Any) -> str:
+    text = str(value or "").strip()
+    normalized = unicodedata.normalize("NFKD", text)
+    ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"[^a-z0-9]+", " ", ascii_text.lower()).strip()
+
+
+def evaluate_city_bounds(
+    latitud: Optional[float],
+    longitud: Optional[float],
+    ciudad_final: Any,
+) -> Tuple[Optional[bool], bool]:
+    city_key = normalize_place_key(ciudad_final)
+    bounds = CITY_BOUNDS.get(city_key)
+    if bounds is None or latitud is None or longitud is None:
+        return None, False
+
+    min_lat, max_lat, min_lon, max_lon = bounds
+    return min_lat <= latitud <= max_lat and min_lon <= longitud <= max_lon, True
+
+
 def normalize_query(row: Dict[str, Any]) -> str:
     base = str(row.get("direccion_geocoding_limpia") or "").strip()
     ciudad = str(row.get("ciudad_final") or "").strip()
@@ -222,6 +317,246 @@ def normalize_query(row: Dict[str, Any]) -> str:
         parts.append("Argentina")
     query = ", ".join(part for part in parts if part)
     return re.sub(r"\s+", " ", query).strip(" ,")
+
+
+def build_query_variants(row: Dict[str, Any]) -> List[str]:
+    primary = normalize_query(row)
+    if not primary:
+        return []
+
+    variants = [primary]
+    replacements = [
+        (r"\bPte\.?\s+Roca\b", "Presidente Roca"),
+        (r"\bPte\.?\s+Roca\b", "Roca"),
+        (r"\b1ro\.?\s+de\s+Mayo\b", "Primero de Mayo"),
+        (r"\b1ro\.?\s+de\s+Mayo\b", "1 de Mayo"),
+        ("\\b1(?:\\u00b0|\\u00ba)\\s+de\\s+Mayo\\b", "Primero de Mayo"),
+        ("\\b1(?:\\u00b0|\\u00ba)\\s+de\\s+Mayo\\b", "1 de Mayo"),
+    ]
+
+    for pattern, replacement in replacements:
+        if re.search(pattern, primary, flags=re.IGNORECASE):
+            variants.append(re.sub(pattern, replacement, primary, flags=re.IGNORECASE))
+
+    return _dedupe_queries(variants)
+
+
+def _dedupe_queries(queries: List[str]) -> List[str]:
+    seen = set()
+    unique: List[str] = []
+    for query in queries:
+        normalized = re.sub(r"\s+", " ", query).strip(" ,")
+        key = normalized.lower()
+        if normalized and key not in seen:
+            unique.append(normalized)
+            seen.add(key)
+    return unique
+
+
+def classify_geocoding_quality(status: str, precision: Optional[str]) -> Tuple[str, bool, bool]:
+    if status != "success":
+        return "low", False, True
+
+    normalized = str(precision or "").lower()
+    if normalized == "exact":
+        return "high", True, False
+    if normalized in {"street", "interpolated"}:
+        return "medium", True, False
+    if normalized == "area":
+        return "low", False, True
+    return "low", False, True
+
+
+def enrich_raw_response(
+    raw_response: Any,
+    *,
+    result: GeocodingResult,
+    primary_query: str,
+    matched_query: Optional[str],
+    attempted_queries: List[str],
+    ciudad_final: Any = None,
+    provincia_final: Any = None,
+) -> Dict[str, Any]:
+    confidence_level, should_apply, needs_review = classify_geocoding_quality(
+        result.status,
+        result.precision_geocoding,
+    )
+    within_city_bounds, city_bounds_checked = evaluate_city_bounds(
+        result.latitud,
+        result.longitud,
+        ciudad_final,
+    )
+    if result.status == "success" and city_bounds_checked and within_city_bounds is False:
+        confidence_level = "low"
+        should_apply = False
+        needs_review = True
+
+    quality_metadata = {
+        "confidence_level": confidence_level,
+        "should_apply_to_property": should_apply,
+        "within_city_bounds": within_city_bounds,
+        "city_bounds_checked": city_bounds_checked,
+        "ciudad_final": ciudad_final,
+        "provincia_final": provincia_final,
+        "needs_review": needs_review,
+        "quality_flag": "baja_confianza" if needs_review else "aplicable",
+        "primary_query": primary_query,
+        "matched_query": matched_query,
+        "attempted_queries": attempted_queries,
+        "precision_geocoding": result.precision_geocoding,
+    }
+
+    if isinstance(raw_response, dict):
+        enriched = dict(raw_response)
+        enriched["inmocapital"] = quality_metadata
+        enriched["_inmocapital"] = quality_metadata
+        return enriched
+
+    return {
+        "provider_response": raw_response,
+        "inmocapital": quality_metadata,
+        "_inmocapital": quality_metadata,
+    }
+
+
+def get_inmocapital_metadata(raw_response: Any) -> Dict[str, Any]:
+    if not isinstance(raw_response, dict):
+        return {}
+    metadata = raw_response.get("inmocapital")
+    if isinstance(metadata, dict):
+        return metadata
+    legacy_metadata = raw_response.get("_inmocapital")
+    return legacy_metadata if isinstance(legacy_metadata, dict) else {}
+
+
+def get_geocoding_apply_decision(
+    row: Dict[str, Any],
+    city_context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    raw_response = row.get("raw_response")
+    metadata = get_inmocapital_metadata(raw_response)
+
+    confidence_level = metadata.get("confidence_level")
+    if not confidence_level:
+        confidence_level, _, _ = classify_geocoding_quality(
+            str(row.get("status") or ""),
+            row.get("precision_geocoding"),
+        )
+
+    if "should_apply_to_property" in metadata:
+        should_apply = bool(metadata.get("should_apply_to_property"))
+    else:
+        _, should_apply, _ = classify_geocoding_quality(
+            str(row.get("status") or ""),
+            row.get("precision_geocoding"),
+        )
+
+    within_city_bounds = metadata.get("within_city_bounds")
+    city_bounds_checked = metadata.get("city_bounds_checked")
+    if city_bounds_checked is None:
+        city = metadata.get("ciudad_final")
+        province = metadata.get("provincia_final")
+        if city_context:
+            city = city or city_context.get("ciudad") or city_context.get("ciudad_final")
+            province = province or city_context.get("provincia") or city_context.get("provincia_final")
+        try:
+            latitud = float(row["latitud"])
+            longitud = float(row["longitud"])
+        except (KeyError, TypeError, ValueError):
+            latitud = None
+            longitud = None
+        within_city_bounds, city_bounds_checked = evaluate_city_bounds(latitud, longitud, city)
+        if city_bounds_checked and within_city_bounds is False:
+            confidence_level = "low"
+            should_apply = False
+
+    confidence_allowed = str(confidence_level or "").lower() in {"high", "medium"}
+    city_gate = within_city_bounds is True if city_bounds_checked else True
+    can_apply = bool(should_apply and confidence_allowed and city_gate)
+    return {
+        "can_apply": can_apply,
+        "confidence_level": confidence_level,
+        "should_apply_to_property": should_apply,
+        "within_city_bounds": within_city_bounds,
+        "city_bounds_checked": city_bounds_checked,
+    }
+
+
+def should_apply_geocoding_result(
+    row: Dict[str, Any],
+    city_context: Optional[Dict[str, Any]] = None,
+) -> bool:
+    return bool(get_geocoding_apply_decision(row, city_context).get("can_apply"))
+
+
+def geocode_with_fallbacks(
+    provider: NominatimProvider,
+    queries: List[str],
+    row: Dict[str, Any],
+) -> Tuple[GeocodingResult, List[str]]:
+    attempted_queries: List[str] = []
+    last_result: Optional[GeocodingResult] = None
+    best_result: Optional[GeocodingResult] = None
+    best_query: Optional[str] = None
+    best_rank = -1
+    primary_query = queries[0] if queries else ""
+
+    for query in queries:
+        attempted_queries.append(query)
+        result = provider.geocode(query)
+        result.attempted_queries = list(attempted_queries)
+
+        if result.status == "success":
+            confidence_level, _, _ = classify_geocoding_quality(
+                result.status,
+                result.precision_geocoding,
+            )
+            within_city_bounds, city_bounds_checked = evaluate_city_bounds(
+                result.latitud,
+                result.longitud,
+                row.get("ciudad_final"),
+            )
+            if city_bounds_checked and within_city_bounds is False:
+                confidence_level = "low"
+            rank = {"high": 3, "medium": 2, "low": 1}.get(confidence_level, 0)
+            if rank > best_rank:
+                best_result = result
+                best_query = query
+                best_rank = rank
+            if rank == 3:
+                break
+
+        last_result = result
+
+    if best_result is not None:
+        best_result.matched_query = best_query
+        best_result.attempted_queries = list(attempted_queries)
+        best_result.raw_response = enrich_raw_response(
+            best_result.raw_response,
+            result=best_result,
+            primary_query=primary_query,
+            matched_query=best_query,
+            attempted_queries=list(attempted_queries),
+            ciudad_final=row.get("ciudad_final"),
+            provincia_final=row.get("provincia_final"),
+        )
+        return best_result, attempted_queries
+
+    if last_result is None:
+        last_result = GeocodingResult(None, None, None, provider.name, None, "error", "Sin direccion para geocodificar")
+
+    last_result.matched_query = None
+    last_result.attempted_queries = list(attempted_queries)
+    last_result.raw_response = enrich_raw_response(
+        last_result.raw_response,
+        result=last_result,
+        primary_query=primary_query,
+        matched_query=None,
+        attempted_queries=list(attempted_queries),
+        ciudad_final=row.get("ciudad_final"),
+        provincia_final=row.get("provincia_final"),
+    )
+    return last_result, attempted_queries
 
 
 def build_payload(row: Dict[str, Any], query: str, result: GeocodingResult) -> Dict[str, Any]:
@@ -254,11 +589,26 @@ def run(limit: int, dry_run: bool = False) -> None:
 
     for row in rows:
         propiedad_id = row.get("propiedad_id")
-        query = normalize_query(row)
-        logger.info("propiedad_id=%s | direccion=%s", propiedad_id, query or "-")
+        queries = build_query_variants(row)
+        query = queries[0] if queries else ""
+        logger.info(
+            "propiedad_id=%s | direccion=%s | variantes=%d",
+            propiedad_id,
+            query or "-",
+            len(queries),
+        )
 
         if not query:
             result = GeocodingResult(None, None, None, provider.name, None, "error", "direccion_geocoding_limpia vacia")
+            result.raw_response = enrich_raw_response(
+                result.raw_response,
+                result=result,
+                primary_query="",
+                matched_query=None,
+                attempted_queries=[],
+                ciudad_final=row.get("ciudad_final"),
+                provincia_final=row.get("provincia_final"),
+            )
             if dry_run:
                 logger.info("[dry-run] status=error | %s", result.error_message)
                 failed += 1
@@ -274,35 +624,195 @@ def run(limit: int, dry_run: bool = False) -> None:
             continue
 
         if dry_run:
-            logger.info("[dry-run] se geocodificaria con proveedor=%s", provider.name)
+            logger.info(
+                "[dry-run] se geocodificaria con proveedor=%s | urls_probadas=%s",
+                provider.name,
+                json.dumps(queries, ensure_ascii=False),
+            )
             continue
 
-        result = provider.geocode(query)
+        result, attempted_queries = geocode_with_fallbacks(provider, queries, row)
         payload = build_payload(row, query, result)
         save_status = client.save_result(payload)
+        quality_metadata = (
+            get_inmocapital_metadata(payload.get("raw_response"))
+        )
 
         if result.status == "success":
             ok += 1
             logger.info(
-                "status=success | lat=%.6f | lon=%.6f | precision=%s | save=%s",
+                "status=success | lat=%.6f | lon=%.6f | precision=%s | confidence=%s | apply=%s | bounds=%s | matched_query=%s | save=%s",
                 result.latitud,
                 result.longitud,
                 result.precision_geocoding,
+                quality_metadata.get("confidence_level"),
+                quality_metadata.get("should_apply_to_property"),
+                quality_metadata.get("within_city_bounds"),
+                result.matched_query or query,
                 save_status,
             )
         else:
             failed += 1
-            logger.info("status=error | error=%s | save=%s", result.error_message, save_status)
+            logger.info(
+                "status=error | error=%s | apply=%s | intentos=%d | save=%s",
+                result.error_message,
+                quality_metadata.get("should_apply_to_property"),
+                len(attempted_queries),
+                save_status,
+            )
 
     logger.info("Geocoding finalizado | success=%d | error=%d | skipped=%d", ok, failed, skipped)
+
+
+def apply_valid_results(limit: int, dry_run: bool = False) -> None:
+    client = SupabaseGeocodingClient(SUPABASE_URL, SUPABASE_KEY)
+    rows = client.get_success_results_batch(limit)
+
+    if not rows:
+        logger.info("No hay resultados exitosos en geocoding_results para aplicar.")
+        return
+
+    logger.info("Resultados candidatos recibidos: %d | dry_run=%s", len(rows), dry_run)
+    applied = 0
+    skipped = 0
+    failed = 0
+
+    for row in rows:
+        propiedad_id = row.get("propiedad_id")
+        precision = row.get("precision_geocoding")
+        city_context = client.get_property_location_context(propiedad_id)
+        decision = get_geocoding_apply_decision(row, city_context)
+        logger.info(
+            "propiedad_id=%s | precision=%s | confidence=%s | should_apply_to_property=%s | bounds=%s | bounds_checked=%s",
+            propiedad_id,
+            precision,
+            decision.get("confidence_level"),
+            decision.get("should_apply_to_property"),
+            decision.get("within_city_bounds"),
+            decision.get("city_bounds_checked"),
+        )
+
+        if not decision.get("can_apply"):
+            skipped += 1
+            logger.info("skip=needs_review | no se aplica a propiedades")
+            continue
+
+        try:
+            latitud = float(row["latitud"])
+            longitud = float(row["longitud"])
+        except (KeyError, TypeError, ValueError) as exc:
+            failed += 1
+            logger.info("status=error | coordenadas invalidas | %s", exc)
+            continue
+
+        if dry_run:
+            applied += 1
+            logger.info("[dry-run] se actualizaria propiedades.id=%s | lat=%.6f | lon=%.6f", propiedad_id, latitud, longitud)
+            continue
+
+        try:
+            save_status = client.update_property_coordinates(propiedad_id, latitud, longitud)
+            applied += 1
+            logger.info("status=%s | propiedades.id=%s | lat=%.6f | lon=%.6f", save_status, propiedad_id, latitud, longitud)
+        except RuntimeError as exc:
+            failed += 1
+            logger.info("status=error | no se pudo actualizar propiedades.id=%s | %s", propiedad_id, exc)
+
+    logger.info("Aplicacion finalizada | applied=%d | skipped=%d | error=%d", applied, skipped, failed)
+
+
+def validate_applied_results(limit: int) -> None:
+    client = SupabaseGeocodingClient(SUPABASE_URL, SUPABASE_KEY)
+    rows = client.get_properties_with_coordinates(limit)
+
+    if not rows:
+        logger.info("No hay propiedades con coordenadas para validar.")
+        return
+
+    logger.info("Propiedades con coordenadas recibidas: %d", len(rows))
+    inside = 0
+    outside = 0
+    no_bounds = 0
+    invalid = 0
+
+    for row in rows:
+        propiedad_id = row.get("id")
+        ciudad = row.get("ciudad")
+        provincia = row.get("provincia")
+        try:
+            latitud = float(row["latitud"])
+            longitud = float(row["longitud"])
+        except (KeyError, TypeError, ValueError) as exc:
+            invalid += 1
+            logger.info("propiedad_id=%s | status=invalid_coordinates | %s", propiedad_id, exc)
+            continue
+
+        within_city_bounds, city_bounds_checked = evaluate_city_bounds(latitud, longitud, ciudad)
+        if not city_bounds_checked:
+            no_bounds += 1
+            logger.info(
+                "propiedad_id=%s | ciudad=%s | provincia=%s | status=no_bounds_configured | lat=%.6f | lon=%.6f",
+                propiedad_id,
+                ciudad,
+                provincia,
+                latitud,
+                longitud,
+            )
+            continue
+
+        if within_city_bounds:
+            inside += 1
+            logger.info(
+                "propiedad_id=%s | ciudad=%s | status=within_bounds | lat=%.6f | lon=%.6f",
+                propiedad_id,
+                ciudad,
+                latitud,
+                longitud,
+            )
+            continue
+
+        outside += 1
+        logger.warning(
+            "propiedad_id=%s | ciudad=%s | provincia=%s | status=outside_bounds | direccion=%s | lat=%.6f | lon=%.6f",
+            propiedad_id,
+            ciudad,
+            provincia,
+            row.get("direccion") or "-",
+            latitud,
+            longitud,
+        )
+
+    logger.info(
+        "Validacion finalizada | within_bounds=%d | outside_bounds=%d | no_bounds=%d | invalid=%d",
+        inside,
+        outside,
+        no_bounds,
+        invalid,
+    )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Geocoder de Inmocapital basado en cola Supabase")
     parser.add_argument("--limit", type=int, default=20, help="Cantidad maxima de propiedades a leer de v_next_geocoding_batch")
     parser.add_argument("--dry-run", action="store_true", help="Leer pendientes y mostrar acciones sin llamar proveedor ni guardar")
+    parser.add_argument(
+        "--apply-valid-results",
+        action="store_true",
+        help="Aplicar a propiedades solo resultados con should_apply_to_property=true",
+    )
+    parser.add_argument(
+        "--validate-applied-results",
+        action="store_true",
+        help="Detectar propiedades ya actualizadas con coordenadas fuera de bounds por ciudad",
+    )
     args = parser.parse_args()
-    run(limit=max(args.limit, 0), dry_run=args.dry_run)
+    limit = max(args.limit, 0)
+    if args.validate_applied_results:
+        validate_applied_results(limit=limit)
+    elif args.apply_valid_results:
+        apply_valid_results(limit=limit, dry_run=args.dry_run)
+    else:
+        run(limit=limit, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":
