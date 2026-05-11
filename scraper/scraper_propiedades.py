@@ -183,6 +183,9 @@ PROTECTED_POSITIVE_NUMBER_FIELDS = {
 }
 PROTECTED_TEXT_FIELDS = {"moneda", "direccion", "barrio", "ciudad", "provincia"}
 COORDINATE_FIELDS = {"latitud", "longitud"}
+MAX_VALID_PRICE_USD = 100_000_000
+MAX_VALID_PRICE_ARS = 1_000_000_000_000
+MIN_VALID_PUBLIC_PRICE = 1
 
 CITY_COORDINATE_BOUNDS: Dict[str, Tuple[float, float, float, float]] = {
     "rosario": (-33.10, -32.80, -60.85, -60.50),
@@ -1150,6 +1153,7 @@ class SupabasePropiedades:
         columns = self._get_property_columns()
         clean = dict(prop)
         clean = sanitize_property_coordinates(clean, getattr(self, "last_save_protection_stats", None))
+        clean = sanitize_property_prices(clean, getattr(self, "last_save_protection_stats", None))
         if "imagenes" in clean:
             raw_images = clean.get("imagenes")
             if isinstance(raw_images, str):
@@ -1236,6 +1240,15 @@ class SupabasePropiedades:
                 "  Coordenadas descartadas por outlier: %d | ejemplos=%s",
                 outliers,
                 self.last_save_protection_stats.get("coordenadas_outlier_ejemplos", [])[:3],
+            )
+        invalid_prices = int(self.last_save_protection_stats.get("precios_descartados_por_invalido") or 0)
+        invalid_normalized = int(self.last_save_protection_stats.get("precios_normalizados_descartados") or 0)
+        if invalid_prices or invalid_normalized:
+            logger.info(
+                "  Precios descartados por invalidos: publicados=%d normalizados=%d | ejemplos=%s",
+                invalid_prices,
+                invalid_normalized,
+                self.last_save_protection_stats.get("precios_invalidos_ejemplos", [])[:3],
             )
 
         return len(propiedades), inserted
@@ -1753,6 +1766,9 @@ def _new_update_protection_stats() -> Dict[str, Any]:
         "coordenadas_descartadas_por_outlier": 0,
         "coordenadas_sin_regla_ciudad": 0,
         "coordenadas_outlier_ejemplos": [],
+        "precios_descartados_por_invalido": 0,
+        "precios_normalizados_descartados": 0,
+        "precios_invalidos_ejemplos": [],
     }
 
 
@@ -1773,6 +1789,83 @@ def _positive_number(value: Any) -> bool:
         return float(value) > 0
     except (TypeError, ValueError):
         return False
+
+
+def _numeric_or_none(value: Any) -> Optional[float]:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _record_invalid_price(
+    stats: Optional[Dict[str, Any]],
+    prop: Dict[str, Any],
+    field: str,
+    value: Any,
+    reason: str,
+) -> None:
+    if stats is None:
+        return
+    if field == "precio":
+        stats["precios_descartados_por_invalido"] = int(stats.get("precios_descartados_por_invalido") or 0) + 1
+    else:
+        stats["precios_normalizados_descartados"] = int(stats.get("precios_normalizados_descartados") or 0) + 1
+    examples = stats.setdefault("precios_invalidos_ejemplos", [])
+    if len(examples) < 12:
+        examples.append({
+            "precio_descartado_por_invalido": True,
+            "field": field,
+            "reason": reason,
+            "precio_original": value,
+            "precio": prop.get("precio"),
+            "precio_usd": prop.get("precio_usd"),
+            "precio_ars": prop.get("precio_ars"),
+            "moneda": prop.get("moneda"),
+            "url": prop.get("url"),
+            "estrategia_usada": prop.get("fuente_extraccion") or prop.get("_strategy_name"),
+        })
+
+
+def _is_invalid_public_price(price: Any, currency: Any) -> Tuple[bool, str]:
+    value = _numeric_or_none(price)
+    if value is None:
+        return False, "null"
+    if value <= MIN_VALID_PUBLIC_PRICE:
+        return True, "precio_menor_o_igual_a_1"
+    currency_code = str(currency or "").upper()
+    if currency_code == "USD" and value > MAX_VALID_PRICE_USD:
+        return True, "precio_usd_publicado_absurdo"
+    if currency_code == "ARS" and value > MAX_VALID_PRICE_ARS:
+        return True, "precio_ars_publicado_absurdo"
+    return False, "ok"
+
+
+def sanitize_property_prices(prop: Dict[str, Any], stats: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Normaliza precios invalidos antes de insertar o actualizar propiedades."""
+    price = prop.get("precio")
+    currency = prop.get("moneda")
+    invalid_price, reason = _is_invalid_public_price(price, currency)
+    if invalid_price:
+        _record_invalid_price(stats, prop, "precio", price, reason)
+        prop["precio"] = None
+        prop["precio_usd"] = None
+        prop["precio_ars"] = None
+        return prop
+
+    price_usd = _numeric_or_none(prop.get("precio_usd"))
+    if price_usd is not None and price_usd > MAX_VALID_PRICE_USD:
+        _record_invalid_price(stats, prop, "precio_usd", prop.get("precio_usd"), "precio_usd_normalizado_absurdo")
+        prop["precio_usd"] = None
+
+    price_ars = _numeric_or_none(prop.get("precio_ars"))
+    if price_ars is not None and price_ars > MAX_VALID_PRICE_ARS:
+        _record_invalid_price(stats, prop, "precio_ars", prop.get("precio_ars"), "precio_ars_normalizado_absurdo")
+        prop["precio_ars"] = None
+
+    return prop
 
 
 def _useful_text(value: Any) -> bool:
@@ -1859,6 +1952,35 @@ def is_coordinate_valid_for_location(lat: Any, lon: Any, ciudad: Any, provincia:
     return bool(validate_coordinate_for_location(lat, lon, ciudad, provincia, pais).get("valid"))
 
 
+def validate_property_coordinate_context(prop: Dict[str, Any]) -> Dict[str, Any]:
+    ciudad = prop.get("ciudad")
+    provincia = prop.get("provincia")
+    pais = prop.get("pais") or "Argentina"
+    validation = validate_coordinate_for_location(prop.get("latitud"), prop.get("longitud"), ciudad, provincia, pais)
+    city_key = _coordinate_location_key(ciudad)
+    province_key = _coordinate_location_key(provincia)
+    barrio_key = _coordinate_location_key(prop.get("barrio"))
+    if (
+        validation.get("city_bounds_checked")
+        and not validation.get("valid")
+        and barrio_key in CITY_COORDINATE_BOUNDS
+        and (not city_key or city_key == province_key)
+    ):
+        barrio_validation = validate_coordinate_for_location(
+            prop.get("latitud"),
+            prop.get("longitud"),
+            prop.get("barrio"),
+            provincia,
+            pais,
+        )
+        if barrio_validation.get("valid"):
+            barrio_validation["location_validation"] = "within_city_bounds_barrio_fallback"
+            barrio_validation["ciudad_usada_para_validacion"] = prop.get("barrio")
+            return barrio_validation
+    validation["ciudad_usada_para_validacion"] = ciudad
+    return validation
+
+
 def _record_coordinate_outlier(stats: Optional[Dict[str, Any]], prop: Dict[str, Any], validation: Dict[str, Any]) -> None:
     if stats is None:
         return
@@ -1870,12 +1992,14 @@ def _record_coordinate_outlier(stats: Optional[Dict[str, Any]], prop: Dict[str, 
     if len(examples) < 10:
         examples.append({
             "ciudad": prop.get("ciudad"),
+            "barrio": prop.get("barrio"),
             "provincia": prop.get("provincia"),
             "pais": prop.get("pais"),
             "latitud_descartada": prop.get("latitud"),
             "longitud_descartada": prop.get("longitud"),
             "url": prop.get("url"),
             "location_validation": validation.get("location_validation"),
+            "ciudad_usada_para_validacion": validation.get("ciudad_usada_para_validacion"),
         })
 
 
@@ -1886,13 +2010,7 @@ def sanitize_property_coordinates(prop: Dict[str, Any], stats: Optional[Dict[str
         prop.pop("latitud", None)
         prop.pop("longitud", None)
         return prop
-    validation = validate_coordinate_for_location(
-        prop.get("latitud"),
-        prop.get("longitud"),
-        prop.get("ciudad"),
-        prop.get("provincia"),
-        prop.get("pais") or "Argentina",
-    )
+    validation = validate_property_coordinate_context(prop)
     prop["_location_validation"] = validation.get("location_validation")
     if validation.get("location_validation") == "no_rule":
         _record_coordinate_outlier(stats, prop, validation)
@@ -1979,6 +2097,8 @@ def build_protected_update_payload(
     if columns is not None:
         payload = {key: value for key, value in payload.items() if key in columns}
 
+    payload = sanitize_property_prices(payload, stats)
+
     existing_for_rules = dict(existing or {})
     payload["_existing_inmobiliaria_id"] = existing_for_rules.get("inmobiliaria_id")
 
@@ -1999,13 +2119,7 @@ def build_protected_update_payload(
             **payload,
             "pais": payload.get("pais") or existing_for_rules.get("pais") or "Argentina",
         }
-        validation = validate_coordinate_for_location(
-            location_context.get("latitud"),
-            location_context.get("longitud"),
-            location_context.get("ciudad"),
-            location_context.get("provincia"),
-            location_context.get("pais"),
-        )
+        validation = validate_property_coordinate_context(location_context)
         if validation.get("location_validation") == "no_rule":
             _record_coordinate_outlier(stats, location_context, validation)
         elif not validation.get("valid"):
@@ -5885,13 +5999,11 @@ def worker_fn(
                                 prop.get("provincia", ""),
                             )
                             if lat and lon:
-                                validation = validate_coordinate_for_location(
-                                    lat,
-                                    lon,
-                                    prop.get("ciudad"),
-                                    prop.get("provincia"),
-                                    prop.get("pais") or "Argentina",
-                                )
+                                validation = validate_property_coordinate_context({
+                                    **prop,
+                                    "latitud": lat,
+                                    "longitud": lon,
+                                })
                                 if not validation.get("valid"):
                                     logger.info(
                                         "  Geocoding omitido por outlier | ciudad=%s provincia=%s lat=%s lon=%s",
@@ -6192,13 +6304,11 @@ def _save_queue_properties(db: SupabasePropiedades, item: Dict, props: List[Dict
                 prop.get("provincia", ""),
             )
             if lat and lon:
-                validation = validate_coordinate_for_location(
-                    lat,
-                    lon,
-                    prop.get("ciudad"),
-                    prop.get("provincia"),
-                    prop.get("pais") or "Argentina",
-                )
+                validation = validate_property_coordinate_context({
+                    **prop,
+                    "latitud": lat,
+                    "longitud": lon,
+                })
                 if not validation.get("valid"):
                     _record_coordinate_outlier(save_protection, {
                         **prop,
