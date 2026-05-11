@@ -1152,6 +1152,7 @@ class SupabasePropiedades:
     def _sanitize_property_payload(self, prop: Dict) -> Dict:
         columns = self._get_property_columns()
         clean = dict(prop)
+        clean = sanitize_property_location(clean, getattr(self, "last_save_protection_stats", None))
         clean = sanitize_property_coordinates(clean, getattr(self, "last_save_protection_stats", None))
         clean = sanitize_property_prices(clean, getattr(self, "last_save_protection_stats", None))
         if "imagenes" in clean:
@@ -1249,6 +1250,13 @@ class SupabasePropiedades:
                 invalid_prices,
                 invalid_normalized,
                 self.last_save_protection_stats.get("precios_invalidos_ejemplos", [])[:3],
+            )
+        normalized_locations = int(self.last_save_protection_stats.get("ubicaciones_normalizadas") or 0)
+        if normalized_locations:
+            logger.info(
+                "  Ubicaciones normalizadas: %d | ejemplos=%s",
+                normalized_locations,
+                self.last_save_protection_stats.get("ubicaciones_normalizadas_ejemplos", [])[:3],
             )
 
         return len(propiedades), inserted
@@ -1769,6 +1777,8 @@ def _new_update_protection_stats() -> Dict[str, Any]:
         "precios_descartados_por_invalido": 0,
         "precios_normalizados_descartados": 0,
         "precios_invalidos_ejemplos": [],
+        "ubicaciones_normalizadas": 0,
+        "ubicaciones_normalizadas_ejemplos": [],
     }
 
 
@@ -1865,6 +1875,208 @@ def sanitize_property_prices(prop: Dict[str, Any], stats: Optional[Dict[str, Any
         _record_invalid_price(stats, prop, "precio_ars", prop.get("precio_ars"), "precio_ars_normalizado_absurdo")
         prop["precio_ars"] = None
 
+    return prop
+
+
+def _location_text_key(*values: Any) -> str:
+    text = " ".join(str(value or "") for value in values)
+    text = unquote(text)
+    text = re.sub(r"https?://\S+", lambda m: urlparse(m.group(0)).path, text)
+    text = text.replace("_", " ").replace("-", " ").replace("/", " ")
+    return _coordinate_location_key(text)
+
+
+_LOCATION_ALIASES: List[Dict[str, Any]] = [
+    {
+        "aliases": ("san jose del rincon", "san jose rincon", "san josé del rincón"),
+        "ciudad": "San José del Rincón",
+        "provincia": "Santa Fe",
+    },
+    {
+        "aliases": ("villa carlos paz",),
+        "ciudad": "Villa Carlos Paz",
+        "provincia": "Córdoba",
+    },
+    {
+        "aliases": ("san carlos de bariloche", "bariloche"),
+        "ciudad": "San Carlos de Bariloche",
+        "provincia": "Río Negro",
+    },
+    {
+        "aliases": ("pueblo esther",),
+        "ciudad": "Pueblo Esther",
+        "provincia": "Santa Fe",
+    },
+    {
+        "aliases": ("rosario",),
+        "ciudad": "Rosario",
+        "provincia": "Santa Fe",
+    },
+    {
+        "aliases": ("funes",),
+        "ciudad": "Funes",
+        "provincia": "Santa Fe",
+    },
+    {
+        "aliases": ("roldan", "roldán"),
+        "ciudad": "Roldán",
+        "provincia": "Santa Fe",
+    },
+    {
+        "aliases": ("rafaela",),
+        "ciudad": "Rafaela",
+        "provincia": "Santa Fe",
+    },
+    {
+        "aliases": ("cosquin", "cosquín"),
+        "ciudad": "Cosquín",
+        "provincia": "Córdoba",
+    },
+]
+
+
+def _detect_location_from_title_or_url(titulo: Any, url: Any) -> Optional[Dict[str, str]]:
+    text = _location_text_key(titulo, url)
+    if not text:
+        return None
+
+    if re.search(r"\b(?:en|ubicad[oa]\s+en)\s+santa\s+fe\s+(?:la\s+capital|capital)\b", text) or "ciudad de santa fe" in text:
+        return {"ciudad": "Santa Fe", "provincia": "Santa Fe", "motivo": "titulo_url_santa_fe_la_capital"}
+
+    if re.search(r"\b(?:en|ubicad[oa]\s+en)\s+cordoba\s+capital\b", text):
+        return {"ciudad": "Córdoba", "provincia": "Córdoba", "motivo": "titulo_url_cordoba_capital"}
+
+    if re.search(r"\b(?:en|ubicad[oa]\s+en)\s+9\s+de\s+julio\b(?!\s+\d)", text):
+        return {"ciudad": "9 de Julio", "provincia": "Buenos Aires", "motivo": "titulo_url_9_de_julio"}
+
+    for rule in _LOCATION_ALIASES:
+        for alias in rule["aliases"]:
+            alias_key = _coordinate_location_key(alias)
+            if re.search(rf"\b{re.escape(alias_key)}\b", text):
+                return {
+                    "ciudad": rule["ciudad"],
+                    "provincia": rule["provincia"],
+                    "motivo": f"titulo_url_contiene_{alias_key.replace(' ', '_')}",
+                }
+    return None
+
+
+def _is_suspicious_location_value(value: Any) -> bool:
+    return _coordinate_location_key(value) in {
+        "santa fe",
+        "la capital",
+        "rio negro",
+        "buenos aires",
+        "castellanos",
+        "punilla",
+        "maldonado",
+    }
+
+
+def normalize_location_fields(
+    titulo: Any,
+    direccion: Any,
+    barrio: Any,
+    ciudad: Any,
+    provincia: Any,
+    pais: Any,
+    url: Any,
+) -> Dict[str, Any]:
+    detected = _detect_location_from_title_or_url(titulo, url)
+    current_city = str(ciudad or "").strip()
+    current_province = str(provincia or "").strip()
+    current_country = str(pais or "Argentina").strip() or "Argentina"
+    result = {
+        "ciudad": current_city,
+        "provincia": current_province,
+        "pais": current_country,
+        "location_normalized": False,
+        "motivo": None,
+    }
+    if not detected:
+        return result
+
+    detected_city = detected["ciudad"]
+    detected_province = detected["provincia"]
+    current_city_key = _coordinate_location_key(current_city)
+    detected_city_key = _coordinate_location_key(detected_city)
+    current_province_key = _coordinate_location_key(current_province)
+    detected_province_key = _coordinate_location_key(detected_province)
+
+    should_update_city = (
+        not current_city_key
+        or current_city_key != detected_city_key
+        or _is_suspicious_location_value(current_city)
+    )
+    should_update_province = (
+        not current_province_key
+        or current_province_key != detected_province_key
+        or _is_suspicious_location_value(current_province)
+    )
+
+    if not should_update_city and not should_update_province and _coordinate_location_key(current_country) == "argentina":
+        return result
+
+    result.update({
+        "ciudad": detected_city if should_update_city else current_city,
+        "provincia": detected_province if should_update_province else current_province,
+        "pais": "Argentina",
+        "location_normalized": True,
+        "ciudad_original": current_city,
+        "provincia_original": current_province,
+        "ciudad_final": detected_city if should_update_city else current_city,
+        "provincia_final": detected_province if should_update_province else current_province,
+        "motivo": detected.get("motivo") or "titulo_url_ciudad_clara",
+    })
+    return result
+
+
+def _record_location_normalization(stats: Optional[Dict[str, Any]], prop: Dict[str, Any], normalized: Dict[str, Any]) -> None:
+    if stats is None or not normalized.get("location_normalized"):
+        return
+    stats["ubicaciones_normalizadas"] = int(stats.get("ubicaciones_normalizadas") or 0) + 1
+    examples = stats.setdefault("ubicaciones_normalizadas_ejemplos", [])
+    if len(examples) < 12:
+        examples.append({
+            "location_normalized": True,
+            "ciudad_original": normalized.get("ciudad_original"),
+            "provincia_original": normalized.get("provincia_original"),
+            "ciudad_final": normalized.get("ciudad_final"),
+            "provincia_final": normalized.get("provincia_final"),
+            "motivo": normalized.get("motivo"),
+            "titulo": prop.get("titulo"),
+            "url": prop.get("url"),
+            "estrategia_usada": prop.get("fuente_extraccion") or prop.get("_strategy_name"),
+        })
+
+
+def sanitize_property_location(prop: Dict[str, Any], stats: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    normalized = normalize_location_fields(
+        prop.get("titulo"),
+        prop.get("direccion"),
+        prop.get("barrio"),
+        prop.get("ciudad"),
+        prop.get("provincia"),
+        prop.get("pais"),
+        prop.get("url"),
+    )
+    if not normalized.get("location_normalized"):
+        return prop
+    _record_location_normalization(stats, prop, normalized)
+    prop["ciudad"] = normalized.get("ciudad")
+    prop["provincia"] = normalized.get("provincia")
+    prop["pais"] = normalized.get("pais") or "Argentina"
+    prop["_location_normalized"] = True
+    prop["_location_normalization_motivo"] = normalized.get("motivo")
+    logger.info(
+        "  Ubicacion normalizada | %s, %s -> %s, %s | motivo=%s | url=%s",
+        normalized.get("ciudad_original") or "-",
+        normalized.get("provincia_original") or "-",
+        normalized.get("ciudad_final"),
+        normalized.get("provincia_final"),
+        normalized.get("motivo"),
+        prop.get("url"),
+    )
     return prop
 
 
@@ -2097,6 +2309,7 @@ def build_protected_update_payload(
     if columns is not None:
         payload = {key: value for key, value in payload.items() if key in columns}
 
+    payload = sanitize_property_location(payload, stats)
     payload = sanitize_property_prices(payload, stats)
 
     existing_for_rules = dict(existing or {})
@@ -2168,6 +2381,9 @@ def build_protected_update_payload(
         payload.pop(field, None)
 
     payload.pop("_existing_inmobiliaria_id", None)
+    payload.pop("_location_normalized", None)
+    payload.pop("_location_normalization_motivo", None)
+    payload.pop("_location_validation", None)
     return payload
 
 
@@ -5987,6 +6203,7 @@ def worker_fn(
                 try:
                     props, estrategia = run_best_strategy(inmob, session, pw_context)
                     total_ext, nuevas = db.save_propiedades(props)
+                    props = [sanitize_property_location(prop, None) for prop in props]
 
                     # Geocodificar propiedades sin coordenadas
                     geo_count = 0
@@ -6293,6 +6510,8 @@ def _save_queue_properties(db: SupabasePropiedades, item: Dict, props: List[Dict
 
     total_ext, nuevas = db.save_propiedades(props)
     save_protection = dict(getattr(db, "last_save_protection_stats", {}) or {})
+    for prop in props:
+        sanitize_property_location(prop, None)
     propiedades_error = max(len(props) - total_ext, 0)
 
     geo_count = 0
