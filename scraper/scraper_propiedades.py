@@ -31,7 +31,7 @@ import time
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
-from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
+from urllib.parse import parse_qsl, unquote, urlencode, urljoin, urlparse, urlunparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -65,6 +65,10 @@ SUPABASE_KEY: str = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "") or os.enviro
 
 TOKKO_API_BASE = "https://api.tokkobroker.com/api/v1/property/"
 TOKKO_LIMIT    = 100
+TOKKO_DETAIL_IMAGE_MAX_WORKERS = 6
+TOKKO_DETAIL_IMAGE_TIMEOUT = 7
+TOKKO_FAKE_IMAGE_EXAMPLES_LIMIT = 8
+TOKKO_REAL_IMAGE_EXAMPLES_LIMIT = 8
 
 SCRAPERAPI_KEY: str = os.environ.get("SCRAPERAPI_KEY", "")
 GROQ_API_KEY: str   = os.environ.get("GROQ_API_KEY", "")
@@ -94,6 +98,45 @@ PLAYWRIGHT_NAV_TIMEOUT_MS = 12000
 PLAYWRIGHT_LOAD_TIMEOUT_MS = 8000
 PLAYWRIGHT_ACTION_TIMEOUT_MS = 2500
 PLAYWRIGHT_CLOSE_TIMEOUT_SECONDS = 3.0
+
+FALSE_IMAGE_PATTERNS = (
+    "static.tokkobroker.com/tfw/img/prop-icons",
+    "/tfw/img/prop-icons",
+    "/tfw_images/",
+    "tfw_images",
+    "/prop-icons/",
+    "prop-icons",
+    "supcubierta",
+    "suptotalconst",
+    "supterreno",
+    "amenit",
+    "surface",
+    "superficie",
+    "placeholder",
+    "no-photo",
+    "no_photo",
+    "no-image",
+    "no_image",
+    "sin-imagen",
+    "sin_imagen",
+    "logo",
+    "brand",
+    "favicon",
+    "marker",
+    "mapa",
+    "map",
+    "tour",
+    "virtual",
+    "removebg",
+    "facebook.com/tr",
+    "connect.facebook.net",
+    "googletagmanager.com",
+    "google-analytics.com",
+    "doubleclick.net",
+    "/collect",
+    "/pixel",
+    "tracking",
+)
 
 def _make_http_session() -> requests.Session:
     s = requests.Session()
@@ -1001,6 +1044,13 @@ class SupabasePropiedades:
     def _sanitize_property_payload(self, prop: Dict) -> Dict:
         columns = self._get_property_columns()
         clean = dict(prop)
+        if "imagenes" in clean:
+            raw_images = clean.get("imagenes")
+            if isinstance(raw_images, str):
+                raw_images = [raw_images]
+            elif not isinstance(raw_images, list):
+                raw_images = []
+            clean["imagenes"] = clean_property_images(raw_images) or None
 
         if "calidad_score" in columns and "calidad_score" not in clean and "score_calidad" in clean:
             clean["calidad_score"] = clean["score_calidad"]
@@ -1443,7 +1493,113 @@ def extraer_agente(soup: BeautifulSoup) -> Tuple[Optional[str], Optional[str]]:
     return nombre, telefono
 
 
-def extraer_imagenes(soup: BeautifulSoup, base_url: str = "") -> List[str]:
+def _normalize_image_url(raw_url: Any, base_url: str = "") -> Optional[str]:
+    if not raw_url:
+        return None
+    url = str(raw_url).strip().strip("\"'() ")
+    if not url or url.startswith("data:") or url.startswith("blob:"):
+        return None
+    url = re.sub(r"^url\([\"']?|[\"']?\)$", "", url.strip()).strip()
+    if url.startswith("//"):
+        scheme = urlparse(base_url).scheme or "https"
+        url = f"{scheme}:{url}"
+    if base_url:
+        url = urljoin(base_url, url)
+    if not url.startswith(("http://", "https://")):
+        return None
+    return url
+
+
+def _image_sort_weight(text: str) -> int:
+    weight = 0
+    for number in re.findall(r"(?:w|width|h|height|ancho|alto)?[=_-]?(\d{2,5})", str(text or "")):
+        try:
+            value = int(number)
+        except ValueError:
+            continue
+        if 80 <= value <= 5000:
+            weight = max(weight, value)
+    return weight
+
+
+def _extract_srcset_urls(srcset: str, base_url: str = "") -> List[str]:
+    candidates: List[Tuple[int, str]] = []
+    for part in str(srcset or "").split(","):
+        tokens = part.strip().split()
+        if not tokens:
+            continue
+        url = _normalize_image_url(tokens[0], base_url)
+        if url:
+            candidates.append((_image_sort_weight(part), url))
+    candidates.sort(reverse=True)
+    return [url for _, url in candidates]
+
+
+def is_fake_property_image_url(image_url: Any) -> bool:
+    url = _normalize_image_url(image_url) or str(image_url or "")
+    low = unquote(url.lower())
+    if not low:
+        return True
+    parsed = urlparse(low)
+    path = parsed.path or low
+    if path.endswith((".svg", ".ico")):
+        return True
+    if re.search(r"(?:^|[\/_.-])360(?:[\/_.-]|$)", low):
+        return True
+    if any(pattern in low for pattern in FALSE_IMAGE_PATTERNS):
+        return True
+    if re.search(r"(?:icon|ico|amenity|surface|superficie|map)[-_]?\d*\.(?:png|jpe?g|webp|gif)$", path):
+        return True
+    return False
+
+
+def clean_property_images(
+    image_urls: List[Any],
+    base_url: str = "",
+    stats: Optional[Dict[str, Any]] = None,
+) -> List[str]:
+    seen: set = set()
+    real_images: List[str] = []
+    for raw_url in image_urls:
+        url = _normalize_image_url(raw_url, base_url)
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        if is_fake_property_image_url(url):
+            if stats is not None:
+                stats["imagenes_falsas_descartadas"] = int(stats.get("imagenes_falsas_descartadas") or 0) + 1
+                examples = stats.setdefault("ejemplos_descartados", [])
+                if len(examples) < TOKKO_FAKE_IMAGE_EXAMPLES_LIMIT:
+                    examples.append(url)
+            continue
+        real_images.append(url)
+        if stats is not None:
+            stats["imagenes_reales_detectadas"] = int(stats.get("imagenes_reales_detectadas") or 0) + 1
+            examples = stats.setdefault("ejemplos_reales", [])
+            if len(examples) < TOKKO_REAL_IMAGE_EXAMPLES_LIMIT:
+                examples.append(url)
+    return real_images[:60]
+
+
+def _collect_json_image_values(value: Any, out: List[str]) -> None:
+    if isinstance(value, str):
+        if value.startswith(("http://", "https://", "//")):
+            out.append(value)
+        return
+    if isinstance(value, list):
+        for item in value:
+            _collect_json_image_values(item, out)
+        return
+    if isinstance(value, dict):
+        for key, item in value.items():
+            key_low = str(key).lower()
+            if key_low in {"image", "images", "photo", "photos", "picture", "pictures", "url", "contenturl", "thumbnailurl"}:
+                _collect_json_image_values(item, out)
+            elif isinstance(item, (dict, list)):
+                _collect_json_image_values(item, out)
+
+
+def _extraer_imagenes_legacy(soup: BeautifulSoup, base_url: str = "") -> List[str]:
     """Extrae todas las imágenes de una propiedad, incluyendo lazy loading y srcset."""
     fotos: List[str] = []
     seen: set = set()
@@ -1487,6 +1643,205 @@ def extraer_imagenes(soup: BeautifulSoup, base_url: str = "") -> List[str]:
     return fotos[:60]  # máximo 60 fotos
 
 
+def extraer_imagenes(
+    soup: BeautifulSoup,
+    base_url: str = "",
+    stats: Optional[Dict[str, Any]] = None,
+) -> List[str]:
+    """Extrae solo fotos reales de una ficha, descartando iconos y placeholders."""
+    candidates: List[str] = []
+
+    img_attrs = [
+        "src",
+        "data-src",
+        "data-lazy-src",
+        "data-original",
+        "data-lazy",
+        "data-url",
+        "data-image",
+        "data-full-src",
+        "data-large",
+        "data-big",
+        "data-zoom-image",
+    ]
+
+    for img in soup.find_all("img"):
+        for attr in img_attrs:
+            src = img.get(attr, "")
+            if src:
+                candidates.append(str(src))
+        for attr in ("srcset", "data-srcset", "data-lazy-srcset"):
+            srcset = img.get(attr, "")
+            if srcset:
+                candidates.extend(_extract_srcset_urls(str(srcset), base_url))
+
+    for source in soup.find_all("source"):
+        for attr in ("srcset", "data-srcset", "src", "data-src"):
+            value = source.get(attr, "")
+            if not value:
+                continue
+            if "srcset" in attr:
+                candidates.extend(_extract_srcset_urls(str(value), base_url))
+            else:
+                candidates.append(str(value))
+
+    for el in soup.select("[data-background], [data-bg], [data-background-image], [style*='background']"):
+        for attr in ("data-background", "data-bg", "data-background-image"):
+            value = el.get(attr, "")
+            if value:
+                candidates.append(str(value))
+        style = el.get("style", "") or ""
+        for match in re.findall(r"url\([\"']?([^\"')\s]+)", style, flags=re.I):
+            candidates.append(match)
+
+    for meta in soup.select(
+        "meta[property='og:image'], meta[property='og:image:secure_url'], "
+        "meta[name='twitter:image'], meta[itemprop='image']"
+    ):
+        content = meta.get("content", "")
+        if content:
+            candidates.append(str(content))
+
+    for script in soup.find_all("script", attrs={"type": re.compile(r"ld\+json", re.I)}):
+        raw = script.string or script.get_text("", strip=True)
+        if not raw:
+            continue
+        try:
+            _collect_json_image_values(json.loads(raw), candidates)
+        except Exception:
+            continue
+
+    html_text = str(soup)
+    for match in re.findall(
+        r"https?:\\?/\\?/[^\"'\s<>]+?\.(?:jpe?g|png|webp|avif)(?:\?[^\"'\s<>]*)?",
+        html_text,
+        flags=re.I,
+    ):
+        candidates.append(match.replace("\\/", "/"))
+
+    return clean_property_images(candidates, base_url=base_url, stats=stats)
+
+
+def _new_image_stats() -> Dict[str, Any]:
+    return {
+        "imagenes_reales_detectadas": 0,
+        "imagenes_falsas_descartadas": 0,
+        "ejemplos_reales": [],
+        "ejemplos_descartados": [],
+    }
+
+
+def _tokko_image_stats(inmob: Dict) -> Dict[str, Any]:
+    stats = inmob.get("_tokko_image_stats")
+    if not isinstance(stats, dict):
+        stats = _new_image_stats()
+        inmob["_tokko_image_stats"] = stats
+    return stats
+
+
+def _merge_image_stats(target: Dict[str, Any], source: Dict[str, Any]) -> None:
+    for key in ("imagenes_reales_detectadas", "imagenes_falsas_descartadas"):
+        target[key] = int(target.get(key) or 0) + int(source.get(key) or 0)
+
+    for key, limit in (
+        ("ejemplos_reales", TOKKO_REAL_IMAGE_EXAMPLES_LIMIT),
+        ("ejemplos_descartados", TOKKO_FAKE_IMAGE_EXAMPLES_LIMIT),
+    ):
+        target_list = target.setdefault(key, [])
+        for value in source.get(key, []) or []:
+            if value not in target_list and len(target_list) < limit:
+                target_list.append(value)
+
+
+def _count_real_image_props(props: List[Dict]) -> Tuple[int, int]:
+    with_images = sum(1 for prop in props if prop.get("imagenes"))
+    return with_images, max(len(props) - with_images, 0)
+
+
+def _fetch_tokko_detail_images(prop: Dict, inmob: Dict) -> Tuple[Dict, List[str], Dict[str, Any], Optional[str]]:
+    stats = _new_image_stats()
+    url = prop.get("url")
+    if not url:
+        return prop, [], stats, "sin_url_detalle"
+    try:
+        _check_strategy_deadline(inmob, "tokko_html")
+        worker_session = _make_http_session()
+        timeout = min(TOKKO_DETAIL_IMAGE_TIMEOUT, _bounded_http_timeout(inmob, TOKKO_DETAIL_IMAGE_TIMEOUT))
+        response = _http_get(str(url), worker_session, timeout=timeout)
+        if response.status_code != 200:
+            return prop, [], stats, f"HTTP {response.status_code}"
+        soup = BeautifulSoup(response.text or "", "html.parser")
+        return prop, extraer_imagenes(soup, str(url), stats), stats, None
+    except Exception as exc:
+        return prop, [], stats, f"{type(exc).__name__}: {str(exc)[:180]}"
+
+
+def _enrich_tokko_detail_images(resultados: List[Dict], session: requests.Session, inmob: Dict) -> Dict[str, Any]:
+    stats = _tokko_image_stats(inmob)
+    for prop in resultados:
+        raw_images = prop.get("imagenes") or []
+        prop["imagenes"] = clean_property_images(raw_images if isinstance(raw_images, list) else [raw_images], stats=stats) or None
+
+    missing = [prop for prop in resultados if not prop.get("imagenes") and prop.get("url")]
+    detail_errors: List[str] = []
+    details_checked = 0
+
+    if missing:
+        remaining = _deadline_remaining_seconds(_strategy_deadline(inmob))
+        if remaining <= 6:
+            with_images, without_images = _count_real_image_props(resultados)
+            return {
+                "propiedades_con_fotos_reales": with_images,
+                "propiedades_sin_fotos_reales": without_images,
+                "detalles_consultados_para_fotos": details_checked,
+                "detalles_pendientes_sin_consultar": len(missing),
+                "imagenes_falsas_descartadas": int(stats.get("imagenes_falsas_descartadas") or 0),
+                "imagenes_reales_detectadas": int(stats.get("imagenes_reales_detectadas") or 0),
+                "ejemplos_imagenes_descartadas": stats.get("ejemplos_descartados", [])[:TOKKO_FAKE_IMAGE_EXAMPLES_LIMIT],
+                "ejemplos_imagenes_reales": stats.get("ejemplos_reales", [])[:TOKKO_REAL_IMAGE_EXAMPLES_LIMIT],
+                "errores_detalle_imagenes": ["sin_tiempo_para_detalles"],
+            }
+        max_workers = max(1, min(TOKKO_DETAIL_IMAGE_MAX_WORKERS, len(missing)))
+        detail_budget = max(1.0, remaining - 5.0)
+        timeout = max(1.0, min(detail_budget, max(TOKKO_DETAIL_IMAGE_TIMEOUT * len(missing) / max_workers, 1.0)))
+        executor = ThreadPoolExecutor(max_workers=max_workers)
+        try:
+            futures = [executor.submit(_fetch_tokko_detail_images, prop, inmob) for prop in missing]
+            for future in as_completed(futures, timeout=timeout):
+                prop, images, detail_stats, error = future.result()
+                _merge_image_stats(stats, detail_stats)
+                details_checked += 1
+                if images:
+                    prop["imagenes"] = images
+                    raw_json = prop.get("raw_json") if isinstance(prop.get("raw_json"), dict) else {}
+                    raw_json["detalle_imagenes"] = True
+                    raw_json["imagenes_reales"] = len(images)
+                    prop["raw_json"] = raw_json
+                elif error and len(detail_errors) < 6:
+                    detail_errors.append(f"{prop.get('url')}: {error}")
+        except Exception as exc:
+            if type(exc).__name__ == "TimeoutError":
+                pending = max(len(missing) - details_checked, 0)
+                detail_errors.append(f"presupuesto_detalles_agotado: {pending} pendientes sin consultar")
+            else:
+                detail_errors.append(f"detalle_imagenes: {type(exc).__name__}: {str(exc)[:180]}")
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
+
+    with_images, without_images = _count_real_image_props(resultados)
+    return {
+        "propiedades_con_fotos_reales": with_images,
+        "propiedades_sin_fotos_reales": without_images,
+        "detalles_consultados_para_fotos": details_checked,
+        "detalles_pendientes_sin_consultar": max(len(missing) - details_checked, 0),
+        "imagenes_falsas_descartadas": int(stats.get("imagenes_falsas_descartadas") or 0),
+        "imagenes_reales_detectadas": int(stats.get("imagenes_reales_detectadas") or 0),
+        "ejemplos_imagenes_descartadas": stats.get("ejemplos_descartados", [])[:TOKKO_FAKE_IMAGE_EXAMPLES_LIMIT],
+        "ejemplos_imagenes_reales": stats.get("ejemplos_reales", [])[:TOKKO_REAL_IMAGE_EXAMPLES_LIMIT],
+        "errores_detalle_imagenes": detail_errors,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Strategy 1: Tokko Broker API
 # ---------------------------------------------------------------------------
@@ -1518,6 +1873,7 @@ def _map_tokko_property(obj: Dict, inmob: Dict) -> Dict:
         img = ph.get("image") or ph.get("original") or ph.get("thumb", "")
         if img:
             fotos.append(img)
+    fotos = clean_property_images(fotos, stats=_tokko_image_stats(inmob))
 
     # Tags / amenities
     amenities = [t.get("name", "") for t in obj.get("tags", []) if t.get("name")]
@@ -1852,6 +2208,7 @@ def _parse_tokko_type_operation_location(text: str, inmob: Dict) -> Tuple[str, s
 
 def _parse_tokko_listing_cards(html: str, source_url: str, inmob: Dict) -> List[Dict]:
     soup = BeautifulSoup(html or "", "html.parser")
+    image_stats = _tokko_image_stats(inmob)
     markers = _parse_tokko_markers(html)
     cards = (
         soup.select("#propiedades > li[prop-id]")
@@ -1888,7 +2245,10 @@ def _parse_tokko_listing_cards(html: str, source_url: str, inmob: Dict) -> List[
             if img:
                 src = (img.get("src") or img.get("data-src") or img.get("data-original") or "").strip()
                 if src:
-                    imagenes.append(urljoin(source_url, src))
+                    imagenes.extend(clean_property_images([src], base_url=source_url, stats=image_stats))
+                srcset = img.get("srcset") or img.get("data-srcset") or ""
+                if srcset:
+                    imagenes.extend(clean_property_images(_extract_srcset_urls(str(srcset), source_url), stats=image_stats))
                 img_title = (img.get("title") or img.get("alt") or "").strip()
 
             title = img_title
@@ -2040,6 +2400,9 @@ def strategy_tokko_html(inmob: Dict, session: requests.Session) -> List[Dict]:
                 max_pages = min(int(inmob.get("paginas_estimadas") or 12), 30)
                 for page_num in range(2, max_pages + 1):
                     _check_strategy_deadline(inmob, "tokko_html")
+                    if _deadline_remaining_seconds(_strategy_deadline(inmob)) <= 8:
+                        errores_relevantes.append("paginacion_tokko_detenida_por_presupuesto")
+                        break
                     next_url = _add_query_param(candidate, "p", page_num)
                     urls_probadas.append(next_url)
                     try:
@@ -2060,6 +2423,7 @@ def strategy_tokko_html(inmob: Dict, session: requests.Session) -> List[Dict]:
                         break
 
                 resultados = _dedupe_props(resultados)
+                image_metadata = _enrich_tokko_detail_images(resultados, session, inmob)
                 inmob["_scraper_metadata"] = {
                     "urls_probadas": urls_probadas,
                     "cantidad_paginas": paginas_leidas,
@@ -2067,18 +2431,30 @@ def strategy_tokko_html(inmob: Dict, session: requests.Session) -> List[Dict]:
                     "plantilla_tokko_detectada": templates_detected[0] if templates_detected else "unknown",
                     "plantillas_tokko_detectadas": templates_detected,
                     "extractor_tokko_version": TOKKO_HTML_EXTRACTOR_VERSION,
+                    **image_metadata,
                     "errores_relevantes": errores_relevantes[-5:],
                 }
                 logger.info(
                     "  Tokko HTML: %d propiedades en %d paginas (%s)",
                     len(resultados), paginas_leidas, candidate,
                 )
+                logger.info(
+                    "  Tokko fotos reales: %d con fotos, %d sin fotos, %d falsas descartadas",
+                    image_metadata["propiedades_con_fotos_reales"],
+                    image_metadata["propiedades_sin_fotos_reales"],
+                    image_metadata["imagenes_falsas_descartadas"],
+                )
+                if image_metadata.get("ejemplos_imagenes_reales"):
+                    logger.info("  Ejemplos fotos reales: %s", image_metadata["ejemplos_imagenes_reales"][:3])
+                if image_metadata.get("ejemplos_imagenes_descartadas"):
+                    logger.info("  Ejemplos descartadas: %s", image_metadata["ejemplos_imagenes_descartadas"][:3])
                 return resultados
 
         except Exception as exc:
             errores_relevantes.append(f"{candidate}: {type(exc).__name__}: {str(exc)[:180]}")
             continue
 
+    image_stats = _tokko_image_stats(inmob)
     inmob["_scraper_metadata"] = {
         "urls_probadas": urls_probadas,
         "cantidad_paginas": paginas_leidas,
@@ -2087,6 +2463,8 @@ def strategy_tokko_html(inmob: Dict, session: requests.Session) -> List[Dict]:
         "plantillas_tokko_detectadas": templates_detected,
         "motivo_sin_propiedades": motivo_sin_propiedades,
         "extractor_tokko_version": TOKKO_HTML_EXTRACTOR_VERSION,
+        "imagenes_falsas_descartadas": int(image_stats.get("imagenes_falsas_descartadas") or 0),
+        "ejemplos_imagenes_descartadas": image_stats.get("ejemplos_descartados", [])[:TOKKO_FAKE_IMAGE_EXAMPLES_LIMIT],
         "errores_relevantes": errores_relevantes[-5:],
     }
     raise RuntimeError("sin_propiedades: tokko_html no encontro propiedades")
@@ -2369,6 +2747,7 @@ def _parse_jsonld_item(item: Dict, inmob: Dict, source_url: str) -> Optional[Dic
                 fotos.append(img)
             elif isinstance(img, dict):
                 fotos.append(img.get("url", ""))
+    fotos = clean_property_images(fotos)
 
     prop = {
         "inmobiliaria_id":     inmob_id,
@@ -4764,9 +5143,22 @@ def test_single_url(
         logger.info("CMS: %s", cms or "sin dato")
         logger.info("Estrategia usada: %s", strategy)
         logger.info("Propiedades detectadas: %d", len(props))
+        con_fotos, sin_fotos = _count_real_image_props(props)
+        logger.info("Propiedades con fotos reales: %d", con_fotos)
+        logger.info("Propiedades sin fotos reales: %d", sin_fotos)
         logger.info("Metadata: %s", json.dumps(metadata, ensure_ascii=False)[:3000])
         for prop in props[:5]:
-            logger.info(" - %s | %s %s | %s", prop.get("titulo"), prop.get("moneda"), prop.get("precio"), prop.get("url"))
+            images = prop.get("imagenes") or []
+            first_image = images[0] if images else "sin foto real"
+            logger.info(
+                " - %s | %s %s | fotos=%d | %s | %s",
+                prop.get("titulo"),
+                prop.get("moneda"),
+                prop.get("precio"),
+                len(images),
+                first_image,
+                prop.get("url"),
+            )
         logger.info("=" * 60)
     except Exception as exc:
         metadata = dict(inmob.get("_scraper_metadata") or {})
