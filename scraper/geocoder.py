@@ -61,6 +61,26 @@ class GeocodingResult:
     attempted_queries: Optional[List[str]] = None
 
 
+@dataclass
+class AddressCleaningResult:
+    cleaned_address: str
+    is_geocodable: bool
+    quality: str
+    reason: str
+    source: str
+    raw_value: str
+
+    def to_metadata(self) -> Dict[str, Any]:
+        return {
+            "cleaned_address": self.cleaned_address,
+            "is_geocodable": self.is_geocodable,
+            "quality": self.quality,
+            "reason": self.reason,
+            "source": self.source,
+            "raw_value": self.raw_value,
+        }
+
+
 class SupabaseGeocodingClient:
     def __init__(self, url: str, key: str) -> None:
         if not url or not key:
@@ -303,8 +323,214 @@ def evaluate_city_bounds(
     return min_lat <= latitud <= max_lat and min_lon <= longitud <= max_lon, True
 
 
+def split_address_segments(text: str, row: Dict[str, Any], source: str) -> List[str]:
+    cleaned = normalize_address_text(text)
+    if source == "direccion_geocoding_limpia":
+        city_keys = {
+            normalize_place_key(row.get("ciudad_final")),
+            normalize_place_key(row.get("provincia_final")),
+            "argentina",
+        }
+        kept_parts = []
+        for part in cleaned.split(","):
+            part_key = normalize_place_key(part)
+            if part_key in city_keys:
+                break
+            kept_parts.append(part)
+        cleaned = ", ".join(kept_parts).strip(" ,") or cleaned
+
+    normalized = re.sub(r"\s*[-–—|•]\s*", " - ", cleaned)
+    pieces = []
+    for part in re.split(r"\s+-\s+|,", normalized):
+        part = normalize_address_text(part)
+        if part:
+            pieces.append(part)
+    if cleaned and not pieces:
+        pieces.append(cleaned)
+    return pieces
+
+
+def normalize_address_text(text: Any) -> str:
+    value = str(text or "").replace("\u00a0", " ")
+    value = re.sub(r"\s+", " ", value)
+    return value.strip(" ,.-")
+
+
+def strip_real_estate_prefixes(text: str) -> str:
+    value = normalize_address_text(text)
+    prefixes = [
+        r"venta",
+        r"alquiler",
+        r"en venta",
+        r"en alquiler",
+        r"departamento",
+        r"depto\.?",
+        r"monoambiente",
+        r"casa al frente a reciclar",
+        r"casa",
+        r"cochera",
+        r"local",
+        r"loft en",
+        r"loft",
+        r"piso exclusivo",
+        r"piso",
+        r"oficina",
+        r"terreno",
+        r"lote",
+        r"premium",
+        r"\d+\s+dormitorios?\.?",
+        r"\d+\s+ambientes?\.?",
+    ]
+    pattern = re.compile(r"^(?:" + "|".join(prefixes) + r")\b\s*", flags=re.IGNORECASE)
+    previous = None
+    while previous != value:
+        previous = value
+        value = pattern.sub("", value).strip(" ,.-")
+    return normalize_address_text(value)
+
+
+def strip_unit_suffix(text: str) -> str:
+    value = normalize_address_text(text)
+    suffix_patterns = [
+        r"\s+(?:piso|p)\s*\d{1,2}\s*[A-Za-z]?$",
+        r"\s+(?:depto|dpto|dto|unidad|uf)\s*[A-Za-z0-9]+$",
+        r"\s+(?:pb|planta baja|ss)$",
+        r"\s+\d{1,2}\s+[A-Za-z]$",
+    ]
+    for pattern in suffix_patterns:
+        value = re.sub(pattern, "", value, flags=re.IGNORECASE).strip(" ,.-")
+    return normalize_address_text(value)
+
+
+def extract_street_number_address(segment: str) -> Optional[str]:
+    value = strip_unit_suffix(strip_real_estate_prefixes(segment))
+    value = re.sub(r"\b(?:piso|depto|dpto|dto|unidad|uf)\b.*$", "", value, flags=re.IGNORECASE)
+    value = normalize_address_text(value)
+
+    if not value:
+        return None
+
+    matches = list(re.finditer(r"\b\d{2,5}\b", value))
+    if not matches:
+        return None
+
+    house_number_match = matches[-1]
+    base = value[:house_number_match.end()]
+    base = strip_unit_suffix(normalize_address_text(base))
+
+    if is_generic_address(base):
+        return None
+    return base
+
+
+def is_generic_address(value: str) -> bool:
+    text = normalize_address_text(value)
+    key = normalize_place_key(text)
+    if not text or key in {"argentina", "rosario", "santa fe", "rosario santa fe argentina"}:
+        return True
+    if re.fullmatch(r"\d{1,5}", text):
+        return True
+    if not re.search(r"\b\d{2,5}\b", text):
+        return True
+    if not re.search(r"[A-Za-zÁÉÍÓÚÑáéíóúñ]", text):
+        return True
+    generic_keys = {
+        "piso exclusivo",
+        "loft",
+        "loft en",
+        "casa",
+        "departamento",
+        "depto",
+        "monoambiente",
+        "cochera",
+        "local",
+        "oficina",
+    }
+    if key in generic_keys:
+        return True
+    return False
+
+
+def score_address_candidate(candidate: str, segment_index: int, source: str) -> int:
+    score = 0
+    numbers = [int(match.group(0)) for match in re.finditer(r"\b\d{2,5}\b", candidate)]
+    if numbers and numbers[-1] >= 100:
+        score += 10
+    elif numbers:
+        score += 3
+    if source == "direccion_limpia":
+        score += 5
+    elif source == "direccion_geocoding_limpia":
+        score += 3
+    elif source == "titulo":
+        score += 1
+    score += min(segment_index, 4)
+    if re.search(r"\b(?:monoambiente|loft|cochera|departamento|casa|local|piso)\b", candidate, flags=re.IGNORECASE):
+        score -= 3
+    return score
+
+
+def prepare_address_for_geocoding(row: Dict[str, Any]) -> AddressCleaningResult:
+    if isinstance(row.get("_address_cleaning"), AddressCleaningResult):
+        return row["_address_cleaning"]
+
+    sources = [
+        ("direccion_limpia", row.get("direccion_limpia")),
+        ("direccion_geocoding_limpia", row.get("direccion_geocoding_limpia")),
+        ("titulo", row.get("titulo")),
+    ]
+    best: Optional[Tuple[int, str, str, str]] = None
+
+    for source, raw_value in sources:
+        raw_text = normalize_address_text(raw_value)
+        if not raw_text:
+            continue
+        segments = split_address_segments(raw_text, row, source)
+        for index, segment in enumerate(segments):
+            candidate = extract_street_number_address(segment)
+            if not candidate:
+                continue
+            score = score_address_candidate(candidate, index, source)
+            if best is None or score > best[0]:
+                best = (score, candidate, source, raw_text)
+
+    if best is not None:
+        _, cleaned_address, source, raw_value = best
+        result = AddressCleaningResult(
+            cleaned_address=cleaned_address,
+            is_geocodable=True,
+            quality="alta",
+            reason="calle_altura_detectada",
+            source=source,
+            raw_value=raw_value,
+        )
+        row["_address_cleaning"] = result
+        return result
+
+    raw_fallback = normalize_address_text(
+        row.get("direccion_limpia")
+        or row.get("direccion_geocoding_limpia")
+        or row.get("titulo")
+        or ""
+    )
+    result = AddressCleaningResult(
+        cleaned_address="",
+        is_geocodable=False,
+        quality="muy_baja",
+        reason="sin_calle_altura_confiable",
+        source="none",
+        raw_value=raw_fallback,
+    )
+    row["_address_cleaning"] = result
+    return result
+
+
 def normalize_query(row: Dict[str, Any]) -> str:
-    base = str(row.get("direccion_geocoding_limpia") or "").strip()
+    address_cleaning = prepare_address_for_geocoding(row)
+    if not address_cleaning.is_geocodable:
+        return ""
+
+    base = address_cleaning.cleaned_address
     ciudad = str(row.get("ciudad_final") or "").strip()
     provincia = str(row.get("provincia_final") or "").strip()
     parts = [base]
@@ -376,6 +602,7 @@ def enrich_raw_response(
     attempted_queries: List[str],
     ciudad_final: Any = None,
     provincia_final: Any = None,
+    address_cleaning: Optional[AddressCleaningResult] = None,
 ) -> Dict[str, Any]:
     confidence_level, should_apply, needs_review = classify_geocoding_quality(
         result.status,
@@ -398,6 +625,8 @@ def enrich_raw_response(
         "city_bounds_checked": city_bounds_checked,
         "ciudad_final": ciudad_final,
         "provincia_final": provincia_final,
+        "calidad_geocoding": address_cleaning.quality if address_cleaning else None,
+        "address_cleaning": address_cleaning.to_metadata() if address_cleaning else None,
         "needs_review": needs_review,
         "quality_flag": "baja_confianza" if needs_review else "aplicable",
         "primary_query": primary_query,
@@ -500,6 +729,7 @@ def geocode_with_fallbacks(
     best_query: Optional[str] = None
     best_rank = -1
     primary_query = queries[0] if queries else ""
+    address_cleaning = prepare_address_for_geocoding(row)
 
     for query in queries:
         attempted_queries.append(query)
@@ -539,6 +769,7 @@ def geocode_with_fallbacks(
             attempted_queries=list(attempted_queries),
             ciudad_final=row.get("ciudad_final"),
             provincia_final=row.get("provincia_final"),
+            address_cleaning=address_cleaning,
         )
         return best_result, attempted_queries
 
@@ -555,6 +786,7 @@ def geocode_with_fallbacks(
         attempted_queries=list(attempted_queries),
         ciudad_final=row.get("ciudad_final"),
         provincia_final=row.get("provincia_final"),
+        address_cleaning=address_cleaning,
     )
     return last_result, attempted_queries
 
@@ -589,17 +821,28 @@ def run(limit: int, dry_run: bool = False) -> None:
 
     for row in rows:
         propiedad_id = row.get("propiedad_id")
+        address_cleaning = prepare_address_for_geocoding(row)
         queries = build_query_variants(row)
         query = queries[0] if queries else ""
         logger.info(
-            "propiedad_id=%s | direccion=%s | variantes=%d",
+            "propiedad_id=%s | direccion=%s | calidad_limpieza=%s | source=%s | variantes=%d",
             propiedad_id,
             query or "-",
+            address_cleaning.quality,
+            address_cleaning.source,
             len(queries),
         )
 
         if not query:
-            result = GeocodingResult(None, None, None, provider.name, None, "error", "direccion_geocoding_limpia vacia")
+            result = GeocodingResult(
+                None,
+                None,
+                None,
+                provider.name,
+                None,
+                "error",
+                f"direccion_no_geocodificable: {address_cleaning.reason}",
+            )
             result.raw_response = enrich_raw_response(
                 result.raw_response,
                 result=result,
@@ -608,12 +851,28 @@ def run(limit: int, dry_run: bool = False) -> None:
                 attempted_queries=[],
                 ciudad_final=row.get("ciudad_final"),
                 provincia_final=row.get("provincia_final"),
+                address_cleaning=address_cleaning,
             )
             if dry_run:
-                logger.info("[dry-run] status=error | %s", result.error_message)
+                logger.info(
+                    "[dry-run] status=error | %s | raw=%s",
+                    result.error_message,
+                    address_cleaning.raw_value or "-",
+                )
                 failed += 1
                 continue
-            client.save_result(build_payload(row, "", result))
+            blocked_query = normalize_address_text(
+                row.get("direccion_geocoding_limpia")
+                or row.get("direccion_limpia")
+                or address_cleaning.raw_value
+            )
+            if blocked_query:
+                existing = client.existing_result(propiedad_id, blocked_query)
+                if existing:
+                    skipped += 1
+                    logger.info("skip=duplicate | status_existente=%s", existing.get("status"))
+                    continue
+            client.save_result(build_payload(row, blocked_query, result))
             failed += 1
             continue
 
