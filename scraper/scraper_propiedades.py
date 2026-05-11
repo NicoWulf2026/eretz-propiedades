@@ -184,6 +184,15 @@ PROTECTED_POSITIVE_NUMBER_FIELDS = {
 PROTECTED_TEXT_FIELDS = {"moneda", "direccion", "barrio", "ciudad", "provincia"}
 COORDINATE_FIELDS = {"latitud", "longitud"}
 
+CITY_COORDINATE_BOUNDS: Dict[str, Tuple[float, float, float, float]] = {
+    "rosario": (-33.10, -32.80, -60.85, -60.50),
+    "funes": (-33.00, -32.80, -60.90, -60.70),
+    "roldan": (-33.00, -32.80, -61.00, -60.80),
+    "santa fe": (-31.80, -31.45, -60.90, -60.45),
+    "san jose del rincon": (-31.70, -31.50, -60.65, -60.45),
+}
+URUGUAY_COORDINATE_BOUNDS = (-35.20, -30.00, -58.80, -53.00)
+
 def _make_http_session() -> requests.Session:
     s = requests.Session()
     s.trust_env = False
@@ -1140,6 +1149,7 @@ class SupabasePropiedades:
     def _sanitize_property_payload(self, prop: Dict) -> Dict:
         columns = self._get_property_columns()
         clean = dict(prop)
+        clean = sanitize_property_coordinates(clean, getattr(self, "last_save_protection_stats", None))
         if "imagenes" in clean:
             raw_images = clean.get("imagenes")
             if isinstance(raw_images, str):
@@ -1219,6 +1229,13 @@ class SupabasePropiedades:
                 protected_fields,
                 int(self.last_save_protection_stats.get("coordenadas_conservadas") or 0),
                 int(self.last_save_protection_stats.get("imagenes_conservadas") or 0),
+            )
+        outliers = int(self.last_save_protection_stats.get("coordenadas_descartadas_por_outlier") or 0)
+        if outliers:
+            logger.info(
+                "  Coordenadas descartadas por outlier: %d | ejemplos=%s",
+                outliers,
+                self.last_save_protection_stats.get("coordenadas_outlier_ejemplos", [])[:3],
             )
 
         return len(propiedades), inserted
@@ -1733,6 +1750,9 @@ def _new_update_protection_stats() -> Dict[str, Any]:
         "campos_protegidos_de_null": 0,
         "campos_invalidos_omitidos": 0,
         "campos_protegidos_por_nombre": {},
+        "coordenadas_descartadas_por_outlier": 0,
+        "coordenadas_sin_regla_ciudad": 0,
+        "coordenadas_outlier_ejemplos": [],
     }
 
 
@@ -1766,6 +1786,130 @@ def _valid_coordinate_pair(values: Dict[str, Any]) -> bool:
     except (TypeError, ValueError):
         return False
     return -90 <= lat <= 90 and -180 <= lon <= 180 and not (lat == 0 and lon == 0)
+
+
+def _coordinate_location_key(value: Any) -> str:
+    text = unicodedata.normalize("NFKD", str(value or "").strip().lower())
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    return re.sub(r"[^a-z0-9]+", " ", text).strip()
+
+
+def validate_coordinate_for_location(
+    lat: Any,
+    lon: Any,
+    ciudad: Any,
+    provincia: Any = None,
+    pais: Any = None,
+) -> Dict[str, Any]:
+    try:
+        lat_float = float(lat)
+        lon_float = float(lon)
+    except (TypeError, ValueError):
+        return {
+            "valid": False,
+            "location_validation": "invalid_coordinate",
+            "city_bounds_checked": False,
+            "within_city_bounds": False,
+        }
+    if not (-90 <= lat_float <= 90 and -180 <= lon_float <= 180) or (lat_float == 0 and lon_float == 0):
+        return {
+            "valid": False,
+            "location_validation": "invalid_coordinate",
+            "city_bounds_checked": False,
+            "within_city_bounds": False,
+        }
+
+    city_key = _coordinate_location_key(ciudad)
+    province_key = _coordinate_location_key(provincia)
+    country_key = _coordinate_location_key(pais)
+    is_uruguay = (
+        "uruguay" in {country_key, province_key}
+        or city_key in {"punta del este", "maldonado", "montevideo"}
+        or province_key == "maldonado"
+    )
+    if is_uruguay:
+        min_lat, max_lat, min_lon, max_lon = URUGUAY_COORDINATE_BOUNDS
+        inside = min_lat <= lat_float <= max_lat and min_lon <= lon_float <= max_lon
+        return {
+            "valid": inside,
+            "location_validation": "uruguay_bounds_ok" if inside else "uruguay_outlier",
+            "city_bounds_checked": True,
+            "within_city_bounds": inside,
+        }
+
+    bounds = CITY_COORDINATE_BOUNDS.get(city_key)
+    if bounds is None:
+        return {
+            "valid": True,
+            "location_validation": "no_rule",
+            "city_bounds_checked": False,
+            "within_city_bounds": None,
+        }
+    min_lat, max_lat, min_lon, max_lon = bounds
+    inside = min_lat <= lat_float <= max_lat and min_lon <= lon_float <= max_lon
+    return {
+        "valid": inside,
+        "location_validation": "within_city_bounds" if inside else "coordenada_descartada_por_outlier",
+        "city_bounds_checked": True,
+        "within_city_bounds": inside,
+    }
+
+
+def is_coordinate_valid_for_location(lat: Any, lon: Any, ciudad: Any, provincia: Any, pais: Any) -> bool:
+    return bool(validate_coordinate_for_location(lat, lon, ciudad, provincia, pais).get("valid"))
+
+
+def _record_coordinate_outlier(stats: Optional[Dict[str, Any]], prop: Dict[str, Any], validation: Dict[str, Any]) -> None:
+    if stats is None:
+        return
+    if validation.get("location_validation") == "no_rule":
+        stats["coordenadas_sin_regla_ciudad"] = int(stats.get("coordenadas_sin_regla_ciudad") or 0) + 1
+        return
+    stats["coordenadas_descartadas_por_outlier"] = int(stats.get("coordenadas_descartadas_por_outlier") or 0) + 1
+    examples = stats.setdefault("coordenadas_outlier_ejemplos", [])
+    if len(examples) < 10:
+        examples.append({
+            "ciudad": prop.get("ciudad"),
+            "provincia": prop.get("provincia"),
+            "pais": prop.get("pais"),
+            "latitud_descartada": prop.get("latitud"),
+            "longitud_descartada": prop.get("longitud"),
+            "url": prop.get("url"),
+            "location_validation": validation.get("location_validation"),
+        })
+
+
+def sanitize_property_coordinates(prop: Dict[str, Any], stats: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    if not any(field in prop for field in COORDINATE_FIELDS):
+        return prop
+    if not _valid_coordinate_pair(prop):
+        prop.pop("latitud", None)
+        prop.pop("longitud", None)
+        return prop
+    validation = validate_coordinate_for_location(
+        prop.get("latitud"),
+        prop.get("longitud"),
+        prop.get("ciudad"),
+        prop.get("provincia"),
+        prop.get("pais") or "Argentina",
+    )
+    prop["_location_validation"] = validation.get("location_validation")
+    if validation.get("location_validation") == "no_rule":
+        _record_coordinate_outlier(stats, prop, validation)
+        return prop
+    if not validation.get("valid"):
+        _record_coordinate_outlier(stats, prop, validation)
+        logger.info(
+            "  Coordenada descartada por outlier | ciudad=%s provincia=%s lat=%s lon=%s url=%s",
+            prop.get("ciudad"),
+            prop.get("provincia"),
+            prop.get("latitud"),
+            prop.get("longitud"),
+            prop.get("url"),
+        )
+        prop.pop("latitud", None)
+        prop.pop("longitud", None)
+    return prop
 
 
 def _has_real_images(value: Any) -> bool:
@@ -1848,6 +1992,38 @@ def build_protected_update_payload(
                 payload.pop(field, None)
         if protected_coord and stats is not None:
             stats["coordenadas_conservadas"] = int(stats.get("coordenadas_conservadas") or 0) + 1
+
+    if any(field in payload for field in COORDINATE_FIELDS) and _valid_coordinate_pair(payload):
+        location_context = {
+            **existing_for_rules,
+            **payload,
+            "pais": payload.get("pais") or existing_for_rules.get("pais") or "Argentina",
+        }
+        validation = validate_coordinate_for_location(
+            location_context.get("latitud"),
+            location_context.get("longitud"),
+            location_context.get("ciudad"),
+            location_context.get("provincia"),
+            location_context.get("pais"),
+        )
+        if validation.get("location_validation") == "no_rule":
+            _record_coordinate_outlier(stats, location_context, validation)
+        elif not validation.get("valid"):
+            for field in COORDINATE_FIELDS:
+                if field in payload:
+                    had_existing = _is_existing_value_useful(field, existing_for_rules.get(field))
+                    _record_protected_field(stats, field, had_existing)
+                    payload.pop(field, None)
+            if stats is not None:
+                stats["coordenadas_conservadas"] = int(stats.get("coordenadas_conservadas") or 0) + 1
+            _record_coordinate_outlier(stats, location_context, validation)
+            logger.info(
+                "  Coordenada descartada por outlier en update | ciudad=%s provincia=%s lat=%s lon=%s",
+                location_context.get("ciudad"),
+                location_context.get("provincia"),
+                location_context.get("latitud"),
+                location_context.get("longitud"),
+            )
 
     if "precio" in payload and not _positive_number(payload.get("precio")):
         for field in ("precio", "moneda", "precio_usd", "precio_ars"):
@@ -5709,6 +5885,22 @@ def worker_fn(
                                 prop.get("provincia", ""),
                             )
                             if lat and lon:
+                                validation = validate_coordinate_for_location(
+                                    lat,
+                                    lon,
+                                    prop.get("ciudad"),
+                                    prop.get("provincia"),
+                                    prop.get("pais") or "Argentina",
+                                )
+                                if not validation.get("valid"):
+                                    logger.info(
+                                        "  Geocoding omitido por outlier | ciudad=%s provincia=%s lat=%s lon=%s",
+                                        prop.get("ciudad"),
+                                        prop.get("provincia"),
+                                        lat,
+                                        lon,
+                                    )
+                                    continue
                                 # Actualizar en BD por hash
                                 try:
                                     db.session.patch(
@@ -6000,6 +6192,28 @@ def _save_queue_properties(db: SupabasePropiedades, item: Dict, props: List[Dict
                 prop.get("provincia", ""),
             )
             if lat and lon:
+                validation = validate_coordinate_for_location(
+                    lat,
+                    lon,
+                    prop.get("ciudad"),
+                    prop.get("provincia"),
+                    prop.get("pais") or "Argentina",
+                )
+                if not validation.get("valid"):
+                    _record_coordinate_outlier(save_protection, {
+                        **prop,
+                        "latitud": lat,
+                        "longitud": lon,
+                    }, validation)
+                    logger.info(
+                        "  Geocoding omitido por outlier | ciudad=%s provincia=%s lat=%s lon=%s hash=%s",
+                        prop.get("ciudad"),
+                        prop.get("provincia"),
+                        lat,
+                        lon,
+                        prop.get("hash_dedup"),
+                    )
+                    continue
                 try:
                     db.session.patch(
                         f"{SUPABASE_URL}/rest/v1/propiedades"

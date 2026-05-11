@@ -46,6 +46,7 @@ CITY_BOUNDS = {
     "roldan": (-33.00, -32.80, -61.00, -60.80),
     "san jose del rincon": (-31.70, -31.50, -60.65, -60.45),
 }
+URUGUAY_BOUNDS = (-35.20, -30.00, -58.80, -53.00)
 
 
 @dataclass
@@ -192,7 +193,7 @@ class SupabaseGeocodingClient:
             f"{self.url}/rest/v1/propiedades",
             headers=self.headers,
             params={
-                "select": "id,ciudad,provincia",
+                "select": "id,ciudad,provincia,pais",
                 "id": f"eq.{propiedad_id}",
                 "limit": 1,
             },
@@ -207,7 +208,7 @@ class SupabaseGeocodingClient:
             f"{self.url}/rest/v1/propiedades",
             headers=self.headers,
             params={
-                "select": "id,titulo,direccion,barrio,ciudad,provincia,latitud,longitud",
+                "select": "id,titulo,direccion,barrio,ciudad,provincia,pais,latitud,longitud",
                 "latitud": "not.is.null",
                 "longitud": "not.is.null",
                 "order": "updated_at.desc",
@@ -313,14 +314,45 @@ def evaluate_city_bounds(
     latitud: Optional[float],
     longitud: Optional[float],
     ciudad_final: Any,
+    provincia_final: Any = None,
+    pais: Any = None,
 ) -> Tuple[Optional[bool], bool]:
     city_key = normalize_place_key(ciudad_final)
+    province_key = normalize_place_key(provincia_final)
+    country_key = normalize_place_key(pais)
+    is_uruguay = (
+        "uruguay" in {country_key, province_key}
+        or city_key in {"punta del este", "maldonado", "montevideo"}
+        or province_key == "maldonado"
+    )
+    if is_uruguay and latitud is not None and longitud is not None:
+        min_lat, max_lat, min_lon, max_lon = URUGUAY_BOUNDS
+        return min_lat <= latitud <= max_lat and min_lon <= longitud <= max_lon, True
+
     bounds = CITY_BOUNDS.get(city_key)
     if bounds is None or latitud is None or longitud is None:
         return None, False
 
     min_lat, max_lat, min_lon, max_lon = bounds
     return min_lat <= latitud <= max_lat and min_lon <= longitud <= max_lon, True
+
+
+def is_coordinate_valid_for_location(
+    lat: Any,
+    lon: Any,
+    ciudad: Any,
+    provincia: Any = None,
+    pais: Any = None,
+) -> bool:
+    try:
+        lat_float = float(lat)
+        lon_float = float(lon)
+    except (TypeError, ValueError):
+        return False
+    if not (-90 <= lat_float <= 90 and -180 <= lon_float <= 180) or (lat_float == 0 and lon_float == 0):
+        return False
+    within_bounds, checked = evaluate_city_bounds(lat_float, lon_float, ciudad, provincia, pais)
+    return bool(within_bounds) if checked else True
 
 
 def split_address_segments(text: str, row: Dict[str, Any], source: str) -> List[str]:
@@ -602,6 +634,7 @@ def enrich_raw_response(
     attempted_queries: List[str],
     ciudad_final: Any = None,
     provincia_final: Any = None,
+    pais: Any = None,
     address_cleaning: Optional[AddressCleaningResult] = None,
 ) -> Dict[str, Any]:
     confidence_level, should_apply, needs_review = classify_geocoding_quality(
@@ -612,6 +645,8 @@ def enrich_raw_response(
         result.latitud,
         result.longitud,
         ciudad_final,
+        provincia_final,
+        pais,
     )
     if result.status == "success" and city_bounds_checked and within_city_bounds is False:
         confidence_level = "low"
@@ -623,8 +658,16 @@ def enrich_raw_response(
         "should_apply_to_property": should_apply,
         "within_city_bounds": within_city_bounds,
         "city_bounds_checked": city_bounds_checked,
+        "location_validation": (
+            "within_city_bounds"
+            if city_bounds_checked and within_city_bounds is True
+            else "coordenada_descartada_por_outlier"
+            if city_bounds_checked and within_city_bounds is False
+            else "no_rule"
+        ),
         "ciudad_final": ciudad_final,
         "provincia_final": provincia_final,
+        "pais": pais,
         "calidad_geocoding": address_cleaning.quality if address_cleaning else None,
         "address_cleaning": address_cleaning.to_metadata() if address_cleaning else None,
         "needs_review": needs_review,
@@ -685,16 +728,18 @@ def get_geocoding_apply_decision(
     if city_bounds_checked is None:
         city = metadata.get("ciudad_final")
         province = metadata.get("provincia_final")
+        pais = metadata.get("pais")
         if city_context:
             city = city or city_context.get("ciudad") or city_context.get("ciudad_final")
             province = province or city_context.get("provincia") or city_context.get("provincia_final")
+            pais = pais or city_context.get("pais")
         try:
             latitud = float(row["latitud"])
             longitud = float(row["longitud"])
         except (KeyError, TypeError, ValueError):
             latitud = None
             longitud = None
-        within_city_bounds, city_bounds_checked = evaluate_city_bounds(latitud, longitud, city)
+        within_city_bounds, city_bounds_checked = evaluate_city_bounds(latitud, longitud, city, province, pais)
         if city_bounds_checked and within_city_bounds is False:
             confidence_level = "low"
             should_apply = False
@@ -745,6 +790,8 @@ def geocode_with_fallbacks(
                 result.latitud,
                 result.longitud,
                 row.get("ciudad_final"),
+                row.get("provincia_final"),
+                row.get("pais"),
             )
             if city_bounds_checked and within_city_bounds is False:
                 confidence_level = "low"
@@ -769,6 +816,7 @@ def geocode_with_fallbacks(
             attempted_queries=list(attempted_queries),
             ciudad_final=row.get("ciudad_final"),
             provincia_final=row.get("provincia_final"),
+            pais=row.get("pais"),
             address_cleaning=address_cleaning,
         )
         return best_result, attempted_queries
@@ -786,17 +834,36 @@ def geocode_with_fallbacks(
         attempted_queries=list(attempted_queries),
         ciudad_final=row.get("ciudad_final"),
         provincia_final=row.get("provincia_final"),
+        pais=row.get("pais"),
         address_cleaning=address_cleaning,
     )
     return last_result, attempted_queries
 
 
 def build_payload(row: Dict[str, Any], query: str, result: GeocodingResult) -> Dict[str, Any]:
+    latitud = result.latitud
+    longitud = result.longitud
+    metadata = get_inmocapital_metadata(result.raw_response)
+    if (
+        result.status == "success"
+        and metadata.get("city_bounds_checked")
+        and metadata.get("within_city_bounds") is False
+    ):
+        logger.info(
+            "coordenada_descartada_por_outlier | propiedad_id=%s | ciudad=%s | provincia=%s | lat=%s | lon=%s",
+            row.get("propiedad_id"),
+            row.get("ciudad_final"),
+            row.get("provincia_final"),
+            latitud,
+            longitud,
+        )
+        latitud = None
+        longitud = None
     return {
         "propiedad_id": row.get("propiedad_id"),
         "direccion_geocoding": query,
-        "latitud": result.latitud,
-        "longitud": result.longitud,
+        "latitud": latitud,
+        "longitud": longitud,
         "precision_geocoding": result.precision_geocoding,
         "proveedor": result.proveedor,
         "raw_response": result.raw_response,
@@ -851,6 +918,7 @@ def run(limit: int, dry_run: bool = False) -> None:
                 attempted_queries=[],
                 ciudad_final=row.get("ciudad_final"),
                 provincia_final=row.get("provincia_final"),
+                pais=row.get("pais"),
                 address_cleaning=address_cleaning,
             )
             if dry_run:
@@ -964,6 +1032,24 @@ def apply_valid_results(limit: int, dry_run: bool = False) -> None:
             logger.info("status=error | coordenadas invalidas | %s", exc)
             continue
 
+        if not is_coordinate_valid_for_location(
+            latitud,
+            longitud,
+            city_context.get("ciudad") or city_context.get("ciudad_final"),
+            city_context.get("provincia") or city_context.get("provincia_final"),
+            city_context.get("pais"),
+        ):
+            skipped += 1
+            logger.info(
+                "skip=coordenada_descartada_por_outlier | propiedad_id=%s | ciudad=%s | provincia=%s | lat=%.6f | lon=%.6f",
+                propiedad_id,
+                city_context.get("ciudad") or city_context.get("ciudad_final"),
+                city_context.get("provincia") or city_context.get("provincia_final"),
+                latitud,
+                longitud,
+            )
+            continue
+
         if dry_run:
             applied += 1
             logger.info("[dry-run] se actualizaria propiedades.id=%s | lat=%.6f | lon=%.6f", propiedad_id, latitud, longitud)
@@ -998,6 +1084,7 @@ def validate_applied_results(limit: int) -> None:
         propiedad_id = row.get("id")
         ciudad = row.get("ciudad")
         provincia = row.get("provincia")
+        pais = row.get("pais")
         try:
             latitud = float(row["latitud"])
             longitud = float(row["longitud"])
@@ -1006,7 +1093,7 @@ def validate_applied_results(limit: int) -> None:
             logger.info("propiedad_id=%s | status=invalid_coordinates | %s", propiedad_id, exc)
             continue
 
-        within_city_bounds, city_bounds_checked = evaluate_city_bounds(latitud, longitud, ciudad)
+        within_city_bounds, city_bounds_checked = evaluate_city_bounds(latitud, longitud, ciudad, provincia, pais)
         if not city_bounds_checked:
             no_bounds += 1
             logger.info(
