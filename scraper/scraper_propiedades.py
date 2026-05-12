@@ -3098,6 +3098,79 @@ def _url_host_variants(url: Optional[str]) -> List[str]:
     return variants
 
 
+_NON_DIAGNOSTIC_PATH_RE = re.compile(
+    r"(^|/)(contacto|contact|nosotros|quienes-somos|quienes_somos|tasaciones|tasacion|servicios|login|admin|wp-admin)(/|$)",
+    re.I,
+)
+
+_DIAGNOSTIC_USEFUL_PATHS = (
+    "/propiedades", "/inmuebles", "/venta", "/ventas", "/alquiler", "/alquileres",
+    "/emprendimientos", "/desarrollos", "/listing", "/listings",
+)
+
+
+def _url_origin(url: str) -> str:
+    parsed = urlparse(_normalize_queue_url(url))
+    if parsed.scheme and parsed.netloc:
+        return f"{parsed.scheme}://{parsed.netloc}"
+    return _normalize_queue_url(url).rstrip("/")
+
+
+def normalize_start_url_for_diagnosis(url: Optional[str]) -> Dict[str, Any]:
+    """Genera puntos de entrada utiles para diagnosticar, evitando paginas tipo contacto."""
+    normalized = _normalize_queue_url(url)
+    parsed = urlparse(normalized)
+    if not parsed.netloc:
+        return {
+            "url_original": url,
+            "url_normalizada": normalized,
+            "url_inicial_era_contacto": False,
+            "url_base_derivada": normalized,
+            "candidate_urls": [normalized] if normalized else [],
+            "base_variants": [normalized] if normalized else [],
+            "subfolder_bases": [],
+        }
+
+    path = parsed.path or "/"
+    path_key = unquote(path).lower()
+    is_non_useful = bool(_NON_DIAGNOSTIC_PATH_RE.search(path_key))
+
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+    subfolder_bases: List[str] = []
+    parts = [part for part in path.strip("/").split("/") if part]
+    if len(parts) >= 2 and is_non_useful:
+        subfolder_bases.append(urljoin(origin + "/", parts[0].strip("/") + "/"))
+    elif len(parts) >= 1 and parts[0].lower() in {"web", "site", "sitio"}:
+        subfolder_bases.append(urljoin(origin + "/", parts[0].strip("/") + "/"))
+
+    candidate_roots = [origin + "/"] + subfolder_bases
+    candidate_urls: List[str] = []
+
+    def add(candidate: str) -> None:
+        for variant in _url_host_variants(candidate):
+            clean = variant.rstrip("/") + ("/" if urlparse(variant).path in {"", "/"} else "")
+            if clean not in candidate_urls:
+                candidate_urls.append(clean)
+
+    if not is_non_useful:
+        add(normalized)
+    for root in candidate_roots:
+        add(root)
+    for useful_path in _DIAGNOSTIC_USEFUL_PATHS:
+        for root in candidate_roots:
+            add(urljoin(root, useful_path.lstrip("/")))
+
+    return {
+        "url_original": url,
+        "url_normalizada": normalized,
+        "url_inicial_era_contacto": is_non_useful,
+        "url_base_derivada": candidate_roots[0] if candidate_roots else origin + "/",
+        "candidate_urls": candidate_urls[:80],
+        "base_variants": list(dict.fromkeys(_url_host_variants(origin + "/"))),
+        "subfolder_bases": subfolder_bases,
+    }
+
+
 def _add_query_param(url: str, key: str, value: Any) -> str:
     parsed = urlparse(url)
     params = dict(parse_qsl(parsed.query, keep_blank_values=True))
@@ -3932,10 +4005,16 @@ def strategy_wordpress_sitemap_detail(inmob: Dict, session: requests.Session) ->
 
 SITEMAP_PATHS = [
     "/sitemap.xml",
+    "/wp-sitemap.xml",
     "/sitemap_index.xml",
     "/sitemap-propiedades.xml",
     "/sitemap-properties.xml",
     "/sitemap-inmuebles.xml",
+    "/property-sitemap.xml",
+    "/propiedades-sitemap.xml",
+    "/inmuebles-sitemap.xml",
+    "/page-sitemap.xml",
+    "/post-sitemap.xml",
 ]
 
 
@@ -4901,7 +4980,7 @@ _UNIVERSAL_LISTING_PATHS = [
 
 _NON_PROPERTY_URL_PATTERNS = re.compile(
     r"(subi-tu-propiedad|publica(?:r)?-tu-propiedad|tasacion|tasaciones|contacto|"
-    r"nosotros|quienes-somos|blog|noticia|servicio|equipo|staff|login|wp-admin|"
+    r"nosotros|quienes-somos|blog|noticia|noticias|prensa|servicio|equipo|staff|login|wp-admin|"
     r"whatsapp|wa\.me|facebook|instagram|linkedin|youtube|twitter|x\.com|"
     r"mapa|maps|property-outside|tr_uuid|[?&]fp=)",
     re.I,
@@ -5107,6 +5186,10 @@ def _generic_candidate_urls(inmob: Dict, first_html: str = "", first_url: str = 
         if clean and clean not in urls:
             urls.append(clean)
 
+    for raw in (inmob.get("url_listado"), inmob.get("web"), first_url):
+        start_info = normalize_start_url_for_diagnosis(raw)
+        for candidate in start_info.get("candidate_urls") or []:
+            add(candidate)
     for variant in _url_host_variants(inmob.get("url_listado")):
         add(variant)
     for variant in _url_host_variants(inmob.get("web")):
@@ -6155,17 +6238,237 @@ def _count_html_cards(html: str) -> int:
     return max_count
 
 
+def _is_site_down_status(status: Optional[int]) -> bool:
+    return isinstance(status, int) and status in {500, 502, 503, 504, 521, 522, 523, 524}
+
+
+def _site_down_reason_from_status(status: Optional[int]) -> str:
+    if status is None:
+        return "sin_respuesta"
+    if status in {502, 503, 504}:
+        return f"http_{status}"
+    if status in {521, 522, 523, 524}:
+        return f"cloudflare_{status}"
+    if status >= 500:
+        return f"http_{status}"
+    return ""
+
+
+def _site_down_reason_from_exception(exc: BaseException) -> str:
+    msg = str(exc).lower()
+    for status_code in ("502", "503", "504"):
+        if f"too many {status_code}" in msg or f"{status_code} error responses" in msg:
+            return f"http_{status_code}"
+    if any(marker in msg for marker in (
+        "nameresolutionerror", "name or service not known", "getaddrinfo failed",
+        "temporary failure in name resolution", "nodename nor servname",
+        "failed to resolve", "no address associated", "11001",
+    )):
+        return "dns_error"
+    if any(marker in msg for marker in ("ssl", "certificate", "cert")):
+        return "ssl_error"
+    if any(marker in msg for marker in ("timed out", "timeout", "read timed out")):
+        return "timeout"
+    if any(marker in msg for marker in ("connection refused", "connection aborted", "connection reset", "max retries exceeded")):
+        return "connection_error"
+    return "connection_error" if _is_fast_site_down_error(exc) else "http_error"
+
+
+def _looks_like_developer_project_url(url: str) -> bool:
+    if not url or _is_noise_property_url(url):
+        return False
+    parsed = urlparse(str(url))
+    path = unquote((parsed.path or "").lower()).strip("/")
+    if not path:
+        return False
+    if re.search(r"^(blog|noticia|noticias|prensa|contactenos?|contacto|nosotros|login)(/|$)", path):
+        return False
+    if path in {"desarrollos", "desarrollo", "emprendimientos", "emprendimiento", "proyectos", "proyecto"}:
+        return False
+    return bool(re.search(r"(^|/)(desarrollos?|emprendimientos?|proyectos?)/[^/?#]{6,}", path, re.I))
+
+
+def _extract_script_property_signals(html: str, current_url: str) -> Dict[str, List[str]]:
+    """Busca URLs inmobiliarias dentro de scripts embebidos sin ejecutar JS."""
+    soup = BeautifulSoup(html or "", "html.parser")
+    script_text = "\n".join(script.get_text(" ", strip=False) for script in soup.find_all("script"))
+    links: List[str] = []
+    listings: List[str] = []
+    projects: List[str] = []
+    current_netloc = urlparse(current_url).netloc
+
+    def add(raw: str) -> None:
+        if not raw:
+            return
+        candidate = raw.replace("\\/", "/").strip()
+        if candidate.startswith(("http://", "https://", "/")):
+            full = urljoin(current_url, candidate).split("#", 1)[0]
+        else:
+            return
+        if current_netloc and urlparse(full).netloc != current_netloc:
+            return
+        if _looks_like_real_property_url(full):
+            if full not in links:
+                links.append(full)
+        elif _looks_like_custom_listing_url(full):
+            if full not in listings:
+                listings.append(full)
+        elif _looks_like_developer_project_url(full):
+            if full not in projects:
+                projects.append(full)
+
+    for match in re.findall(r"""https?://[^"'\\<>\s]+|/[^"'\\<>\s]*(?:propiedad|property|inmueble|ficha|detalle|listing|desarrollo|emprendimiento|proyecto)[^"'\\<>\s]*""", script_text, flags=re.I):
+        add(match)
+
+    return {
+        "property_urls": links[:200],
+        "listing_urls": listings[:100],
+        "project_urls": projects[:100],
+    }
+
+
+def _extract_developer_project_links(html: str, current_url: str) -> List[str]:
+    soup = BeautifulSoup(html or "", "html.parser")
+    current_netloc = urlparse(current_url).netloc
+    links: List[str] = []
+    for a in soup.select("a[href]"):
+        href = (a.get("href") or "").strip()
+        if not href or href.startswith(("#", "javascript:", "mailto:", "tel:")):
+            continue
+        full = urljoin(current_url, href).split("#", 1)[0]
+        if current_netloc and urlparse(full).netloc != current_netloc:
+            continue
+        if _looks_like_developer_project_url(full) and full not in links:
+            links.append(full)
+    return links[:200]
+
+
+def _fetch_sitemap_urls_for_diagnosis(base: str, session: requests.Session) -> Tuple[List[str], List[str], List[str], List[str]]:
+    prop_urls: List[str] = []
+    project_urls: List[str] = []
+    tried: List[str] = []
+    errors: List[str] = []
+    parsed_base = urlparse(_normalize_queue_url(base))
+    root_base = f"{parsed_base.scheme}://{parsed_base.netloc}" if parsed_base.scheme and parsed_base.netloc else base.rstrip("/")
+    ns = {"sm": "http://www.sitemaps.org/schemas/sitemap/0.9"}
+
+    def collect_from_xml(xml_text: str) -> Tuple[List[str], List[str], List[str]]:
+        nested: List[str] = []
+        props: List[str] = []
+        projects: List[str] = []
+        try:
+            root = ET.fromstring(xml_text)
+        except Exception:
+            return nested, props, projects
+        for sitemap_tag in root.findall(".//sm:sitemap/sm:loc", ns):
+            sub_url = sitemap_tag.text.strip() if sitemap_tag.text else ""
+            if sub_url:
+                nested.append(sub_url)
+        for loc_tag in root.findall(".//sm:url/sm:loc", ns):
+            loc = loc_tag.text.strip() if loc_tag.text else ""
+            if not loc:
+                continue
+            if _looks_like_real_property_url(loc):
+                props.append(loc)
+            elif _looks_like_developer_project_url(loc):
+                projects.append(loc)
+        return nested, props, projects
+
+    for path in SITEMAP_PATHS:
+        sitemap_url = urljoin(root_base.rstrip("/") + "/", path.lstrip("/"))
+        tried.append(sitemap_url)
+        try:
+            response = _http_get(sitemap_url, session, timeout=4, use_scraper_on_block=False)
+            if response.status_code != 200:
+                continue
+            nested, props, projects = collect_from_xml(_decode_response_text(response))
+            prop_urls.extend(props)
+            project_urls.extend(projects)
+            for sub_url in nested[:12]:
+                tried.append(sub_url)
+                try:
+                    sub_response = _http_get(sub_url, session, timeout=4, use_scraper_on_block=False)
+                    if sub_response.status_code != 200:
+                        continue
+                    _, sub_props, sub_projects = collect_from_xml(_decode_response_text(sub_response))
+                    prop_urls.extend(sub_props)
+                    project_urls.extend(sub_projects)
+                except Exception as sub_exc:
+                    errors.append(f"{sub_url}: {type(sub_exc).__name__}: {str(sub_exc)[:140]}")
+            if prop_urls or project_urls:
+                break
+        except Exception as exc:
+            errors.append(f"{sitemap_url}: {type(exc).__name__}: {str(exc)[:140]}")
+            if _site_down_reason_from_exception(exc) == "dns_error":
+                break
+    return (
+        list(dict.fromkeys(prop_urls)),
+        list(dict.fromkeys(project_urls)),
+        tried,
+        errors,
+    )
+
+
+def _wordpress_rest_links_for_diagnosis(base_url: str, session: requests.Session, plugin: str = "wordpress_generic") -> Tuple[List[str], List[str], List[str], List[str]]:
+    parsed = urlparse(_normalize_queue_url(base_url))
+    base = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else base_url.rstrip("/")
+    links: List[str] = []
+    detected_types: List[str] = []
+    tried: List[str] = []
+    errors: List[str] = []
+    rest_types = list(dict.fromkeys(_WORDPRESS_REST_TYPES + ["pages", "posts"]))
+    for post_type in rest_types:
+        api_url = f"{base}/wp-json/wp/v2/{post_type}?per_page=50"
+        tried.append(api_url)
+        try:
+            response = _http_get(api_url, session, timeout=4, use_scraper_on_block=False)
+            if response.status_code != 200:
+                continue
+            data = response.json()
+            if not isinstance(data, list) or not data:
+                continue
+            useful_links = []
+            for item in data:
+                if not isinstance(item, dict):
+                    continue
+                link = str(item.get("link") or "")
+                if link and (
+                    _looks_like_wordpress_plugin_property_url(link, plugin)
+                    or _looks_like_real_property_url(link)
+                    or _looks_like_developer_project_url(link)
+                ):
+                    useful_links.append(link)
+            if useful_links:
+                detected_types.append(post_type)
+                for link in useful_links:
+                    if link not in links:
+                        links.append(link)
+        except Exception as exc:
+            errors.append(f"{api_url}: {type(exc).__name__}: {str(exc)[:140]}")
+            if _site_down_reason_from_exception(exc) == "dns_error":
+                break
+    return links[:300], detected_types, tried, errors
+
+
 def _html_requires_js(html: str, property_links_count: int = 0, cards_count: int = 0) -> bool:
     low = (html or "").lower()
     js_markers = (
         "__next_data__", "next/static", "data-reactroot", "id=\"root\"",
         "id=\"app\"", "vue", "nuxt", "window.__initial_state__",
-        "apollo-state", "webpack", "vite", "chunk.js",
+        "apollo-state", "webpack", "vite", "chunk.js", "main.js",
+        "app.js", "window.__", "data-v-app", "ng-version",
     )
     if any(marker in low for marker in js_markers) and property_links_count == 0 and cards_count == 0:
         return True
     body_text = BeautifulSoup(html or "", "html.parser").get_text(" ", strip=True)
-    return len(body_text) < 300 and len(re.findall(r"<script\b", html or "", re.I)) >= 5
+    loading_markers = ("cargando", "loading", "please enable javascript", "habilite javascript")
+    return (
+        len(body_text) < 300 and len(re.findall(r"<script\b", html or "", re.I)) >= 5
+    ) or (
+        len(body_text) < 500
+        and any(marker in low for marker in loading_markers)
+        and len(re.findall(r"<script\b", html or "", re.I)) >= 3
+    )
 
 
 def _jsonld_type_count(html: str) -> int:
@@ -6195,9 +6498,9 @@ def classify_diagnostic_failure(
 ) -> str:
     status = diagnostic.get("http_status")
     if status is None or diagnostic.get("site_down"):
-        return "site_down"
-    if isinstance(status, int) and status >= 500:
-        return "site_down"
+        return "site_down_confirmed"
+    if _is_site_down_status(status):
+        return "site_down_confirmed"
     if status in {403, 429} or diagnostic.get("blocked"):
         return "blocked"
     if diagnostic.get("html_empty"):
@@ -6207,6 +6510,8 @@ def classify_diagnostic_failure(
     property_links_count = int(diagnostic.get("property_links_count") or 0)
     sitemap_count = int(diagnostic.get("sitemap_property_urls_count") or 0)
     custom_listing_count = int(diagnostic.get("custom_listing_urls_count") or 0)
+    rest_count = int(diagnostic.get("wordpress_rest_property_urls_count") or 0)
+    project_count = int(diagnostic.get("developer_project_urls_count") or 0)
     plugin = str(diagnostic.get("wordpress_plugin_detectado") or "").strip().lower()
 
     if "tokko_html" in technologies and property_links_count > 0:
@@ -6221,23 +6526,27 @@ def classify_diagnostic_failure(
         return f"scrapeable_wordpress_{plugin}"
     if "wordpress" in technologies and sitemap_count > 0:
         return "scrapeable_wordpress_sitemap"
+    if "wordpress" in technologies and rest_count > 0:
+        return "scrapeable_wordpress_rest"
     if "wordpress" in technologies and property_links_count > 0:
         if plugin and plugin not in {"unknown", "wordpress_generic"}:
             return f"scrapeable_wordpress_{plugin}"
         return "scrapeable_wordpress_html"
-    if property_links_count > 0:
-        return "scrapeable_static_html"
     if custom_listing_count > 0:
         return "scrapeable_custom_listing"
+    if property_links_count > 0:
+        return "scrapeable_static_html"
     if sitemap_count > 0:
         return "scrapeable_sitemap"
+    if project_count > 0:
+        return "scrapeable_developer_projects"
 
     if diagnostic.get("requires_network_interception") and not allow_network_interception:
         return "requires_network_interception"
     if diagnostic.get("requires_playwright") and not allow_playwright:
         return "requires_playwright"
-    if property_links_count == 0 and sitemap_count == 0 and custom_listing_count == 0:
-        return "no_property_links"
+    if property_links_count == 0 and sitemap_count == 0 and custom_listing_count == 0 and rest_count == 0 and project_count == 0:
+        return "no_property_links_confirmed"
     if diagnostic.get("unsupported_cms"):
         return "unsupported_cms"
     return "parsing_failed"
@@ -6251,16 +6560,46 @@ def diagnose_inmob(
     allow_network_interception: bool = False,
 ) -> Dict[str, Any]:
     """Diagnostico universal sin guardar propiedades ni consumir cola."""
+    started_at = time.time()
     url_inicial = inmob.get("url_listado") or inmob.get("web", "")
+    start_infos: List[Dict[str, Any]] = []
+    for raw_url in (url_inicial, inmob.get("web")):
+        if raw_url:
+            start_infos.append(normalize_start_url_for_diagnosis(raw_url))
+    primary_start_info = start_infos[0] if start_infos else normalize_start_url_for_diagnosis(url_inicial)
+    base_variants: List[str] = []
+    subfolder_bases: List[str] = []
+    derived_candidates: List[str] = []
+    for info in start_infos:
+        for key, target in (
+            ("base_variants", base_variants),
+            ("subfolder_bases", subfolder_bases),
+            ("candidate_urls", derived_candidates),
+        ):
+            for value in info.get(key) or []:
+                if value and value not in target:
+                    target.append(value)
+
     diagnostic: Dict[str, Any] = {
+        "url_original": url_inicial,
         "url_inicial": url_inicial,
         "url_normalizada": _normalize_queue_url(url_inicial),
+        "url_diagnostico_usada": None,
+        "url_base_derivada": primary_start_info.get("url_base_derivada"),
+        "url_inicial_era_contacto": any(bool(info.get("url_inicial_era_contacto")) for info in start_infos),
+        "rutas_alternativas_probadas": [],
+        "sitemap_urls_probadas": [],
+        "rest_api_probada": [],
+        "scripts_json_detectados": 0,
+        "motivo_no_scrapeable": None,
         "tecnologias_detectadas": [],
         "extractores_posibles": [],
         "posibles_urls_listado": [],
         "posibles_urls_detalle": [],
         "property_links_count": 0,
         "custom_listing_urls_count": 0,
+        "developer_project_urls_count": 0,
+        "wordpress_rest_property_urls_count": 0,
         "cards_posibles": 0,
         "json_ld_property_items": 0,
         "sitemap_property_urls_count": 0,
@@ -6271,93 +6610,216 @@ def diagnose_inmob(
         "site_down": False,
         "html_empty": False,
         "http_statuses": [],
+        "failed_base_variants": [],
+        "site_down_reason": None,
+        "elapsed_seconds": 0,
     }
     if not url_inicial:
-        diagnostic["classification"] = "site_down"
+        diagnostic["site_down"] = True
+        diagnostic["site_down_reason"] = "sin_url"
+        diagnostic["classification"] = "site_down_confirmed"
         return diagnostic
 
     first_html = ""
     final_url = diagnostic["url_normalizada"]
-    candidates = _generic_candidate_urls(inmob, first_url=final_url)
-    diagnostic["posibles_urls_listado"] = candidates[:20]
+    candidates: List[str] = []
+
+    def add_candidate(candidate: Optional[str]) -> None:
+        if not candidate:
+            return
+        clean = _normalize_queue_url(str(candidate).split("#", 1)[0])
+        if clean and clean not in candidates:
+            candidates.append(clean)
+
+    for candidate in derived_candidates:
+        add_candidate(candidate)
+    for candidate in _generic_candidate_urls(inmob, first_url=final_url):
+        add_candidate(candidate)
+    diagnostic["posibles_urls_listado"] = candidates[:30]
+    diagnostic["rutas_alternativas_probadas"] = candidates[1:30]
     fast_site_down_errors = 0
+    site_down_statuses = 0
+    tried_fetch_urls: List[str] = []
+    html_pages: List[Tuple[str, str]] = []
+    base_set = {
+        _normalize_queue_url(value).rstrip("/")
+        for value in (base_variants + subfolder_bases)
+        if value
+    }
+    failed_base_variants: List[str] = []
+
+    def is_base_candidate(candidate: str) -> bool:
+        normalized = _normalize_queue_url(candidate).rstrip("/")
+        return normalized in base_set
 
     for candidate in candidates[:8]:
+        tried_fetch_urls.append(candidate)
         try:
-            response = _http_get(candidate, session, timeout=6, use_scraper_on_block=False)
+            response = _http_get(candidate, session, timeout=5, use_scraper_on_block=False)
             diagnostic["http_statuses"].append(response.status_code)
             diagnostic["http_status"] = response.status_code
             final_url = response.url or candidate
             diagnostic["final_url"] = final_url
             if response.status_code in {403, 429}:
                 diagnostic["blocked"] = True
-            if response.status_code >= 500:
+            if _is_site_down_status(response.status_code):
                 diagnostic["site_down"] = True
+                diagnostic["site_down_reason"] = diagnostic.get("site_down_reason") or _site_down_reason_from_status(response.status_code)
+                site_down_statuses += 1
+                if site_down_statuses >= 2:
+                    break
             if response.status_code == 200 and response.text:
-                first_html = response.text
+                first_html = _decode_response_text(response)
+                if first_html.strip():
+                    html_pages.append((first_html, final_url))
+                    diagnostic["url_diagnostico_usada"] = final_url
+                else:
+                    diagnostic["html_empty"] = True
                 break
         except Exception as exc:
             diagnostic.setdefault("errores_http", []).append(f"{candidate}: {type(exc).__name__}: {str(exc)[:180]}")
             if _is_fast_site_down_error(exc):
                 fast_site_down_errors += 1
                 diagnostic["site_down"] = True
+                reason = _site_down_reason_from_exception(exc)
+                diagnostic["site_down_reason"] = diagnostic.get("site_down_reason") or reason
+                if is_base_candidate(candidate) and candidate not in failed_base_variants:
+                    failed_base_variants.append(candidate)
                 if fast_site_down_errors >= 2:
                     break
 
+    diagnostic["failed_base_variants"] = failed_base_variants
+
     if not first_html:
-        diagnostic["html_empty"] = True
+        diagnostic["html_empty"] = not diagnostic.get("site_down")
+        if diagnostic.get("site_down") and not diagnostic.get("site_down_reason"):
+            diagnostic["site_down_reason"] = "sin_respuesta"
+        diagnostic["elapsed_seconds"] = round(time.time() - started_at, 2)
+        if diagnostic.get("site_down"):
+            diagnostic["motivo_no_scrapeable"] = diagnostic.get("site_down_reason") or "site_down"
+        else:
+            diagnostic["motivo_no_scrapeable"] = "html_vacio_o_sin_respuesta"
         diagnostic["classification"] = classify_diagnostic_failure(diagnostic, allow_playwright, allow_network_interception)
         return diagnostic
 
-    key = _buscar_tokko_key_en_html(first_html)
+    # Escaneo liviano de rutas inmobiliarias alternativas. Esto evita diagnosticar
+    # toda la inmobiliaria desde una pagina tipo contacto o landing institucional.
+    for candidate in candidates[:16]:
+        if len(html_pages) >= 9:
+            break
+        if candidate in tried_fetch_urls or candidate == final_url:
+            continue
+        tried_fetch_urls.append(candidate)
+        try:
+            response = _http_get(candidate, session, timeout=4, use_scraper_on_block=False)
+            diagnostic["http_statuses"].append(response.status_code)
+            if response.status_code in {403, 429}:
+                diagnostic["blocked"] = True
+            if _is_site_down_status(response.status_code):
+                site_down_statuses += 1
+                diagnostic["site_down_reason"] = diagnostic.get("site_down_reason") or _site_down_reason_from_status(response.status_code)
+                continue
+            if response.status_code != 200 or not response.text:
+                continue
+            html = _decode_response_text(response)
+            if html.strip():
+                html_pages.append((html, response.url or candidate))
+        except Exception as exc:
+            diagnostic.setdefault("errores_http", []).append(f"{candidate}: {type(exc).__name__}: {str(exc)[:180]}")
+            if _is_fast_site_down_error(exc):
+                reason = _site_down_reason_from_exception(exc)
+                diagnostic["site_down_reason"] = diagnostic.get("site_down_reason") or reason
+                if is_base_candidate(candidate) and candidate not in failed_base_variants:
+                    failed_base_variants.append(candidate)
+
+    diagnostic["rutas_alternativas_probadas"] = tried_fetch_urls
+    diagnostic["failed_base_variants"] = failed_base_variants
+    combined_html = "\n".join(html for html, _ in html_pages)
+
+    key = _buscar_tokko_key_en_html(combined_html)
     if key:
         diagnostic["tokko_api_key_detectada"] = True
         diagnostic["tecnologias_detectadas"].append("tokko_api")
         diagnostic["extractores_posibles"].append("tokko_api")
-    if _is_tokko_html(first_html):
+    if _is_tokko_html(combined_html) or "tokko" in str(inmob.get("cms_detectado") or "").lower():
         diagnostic["tecnologias_detectadas"].append("tokko_html")
         diagnostic["extractores_posibles"].append("tokko_html")
 
-    wp_plugin = _detect_wordpress_plugin(first_html)
+    wp_plugin = "unknown"
+    for page_html, _ in html_pages:
+        detected_plugin = _detect_wordpress_plugin(page_html)
+        if detected_plugin != "unknown":
+            wp_plugin = detected_plugin
+            break
+    cms_hint = str(inmob.get("cms_detectado") or inmob.get("cms") or "").lower()
+    if wp_plugin == "unknown" and "wordpress" in cms_hint:
+        wp_plugin = "wordpress_generic"
     if wp_plugin != "unknown":
         diagnostic["wordpress_plugin_detectado"] = wp_plugin
         diagnostic["tecnologias_detectadas"].append("wordpress")
         diagnostic["extractores_posibles"].append("wordpress_html")
         diagnostic["extractores_posibles"].append(_wordpress_plugin_strategy_name(wp_plugin))
 
-    generic_property_links = _extract_generic_property_links(first_html, final_url)
+    generic_property_links: List[str] = []
+    plugin_property_links: List[str] = []
+    listing_links: List[str] = []
+    custom_listing_urls: List[str] = []
+    developer_project_urls: List[str] = []
+    script_property_urls: List[str] = []
+    script_listing_urls: List[str] = []
+    script_project_urls: List[str] = []
+    jsonld_count = 0
+    cards_count = 0
+
+    for page_html, page_url in html_pages:
+        generic_property_links.extend(_extract_generic_property_links(page_html, page_url))
+        if wp_plugin != "unknown":
+            plugin_property_links.extend(_extract_wordpress_plugin_property_links(page_html, page_url, wp_plugin))
+        listing_links.extend(
+            link for link in _extract_keyword_internal_links(page_html, page_url, _UNIVERSAL_LISTING_KEYWORDS)
+            if not _is_noise_property_url(link)
+        )
+        page_custom_listing_urls = _extract_custom_listing_urls(page_html, page_url)
+        custom_listing_urls.extend(page_custom_listing_urls)
+        if _looks_like_custom_listing_url(page_url):
+            custom_listing_urls.append(page_url)
+        developer_project_urls.extend(_extract_developer_project_links(page_html, page_url))
+        script_signals = _extract_script_property_signals(page_html, page_url)
+        script_property_urls.extend(script_signals["property_urls"])
+        script_listing_urls.extend(script_signals["listing_urls"])
+        script_project_urls.extend(script_signals["project_urls"])
+        if any(script_signals.values()):
+            diagnostic["scripts_json_detectados"] += 1
+        jsonld_count += _jsonld_type_count(page_html)
+        cards_count = max(cards_count, _count_html_cards(page_html))
+
     if wp_plugin != "unknown":
-        plugin_property_links = _extract_wordpress_plugin_property_links(first_html, final_url, wp_plugin)
         property_links = [
-            url for url in list(dict.fromkeys(plugin_property_links + generic_property_links))
+            url for url in list(dict.fromkeys(plugin_property_links + generic_property_links + script_property_urls))
             if _looks_like_wordpress_plugin_property_url(url, wp_plugin) or _looks_like_real_property_url(url)
         ]
     else:
-        property_links = [url for url in generic_property_links if _looks_like_real_property_url(url)]
-    listing_links = [
-        link for link in _extract_keyword_internal_links(first_html, final_url, _UNIVERSAL_LISTING_KEYWORDS)
-        if not _is_noise_property_url(link)
-    ]
-    custom_listing_urls = _extract_custom_listing_urls(first_html, final_url)
-    if _looks_like_custom_listing_url(final_url) and final_url not in custom_listing_urls:
-        custom_listing_urls.insert(0, final_url)
+        property_links = [url for url in list(dict.fromkeys(generic_property_links + script_property_urls)) if _looks_like_real_property_url(url)]
+
+    custom_listing_urls = list(dict.fromkeys(custom_listing_urls + script_listing_urls))
+    developer_project_urls = list(dict.fromkeys(developer_project_urls + script_project_urls))
     diagnostic["property_links_count"] = len(property_links)
     diagnostic["urls_validas_detectadas"] = len([url for url in property_links if _looks_like_real_property_url(url) or _looks_like_wordpress_plugin_property_url(url, wp_plugin)])
     diagnostic["posibles_urls_detalle"] = property_links[:20]
     diagnostic["custom_listing_urls_count"] = len(custom_listing_urls)
     diagnostic["custom_listing_urls_detectadas"] = custom_listing_urls[:30]
+    diagnostic["developer_project_urls_count"] = len(developer_project_urls)
+    diagnostic["developer_project_urls_detectadas"] = developer_project_urls[:20]
     diagnostic["posibles_urls_listado"] = list(dict.fromkeys(diagnostic["posibles_urls_listado"] + listing_links + custom_listing_urls))[:30]
     if custom_listing_urls:
         diagnostic["extractores_posibles"].append("custom_listing_detail")
     if property_links:
         diagnostic["extractores_posibles"].append("static_html")
 
-    cards_count = _count_html_cards(first_html)
     diagnostic["cards_posibles"] = cards_count
     if cards_count >= 3 and "static_html" not in diagnostic["extractores_posibles"]:
         diagnostic["extractores_posibles"].append("static_html")
 
-    jsonld_count = _jsonld_type_count(first_html)
     diagnostic["json_ld_property_items"] = jsonld_count
     if jsonld_count:
         diagnostic["extractores_posibles"].append("json_ld")
@@ -6365,15 +6827,51 @@ def diagnose_inmob(
     parsed = urlparse(final_url)
     base = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else final_url
     try:
-        sitemap_urls = [url for url in _fetch_sitemap_urls(base, session, None) if _looks_like_real_property_url(url)]
+        sitemap_urls, sitemap_project_urls, sitemap_tried, sitemap_errors = _fetch_sitemap_urls_for_diagnosis(base, session)
+        diagnostic["sitemap_urls_probadas"] = sitemap_tried
+        if sitemap_errors:
+            diagnostic.setdefault("errores_http", []).extend(f"sitemap: {err}" for err in sitemap_errors[:8])
         diagnostic["sitemap_property_urls_count"] = len(sitemap_urls)
+        if sitemap_project_urls:
+            developer_project_urls = list(dict.fromkeys(developer_project_urls + sitemap_project_urls))
+            diagnostic["developer_project_urls_count"] = len(developer_project_urls)
+            diagnostic["developer_project_urls_detectadas"] = developer_project_urls[:20]
         if sitemap_urls:
             diagnostic["extractores_posibles"].append("sitemap")
             diagnostic["posibles_urls_detalle"] = list(dict.fromkeys(diagnostic["posibles_urls_detalle"] + sitemap_urls[:20]))[:30]
     except Exception as exc:
         diagnostic.setdefault("errores_http", []).append(f"sitemap: {type(exc).__name__}: {str(exc)[:180]}")
 
-    requires_js = _html_requires_js(first_html, len(property_links), cards_count)
+    if "wordpress" in diagnostic["tecnologias_detectadas"]:
+        try:
+            rest_links, rest_types, rest_tried, rest_errors = _wordpress_rest_links_for_diagnosis(base, session, wp_plugin)
+            diagnostic["rest_api_probada"] = rest_tried
+            diagnostic["wordpress_rest_types_detectados"] = rest_types
+            rest_property_links = [
+                link for link in rest_links
+                if _looks_like_wordpress_plugin_property_url(link, wp_plugin) or _looks_like_real_property_url(link)
+            ]
+            rest_project_links = [link for link in rest_links if _looks_like_developer_project_url(link)]
+            diagnostic["wordpress_rest_property_urls_count"] = len(rest_property_links)
+            if rest_property_links:
+                diagnostic["extractores_posibles"].append("wordpress_rest")
+                diagnostic["posibles_urls_detalle"] = list(dict.fromkeys(diagnostic["posibles_urls_detalle"] + rest_property_links[:20]))[:30]
+                property_links = list(dict.fromkeys(property_links + rest_property_links))
+                diagnostic["property_links_count"] = len(property_links)
+                diagnostic["urls_validas_detectadas"] = len([url for url in property_links if _looks_like_real_property_url(url) or _looks_like_wordpress_plugin_property_url(url, wp_plugin)])
+            if rest_project_links:
+                developer_project_urls = list(dict.fromkeys(developer_project_urls + rest_project_links))
+                diagnostic["developer_project_urls_count"] = len(developer_project_urls)
+                diagnostic["developer_project_urls_detectadas"] = developer_project_urls[:20]
+            if rest_errors:
+                diagnostic.setdefault("errores_http", []).extend(f"rest: {err}" for err in rest_errors[:8])
+        except Exception as exc:
+            diagnostic.setdefault("errores_http", []).append(f"rest: {type(exc).__name__}: {str(exc)[:180]}")
+
+    if developer_project_urls and "developer_projects" not in diagnostic["extractores_posibles"]:
+        diagnostic["extractores_posibles"].append("developer_projects")
+
+    requires_js = _html_requires_js(combined_html, len(property_links), cards_count)
     diagnostic["requires_js"] = requires_js
     diagnostic["requires_playwright"] = requires_js and not property_links and not jsonld_count and not diagnostic["sitemap_property_urls_count"]
     diagnostic["requires_network_interception"] = (
@@ -6407,8 +6905,15 @@ def diagnose_inmob(
         finally:
             _close_playwright_safely(page, "diagnose page")
 
+    if not property_links and not diagnostic["sitemap_property_urls_count"] and not custom_listing_urls and not developer_project_urls:
+        if diagnostic.get("requires_playwright"):
+            diagnostic["motivo_no_scrapeable"] = "html_responde_pero_contenido_cargado_por_js"
+        else:
+            diagnostic["motivo_no_scrapeable"] = "sin_fichas_reales_tras_rutas_alternativas"
+
     diagnostic["extractores_posibles"] = list(dict.fromkeys(diagnostic["extractores_posibles"]))
     diagnostic["tecnologias_detectadas"] = list(dict.fromkeys(diagnostic["tecnologias_detectadas"])) or ["unknown"]
+    diagnostic["elapsed_seconds"] = round(time.time() - started_at, 2)
     diagnostic["classification"] = classify_diagnostic_failure(diagnostic, allow_playwright, allow_network_interception)
     return diagnostic
 
@@ -6479,6 +6984,7 @@ def select_best_scraping_strategy(diagnostic: Dict[str, Any], history: Optional[
 
     no_scrapeable = {
         "site_down", "blocked", "empty_site", "no_property_links",
+        "site_down_confirmed", "no_property_links_confirmed",
         "unsupported_cms", "tracking_only",
     }
     if classification in no_scrapeable:
@@ -6527,6 +7033,11 @@ def select_best_scraping_strategy(diagnostic: Dict[str, Any], history: Optional[
             fallbacks = ["wordpress_generic_detail", "static_html_detail"]
             reason = f"wordpress/{plugin or 'generic'} con sitemap de propiedades ({sitemap_count} URLs)"
             confidence = "high" if sitemap_count >= 20 else "medium"
+        elif classification == "scrapeable_wordpress_rest":
+            primary = "wordpress_generic_detail"
+            fallbacks = ["static_html_detail"]
+            reason = "wordpress con REST API mostrando URLs de propiedades"
+            confidence = "medium"
         elif property_links > 0:
             primary = "wordpress_generic_detail"
             fallbacks = ["static_html_detail"]
@@ -6568,6 +7079,12 @@ def select_best_scraping_strategy(diagnostic: Dict[str, Any], history: Optional[
         fallbacks = ["json_ld"]
         reason = f"HTML estatico con links reales de propiedades ({property_links})"
         confidence = "medium"
+
+    if primary is None and classification == "scrapeable_developer_projects":
+        primary = "static_html_detail"
+        fallbacks = ["json_ld"]
+        reason = "sitio con fichas de desarrollos/emprendimientos detectadas"
+        confidence = "low"
 
     if primary is None and diagnostic.get("requires_playwright"):
         primary = "playwright_html"
