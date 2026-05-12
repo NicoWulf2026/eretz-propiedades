@@ -2085,6 +2085,18 @@ def _location_text_key(*values: Any) -> str:
 
 _LOCATION_ALIASES: List[Dict[str, Any]] = [
     {
+        "aliases": (
+            "potrero de los funes",
+            "potrero-de-los-funes",
+            "potrero de los funes san luis",
+            "potrero de los funes, san luis",
+        ),
+        "ciudad": "Potrero de los Funes",
+        "provincia": "San Luis",
+        "motivo": "titulo_url_contiene_potrero_de_los_funes",
+        "specific": True,
+    },
+    {
         "aliases": ("san jose del rincon", "san jose rincon", "san josé del rincón"),
         "ciudad": "San José del Rincón",
         "provincia": "Santa Fe",
@@ -2113,6 +2125,7 @@ _LOCATION_ALIASES: List[Dict[str, Any]] = [
         "aliases": ("funes",),
         "ciudad": "Funes",
         "provincia": "Santa Fe",
+        "blocked_if_contains": ("potrero de los funes",),
     },
     {
         "aliases": ("roldan", "roldán"),
@@ -2132,10 +2145,30 @@ _LOCATION_ALIASES: List[Dict[str, Any]] = [
 ]
 
 
-def _detect_location_from_title_or_url(titulo: Any, url: Any) -> Optional[Dict[str, str]]:
-    text = _location_text_key(titulo, url)
+def _text_contains_location_alias(text: str, alias: str) -> bool:
+    alias_key = _coordinate_location_key(alias)
+    if not alias_key:
+        return False
+    return bool(re.search(rf"\b{re.escape(alias_key)}\b", text))
+
+
+def _detect_location_from_text(
+    titulo: Any,
+    url: Any,
+    direccion: Any = None,
+    barrio: Any = None,
+    descripcion: Any = None,
+) -> Optional[Dict[str, str]]:
+    text = _location_text_key(titulo, url, direccion, barrio, descripcion)
     if not text:
         return None
+
+    if _text_contains_location_alias(text, "potrero de los funes"):
+        return {
+            "ciudad": "Potrero de los Funes",
+            "provincia": "San Luis",
+            "motivo": "titulo_url_contiene_potrero_de_los_funes",
+        }
 
     if re.search(r"\b(?:en|ubicad[oa]\s+en)\s+santa\s+fe\s+(?:la\s+capital|capital)\b", text) or "ciudad de santa fe" in text:
         return {"ciudad": "Santa Fe", "provincia": "Santa Fe", "motivo": "titulo_url_santa_fe_la_capital"}
@@ -2149,13 +2182,20 @@ def _detect_location_from_title_or_url(titulo: Any, url: Any) -> Optional[Dict[s
     for rule in _LOCATION_ALIASES:
         for alias in rule["aliases"]:
             alias_key = _coordinate_location_key(alias)
+            blocked_aliases = rule.get("blocked_if_contains") or ()
+            if any(_text_contains_location_alias(text, blocked) for blocked in blocked_aliases):
+                continue
             if re.search(rf"\b{re.escape(alias_key)}\b", text):
                 return {
                     "ciudad": rule["ciudad"],
                     "provincia": rule["provincia"],
-                    "motivo": f"titulo_url_contiene_{alias_key.replace(' ', '_')}",
+                    "motivo": rule.get("motivo") or f"titulo_url_contiene_{alias_key.replace(' ', '_')}",
                 }
     return None
+
+
+def _detect_location_from_title_or_url(titulo: Any, url: Any) -> Optional[Dict[str, str]]:
+    return _detect_location_from_text(titulo=titulo, url=url)
 
 
 def _is_suspicious_location_value(value: Any) -> bool:
@@ -2178,8 +2218,15 @@ def normalize_location_fields(
     provincia: Any,
     pais: Any,
     url: Any,
+    descripcion: Any = None,
 ) -> Dict[str, Any]:
-    detected = _detect_location_from_title_or_url(titulo, url)
+    detected = _detect_location_from_text(
+        titulo=titulo,
+        url=url,
+        direccion=direccion,
+        barrio=barrio,
+        descripcion=descripcion,
+    )
     current_city = str(ciudad or "").strip()
     current_province = str(provincia or "").strip()
     current_country = str(pais or "Argentina").strip() or "Argentina"
@@ -2256,6 +2303,7 @@ def sanitize_property_location(prop: Dict[str, Any], stats: Optional[Dict[str, A
         prop.get("provincia"),
         prop.get("pais"),
         prop.get("url"),
+        prop.get("descripcion"),
     )
     if not normalized.get("location_normalized"):
         return prop
