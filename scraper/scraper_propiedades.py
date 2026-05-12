@@ -206,8 +206,11 @@ PROPERTY_INTEGER_RANGES: Dict[str, Tuple[int, int]] = {
 
 CITY_COORDINATE_BOUNDS: Dict[str, Tuple[float, float, float, float]] = {
     "rosario": (-33.10, -32.80, -60.85, -60.50),
-    "funes": (-33.00, -32.80, -60.90, -60.70),
+    "potrero de los funes": (-33.30, -33.15, -66.35, -66.15),
+    "potrero de garay": (-31.90, -31.70, -64.65, -64.40),
+    "funes": (-33.00, -32.85, -60.95, -60.70),
     "roldan": (-33.00, -32.80, -61.00, -60.80),
+    "cordoba": (-31.55, -31.25, -64.35, -64.05),
     "santa fe": (-31.80, -31.45, -60.90, -60.45),
     "san jose del rincon": (-31.70, -31.50, -60.65, -60.45),
 }
@@ -2097,6 +2100,19 @@ _LOCATION_ALIASES: List[Dict[str, Any]] = [
         "specific": True,
     },
     {
+        "aliases": (
+            "potrero de garay",
+            "potrero-de-garay",
+            "potrero de garay cordoba",
+            "potrero de garay, cordoba",
+        ),
+        "ciudad": "Potrero de Garay",
+        "provincia": "Córdoba",
+        "motivo": "titulo_url_contiene_potrero_de_garay",
+        "specific": True,
+        "clear_barrio": True,
+    },
+    {
         "aliases": ("san jose del rincon", "san jose rincon", "san josé del rincón"),
         "ciudad": "San José del Rincón",
         "provincia": "Santa Fe",
@@ -2170,10 +2186,21 @@ def _detect_location_from_text(
             "motivo": "titulo_url_contiene_potrero_de_los_funes",
         }
 
+    if _text_contains_location_alias(text, "potrero de garay"):
+        return {
+            "ciudad": "Potrero de Garay",
+            "provincia": "Córdoba",
+            "motivo": "titulo_url_contiene_potrero_de_garay",
+            "clear_barrio": True,
+        }
+
     if re.search(r"\b(?:en|ubicad[oa]\s+en)\s+santa\s+fe\s+(?:la\s+capital|capital)\b", text) or "ciudad de santa fe" in text:
         return {"ciudad": "Santa Fe", "provincia": "Santa Fe", "motivo": "titulo_url_santa_fe_la_capital"}
 
-    if re.search(r"\b(?:en|ubicad[oa]\s+en)\s+cordoba\s+capital\b", text):
+    if (
+        re.search(r"\b(?:en|ubicad[oa]\s+en)\s+cordoba\s+capital\b", text)
+        and not _text_contains_location_alias(text, "potrero de garay")
+    ):
         return {"ciudad": "Córdoba", "provincia": "Córdoba", "motivo": "titulo_url_cordoba_capital"}
 
     if re.search(r"\b(?:en|ubicad[oa]\s+en)\s+9\s+de\s+julio\b(?!\s+\d)", text):
@@ -2190,6 +2217,7 @@ def _detect_location_from_text(
                     "ciudad": rule["ciudad"],
                     "provincia": rule["provincia"],
                     "motivo": rule.get("motivo") or f"titulo_url_contiene_{alias_key.replace(' ', '_')}",
+                    "clear_barrio": bool(rule.get("clear_barrio")),
                 }
     return None
 
@@ -2225,14 +2253,16 @@ def normalize_location_fields(
         url=url,
         direccion=direccion,
         barrio=barrio,
-        descripcion=descripcion,
+        descripcion=" ".join(str(value or "") for value in (descripcion, ciudad, provincia)),
     )
     current_city = str(ciudad or "").strip()
     current_province = str(provincia or "").strip()
     current_country = str(pais or "Argentina").strip() or "Argentina"
+    current_barrio = str(barrio or "").strip()
     result = {
         "ciudad": current_city,
         "provincia": current_province,
+        "barrio": current_barrio,
         "pais": current_country,
         "location_normalized": False,
         "motivo": None,
@@ -2250,27 +2280,38 @@ def normalize_location_fields(
     should_update_city = (
         not current_city_key
         or current_city_key != detected_city_key
-        or _is_suspicious_location_value(current_city)
+        or (_is_suspicious_location_value(current_city) and current_city_key != detected_city_key)
     )
     should_update_province = (
         not current_province_key
         or current_province_key != detected_province_key
-        or _is_suspicious_location_value(current_province)
+        or (_is_suspicious_location_value(current_province) and current_province_key != detected_province_key)
     )
 
-    if not should_update_city and not should_update_province and _coordinate_location_key(current_country) == "argentina":
+    should_clear_barrio = bool(detected.get("clear_barrio")) and bool(current_barrio)
+
+    if (
+        not should_update_city
+        and not should_update_province
+        and not should_clear_barrio
+        and _coordinate_location_key(current_country) == "argentina"
+    ):
         return result
 
     result.update({
         "ciudad": detected_city if should_update_city else current_city,
         "provincia": detected_province if should_update_province else current_province,
+        "barrio": None if detected.get("clear_barrio") else current_barrio,
         "pais": "Argentina",
         "location_normalized": True,
         "ciudad_original": current_city,
         "provincia_original": current_province,
+        "barrio_original": current_barrio,
         "ciudad_final": detected_city if should_update_city else current_city,
         "provincia_final": detected_province if should_update_province else current_province,
+        "barrio_final": None if detected.get("clear_barrio") else current_barrio,
         "motivo": detected.get("motivo") or "titulo_url_ciudad_clara",
+        "clear_barrio": bool(detected.get("clear_barrio")),
     })
     return result
 
@@ -2287,6 +2328,8 @@ def _record_location_normalization(stats: Optional[Dict[str, Any]], prop: Dict[s
             "provincia_original": normalized.get("provincia_original"),
             "ciudad_final": normalized.get("ciudad_final"),
             "provincia_final": normalized.get("provincia_final"),
+            "barrio_original": normalized.get("barrio_original"),
+            "barrio_final": normalized.get("barrio_final"),
             "motivo": normalized.get("motivo"),
             "titulo": prop.get("titulo"),
             "url": prop.get("url"),
@@ -2310,18 +2353,41 @@ def sanitize_property_location(prop: Dict[str, Any], stats: Optional[Dict[str, A
     _record_location_normalization(stats, prop, normalized)
     prop["ciudad"] = normalized.get("ciudad")
     prop["provincia"] = normalized.get("provincia")
+    if normalized.get("clear_barrio"):
+        prop["barrio"] = None
     prop["pais"] = normalized.get("pais") or "Argentina"
     prop["_location_normalized"] = True
     prop["_location_normalization_motivo"] = normalized.get("motivo")
-    logger.info(
-        "  Ubicacion normalizada | %s, %s -> %s, %s | motivo=%s | url=%s",
-        normalized.get("ciudad_original") or "-",
-        normalized.get("provincia_original") or "-",
-        normalized.get("ciudad_final"),
-        normalized.get("provincia_final"),
-        normalized.get("motivo"),
-        prop.get("url"),
-    )
+    prop["_clear_barrio_due_location_normalization"] = bool(normalized.get("clear_barrio"))
+    motivo = str(normalized.get("motivo") or "")
+    if motivo == "titulo_url_contiene_potrero_de_garay":
+        logger.info(
+            "[NORMALIZE_LOCATION] Potrero de Garay corregido: ciudad_anterior=%s provincia_anterior=%s ciudad_final=%s provincia_final=%s url=%s",
+            normalized.get("ciudad_original") or "-",
+            normalized.get("provincia_original") or "-",
+            normalized.get("ciudad_final"),
+            normalized.get("provincia_final"),
+            prop.get("url"),
+        )
+    elif motivo == "titulo_url_contiene_potrero_de_los_funes":
+        logger.info(
+            "[NORMALIZE_LOCATION] Potrero de los Funes corregido: ciudad_anterior=%s provincia_anterior=%s ciudad_final=%s provincia_final=%s url=%s",
+            normalized.get("ciudad_original") or "-",
+            normalized.get("provincia_original") or "-",
+            normalized.get("ciudad_final"),
+            normalized.get("provincia_final"),
+            prop.get("url"),
+        )
+    else:
+        logger.info(
+            "  Ubicacion normalizada | %s, %s -> %s, %s | motivo=%s | url=%s",
+            normalized.get("ciudad_original") or "-",
+            normalized.get("provincia_original") or "-",
+            normalized.get("ciudad_final"),
+            normalized.get("provincia_final"),
+            normalized.get("motivo"),
+            prop.get("url"),
+        )
     return prop
 
 
@@ -2475,7 +2541,7 @@ def sanitize_property_coordinates(prop: Dict[str, Any], stats: Optional[Dict[str
     if not validation.get("valid"):
         _record_coordinate_outlier(stats, prop, validation)
         logger.info(
-            "  Coordenada descartada por outlier | ciudad=%s provincia=%s lat=%s lon=%s url=%s",
+            "[INVALID_COORDS] Coordenadas descartadas por bounds: ciudad=%s provincia=%s lat=%s lon=%s url=%s",
             prop.get("ciudad"),
             prop.get("provincia"),
             prop.get("latitud"),
@@ -2591,11 +2657,12 @@ def build_protected_update_payload(
                 stats["coordenadas_conservadas"] = int(stats.get("coordenadas_conservadas") or 0) + 1
             _record_coordinate_outlier(stats, location_context, validation)
             logger.info(
-                "  Coordenada descartada por outlier en update | ciudad=%s provincia=%s lat=%s lon=%s",
+                "[INVALID_COORDS] Coordenadas descartadas por bounds: ciudad=%s provincia=%s lat=%s lon=%s url=%s",
                 location_context.get("ciudad"),
                 location_context.get("provincia"),
                 location_context.get("latitud"),
                 location_context.get("longitud"),
+                location_context.get("url"),
             )
 
     if "precio" in payload and not _positive_number(payload.get("precio")):
@@ -2617,6 +2684,8 @@ def build_protected_update_payload(
                 raw_images = []
             cleaned = clean_property_images(raw_images)
             payload[field] = cleaned or None
+        if field == "barrio" and payload.get("_clear_barrio_due_location_normalization"):
+            continue
         safe_incoming = _is_new_value_safe(field, payload.get(field), payload)
         if safe_incoming:
             continue
@@ -2629,6 +2698,7 @@ def build_protected_update_payload(
     payload.pop("_existing_inmobiliaria_id", None)
     payload.pop("_location_normalized", None)
     payload.pop("_location_normalization_motivo", None)
+    payload.pop("_clear_barrio_due_location_normalization", None)
     payload.pop("_location_validation", None)
     return payload
 
