@@ -93,6 +93,10 @@ STRATEGY_TIMEOUT_SECONDS: Dict[str, int] = {
     "static_html_detail": 45,
     "static_html_tokko_detail": 45,
     "wordpress_sitemap_detail": 90,
+    "wordpress_essential_real_estate_detail": 75,
+    "wordpress_estatik_detail": 75,
+    "wordpress_realhomes_detail": 75,
+    "wordpress_generic_detail": 65,
     "json_ld": 20,
     "sitemap": 20,
     "html_scraper": 45,
@@ -3791,6 +3795,10 @@ def _extract_detail_page(url: str, inmob: Dict, session: requests.Session) -> Op
         "static_html_detail",
         "static_html_tokko_detail",
         "wordpress_sitemap_detail",
+        "wordpress_essential_real_estate_detail",
+        "wordpress_estatik_detail",
+        "wordpress_realhomes_detail",
+        "wordpress_generic_detail",
     }
     if bounded_strategy:
         _check_strategy_deadline(inmob, str(inmob.get("_strategy_name") or "detail"))
@@ -4182,11 +4190,11 @@ def _detect_wordpress_plugin(html: str) -> str:
     low = (html or "").lower()
     if "houzez" in low:
         return "houzez"
-    if "realhomes" in low or "inspiry" in low:
+    if "realhomes" in low or "inspiry" in low or "rh_prop_card" in low or "rh-property" in low:
         return "realhomes"
-    if "essential-real-estate" in low or "ere-" in low:
+    if "essential-real-estate" in low or "/essential-real-estate/" in low or "ere-property" in low or "ere-" in low:
         return "essential_real_estate"
-    if "estatik" in low:
+    if "estatik" in low or "es_property" in low or "es-listing" in low or "es-property" in low:
         return "estatik"
     if "wp-content" in low or "wp-json" in low or "wordpress" in low:
         return "wordpress_generic"
@@ -4255,6 +4263,432 @@ def _extract_wordpress_property_links(html: str, current_url: str) -> List[str]:
             if urlparse(full).netloc == urlparse(current_url).netloc and full not in links:
                 links.append(full)
     return links[:300]
+
+
+_WORDPRESS_PLUGIN_LISTING_PATHS: Dict[str, Tuple[str, ...]] = {
+    "essential_real_estate": (
+        "/", "/properties/", "/property/", "/property-status/for-sale/",
+        "/property-status/venta/", "/property-status/alquiler/",
+        "/property-type/casa/", "/property-type/departamento/",
+        "/property-type/local/", "/property-type/terreno/", "/venta/", "/alquiler/",
+        "/?post_type=property",
+    ),
+    "estatik": (
+        "/", "/propiedades/", "/propiedad/", "/properties/", "/property/",
+        "/venta/", "/ventas/", "/alquiler/", "/alquileres/",
+        "/?post_type=properties", "/?post_type=property",
+    ),
+    "realhomes": (
+        "/", "/properties/", "/property/", "/propiedades/",
+        "/property-status/venta/", "/property-status/alquiler/",
+        "/property-status/for-sale/", "/property-status/for-rent/",
+        "/property-type/casa/", "/property-type/departamento/",
+        "/property-type/terreno/", "/property-type/local/",
+        "/venta/", "/alquiler/",
+    ),
+    "wordpress_generic": (
+        "/", "/propiedades/", "/propiedad/", "/properties/", "/property/",
+        "/inmuebles/", "/inmueble/", "/venta/", "/ventas/", "/alquiler/",
+        "/alquileres/",
+    ),
+}
+
+_WORDPRESS_PLUGIN_MAX_LISTING_PAGES: Dict[str, int] = {
+    "essential_real_estate": 28,
+    "estatik": 36,
+    "realhomes": 28,
+    "wordpress_generic": 22,
+}
+
+_WORDPRESS_PLUGIN_MAX_DETAILS: Dict[str, int] = {
+    "essential_real_estate": 180,
+    "estatik": 220,
+    "realhomes": 180,
+    "wordpress_generic": 140,
+}
+
+
+def _wordpress_plugin_strategy_name(plugin: str) -> str:
+    normalized = (plugin or "wordpress_generic").strip().lower()
+    if normalized in {"essential_real_estate", "estatik", "realhomes"}:
+        return f"wordpress_{normalized}_detail"
+    return "wordpress_generic_detail"
+
+
+def _wordpress_base_url(url: str) -> str:
+    parsed = urlparse(_normalize_queue_url(url))
+    if parsed.scheme and parsed.netloc:
+        return f"{parsed.scheme}://{parsed.netloc}"
+    return _normalize_queue_url(url).rstrip("/")
+
+
+def _same_site_url(url: str, base_url: str) -> bool:
+    return bool(urlparse(url).netloc) and urlparse(url).netloc == urlparse(base_url).netloc
+
+
+def _looks_like_wordpress_plugin_property_url(url: str, plugin: str = "wordpress_generic") -> bool:
+    if not url or _is_noise_property_url(url):
+        return False
+    parsed = urlparse(str(url))
+    path = unquote((parsed.path or "").lower()).strip("/")
+    if not path:
+        return False
+    if re.search(r"^(property-status|property-type|property-feature|property-city|property-state|estado|tipo-propiedad|categoria|category|tag)/", path):
+        return False
+    if path in {
+        "property", "properties", "propiedad", "propiedades", "inmueble", "inmuebles",
+        "venta", "ventas", "alquiler", "alquileres",
+    }:
+        return False
+
+    first = path.split("/", 1)[0]
+    slug = path.split("/", 1)[1] if "/" in path else ""
+    if plugin == "essential_real_estate":
+        return first in {"property", "properties"} and len(slug) >= 6
+    if plugin == "estatik":
+        return first in {"propiedad", "propiedades", "property", "properties", "inmueble", "inmuebles"} and len(slug) >= 6
+    if plugin == "realhomes":
+        return first in {"property", "properties", "propiedad", "propiedades"} and len(slug) >= 6
+    return _looks_like_real_property_url(url)
+
+
+def _extract_wordpress_plugin_property_links(html: str, current_url: str, plugin: str) -> List[str]:
+    soup = BeautifulSoup(html or "", "html.parser")
+    current_netloc = urlparse(current_url).netloc
+    links: List[str] = []
+    selectors = [
+        "a[href*='/property/']", "a[href*='/properties/']",
+        "a[href*='/propiedad/']", "a[href*='/propiedades/']",
+        "a[href*='/inmueble/']", "a[href*='/inmuebles/']",
+        ".property a[href]", ".property-item a[href]", ".property-listing a[href]",
+        ".ere-property a[href]", "[class*='ere-property'] a[href]",
+        "[class*='es-listing'] a[href]", "[class*='es-property'] a[href]",
+        "[class*='rh_prop_card'] a[href]", "[class*='rh-property'] a[href]",
+        "article a[href]", ".card a[href]",
+    ]
+    for selector in selectors:
+        for a in soup.select(selector):
+            href = (a.get("href") or "").strip()
+            if not href:
+                continue
+            full = urljoin(current_url, href).split("#", 1)[0]
+            if urlparse(full).netloc != current_netloc:
+                continue
+            if _looks_like_wordpress_plugin_property_url(full, plugin) and full not in links:
+                links.append(full)
+
+    script_patterns = (
+        r"""["']([^"']*/(?:property|properties|propiedad|propiedades|inmueble|inmuebles)/[^"']{6,})["']""",
+        r"""https?://[^\s"'<>]+/(?:property|properties|propiedad|propiedades|inmueble|inmuebles)/[^\s"'<>]+""",
+    )
+    for pattern in script_patterns:
+        for match in re.findall(pattern, html or "", flags=re.I):
+            candidate = match if isinstance(match, str) else match[0]
+            full = urljoin(current_url, candidate).split("#", 1)[0]
+            if urlparse(full).netloc != current_netloc:
+                continue
+            if _looks_like_wordpress_plugin_property_url(full, plugin) and full not in links:
+                links.append(full)
+    return links[:500]
+
+
+def _looks_like_wordpress_listing_url(url: str, base_url: str, plugin: str) -> bool:
+    if not url or _is_noise_property_url(url):
+        return False
+    if not _same_site_url(url, base_url):
+        return False
+    if _looks_like_wordpress_plugin_property_url(url, plugin):
+        return False
+    path = unquote((urlparse(url).path or "").lower()).strip("/")
+    query = (urlparse(url).query or "").lower()
+    listing_markers = (
+        "property-status", "property-type", "property-city", "property-state",
+        "properties", "property", "propiedades", "propiedad", "inmuebles",
+        "inmueble", "venta", "ventas", "alquiler", "alquileres", "page",
+    )
+    query_markers = ("post_type=property", "post_type=properties", "paged=", "es_")
+    return any(marker in path for marker in listing_markers) or any(marker in query for marker in query_markers)
+
+
+def _extract_wordpress_listing_links(html: str, current_url: str, base_url: str, plugin: str) -> List[str]:
+    soup = BeautifulSoup(html or "", "html.parser")
+    links: List[str] = []
+    selectors = [
+        "a[rel='next']", "link[rel='next']", ".pagination a[href]",
+        ".page-numbers a[href]", ".nav-links a[href]", "a[href*='/page/']",
+        "a[href*='paged=']", "a[href*='page=']",
+        "a[href*='property-status']", "a[href*='property-type']",
+        "a[href*='propiedades']", "a[href*='properties']",
+    ]
+    for selector in selectors:
+        for node in soup.select(selector):
+            href = (node.get("href") or "").strip()
+            text = node.get_text(" ", strip=True).lower()
+            if not href:
+                continue
+            full = urljoin(current_url, href).split("#", 1)[0]
+            if not _looks_like_wordpress_listing_url(full, base_url, plugin):
+                continue
+            if (
+                re.search(r"/page/\d+", full, re.I)
+                or re.search(r"[?&](paged|page)=\d+", full, re.I)
+                or any(word in text for word in ("siguiente", "next", ">", "mas", "mÃ¡s"))
+                or "property-status" in full.lower()
+                or "property-type" in full.lower()
+            ):
+                if full not in links:
+                    links.append(full)
+    for link in _extract_keyword_internal_links(html, current_url, _WORDPRESS_LISTING_KEYWORDS):
+        if _looks_like_wordpress_listing_url(link, base_url, plugin) and link not in links:
+            links.append(link)
+    return links[:120]
+
+
+def _wordpress_plugin_candidate_urls(inmob: Dict, first_html: str = "", first_url: str = "", plugin: str = "wordpress_generic") -> List[str]:
+    urls: List[str] = []
+
+    def add(url: Optional[str]) -> None:
+        if not url:
+            return
+        clean = _normalize_queue_url(str(url).split("#", 1)[0])
+        if clean and not _is_noise_property_url(clean) and clean not in urls:
+            urls.append(clean)
+
+    for variant in _url_host_variants(inmob.get("url_listado")):
+        add(variant)
+    for variant in _url_host_variants(inmob.get("web")):
+        add(variant)
+    base_sources = _url_host_variants(inmob.get("web") or first_url or inmob.get("url_listado"))
+    for base in base_sources:
+        root = _wordpress_base_url(base)
+        for path in _WORDPRESS_PLUGIN_LISTING_PATHS.get(plugin, _WORDPRESS_PLUGIN_LISTING_PATHS["wordpress_generic"]):
+            add(urljoin(root.rstrip("/") + "/", path.lstrip("/")))
+    if first_html and first_url:
+        base = _wordpress_base_url(first_url)
+        for link in _extract_wordpress_listing_links(first_html, first_url, base, plugin):
+            add(link)
+    return urls[:80]
+
+
+def _extract_wordpress_details_from_urls(
+    detail_urls: List[str],
+    inmob: Dict,
+    session: requests.Session,
+    strategy_name: str,
+    plugin: str,
+    max_details: int,
+) -> Tuple[List[Dict], List[str]]:
+    resultados: List[Dict] = []
+    errores_relevantes: List[str] = []
+
+    def _fetch_one(detail_url: str) -> Optional[Dict]:
+        try:
+            _check_strategy_deadline(inmob, strategy_name)
+            prop = _extract_detail_page(detail_url, inmob, session)
+            if prop:
+                prop["fuente_extraccion"] = strategy_name
+                prop["cms_origen"] = inmob.get("cms_detectado") or "wordpress"
+            time.sleep(random.uniform(0.05, 0.18))
+            return prop
+        except StrategyTimeoutError:
+            raise
+        except Exception:
+            return None
+
+    urls = detail_urls[:max_details]
+    executor = ThreadPoolExecutor(max_workers=6)
+    try:
+        futures = {executor.submit(_fetch_one, detail_url): detail_url for detail_url in urls}
+        timeout = max(1.0, _deadline_remaining_seconds(_strategy_deadline(inmob)))
+        for future in as_completed(futures, timeout=timeout):
+            try:
+                prop = future.result()
+                if prop:
+                    resultados.append(prop)
+            except StrategyTimeoutError:
+                raise
+            except Exception:
+                pass
+    except TimeoutError:
+        errores_relevantes.append(f"{strategy_name}_detalles_detenidos_por_timeout")
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+
+    return _dedupe_props(resultados), errores_relevantes
+
+
+def _extract_wordpress_details_sequential(
+    detail_urls: List[str],
+    inmob: Dict,
+    session: requests.Session,
+    strategy_name: str,
+    max_details: int,
+) -> Tuple[List[Dict], List[str]]:
+    """Detalle HTTP estable para plugins sensibles a concurrencia."""
+    resultados: List[Dict] = []
+    errores_relevantes: List[str] = []
+    for detail_url in detail_urls[:max_details]:
+        _check_strategy_deadline(inmob, strategy_name)
+        if _deadline_remaining_seconds(_strategy_deadline(inmob)) <= 4:
+            errores_relevantes.append(f"{strategy_name}_detalles_detenidos_por_presupuesto")
+            break
+        try:
+            prop = _extract_detail_page(detail_url, inmob, session)
+            if prop:
+                prop["fuente_extraccion"] = strategy_name
+                prop["cms_origen"] = inmob.get("cms_detectado") or "wordpress"
+                resultados.append(prop)
+            time.sleep(random.uniform(0.06, 0.18))
+        except Exception as exc:
+            if len(errores_relevantes) < 10:
+                errores_relevantes.append(f"{detail_url}: {type(exc).__name__}: {str(exc)[:160]}")
+    return _dedupe_props(resultados), errores_relevantes
+
+
+def _strategy_wordpress_plugin_detail(inmob: Dict, session: requests.Session, plugin: str) -> List[Dict]:
+    strategy_name = _wordpress_plugin_strategy_name(plugin)
+    url_inicial = inmob.get("url_listado") or inmob.get("web", "")
+    if not url_inicial:
+        raise ValueError("sin_url_listado")
+
+    _check_strategy_deadline(inmob, strategy_name)
+    urls_probadas: List[str] = []
+    detail_urls: List[str] = []
+    errores_relevantes: List[str] = []
+    plugin_detectado = plugin or "wordpress_generic"
+    first_html = ""
+    final_url = _normalize_queue_url(url_inicial)
+
+    try:
+        r0 = _http_get(final_url, session, timeout=_bounded_http_timeout(inmob, 7), use_scraper_on_block=False)
+        if r0.status_code == 200:
+            first_html = _decode_response_text(r0)
+            final_url = r0.url or final_url
+            detected = _detect_wordpress_plugin(first_html)
+            if detected != "unknown":
+                plugin_detectado = detected
+    except Exception as exc:
+        errores_relevantes.append(f"{final_url}: {type(exc).__name__}: {str(exc)[:180]}")
+
+    base_url = _wordpress_base_url(final_url)
+    candidates = _wordpress_plugin_candidate_urls(inmob, first_html, final_url, plugin_detectado)
+    max_listing_pages = _WORDPRESS_PLUGIN_MAX_LISTING_PAGES.get(plugin_detectado, 22)
+    max_details = _WORDPRESS_PLUGIN_MAX_DETAILS.get(plugin_detectado, 140)
+
+    idx = 0
+    while idx < len(candidates) and len(urls_probadas) < max_listing_pages:
+        _check_strategy_deadline(inmob, strategy_name)
+        if _deadline_remaining_seconds(_strategy_deadline(inmob)) <= 10:
+            errores_relevantes.append(f"{strategy_name}_listados_detenidos_por_presupuesto")
+            break
+        candidate = candidates[idx]
+        idx += 1
+        if candidate in urls_probadas:
+            continue
+        urls_probadas.append(candidate)
+        try:
+            if candidate == final_url and first_html:
+                html = first_html
+            else:
+                r = _http_get(candidate, session, timeout=_bounded_http_timeout(inmob, 6), use_scraper_on_block=False)
+                if r.status_code != 200:
+                    errores_relevantes.append(f"{candidate}: HTTP {r.status_code}")
+                    continue
+                html = _decode_response_text(r)
+            detected = _detect_wordpress_plugin(html)
+            if plugin_detectado in {"unknown", "wordpress_generic"} and detected != "unknown":
+                plugin_detectado = detected
+            candidate_detail_links = list(dict.fromkeys(
+                [
+                    url for url in _extract_generic_property_links(html, candidate)
+                    if _looks_like_wordpress_plugin_property_url(url, plugin_detectado) or _looks_like_real_property_url(url)
+                ]
+                + _extract_wordpress_plugin_property_links(html, candidate, plugin_detectado)
+            ))
+            for link in candidate_detail_links:
+                if link not in detail_urls:
+                    detail_urls.append(link)
+            for link in _extract_wordpress_listing_links(html, candidate, base_url, plugin_detectado):
+                if link not in candidates and link not in urls_probadas:
+                    candidates.append(link)
+            if len(detail_urls) >= max_details:
+                break
+        except Exception as exc:
+            errores_relevantes.append(f"{candidate}: {type(exc).__name__}: {str(exc)[:180]}")
+
+    if not detail_urls:
+        raise RuntimeError(f"no_property_links: {strategy_name} sin URLs reales de propiedades")
+
+    if plugin_detectado == "estatik":
+        resultados, detail_errors = _extract_wordpress_details_sequential(
+            detail_urls,
+            inmob,
+            session,
+            strategy_name,
+            max_details=max_details,
+        )
+    else:
+        resultados, detail_errors = _extract_wordpress_details_from_urls(
+            detail_urls,
+            inmob,
+            session,
+            strategy_name,
+            plugin_detectado,
+            max_details=max_details,
+        )
+    errores_relevantes.extend(detail_errors)
+    inmob["_scraper_metadata"] = {
+        **dict(inmob.get("_scraper_metadata") or {}),
+        "plugin_detectado": plugin_detectado,
+        "primary_strategy": strategy_name,
+        "urls_probadas": urls_probadas,
+        "cantidad_paginas": len(urls_probadas),
+        "urls_validas_detectadas": len(detail_urls),
+        "property_links_count": len(detail_urls),
+        "wordpress_detail_urls_sample": detail_urls[:12],
+        "errores_relevantes": errores_relevantes[-10:],
+    }
+    if not resultados:
+        raise RuntimeError(f"parsing_failed: {strategy_name} encontro links pero no datos extraibles")
+    logger.info(
+        "  %s: %d propiedades desde %d URLs validas (%s)",
+        strategy_name,
+        len(resultados),
+        len(detail_urls),
+        plugin_detectado,
+    )
+    return resultados
+
+
+def strategy_wordpress_essential_real_estate_detail(inmob: Dict, session: requests.Session) -> List[Dict]:
+    return _strategy_wordpress_plugin_detail(inmob, session, "essential_real_estate")
+
+
+def strategy_wordpress_estatik_detail(inmob: Dict, session: requests.Session) -> List[Dict]:
+    metadata = dict(inmob.get("_scraper_metadata") or {})
+    metadata["plugin_detectado"] = "estatik"
+    metadata["estatik_extractor_mode"] = "static_html_detail_validated"
+    inmob["_scraper_metadata"] = metadata
+    props = strategy_static_html(inmob, session)
+    for prop in props:
+        prop["fuente_extraccion"] = "wordpress_estatik_detail"
+        prop["cms_origen"] = inmob.get("cms_detectado") or "wordpress"
+    inmob["_scraper_metadata"] = {
+        **metadata,
+        **dict(inmob.get("_scraper_metadata") or {}),
+        "plugin_detectado": "estatik",
+        "primary_strategy": "wordpress_estatik_detail",
+        "estatik_extractor_mode": "static_html_detail_validated",
+    }
+    return props
+
+
+def strategy_wordpress_realhomes_detail(inmob: Dict, session: requests.Session) -> List[Dict]:
+    return _strategy_wordpress_plugin_detail(inmob, session, "realhomes")
+
+
+def strategy_wordpress_generic_detail(inmob: Dict, session: requests.Session) -> List[Dict]:
+    return _strategy_wordpress_plugin_detail(inmob, session, "wordpress_generic")
 
 
 _UNIVERSAL_LISTING_KEYWORDS = (
@@ -4327,6 +4761,16 @@ def _looks_like_real_property_url(url: str) -> bool:
         return False
     if re.search(r"^(estado|tipo-propiedad|property-type|categoria|category)/", path):
         return False
+    if re.search(r"^(property-status|property-feature|property-city|property-state|location|tag)/", path):
+        return False
+    singular_slug_match = re.search(r"(^|/)(property|propiedad|inmueble|ficha|detalle)/([^/?#]{6,})$", path, re.I)
+    if singular_slug_match:
+        slug = singular_slug_match.group(3).strip("/").lower()
+        if slug not in {
+            "venta", "ventas", "alquiler", "alquileres", "propiedades", "properties",
+            "inmuebles", "buscar", "busqueda", "mapa",
+        }:
+            return True
     detail_patterns = (
         r"(^|/)p/\d{3,}",
         r"(^|/)propiedad[-/]\d{3,}",
@@ -5284,6 +5728,12 @@ def classify_diagnostic_failure(
         return "scrapeable_tokko"
     if "tokko_api" in technologies:
         return "scrapeable_tokko_api"
+    if (
+        "wordpress" in technologies
+        and plugin in {"essential_real_estate", "estatik", "realhomes"}
+        and property_links_count > 0
+    ):
+        return f"scrapeable_wordpress_{plugin}"
     if "wordpress" in technologies and sitemap_count > 0:
         return "scrapeable_wordpress_sitemap"
     if "wordpress" in technologies and property_links_count > 0:
@@ -5379,13 +5829,23 @@ def diagnose_inmob(
         diagnostic["wordpress_plugin_detectado"] = wp_plugin
         diagnostic["tecnologias_detectadas"].append("wordpress")
         diagnostic["extractores_posibles"].append("wordpress_html")
+        diagnostic["extractores_posibles"].append(_wordpress_plugin_strategy_name(wp_plugin))
 
-    property_links = _extract_generic_property_links(first_html, final_url)
+    generic_property_links = _extract_generic_property_links(first_html, final_url)
+    if wp_plugin != "unknown":
+        plugin_property_links = _extract_wordpress_plugin_property_links(first_html, final_url, wp_plugin)
+        property_links = [
+            url for url in list(dict.fromkeys(plugin_property_links + generic_property_links))
+            if _looks_like_wordpress_plugin_property_url(url, wp_plugin) or _looks_like_real_property_url(url)
+        ]
+    else:
+        property_links = [url for url in generic_property_links if _looks_like_real_property_url(url)]
     listing_links = [
         link for link in _extract_keyword_internal_links(first_html, final_url, _UNIVERSAL_LISTING_KEYWORDS)
         if not _is_noise_property_url(link)
     ]
     diagnostic["property_links_count"] = len(property_links)
+    diagnostic["urls_validas_detectadas"] = len([url for url in property_links if _looks_like_real_property_url(url) or _looks_like_wordpress_plugin_property_url(url, wp_plugin)])
     diagnostic["posibles_urls_detalle"] = property_links[:20]
     diagnostic["posibles_urls_listado"] = list(dict.fromkeys(diagnostic["posibles_urls_listado"] + listing_links))[:30]
     if property_links:
@@ -5452,18 +5912,36 @@ def diagnose_inmob(
     return diagnostic
 
 
+def _diagnostic_expected_property_count(diagnostic: Dict[str, Any]) -> int:
+    """Estimacion conservadora para quality scoring.
+
+    Los contadores de cards pueden inflarse por grillas, filtros o skeletons.
+    Se priorizan URLs reales y sitemaps; las cards solo empujan el esperado de
+    forma acotada para no rechazar resultados validos por ruido visual.
+    """
+    property_links = int(diagnostic.get("property_links_count") or 0)
+    valid_urls = int(diagnostic.get("urls_validas_detectadas") or 0)
+    sitemap_count = int(diagnostic.get("sitemap_property_urls_count") or 0)
+    cards = int(diagnostic.get("cards_posibles") or 0)
+    url_signal = max(property_links, valid_urls)
+    if sitemap_count >= 5:
+        return max(sitemap_count, url_signal)
+    if url_signal > 0:
+        card_cap = min(cards, max(url_signal * 2, url_signal))
+        return max(url_signal, card_cap)
+    if sitemap_count > 0:
+        return sitemap_count
+    if cards >= 6:
+        return min(cards, 40)
+    return max(cards, 0)
+
+
 def _strategy_plan_noop(reason: str, diagnostic: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "primary_strategy": None,
         "fallback_strategies": [],
         "reason": reason,
-        "expected_property_count": int(
-            max(
-                diagnostic.get("sitemap_property_urls_count") or 0,
-                diagnostic.get("property_links_count") or 0,
-                diagnostic.get("cards_posibles") or 0,
-            )
-        ),
+        "expected_property_count": _diagnostic_expected_property_count(diagnostic),
         "confidence": "high",
         "requires_playwright": bool(diagnostic.get("requires_playwright")),
         "requires_network_interception": bool(diagnostic.get("requires_network_interception")),
@@ -5492,7 +5970,7 @@ def select_best_scraping_strategy(diagnostic: Dict[str, Any], history: Optional[
     sitemap_count = int(diagnostic.get("sitemap_property_urls_count") or 0)
     cards = int(diagnostic.get("cards_posibles") or 0)
     plugin = str(diagnostic.get("wordpress_plugin_detectado") or "").strip().lower()
-    expected = max(sitemap_count, property_links, cards)
+    expected = _diagnostic_expected_property_count(diagnostic)
 
     no_scrapeable = {
         "site_down", "blocked", "empty_site", "no_property_links",
@@ -5511,6 +5989,10 @@ def select_best_scraping_strategy(diagnostic: Dict[str, Any], history: Optional[
         "tokko_html",
         "static_html_tokko_detail",
         "wordpress_sitemap_detail",
+        "wordpress_essential_real_estate_detail",
+        "wordpress_estatik_detail",
+        "wordpress_realhomes_detail",
+        "wordpress_generic_detail",
         "static_html_detail",
         "playwright_html",
         "network_interception",
@@ -5520,13 +6002,27 @@ def select_best_scraping_strategy(diagnostic: Dict[str, Any], history: Optional[
         confidence = "high"
 
     if primary is None and "wordpress" in technologies:
-        if sitemap_count > 0:
+        if plugin in {"essential_real_estate", "estatik", "realhomes"}:
+            primary = _wordpress_plugin_strategy_name(plugin)
+            fallbacks = ["static_html_detail"]
+            if plugin == "realhomes" and sitemap_count >= max(5, property_links):
+                fallbacks.insert(0, "wordpress_sitemap_detail")
+            elif sitemap_count >= 20:
+                fallbacks.append("wordpress_sitemap_detail")
+            reason = f"wordpress/{plugin} con extractor especifico; links={property_links}, cards={cards}, sitemap={sitemap_count}"
+            confidence = "high" if property_links > 0 or cards >= 6 else "medium"
+        elif plugin in {"houzez"} and sitemap_count >= 5:
             primary = "wordpress_sitemap_detail"
-            fallbacks = ["wordpress_html", "static_html_detail"]
+            fallbacks = ["wordpress_generic_detail", "static_html_detail"]
+            reason = f"wordpress/{plugin} con sitemap de propiedades ({sitemap_count} URLs)"
+            confidence = "high" if sitemap_count >= 20 else "medium"
+        elif sitemap_count > 0:
+            primary = "wordpress_sitemap_detail"
+            fallbacks = ["wordpress_generic_detail", "static_html_detail"]
             reason = f"wordpress/{plugin or 'generic'} con sitemap de propiedades ({sitemap_count} URLs)"
             confidence = "high" if sitemap_count >= 20 else "medium"
         elif property_links > 0:
-            primary = "wordpress_html"
+            primary = "wordpress_generic_detail"
             fallbacks = ["static_html_detail"]
             reason = f"wordpress con links HTML de propiedades ({property_links})"
             confidence = "medium"
@@ -5598,20 +6094,30 @@ def select_best_scraping_strategy(diagnostic: Dict[str, Any], history: Optional[
 
 
 def _is_absurd_property_price(prop: Dict[str, Any]) -> bool:
-    price = prop.get("precio")
-    if not _positive_number(price):
-        return False
-    value = float(price)
-    currency = str(prop.get("moneda") or "ARS").upper()
-    if currency == "USD":
-        return value < 1000 or value > 50_000_000
-    if currency == "ARS":
-        return value < 10_000 or value > 100_000_000_000
-    return value < 1000 or value > 100_000_000_000
+    invalid, _ = _is_invalid_public_price(prop.get("precio"), prop.get("moneda"))
+    return invalid
 
 
 def _ratio(count: int, total: int) -> float:
     return round(count / total, 3) if total else 0.0
+
+
+def _sanitize_scraped_props_for_quality(props: List[Dict[str, Any]], metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Aplica guardas centrales antes de puntuar y antes de devolver props del test."""
+    stats = metadata.setdefault("quality_sanitization_stats", _new_update_protection_stats())
+    sanitized: List[Dict[str, Any]] = []
+    for prop in props or []:
+        clean = dict(prop)
+        clean = sanitize_property_location(clean, stats)
+        clean = sanitize_property_coordinates(clean, stats)
+        clean = sanitize_property_prices(clean, stats)
+        raw_images = clean.get("imagenes")
+        if isinstance(raw_images, str):
+            raw_images = [raw_images]
+        if isinstance(raw_images, list):
+            clean["imagenes"] = clean_property_images(raw_images) or None
+        sanitized.append(clean)
+    return sanitized
 
 
 def evaluate_scrape_quality(
@@ -5621,6 +6127,8 @@ def evaluate_scrape_quality(
 ) -> Dict[str, Any]:
     total = len(props or [])
     expected = int(strategy_plan.get("expected_property_count") or 0)
+    diagnostic_property_links = int(diagnostic.get("property_links_count") or 0)
+    diagnostic_sitemap_count = int(diagnostic.get("sitemap_property_urls_count") or 0)
     if total == 0:
         return {
             "accepted": False,
@@ -5645,7 +6153,8 @@ def evaluate_scrape_quality(
     address_ratio = _ratio(address_count, total)
 
     issues: List[str] = []
-    if expected >= 50 and total < max(10, int(expected * 0.1)):
+    strong_missing_signal = diagnostic_sitemap_count >= 20 or diagnostic_property_links >= 30
+    if strong_missing_signal and expected >= 50 and total < max(10, int(expected * 0.08)):
         issues.append(f"too_few_vs_expected:{total}/{expected}")
     if url_ratio < 0.6:
         issues.append("urls_invalidas")
@@ -5766,6 +6275,17 @@ def run_best_strategy(
             return call("static_html", lambda: strategy_static_html(inmob, session))
         if strategy_name == "wordpress_sitemap_detail":
             return call("wordpress_sitemap_detail", lambda: strategy_wordpress_sitemap_detail(inmob, session))
+        if strategy_name == "wordpress_essential_real_estate_detail":
+            return call(
+                "wordpress_essential_real_estate_detail",
+                lambda: strategy_wordpress_essential_real_estate_detail(inmob, session),
+            )
+        if strategy_name == "wordpress_estatik_detail":
+            return call("wordpress_estatik_detail", lambda: strategy_wordpress_estatik_detail(inmob, session))
+        if strategy_name == "wordpress_realhomes_detail":
+            return call("wordpress_realhomes_detail", lambda: strategy_wordpress_realhomes_detail(inmob, session))
+        if strategy_name == "wordpress_generic_detail":
+            return call("wordpress_generic_detail", lambda: strategy_wordpress_generic_detail(inmob, session))
         if strategy_name == "wordpress_html":
             return call("wordpress_html", lambda: strategy_wordpress_html(inmob, session))
         if strategy_name == "json_ld":
@@ -5799,8 +6319,14 @@ def run_best_strategy(
     metadata.update({
         "diagnostico_inicial": diagnostic,
         "strategy_plan": strategy_plan,
+        "plugin_detectado": diagnostic.get("wordpress_plugin_detectado"),
         "estrategia_elegida": strategy_plan.get("primary_strategy"),
+        "primary_strategy": strategy_plan.get("primary_strategy"),
         "motivo_eleccion_estrategia": strategy_plan.get("reason"),
+        "expected_property_count": strategy_plan.get("expected_property_count"),
+        "property_links_count": diagnostic.get("property_links_count"),
+        "cards_posibles": diagnostic.get("cards_posibles"),
+        "urls_validas_detectadas": diagnostic.get("urls_validas_detectadas"),
         "extractores_descartados": strategy_plan.get("discarded_extractors", []),
         "extractores_ejecutados": attempts,
     })
@@ -5816,8 +6342,10 @@ def run_best_strategy(
     candidate_strategies = [primary_strategy] + list(strategy_plan.get("fallback_strategies") or [])
     quality_results: List[Dict[str, Any]] = []
     last_error: Optional[BaseException] = None
+    skipped_reasons: List[str] = []
     for index, strategy_name in enumerate(candidate_strategies):
         if strategy_name == "network_interception" and not allow_network_interception:
+            skipped_reasons.append("requires_network_interception")
             attempts.append({
                 "extractor": strategy_name,
                 "status": "skipped",
@@ -5825,6 +6353,7 @@ def run_best_strategy(
             })
             continue
         if strategy_name == "playwright_html" and (not allow_playwright_fallback or pw_context is None):
+            skipped_reasons.append("requires_playwright")
             attempts.append({
                 "extractor": strategy_name,
                 "status": "skipped",
@@ -5835,6 +6364,7 @@ def run_best_strategy(
         try:
             logger.info("  -> Ejecutando estrategia %s", strategy_name)
             props = execute_selected_strategy(strategy_name)
+            props = _sanitize_scraped_props_for_quality(props, metadata)
             quality = evaluate_scrape_quality(props, strategy_plan, diagnostic)
             quality["strategy"] = strategy_name
             quality_results.append(quality)
@@ -5859,9 +6389,15 @@ def run_best_strategy(
 
     metadata["resultado_calidad"] = quality_results[-1] if quality_results else None
     metadata["resultados_calidad_por_estrategia"] = quality_results
+    if not quality_results and "requires_playwright" in skipped_reasons:
+        raise RuntimeError("requires_playwright: sitio requiere renderizado JS y --allow-playwright no esta habilitado")
+    if not quality_results and "requires_network_interception" in skipped_reasons:
+        raise RuntimeError("requires_network_interception: sitio requiere inspeccion de red y --allow-network-interception no esta habilitado")
     if last_error and not quality_results:
         raise last_error
     issues = (quality_results[-1].get("issues") if quality_results else []) or []
+    if issues:
+        metadata["rejected_reason"] = issues
     raise RuntimeError(f"parsing_failed: ninguna estrategia alcanzo calidad minima; issues={issues}")
 
     # --- Ir directo a la estrategia guardada (con fallback automático) ---
