@@ -190,6 +190,15 @@ COORDINATE_FIELDS = {"latitud", "longitud"}
 MAX_VALID_PRICE_USD = 100_000_000
 MAX_VALID_PRICE_ARS = 1_000_000_000_000
 MIN_VALID_PUBLIC_PRICE = 1
+PROPERTY_INTEGER_RANGES: Dict[str, Tuple[int, int]] = {
+    "ambientes": (0, 30),
+    "dormitorios": (0, 30),
+    "banos": (0, 20),
+    "toilettes": (0, 20),
+    "cocheras": (0, 50),
+    "antiguedad": (0, 300),
+    "piso": (0, 200),
+}
 
 CITY_COORDINATE_BOUNDS: Dict[str, Tuple[float, float, float, float]] = {
     "rosario": (-33.10, -32.80, -60.85, -60.50),
@@ -444,8 +453,18 @@ class StrategyTimeoutError(TimeoutError):
     """Timeout controlado de item o estrategia."""
 
 
+class SavePropertiesError(RuntimeError):
+    """Error controlado cuando Supabase rechaza el guardado de propiedades."""
+
+    def __init__(self, message: str, errors: Optional[List[Dict[str, Any]]] = None) -> None:
+        super().__init__(message)
+        self.errors = errors or []
+
+
 def clasificar_error(e: Exception) -> str:
     msg = str(e).lower()
+    if "save_failed" in msg or isinstance(e, SavePropertiesError):
+        return "save_failed"
     if "site_down" in msg or "dominio_caido" in msg:
         return "site_down"
     if "requires_network_interception" in msg or "network_interception_requerida" in msg:
@@ -672,6 +691,7 @@ class SupabasePropiedades:
             raise RuntimeError("SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY son requeridas en .env")
         self.session = self._make_session()
         self.last_save_protection_stats = _new_update_protection_stats()
+        self.last_save_result = {"inserted": 0, "updated": 0, "unchanged": 0, "failed": 0, "errors": []}
         self._headers = {
             "apikey": SUPABASE_KEY,
             "Authorization": f"Bearer {SUPABASE_KEY}",
@@ -1159,6 +1179,7 @@ class SupabasePropiedades:
         clean = sanitize_property_location(clean, getattr(self, "last_save_protection_stats", None))
         clean = sanitize_property_coordinates(clean, getattr(self, "last_save_protection_stats", None))
         clean = sanitize_property_prices(clean, getattr(self, "last_save_protection_stats", None))
+        clean = sanitize_property_integers(clean, getattr(self, "last_save_protection_stats", None))
         if "imagenes" in clean:
             raw_images = clean.get("imagenes")
             if isinstance(raw_images, str):
@@ -1176,8 +1197,16 @@ class SupabasePropiedades:
             logger.debug("Campos omitidos en propiedades: %s", ", ".join(dropped))
         return filtered
 
+    def _normalize_payload_batch_keys(self, chunk: List[Dict[str, Any]], columns: set) -> List[Dict[str, Any]]:
+        """PostgREST exige que todos los objetos de un batch tengan las mismas keys."""
+        if not chunk:
+            return []
+        keys = sorted(set().union(*(set(item.keys()) for item in chunk)) & set(columns))
+        return [{key: item.get(key) for key in keys} for item in chunk]
+
     def save_propiedades(self, propiedades: List[Dict]) -> Tuple[int, int]:
         """Guarda nuevas y actualiza existentes sin degradar datos valiosos."""
+        self.last_save_result = {"inserted": 0, "updated": 0, "unchanged": 0, "failed": 0, "errors": []}
         if not propiedades:
             return 0, 0
 
@@ -1195,8 +1224,13 @@ class SupabasePropiedades:
         existing_props = self.get_existing_properties_by_hash([p["hash_dedup"] for p in actualizadas])
 
         inserted = 0
+        updated = 0
+        unchanged = 0
+        failed = 0
+        save_errors: List[Dict[str, Any]] = []
         for i in range(0, len(nuevas), self._CHUNK):
-            chunk = nuevas[i : i + self._CHUNK]
+            raw_chunk = nuevas[i : i + self._CHUNK]
+            chunk = self._normalize_payload_batch_keys(raw_chunk, columns)
             r = self.session.post(
                 f"{SUPABASE_URL}/rest/v1/propiedades?on_conflict=hash_dedup",
                 headers=self._headers,
@@ -1204,11 +1238,18 @@ class SupabasePropiedades:
                 timeout=40,
             )
             if r.status_code not in {200, 201}:
-                logger.error("save_propiedades insert %s: %s", r.status_code, r.text[:200])
+                failed += len(raw_chunk)
+                error = {
+                    "operation": "insert",
+                    "status_code": r.status_code,
+                    "message": r.text[:1000],
+                    "count": len(raw_chunk),
+                }
+                save_errors.append(error)
+                logger.error("save_propiedades insert %s: %s", r.status_code, r.text[:500])
             else:
-                inserted += len(chunk)
+                inserted += len(raw_chunk)
 
-        updated = 0
         for prop in actualizadas:
             hash_dedup = prop.get("hash_dedup")
             update_payload = build_protected_update_payload(
@@ -1218,6 +1259,7 @@ class SupabasePropiedades:
                 stats=self.last_save_protection_stats,
             )
             if not update_payload:
+                unchanged += 1
                 continue
             r = self.session.patch(
                 f"{SUPABASE_URL}/rest/v1/propiedades?hash_dedup=eq.{hash_dedup}",
@@ -1226,11 +1268,27 @@ class SupabasePropiedades:
                 timeout=20,
             )
             if r.status_code not in {200, 204}:
-                logger.warning("save_propiedades safe update %s: %s", r.status_code, r.text[:200])
+                failed += 1
+                error = {
+                    "operation": "update",
+                    "status_code": r.status_code,
+                    "message": r.text[:1000],
+                    "hash_dedup": hash_dedup,
+                    "url": prop.get("url"),
+                }
+                save_errors.append(error)
+                logger.warning("save_propiedades safe update %s: %s", r.status_code, r.text[:500])
             else:
                 updated += 1
 
         self.last_save_protection_stats["actualizaciones_seguras"] = updated
+        self.last_save_result = {
+            "inserted": inserted,
+            "updated": updated,
+            "unchanged": unchanged,
+            "failed": failed,
+            "errors": save_errors,
+        }
         protected_fields = int(self.last_save_protection_stats.get("campos_protegidos_de_null") or 0)
         if protected_fields:
             logger.info(
@@ -1262,8 +1320,30 @@ class SupabasePropiedades:
                 normalized_locations,
                 self.last_save_protection_stats.get("ubicaciones_normalizadas_ejemplos", [])[:3],
             )
+        invalid_integers = int(self.last_save_protection_stats.get("integers_descartados_por_invalido") or 0)
+        if invalid_integers:
+            logger.info(
+                "  Enteros descartados por invalidos: %d | ejemplos=%s",
+                invalid_integers,
+                self.last_save_protection_stats.get("integers_invalidos_ejemplos", [])[:3],
+            )
 
-        return len(propiedades), inserted
+        if save_errors and (inserted + updated + unchanged) == 0:
+            first_error = save_errors[0]
+            raise SavePropertiesError(
+                f"save_failed: {first_error.get('operation')} {first_error.get('status_code')}: {first_error.get('message')}",
+                errors=save_errors,
+            )
+        if save_errors:
+            logger.warning(
+                "  Guardado parcial: inserted=%d updated=%d unchanged=%d failed=%d",
+                inserted,
+                updated,
+                unchanged,
+                failed,
+            )
+
+        return inserted + updated + unchanged, inserted
 
     def mark_inactivos(self, inmob_id: int, active_hashes: set) -> int:
         """
@@ -1783,6 +1863,8 @@ def _new_update_protection_stats() -> Dict[str, Any]:
         "precios_invalidos_ejemplos": [],
         "ubicaciones_normalizadas": 0,
         "ubicaciones_normalizadas_ejemplos": [],
+        "integers_descartados_por_invalido": 0,
+        "integers_invalidos_ejemplos": [],
     }
 
 
@@ -1812,6 +1894,77 @@ def _numeric_or_none(value: Any) -> Optional[float]:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _record_invalid_integer(
+    stats: Optional[Dict[str, Any]],
+    prop: Dict[str, Any],
+    field: str,
+    value: Any,
+    reason: str,
+) -> None:
+    if stats is None:
+        return
+    stats["integers_descartados_por_invalido"] = int(stats.get("integers_descartados_por_invalido") or 0) + 1
+    examples = stats.setdefault("integers_invalidos_ejemplos", [])
+    if len(examples) < 12:
+        examples.append({
+            "integer_descartado_por_invalido": True,
+            "campo": field,
+            "reason": reason,
+            "valor_original": value,
+            "url": prop.get("url"),
+            "estrategia_usada": prop.get("fuente_extraccion") or prop.get("_strategy_name"),
+        })
+
+
+def _reasonable_integer_or_none(
+    value: Any,
+    min_value: int,
+    max_value: int,
+) -> Tuple[Optional[int], Optional[str]]:
+    if value is None or isinstance(value, bool):
+        return None, None
+    if isinstance(value, int):
+        parsed = value
+    elif isinstance(value, float):
+        if not math.isfinite(value) or not value.is_integer():
+            return None, "no_es_entero"
+        parsed = int(value)
+    elif isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None, None
+        # Evita strings contaminados por concatenacion de muchos numeros.
+        digits_only = re.sub(r"\D", "", text)
+        if len(digits_only) > 4:
+            return None, "string_numerico_concatenado"
+        if not re.fullmatch(r"-?\d+(?:\.0+)?", text):
+            return None, "formato_no_entero"
+        parsed = int(float(text))
+    else:
+        return None, "tipo_no_entero"
+
+    if parsed < min_value or parsed > max_value:
+        return None, f"fuera_de_rango_{min_value}_{max_value}"
+    return parsed, None
+
+
+def sanitize_property_integers(prop: Dict[str, Any], stats: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Descarta enteros contaminados antes de insertar o actualizar."""
+    for field, (min_value, max_value) in PROPERTY_INTEGER_RANGES.items():
+        if field not in prop:
+            continue
+        original = prop.get(field)
+        parsed, reason = _reasonable_integer_or_none(original, min_value, max_value)
+        if reason:
+            _record_invalid_integer(stats, prop, field, original, reason)
+            prop[field] = None
+        elif parsed is not None:
+            prop[field] = parsed
+        else:
+            prop[field] = None
+    return prop
 
 
 def _record_invalid_price(
@@ -2315,6 +2468,7 @@ def build_protected_update_payload(
 
     payload = sanitize_property_location(payload, stats)
     payload = sanitize_property_prices(payload, stats)
+    payload = sanitize_property_integers(payload, stats)
 
     existing_for_rules = dict(existing or {})
     payload["_existing_inmobiliaria_id"] = existing_for_rules.get("inmobiliaria_id")
@@ -6111,6 +6265,7 @@ def _sanitize_scraped_props_for_quality(props: List[Dict[str, Any]], metadata: D
         clean = sanitize_property_location(clean, stats)
         clean = sanitize_property_coordinates(clean, stats)
         clean = sanitize_property_prices(clean, stats)
+        clean = sanitize_property_integers(clean, stats)
         raw_images = clean.get("imagenes")
         if isinstance(raw_images, str):
             raw_images = [raw_images]
@@ -7044,11 +7199,21 @@ def _save_queue_properties(db: SupabasePropiedades, item: Dict, props: List[Dict
     expected_new = sum(1 for h in hashes if h not in existing_hashes)
     expected_existing = sum(1 for h in hashes if h in existing_hashes)
 
-    total_ext, nuevas = db.save_propiedades(props)
+    try:
+        total_ext, nuevas = db.save_propiedades(props)
+    except SavePropertiesError as exc:
+        save_protection = dict(getattr(db, "last_save_protection_stats", {}) or {})
+        save_result = dict(getattr(db, "last_save_result", {}) or {})
+        save_protection["save_result"] = save_result
+        save_protection["save_errors"] = exc.errors
+        raise SavePropertiesError(str(exc), errors=exc.errors) from exc
+
     save_protection = dict(getattr(db, "last_save_protection_stats", {}) or {})
+    save_result = dict(getattr(db, "last_save_result", {}) or {})
+    save_protection["save_result"] = save_result
     for prop in props:
         sanitize_property_location(prop, None)
-    propiedades_error = max(len(props) - total_ext, 0)
+    propiedades_error = int(save_result.get("failed") or max(len(props) - total_ext, 0))
 
     geo_count = 0
     for prop in props:
@@ -7098,9 +7263,9 @@ def _save_queue_properties(db: SupabasePropiedades, item: Dict, props: List[Dict
 
     return {
         "propiedades_detectadas": len(props),
-        "propiedades_nuevas": nuevas,
-        "propiedades_actualizadas": max(expected_existing, total_ext - expected_new),
-        "propiedades_sin_cambios": 0,
+        "propiedades_nuevas": int(save_result.get("inserted") or nuevas),
+        "propiedades_actualizadas": int(save_result.get("updated") or 0),
+        "propiedades_sin_cambios": int(save_result.get("unchanged") or 0),
         "propiedades_error": propiedades_error,
         "geocodificadas": geo_count,
         "propiedades_inactivas_marcadas": inactivos,
@@ -7137,7 +7302,34 @@ def _process_scraping_control_item(
         allow_network_interception=allow_network_interception,
     )
     _check_deadline(item_deadline, "item")
-    counts = _save_queue_properties(db, item, props)
+    try:
+        counts = _save_queue_properties(db, item, props)
+    except SavePropertiesError as exc:
+        metadata_extra = {
+            "diagnostico_inicial": strategy_meta.get("diagnostico_inicial"),
+            "strategy_plan": strategy_meta.get("strategy_plan"),
+            "estrategia_usada": estrategia,
+            "propiedades_detectadas": len(props),
+            "save_errors": exc.errors,
+            "proteccion_actualizacion": dict(getattr(db, "last_save_protection_stats", {}) or {}),
+            "save_result": dict(getattr(db, "last_save_result", {}) or {}),
+        }
+        combined_errors = errores_relevantes + [str(exc)[:1000]]
+        metadata = _queue_metadata(
+            item=item,
+            started_at=started_at,
+            url_usada=url_usada,
+            estrategia_usada=estrategia,
+            cantidad_paginas=int(strategy_meta.get("cantidad_paginas") or (1 if url_usada else 0)),
+            errores_relevantes=combined_errors,
+            extra=metadata_extra,
+        )
+        raise ScrapingControlError(
+            str(exc)[:1000],
+            metadata=metadata,
+            final_url=url_usada,
+            http_status=None,
+        ) from exc
     metadata_extra = {
         "geocodificadas": counts["geocodificadas"],
         "propiedades_inactivas_marcadas": counts["propiedades_inactivas_marcadas"],
