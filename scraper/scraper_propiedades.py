@@ -2139,11 +2139,6 @@ _LOCATION_ALIASES: List[Dict[str, Any]] = [
         "provincia": "Santa Fe",
     },
     {
-        "aliases": ("rosario",),
-        "ciudad": "Rosario",
-        "provincia": "Santa Fe",
-    },
-    {
         "aliases": ("roldan", "roldán"),
         "ciudad": "Roldán",
         "provincia": "Santa Fe",
@@ -2181,6 +2176,26 @@ _FUNES_CITY_CONTEXT_ALIASES = (
     "don mateo funes",
 )
 
+_GENERIC_MAR_DEL_PLATA_SOURCE_CITY_KEYS = {
+    "",
+    "costa atlantica",
+    "costa argentina",
+    "buenos aires",
+}
+
+_ROSARIO_CITY_CONTEXT_BARRIOS = (
+    "pichincha",
+    "echesortu",
+    "fisherton",
+    "refineria",
+    "arroyito",
+    "alberdi",
+    "abasto",
+    "martin",
+    "luis agote",
+    "nuestra senora de lourdes",
+)
+
 
 def _has_funes_street_context(text: str) -> bool:
     """Evita confundir calles/personas llamadas Funes con la ciudad Funes."""
@@ -2212,6 +2227,59 @@ def _has_funes_city_signal(text: str, ciudad: Any = None, provincia: Any = None,
     if re.search(r"\bcountries?\s+b\s+cerrado\s+funes\b", text):
         return True
     return any(_text_contains_location_alias(text, alias) for alias in _FUNES_CITY_CONTEXT_ALIASES)
+
+
+def _has_rosario_street_context(text: str) -> bool:
+    if re.search(r"\brosario\s+(?:al\s+)?\d{1,5}\b", text):
+        return True
+    return bool(re.search(r"\bcalle\s+rosario\b", text))
+
+
+def _has_rosario_city_signal(text: str, ciudad: Any = None, provincia: Any = None, barrio: Any = None) -> bool:
+    current_city_key = _coordinate_location_key(ciudad)
+    current_province_key = _coordinate_location_key(provincia)
+    barrio_key = _location_text_key(barrio)
+
+    if current_city_key == "rosario":
+        return True
+
+    if _has_rosario_street_context(text):
+        return False
+
+    if re.search(r"\brosario\s*,\s*santa\s+fe\b", text):
+        return True
+
+    if current_province_key == "santa fe" and re.search(r"\b(?:en|ubicad[oa]\s+en)\s+rosario\b", text):
+        return True
+
+    if re.search(r"\b(?:venta|alquiler)\s+(?:/\s*(?:venta|alquiler)\s+)?en\s+rosario\b", text):
+        return True
+
+    return current_province_key == "santa fe" and any(alias in barrio_key for alias in _ROSARIO_CITY_CONTEXT_BARRIOS)
+
+
+def _has_mar_del_plata_street_context(text: str) -> bool:
+    if re.search(r"\bmar\s+del\s+plata\s+(?:al\s+)?\d{1,5}\b", text):
+        return True
+    return bool(re.search(r"\b(?:y|esquina|esq|interseccion|intersecci[oó]n)\s+mar\s+del\s+plata\b", text))
+
+
+def _has_mar_del_plata_city_signal(text: str, ciudad: Any = None, provincia: Any = None) -> bool:
+    current_city_key = _coordinate_location_key(ciudad)
+
+    if _has_mar_del_plata_street_context(text):
+        return False
+
+    if current_city_key == "mar del plata":
+        return True
+
+    if re.search(r"\bmar\s+del\s+plata\s*,\s*buenos\s+aires\b", text):
+        return True
+
+    if re.search(r"\b(?:en|ubicad[oa]\s+en)\s+mar\s+del\s+plata\b", text):
+        return True
+
+    return current_city_key in _GENERIC_MAR_DEL_PLATA_SOURCE_CITY_KEYS and _text_contains_location_alias(text, "mar del plata")
 
 
 def _detect_location_from_text(
@@ -2255,11 +2323,14 @@ def _detect_location_from_text(
     if re.search(r"\b(?:en|ubicad[oa]\s+en)\s+9\s+de\s+julio\b(?!\s+\d)", text):
         return {"ciudad": "9 de Julio", "provincia": "Buenos Aires", "motivo": "titulo_url_9_de_julio"}
 
-    if _text_contains_location_alias(text, "mar del plata"):
+    if _has_rosario_city_signal(text, ciudad=ciudad, provincia=provincia, barrio=barrio):
+        return {"ciudad": "Rosario", "provincia": "Santa Fe", "motivo": "titulo_url_contiene_rosario"}
+
+    if _has_mar_del_plata_city_signal(text, ciudad=ciudad, provincia=provincia):
         return {"ciudad": "Mar del Plata", "provincia": "Buenos Aires", "motivo": "titulo_url_contiene_mar_del_plata"}
 
     if _text_contains_location_alias(text, "belen de escobar"):
-        return {"ciudad": "BelÃ©n de Escobar", "provincia": "Buenos Aires", "motivo": "titulo_url_contiene_belen_de_escobar"}
+        return {"ciudad": "Belen de Escobar", "provincia": "Buenos Aires", "motivo": "titulo_url_contiene_belen_de_escobar"}
 
     if _has_funes_city_signal(text, ciudad=ciudad, provincia=provincia, barrio=barrio):
         return {"ciudad": "Funes", "provincia": "Santa Fe", "motivo": "titulo_url_contiene_funes"}
