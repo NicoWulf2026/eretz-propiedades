@@ -84,6 +84,9 @@ USER_AGENTS: List[str] = [
 ]
 
 CONTROL_ITEM_TIMEOUT_SECONDS = 180
+SIMPLE_ITEM_TIMEOUT_SECONDS = 90
+CUSTOM_OR_SITEMAP_ITEM_TIMEOUT_SECONDS = 240
+PLAYWRIGHT_ITEM_TIMEOUT_SECONDS = 300
 STRATEGY_TIMEOUT_SECONDS: Dict[str, int] = {
     "tokko_api": 45,
     "tokko_html": 45,
@@ -213,7 +216,7 @@ URUGUAY_COORDINATE_BOUNDS = (-35.20, -30.00, -58.80, -53.00)
 def _make_http_session() -> requests.Session:
     s = requests.Session()
     s.trust_env = False
-    retry = Retry(total=3, backoff_factor=0.5, status_forcelist=[429, 500, 502, 503, 504],
+    retry = Retry(total=0, connect=0, read=0, status=0, backoff_factor=0, status_forcelist=[429, 500, 502, 503, 504],
                   allowed_methods=["GET"])
     adapter = HTTPAdapter(max_retries=retry)
     s.mount("https://", adapter)
@@ -454,6 +457,10 @@ class StrategyTimeoutError(TimeoutError):
     """Timeout controlado de item o estrategia."""
 
 
+class ItemTimeoutError(StrategyTimeoutError):
+    """Timeout duro del item completo."""
+
+
 class SavePropertiesError(RuntimeError):
     """Error controlado cuando Supabase rechaza el guardado de propiedades."""
 
@@ -464,6 +471,8 @@ class SavePropertiesError(RuntimeError):
 
 def clasificar_error(e: Exception) -> str:
     msg = str(e).lower()
+    if "item_timeout" in msg or isinstance(e, ItemTimeoutError):
+        return "item_timeout"
     if "save_failed" in msg or isinstance(e, SavePropertiesError):
         return "save_failed"
     if "site_down" in msg or "dominio_caido" in msg:
@@ -501,6 +510,8 @@ def _deadline_remaining_seconds(deadline: Optional[float]) -> float:
 
 def _check_deadline(deadline: Optional[float], label: str) -> None:
     if deadline is not None and time.time() >= deadline:
+        if label == "item":
+            raise ItemTimeoutError("item_timeout: Tiempo mÃ¡ximo por inmobiliaria excedido")
         raise StrategyTimeoutError(f"timeout_{label}: excedio el limite configurado")
 
 
@@ -717,8 +728,11 @@ class SupabasePropiedades:
         s = requests.Session()
         s.trust_env = False
         retry = Retry(
-            total=3,
-            backoff_factor=0.5,
+            total=0,
+            connect=0,
+            read=0,
+            status=0,
+            backoff_factor=0,
             status_forcelist=[429, 500, 502, 503, 504],
             allowed_methods=["GET", "POST", "PATCH"],
         )
@@ -1081,7 +1095,7 @@ class SupabasePropiedades:
         return self._rpc_with_parameter_fallback(
             "finish_scraping_item_error",
             payload,
-            timeout=15,
+            timeout=8,
         )
 
     def close_scraping_run_if_finished(self, run_id: Any) -> Any:
@@ -1399,7 +1413,13 @@ def _http_get(url: str, session: requests.Session, timeout: int = 20,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     }
     headers.update(kwargs.pop("headers", {}))
-    r = session.get(url, headers=headers, timeout=timeout, verify=False, **kwargs)
+    timeout_value = timeout
+    if isinstance(timeout, (int, float)):
+        timeout_value = (
+            max(1.0, min(float(timeout), 2.5)),
+            max(1.0, min(float(timeout), 6.0)),
+        )
+    r = session.get(url, headers=headers, timeout=timeout_value, verify=False, **kwargs)
     # Si bloqueado y tenemos ScraperAPI, reintentar
     if use_scraper_on_block and r.status_code in (403, 429, 503) and SCRAPERAPI_KEY:
         logger.debug("Bloqueado (%s) → reintentando con ScraperAPI: %s", r.status_code, url)
@@ -1415,6 +1435,25 @@ def _decode_response_text(response: requests.Response) -> str:
     except Exception:
         pass
     return _fix_mojibake_text(response.text)
+
+
+def _is_fast_site_down_error(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    return any(marker in msg for marker in (
+        "nameresolutionerror",
+        "name or service not known",
+        "getaddrinfo failed",
+        "temporary failure in name resolution",
+        "nodename nor servname provided",
+        "failed to resolve",
+        "no address associated",
+        "connection refused",
+        "max retries exceeded",
+        "too many 502",
+        "too many 503",
+        "too many 504",
+        "responseerror",
+    ))
 
 
 def _fix_mojibake_text(value: Any) -> str:
@@ -6241,10 +6280,11 @@ def diagnose_inmob(
     final_url = diagnostic["url_normalizada"]
     candidates = _generic_candidate_urls(inmob, first_url=final_url)
     diagnostic["posibles_urls_listado"] = candidates[:20]
+    fast_site_down_errors = 0
 
     for candidate in candidates[:8]:
         try:
-            response = _http_get(candidate, session, timeout=10, use_scraper_on_block=False)
+            response = _http_get(candidate, session, timeout=6, use_scraper_on_block=False)
             diagnostic["http_statuses"].append(response.status_code)
             diagnostic["http_status"] = response.status_code
             final_url = response.url or candidate
@@ -6258,6 +6298,11 @@ def diagnose_inmob(
                 break
         except Exception as exc:
             diagnostic.setdefault("errores_http", []).append(f"{candidate}: {type(exc).__name__}: {str(exc)[:180]}")
+            if _is_fast_site_down_error(exc):
+                fast_site_down_errors += 1
+                diagnostic["site_down"] = True
+                if fast_site_down_errors >= 2:
+                    break
 
     if not first_html:
         diagnostic["html_empty"] = True
@@ -7349,6 +7394,25 @@ def _queue_candidate_urls(item: Dict) -> List[str]:
     return urls
 
 
+def _item_timeout_seconds(item: Dict, allow_playwright: bool = False, strategy_hint: Optional[str] = None) -> int:
+    if allow_playwright:
+        return PLAYWRIGHT_ITEM_TIMEOUT_SECONDS
+    hint = " ".join(
+        str(value or "").lower()
+        for value in (
+            strategy_hint,
+            item.get("cms_detectado"),
+            item.get("url_listado"),
+            item.get("web"),
+        )
+    )
+    if any(marker in hint for marker in ("custom_listing", "/listing", "listing?", "sitemap")):
+        return CUSTOM_OR_SITEMAP_ITEM_TIMEOUT_SECONDS
+    if any(marker in hint for marker in ("wordpress", "tokko", "static_html")):
+        return CONTROL_ITEM_TIMEOUT_SECONDS
+    return CONTROL_ITEM_TIMEOUT_SECONDS
+
+
 def _strategy_from_cms(cms_detectado: Optional[str]) -> Optional[str]:
     cms = (cms_detectado or "").strip().lower()
     if cms in {"tokko_api"}:
@@ -7420,6 +7484,39 @@ def _queue_metadata(
     return metadata
 
 
+def _item_timeout_control_error(
+    item: Dict,
+    started_at: float,
+    timeout_seconds: int,
+    url_usada: Optional[str],
+    estrategia_actual: Optional[str],
+    fase_actual: str,
+    extra: Optional[Dict[str, Any]] = None,
+) -> ScrapingControlError:
+    elapsed = round(time.time() - started_at, 2)
+    metadata = _queue_metadata(
+        item=item,
+        started_at=started_at,
+        url_usada=url_usada,
+        estrategia_usada=estrategia_actual or "item_timeout",
+        cantidad_paginas=0,
+        errores_relevantes=["Tiempo mÃ¡ximo por inmobiliaria excedido"],
+        extra={
+            "timeout_seconds": timeout_seconds,
+            "elapsed_seconds": elapsed,
+            "estrategia_actual": estrategia_actual,
+            "fase_actual": fase_actual,
+            **(extra or {}),
+        },
+    )
+    return ScrapingControlError(
+        "item_timeout: Tiempo mÃ¡ximo por inmobiliaria excedido",
+        metadata=metadata,
+        final_url=url_usada,
+        http_status=None,
+    )
+
+
 def _scrape_queue_item(
     item: Dict,
     session: requests.Session,
@@ -7443,12 +7540,25 @@ def _scrape_queue_item(
     errores_relevantes: List[str] = []
     last_exc: Optional[BaseException] = None
     last_url: Optional[str] = None
-    item_deadline = started_at + CONTROL_ITEM_TIMEOUT_SECONDS
+    timeout_seconds = _item_timeout_seconds(item, allow_playwright_fallback or allow_network_interception)
+    item_deadline = started_at + timeout_seconds
 
     for idx, url_usada in enumerate(urls, start=1):
-        _check_deadline(item_deadline, "item")
+        try:
+            _check_deadline(item_deadline, "item")
+        except ItemTimeoutError as exc:
+            raise _item_timeout_control_error(
+                item,
+                started_at,
+                timeout_seconds,
+                last_url,
+                "sin_estrategia",
+                "antes_de_probar_url",
+                {"errores_relevantes": errores_relevantes},
+            ) from exc
         last_url = url_usada
         inmob = _queue_item_to_inmob(item, url_usada)
+        inmob["_item_timeout_seconds"] = timeout_seconds
         logger.info("URL usada: %s", url_usada)
         logger.info("CMS detectado: %s", item.get("cms_detectado") or "sin dato")
 
@@ -7469,6 +7579,17 @@ def _scrape_queue_item(
             errores_relevantes.append(f"{url_usada}: sin propiedades detectadas; probando fallback")
             logger.warning("Sin propiedades en URL principal; probando fallback si existe")
         except Exception as exc:
+            if isinstance(exc, ItemTimeoutError) or clasificar_error(exc) == "item_timeout":
+                strategy_meta = dict(inmob.get("_scraper_metadata") or {})
+                raise _item_timeout_control_error(
+                    item,
+                    started_at,
+                    timeout_seconds,
+                    url_usada,
+                    strategy_meta.get("estrategia_final") or strategy_meta.get("estrategia_elegida") or strategy_meta.get("primary_strategy"),
+                    "scraping",
+                    strategy_meta,
+                ) from exc
             last_exc = exc
             error_msg = f"{url_usada}: {type(exc).__name__}: {str(exc)[:300]}"
             errores_relevantes.append(error_msg)
@@ -7506,7 +7627,13 @@ def _scrape_queue_item(
     )
 
 
-def _save_queue_properties(db: SupabasePropiedades, item: Dict, props: List[Dict]) -> Dict[str, Any]:
+def _save_queue_properties(
+    db: SupabasePropiedades,
+    item: Dict,
+    props: List[Dict],
+    item_deadline: Optional[float] = None,
+) -> Dict[str, Any]:
+    _check_deadline(item_deadline, "item")
     agency_resolution = db.resolve_scraping_agency(item)
     main_id = agency_resolution.get("inmobiliaria_main_id")
     scraping_id = agency_resolution["inmobiliaria_scraping_id"]
@@ -7526,6 +7653,7 @@ def _save_queue_properties(db: SupabasePropiedades, item: Dict, props: List[Dict
     expected_existing = sum(1 for h in hashes if h in existing_hashes)
 
     try:
+        _check_deadline(item_deadline, "item")
         total_ext, nuevas = db.save_propiedades(props)
     except SavePropertiesError as exc:
         save_protection = dict(getattr(db, "last_save_protection_stats", {}) or {})
@@ -7543,7 +7671,11 @@ def _save_queue_properties(db: SupabasePropiedades, item: Dict, props: List[Dict
 
     geo_count = 0
     for prop in props:
+        _check_deadline(item_deadline, "item")
         if prop.get("latitud") is None and (prop.get("direccion") or prop.get("ciudad")):
+            if item_deadline is not None and _deadline_remaining_seconds(item_deadline) <= 6:
+                logger.info("  Geocoding omitido por presupuesto de item agotado")
+                break
             lat, lon = geocodificar_direccion(
                 prop.get("direccion", ""),
                 prop.get("ciudad", ""),
@@ -7584,6 +7716,7 @@ def _save_queue_properties(db: SupabasePropiedades, item: Dict, props: List[Dict
 
     inactivos = 0
     if props and scraping_id:
+        _check_deadline(item_deadline, "item")
         active_hashes = {p["hash_dedup"] for p in props if p.get("hash_dedup")}
         inactivos = db.mark_inactivos(int(scraping_id), active_hashes)
 
@@ -7611,25 +7744,46 @@ def _process_scraping_control_item(
     allow_network_interception: bool = False,
 ) -> Dict[str, Any]:
     started_at = time.time()
-    item_deadline = started_at + CONTROL_ITEM_TIMEOUT_SECONDS
+    timeout_seconds = _item_timeout_seconds(item, allow_playwright_fallback or allow_network_interception)
+    item_deadline = started_at + timeout_seconds
     item_id = item.get("scraping_run_item_id")
     if not item_id:
         raise ScrapingControlError("Item sin scraping_run_item_id")
 
     db.start_scraping_item(item_id)
-    _check_deadline(item_deadline, "item")
-
-    props, estrategia, url_usada, errores_relevantes, strategy_meta = _scrape_queue_item(
-        item=item,
-        session=session,
-        pw_context=pw_context,
-        started_at=started_at,
-        allow_playwright_fallback=allow_playwright_fallback,
-        allow_network_interception=allow_network_interception,
-    )
-    _check_deadline(item_deadline, "item")
     try:
-        counts = _save_queue_properties(db, item, props)
+        _check_deadline(item_deadline, "item")
+    except ItemTimeoutError as exc:
+        raise _item_timeout_control_error(item, started_at, timeout_seconds, None, "start_scraping_item", "inicio") from exc
+
+    try:
+        props, estrategia, url_usada, errores_relevantes, strategy_meta = _scrape_queue_item(
+            item=item,
+            session=session,
+            pw_context=pw_context,
+            started_at=started_at,
+            allow_playwright_fallback=allow_playwright_fallback,
+            allow_network_interception=allow_network_interception,
+        )
+        _check_deadline(item_deadline, "item")
+    except ItemTimeoutError as exc:
+        raise _item_timeout_control_error(item, started_at, timeout_seconds, None, "sin_estrategia", "scraping") from exc
+    try:
+        counts = _save_queue_properties(db, item, props, item_deadline=item_deadline)
+    except ItemTimeoutError as exc:
+        raise _item_timeout_control_error(
+            item,
+            started_at,
+            timeout_seconds,
+            url_usada,
+            estrategia,
+            "guardado_geocoding",
+            {
+                "diagnostico_inicial": strategy_meta.get("diagnostico_inicial"),
+                "strategy_plan": strategy_meta.get("strategy_plan"),
+                "propiedades_detectadas": len(props),
+            },
+        ) from exc
     except SavePropertiesError as exc:
         metadata_extra = {
             "diagnostico_inicial": strategy_meta.get("diagnostico_inicial"),
