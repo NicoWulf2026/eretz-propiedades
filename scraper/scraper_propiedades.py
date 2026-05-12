@@ -65,8 +65,8 @@ SUPABASE_KEY: str = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "") or os.enviro
 
 TOKKO_API_BASE = "https://api.tokkobroker.com/api/v1/property/"
 TOKKO_LIMIT    = 100
-TOKKO_DETAIL_IMAGE_MAX_WORKERS = 6
-TOKKO_DETAIL_IMAGE_TIMEOUT = 7
+TOKKO_DETAIL_IMAGE_MAX_WORKERS = 10
+TOKKO_DETAIL_IMAGE_TIMEOUT = 6
 TOKKO_FAKE_IMAGE_EXAMPLES_LIMIT = 8
 TOKKO_REAL_IMAGE_EXAMPLES_LIMIT = 8
 
@@ -89,7 +89,7 @@ CUSTOM_OR_SITEMAP_ITEM_TIMEOUT_SECONDS = 240
 PLAYWRIGHT_ITEM_TIMEOUT_SECONDS = 300
 STRATEGY_TIMEOUT_SECONDS: Dict[str, int] = {
     "tokko_api": 45,
-    "tokko_html": 45,
+    "tokko_html": 150,
     "wordpress_html": 35,
     "network_intercept": 30,
     "static_html": 35,
@@ -1855,6 +1855,12 @@ def is_fake_property_image_url(image_url: Any) -> bool:
         return True
     if re.search(r"(?:^|[\/_.-])360(?:[\/_.-]|$)", low):
         return True
+    for width, height in re.findall(r"(?<!\d)(\d{1,4})[xX](\d{1,4})(?!\d)", low):
+        try:
+            if int(width) < 180 and int(height) < 180:
+                return True
+        except Exception:
+            continue
     if any(pattern in low for pattern in FALSE_IMAGE_PATTERNS):
         return True
     if re.search(r"(?:icon|ico|amenity|surface|superficie|map)[-_]?\d*\.(?:png|jpe?g|webp|gif)$", path):
@@ -2772,6 +2778,14 @@ def extraer_imagenes(
 ) -> List[str]:
     """Extrae solo fotos reales de una ficha, descartando iconos y placeholders."""
     candidates: List[str] = []
+    source_by_url: Dict[str, str] = {}
+
+    def add_candidate(raw: Any, source: str) -> None:
+        normalized = _normalize_image_url(raw, base_url)
+        if not normalized:
+            return
+        candidates.append(str(raw))
+        source_by_url.setdefault(normalized, source)
 
     img_attrs = [
         "src",
@@ -2791,11 +2805,12 @@ def extraer_imagenes(
         for attr in img_attrs:
             src = img.get(attr, "")
             if src:
-                candidates.append(str(src))
+                add_candidate(src, attr)
         for attr in ("srcset", "data-srcset", "data-lazy-srcset"):
             srcset = img.get(attr, "")
             if srcset:
-                candidates.extend(_extract_srcset_urls(str(srcset), base_url))
+                for srcset_url in _extract_srcset_urls(str(srcset), base_url):
+                    add_candidate(srcset_url, attr)
 
     for source in soup.find_all("source"):
         for attr in ("srcset", "data-srcset", "src", "data-src"):
@@ -2803,18 +2818,19 @@ def extraer_imagenes(
             if not value:
                 continue
             if "srcset" in attr:
-                candidates.extend(_extract_srcset_urls(str(value), base_url))
+                for srcset_url in _extract_srcset_urls(str(value), base_url):
+                    add_candidate(srcset_url, f"source_{attr}")
             else:
-                candidates.append(str(value))
+                add_candidate(value, f"source_{attr}")
 
     for el in soup.select("[data-background], [data-bg], [data-background-image], [style*='background']"):
         for attr in ("data-background", "data-bg", "data-background-image"):
             value = el.get(attr, "")
             if value:
-                candidates.append(str(value))
+                add_candidate(value, attr)
         style = el.get("style", "") or ""
         for match in re.findall(r"url\([\"']?([^\"')\s]+)", style, flags=re.I):
-            candidates.append(match)
+            add_candidate(match, "background_style")
 
     for meta in soup.select(
         "meta[property='og:image'], meta[property='og:image:secure_url'], "
@@ -2822,16 +2838,22 @@ def extraer_imagenes(
     ):
         content = meta.get("content", "")
         if content:
-            candidates.append(str(content))
+            add_candidate(content, "meta")
 
     for script in soup.find_all("script", attrs={"type": re.compile(r"ld\+json", re.I)}):
         raw = script.string or script.get_text("", strip=True)
         if not raw:
             continue
+        before = len(candidates)
         try:
-            _collect_json_image_values(json.loads(raw), candidates)
+            json_candidates: List[str] = []
+            _collect_json_image_values(json.loads(raw), json_candidates)
+            for image_url in json_candidates:
+                add_candidate(image_url, "json_ld")
         except Exception:
             continue
+        if stats is not None and len(candidates) > before:
+            stats["json_ld_scripts_con_imagenes"] = int(stats.get("json_ld_scripts_con_imagenes") or 0) + 1
 
     html_text = str(soup)
     for match in re.findall(
@@ -2839,9 +2861,16 @@ def extraer_imagenes(
         html_text,
         flags=re.I,
     ):
-        candidates.append(match.replace("\\/", "/"))
+        add_candidate(match.replace("\\/", "/"), "html_regex")
 
-    return clean_property_images(candidates, base_url=base_url, stats=stats)
+    images = clean_property_images(candidates, base_url=base_url, stats=stats)
+    if stats is not None:
+        source_counts = stats.setdefault("fuentes_imagenes", {})
+        for image_url in images:
+            normalized = _normalize_image_url(image_url, base_url) or image_url
+            source = source_by_url.get(normalized, "unknown")
+            source_counts[source] = int(source_counts.get(source) or 0) + 1
+    return images
 
 
 def _new_image_stats() -> Dict[str, Any]:
@@ -2850,6 +2879,8 @@ def _new_image_stats() -> Dict[str, Any]:
         "imagenes_falsas_descartadas": 0,
         "ejemplos_reales": [],
         "ejemplos_descartados": [],
+        "fuentes_imagenes": {},
+        "json_ld_scripts_con_imagenes": 0,
     }
 
 
@@ -2862,8 +2893,12 @@ def _tokko_image_stats(inmob: Dict) -> Dict[str, Any]:
 
 
 def _merge_image_stats(target: Dict[str, Any], source: Dict[str, Any]) -> None:
-    for key in ("imagenes_reales_detectadas", "imagenes_falsas_descartadas"):
+    for key in ("imagenes_reales_detectadas", "imagenes_falsas_descartadas", "json_ld_scripts_con_imagenes"):
         target[key] = int(target.get(key) or 0) + int(source.get(key) or 0)
+
+    target_sources = target.setdefault("fuentes_imagenes", {})
+    for source_name, count in (source.get("fuentes_imagenes") or {}).items():
+        target_sources[source_name] = int(target_sources.get(source_name) or 0) + int(count or 0)
 
     for key, limit in (
         ("ejemplos_reales", TOKKO_REAL_IMAGE_EXAMPLES_LIMIT),
@@ -2892,8 +2927,13 @@ def _fetch_tokko_detail_images(prop: Dict, inmob: Dict) -> Tuple[Dict, List[str]
         response = _http_get(str(url), worker_session, timeout=timeout)
         if response.status_code != 200:
             return prop, [], stats, f"HTTP {response.status_code}"
-        soup = BeautifulSoup(response.text or "", "html.parser")
-        return prop, extraer_imagenes(soup, str(url), stats), stats, None
+        soup = BeautifulSoup(_decode_response_text(response), "html.parser")
+        images = extraer_imagenes(soup, str(url), stats)
+        if images:
+            logger.debug("[IMAGE_EXTRACTION] propiedad=%s imagenes_detectadas=%d url=%s", prop.get("id_externo"), len(images), url)
+        else:
+            logger.debug("[IMAGE_EXTRACTION_WARN] sin imagenes reales url=%s", url)
+        return prop, images, stats, None
     except Exception as exc:
         return prop, [], stats, f"{type(exc).__name__}: {str(exc)[:180]}"
 
@@ -2919,6 +2959,8 @@ def _enrich_tokko_detail_images(resultados: List[Dict], session: requests.Sessio
                 "detalles_pendientes_sin_consultar": len(missing),
                 "imagenes_falsas_descartadas": int(stats.get("imagenes_falsas_descartadas") or 0),
                 "imagenes_reales_detectadas": int(stats.get("imagenes_reales_detectadas") or 0),
+                "fuentes_imagenes": dict(stats.get("fuentes_imagenes") or {}),
+                "json_ld_scripts_con_imagenes": int(stats.get("json_ld_scripts_con_imagenes") or 0),
                 "ejemplos_imagenes_descartadas": stats.get("ejemplos_descartados", [])[:TOKKO_FAKE_IMAGE_EXAMPLES_LIMIT],
                 "ejemplos_imagenes_reales": stats.get("ejemplos_reales", [])[:TOKKO_REAL_IMAGE_EXAMPLES_LIMIT],
                 "errores_detalle_imagenes": ["sin_tiempo_para_detalles"],
@@ -2958,6 +3000,8 @@ def _enrich_tokko_detail_images(resultados: List[Dict], session: requests.Sessio
         "detalles_pendientes_sin_consultar": max(len(missing) - details_checked, 0),
         "imagenes_falsas_descartadas": int(stats.get("imagenes_falsas_descartadas") or 0),
         "imagenes_reales_detectadas": int(stats.get("imagenes_reales_detectadas") or 0),
+        "fuentes_imagenes": dict(stats.get("fuentes_imagenes") or {}),
+        "json_ld_scripts_con_imagenes": int(stats.get("json_ld_scripts_con_imagenes") or 0),
         "ejemplos_imagenes_descartadas": stats.get("ejemplos_descartados", [])[:TOKKO_FAKE_IMAGE_EXAMPLES_LIMIT],
         "ejemplos_imagenes_reales": stats.get("ejemplos_reales", [])[:TOKKO_REAL_IMAGE_EXAMPLES_LIMIT],
         "errores_detalle_imagenes": detail_errors,
@@ -3144,7 +3188,7 @@ def strategy_tokko_api(inmob: Dict, session: requests.Session) -> List[Dict]:
     return resultados
 
 
-TOKKO_HTML_EXTRACTOR_VERSION = "tokko_html_v2"
+TOKKO_HTML_EXTRACTOR_VERSION = "tokko_html_v3_images"
 
 _TOKKO_LISTING_PATHS = [
     "/Propiedades", "/propiedades", "/PROPIEDADES",
@@ -3643,6 +3687,8 @@ def strategy_tokko_html(inmob: Dict, session: requests.Session) -> List[Dict]:
                     logger.info("  Ejemplos fotos reales: %s", image_metadata["ejemplos_imagenes_reales"][:3])
                 if image_metadata.get("ejemplos_imagenes_descartadas"):
                     logger.info("  Ejemplos descartadas: %s", image_metadata["ejemplos_imagenes_descartadas"][:3])
+                if image_metadata.get("fuentes_imagenes"):
+                    logger.info("[IMAGE_EXTRACTION_SOURCE] %s", image_metadata["fuentes_imagenes"])
                 return resultados
 
         except Exception as exc:
@@ -6614,16 +6660,6 @@ def classify_diagnostic_failure(
     allow_playwright: bool = False,
     allow_network_interception: bool = False,
 ) -> str:
-    status = diagnostic.get("http_status")
-    if status is None or diagnostic.get("site_down"):
-        return "site_down_confirmed"
-    if _is_site_down_status(status):
-        return "site_down_confirmed"
-    if status in {403, 429} or diagnostic.get("blocked"):
-        return "blocked"
-    if diagnostic.get("html_empty"):
-        return "empty_site"
-
     technologies = set(diagnostic.get("tecnologias_detectadas") or [])
     property_links_count = int(diagnostic.get("property_links_count") or 0)
     sitemap_count = int(diagnostic.get("sitemap_property_urls_count") or 0)
@@ -6631,8 +6667,12 @@ def classify_diagnostic_failure(
     rest_count = int(diagnostic.get("wordpress_rest_property_urls_count") or 0)
     project_count = int(diagnostic.get("developer_project_urls_count") or 0)
     plugin = str(diagnostic.get("wordpress_plugin_detectado") or "").strip().lower()
+    possible_detail_urls = diagnostic.get("posibles_urls_detalle") or []
+    has_real_detail_urls = any(_looks_like_real_property_url(str(url)) for url in possible_detail_urls)
 
-    if "tokko_html" in technologies and property_links_count > 0:
+    # Las senales scrapeables tienen prioridad sobre errores parciales de rutas
+    # alternativas. Un timeout en /venta no debe tapar que ya vimos Tokko + fichas.
+    if "tokko_html" in technologies and (property_links_count > 0 or has_real_detail_urls):
         return "scrapeable_tokko"
     if "tokko_api" in technologies:
         return "scrapeable_tokko_api"
@@ -6658,6 +6698,16 @@ def classify_diagnostic_failure(
         return "scrapeable_sitemap"
     if project_count > 0:
         return "scrapeable_developer_projects"
+
+    status = diagnostic.get("http_status")
+    if status is None or diagnostic.get("site_down"):
+        return "site_down_confirmed"
+    if _is_site_down_status(status):
+        return "site_down_confirmed"
+    if status in {403, 429} or diagnostic.get("blocked"):
+        return "blocked"
+    if diagnostic.get("html_empty"):
+        return "empty_site"
 
     if diagnostic.get("requires_network_interception") and not allow_network_interception:
         return "requires_network_interception"
@@ -7359,6 +7409,7 @@ def run_best_strategy(
     allow_playwright_fallback: bool = True,
     allow_network_interception: bool = True,
     item_deadline: Optional[float] = None,
+    allow_explicit_strategy_fallback: bool = False,
 ) -> Tuple[List[Dict], str]:
     """
     Ejecuta la mejor estrategia para una agencia.
@@ -7474,6 +7525,46 @@ def run_best_strategy(
             "last_successful_strategy": inmob.get("last_successful_strategy"),
         },
     )
+    supported_explicit_strategies = {
+        "tokko_api",
+        "tokko_html",
+        "static_html_tokko_detail",
+        "static_html_detail",
+        "static_html",
+        "custom_listing_detail",
+        "wordpress_sitemap_detail",
+        "wordpress_essential_real_estate_detail",
+        "wordpress_estatik_detail",
+        "wordpress_realhomes_detail",
+        "wordpress_generic_detail",
+        "wordpress_html",
+        "json_ld",
+        "sitemap",
+        "network_interception",
+        "playwright_html",
+    }
+    if (
+        allow_explicit_strategy_fallback
+        and not strategy_plan.get("primary_strategy")
+        and estrategia_guardada in supported_explicit_strategies
+    ):
+        explicit_fallbacks = {
+            "tokko_html": ["static_html_tokko_detail", "static_html_detail", "json_ld", "sitemap"],
+            "wordpress_html": ["wordpress_generic_detail", "static_html_detail", "sitemap"],
+            "static_html": ["static_html_detail", "json_ld"],
+        }
+        strategy_plan = {
+            "primary_strategy": estrategia_guardada,
+            "fallback_strategies": explicit_fallbacks.get(str(estrategia_guardada), []),
+            "reason": "test-url con CMS/estrategia explicita tras diagnostico parcial",
+            "expected_property_count": _diagnostic_expected_property_count(diagnostic),
+            "confidence": "low",
+            "requires_playwright": estrategia_guardada == "playwright_html",
+            "requires_network_interception": estrategia_guardada == "network_interception",
+            "should_save_strategy_for_future": False,
+            "classification": diagnostic.get("classification"),
+            "discarded_extractors": diagnostic.get("extractores_posibles") or [],
+        }
     metadata = inmob.setdefault("_scraper_metadata", {})
     metadata.update({
         "diagnostico_inicial": diagnostic,
@@ -8905,6 +8996,7 @@ def test_single_url(
             allow_playwright_fallback=allow_playwright_fallback,
             allow_network_interception=allow_network_interception,
             item_deadline=started_at + CONTROL_ITEM_TIMEOUT_SECONDS,
+            allow_explicit_strategy_fallback=True,
         )
         metadata = dict(inmob.get("_scraper_metadata") or {})
         logger.info("=" * 60)
