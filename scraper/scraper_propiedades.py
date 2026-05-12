@@ -97,6 +97,7 @@ STRATEGY_TIMEOUT_SECONDS: Dict[str, int] = {
     "wordpress_estatik_detail": 75,
     "wordpress_realhomes_detail": 75,
     "wordpress_generic_detail": 65,
+    "custom_listing_detail": 75,
     "json_ld": 20,
     "sitemap": 20,
     "html_scraper": 45,
@@ -4972,6 +4973,91 @@ def _extract_generic_property_links(html: str, current_url: str) -> List[str]:
     return links[:400]
 
 
+def _looks_like_custom_listing_url(url: str) -> bool:
+    if not url or _is_noise_property_url(url):
+        return False
+    parsed = urlparse(str(url))
+    path = unquote((parsed.path or "").lower()).rstrip("/")
+    query = unquote(parsed.query or "").lower()
+    if path.endswith("/listing") or path.endswith("/listings") or path == "listing" or path == "listings":
+        return True
+    if "listing" in path and any(marker in query for marker in ("user_id=", "purpose=", "type=", "page=")):
+        return True
+    return False
+
+
+def _looks_like_custom_property_url(url: str, link_text: str = "") -> bool:
+    if not url or _is_noise_property_url(url):
+        return False
+    parsed = urlparse(str(url))
+    path = unquote((parsed.path or "").lower()).strip("/")
+    if not path:
+        return False
+    if re.search(r"^(blog|prensa|desarrollos?|contactenos?|contacto|nosotros|login)(/|$)", path):
+        return False
+    if re.search(r"^(ad|avisos?|ficha|detalle|propiedad|inmueble)/[^/?#]{8,}", path):
+        text = _fix_mojibake_text(link_text).lower()
+        if any(noise in text for noise in ("ingresar", "contacto", "instagram", "facebook", "desarrollado")):
+            return False
+        return True
+    return _looks_like_real_property_url(url)
+
+
+def _extract_custom_listing_urls(html: str, current_url: str) -> List[str]:
+    soup = BeautifulSoup(html or "", "html.parser")
+    current_netloc = urlparse(current_url).netloc
+    urls: List[str] = []
+
+    def add(candidate: str) -> None:
+        full = urljoin(current_url, candidate).split("#", 1)[0]
+        if urlparse(full).netloc != current_netloc:
+            return
+        if _looks_like_custom_listing_url(full) and full not in urls:
+            urls.append(full)
+
+    for a in soup.select("a[href]"):
+        add((a.get("href") or "").strip())
+
+    for match in re.findall(r"""["']([^"']*(?:/listing|listing\?)[^"']*)["']""", html or "", flags=re.I):
+        add(match)
+
+    user_ids = re.findall(r"user_id=(\d+)", html or "", flags=re.I)
+    base = f"{urlparse(current_url).scheme}://{current_netloc}" if current_netloc else current_url.rstrip("/")
+    for user_id in list(dict.fromkeys(user_ids))[:3]:
+        for purpose in ("sale", "rent", "temporary_rental", "temporary_rent"):
+            add(f"{base}/listing?user_id={user_id}&purpose={purpose}")
+
+    return urls[:120]
+
+
+def _extract_custom_property_links(html: str, current_url: str) -> List[str]:
+    soup = BeautifulSoup(html or "", "html.parser")
+    current_netloc = urlparse(current_url).netloc
+    links: List[str] = []
+
+    def add(candidate: str, text: str = "") -> None:
+        full = urljoin(current_url, candidate).split("#", 1)[0]
+        if urlparse(full).netloc != current_netloc:
+            return
+        if _looks_like_custom_property_url(full, text) and full not in links:
+            links.append(full)
+
+    selectors = [
+        "a[href*='/ad/']", "a[href*='/aviso/']", "a[href*='/ficha/']",
+        "a[href*='/detalle/']", "a[href*='/propiedad/']", "a[href*='/inmueble/']",
+        "[class*='listing'] a[href]", "[class*='property'] a[href]",
+        "[class*='propiedad'] a[href]", "[class*='inmueble'] a[href]",
+        ".card a[href]", "article a[href]",
+    ]
+    for selector in selectors:
+        for a in soup.select(selector):
+            add((a.get("href") or "").strip(), a.get_text(" ", strip=True))
+
+    for match in re.findall(r"""["']([^"']*/(?:ad|aviso|ficha|detalle|propiedad|inmueble)/[^"']{8,})["']""", html or "", flags=re.I):
+        add(match)
+    return links[:500]
+
+
 def _generic_candidate_urls(inmob: Dict, first_html: str = "", first_url: str = "") -> List[str]:
     urls: List[str] = []
 
@@ -4993,6 +5079,211 @@ def _generic_candidate_urls(inmob: Dict, first_html: str = "", first_url: str = 
         for path in _UNIVERSAL_LISTING_PATHS:
             add(urljoin(base.rstrip("/") + "/", path.lstrip("/")))
     return urls[:50]
+
+
+def _custom_listing_candidate_urls(inmob: Dict, first_html: str = "", first_url: str = "") -> List[str]:
+    urls: List[str] = []
+
+    def add(url: Optional[str]) -> None:
+        if not url:
+            return
+        clean = _normalize_queue_url(str(url).split("#", 1)[0])
+        if clean and not _is_noise_property_url(clean) and clean not in urls:
+            urls.append(clean)
+
+    for variant in _url_host_variants(inmob.get("url_listado")):
+        if _looks_like_custom_listing_url(variant):
+            add(variant)
+    for variant in _url_host_variants(inmob.get("web")):
+        add(variant)
+    if first_html and first_url:
+        for link in _extract_custom_listing_urls(first_html, first_url):
+            add(link)
+    for base in _url_host_variants(inmob.get("web") or first_url):
+        root = base.rstrip("/") + "/"
+        add(urljoin(root, "listing"))
+        add(urljoin(root, "listings"))
+        add(urljoin(root, "listing?purpose=sale"))
+        add(urljoin(root, "listing?purpose=rent"))
+    return urls[:80]
+
+
+def _parse_custom_listing_cards(html: str, source_url: str, inmob: Dict) -> List[Dict]:
+    """Extrae propiedades directamente desde cards cuando no hay pagina detalle."""
+    soup = BeautifulSoup(html or "", "html.parser")
+    selectors = [
+        "[class*='listing']", "[class*='property']", "[class*='propiedad']",
+        "[class*='inmueble']", ".card", "article",
+    ]
+    cards = []
+    for selector in selectors:
+        found = [
+            node for node in soup.select(selector)
+            if len(node.get_text(" ", strip=True)) >= 80
+            and re.search(r"(venta|alquiler|usd|u\$s|\$|amb|m2|mÂ²|departamento|casa|lote|terreno)", node.get_text(" ", strip=True), re.I)
+        ]
+        if len(found) >= 2:
+            cards = found[:80]
+            break
+
+    props: List[Dict] = []
+    for idx, card in enumerate(cards, start=1):
+        text = _fix_mojibake_text(card.get_text(" ", strip=True))
+        if not text or len(text) < 80:
+            continue
+        link = card.select_one("a[href]")
+        url_prop = urljoin(source_url, link.get("href")) if link and link.get("href") else f"{source_url}#card-{idx}"
+        if _is_noise_property_url(url_prop) or _looks_like_custom_listing_url(url_prop):
+            url_prop = f"{source_url}#card-{idx}"
+
+        title = ""
+        for selector in ("h1", "h2", "h3", "h4", "[class*='title']", "[class*='titulo']"):
+            el = card.select_one(selector)
+            if el and _is_useful_scraped_title(el.get_text(" ", strip=True)):
+                title = _fix_mojibake_text(el.get_text(" ", strip=True))
+                break
+        if not title and link:
+            title = _fix_mojibake_text(link.get_text(" ", strip=True))
+        if not _is_useful_scraped_title(title):
+            title = _title_from_detail_url(url_prop)
+        if not _is_useful_scraped_title(title):
+            continue
+
+        precio, moneda = _normalizar_precio_detalle(text)
+        precio_ars, precio_usd = convertir_precio(precio, moneda)
+        direccion = _extract_address_from_text(text)
+        imagenes = clean_property_images(extraer_imagenes(card, source_url), base_url=source_url)
+        id_ext = ""
+        match = re.search(r"/(?:ad|aviso|ficha|detalle|propiedad|inmueble)/([^/?#]+)", url_prop, re.I)
+        if match:
+            id_ext = match.group(1)[:120]
+
+        prop = {
+            "inmobiliaria_id": inmob["id"],
+            "url": url_prop,
+            "id_externo": id_ext or f"card-{idx}",
+            "hash_dedup": hash_propiedad(inmob["id"], id_ext or f"card-{idx}", url_prop),
+            "titulo": title,
+            "descripcion": limpiar_descripcion(text[:1200]),
+            "precio": precio,
+            "moneda": moneda,
+            "precio_ars": precio_ars,
+            "precio_usd": precio_usd,
+            "tipo_propiedad": normalizar_tipo(text),
+            "operacion": normalizar_operacion(text or source_url),
+            "ambientes": normalizar_int(re.search(r"(\d+)\s*amb", text, re.I).group(1)) if re.search(r"(\d+)\s*amb", text, re.I) else None,
+            "superficie_total": normalizar_superficie(text),
+            "direccion": direccion,
+            "ciudad": inmob.get("ciudad", ""),
+            "provincia": inmob.get("provincia", ""),
+            "pais": "Argentina",
+            "imagenes": imagenes or None,
+            "fuente_extraccion": "custom_listing_detail",
+            "cms_origen": inmob.get("cms_detectado") or "custom",
+            "estado": "activo",
+        }
+        prop["score_calidad"] = calcular_score(prop)
+        props.append(prop)
+    return _dedupe_props(props)
+
+
+def strategy_custom_listing_detail(inmob: Dict, session: requests.Session) -> List[Dict]:
+    """Extractor HTTP para sitios custom con listados /listing?... y fichas /ad/..."""
+    strategy_name = "custom_listing_detail"
+    url_inicial = inmob.get("url_listado") or inmob.get("web", "")
+    if not url_inicial:
+        raise ValueError("sin_url_listado")
+
+    _check_strategy_deadline(inmob, strategy_name)
+    first_html = ""
+    final_url = _normalize_queue_url(url_inicial)
+    urls_detectadas: List[str] = []
+    urls_probadas: List[str] = []
+    detail_urls: List[str] = []
+    errores_relevantes: List[str] = []
+    card_props: List[Dict] = []
+
+    try:
+        r0 = _http_get(final_url, session, timeout=_bounded_http_timeout(inmob, 8), use_scraper_on_block=False)
+        if r0.status_code == 200:
+            first_html = _decode_response_text(r0)
+            final_url = r0.url or final_url
+    except Exception as exc:
+        errores_relevantes.append(f"{final_url}: {type(exc).__name__}: {str(exc)[:180]}")
+
+    candidates = _custom_listing_candidate_urls(inmob, first_html=first_html, first_url=final_url)
+    urls_detectadas = [url for url in candidates if _looks_like_custom_listing_url(url)]
+    if not urls_detectadas and _looks_like_custom_listing_url(final_url):
+        urls_detectadas.append(final_url)
+    if not urls_detectadas:
+        raise RuntimeError("no_property_links: custom_listing_detail sin URLs /listing")
+
+    idx = 0
+    while idx < len(urls_detectadas) and len(urls_probadas) < 35:
+        _check_strategy_deadline(inmob, strategy_name)
+        if _deadline_remaining_seconds(_strategy_deadline(inmob)) <= 8:
+            errores_relevantes.append("custom_listing_detenido_por_presupuesto")
+            break
+        listing_url = urls_detectadas[idx]
+        idx += 1
+        if listing_url in urls_probadas:
+            continue
+        urls_probadas.append(listing_url)
+        try:
+            if listing_url == final_url and first_html:
+                html = first_html
+            else:
+                r = _http_get(listing_url, session, timeout=_bounded_http_timeout(inmob, 7), use_scraper_on_block=False)
+                if r.status_code != 200:
+                    errores_relevantes.append(f"{listing_url}: HTTP {r.status_code}")
+                    continue
+                html = _decode_response_text(r)
+            for link in _extract_custom_listing_urls(html, listing_url):
+                if link not in urls_detectadas and link not in urls_probadas:
+                    urls_detectadas.append(link)
+            for link in _extract_custom_property_links(html, listing_url):
+                if link not in detail_urls:
+                    detail_urls.append(link)
+            if not detail_urls:
+                card_props.extend(_parse_custom_listing_cards(html, listing_url, inmob))
+            if len(detail_urls) >= 180:
+                break
+        except Exception as exc:
+            errores_relevantes.append(f"{listing_url}: {type(exc).__name__}: {str(exc)[:180]}")
+
+    resultados: List[Dict] = []
+    for detail_url in detail_urls[:180]:
+        _check_strategy_deadline(inmob, strategy_name)
+        if _deadline_remaining_seconds(_strategy_deadline(inmob)) <= 4:
+            errores_relevantes.append("custom_listing_detalles_detenidos_por_presupuesto")
+            break
+        try:
+            prop = _extract_detail_page(detail_url, inmob, session)
+            if prop:
+                prop["fuente_extraccion"] = strategy_name
+                prop["cms_origen"] = inmob.get("cms_detectado") or "custom"
+                resultados.append(prop)
+            time.sleep(random.uniform(0.05, 0.16))
+        except Exception as exc:
+            if len(errores_relevantes) < 10:
+                errores_relevantes.append(f"{detail_url}: {type(exc).__name__}: {str(exc)[:160]}")
+
+    resultados = _dedupe_props(resultados + card_props)
+    inmob["_scraper_metadata"] = {
+        **dict(inmob.get("_scraper_metadata") or {}),
+        "custom_listing_urls_detectadas": len(urls_detectadas),
+        "custom_listing_urls_probadas": urls_probadas,
+        "custom_listing_links_propiedad_detectados": len(detail_urls),
+        "custom_listing_detail_urls_sample": detail_urls[:12],
+        "cantidad_paginas": len(urls_probadas),
+        "errores_relevantes": errores_relevantes[-10:],
+    }
+    if not detail_urls and not card_props:
+        raise RuntimeError("no_property_links: custom_listing_detail no encontro fichas ni cards reales")
+    if not resultados:
+        raise RuntimeError("parsing_failed: custom_listing_detail encontro links pero no datos extraibles")
+    logger.info("  Custom listing: %d propiedades desde %d fichas", len(resultados), len(detail_urls))
+    return resultados
 
 
 def strategy_static_html(inmob: Dict, session: requests.Session) -> List[Dict]:
@@ -5876,6 +6167,7 @@ def classify_diagnostic_failure(
     technologies = set(diagnostic.get("tecnologias_detectadas") or [])
     property_links_count = int(diagnostic.get("property_links_count") or 0)
     sitemap_count = int(diagnostic.get("sitemap_property_urls_count") or 0)
+    custom_listing_count = int(diagnostic.get("custom_listing_urls_count") or 0)
     plugin = str(diagnostic.get("wordpress_plugin_detectado") or "").strip().lower()
 
     if "tokko_html" in technologies and property_links_count > 0:
@@ -5896,6 +6188,8 @@ def classify_diagnostic_failure(
         return "scrapeable_wordpress_html"
     if property_links_count > 0:
         return "scrapeable_static_html"
+    if custom_listing_count > 0:
+        return "scrapeable_custom_listing"
     if sitemap_count > 0:
         return "scrapeable_sitemap"
 
@@ -5903,7 +6197,7 @@ def classify_diagnostic_failure(
         return "requires_network_interception"
     if diagnostic.get("requires_playwright") and not allow_playwright:
         return "requires_playwright"
-    if property_links_count == 0 and sitemap_count == 0:
+    if property_links_count == 0 and sitemap_count == 0 and custom_listing_count == 0:
         return "no_property_links"
     if diagnostic.get("unsupported_cms"):
         return "unsupported_cms"
@@ -5927,6 +6221,7 @@ def diagnose_inmob(
         "posibles_urls_listado": [],
         "posibles_urls_detalle": [],
         "property_links_count": 0,
+        "custom_listing_urls_count": 0,
         "cards_posibles": 0,
         "json_ld_property_items": 0,
         "sitemap_property_urls_count": 0,
@@ -5998,10 +6293,17 @@ def diagnose_inmob(
         link for link in _extract_keyword_internal_links(first_html, final_url, _UNIVERSAL_LISTING_KEYWORDS)
         if not _is_noise_property_url(link)
     ]
+    custom_listing_urls = _extract_custom_listing_urls(first_html, final_url)
+    if _looks_like_custom_listing_url(final_url) and final_url not in custom_listing_urls:
+        custom_listing_urls.insert(0, final_url)
     diagnostic["property_links_count"] = len(property_links)
     diagnostic["urls_validas_detectadas"] = len([url for url in property_links if _looks_like_real_property_url(url) or _looks_like_wordpress_plugin_property_url(url, wp_plugin)])
     diagnostic["posibles_urls_detalle"] = property_links[:20]
-    diagnostic["posibles_urls_listado"] = list(dict.fromkeys(diagnostic["posibles_urls_listado"] + listing_links))[:30]
+    diagnostic["custom_listing_urls_count"] = len(custom_listing_urls)
+    diagnostic["custom_listing_urls_detectadas"] = custom_listing_urls[:30]
+    diagnostic["posibles_urls_listado"] = list(dict.fromkeys(diagnostic["posibles_urls_listado"] + listing_links + custom_listing_urls))[:30]
+    if custom_listing_urls:
+        diagnostic["extractores_posibles"].append("custom_listing_detail")
     if property_links:
         diagnostic["extractores_posibles"].append("static_html")
 
@@ -6076,6 +6378,7 @@ def _diagnostic_expected_property_count(diagnostic: Dict[str, Any]) -> int:
     property_links = int(diagnostic.get("property_links_count") or 0)
     valid_urls = int(diagnostic.get("urls_validas_detectadas") or 0)
     sitemap_count = int(diagnostic.get("sitemap_property_urls_count") or 0)
+    custom_listing_count = int(diagnostic.get("custom_listing_urls_count") or 0)
     cards = int(diagnostic.get("cards_posibles") or 0)
     url_signal = max(property_links, valid_urls)
     if sitemap_count >= 5:
@@ -6085,6 +6388,8 @@ def _diagnostic_expected_property_count(diagnostic: Dict[str, Any]) -> int:
         return max(url_signal, card_cap)
     if sitemap_count > 0:
         return sitemap_count
+    if custom_listing_count > 0:
+        return max(min(custom_listing_count * 6, 60), custom_listing_count)
     if cards >= 6:
         return min(cards, 40)
     return max(cards, 0)
@@ -6122,6 +6427,7 @@ def select_best_scraping_strategy(diagnostic: Dict[str, Any], history: Optional[
     extractores_posibles = list(diagnostic.get("extractores_posibles") or [])
     property_links = int(diagnostic.get("property_links_count") or 0)
     sitemap_count = int(diagnostic.get("sitemap_property_urls_count") or 0)
+    custom_listing_count = int(diagnostic.get("custom_listing_urls_count") or 0)
     cards = int(diagnostic.get("cards_posibles") or 0)
     plugin = str(diagnostic.get("wordpress_plugin_detectado") or "").strip().lower()
     expected = _diagnostic_expected_property_count(diagnostic)
@@ -6147,6 +6453,7 @@ def select_best_scraping_strategy(diagnostic: Dict[str, Any], history: Optional[
         "wordpress_estatik_detail",
         "wordpress_realhomes_detail",
         "wordpress_generic_detail",
+        "custom_listing_detail",
         "static_html_detail",
         "playwright_html",
         "network_interception",
@@ -6198,6 +6505,12 @@ def select_best_scraping_strategy(diagnostic: Dict[str, Any], history: Optional[
             fallbacks = ["tokko_html", "static_html_detail", "json_ld"]
             reason = "Tokko custom/estatico: hay fichas reales pero no cards clasicas suficientes"
             confidence = "medium"
+
+    if primary is None and (classification == "scrapeable_custom_listing" or custom_listing_count > 0):
+        primary = "custom_listing_detail"
+        fallbacks = ["static_html_detail"]
+        reason = f"custom listing con URLs /listing detectadas ({custom_listing_count})"
+        confidence = "medium"
 
     if primary is None and sitemap_count > 0:
         primary = "sitemap"
@@ -6293,7 +6606,16 @@ def evaluate_scrape_quality(
             "expected_property_count": expected,
         }
 
-    url_real_count = sum(1 for prop in props if _looks_like_real_property_url(str(prop.get("url") or "")))
+    accepts_custom_urls = (
+        strategy_plan.get("primary_strategy") == "custom_listing_detail"
+        or diagnostic.get("classification") == "scrapeable_custom_listing"
+    )
+    url_real_count = sum(
+        1
+        for prop in props
+        if _looks_like_real_property_url(str(prop.get("url") or ""))
+        or (accepts_custom_urls and _looks_like_custom_property_url(str(prop.get("url") or "")))
+    )
     useful_title_count = sum(1 for prop in props if _is_useful_scraped_title(prop.get("titulo")))
     valid_price_count = sum(1 for prop in props if _positive_number(prop.get("precio")))
     image_count = sum(1 for prop in props if _has_real_images(prop.get("imagenes")))
@@ -6428,6 +6750,8 @@ def run_best_strategy(
             return call("static_html_detail", lambda: strategy_static_html_detail(inmob, session))
         if strategy_name == "static_html":
             return call("static_html", lambda: strategy_static_html(inmob, session))
+        if strategy_name == "custom_listing_detail":
+            return call("custom_listing_detail", lambda: strategy_custom_listing_detail(inmob, session))
         if strategy_name == "wordpress_sitemap_detail":
             return call("wordpress_sitemap_detail", lambda: strategy_wordpress_sitemap_detail(inmob, session))
         if strategy_name == "wordpress_essential_real_estate_detail":
@@ -6480,6 +6804,8 @@ def run_best_strategy(
         "motivo_eleccion_estrategia": strategy_plan.get("reason"),
         "expected_property_count": strategy_plan.get("expected_property_count"),
         "property_links_count": diagnostic.get("property_links_count"),
+        "custom_listing_urls_detectadas": diagnostic.get("custom_listing_urls_detectadas"),
+        "custom_listing_urls_count": diagnostic.get("custom_listing_urls_count"),
         "cards_posibles": diagnostic.get("cards_posibles"),
         "urls_validas_detectadas": diagnostic.get("urls_validas_detectadas"),
         "extractores_descartados": strategy_plan.get("discarded_extractors", []),
