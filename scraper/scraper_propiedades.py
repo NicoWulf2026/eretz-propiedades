@@ -2144,12 +2144,6 @@ _LOCATION_ALIASES: List[Dict[str, Any]] = [
         "provincia": "Santa Fe",
     },
     {
-        "aliases": ("funes",),
-        "ciudad": "Funes",
-        "provincia": "Santa Fe",
-        "blocked_if_contains": ("potrero de los funes",),
-    },
-    {
         "aliases": ("roldan", "roldán"),
         "ciudad": "Roldán",
         "provincia": "Santa Fe",
@@ -2174,14 +2168,63 @@ def _text_contains_location_alias(text: str, alias: str) -> bool:
     return bool(re.search(rf"\b{re.escape(alias_key)}\b", text))
 
 
+_FUNES_CITY_CONTEXT_ALIASES = (
+    "funes city",
+    "funes town",
+    "funes hills",
+    "funes norte",
+    "haras de funes",
+    "vida club de campo funes",
+    "kentucky funes",
+    "cantegril funes",
+    "aguadas funes",
+    "don mateo funes",
+)
+
+
+def _has_funes_street_context(text: str) -> bool:
+    """Evita confundir calles/personas llamadas Funes con la ciudad Funes."""
+    if re.search(r"\bfunes\s+(?:al\s+)?\d{2,5}\b", text):
+        return True
+    return bool(re.search(r"\b(?:dean|pedro\s+lino|jose\s+roque)\s+funes\b", text))
+
+
+def _has_funes_city_signal(text: str, ciudad: Any = None, provincia: Any = None, barrio: Any = None) -> bool:
+    if _text_contains_location_alias(text, "potrero de los funes"):
+        return False
+    current_city_key = _coordinate_location_key(ciudad)
+    current_province_key = _coordinate_location_key(provincia)
+    barrio_key = _location_text_key(barrio)
+
+    if current_city_key == "funes":
+        return True
+
+    if _has_funes_street_context(text):
+        return False
+
+    if current_province_key == "santa fe" and any(alias in barrio_key for alias in _FUNES_CITY_CONTEXT_ALIASES):
+        return True
+
+    if re.search(r"\bfunes\s*,\s*santa\s+fe\b", text):
+        return True
+    if re.search(r"\ben\s+funes\b(?!\s*(?:al\s+)?\d)", text):
+        return True
+    if re.search(r"\bcountries?\s+b\s+cerrado\s+funes\b", text):
+        return True
+    return any(_text_contains_location_alias(text, alias) for alias in _FUNES_CITY_CONTEXT_ALIASES)
+
+
 def _detect_location_from_text(
     titulo: Any,
     url: Any,
     direccion: Any = None,
     barrio: Any = None,
     descripcion: Any = None,
+    ciudad: Any = None,
+    provincia: Any = None,
+    pais: Any = None,
 ) -> Optional[Dict[str, str]]:
-    text = _location_text_key(titulo, url, direccion, barrio, descripcion)
+    text = _location_text_key(titulo, url, direccion, barrio, descripcion, ciudad, provincia, pais)
     if not text:
         return None
 
@@ -2211,6 +2254,15 @@ def _detect_location_from_text(
 
     if re.search(r"\b(?:en|ubicad[oa]\s+en)\s+9\s+de\s+julio\b(?!\s+\d)", text):
         return {"ciudad": "9 de Julio", "provincia": "Buenos Aires", "motivo": "titulo_url_9_de_julio"}
+
+    if _text_contains_location_alias(text, "mar del plata"):
+        return {"ciudad": "Mar del Plata", "provincia": "Buenos Aires", "motivo": "titulo_url_contiene_mar_del_plata"}
+
+    if _text_contains_location_alias(text, "belen de escobar"):
+        return {"ciudad": "BelÃ©n de Escobar", "provincia": "Buenos Aires", "motivo": "titulo_url_contiene_belen_de_escobar"}
+
+    if _has_funes_city_signal(text, ciudad=ciudad, provincia=provincia, barrio=barrio):
+        return {"ciudad": "Funes", "provincia": "Santa Fe", "motivo": "titulo_url_contiene_funes"}
 
     for rule in _LOCATION_ALIASES:
         for alias in rule["aliases"]:
@@ -2259,7 +2311,10 @@ def normalize_location_fields(
         url=url,
         direccion=direccion,
         barrio=barrio,
-        descripcion=" ".join(str(value or "") for value in (descripcion, ciudad, provincia)),
+        descripcion=descripcion,
+        ciudad=ciudad,
+        provincia=provincia,
+        pais=pais,
     )
     current_city = str(ciudad or "").strip()
     current_province = str(provincia or "").strip()
@@ -2286,11 +2341,13 @@ def normalize_location_fields(
     should_update_city = (
         not current_city_key
         or current_city_key != detected_city_key
+        or (current_city_key == detected_city_key and current_city != detected_city)
         or (_is_suspicious_location_value(current_city) and current_city_key != detected_city_key)
     )
     should_update_province = (
         not current_province_key
         or current_province_key != detected_province_key
+        or (current_province_key == detected_province_key and current_province != detected_province)
         or (_is_suspicious_location_value(current_province) and current_province_key != detected_province_key)
     )
 
