@@ -2,14 +2,20 @@
 Scraper controlado de inmobiliarias desde Zonaprop.
 Fuente: https://www.zonaprop.com.ar/inmobiliarias.bum
 
-Uso:
+Uso basico:
     python scraper/scraper_zonaprop_inmobiliarias.py --max-pages 1 --output data/zonaprop_test.csv --delay 3
+
+Uso para reanudar desde pagina 178:
+    python scraper/scraper_zonaprop_inmobiliarias.py --start-page 178 --max-pages 20 --output data/zonaprop_resume.csv --delay 12
+
+Uso con append a CSV existente:
+    python scraper/scraper_zonaprop_inmobiliarias.py --start-page 178 --max-pages 20 --output data/zonaprop_total.csv --delay 12 --append
 
 Reglas:
     - Solo descubrimiento de inmobiliarias (no copia propiedades).
     - No login, no captcha bypass, no evasion de bloqueos.
     - No toca Supabase, no inserta datos en la base.
-    - Si detecta bloqueo real, se detiene.
+    - Si detecta bloqueo real, se detiene y guarda lo recolectado.
 """
 
 import argparse
@@ -19,7 +25,7 @@ import re
 import sys
 import time
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 import requests
 from bs4 import BeautifulSoup
@@ -66,6 +72,9 @@ BLOCK_SIGNALS = [
     "captcha challenge required",
 ]
 
+# HTTP status codes que son reintenteables (errores temporales del servidor)
+RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 520, 521, 522, 523, 524}
+
 
 # ---------------------------------------------------------------------------
 # Funciones auxiliares
@@ -108,6 +117,18 @@ def detect_block(status_code, html, cards_found):
         return "Captcha activo sin cards visibles"
 
     return None
+
+
+def is_retryable_error(block_reason):
+    # type: (Optional[str]) -> bool
+    """Determina si un error de bloqueo es reintentable (error temporal del servidor)."""
+    if not block_reason:
+        return False
+    # Errores HTTP 5xx y 429 son reintenteables
+    for code in RETRYABLE_STATUS_CODES:
+        if "HTTP {}".format(code) in block_reason:
+            return True
+    return False
 
 
 def extract_text_field(card_text, pattern):
@@ -191,10 +212,10 @@ def parse_card(card, page_url):
 
 
 def scrape_page(page_num, session):
-    # type: (int, requests.Session) -> Tuple[List[Dict], Optional[str]]
+    # type: (int, requests.Session) -> Tuple[List[Dict], Optional[str], int]
     """Descarga y parsea una pagina del directorio.
 
-    Retorna (lista_de_inmobiliarias, bloqueo_detectado).
+    Retorna (lista_de_inmobiliarias, bloqueo_detectado, status_code).
     bloqueo_detectado es None si no hay bloqueo.
     """
     url = build_page_url(page_num)
@@ -204,10 +225,10 @@ def scrape_page(page_num, session):
         resp = session.get(url, headers=HEADERS, timeout=30, allow_redirects=True)
     except requests.exceptions.TooManyRedirects:
         print("  [ERROR] Demasiados redirects para pagina {}.".format(page_num))
-        return [], "TooManyRedirects"
+        return [], "TooManyRedirects", 0
     except requests.exceptions.RequestException as exc:
         print("  [ERROR] Error de red: {}".format(exc))
-        return [], "RequestException: {}".format(exc)
+        return [], "RequestException: {}".format(exc), 0
 
     print("  Status: {} | Tamanio: {:,} chars".format(resp.status_code, len(resp.text)))
 
@@ -221,7 +242,7 @@ def scrape_page(page_num, session):
     # Detectar bloqueo
     block = detect_block(resp.status_code, html, len(cards))
     if block:
-        return [], block
+        return [], block, resp.status_code
 
     # Parsear cada card
     results = []
@@ -231,13 +252,13 @@ def scrape_page(page_num, session):
             results.append(data)
 
     print("  Inmobiliarias extraidas: {}".format(len(results)))
-    return results, None
+    return results, None, resp.status_code
 
 
 def deduplicate(records):
     # type: (List[Dict]) -> List[Dict]
     """Elimina duplicados por nombre + url_perfil_zonaprop."""
-    seen = set()
+    seen = set()  # type: Set[Tuple[str, str]]
     unique = []
     for rec in records:
         key = (rec["nombre"].strip().lower(), rec["url_perfil_zonaprop"].strip().lower())
@@ -247,13 +268,49 @@ def deduplicate(records):
     return unique
 
 
-def save_csv(records, output_path):
-    # type: (List[Dict], str) -> None
+def load_existing_csv(csv_path):
+    # type: (str) -> Tuple[List[Dict], Set[Tuple[str, str]]]
+    """Carga un CSV existente y retorna los registros y un set de claves para dedup."""
+    records = []
+    keys = set()  # type: Set[Tuple[str, str]]
+    if not os.path.exists(csv_path):
+        return records, keys
+    try:
+        with open(csv_path, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                records.append(row)
+                key = (
+                    row.get("nombre", "").strip().lower(),
+                    row.get("url_perfil_zonaprop", "").strip().lower(),
+                )
+                keys.add(key)
+        print("[INFO] CSV existente cargado: {} ({} registros)".format(csv_path, len(records)))
+    except Exception as exc:
+        print("[WARN] No se pudo leer CSV existente: {}".format(exc))
+    return records, keys
+
+
+def save_csv(records, output_path, append_mode=False):
+    # type: (List[Dict], str, bool) -> None
     """Guarda los registros en un archivo CSV."""
     output_dir = os.path.dirname(output_path)
     if output_dir and not os.path.exists(output_dir):
         os.makedirs(output_dir, exist_ok=True)
         print("[INFO] Directorio creado: {}".format(output_dir))
+
+    if append_mode and os.path.exists(output_path):
+        # Cargar existentes, agregar nuevos, deduplicar y guardar
+        existing, existing_keys = load_existing_csv(output_path)
+        new_count = 0
+        for rec in records:
+            key = (rec["nombre"].strip().lower(), rec["url_perfil_zonaprop"].strip().lower())
+            if key not in existing_keys:
+                existing.append(rec)
+                existing_keys.add(key)
+                new_count += 1
+        records = existing
+        print("[INFO] Modo append: {} nuevos agregados, {} total".format(new_count, len(records)))
 
     with open(output_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS)
@@ -263,28 +320,33 @@ def save_csv(records, output_path):
     print("[OK] CSV guardado: {} ({} filas)".format(output_path, len(records)))
 
 
-def print_summary(all_records, pages_processed, per_page, output_path, block_reason):
-    # type: (List[Dict], int, List[int], str, Optional[str]) -> None
+def print_summary(all_records, pages_processed, per_page, output_path,
+                  block_reason, start_page, last_page):
+    # type: (List[Dict], int, List[Tuple[int, int]], str, Optional[str], int, int) -> None
     """Imprime el resumen de la ejecucion."""
     print("\n" + "=" * 60)
     print("RESUMEN DE EJECUCION")
     print("=" * 60)
     print("Fecha/hora:            {}".format(datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+    print("Pagina inicio:         {}".format(start_page))
+    print("Ultima pagina:         {}".format(last_page))
     print("Paginas procesadas:    {}".format(pages_processed))
-    for i, count in enumerate(per_page, 1):
-        print("  Pagina {}:            {} inmobiliarias".format(i, count))
-    print("Total unicas:          {}".format(len(all_records)))
+    for page_num, count in per_page:
+        print("  Pagina {:>4d}:          {} inmobiliarias".format(page_num, count))
+    print("Total unicas (sesion): {}".format(len(all_records)))
     print("Archivo generado:      {}".format(output_path))
 
     if block_reason:
         print("\n[!!] BLOQUEO DETECTADO: {}".format(block_reason))
+        print("     Ultima pagina intentada: {}".format(last_page))
         print("     El scraper se detuvo por seguridad.")
+        print("     Para reanudar, usar: --start-page {}".format(last_page))
     else:
         print("\n[OK] Sin bloqueo detectado.")
 
-    # Mostrar primeras 10 inmobiliarias
+    # Mostrar primeras 10 inmobiliarias de esta sesion
     if all_records:
-        print("\nPrimeras {} inmobiliarias:".format(min(10, len(all_records))))
+        print("\nPrimeras {} inmobiliarias (esta sesion):".format(min(10, len(all_records))))
         print("-" * 60)
         for i, rec in enumerate(all_records[:10], 1):
             print(
@@ -309,13 +371,25 @@ def print_summary(all_records, pages_processed, per_page, output_path, block_rea
 def main():
     parser = argparse.ArgumentParser(
         description="Scraper controlado de inmobiliarias desde Zonaprop.",
-        epilog="Ejemplo: python scraper/scraper_zonaprop_inmobiliarias.py --max-pages 1 --output data/zonaprop_test.csv --delay 3",
+        epilog=(
+            "Ejemplos:\n"
+            "  Primera corrida:  python scraper/scraper_zonaprop_inmobiliarias.py --max-pages 5 --output data/zonaprop.csv --delay 10\n"
+            "  Reanudar:         python scraper/scraper_zonaprop_inmobiliarias.py --start-page 178 --max-pages 20 --output data/zonaprop_resume.csv --delay 12\n"
+            "  Append:           python scraper/scraper_zonaprop_inmobiliarias.py --start-page 178 --max-pages 20 --output data/zonaprop.csv --delay 12 --append"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "--max-pages",
         type=int,
         default=1,
         help="Numero maximo de paginas a procesar (default: 1).",
+    )
+    parser.add_argument(
+        "--start-page",
+        type=int,
+        default=1,
+        help="Pagina inicial para reanudar scraping (default: 1).",
     )
     parser.add_argument(
         "--output",
@@ -329,60 +403,136 @@ def main():
         default=3.0,
         help="Segundos de espera entre requests (default: 3).",
     )
+    parser.add_argument(
+        "--max-retries",
+        type=int,
+        default=2,
+        help="Reintentos por pagina ante errores temporales (default: 2).",
+    )
+    parser.add_argument(
+        "--backoff",
+        type=float,
+        default=60.0,
+        help="Segundos extra de espera tras error 520/429/5xx (default: 60).",
+    )
+    parser.add_argument(
+        "--append",
+        action="store_true",
+        default=False,
+        help="Agregar resultados a CSV existente sin duplicar.",
+    )
     args = parser.parse_args()
 
     print("=" * 60)
     print("SCRAPER ZONAPROP INMOBILIARIAS")
     print("=" * 60)
-    print("Max paginas: {}".format(args.max_pages))
-    print("Output:      {}".format(args.output))
-    print("Delay:       {}s".format(args.delay))
-    print("Fuente:      {}".format(FUENTE))
-    print("URL base:    {}".format(BASE_URL))
+    print("Pagina inicio: {}".format(args.start_page))
+    print("Max paginas:   {}".format(args.max_pages))
+    print("Output:        {}".format(args.output))
+    print("Delay:         {}s".format(args.delay))
+    print("Max retries:   {}".format(args.max_retries))
+    print("Backoff:       {}s".format(args.backoff))
+    print("Append:        {}".format(args.append))
+    print("Fuente:        {}".format(FUENTE))
+    print("URL base:      {}".format(BASE_URL))
 
     # Crear sesion reutilizable
     session = requests.Session()
 
-    all_records = []
-    per_page_counts = []
+    all_records = []  # type: List[Dict]
+    per_page_info = []  # type: List[Tuple[int, int]]
     pages_processed = 0
     block_reason = None
+    last_page = args.start_page
 
-    for page in range(1, args.max_pages + 1):
-        if page > 1:
+    end_page = args.start_page + args.max_pages  # exclusive
+    for page in range(args.start_page, end_page):
+        last_page = page
+
+        # Delay entre paginas (no antes de la primera)
+        if page > args.start_page:
             print("\n[DELAY] Esperando {}s antes de pagina {}...".format(args.delay, page))
             time.sleep(args.delay)
 
-        records, block = scrape_page(page, session)
+        # Intentar la pagina con reintentos
+        records = []
+        block = None
+        status_code = 0
+        attempts = 0
 
+        while attempts <= args.max_retries:
+            if attempts > 0:
+                wait_time = args.backoff * attempts
+                print("  [RETRY {}/{}] Esperando {}s antes de reintentar pagina {}...".format(
+                    attempts, args.max_retries, wait_time, page
+                ))
+                time.sleep(wait_time)
+
+            records, block, status_code = scrape_page(page, session)
+            attempts += 1
+
+            # Si no hay bloqueo y tenemos resultados, exito
+            if not block and len(records) > 0:
+                break
+
+            # Si hay bloqueo reintentable, seguir intentando
+            if block and is_retryable_error(block):
+                print("  [WARN] Error reintentable: {}".format(block))
+                if attempts <= args.max_retries:
+                    continue
+                else:
+                    print("  [FAIL] Se agotaron los reintentos para pagina {}.".format(page))
+                    break
+
+            # Si hay bloqueo no reintentable (403, captcha, etc.), cortar
+            if block and not is_retryable_error(block):
+                print("  [FAIL] Bloqueo no reintentable: {}".format(block))
+                break
+
+            # Si 0 resultados sin bloqueo, reintentar una vez
+            if not block and len(records) == 0:
+                if attempts <= args.max_retries:
+                    print("  [WARN] 0 inmobiliarias en pagina {}. Reintentando...".format(page))
+                    continue
+                else:
+                    print("  [INFO] Pagina {} devolvio 0 inmobiliarias tras reintentos.".format(page))
+                    break
+
+        # Registrar resultados de esta pagina
         pages_processed += 1
-        per_page_counts.append(len(records))
+        per_page_info.append((page, len(records)))
         all_records.extend(records)
 
+        # Si hay bloqueo definitivo, guardar lo que tenemos y cortar
         if block:
             block_reason = block
-            print("\n[STOP] Bloqueo detectado en pagina {}: {}".format(page, block))
-            print("[STOP] Deteniendo scraper por seguridad.")
+            print("\n[STOP] Bloqueo en pagina {}: {}".format(page, block))
+            print("[STOP] Guardando {} inmobiliarias recolectadas antes de detenerse.".format(
+                len(all_records)
+            ))
             break
 
-        # Si no encontramos cards en una pagina, posiblemente llegamos al final
-        if not records and page > 1:
-            print("\n[INFO] Pagina {} sin resultados. Fin del directorio.".format(page))
+        # Si 0 resultados tras reintentos y no es la primera pagina del rango
+        if len(records) == 0 and page > args.start_page:
+            print("\n[INFO] Pagina {} sin resultados tras reintentos. Posible fin del directorio.".format(page))
             break
 
-    # Deduplicar
+    # Deduplicar los registros de esta sesion
     unique_records = deduplicate(all_records)
     if len(unique_records) < len(all_records):
         print("\n[INFO] Duplicados eliminados: {}".format(len(all_records) - len(unique_records)))
 
-    # Guardar CSV
+    # Guardar CSV (siempre guardar si tenemos datos, incluso con bloqueo)
     if unique_records:
-        save_csv(unique_records, args.output)
+        save_csv(unique_records, args.output, append_mode=args.append)
     else:
-        print("\n[WARN] No se encontraron inmobiliarias. No se genera CSV.")
+        print("\n[WARN] No se encontraron inmobiliarias nuevas. No se genera CSV.")
 
     # Resumen
-    print_summary(unique_records, pages_processed, per_page_counts, args.output, block_reason)
+    print_summary(
+        unique_records, pages_processed, per_page_info,
+        args.output, block_reason, args.start_page, last_page
+    )
 
     session.close()
 
