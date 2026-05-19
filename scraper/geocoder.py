@@ -1249,6 +1249,8 @@ def geocode_with_fallbacks(
 def build_payload(row: Dict[str, Any], query: str, result: GeocodingResult) -> Dict[str, Any]:
     latitud = result.latitud
     longitud = result.longitud
+    status = result.status
+    error_message = result.error_message
     metadata = get_inmocapital_metadata(result.raw_response)
     if (
         result.status == "success"
@@ -1265,6 +1267,24 @@ def build_payload(row: Dict[str, Any], query: str, result: GeocodingResult) -> D
         )
         latitud = None
         longitud = None
+        status = "error"
+        error_message = "geocoding_coordinates_discarded_by_outlier_validation"
+    elif result.status == "success" and not is_coordinate_inside_argentina(latitud, longitud):
+        logger.info(
+            "coordenada_descartada_por_bounds_argentina | propiedad_id=%s | lat=%s | lon=%s",
+            row.get("propiedad_id"),
+            latitud,
+            longitud,
+        )
+        latitud = None
+        longitud = None
+        status = "error"
+        error_message = "geocoding_coordinates_outside_argentina_bounds"
+
+    if status == "success" and (latitud is None or longitud is None):
+        status = "error"
+        error_message = error_message or "geocoding_coordinates_missing"
+
     return {
         "propiedad_id": row.get("propiedad_id"),
         "direccion_geocoding": query,
@@ -1273,8 +1293,8 @@ def build_payload(row: Dict[str, Any], query: str, result: GeocodingResult) -> D
         "precision_geocoding": result.precision_geocoding,
         "proveedor": result.proveedor,
         "raw_response": result.raw_response,
-        "status": result.status,
-        "error_message": result.error_message,
+        "status": status,
+        "error_message": error_message,
     }
 
 
@@ -1390,16 +1410,17 @@ def run(limit: int, dry_run: bool = False) -> None:
         result, attempted_queries = geocode_with_fallbacks(provider, queries, row)
         payload = build_payload(row, query, result)
         save_status = client.save_result(payload)
+        payload_status = payload.get("status")
         quality_metadata = (
             get_inmocapital_metadata(payload.get("raw_response"))
         )
 
-        if result.status == "success":
+        if payload_status == "success":
             ok += 1
             logger.info(
                 "status=success | lat=%.6f | lon=%.6f | precision=%s | confidence=%s | apply=%s | bounds=%s | matched_query=%s | save=%s",
-                result.latitud,
-                result.longitud,
+                payload.get("latitud"),
+                payload.get("longitud"),
                 result.precision_geocoding,
                 quality_metadata.get("confidence_level"),
                 quality_metadata.get("should_apply_to_property"),
@@ -1411,7 +1432,7 @@ def run(limit: int, dry_run: bool = False) -> None:
             failed += 1
             logger.info(
                 "status=error | error=%s | apply=%s | intentos=%d | save=%s",
-                result.error_message,
+                payload.get("error_message"),
                 quality_metadata.get("should_apply_to_property"),
                 len(attempted_queries),
                 save_status,
