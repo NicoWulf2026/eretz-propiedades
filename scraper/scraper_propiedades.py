@@ -17,6 +17,7 @@ Estrategias (orden de prioridad):
 from __future__ import annotations
 
 import hashlib
+import html
 import json
 import logging
 import math
@@ -447,8 +448,76 @@ def calcular_score(prop: Dict) -> int:
 # Deduplicación
 # ---------------------------------------------------------------------------
 
+_DEDUP_TRACKING_QUERY_PARAMS = {
+    "utm_source",
+    "utm_medium",
+    "utm_campaign",
+    "utm_term",
+    "utm_content",
+    "fbclid",
+    "gclid",
+    "wbraid",
+    "gbraid",
+    "mc_cid",
+    "mc_eid",
+}
+
+
+def normalize_property_url_for_dedup(url: Any) -> str:
+    """URL canonica para identidad de propiedad."""
+    if not url:
+        return ""
+    raw = unquote(str(url).strip())
+    if not raw:
+        return ""
+    if not re.match(r"^https?://", raw, re.IGNORECASE):
+        raw = f"http://{raw.lstrip('/')}"
+    try:
+        parsed = urlparse(raw)
+    except Exception:
+        return re.sub(r"\s+", "", raw.lower()).rstrip("/")
+
+    host = (parsed.netloc or parsed.path.split("/")[0]).split("@")[-1]
+    host = host.split(":")[0].strip().lower()
+    if host.startswith("www."):
+        host = host[4:]
+
+    path = parsed.path or ""
+    if parsed.netloc:
+        path = re.sub(r"/+", "/", unquote(path)).strip().rstrip("/")
+    else:
+        path = ""
+    path = path.lower()
+
+    query_items = []
+    for key, value in parse_qsl(parsed.query, keep_blank_values=False):
+        key_clean = key.strip().lower()
+        if not key_clean or key_clean in _DEDUP_TRACKING_QUERY_PARAMS or key_clean.startswith("utm_"):
+            continue
+        query_items.append((key_clean, value.strip().lower()))
+    query = urlencode(sorted(query_items), doseq=True)
+
+    normalized = f"{host}{path}"
+    if query:
+        normalized = f"{normalized}?{query}"
+    return normalized.rstrip("/")
+
+
+def normalize_external_id_for_dedup(id_externo: Any) -> str:
+    if id_externo is None:
+        return ""
+    return re.sub(r"\s+", "", str(id_externo).strip().lower())
+
+
 def hash_propiedad(inmob_id: Any, id_externo: Any, url: Any) -> str:
-    key = f"{inmob_id}|{id_externo or ''}|{url or ''}"
+    url_key = normalize_property_url_for_dedup(url)
+    id_key = normalize_external_id_for_dedup(id_externo)
+    if url_key:
+        key = f"{inmob_id}|url|{url_key}"
+    elif id_key:
+        key = f"{inmob_id}|id_externo|{id_key}"
+    else:
+        key = f"{inmob_id}|sin_identidad|"
     return hashlib.sha256(key.encode()).hexdigest()[:32]
 
 
@@ -474,6 +543,14 @@ class SavePropertiesError(RuntimeError):
 
 def clasificar_error(e: Exception) -> str:
     msg = str(e).lower()
+    if "data_integrity_mismatch" in msg:
+        return "data_integrity_mismatch"
+    if "canonical_id_resolution_failed" in msg:
+        return "canonical_id_resolution_failed"
+    if "canonical_id_mismatch" in msg:
+        return "canonical_id_mismatch"
+    if "final_url_domain_mismatch" in msg:
+        return "final_url_domain_mismatch"
     if "item_timeout" in msg or isinstance(e, ItemTimeoutError):
         return "item_timeout"
     if "save_failed" in msg or isinstance(e, SavePropertiesError):
@@ -579,6 +656,18 @@ def _run_strategy_with_deadline(
             inmob["_strategy_name"] = previous_name
 
 
+def _update_strategy_progress(inmob: Dict, strategy_name: str, **kwargs: Any) -> None:
+    """Deja progreso consultable si una estrategia corta por timeout."""
+    metadata = inmob.setdefault("_scraper_metadata", {})
+    progress = metadata.setdefault("strategy_progress", {})
+    current = dict(progress.get(strategy_name) or {})
+    current.update(kwargs)
+    current["strategy"] = strategy_name
+    current["updated_at"] = datetime.now(timezone.utc).isoformat()
+    progress[strategy_name] = current
+    metadata["estrategia_actual"] = strategy_name
+
+
 def _close_playwright_safely(resource: Any, label: str, timeout: float = PLAYWRIGHT_CLOSE_TIMEOUT_SECONDS) -> bool:
     if resource is None:
         return True
@@ -641,6 +730,113 @@ def _same_location(candidate: Dict, ciudad: Any, provincia: Any) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# ID integrity helpers
+# ---------------------------------------------------------------------------
+
+# ID spaces are intentionally explicit:
+# - inmobiliarias_main.id is the canonical agency ID used by propiedades.inmobiliaria_id.
+# - inmobiliarias_scraping.id is an operational/source/enrichment ID only.
+# - scraping_run_items can contain historical data from either space, so each item
+#   must be resolved to inmobiliarias_main.id before properties are saved.
+
+def _agency_item_name(item: Dict[str, Any]) -> str:
+    return str(item.get("inmobiliaria_nombre") or item.get("nombre") or "").strip()
+
+
+def _agency_row_name(row: Optional[Dict[str, Any]]) -> str:
+    if not row:
+        return ""
+    return str(row.get("nombre") or row.get("nombre_limpio") or row.get("nombre_normalizado") or "").strip()
+
+
+def _unique_domains(*urls: Any) -> List[str]:
+    domains: List[str] = []
+    for url in urls:
+        key = _normalize_web_key(url)
+        if key and key not in domains:
+            domains.append(key)
+    return domains
+
+
+def _agency_name_compatible(left: Any, right: Any) -> bool:
+    left_key = _normalize_text_key(left)
+    right_key = _normalize_text_key(right)
+    if not left_key or not right_key:
+        return True
+    if left_key == right_key:
+        return True
+    left_tokens = set(left_key.split())
+    right_tokens = set(right_key.split())
+    if not left_tokens or not right_tokens:
+        return True
+    overlap = left_tokens & right_tokens
+    if not overlap:
+        return False
+    shortest = min(len(left_tokens), len(right_tokens))
+    return len(overlap) / max(shortest, 1) >= 0.75
+
+
+def _agency_row_item_validation(row: Optional[Dict[str, Any]], item: Dict[str, Any]) -> Dict[str, Any]:
+    row_name = _agency_row_name(row)
+    item_name = _agency_item_name(item)
+    row_domains = _unique_domains(
+        row.get("web") if row else None,
+        row.get("url_listado") if row else None,
+    )
+    item_domains = _unique_domains(item.get("web"), item.get("url_listado"))
+    matching_domains = sorted(set(row_domains) & set(item_domains))
+    domain_ok = True
+    if row_domains and item_domains:
+        domain_ok = bool(matching_domains)
+    name_ok = _agency_name_compatible(item_name, row_name)
+    return {
+        "matches": bool(row and domain_ok and name_ok),
+        "name_ok": name_ok,
+        "domain_ok": domain_ok,
+        "matching_domains": matching_domains,
+        "item_name": item_name,
+        "row_name": row_name,
+        "item_domains": item_domains,
+        "row_domains": row_domains,
+    }
+
+
+def _final_url_domain_validation(
+    final_url: Optional[str],
+    item: Dict[str, Any],
+    canonical_resolution: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    final_domain = _normalize_web_key(final_url)
+    source_domains = _unique_domains(item.get("web"), item.get("url_listado"))
+    main_row = (canonical_resolution or {}).get("main_row") or {}
+    source_domains.extend(domain for domain in _unique_domains(main_row.get("web"), main_row.get("url_listado")) if domain not in source_domains)
+    if not final_domain:
+        return {"valid": True, "reason": "sin_final_url", "final_domain": "", "source_domains": source_domains}
+    if not source_domains:
+        return {"valid": True, "reason": "sin_dominios_fuente", "final_domain": final_domain, "source_domains": source_domains}
+    return {
+        "valid": final_domain in source_domains,
+        "reason": "domain_match" if final_domain in source_domains else "domain_mismatch",
+        "final_domain": final_domain,
+        "source_domains": source_domains,
+    }
+
+
+def _effective_final_url(url_usada: Optional[str], strategy_meta: Optional[Dict[str, Any]]) -> Optional[str]:
+    metadata = strategy_meta or {}
+    diagnostico = metadata.get("diagnostico_inicial") if isinstance(metadata.get("diagnostico_inicial"), dict) else {}
+    for candidate in (
+        metadata.get("final_url"),
+        metadata.get("url_final"),
+        diagnostico.get("final_url") if diagnostico else None,
+        url_usada,
+    ):
+        if candidate:
+            return str(candidate)
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Supabase client
 # ---------------------------------------------------------------------------
 
@@ -652,6 +848,7 @@ class SupabasePropiedades:
         "id",
         "inmobiliaria_id",
         "url",
+        "url_normalizada",
         "id_externo",
         "hash_dedup",
         "titulo",
@@ -831,6 +1028,271 @@ class SupabasePropiedades:
         except Exception as exc:
             logger.debug("resolve inmobiliaria name lookup error: %s", exc)
         return []
+
+    def load_main_agency_by_id(self, agency_id: Any) -> Optional[Dict[str, Any]]:
+        if agency_id is None:
+            return None
+        try:
+            r = self.session.get(
+                f"{SUPABASE_URL}/rest/v1/inmobiliarias_main",
+                headers=self._headers,
+                params={
+                    "select": "id,nombre,nombre_limpio,nombre_normalizado,web,url_listado,ciudad,provincia,pais,cms_detectado,scraping_id_origen",
+                    "id": f"eq.{agency_id}",
+                    "limit": 1,
+                },
+                timeout=12,
+            )
+            if r.status_code == 200:
+                data = r.json()
+                return data[0] if data else None
+            logger.debug("load_main_agency_by_id %s -> %s %s", agency_id, r.status_code, r.text[:200])
+        except Exception as exc:
+            logger.debug("load_main_agency_by_id %s error: %s", agency_id, exc)
+        return None
+
+    def load_scraping_agency_by_id(self, agency_id: Any) -> Optional[Dict[str, Any]]:
+        if agency_id is None:
+            return None
+        try:
+            r = self.session.get(
+                f"{SUPABASE_URL}/rest/v1/inmobiliarias_scraping",
+                headers=self._headers,
+                params={
+                    "select": "id,nombre,web,ciudad,provincia",
+                    "id": f"eq.{agency_id}",
+                    "limit": 1,
+                },
+                timeout=12,
+            )
+            if r.status_code == 200:
+                data = r.json()
+                return data[0] if data else None
+            logger.debug("load_scraping_agency_by_id %s -> %s %s", agency_id, r.status_code, r.text[:200])
+        except Exception as exc:
+            logger.debug("load_scraping_agency_by_id %s error: %s", agency_id, exc)
+        return None
+
+    def load_main_agencies_by_scraping_id(self, scraping_id: Any) -> List[Dict[str, Any]]:
+        if scraping_id is None:
+            return []
+        try:
+            r = self.session.get(
+                f"{SUPABASE_URL}/rest/v1/inmobiliarias_main",
+                headers=self._headers,
+                params={
+                    "select": "id,nombre,nombre_limpio,nombre_normalizado,web,url_listado,ciudad,provincia,pais,cms_detectado,scraping_id_origen",
+                    "scraping_id_origen": f"eq.{scraping_id}",
+                    "limit": 10,
+                },
+                timeout=12,
+            )
+            if r.status_code == 200:
+                return r.json()
+            logger.debug("load_main_agencies_by_scraping_id %s -> %s %s", scraping_id, r.status_code, r.text[:200])
+        except Exception as exc:
+            logger.debug("load_main_agencies_by_scraping_id %s error: %s", scraping_id, exc)
+        return []
+
+    def find_main_agency_by_web_name(self, web: Any, name: Any) -> Dict[str, Any]:
+        web_key = _normalize_web_key(web)
+        if not web_key:
+            return {"status": "not_found", "candidates": []}
+
+        rows_by_id: Dict[Any, Dict[str, Any]] = {}
+        for column in ("web", "url_listado"):
+            try:
+                r = self.session.get(
+                    f"{SUPABASE_URL}/rest/v1/inmobiliarias_main",
+                    headers=self._headers,
+                    params={
+                        "select": "id,nombre,nombre_limpio,nombre_normalizado,web,url_listado,ciudad,provincia,pais,cms_detectado,scraping_id_origen",
+                        column: f"ilike.*{web_key}*",
+                        "limit": 25,
+                    },
+                    timeout=15,
+                )
+                if r.status_code == 200:
+                    for row in r.json():
+                        rows_by_id[row.get("id")] = row
+            except Exception as exc:
+                logger.debug("find_main_agency_by_web_name %s lookup error: %s", column, exc)
+
+        candidates: List[Dict[str, Any]] = []
+        for row in rows_by_id.values():
+            row_domains = _unique_domains(row.get("web"), row.get("url_listado"))
+            if web_key not in row_domains:
+                continue
+            if not _agency_name_compatible(name, _agency_row_name(row)):
+                continue
+            candidates.append(row)
+
+        if len(candidates) == 1:
+            return {"status": "ok", "row": candidates[0], "candidates": candidates}
+        if len(candidates) > 1:
+            return {"status": "ambiguous", "candidates": candidates}
+        return {"status": "not_found", "candidates": []}
+
+    def resolve_canonical_inmobiliaria_id(self, item: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Resolve a scraping item to the canonical inmobiliarias_main.id.
+
+        Historical data can contain either ID space in scraping_run_items.inmobiliaria_id.
+        This method fails closed when the source row cannot be tied safely to a single
+        inmobiliarias_main row.
+        """
+        run_item_id = item.get("scraping_run_item_id") or item.get("id")
+        source_id = item.get("inmobiliaria_id")
+        item_name = _agency_item_name(item)
+        item_web = item.get("web") or item.get("url_listado")
+        attempts: List[Dict[str, Any]] = []
+
+        def _resolution(row: Dict[str, Any], method: str, source_space: str,
+                        scraping_row: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+            validation = _agency_row_item_validation(row, item)
+            if not validation["matches"]:
+                raise ScrapingControlError(
+                    "canonical_id_mismatch: la fila canonica no coincide con el item de cola",
+                    metadata={
+                        "run_item_id": run_item_id,
+                        "run_item_inmobiliaria_id": source_id,
+                        "metodo_resolucion": method,
+                        "source_id_space": source_space,
+                        "canonical_main_id": row.get("id"),
+                        "validation": validation,
+                        "item_snapshot": {
+                            "inmobiliaria_nombre": item_name,
+                            "web": item.get("web"),
+                            "url_listado": item.get("url_listado"),
+                            "ciudad": item.get("ciudad"),
+                            "provincia": item.get("provincia"),
+                        },
+                        "main_row": {
+                            "id": row.get("id"),
+                            "nombre": _agency_row_name(row),
+                            "web": row.get("web"),
+                            "url_listado": row.get("url_listado"),
+                            "ciudad": row.get("ciudad"),
+                            "provincia": row.get("provincia"),
+                        },
+                    },
+                    final_url=item.get("url_listado") or item.get("web"),
+                )
+            return {
+                "canonical_main_id": int(row["id"]),
+                "inmobiliaria_main_id": int(row["id"]),
+                "main_row": row,
+                "scraping_row": scraping_row,
+                "source_id_space": source_space,
+                "run_item_inmobiliaria_id": source_id,
+                "metodo_resolucion": method,
+                "validation": validation,
+                "attempts": attempts,
+            }
+
+        main_row = self.load_main_agency_by_id(source_id)
+        if main_row:
+            validation = _agency_row_item_validation(main_row, item)
+            attempts.append({
+                "source": "inmobiliarias_main_by_id",
+                "id": source_id,
+                "row_name": _agency_row_name(main_row),
+                "row_web": main_row.get("web"),
+                "validation": validation,
+            })
+            if validation["matches"]:
+                return _resolution(main_row, "main_id_match", "main")
+
+        scraping_row = self.load_scraping_agency_by_id(source_id)
+        if scraping_row:
+            scraping_validation = _agency_row_item_validation(scraping_row, item)
+            attempts.append({
+                "source": "inmobiliarias_scraping_by_id",
+                "id": source_id,
+                "row_name": _agency_row_name(scraping_row),
+                "row_web": scraping_row.get("web"),
+                "validation": scraping_validation,
+            })
+            if scraping_validation["matches"]:
+                linked_rows = self.load_main_agencies_by_scraping_id(source_id)
+                attempts.append({
+                    "source": "inmobiliarias_main_by_scraping_id_origen",
+                    "scraping_id": source_id,
+                    "count": len(linked_rows),
+                    "ids": [row.get("id") for row in linked_rows],
+                })
+                if len(linked_rows) == 1:
+                    return _resolution(
+                        linked_rows[0],
+                        "scraping_id_origen_match",
+                        "scraping",
+                        scraping_row=scraping_row,
+                    )
+                if len(linked_rows) > 1:
+                    raise ScrapingControlError(
+                        "canonical_id_resolution_failed: scraping_id_origen apunta a multiples inmobiliarias_main",
+                        metadata={
+                            "run_item_id": run_item_id,
+                            "run_item_inmobiliaria_id": source_id,
+                            "candidate_main_ids": [row.get("id") for row in linked_rows],
+                            "attempts": attempts,
+                        },
+                        final_url=item.get("url_listado") or item.get("web"),
+                    )
+
+        fallback = self.find_main_agency_by_web_name(item_web, item_name)
+        attempts.append({
+            "source": "inmobiliarias_main_by_web_name",
+            "status": fallback.get("status"),
+            "candidate_main_ids": [row.get("id") for row in fallback.get("candidates", [])],
+        })
+        if fallback.get("status") == "ok":
+            return _resolution(fallback["row"], "web_name_match", "fallback_web_name")
+        if fallback.get("status") == "ambiguous":
+            raise ScrapingControlError(
+                "canonical_id_resolution_failed: match por web/nombre ambiguo en inmobiliarias_main",
+                metadata={
+                    "run_item_id": run_item_id,
+                    "run_item_inmobiliaria_id": source_id,
+                    "candidate_main_ids": [row.get("id") for row in fallback.get("candidates", [])],
+                    "attempts": attempts,
+                },
+                final_url=item.get("url_listado") or item.get("web"),
+            )
+
+        if main_row:
+            raise ScrapingControlError(
+                "canonical_id_mismatch: inmobiliaria_id apunta a main pero nombre/web no coinciden",
+                metadata={
+                    "run_item_id": run_item_id,
+                    "run_item_inmobiliaria_id": source_id,
+                    "attempts": attempts,
+                    "main_row": {
+                        "id": main_row.get("id"),
+                        "nombre": _agency_row_name(main_row),
+                        "web": main_row.get("web"),
+                        "url_listado": main_row.get("url_listado"),
+                    },
+                },
+                final_url=item.get("url_listado") or item.get("web"),
+            )
+
+        raise ScrapingControlError(
+            "canonical_id_resolution_failed: no se pudo resolver inmobiliarias_main.id de forma segura",
+            metadata={
+                "run_item_id": run_item_id,
+                "run_item_inmobiliaria_id": source_id,
+                "item_snapshot": {
+                    "inmobiliaria_nombre": item_name,
+                    "web": item.get("web"),
+                    "url_listado": item.get("url_listado"),
+                    "ciudad": item.get("ciudad"),
+                    "provincia": item.get("provincia"),
+                },
+                "attempts": attempts,
+            },
+            final_url=item.get("url_listado") or item.get("web"),
+        )
 
     def resolve_scraping_agency(self, item: Dict[str, Any]) -> Dict[str, Any]:
         main_id = item.get("inmobiliaria_id")
@@ -1044,6 +1506,26 @@ class SupabasePropiedades:
             return None
         return data
 
+    def load_pending_scraping_items_for_integrity(self, limit: int = 5) -> List[Dict[str, Any]]:
+        """Read-only preview of pending queue items for ID-integrity dry runs."""
+        r = self.session.get(
+            f"{SUPABASE_URL}/rest/v1/scraping_run_items",
+            headers=self._headers,
+            params={
+                "select": "id,scraping_run_id,inmobiliaria_id,inmobiliaria_nombre,ciudad,provincia,web,url_listado,cms_detectado,status,final_url,metadata,created_at",
+                "status": "eq.pending",
+                "order": "created_at.asc",
+                "limit": max(int(limit or 5), 1),
+            },
+            timeout=15,
+        )
+        if r.status_code != 200:
+            raise RuntimeError(f"No se pudieron leer items pending para dry-run: {r.status_code} {r.text[:300]}")
+        rows = r.json()
+        for row in rows:
+            row["scraping_run_item_id"] = row.get("id")
+        return rows
+
     def start_scraping_item(self, item_id: Any) -> Any:
         return self._rpc_with_parameter_fallback(
             "start_scraping_item",
@@ -1170,6 +1652,102 @@ class SupabasePropiedades:
                 logger.warning("get_existing_properties_by_hash fallo: %s", str(exc)[:200])
         return existing
 
+    def get_existing_properties_for_dedup(self, propiedades: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Carga propiedades existentes por inmobiliaria para deduplicar por URL/id externo.
+
+        La identidad fuerte de una propiedad es:
+        1) inmobiliaria_id canonico + URL normalizada,
+        2) inmobiliaria_id canonico + id_externo normalizado,
+        3) hash_dedup como fallback.
+        """
+        agency_ids = sorted({
+            int(p.get("inmobiliaria_id"))
+            for p in propiedades
+            if p.get("inmobiliaria_id") is not None and str(p.get("inmobiliaria_id")).isdigit()
+        })
+        result = {
+            "by_url": {},
+            "by_url_all": {},
+            "by_external": {},
+            "by_external_all": {},
+            "by_hash": {},
+            "duplicate_existing_keys": [],
+        }
+        if not agency_ids:
+            return result
+
+        columns = self._get_property_columns()
+        select_columns = ["id", "hash_dedup", "inmobiliaria_id", "url", "url_normalizada", "id_externo"]
+        for column in sorted(PROTECTED_UPDATE_FIELDS | {"created_at", "updated_at"}):
+            if column in columns and column not in select_columns:
+                select_columns.append(column)
+
+        def remember(index: Dict[Any, Dict[str, Any]], key: Any, row: Dict[str, Any], key_type: str) -> None:
+            if not key:
+                return
+            existing = index.get(key)
+            if existing is None:
+                index[key] = row
+                return
+            duplicate = {
+                "type": key_type,
+                "key": str(key)[:300],
+                "kept_id": existing.get("id"),
+                "duplicate_id": row.get("id"),
+            }
+            result["duplicate_existing_keys"].append(duplicate)
+
+        for agency_id in agency_ids:
+            offset = 0
+            page_size = 1000
+            while True:
+                try:
+                    r = self.session.get(
+                        f"{SUPABASE_URL}/rest/v1/propiedades",
+                        headers=self._headers,
+                        params={
+                            "select": ",".join(select_columns),
+                            "inmobiliaria_id": f"eq.{agency_id}",
+                            "order": "id.asc",
+                            "limit": page_size,
+                            "offset": offset,
+                        },
+                        timeout=30,
+                    )
+                    if r.status_code != 200:
+                        logger.warning("get_existing_properties_for_dedup %s: %s", r.status_code, r.text[:200])
+                        break
+                    rows = r.json()
+                except Exception as exc:
+                    logger.warning("get_existing_properties_for_dedup fallo: %s", str(exc)[:200])
+                    break
+
+                for row in rows:
+                    row_agency_id = row.get("inmobiliaria_id")
+                    if row.get("hash_dedup"):
+                        remember(result["by_hash"], row["hash_dedup"], row, "hash")
+                    url_key = row.get("url_normalizada") or normalize_property_url_for_dedup(row.get("url"))
+                    if url_key and row_agency_id is not None:
+                        key = (int(row_agency_id), url_key)
+                        result["by_url_all"].setdefault(key, []).append(row)
+                        remember(result["by_url"], key, row, "url")
+                    external_key = normalize_external_id_for_dedup(row.get("id_externo"))
+                    if external_key and row_agency_id is not None:
+                        key = (int(row_agency_id), external_key)
+                        result["by_external_all"].setdefault(key, []).append(row)
+                        remember(result["by_external"], key, row, "id_externo")
+
+                if len(rows) < page_size:
+                    break
+                offset += page_size
+
+        duplicates = result.get("duplicate_existing_keys") or []
+        if duplicates:
+            self.last_save_protection_stats["dedup_existing_duplicados"] = len(duplicates)
+            examples = self.last_save_protection_stats.setdefault("dedup_existing_duplicados_ejemplos", [])
+            examples.extend(duplicates[:5])
+        return result
+
     def _get_property_columns(self) -> set:
         if SupabasePropiedades._property_columns_cache is not None:
             return SupabasePropiedades._property_columns_cache
@@ -1194,6 +1772,11 @@ class SupabasePropiedades:
     def _sanitize_property_payload(self, prop: Dict) -> Dict:
         columns = self._get_property_columns()
         clean = dict(prop)
+        url_key = normalize_property_url_for_dedup(clean.get("url"))
+        if url_key:
+            clean["url_normalizada"] = url_key
+        else:
+            clean.pop("url_normalizada", None)
         clean = sanitize_property_location(clean, getattr(self, "last_save_protection_stats", None))
         clean = sanitize_property_coordinates(clean, getattr(self, "last_save_protection_stats", None))
         clean = sanitize_property_prices(clean, getattr(self, "last_save_protection_stats", None))
@@ -1204,7 +1787,23 @@ class SupabasePropiedades:
                 raw_images = [raw_images]
             elif not isinstance(raw_images, list):
                 raw_images = []
-            clean["imagenes"] = clean_property_images(raw_images) or None
+            image_clean_stats = _new_image_stats()
+            cleaned_images = clean_property_images(raw_images, stats=image_clean_stats)
+            stats = getattr(self, "last_save_protection_stats", None)
+            if stats is not None:
+                stats["imagenes_payload_entrada"] = int(stats.get("imagenes_payload_entrada") or 0) + (1 if raw_images else 0)
+                if cleaned_images:
+                    stats["imagenes_payload_con_reales"] = int(stats.get("imagenes_payload_con_reales") or 0) + 1
+                    stats["imagenes_guardadas_payload"] = int(stats.get("imagenes_guardadas_payload") or 0) + len(cleaned_images)
+                elif raw_images:
+                    stats["imagenes_payload_sin_reales"] = int(stats.get("imagenes_payload_sin_reales") or 0) + 1
+                stats["imagenes_descartadas_sanitizer"] = int(stats.get("imagenes_descartadas_sanitizer") or 0) + int(
+                    image_clean_stats.get("imagenes_falsas_descartadas") or 0
+                )
+                by_reason = stats.setdefault("imagenes_descartadas_sanitizer_por_motivo", {})
+                for reason, count in (image_clean_stats.get("imagenes_descartadas_por_motivo") or {}).items():
+                    by_reason[reason] = int(by_reason.get(reason) or 0) + int(count or 0)
+            clean["imagenes"] = cleaned_images or None
 
         if "calidad_score" in columns and "calidad_score" not in clean and "score_calidad" in clean:
             clean["calidad_score"] = clean["score_calidad"]
@@ -1222,6 +1821,53 @@ class SupabasePropiedades:
         keys = sorted(set().union(*(set(item.keys()) for item in chunk)) & set(columns))
         return [{key: item.get(key) for key in keys} for item in chunk]
 
+    def _load_existing_property_by_url_normalizada(
+        self,
+        agency_id: Any,
+        url_normalizada: Any,
+        columns: set,
+    ) -> Optional[Dict[str, Any]]:
+        if agency_id is None or not url_normalizada:
+            return None
+        try:
+            agency_key = int(agency_id)
+        except (TypeError, ValueError):
+            return None
+
+        select_columns = ["id", "hash_dedup", "inmobiliaria_id", "url", "url_normalizada", "id_externo"]
+        for column in sorted(PROTECTED_UPDATE_FIELDS | {"created_at", "updated_at"}):
+            if column in columns and column not in select_columns:
+                select_columns.append(column)
+        try:
+            r = self.session.get(
+                f"{SUPABASE_URL}/rest/v1/propiedades",
+                headers=self._headers,
+                params={
+                    "select": ",".join([column for column in select_columns if column in columns]),
+                    "inmobiliaria_id": f"eq.{agency_key}",
+                    "url_normalizada": f"eq.{url_normalizada}",
+                    "order": "id.asc",
+                    "limit": 1,
+                },
+                timeout=15,
+            )
+            if r.status_code == 200:
+                rows = r.json()
+                return rows[0] if rows else None
+            logger.warning("lookup url_normalizada %s: %s", r.status_code, r.text[:200])
+        except Exception as exc:
+            logger.warning("lookup url_normalizada fallo: %s", str(exc)[:200])
+        return None
+
+    @staticmethod
+    def _is_unique_url_violation(status_code: int, message: str) -> bool:
+        text = (message or "").lower()
+        return (
+            status_code == 409
+            and "idx_propiedades_unique_inmobiliaria_url_normalizada" in text
+            and "url_normalizada" in text
+        )
+
     def save_propiedades(self, propiedades: List[Dict]) -> Tuple[int, int]:
         """Guarda nuevas y actualiza existentes sin degradar datos valiosos."""
         self.last_save_result = {"inserted": 0, "updated": 0, "unchanged": 0, "failed": 0, "errors": []}
@@ -1235,52 +1881,106 @@ class SupabasePropiedades:
             return 0, 0
 
         columns = self._get_property_columns()
-        hashes = [p["hash_dedup"] for p in propiedades]
-        existing = self.get_existing_hashes(hashes)
-        nuevas = [p for p in propiedades if p["hash_dedup"] not in existing]
-        actualizadas = [p for p in propiedades if p["hash_dedup"] in existing]
-        existing_props = self.get_existing_properties_by_hash([p["hash_dedup"] for p in actualizadas])
+        identity_index = self.get_existing_properties_for_dedup(propiedades)
+        nuevas: List[Dict[str, Any]] = []
+        actualizadas: List[Tuple[Dict[str, Any], Dict[str, Any], str]] = []
+        matched_existing_hashes: set = set()
+        matched_existing_ids: set = set()
+
+        def choose_existing_candidate(candidates: List[Dict[str, Any]], incoming_hash: Any) -> Optional[Dict[str, Any]]:
+            if not candidates:
+                return None
+            if incoming_hash:
+                for candidate in candidates:
+                    if candidate.get("hash_dedup") == incoming_hash:
+                        return candidate
+            return candidates[0]
+
+        for prop in propiedades:
+            agency_id = prop.get("inmobiliaria_id")
+            try:
+                agency_key = int(agency_id) if agency_id is not None else None
+            except (TypeError, ValueError):
+                agency_key = None
+            url_key = normalize_property_url_for_dedup(prop.get("url"))
+            external_key = normalize_external_id_for_dedup(prop.get("id_externo"))
+            existing_prop = None
+            match_type = ""
+            if agency_key is not None and url_key:
+                existing_prop = choose_existing_candidate(
+                    identity_index.get("by_url_all", {}).get((agency_key, url_key), []),
+                    prop.get("hash_dedup"),
+                )
+                if existing_prop:
+                    match_type = "url_normalizada"
+                    self.last_save_protection_stats["dedup_por_url_normalizada"] = int(
+                        self.last_save_protection_stats.get("dedup_por_url_normalizada") or 0
+                    ) + 1
+            if existing_prop is None and agency_key is not None and external_key:
+                existing_prop = choose_existing_candidate(
+                    identity_index.get("by_external_all", {}).get((agency_key, external_key), []),
+                    prop.get("hash_dedup"),
+                )
+                if existing_prop:
+                    match_type = "id_externo"
+                    self.last_save_protection_stats["dedup_por_id_externo"] = int(
+                        self.last_save_protection_stats.get("dedup_por_id_externo") or 0
+                    ) + 1
+            if existing_prop is None and prop.get("hash_dedup"):
+                existing_prop = identity_index["by_hash"].get(prop.get("hash_dedup"))
+                if existing_prop:
+                    match_type = "hash_dedup"
+                    self.last_save_protection_stats["dedup_por_hash"] = int(
+                        self.last_save_protection_stats.get("dedup_por_hash") or 0
+                    ) + 1
+
+            if existing_prop:
+                if existing_prop.get("hash_dedup"):
+                    matched_existing_hashes.add(existing_prop["hash_dedup"])
+                if existing_prop.get("id") is not None:
+                    matched_existing_ids.add(existing_prop["id"])
+                actualizadas.append((prop, existing_prop, match_type))
+            else:
+                nuevas.append(prop)
 
         inserted = 0
         updated = 0
         unchanged = 0
         failed = 0
+        recovered_unique = 0
         save_errors: List[Dict[str, Any]] = []
-        for i in range(0, len(nuevas), self._CHUNK):
-            raw_chunk = nuevas[i : i + self._CHUNK]
-            chunk = self._normalize_payload_batch_keys(raw_chunk, columns)
-            r = self.session.post(
-                f"{SUPABASE_URL}/rest/v1/propiedades?on_conflict=hash_dedup",
-                headers=self._headers,
-                json=chunk,
-                timeout=40,
-            )
-            if r.status_code not in {200, 201}:
-                failed += len(raw_chunk)
-                error = {
-                    "operation": "insert",
-                    "status_code": r.status_code,
-                    "message": r.text[:1000],
-                    "count": len(raw_chunk),
-                }
-                save_errors.append(error)
-                logger.error("save_propiedades insert %s: %s", r.status_code, r.text[:500])
-            else:
-                inserted += len(raw_chunk)
 
-        for prop in actualizadas:
+        def update_existing_property(
+            prop: Dict[str, Any],
+            existing_prop: Dict[str, Any],
+            match_type: str,
+        ) -> bool:
+            nonlocal updated, unchanged, failed
             hash_dedup = prop.get("hash_dedup")
             update_payload = build_protected_update_payload(
                 incoming=prop,
-                existing=existing_props.get(hash_dedup, {}),
+                existing=existing_prop,
                 columns=columns,
                 stats=self.last_save_protection_stats,
             )
             if not update_payload:
                 unchanged += 1
-                continue
+                return True
+            target_id = existing_prop.get("id")
+            if not target_id:
+                failed += 1
+                save_errors.append({
+                    "operation": "update",
+                    "status_code": "missing_target_id",
+                    "message": "No se encontro id de propiedad existente para actualizar",
+                    "hash_dedup": hash_dedup,
+                    "url": prop.get("url"),
+                    "url_normalizada": prop.get("url_normalizada"),
+                    "match_type": match_type,
+                })
+                return False
             r = self.session.patch(
-                f"{SUPABASE_URL}/rest/v1/propiedades?hash_dedup=eq.{hash_dedup}",
+                f"{SUPABASE_URL}/rest/v1/propiedades?id=eq.{target_id}",
                 headers=self._headers_minimal,
                 json=update_payload,
                 timeout=20,
@@ -1293,11 +1993,106 @@ class SupabasePropiedades:
                     "message": r.text[:1000],
                     "hash_dedup": hash_dedup,
                     "url": prop.get("url"),
+                    "url_normalizada": prop.get("url_normalizada"),
+                    "target_id": target_id,
+                    "match_type": match_type,
                 }
                 save_errors.append(error)
                 logger.warning("save_propiedades safe update %s: %s", r.status_code, r.text[:500])
+                return False
+            updated += 1
+            return True
+
+        def recover_unique_url_violation(prop: Dict[str, Any], response_text: str) -> bool:
+            nonlocal recovered_unique
+            if not self._is_unique_url_violation(409, response_text):
+                return False
+            agency_id = prop.get("inmobiliaria_id")
+            url_key = prop.get("url_normalizada") or normalize_property_url_for_dedup(prop.get("url"))
+            existing_prop = self._load_existing_property_by_url_normalizada(agency_id, url_key, columns)
+            if not existing_prop:
+                return False
+            recovered_unique += 1
+            self.last_save_protection_stats["recovered_from_unique_violation"] = int(
+                self.last_save_protection_stats.get("recovered_from_unique_violation") or 0
+            ) + 1
+            examples = self.last_save_protection_stats.setdefault("unique_violation_recovered_examples", [])
+            if len(examples) < 5:
+                examples.append({
+                    "inmobiliaria_id": agency_id,
+                    "url_normalizada": url_key,
+                    "existing_id": existing_prop.get("id"),
+                })
+            logger.info(
+                "  Recuperado 409 por url_normalizada: inmobiliaria_id=%s url_normalizada=%s existing_id=%s",
+                agency_id,
+                url_key,
+                existing_prop.get("id"),
+            )
+            if existing_prop.get("hash_dedup"):
+                matched_existing_hashes.add(existing_prop["hash_dedup"])
+            if existing_prop.get("id") is not None:
+                matched_existing_ids.add(existing_prop["id"])
+            return update_existing_property(prop, existing_prop, "url_normalizada_unique_violation")
+
+        def insert_one_after_batch_failure(prop: Dict[str, Any]) -> None:
+            nonlocal inserted, failed
+            single = self._normalize_payload_batch_keys([prop], columns)
+            r_single = self.session.post(
+                f"{SUPABASE_URL}/rest/v1/propiedades?on_conflict=hash_dedup",
+                headers=self._headers,
+                json=single,
+                timeout=25,
+            )
+            if r_single.status_code in {200, 201}:
+                inserted += 1
+                return
+            if self._is_unique_url_violation(r_single.status_code, r_single.text) and recover_unique_url_violation(prop, r_single.text):
+                return
+            failed += 1
+            save_errors.append({
+                "operation": "insert",
+                "status_code": r_single.status_code,
+                "message": r_single.text[:1000],
+                "count": 1,
+                "hash_dedup": prop.get("hash_dedup"),
+                "url": prop.get("url"),
+                "url_normalizada": prop.get("url_normalizada"),
+            })
+            logger.error("save_propiedades insert single %s: %s", r_single.status_code, r_single.text[:500])
+
+        for i in range(0, len(nuevas), self._CHUNK):
+            raw_chunk = nuevas[i : i + self._CHUNK]
+            chunk = self._normalize_payload_batch_keys(raw_chunk, columns)
+            r = self.session.post(
+                f"{SUPABASE_URL}/rest/v1/propiedades?on_conflict=hash_dedup",
+                headers=self._headers,
+                json=chunk,
+                timeout=40,
+            )
+            if r.status_code not in {200, 201}:
+                if self._is_unique_url_violation(r.status_code, r.text):
+                    logger.warning(
+                        "save_propiedades insert batch 409 por url_normalizada; reintentando %d filas individualmente",
+                        len(raw_chunk),
+                    )
+                    for prop in raw_chunk:
+                        insert_one_after_batch_failure(prop)
+                    continue
+                failed += len(raw_chunk)
+                error = {
+                    "operation": "insert",
+                    "status_code": r.status_code,
+                    "message": r.text[:1000],
+                    "count": len(raw_chunk),
+                }
+                save_errors.append(error)
+                logger.error("save_propiedades insert %s: %s", r.status_code, r.text[:500])
             else:
-                updated += 1
+                inserted += len(raw_chunk)
+
+        for prop, existing_prop, match_type in actualizadas:
+            update_existing_property(prop, existing_prop, match_type)
 
         self.last_save_protection_stats["actualizaciones_seguras"] = updated
         self.last_save_result = {
@@ -1306,6 +2101,9 @@ class SupabasePropiedades:
             "unchanged": unchanged,
             "failed": failed,
             "errors": save_errors,
+            "recovered_from_unique_violation": recovered_unique,
+            "matched_existing_hashes": sorted(matched_existing_hashes),
+            "matched_existing_ids": sorted(matched_existing_ids),
         }
         protected_fields = int(self.last_save_protection_stats.get("campos_protegidos_de_null") or 0)
         if protected_fields:
@@ -1344,6 +2142,30 @@ class SupabasePropiedades:
                 "  Enteros descartados por invalidos: %d | ejemplos=%s",
                 invalid_integers,
                 self.last_save_protection_stats.get("integers_invalidos_ejemplos", [])[:3],
+            )
+        dedup_url = int(self.last_save_protection_stats.get("dedup_por_url_normalizada") or 0)
+        dedup_external = int(self.last_save_protection_stats.get("dedup_por_id_externo") or 0)
+        dedup_hash = int(self.last_save_protection_stats.get("dedup_por_hash") or 0)
+        if dedup_url or dedup_external or dedup_hash:
+            logger.info(
+                "  Deduplicacion existente: url_normalizada=%d id_externo=%d hash=%d",
+                dedup_url,
+                dedup_external,
+                dedup_hash,
+            )
+        existing_dups = int(self.last_save_protection_stats.get("dedup_existing_duplicados") or 0)
+        if existing_dups:
+            logger.warning(
+                "  Duplicados historicos detectados por identidad: %d | ejemplos=%s",
+                existing_dups,
+                self.last_save_protection_stats.get("dedup_existing_duplicados_ejemplos", [])[:3],
+            )
+        recovered_409 = int(self.last_save_protection_stats.get("recovered_from_unique_violation") or 0)
+        if recovered_409:
+            logger.info(
+                "  Recuperados por 409 url_normalizada: %d | ejemplos=%s",
+                recovered_409,
+                self.last_save_protection_stats.get("unique_violation_recovered_examples", [])[:3],
             )
 
         if save_errors and (inserted + updated + unchanged) == 0:
@@ -1813,6 +2635,13 @@ def _normalize_image_url(raw_url: Any, base_url: str = "") -> Optional[str]:
         scheme = urlparse(base_url).scheme or "https"
         url = f"{scheme}:{url}"
     if base_url:
+        if re.match(r"^wp-content/", url, re.I):
+            url = "/" + url
+        elif re.match(r"^uploads/", url, re.I):
+            url = "/wp-content/" + url
+        elif re.match(r"^/uploads/", url, re.I):
+            url = "/wp-content" + url
+    if base_url:
         url = urljoin(base_url, url)
     if not url.startswith(("http://", "https://")):
         return None
@@ -1844,28 +2673,59 @@ def _extract_srcset_urls(srcset: str, base_url: str = "") -> List[str]:
     return [url for _, url in candidates]
 
 
-def is_fake_property_image_url(image_url: Any) -> bool:
+def fake_property_image_reason(image_url: Any) -> Optional[str]:
     url = _normalize_image_url(image_url) or str(image_url or "")
     low = unquote(url.lower())
     if not low:
-        return True
+        return "empty_url"
     parsed = urlparse(low)
     path = parsed.path or low
+    filename = path.rsplit("/", 1)[-1]
     if path.endswith((".svg", ".ico")):
-        return True
+        return "svg_or_icon_file"
+    has_image_extension = bool(re.search(r"\.(?:jpe?g|png|webp|avif)(?:[?#]|$)", path, re.I))
+    known_photo_host_path = any(marker in low for marker in (
+        "static.tokkobroker.com/water_pics/",
+        "static.tokkobroker.com/w_pics/",
+        "static.tokkobroker.com/thumbs/",
+        "/wp-content/uploads/",
+    ))
+    if not has_image_extension and not known_photo_host_path:
+        return "not_image_url"
+    if "/wp-content/themes/" in low or "/wp-content/plugins/" in low:
+        return "theme_or_plugin_asset"
+    if filename.startswith("cropped-") or "mesa-de-trabajo" in filename:
+        return "logo_or_brand"
+    if "banner" in filename and "/wp-content/uploads/" not in low:
+        return "theme_or_plugin_asset"
     if re.search(r"(?:^|[\/_.-])360(?:[\/_.-]|$)", low):
-        return True
+        return "tour_360"
     for width, height in re.findall(r"(?<!\d)(\d{1,4})[xX](\d{1,4})(?!\d)", low):
         try:
             if int(width) < 180 and int(height) < 180:
-                return True
+                return "tiny_image_dimensions"
         except Exception:
             continue
-    if any(pattern in low for pattern in FALSE_IMAGE_PATTERNS):
-        return True
+    for pattern in FALSE_IMAGE_PATTERNS:
+        if pattern in low:
+            if "prop-icons" in pattern or "sup" in pattern:
+                return "tokko_prop_icon"
+            if "placeholder" in pattern or "no-photo" in pattern or "no_image" in pattern or "sin-imagen" in pattern:
+                return "placeholder"
+            if "logo" in pattern or "isotipo" in pattern or "brand" in pattern:
+                return "logo_or_brand"
+            if "avatar" in pattern:
+                return "avatar"
+            if "map" in pattern:
+                return "map_or_location"
+            return "false_image_pattern"
     if re.search(r"(?:icon|ico|amenity|surface|superficie|map)[-_]?\d*\.(?:png|jpe?g|webp|gif)$", path):
-        return True
-    return False
+        return "icon_or_surface_asset"
+    return None
+
+
+def is_fake_property_image_url(image_url: Any) -> bool:
+    return fake_property_image_reason(image_url) is not None
 
 
 def clean_property_images(
@@ -1880,12 +2740,15 @@ def clean_property_images(
         if not url or url in seen:
             continue
         seen.add(url)
-        if is_fake_property_image_url(url):
+        fake_reason = fake_property_image_reason(url)
+        if fake_reason:
             if stats is not None:
                 stats["imagenes_falsas_descartadas"] = int(stats.get("imagenes_falsas_descartadas") or 0) + 1
+                by_reason = stats.setdefault("imagenes_descartadas_por_motivo", {})
+                by_reason[fake_reason] = int(by_reason.get(fake_reason) or 0) + 1
                 examples = stats.setdefault("ejemplos_descartados", [])
                 if len(examples) < TOKKO_FAKE_IMAGE_EXAMPLES_LIMIT:
-                    examples.append(url)
+                    examples.append({"url": url, "motivo": fake_reason})
             continue
         real_images.append(url)
         if stats is not None:
@@ -1914,6 +2777,11 @@ def _new_update_protection_stats() -> Dict[str, Any]:
         "ubicaciones_normalizadas_ejemplos": [],
         "integers_descartados_por_invalido": 0,
         "integers_invalidos_ejemplos": [],
+        "dedup_por_url_normalizada": 0,
+        "dedup_por_id_externo": 0,
+        "dedup_por_hash": 0,
+        "dedup_existing_duplicados": 0,
+        "dedup_existing_duplicados_ejemplos": [],
     }
 
 
@@ -2915,6 +3783,29 @@ def extraer_imagenes(
         candidates.append(str(raw))
         source_by_url.setdefault(normalized, source)
 
+    def add_embedded_image_candidates(value: Any, source: str) -> None:
+        text = str(value or "")
+        if not text:
+            return
+        text = html.unescape(text).replace("\\/", "/")
+        for match in re.findall(
+            r"(?:https?:)?//[^\"'\s<>\\]+?\.(?:jpe?g|png|webp|avif)(?:\?[^\"'\s<>\\]*)?",
+            text,
+            flags=re.I,
+        ):
+            add_candidate(match, source)
+        for match in re.findall(
+            r"(?:static\.tokkobroker\.com|storage\.tokkobroker\.com|cdn[^\"'\s<>\\]*|uploads?)[^\"'\s<>\\]+?\.(?:jpe?g|png|webp|avif)(?:\?[^\"'\s<>\\]*)?",
+            text,
+            flags=re.I,
+        ):
+            if match.startswith(("http://", "https://", "//")):
+                add_candidate(match, source)
+            elif match.startswith("static.tokkobroker.com") or match.startswith("storage.tokkobroker.com"):
+                add_candidate(f"https://{match}", source)
+            else:
+                add_candidate(match, source)
+
     img_attrs = [
         "src",
         "data-src",
@@ -2939,6 +3830,25 @@ def extraer_imagenes(
             if srcset:
                 for srcset_url in _extract_srcset_urls(str(srcset), base_url):
                     add_candidate(srcset_url, attr)
+
+    for tag in soup.find_all(True):
+        for attr, value in (tag.attrs or {}).items():
+            attr_low = str(attr).lower()
+            if attr_low in img_attrs or "srcset" in attr_low:
+                continue
+            if not (
+                attr_low.startswith("data-")
+                or "image" in attr_low
+                or "photo" in attr_low
+                or "thumb" in attr_low
+                or "gallery" in attr_low
+                or "background" in attr_low
+                or "style" == attr_low
+            ):
+                continue
+            if isinstance(value, (list, tuple)):
+                value = " ".join(str(item) for item in value)
+            add_embedded_image_candidates(value, f"attr_{attr_low}")
 
     for source in soup.find_all("source"):
         for attr in ("srcset", "data-srcset", "src", "data-src"):
@@ -2983,6 +3893,11 @@ def extraer_imagenes(
         if stats is not None and len(candidates) > before:
             stats["json_ld_scripts_con_imagenes"] = int(stats.get("json_ld_scripts_con_imagenes") or 0) + 1
 
+    for script in soup.find_all("script"):
+        raw_script = script.string or script.get_text("", strip=False)
+        if raw_script:
+            add_embedded_image_candidates(raw_script, "script_regex")
+
     html_text = str(soup)
     for match in re.findall(
         r"https?:\\?/\\?/[^\"'\s<>]+?\.(?:jpe?g|png|webp|avif)(?:\?[^\"'\s<>]*)?",
@@ -2990,6 +3905,7 @@ def extraer_imagenes(
         flags=re.I,
     ):
         add_candidate(match.replace("\\/", "/"), "html_regex")
+    add_embedded_image_candidates(html_text, "html_regex")
 
     images = clean_property_images(candidates, base_url=base_url, stats=stats)
     if stats is not None:
@@ -3005,6 +3921,7 @@ def _new_image_stats() -> Dict[str, Any]:
     return {
         "imagenes_reales_detectadas": 0,
         "imagenes_falsas_descartadas": 0,
+        "imagenes_descartadas_por_motivo": {},
         "ejemplos_reales": [],
         "ejemplos_descartados": [],
         "fuentes_imagenes": {},
@@ -3027,6 +3944,10 @@ def _merge_image_stats(target: Dict[str, Any], source: Dict[str, Any]) -> None:
     target_sources = target.setdefault("fuentes_imagenes", {})
     for source_name, count in (source.get("fuentes_imagenes") or {}).items():
         target_sources[source_name] = int(target_sources.get(source_name) or 0) + int(count or 0)
+
+    target_reasons = target.setdefault("imagenes_descartadas_por_motivo", {})
+    for reason, count in (source.get("imagenes_descartadas_por_motivo") or {}).items():
+        target_reasons[reason] = int(target_reasons.get(reason) or 0) + int(count or 0)
 
     for key, limit in (
         ("ejemplos_reales", TOKKO_REAL_IMAGE_EXAMPLES_LIMIT),
@@ -3075,6 +3996,13 @@ def _enrich_tokko_detail_images(resultados: List[Dict], session: requests.Sessio
     missing = [prop for prop in resultados if not prop.get("imagenes") and prop.get("url")]
     detail_errors: List[str] = []
     details_checked = 0
+    _update_strategy_progress(
+        inmob,
+        str(inmob.get("_strategy_name") or "tokko_html"),
+        detail_image_urls_total=len(missing),
+        detail_image_urls_processed=0,
+        detail_image_urls_remaining=len(missing),
+    )
 
     if missing:
         remaining = _deadline_remaining_seconds(_strategy_deadline(inmob))
@@ -3086,8 +4014,11 @@ def _enrich_tokko_detail_images(resultados: List[Dict], session: requests.Sessio
                 "detalles_consultados_para_fotos": details_checked,
                 "detalles_pendientes_sin_consultar": len(missing),
                 "imagenes_falsas_descartadas": int(stats.get("imagenes_falsas_descartadas") or 0),
+                "imagenes_descartadas_por_motivo": dict(stats.get("imagenes_descartadas_por_motivo") or {}),
                 "imagenes_reales_detectadas": int(stats.get("imagenes_reales_detectadas") or 0),
                 "fuentes_imagenes": dict(stats.get("fuentes_imagenes") or {}),
+                "metodo_extraccion_imagenes": "tokko_card_y_detalle_http",
+                "metodos_extraccion_imagenes_usados": sorted((stats.get("fuentes_imagenes") or {}).keys()),
                 "json_ld_scripts_con_imagenes": int(stats.get("json_ld_scripts_con_imagenes") or 0),
                 "ejemplos_imagenes_descartadas": stats.get("ejemplos_descartados", [])[:TOKKO_FAKE_IMAGE_EXAMPLES_LIMIT],
                 "ejemplos_imagenes_reales": stats.get("ejemplos_reales", [])[:TOKKO_REAL_IMAGE_EXAMPLES_LIMIT],
@@ -3111,12 +4042,30 @@ def _enrich_tokko_detail_images(resultados: List[Dict], session: requests.Sessio
                     prop["raw_json"] = raw_json
                 elif error and len(detail_errors) < 6:
                     detail_errors.append(f"{prop.get('url')}: {error}")
+                _update_strategy_progress(
+                    inmob,
+                    str(inmob.get("_strategy_name") or "tokko_html"),
+                    detail_image_urls_total=len(missing),
+                    detail_image_urls_processed=details_checked,
+                    detail_image_urls_remaining=max(len(missing) - details_checked, 0),
+                    propiedades_con_fotos_reales=_count_real_image_props(resultados)[0],
+                    errores_detalle_imagenes=detail_errors[-5:],
+                )
         except Exception as exc:
             if type(exc).__name__ == "TimeoutError":
                 pending = max(len(missing) - details_checked, 0)
                 detail_errors.append(f"presupuesto_detalles_agotado: {pending} pendientes sin consultar")
             else:
                 detail_errors.append(f"detalle_imagenes: {type(exc).__name__}: {str(exc)[:180]}")
+            _update_strategy_progress(
+                inmob,
+                str(inmob.get("_strategy_name") or "tokko_html"),
+                detail_image_urls_total=len(missing),
+                detail_image_urls_processed=details_checked,
+                detail_image_urls_remaining=max(len(missing) - details_checked, 0),
+                propiedades_con_fotos_reales=_count_real_image_props(resultados)[0],
+                errores_detalle_imagenes=detail_errors[-5:],
+            )
         finally:
             executor.shutdown(wait=False, cancel_futures=True)
 
@@ -3127,8 +4076,11 @@ def _enrich_tokko_detail_images(resultados: List[Dict], session: requests.Sessio
         "detalles_consultados_para_fotos": details_checked,
         "detalles_pendientes_sin_consultar": max(len(missing) - details_checked, 0),
         "imagenes_falsas_descartadas": int(stats.get("imagenes_falsas_descartadas") or 0),
+        "imagenes_descartadas_por_motivo": dict(stats.get("imagenes_descartadas_por_motivo") or {}),
         "imagenes_reales_detectadas": int(stats.get("imagenes_reales_detectadas") or 0),
         "fuentes_imagenes": dict(stats.get("fuentes_imagenes") or {}),
+        "metodo_extraccion_imagenes": "tokko_card_y_detalle_http",
+        "metodos_extraccion_imagenes_usados": sorted((stats.get("fuentes_imagenes") or {}).keys()),
         "json_ld_scripts_con_imagenes": int(stats.get("json_ld_scripts_con_imagenes") or 0),
         "ejemplos_imagenes_descartadas": stats.get("ejemplos_descartados", [])[:TOKKO_FAKE_IMAGE_EXAMPLES_LIMIT],
         "ejemplos_imagenes_reales": stats.get("ejemplos_reales", [])[:TOKKO_REAL_IMAGE_EXAMPLES_LIMIT],
@@ -3726,6 +4678,14 @@ def strategy_tokko_html(inmob: Dict, session: requests.Session) -> List[Dict]:
         errores_relevantes.append(f"{url_inicial}: {type(exc).__name__}: {str(exc)[:180]}")
 
     candidates = _tokko_candidate_urls(inmob, first_html=first_html, first_url=url_inicial)
+    _update_strategy_progress(
+        inmob,
+        "tokko_html",
+        listing_urls_total=len(candidates),
+        listing_urls_processed=0,
+        propiedades_detectadas=0,
+        paginas_leidas=0,
+    )
 
     idx = 0
     while idx < len(candidates):
@@ -3763,6 +4723,16 @@ def strategy_tokko_html(inmob: Dict, session: requests.Session) -> List[Dict]:
             if page_props:
                 paginas_leidas += 1
                 resultados.extend(page_props)
+                _update_strategy_progress(
+                    inmob,
+                    "tokko_html",
+                    listing_urls_total=len(candidates),
+                    listing_urls_processed=len(urls_probadas),
+                    listing_urls_remaining=max(len(candidates) - len(urls_probadas), 0),
+                    paginas_leidas=paginas_leidas,
+                    propiedades_detectadas=len(resultados),
+                    current_url=candidate,
+                )
 
                 max_pages = min(int(inmob.get("paginas_estimadas") or 12), 30)
                 for page_num in range(2, max_pages + 1):
@@ -3783,6 +4753,17 @@ def strategy_tokko_html(inmob: Dict, session: requests.Session) -> List[Dict]:
                         resultados.extend(more_props)
                         resultados = _dedupe_props(resultados)
                         paginas_leidas += 1
+                        _update_strategy_progress(
+                            inmob,
+                            "tokko_html",
+                            listing_urls_total=len(candidates),
+                            listing_urls_processed=len(urls_probadas),
+                            listing_urls_remaining=max(len(candidates) - len(urls_probadas), 0),
+                            paginas_leidas=paginas_leidas,
+                            propiedades_detectadas=len(resultados),
+                            current_url=next_url,
+                            page_num=page_num,
+                        )
                         if len(resultados) == before:
                             break
                     except Exception as exc:
@@ -3822,6 +4803,17 @@ def strategy_tokko_html(inmob: Dict, session: requests.Session) -> List[Dict]:
         except Exception as exc:
             errores_relevantes.append(f"{candidate}: {type(exc).__name__}: {str(exc)[:180]}")
             continue
+        _update_strategy_progress(
+            inmob,
+            "tokko_html",
+            listing_urls_total=len(candidates),
+            listing_urls_processed=len(urls_probadas),
+            listing_urls_remaining=max(len(candidates) - len(urls_probadas), 0),
+            paginas_leidas=paginas_leidas,
+            propiedades_detectadas=len(resultados),
+            current_url=candidate,
+            errores_relevantes=errores_relevantes[-5:],
+        )
 
     image_stats = _tokko_image_stats(inmob)
     inmob["_scraper_metadata"] = {
@@ -3833,6 +4825,10 @@ def strategy_tokko_html(inmob: Dict, session: requests.Session) -> List[Dict]:
         "motivo_sin_propiedades": motivo_sin_propiedades,
         "extractor_tokko_version": TOKKO_HTML_EXTRACTOR_VERSION,
         "imagenes_falsas_descartadas": int(image_stats.get("imagenes_falsas_descartadas") or 0),
+        "imagenes_descartadas_por_motivo": dict(image_stats.get("imagenes_descartadas_por_motivo") or {}),
+        "fuentes_imagenes": dict(image_stats.get("fuentes_imagenes") or {}),
+        "metodo_extraccion_imagenes": "tokko_card_y_detalle_http",
+        "metodos_extraccion_imagenes_usados": sorted((image_stats.get("fuentes_imagenes") or {}).keys()),
         "ejemplos_imagenes_descartadas": image_stats.get("ejemplos_descartados", [])[:TOKKO_FAKE_IMAGE_EXAMPLES_LIMIT],
         "errores_relevantes": errores_relevantes[-5:],
     }
@@ -4405,7 +5401,16 @@ def _extract_detail_page(url: str, inmob: Dict, session: requests.Session) -> Op
                 if isinstance(t, list):
                     t = t[0]
                 if t in _JSONLD_TYPES:
-                    return _parse_jsonld_item(item, inmob, url)
+                    prop_jsonld = _parse_jsonld_item(item, inmob, url)
+                    if prop_jsonld:
+                        html_images = extraer_imagenes(soup, url)
+                        if html_images and not _has_real_images(prop_jsonld.get("imagenes")):
+                            prop_jsonld["imagenes"] = html_images
+                            raw_json = prop_jsonld.get("raw_json") if isinstance(prop_jsonld.get("raw_json"), dict) else {}
+                            raw_json["imagenes_enriquecidas_desde_html"] = True
+                            raw_json["imagenes_reales"] = len(html_images)
+                            prop_jsonld["raw_json"] = raw_json
+                        return prop_jsonld
         except Exception:
             pass
 
@@ -4621,7 +5626,10 @@ def _html_extract_detail(soup: BeautifulSoup, url: str, inmob: Dict,
     amenities = extraer_amenities_html(soup, page_text_lower)
 
     # Fotos con extractor mejorado
-    fotos = extraer_imagenes(soup, url)
+    detail_image_stats = _new_image_stats()
+    fotos = extraer_imagenes(soup, url, detail_image_stats)
+    aggregate_image_stats = inmob.setdefault("_image_extraction_stats", _new_image_stats())
+    _merge_image_stats(aggregate_image_stats, detail_image_stats)
 
     # Agente
     agente_nombre, agente_telefono = extraer_agente(soup)
@@ -5061,11 +6069,20 @@ def _extract_wordpress_details_from_urls(
             return None
 
     urls = detail_urls[:max_details]
+    _update_strategy_progress(
+        inmob,
+        strategy_name,
+        detail_urls_total=len(urls),
+        detail_urls_processed=0,
+        detail_urls_remaining=len(urls),
+    )
     executor = ThreadPoolExecutor(max_workers=6)
     try:
         futures = {executor.submit(_fetch_one, detail_url): detail_url for detail_url in urls}
         timeout = max(1.0, _deadline_remaining_seconds(_strategy_deadline(inmob)))
+        processed = 0
         for future in as_completed(futures, timeout=timeout):
+            processed += 1
             try:
                 prop = future.result()
                 if prop:
@@ -5074,6 +6091,14 @@ def _extract_wordpress_details_from_urls(
                 raise
             except Exception:
                 pass
+            _update_strategy_progress(
+                inmob,
+                strategy_name,
+                detail_urls_total=len(urls),
+                detail_urls_processed=processed,
+                detail_urls_remaining=max(len(urls) - processed, 0),
+                propiedades_detectadas=len(resultados),
+            )
     except TimeoutError:
         errores_relevantes.append(f"{strategy_name}_detalles_detenidos_por_timeout")
     finally:
@@ -5092,7 +6117,15 @@ def _extract_wordpress_details_sequential(
     """Detalle HTTP estable para plugins sensibles a concurrencia."""
     resultados: List[Dict] = []
     errores_relevantes: List[str] = []
-    for detail_url in detail_urls[:max_details]:
+    urls = detail_urls[:max_details]
+    _update_strategy_progress(
+        inmob,
+        strategy_name,
+        detail_urls_total=len(urls),
+        detail_urls_processed=0,
+        detail_urls_remaining=len(urls),
+    )
+    for index, detail_url in enumerate(urls, start=1):
         _check_strategy_deadline(inmob, strategy_name)
         if _deadline_remaining_seconds(_strategy_deadline(inmob)) <= 4:
             errores_relevantes.append(f"{strategy_name}_detalles_detenidos_por_presupuesto")
@@ -5107,6 +6140,14 @@ def _extract_wordpress_details_sequential(
         except Exception as exc:
             if len(errores_relevantes) < 10:
                 errores_relevantes.append(f"{detail_url}: {type(exc).__name__}: {str(exc)[:160]}")
+        _update_strategy_progress(
+            inmob,
+            strategy_name,
+            detail_urls_total=len(urls),
+            detail_urls_processed=index,
+            detail_urls_remaining=max(len(urls) - index, 0),
+            propiedades_detectadas=len(resultados),
+        )
     return _dedupe_props(resultados), errores_relevantes
 
 
@@ -5180,6 +6221,15 @@ def _strategy_wordpress_plugin_detail(inmob: Dict, session: requests.Session, pl
                 break
         except Exception as exc:
             errores_relevantes.append(f"{candidate}: {type(exc).__name__}: {str(exc)[:180]}")
+        _update_strategy_progress(
+            inmob,
+            strategy_name,
+            listing_urls_total=min(len(candidates), max_listing_pages),
+            listing_urls_processed=len(urls_probadas),
+            listing_urls_remaining=max(min(len(candidates), max_listing_pages) - len(urls_probadas), 0),
+            detail_urls_total=len(detail_urls),
+            errores_relevantes=errores_relevantes[-5:],
+        )
 
     if not detail_urls:
         raise RuntimeError(f"no_property_links: {strategy_name} sin URLs reales de propiedades")
@@ -5202,6 +6252,8 @@ def _strategy_wordpress_plugin_detail(inmob: Dict, session: requests.Session, pl
             max_details=max_details,
         )
     errores_relevantes.extend(detail_errors)
+    with_images, without_images = _count_real_image_props(resultados)
+    image_stats = inmob.get("_image_extraction_stats") if isinstance(inmob.get("_image_extraction_stats"), dict) else {}
     inmob["_scraper_metadata"] = {
         **dict(inmob.get("_scraper_metadata") or {}),
         "plugin_detectado": plugin_detectado,
@@ -5211,6 +6263,13 @@ def _strategy_wordpress_plugin_detail(inmob: Dict, session: requests.Session, pl
         "urls_validas_detectadas": len(detail_urls),
         "property_links_count": len(detail_urls),
         "wordpress_detail_urls_sample": detail_urls[:12],
+        "imagenes_detectadas": with_images,
+        "imagenes_guardadas": sum(len(clean_property_images(prop.get("imagenes") or [])) for prop in resultados),
+        "imagenes_descartadas": int(image_stats.get("imagenes_falsas_descartadas") or 0),
+        "motivo_descartes": dict(image_stats.get("imagenes_descartadas_por_motivo") or {}),
+        "fuentes_imagenes": dict(image_stats.get("fuentes_imagenes") or {}),
+        "propiedades_con_fotos_reales": with_images,
+        "propiedades_sin_fotos_reales": without_images,
         "errores_relevantes": errores_relevantes[-10:],
     }
     if not resultados:
@@ -5747,9 +6806,26 @@ def strategy_static_html(inmob: Dict, session: requests.Session) -> List[Dict]:
                 break
         except Exception as exc:
             errores_relevantes.append(f"{candidate}: {type(exc).__name__}: {str(exc)[:180]}")
+        _update_strategy_progress(
+            inmob,
+            "static_html",
+            listing_urls_total=len(candidates),
+            listing_urls_processed=len(urls_probadas),
+            listing_urls_remaining=max(len(candidates) - len(urls_probadas), 0),
+            detail_urls_total=len(detail_urls),
+            errores_relevantes=errores_relevantes[-5:],
+        )
 
     resultados: List[Dict] = []
-    for durl in detail_urls[:120]:
+    detail_slice = detail_urls[:120]
+    _update_strategy_progress(
+        inmob,
+        "static_html",
+        detail_urls_total=len(detail_slice),
+        detail_urls_processed=0,
+        detail_urls_remaining=len(detail_slice),
+    )
+    for index, durl in enumerate(detail_slice, start=1):
         _check_strategy_deadline(inmob, "static_html")
         if _deadline_remaining_seconds(_strategy_deadline(inmob)) <= 4:
             errores_relevantes.append("static_html_detalles_detenidos_por_presupuesto")
@@ -5762,6 +6838,15 @@ def strategy_static_html(inmob: Dict, session: requests.Session) -> List[Dict]:
         except Exception as exc:
             if len(errores_relevantes) < 8:
                 errores_relevantes.append(f"{durl}: {type(exc).__name__}: {str(exc)[:180]}")
+        _update_strategy_progress(
+            inmob,
+            "static_html",
+            detail_urls_total=len(detail_slice),
+            detail_urls_processed=index,
+            detail_urls_remaining=max(len(detail_slice) - index, 0),
+            propiedades_detectadas=len(resultados),
+            errores_relevantes=errores_relevantes[-5:],
+        )
 
     inmob["_scraper_metadata"] = {
         **dict(inmob.get("_scraper_metadata") or {}),
@@ -6794,13 +7879,14 @@ def classify_diagnostic_failure(
     custom_listing_count = int(diagnostic.get("custom_listing_urls_count") or 0)
     rest_count = int(diagnostic.get("wordpress_rest_property_urls_count") or 0)
     project_count = int(diagnostic.get("developer_project_urls_count") or 0)
+    cards_count = int(diagnostic.get("cards_posibles") or 0)
     plugin = str(diagnostic.get("wordpress_plugin_detectado") or "").strip().lower()
     possible_detail_urls = diagnostic.get("posibles_urls_detalle") or []
     has_real_detail_urls = any(_looks_like_real_property_url(str(url)) for url in possible_detail_urls)
 
     # Las senales scrapeables tienen prioridad sobre errores parciales de rutas
     # alternativas. Un timeout en /venta no debe tapar que ya vimos Tokko + fichas.
-    if "tokko_html" in technologies and (property_links_count > 0 or has_real_detail_urls):
+    if "tokko_html" in technologies and (property_links_count > 0 or has_real_detail_urls or cards_count > 0):
         return "scrapeable_tokko"
     if "tokko_api" in technologies:
         return "scrapeable_tokko_api"
@@ -6880,10 +7966,12 @@ def diagnose_inmob(
         "url_original": url_inicial,
         "url_inicial": url_inicial,
         "url_normalizada": _normalize_queue_url(url_inicial),
+        "url_usada": None,
         "url_diagnostico_usada": None,
         "url_base_derivada": primary_start_info.get("url_base_derivada"),
         "url_inicial_era_contacto": any(bool(info.get("url_inicial_era_contacto")) for info in start_infos),
         "rutas_alternativas_probadas": [],
+        "route_diagnostics": [],
         "sitemap_urls_probadas": [],
         "rest_api_probada": [],
         "scripts_json_detectados": 0,
@@ -6943,6 +8031,7 @@ def diagnose_inmob(
         if value
     }
     failed_base_variants: List[str] = []
+    minimum_base_probe_count = min(4, len(candidates))
 
     def is_base_candidate(candidate: str) -> bool:
         normalized = _normalize_queue_url(candidate).rstrip("/")
@@ -6962,7 +8051,7 @@ def diagnose_inmob(
                 diagnostic["site_down"] = True
                 diagnostic["site_down_reason"] = diagnostic.get("site_down_reason") or _site_down_reason_from_status(response.status_code)
                 site_down_statuses += 1
-                if site_down_statuses >= 2:
+                if site_down_statuses >= 3 and len(tried_fetch_urls) >= minimum_base_probe_count:
                     break
             if response.status_code == 200 and response.text:
                 first_html = _decode_response_text(response)
@@ -7066,28 +8155,88 @@ def diagnose_inmob(
     script_project_urls: List[str] = []
     jsonld_count = 0
     cards_count = 0
+    route_diagnostics: List[Dict[str, Any]] = []
 
     for page_html, page_url in html_pages:
-        generic_property_links.extend(_extract_generic_property_links(page_html, page_url))
+        page_generic_links = _extract_generic_property_links(page_html, page_url)
+        generic_property_links.extend(page_generic_links)
+        page_plugin_links: List[str] = []
         if wp_plugin != "unknown":
-            plugin_property_links.extend(_extract_wordpress_plugin_property_links(page_html, page_url, wp_plugin))
-        listing_links.extend(
+            page_plugin_links = _extract_wordpress_plugin_property_links(page_html, page_url, wp_plugin)
+            plugin_property_links.extend(page_plugin_links)
+        page_listing_links = [
             link for link in _extract_keyword_internal_links(page_html, page_url, _UNIVERSAL_LISTING_KEYWORDS)
             if not _is_noise_property_url(link)
-        )
+        ]
+        listing_links.extend(page_listing_links)
         page_custom_listing_urls = _extract_custom_listing_urls(page_html, page_url)
         custom_listing_urls.extend(page_custom_listing_urls)
         if _looks_like_custom_listing_url(page_url):
             custom_listing_urls.append(page_url)
-        developer_project_urls.extend(_extract_developer_project_links(page_html, page_url))
+        page_developer_project_urls = _extract_developer_project_links(page_html, page_url)
+        developer_project_urls.extend(page_developer_project_urls)
         script_signals = _extract_script_property_signals(page_html, page_url)
-        script_property_urls.extend(script_signals["property_urls"])
-        script_listing_urls.extend(script_signals["listing_urls"])
-        script_project_urls.extend(script_signals["project_urls"])
+        page_script_property_urls = script_signals["property_urls"]
+        page_script_listing_urls = script_signals["listing_urls"]
+        page_script_project_urls = script_signals["project_urls"]
+        script_property_urls.extend(page_script_property_urls)
+        script_listing_urls.extend(page_script_listing_urls)
+        script_project_urls.extend(page_script_project_urls)
         if any(script_signals.values()):
             diagnostic["scripts_json_detectados"] += 1
-        jsonld_count += _jsonld_type_count(page_html)
-        cards_count = max(cards_count, _count_html_cards(page_html))
+        page_jsonld_count = _jsonld_type_count(page_html)
+        jsonld_count += page_jsonld_count
+        page_cards_count = _count_html_cards(page_html)
+        cards_count = max(cards_count, page_cards_count)
+
+        route_extractors: List[str] = []
+        if _is_tokko_html(page_html):
+            route_extractors.append("tokko_html")
+        if wp_plugin != "unknown":
+            route_extractors.append(_wordpress_plugin_strategy_name(wp_plugin))
+        if page_generic_links or page_plugin_links or page_script_property_urls:
+            route_extractors.append("static_html")
+        if page_custom_listing_urls:
+            route_extractors.append("custom_listing_detail")
+        if page_jsonld_count:
+            route_extractors.append("json_ld")
+
+        discard_reasons: List[str] = []
+        if not (page_generic_links or page_plugin_links or page_script_property_urls):
+            discard_reasons.append("sin_links_detalle_estaticos")
+        if _is_tokko_html(page_html) and page_cards_count > 0:
+            discard_reasons.append("tokko_detectado_debe_probar_rutas_tokko")
+        elif page_cards_count > 0:
+            discard_reasons.append("cards_sin_links_detalle")
+        if not route_extractors:
+            discard_reasons.append("sin_extractor_liviano_detectado")
+
+        route_diagnostics.append({
+            "url": page_url,
+            "tokko_template": _detect_tokko_template(page_html),
+            "wordpress_plugin": wp_plugin if wp_plugin != "unknown" else None,
+            "generic_property_links_count": len(page_generic_links),
+            "plugin_property_links_count": len(page_plugin_links),
+            "script_property_urls_count": len(page_script_property_urls),
+            "listing_links_count": len(page_listing_links),
+            "custom_listing_urls_count": len(page_custom_listing_urls),
+            "developer_project_urls_count": len(page_developer_project_urls),
+            "cards_posibles": page_cards_count,
+            "json_ld_property_items": page_jsonld_count,
+            "requires_js": _html_requires_js(page_html, len(page_generic_links) + len(page_plugin_links) + len(page_script_property_urls), page_cards_count),
+            "extractores_detectados": list(dict.fromkeys(route_extractors)),
+            "motivos_descarte": discard_reasons,
+        })
+        if not diagnostic.get("url_usada") and (
+            page_generic_links
+            or page_plugin_links
+            or page_script_property_urls
+            or page_custom_listing_urls
+            or page_cards_count > 0
+        ):
+            diagnostic["url_usada"] = page_url
+
+    diagnostic["route_diagnostics"] = route_diagnostics[:30]
 
     if wp_plugin != "unknown":
         property_links = [
@@ -7357,6 +8506,14 @@ def select_best_scraping_strategy(diagnostic: Dict[str, Any], history: Optional[
             fallbacks = ["tokko_html", "static_html_detail", "json_ld"]
             reason = "Tokko custom/estatico: hay fichas reales pero no cards clasicas suficientes"
             confidence = "medium"
+        elif classification == "scrapeable_tokko" or cards > 0 or "tokko_html" in extractores_posibles:
+            primary = "tokko_html"
+            fallbacks = ["static_html_tokko_detail", "json_ld", "sitemap"]
+            reason = (
+                "Tokko detectado sin links estaticos de detalle; "
+                "se prueban rutas Tokko conocidas (/Venta, /Propiedades, /Alquiler)"
+            )
+            confidence = "medium"
 
     if primary is None and (classification == "scrapeable_custom_listing" or custom_listing_count > 0):
         primary = "custom_listing_detail"
@@ -7565,6 +8722,14 @@ def run_best_strategy(
     def call(strategy_name: str, func: Callable[[], List[Dict]]) -> List[Dict]:
         _check_deadline(item_deadline, "item")
         started = time.time()
+        _update_strategy_progress(
+            inmob,
+            strategy_name,
+            status="running",
+            elapsed_seconds=0,
+            item_remaining_seconds=round(_deadline_remaining_seconds(item_deadline), 2)
+            if item_deadline is not None else None,
+        )
         try:
             result = _run_strategy_with_deadline(strategy_name, inmob, item_deadline, func)
             attempts.append({
@@ -7573,6 +8738,13 @@ def run_best_strategy(
                 "propiedades": len(result),
                 "tiempo_segundos": round(time.time() - started, 2),
             })
+            _update_strategy_progress(
+                inmob,
+                strategy_name,
+                status="success",
+                propiedades=len(result),
+                elapsed_seconds=round(time.time() - started, 2),
+            )
             inmob.setdefault("_scraper_metadata", {})["extractores_intentados"] = attempts
             return result
         except Exception as exc:
@@ -7583,6 +8755,14 @@ def run_best_strategy(
                 "error_message": str(exc)[:240],
                 "tiempo_segundos": round(time.time() - started, 2),
             })
+            _update_strategy_progress(
+                inmob,
+                strategy_name,
+                status="error",
+                error_type=clasificar_error(exc),
+                error_message=str(exc)[:240],
+                elapsed_seconds=round(time.time() - started, 2),
+            )
             inmob.setdefault("_scraper_metadata", {})["extractores_intentados"] = attempts
             raise
 
@@ -7744,6 +8924,10 @@ def run_best_strategy(
         try:
             logger.info("  -> Ejecutando estrategia %s", strategy_name)
             props = execute_selected_strategy(strategy_name)
+            strategy_runtime_metadata = dict(inmob.get("_scraper_metadata") or {})
+            metadata.update(strategy_runtime_metadata)
+            metadata["extractores_ejecutados"] = attempts
+            inmob["_scraper_metadata"] = metadata
             props = _sanitize_scraped_props_for_quality(props, metadata)
             quality = evaluate_scrape_quality(props, strategy_plan, diagnostic)
             quality["strategy"] = strategy_name
@@ -7763,6 +8947,10 @@ def run_best_strategy(
                 quality.get("issues"),
             )
         except Exception as exc:
+            strategy_runtime_metadata = dict(inmob.get("_scraper_metadata") or {})
+            metadata.update(strategy_runtime_metadata)
+            metadata["extractores_ejecutados"] = attempts
+            inmob["_scraper_metadata"] = metadata
             last_error = exc
             logger.warning("  Estrategia %s fallo: %s", strategy_name, str(exc)[:240])
             continue
@@ -8284,10 +9472,16 @@ def _strategy_from_cms(cms_detectado: Optional[str]) -> Optional[str]:
     return None
 
 
-def _queue_item_to_inmob(item: Dict, url_usada: str) -> Dict:
+def _queue_item_to_inmob(
+    item: Dict,
+    url_usada: str,
+    canonical_resolution: Optional[Dict[str, Any]] = None,
+) -> Dict:
     estrategia = _strategy_from_cms(item.get("cms_detectado"))
+    main_row = (canonical_resolution or {}).get("main_row") or {}
+    canonical_id = (canonical_resolution or {}).get("canonical_main_id") or item.get("inmobiliaria_id")
     inmob = {
-        "id": item.get("inmobiliaria_id"),
+        "id": canonical_id,
         "nombre": item.get("inmobiliaria_nombre") or item.get("nombre") or "Sin nombre",
         "ciudad": item.get("ciudad"),
         "provincia": item.get("provincia"),
@@ -8296,6 +9490,10 @@ def _queue_item_to_inmob(item: Dict, url_usada: str) -> Dict:
         "cms_detectado": item.get("cms_detectado"),
         "prioridad_scraping_score": item.get("prioridad_scraping_score"),
         "total_propiedades_normalizado": item.get("total_propiedades_normalizado"),
+        "_run_item_inmobiliaria_id": item.get("inmobiliaria_id"),
+        "_canonical_inmobiliaria_main_id": canonical_id,
+        "_canonical_inmobiliaria_nombre": _agency_row_name(main_row),
+        "_canonical_inmobiliaria_web": main_row.get("web"),
     }
     if estrategia:
         inmob["estrategia_scraping"] = estrategia
@@ -8376,6 +9574,7 @@ def _scrape_queue_item(
     session: requests.Session,
     pw_context,
     started_at: float,
+    canonical_resolution: Optional[Dict[str, Any]] = None,
     allow_playwright_fallback: bool = False,
     allow_network_interception: bool = False,
 ) -> Tuple[List[Dict], str, str, List[str], Dict[str, Any]]:
@@ -8411,7 +9610,7 @@ def _scrape_queue_item(
                 {"errores_relevantes": errores_relevantes},
             ) from exc
         last_url = url_usada
-        inmob = _queue_item_to_inmob(item, url_usada)
+        inmob = _queue_item_to_inmob(item, url_usada, canonical_resolution=canonical_resolution)
         inmob["_item_timeout_seconds"] = timeout_seconds
         logger.info("URL usada: %s", url_usada)
         logger.info("CMS detectado: %s", item.get("cms_detectado") or "sin dato")
@@ -8481,30 +9680,60 @@ def _scrape_queue_item(
     )
 
 
+def _metadata_indicates_partial_extraction(strategy_meta: Optional[Dict[str, Any]]) -> bool:
+    if not isinstance(strategy_meta, dict):
+        return False
+    error_text = " | ".join(str(value) for value in strategy_meta.get("errores_relevantes") or [])
+    if re.search(r"timeout|presupuesto|detenido|pendientes sin consultar", error_text, re.I):
+        return True
+    progress = strategy_meta.get("strategy_progress")
+    if isinstance(progress, dict):
+        for data in progress.values():
+            if not isinstance(data, dict):
+                continue
+            for key in ("detail_urls_remaining", "listing_urls_remaining"):
+                try:
+                    if int(data.get(key) or 0) > 0 and int(data.get("propiedades_detectadas") or 0) > 0:
+                        return True
+                except (TypeError, ValueError):
+                    continue
+    return False
+
+
 def _save_queue_properties(
     db: SupabasePropiedades,
     item: Dict,
     props: List[Dict],
     item_deadline: Optional[float] = None,
+    canonical_resolution: Optional[Dict[str, Any]] = None,
+    strategy_meta: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     _check_deadline(item_deadline, "item")
-    agency_resolution = db.resolve_scraping_agency(item)
-    main_id = agency_resolution.get("inmobiliaria_main_id")
-    scraping_id = agency_resolution["inmobiliaria_scraping_id"]
+    agency_resolution = canonical_resolution or db.resolve_canonical_inmobiliaria_id(item)
+    main_id = agency_resolution["canonical_main_id"]
+    scraping_row = agency_resolution.get("scraping_row") or {}
+    main_row = agency_resolution.get("main_row") or {}
+    scraping_id = scraping_row.get("id") or main_row.get("scraping_id_origen")
     method = agency_resolution["metodo_resolucion"]
     logger.info(
-        "Resolucion inmobiliaria: main_id=%s scraping_id=%s metodo=%s",
+        "Resolucion inmobiliaria canonica: run_item_id=%s run_item_inmobiliaria_id=%s main_id=%s scraping_id=%s metodo=%s",
+        item.get("scraping_run_item_id") or item.get("id"),
+        item.get("inmobiliaria_id"),
         main_id, scraping_id, method,
     )
 
     for prop in props:
-        prop["inmobiliaria_id"] = scraping_id
-        prop["hash_dedup"] = hash_propiedad(scraping_id, prop.get("id_externo"), prop.get("url"))
+        prop["inmobiliaria_id"] = main_id
+        prop["hash_dedup"] = hash_propiedad(main_id, prop.get("id_externo"), prop.get("url"))
 
-    hashes = [p.get("hash_dedup") for p in props if p.get("hash_dedup")]
-    existing_hashes = db.get_existing_hashes(hashes)
-    expected_new = sum(1 for h in hashes if h not in existing_hashes)
-    expected_existing = sum(1 for h in hashes if h in existing_hashes)
+    props_with_images, props_without_images = _count_real_image_props(props)
+    image_urls_detected = 0
+    for prop in props:
+        raw_images = prop.get("imagenes") or []
+        if isinstance(raw_images, str):
+            raw_images = [raw_images]
+        if isinstance(raw_images, list):
+            image_urls_detected += len(clean_property_images(raw_images))
 
     try:
         _check_deadline(item_deadline, "item")
@@ -8514,22 +9743,43 @@ def _save_queue_properties(
         save_result = dict(getattr(db, "last_save_result", {}) or {})
         save_protection["save_result"] = save_result
         save_protection["save_errors"] = exc.errors
+        save_protection["image_save_diagnostics"] = {
+            "imagenes_detectadas": props_with_images,
+            "propiedades_sin_imagenes_detectadas": props_without_images,
+            "imagenes_urls_detectadas": image_urls_detected,
+            "imagenes_guardadas": int(save_protection.get("imagenes_guardadas_payload") or 0),
+            "imagenes_descartadas": int(save_protection.get("imagenes_descartadas_sanitizer") or 0),
+            "motivo_descartes": save_protection.get("imagenes_descartadas_sanitizer_por_motivo", {}),
+            "imagenes_conservadas_existentes": int(save_protection.get("imagenes_conservadas") or 0),
+        }
+        db.last_save_protection_stats = save_protection
         raise SavePropertiesError(str(exc), errors=exc.errors) from exc
 
     save_protection = dict(getattr(db, "last_save_protection_stats", {}) or {})
     save_result = dict(getattr(db, "last_save_result", {}) or {})
     save_protection["save_result"] = save_result
+    save_protection["image_save_diagnostics"] = {
+        "imagenes_detectadas": props_with_images,
+        "propiedades_sin_imagenes_detectadas": props_without_images,
+        "imagenes_urls_detectadas": image_urls_detected,
+        "imagenes_guardadas": int(save_protection.get("imagenes_guardadas_payload") or 0),
+        "imagenes_descartadas": int(save_protection.get("imagenes_descartadas_sanitizer") or 0),
+        "motivo_descartes": save_protection.get("imagenes_descartadas_sanitizer_por_motivo", {}),
+        "imagenes_conservadas_existentes": int(save_protection.get("imagenes_conservadas") or 0),
+    }
     for prop in props:
         sanitize_property_location(prop, None)
     propiedades_error = int(save_result.get("failed") or max(len(props) - total_ext, 0))
 
     geo_count = 0
+    geocoding_skipped_by_budget = 0
     for prop in props:
+        if item_deadline is not None and _deadline_remaining_seconds(item_deadline) <= 6:
+            geocoding_skipped_by_budget += 1
+            logger.info("  Geocoding omitido por presupuesto de item agotado")
+            break
         _check_deadline(item_deadline, "item")
         if prop.get("latitud") is None and (prop.get("direccion") or prop.get("ciudad")):
-            if item_deadline is not None and _deadline_remaining_seconds(item_deadline) <= 6:
-                logger.info("  Geocoding omitido por presupuesto de item agotado")
-                break
             lat, lon = geocodificar_direccion(
                 prop.get("direccion", ""),
                 prop.get("ciudad", ""),
@@ -8569,10 +9819,19 @@ def _save_queue_properties(
                     pass
 
     inactivos = 0
-    if props and scraping_id:
-        _check_deadline(item_deadline, "item")
-        active_hashes = {p["hash_dedup"] for p in props if p.get("hash_dedup")}
-        inactivos = db.mark_inactivos(int(scraping_id), active_hashes)
+    inactivos_omitidos_por_timeout = False
+    inactivos_omitidos_por_extraccion_parcial = _metadata_indicates_partial_extraction(strategy_meta)
+    if props and main_id:
+        if inactivos_omitidos_por_extraccion_parcial:
+            logger.info("  Marcado de inactivos omitido: extraccion parcial o detenida por presupuesto")
+        elif item_deadline is not None and _deadline_remaining_seconds(item_deadline) <= 4:
+            inactivos_omitidos_por_timeout = True
+            logger.info("  Marcado de inactivos omitido por presupuesto de item agotado")
+        else:
+            _check_deadline(item_deadline, "item")
+            matched_existing_hashes = set((save_result.get("matched_existing_hashes") or []))
+            active_hashes = {p["hash_dedup"] for p in props if p.get("hash_dedup")} | matched_existing_hashes
+            inactivos = db.mark_inactivos(int(main_id), active_hashes)
 
     return {
         "propiedades_detectadas": len(props),
@@ -8581,11 +9840,22 @@ def _save_queue_properties(
         "propiedades_sin_cambios": int(save_result.get("unchanged") or 0),
         "propiedades_error": propiedades_error,
         "geocodificadas": geo_count,
+        "geocoding_omitido_por_timeout": geocoding_skipped_by_budget,
         "propiedades_inactivas_marcadas": inactivos,
+        "inactivos_omitidos_por_timeout": inactivos_omitidos_por_timeout,
+        "inactivos_omitidos_por_extraccion_parcial": inactivos_omitidos_por_extraccion_parcial,
         "inmobiliaria_main_id": main_id,
         "inmobiliaria_scraping_id": scraping_id,
         "metodo_resolucion_inmobiliaria": method,
+        "canonical_resolution": {
+            "run_item_inmobiliaria_id": agency_resolution.get("run_item_inmobiliaria_id"),
+            "canonical_main_id": agency_resolution.get("canonical_main_id"),
+            "source_id_space": agency_resolution.get("source_id_space"),
+            "metodo_resolucion": agency_resolution.get("metodo_resolucion"),
+            "validation": agency_resolution.get("validation"),
+        },
         "proteccion_actualizacion": save_protection,
+        "image_save_diagnostics": save_protection.get("image_save_diagnostics", {}),
     }
 
 
@@ -8610,20 +9880,78 @@ def _process_scraping_control_item(
     except ItemTimeoutError as exc:
         raise _item_timeout_control_error(item, started_at, timeout_seconds, None, "start_scraping_item", "inicio") from exc
 
+    canonical_resolution = db.resolve_canonical_inmobiliaria_id(item)
+    main_row = canonical_resolution.get("main_row") or {}
+    logger.info(
+        "Preflight ID | run=%s item=%s run_item_inmobiliaria_id=%s canonical_main_id=%s source_space=%s",
+        item.get("scraping_run_id"),
+        item_id,
+        item.get("inmobiliaria_id"),
+        canonical_resolution.get("canonical_main_id"),
+        canonical_resolution.get("source_id_space"),
+    )
+    logger.info(
+        "Preflight agencia | item='%s' web='%s' | main='%s' web='%s'",
+        item.get("inmobiliaria_nombre"),
+        item.get("web") or item.get("url_listado"),
+        _agency_row_name(main_row),
+        main_row.get("web") or main_row.get("url_listado"),
+    )
+
     try:
         props, estrategia, url_usada, errores_relevantes, strategy_meta = _scrape_queue_item(
             item=item,
             session=session,
             pw_context=pw_context,
             started_at=started_at,
+            canonical_resolution=canonical_resolution,
             allow_playwright_fallback=allow_playwright_fallback,
             allow_network_interception=allow_network_interception,
         )
         _check_deadline(item_deadline, "item")
     except ItemTimeoutError as exc:
         raise _item_timeout_control_error(item, started_at, timeout_seconds, None, "sin_estrategia", "scraping") from exc
+
+    final_url = _effective_final_url(url_usada, strategy_meta)
+    final_validation = _final_url_domain_validation(final_url, item, canonical_resolution)
+    if not final_validation.get("valid"):
+        metadata = _queue_metadata(
+            item=item,
+            started_at=started_at,
+            url_usada=url_usada,
+            estrategia_usada=estrategia,
+            cantidad_paginas=int(strategy_meta.get("cantidad_paginas") or (1 if url_usada else 0)),
+            errores_relevantes=errores_relevantes + ["Dominio final no coincide con la inmobiliaria del item"],
+            extra={
+                "diagnostico_inicial": strategy_meta.get("diagnostico_inicial"),
+                "strategy_plan": strategy_meta.get("strategy_plan"),
+                "canonical_resolution": {
+                    "run_item_inmobiliaria_id": canonical_resolution.get("run_item_inmobiliaria_id"),
+                    "canonical_main_id": canonical_resolution.get("canonical_main_id"),
+                    "source_id_space": canonical_resolution.get("source_id_space"),
+                    "metodo_resolucion": canonical_resolution.get("metodo_resolucion"),
+                    "validation": canonical_resolution.get("validation"),
+                },
+                "final_url_validation": final_validation,
+                "propiedades_detectadas": len(props),
+            },
+        )
+        raise ScrapingControlError(
+            "final_url_domain_mismatch: el dominio final no coincide con la web/url_listado del item",
+            metadata=metadata,
+            final_url=final_url,
+            http_status=None,
+        )
+
     try:
-        counts = _save_queue_properties(db, item, props, item_deadline=item_deadline)
+        counts = _save_queue_properties(
+            db,
+            item,
+            props,
+            item_deadline=item_deadline,
+            canonical_resolution=canonical_resolution,
+            strategy_meta=strategy_meta,
+        )
     except ItemTimeoutError as exc:
         raise _item_timeout_control_error(
             item,
@@ -8644,6 +9972,14 @@ def _process_scraping_control_item(
             "strategy_plan": strategy_meta.get("strategy_plan"),
             "estrategia_usada": estrategia,
             "propiedades_detectadas": len(props),
+            "canonical_resolution": {
+                "run_item_inmobiliaria_id": canonical_resolution.get("run_item_inmobiliaria_id"),
+                "canonical_main_id": canonical_resolution.get("canonical_main_id"),
+                "source_id_space": canonical_resolution.get("source_id_space"),
+                "metodo_resolucion": canonical_resolution.get("metodo_resolucion"),
+                "validation": canonical_resolution.get("validation"),
+            },
+            "final_url_validation": final_validation,
             "save_errors": exc.errors,
             "proteccion_actualizacion": dict(getattr(db, "last_save_protection_stats", {}) or {}),
             "save_result": dict(getattr(db, "last_save_result", {}) or {}),
@@ -8666,11 +10002,17 @@ def _process_scraping_control_item(
         ) from exc
     metadata_extra = {
         "geocodificadas": counts["geocodificadas"],
+        "geocoding_omitido_por_timeout": counts.get("geocoding_omitido_por_timeout", 0),
         "propiedades_inactivas_marcadas": counts["propiedades_inactivas_marcadas"],
+        "inactivos_omitidos_por_timeout": counts.get("inactivos_omitidos_por_timeout", False),
+        "inactivos_omitidos_por_extraccion_parcial": counts.get("inactivos_omitidos_por_extraccion_parcial", False),
         "inmobiliaria_main_id": counts["inmobiliaria_main_id"],
         "inmobiliaria_scraping_id": counts["inmobiliaria_scraping_id"],
         "metodo_resolucion_inmobiliaria": counts["metodo_resolucion_inmobiliaria"],
+        "canonical_resolution": counts.get("canonical_resolution", {}),
+        "final_url_validation": final_validation,
         "proteccion_actualizacion": counts.get("proteccion_actualizacion", {}),
+        "image_save_diagnostics": counts.get("image_save_diagnostics", {}),
     }
     for key, value in strategy_meta.items():
         if key not in {"cantidad_paginas", "errores_relevantes"}:
@@ -8689,9 +10031,99 @@ def _process_scraping_control_item(
     return {
         **counts,
         "estrategia_usada": estrategia,
-        "final_url": url_usada,
+        "final_url": final_url,
         "metadata_json": metadata,
     }
+
+
+def run_integrity_dry_run(max_items: Optional[int] = 5) -> None:
+    """
+    Read-only queue integrity check.
+
+    It does not claim items, does not start/finish items, does not scrape URLs and
+    does not save properties. It verifies that pending queue items can be resolved
+    to the canonical inmobiliarias_main.id that would be used for propiedades.
+    """
+    db = SupabasePropiedades()
+    limit = max_items if max_items is not None and max_items > 0 else 5
+    items = db.load_pending_scraping_items_for_integrity(limit=limit)
+
+    safe = 0
+    failed = 0
+    final_url_mismatch = 0
+    canonical_failed = 0
+
+    logger.info("=" * 60)
+    logger.info("DRY-RUN INTEGRIDAD DE IDS")
+    logger.info("Items pending revisados: %d", len(items))
+    logger.info("No se reclama cola, no se scrapea y no se guarda nada.")
+
+    if not items:
+        logger.info("No hay items pending para revisar.")
+
+    for item in items:
+        item_id = item.get("scraping_run_item_id") or item.get("id")
+        logger.info("-" * 60)
+        logger.info(
+            "Item %s | run=%s | run_item_inmobiliaria_id=%s | nombre=%s | web=%s",
+            item_id,
+            item.get("scraping_run_id"),
+            item.get("inmobiliaria_id"),
+            item.get("inmobiliaria_nombre"),
+            item.get("web") or item.get("url_listado"),
+        )
+        try:
+            resolution = db.resolve_canonical_inmobiliaria_id(item)
+            main_row = resolution.get("main_row") or {}
+            validation = resolution.get("validation") or {}
+            final_validation = (
+                _final_url_domain_validation(item.get("final_url"), item, resolution)
+                if item.get("final_url")
+                else {"valid": True, "reason": "runtime_validation_pending", "final_domain": "", "source_domains": _unique_domains(item.get("web"), item.get("url_listado"))}
+            )
+            if not final_validation.get("valid"):
+                final_url_mismatch += 1
+                failed += 1
+                logger.error(
+                    "NO SAFE | final_url_domain_mismatch | final_url=%s final_domain=%s source_domains=%s",
+                    item.get("final_url"),
+                    final_validation.get("final_domain"),
+                    final_validation.get("source_domains"),
+                )
+                continue
+            safe += 1
+            logger.info(
+                "SAFE | canonical_main_id=%s | main='%s' | main_web='%s' | metodo=%s | source_space=%s",
+                resolution.get("canonical_main_id"),
+                _agency_row_name(main_row),
+                main_row.get("web") or main_row.get("url_listado"),
+                resolution.get("metodo_resolucion"),
+                resolution.get("source_id_space"),
+            )
+            logger.info(
+                "Validacion | name_ok=%s domain_ok=%s matching_domains=%s final_url_check=%s",
+                validation.get("name_ok"),
+                validation.get("domain_ok"),
+                validation.get("matching_domains"),
+                final_validation.get("reason"),
+            )
+        except Exception as exc:
+            failed += 1
+            error_type = clasificar_error(exc)
+            if error_type in {"canonical_id_resolution_failed", "canonical_id_mismatch", "data_integrity_mismatch"}:
+                canonical_failed += 1
+            logger.error("NO SAFE | %s | %s", error_type, str(exc)[:500])
+            metadata = getattr(exc, "metadata", None)
+            if metadata:
+                logger.info("Metadata error: %s", json.dumps(metadata, ensure_ascii=False)[:2000])
+
+    logger.info("=" * 60)
+    logger.info("RESUMEN DRY-RUN INTEGRIDAD")
+    logger.info("safe_to_scrape_save: %d", safe)
+    logger.info("failed: %d", failed)
+    logger.info("canonical_resolution_failed/mismatch: %d", canonical_failed)
+    logger.info("final_url_domain_mismatch: %d", final_url_mismatch)
+    logger.info("=" * 60)
 
 
 def run_controlled_queue(
@@ -8709,6 +10141,13 @@ def run_controlled_queue(
     success = 0
     failed = 0
     interrupted = False
+    skipped_integrity = 0
+    skipped_final_domain = 0
+    total_detected = 0
+    total_new = 0
+    total_updated = 0
+    total_unchanged = 0
+    total_property_errors = 0
 
     if max_items is not None and max_items <= 0:
         elapsed = time.time() - t_inicio
@@ -8771,6 +10210,18 @@ def run_controlled_queue(
                         metadata_json=result["metadata_json"],
                     )
                     success += 1
+                    total_detected += int(result.get("propiedades_detectadas") or 0)
+                    total_new += int(result.get("propiedades_nuevas") or 0)
+                    total_updated += int(result.get("propiedades_actualizadas") or 0)
+                    total_unchanged += int(result.get("propiedades_sin_cambios") or 0)
+                    total_property_errors += int(result.get("propiedades_error") or 0)
+                    logger.info(
+                        "Integridad ID final | item=%s run_item_inmobiliaria_id=%s canonical_main_id=%s final_url=%s",
+                        item_id,
+                        item.get("inmobiliaria_id"),
+                        (result.get("metadata_json") or {}).get("canonical_resolution", {}).get("canonical_main_id"),
+                        result.get("final_url"),
+                    )
                     logger.info("Propiedades detectadas: %d", result["propiedades_detectadas"])
                     logger.info("Nuevas: %d", result["propiedades_nuevas"])
                     logger.info("Actualizadas: %d", result["propiedades_actualizadas"])
@@ -8823,6 +10274,14 @@ def run_controlled_queue(
                         else _extract_http_status(exc)
                     )
                     error_type = clasificar_error(exc)
+                    if error_type in {
+                        "data_integrity_mismatch",
+                        "canonical_id_resolution_failed",
+                        "canonical_id_mismatch",
+                    }:
+                        skipped_integrity += 1
+                    if error_type == "final_url_domain_mismatch":
+                        skipped_final_domain += 1
 
                     logger.error("Estado final: error (%s): %s", error_type, str(exc)[:500])
                     try:
@@ -8859,6 +10318,13 @@ def run_controlled_queue(
     logger.info("Items procesados: %d", processed)
     logger.info("Exitos: %d", success)
     logger.info("Errores: %d", failed)
+    logger.info("Omitidos por integridad ID: %d", skipped_integrity)
+    logger.info("Omitidos por final_url_domain_mismatch: %d", skipped_final_domain)
+    logger.info("Propiedades detectadas: %d", total_detected)
+    logger.info("Propiedades nuevas: %d", total_new)
+    logger.info("Propiedades actualizadas: %d", total_updated)
+    logger.info("Propiedades sin cambios: %d", total_unchanged)
+    logger.info("Propiedades con error: %d", total_property_errors)
     logger.info("Tiempo total: %.1f s (%.1f min)", elapsed, elapsed / 60)
     logger.info("=" * 60)
 
@@ -9256,13 +10722,17 @@ if __name__ == "__main__":
                         help="Alias de --allow-playwright-fallback")
     parser.add_argument("--legacy-jobs",  action="store_true",
                         help="Usar el flujo anterior basado en scraping_jobs")
+    parser.add_argument("--integrity-dry-run", action="store_true",
+                        help="Validar IDs canonicos de items pending sin consumir cola, scrapear ni guardar")
     args = parser.parse_args()
 
     technical_mode = args.technical_review or args.retry_errors
     allow_network = args.allow_network_interception or technical_mode
     allow_playwright = args.allow_playwright_fallback or args.allow_playwright or technical_mode
 
-    if args.diagnose_url:
+    if args.integrity_dry_run:
+        run_integrity_dry_run(max_items=args.max_items)
+    elif args.diagnose_url:
         diagnose_single_url(
             url=args.diagnose_url,
             cms=args.cms,
