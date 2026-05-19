@@ -47,6 +47,7 @@ CITY_BOUNDS = {
     "san jose del rincon": (-31.70, -31.50, -60.65, -60.45),
 }
 URUGUAY_BOUNDS = (-35.20, -30.00, -58.80, -53.00)
+ARGENTINA_BOUNDS = (-56.00, -21.00, -74.00, -53.00)
 
 
 @dataclass
@@ -70,6 +71,12 @@ class AddressCleaningResult:
     reason: str
     source: str
     raw_value: str
+    skipped_sources: Optional[List[Dict[str, str]]] = None
+    evaluated_sources: Optional[List[Dict[str, str]]] = None
+    readiness: str = "geocoding_not_ready"
+    detected_city: Optional[str] = None
+    detected_province: Optional[str] = None
+    proposed_query: str = ""
 
     def to_metadata(self) -> Dict[str, Any]:
         return {
@@ -79,6 +86,12 @@ class AddressCleaningResult:
             "reason": self.reason,
             "source": self.source,
             "raw_value": self.raw_value,
+            "skipped_sources": self.skipped_sources or [],
+            "evaluated_sources": self.evaluated_sources or [],
+            "readiness": self.readiness,
+            "detected_city": self.detected_city,
+            "detected_province": self.detected_province,
+            "proposed_query": self.proposed_query,
         }
 
 
@@ -105,6 +118,7 @@ class SupabaseGeocodingClient:
     @staticmethod
     def _make_session() -> requests.Session:
         session = requests.Session()
+        session.trust_env = False
         retry = Retry(
             total=3,
             backoff_factor=0.5,
@@ -162,11 +176,11 @@ class SupabaseGeocodingClient:
             f"{self.url}/rest/v1/geocoding_results",
             headers=self.headers,
             params={
-                "select": "propiedad_id,direccion_geocoding,latitud,longitud,precision_geocoding,proveedor,raw_response,status",
+                "select": "id,propiedad_id,direccion_geocoding,latitud,longitud,precision_geocoding,proveedor,raw_response,status",
                 "status": "eq.success",
                 "latitud": "not.is.null",
                 "longitud": "not.is.null",
-                "order": "propiedad_id.asc",
+                "order": "id.desc",
                 "limit": limit,
             },
             timeout=20,
@@ -193,7 +207,7 @@ class SupabaseGeocodingClient:
             f"{self.url}/rest/v1/propiedades",
             headers=self.headers,
             params={
-                "select": "id,ciudad,provincia,pais",
+                "select": "id,ciudad,provincia,pais,latitud,longitud",
                 "id": f"eq.{propiedad_id}",
                 "limit": 1,
             },
@@ -225,6 +239,7 @@ class NominatimProvider:
 
     def __init__(self) -> None:
         self.session = requests.Session()
+        self.session.trust_env = False
         self.session.headers.update({
             "User-Agent": USER_AGENT,
             "Accept-Language": "es-AR,es;q=0.9",
@@ -355,6 +370,36 @@ def is_coordinate_valid_for_location(
     return bool(within_bounds) if checked else True
 
 
+def parse_metadata_bool(value: Any, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, (int, float)):
+        return bool(value)
+    normalized = str(value).strip().lower()
+    if normalized in {"true", "t", "1", "yes", "y", "si", "sí"}:
+        return True
+    if normalized in {"false", "f", "0", "no", "n"}:
+        return False
+    return default
+
+
+def parse_coordinate_pair(lat: Any, lon: Any) -> Tuple[Optional[float], Optional[float]]:
+    try:
+        return float(lat), float(lon)
+    except (TypeError, ValueError):
+        return None, None
+
+
+def is_coordinate_inside_argentina(lat: Any, lon: Any) -> bool:
+    lat_float, lon_float = parse_coordinate_pair(lat, lon)
+    if lat_float is None or lon_float is None:
+        return False
+    min_lat, max_lat, min_lon, max_lon = ARGENTINA_BOUNDS
+    return min_lat <= lat_float <= max_lat and min_lon <= lon_float <= max_lon
+
+
 def split_address_segments(text: str, row: Dict[str, Any], source: str) -> List[str]:
     cleaned = normalize_address_text(text)
     if source == "direccion_geocoding_limpia":
@@ -386,6 +431,214 @@ def normalize_address_text(text: Any) -> str:
     value = str(text or "").replace("\u00a0", " ")
     value = re.sub(r"\s+", " ", value)
     return value.strip(" ,.-")
+
+
+UI_ADDRESS_BLOCKERS: List[Tuple[re.Pattern[str], str]] = [
+    (re.compile(r"\bgaler[ií]a\s+de\s+im[aá]genes\b", re.IGNORECASE), "texto_ui_galeria_de_imagenes"),
+    (re.compile(r"\bver\s+fotos?\b", re.IGNORECASE), "texto_ui_ver_fotos"),
+    (re.compile(r"\bcompartir\b", re.IGNORECASE), "texto_ui_compartir"),
+    (re.compile(r"\bcasa\s+central\b", re.IGNORECASE), "texto_ui_casa_central"),
+    (re.compile(r"\bpropiedades\s+relacionadas\b", re.IGNORECASE), "texto_ui_propiedades_relacionadas"),
+    (re.compile(r"\bcontactate\b", re.IGNORECASE), "texto_ui_contactate"),
+    (re.compile(r"\benviar\s+mensaje\b", re.IGNORECASE), "texto_ui_enviar_mensaje"),
+    (re.compile(r"\bb[uú]squeda\s+de\s+propiedades\b", re.IGNORECASE), "texto_ui_busqueda_propiedades"),
+    (re.compile(r"\btipo\s+de\s+operaci[oó]n\b", re.IGNORECASE), "texto_ui_tipo_operacion"),
+    (re.compile(r"\btipo\s+de\s+propiedad\b", re.IGNORECASE), "texto_ui_tipo_propiedad"),
+    (re.compile(r"\bseleccione\s+ubicaci[oó]n\b", re.IGNORECASE), "texto_ui_seleccione_ubicacion"),
+    (re.compile(r"\bambientes\b", re.IGNORECASE), "texto_ui_ambientes"),
+    (re.compile(r"\bhabitaciones\b", re.IGNORECASE), "texto_ui_habitaciones"),
+    (re.compile(r"\bgarages\b", re.IGNORECASE), "texto_ui_garages"),
+    (re.compile(r"\bavanzado\b", re.IGNORECASE), "texto_ui_avanzado"),
+    (re.compile(r"\bbuscar\b", re.IGNORECASE), "texto_ui_buscar"),
+]
+
+
+REAL_ESTATE_NOISE_PATTERNS: List[re.Pattern[str]] = [
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in (
+        r"\b\d+\s+dormitorios?\b",
+        r"\b(?:un|una|dos|tres|cuatro|cinco|seis)\s+dormitorios?\b",
+        r"\bdormitorios?\b",
+        r"\bmonoambiente\b",
+        r"\bcontra\s*frente\b",
+        r"\bcontrafrente\b",
+        r"\bfrente\b",
+        r"\bbalc[oó]n\b",
+        r"\bcocheras?\b",
+        r"\bpiscina\b",
+        r"\bexcelente\b",
+        r"\boportunidad\b",
+        r"\bopci[oó]n\b",
+        r"\bretasad[ao]\b",
+        r"\bestado\b",
+        r"\bnuevo\b",
+        r"\ba\s+estrenar\b",
+    )
+]
+
+
+ROUTE_ADDRESS_RE = re.compile(
+    r"\b(?:ruta|rn|rp)\s*(?:nacional|provincial|prov\.?|nac\.?)?\s*\d{1,4}(?:\s*(?:km|kil[oó]metro)\s*\d{1,4})?\b",
+    re.IGNORECASE,
+)
+
+
+def ui_address_block_reason(text: Any) -> Optional[str]:
+    value = normalize_address_text(text)
+    if not value:
+        return None
+    key = normalize_place_key(value)
+    key_reasons = {
+        "galeria de imagenes": "texto_ui_galeria_de_imagenes",
+        "ver fotos": "texto_ui_ver_fotos",
+        "compartir": "texto_ui_compartir",
+        "casa central": "texto_ui_casa_central",
+        "propiedades relacionadas": "texto_ui_propiedades_relacionadas",
+        "contactate": "texto_ui_contactate",
+        "enviar mensaje": "texto_ui_enviar_mensaje",
+        "busqueda de propiedades": "texto_ui_busqueda_propiedades",
+        "tipo de operacion": "texto_ui_tipo_operacion",
+        "tipo de propiedad": "texto_ui_tipo_propiedad",
+        "seleccione ubicacion": "texto_ui_seleccione_ubicacion",
+        "ambientes": "texto_ui_ambientes",
+        "habitaciones": "texto_ui_habitaciones",
+        "garages": "texto_ui_garages",
+        "avanzado": "texto_ui_avanzado",
+        "buscar": "texto_ui_buscar",
+    }
+    for marker, reason in key_reasons.items():
+        if marker in key:
+            return reason
+    for pattern, reason in UI_ADDRESS_BLOCKERS:
+        if pattern.search(value):
+            return reason
+    return None
+
+
+def strip_ui_noise(text: str) -> str:
+    value = normalize_address_text(text)
+    for pattern, _reason in UI_ADDRESS_BLOCKERS:
+        value = pattern.sub(" ", value)
+    value = re.sub(r"\s*[|•]\s*", " ", value)
+    for pattern in (
+        r"\bgaler\S*\s+de\s+im\S*genes\b",
+        r"\bver\s+fotos?\b",
+        r"\bcompartir\b",
+        r"\bcasa\s+central\b",
+        r"\bpropiedades\s+relacionadas\b",
+        r"\bcontactate\b",
+        r"\benviar\s+mensaje\b",
+        r"\bb\S*squeda\s+de\s+propiedades\b",
+        r"\btipo\s+de\s+operaci\S*n\b",
+        r"\btipo\s+de\s+propiedad\b",
+        r"\bseleccione\s+ubicaci\S*n\b",
+        r"\bambientes\b",
+        r"\bhabitaciones\b",
+        r"\bgarages\b",
+        r"\bavanzado\b",
+        r"\bbuscar\b",
+    ):
+        value = re.sub(pattern, " ", value, flags=re.IGNORECASE)
+    value = re.sub(r"\s*[.]{1,}\s*", " ", value)
+    return normalize_address_text(value)
+
+
+def strip_real_estate_noise(text: str) -> str:
+    value = normalize_address_text(text)
+    for pattern in REAL_ESTATE_NOISE_PATTERNS:
+        value = pattern.sub(" ", value)
+    value = re.sub(r"\s*[.]{1,}\s*", " ", value)
+    value = re.sub(r"\s{2,}", " ", value)
+    return normalize_address_text(value)
+
+
+def is_route_address(value: str) -> bool:
+    return bool(ROUTE_ADDRESS_RE.search(normalize_address_text(value)))
+
+
+def has_reliable_location_context(row: Dict[str, Any]) -> bool:
+    ciudad = normalize_place_key(row.get("ciudad_final") or row.get("ciudad"))
+    provincia = normalize_place_key(row.get("provincia_final") or row.get("provincia"))
+    if not ciudad or not provincia:
+        return False
+    if ciudad in {"argentina", "santa fe argentina", "buenos aires argentina"}:
+        return False
+    return True
+
+
+KNOWN_LOCALITIES: List[Tuple[re.Pattern[str], str, str]] = [
+    (re.compile(r"\bvilla\s+constituci[oÃ³]n\b", re.IGNORECASE), "Villa Constitución", "Santa Fe"),
+    (re.compile(r"\brosario\b", re.IGNORECASE), "Rosario", "Santa Fe"),
+    (re.compile(r"\bsanta\s+fe\b", re.IGNORECASE), "Santa Fe", "Santa Fe"),
+    (re.compile(r"\bfunes\b", re.IGNORECASE), "Funes", "Santa Fe"),
+    (re.compile(r"\brold[aÃ¡]n\b", re.IGNORECASE), "Roldán", "Santa Fe"),
+    (re.compile(r"\bsan\s+jos[eÃ©]\s+del\s+rinc[oÃ³]n\b", re.IGNORECASE), "San José del Rincón", "Santa Fe"),
+    (re.compile(r"\bpueblo\s+esther\b", re.IGNORECASE), "Pueblo Esther", "Santa Fe"),
+    (re.compile(r"\brafaela\b", re.IGNORECASE), "Rafaela", "Santa Fe"),
+]
+
+
+def detect_city_in_raw(text: Any, row: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
+    raw = normalize_address_text(text)
+    if not raw:
+        return None, None
+    key = normalize_place_key(raw)
+    key_localities = [
+        ("villa constitucion", "Villa Constitución", "Santa Fe"),
+        ("rosario", "Rosario", "Santa Fe"),
+        ("san jose del rincon", "San José del Rincón", "Santa Fe"),
+        ("pueblo esther", "Pueblo Esther", "Santa Fe"),
+        ("roldan", "Roldán", "Santa Fe"),
+        ("funes", "Funes", "Santa Fe"),
+        ("rafaela", "Rafaela", "Santa Fe"),
+    ]
+    for marker, city, province in key_localities:
+        if marker in key:
+            return city, province
+    for pattern, city, province in KNOWN_LOCALITIES:
+        if pattern.search(raw):
+            return city, province
+
+    row_city = str(row.get("ciudad_final") or row.get("ciudad") or "").strip()
+    row_province = str(row.get("provincia_final") or row.get("provincia") or "").strip()
+    if row_city and normalize_place_key(row_city) in key:
+        return row_city, row_province or None
+    return None, None
+
+
+def useful_context_value(value: Any) -> str:
+    text = normalize_address_text(value)
+    if not text:
+        return ""
+    if ui_address_block_reason(text):
+        return ""
+    key = normalize_place_key(text)
+    if key in {
+        "argentina",
+        "santa fe argentina",
+        "buenos aires argentina",
+        "seleccione ubicacion",
+        "sin barrio",
+        "sin dato",
+    }:
+        return ""
+    return text
+
+
+def build_query_from_parts(base: str, city: Any, province: Any, country: Any = "Argentina") -> str:
+    base_clean = normalize_address_text(base)
+    city_clean = normalize_address_text(city)
+    province_clean = normalize_address_text(province)
+    country_clean = normalize_address_text(country) or "Argentina"
+    parts = [base_clean]
+    lower = base_clean.lower()
+    if city_clean and city_clean.lower() not in lower:
+        parts.append(city_clean)
+    if province_clean and province_clean.lower() not in lower:
+        parts.append(province_clean)
+    if country_clean and country_clean.lower() not in lower:
+        parts.append(country_clean)
+    return re.sub(r"\s+", " ", ", ".join(part for part in parts if part)).strip(" ,")
 
 
 def strip_real_estate_prefixes(text: str) -> str:
@@ -435,12 +688,21 @@ def strip_unit_suffix(text: str) -> str:
 
 
 def extract_street_number_address(segment: str) -> Optional[str]:
-    value = strip_unit_suffix(strip_real_estate_prefixes(segment))
+    value = strip_ui_noise(segment)
+    value = strip_unit_suffix(strip_real_estate_prefixes(value))
+    value = strip_real_estate_noise(value)
+    value = strip_real_estate_prefixes(value)
     value = re.sub(r"\b(?:piso|depto|dpto|dto|unidad|uf)\b.*$", "", value, flags=re.IGNORECASE)
     value = normalize_address_text(value)
 
     if not value:
         return None
+
+    route_match = ROUTE_ADDRESS_RE.search(value)
+    if route_match:
+        route_value = normalize_address_text(route_match.group(0))
+        if not is_generic_address(route_value):
+            return route_value
 
     matches = list(re.finditer(r"\b\d{2,5}\b", value))
     if not matches:
@@ -459,6 +721,10 @@ def is_generic_address(value: str) -> bool:
     text = normalize_address_text(value)
     key = normalize_place_key(text)
     if not text or key in {"argentina", "rosario", "santa fe", "rosario santa fe argentina"}:
+        return True
+    if "casa central" in key:
+        return True
+    if ui_address_block_reason(text):
         return True
     if re.fullmatch(r"\d{1,5}", text):
         return True
@@ -507,41 +773,153 @@ def prepare_address_for_geocoding(row: Dict[str, Any]) -> AddressCleaningResult:
         return row["_address_cleaning"]
 
     sources = [
+        ("direccion", row.get("direccion")),
         ("direccion_limpia", row.get("direccion_limpia")),
         ("direccion_geocoding_limpia", row.get("direccion_geocoding_limpia")),
         ("titulo", row.get("titulo")),
+        ("barrio", row.get("barrio")),
     ]
-    best: Optional[Tuple[int, str, str, str]] = None
+    best: Optional[Tuple[int, str, str, str, str, str, Optional[str], Optional[str], bool]] = None
+    skipped_sources: List[Dict[str, str]] = []
+    evaluated_sources: List[Dict[str, str]] = []
+    primary_raw_value = ""
 
     for source, raw_value in sources:
         raw_text = normalize_address_text(raw_value)
         if not raw_text:
             continue
-        segments = split_address_segments(raw_text, row, source)
+        if not primary_raw_value:
+            primary_raw_value = raw_text
+        detected_city, detected_province = detect_city_in_raw(raw_text, row)
+        blocked_reason = ui_address_block_reason(raw_text)
+        cleaned_source = strip_ui_noise(raw_text) if blocked_reason else raw_text
+        evaluated_sources.append({
+            "source": source,
+            "raw_value": raw_text[:240],
+            "cleaned_value": cleaned_source[:240],
+            "ui_noise_reason": blocked_reason or "",
+            "detected_city": detected_city or "",
+            "detected_province": detected_province or "",
+        })
+        if blocked_reason:
+            skipped_sources.append({
+                "source": source,
+                "reason": f"{blocked_reason}_limpiado_para_buscar_direccion",
+                "raw_value": raw_text[:240],
+            })
+        if not cleaned_source:
+            continue
+        segments = split_address_segments(cleaned_source, row, source)
         for index, segment in enumerate(segments):
+            blocked_segment_reason = ui_address_block_reason(segment)
+            if blocked_segment_reason:
+                skipped_sources.append({
+                    "source": source,
+                    "reason": f"{blocked_segment_reason}_segmento_omitido",
+                    "raw_value": segment[:240],
+                })
+                continue
             candidate = extract_street_number_address(segment)
             if not candidate:
                 continue
+            is_route = is_route_address(candidate)
+            if is_route and not has_reliable_location_context(row):
+                skipped_sources.append({
+                    "source": source,
+                    "reason": "ruta_sin_contexto_ciudad_provincia_confiable",
+                    "raw_value": segment[:240],
+                })
+                continue
             score = score_address_candidate(candidate, index, source)
+            quality = "media" if is_route else "alta"
+            reason = "ruta_geocodificable_con_contexto" if is_route else "calle_altura_detectada"
+            if blocked_reason:
+                score -= 4
+                quality = "media" if not is_route else "media"
+                reason = f"{reason}_tras_limpiar_texto_ui"
             if best is None or score > best[0]:
-                best = (score, candidate, source, raw_text)
+                best = (
+                    score,
+                    candidate,
+                    source,
+                    raw_text,
+                    quality,
+                    reason,
+                    detected_city,
+                    detected_province,
+                    is_route,
+                )
 
     if best is not None:
-        _, cleaned_address, source, raw_value = best
+        _, cleaned_address, source, raw_value, quality, reason, detected_city, detected_province, is_route = best
+        city_for_query = detected_city or row.get("ciudad_final") or row.get("ciudad")
+        province_for_query = detected_province or row.get("provincia_final") or row.get("provincia")
+        proposed_query = build_query_from_parts(cleaned_address, city_for_query, province_for_query, row.get("pais"))
+        readiness = "geocoding_ready_review" if is_route or quality != "alta" else "geocoding_ready_safe"
         result = AddressCleaningResult(
             cleaned_address=cleaned_address,
-            is_geocodable=True,
-            quality="alta",
-            reason="calle_altura_detectada",
+            is_geocodable=readiness == "geocoding_ready_safe",
+            quality=quality,
+            reason=reason,
             source=source,
             raw_value=raw_value,
+            skipped_sources=skipped_sources,
+            evaluated_sources=evaluated_sources,
+            readiness=readiness,
+            detected_city=detected_city,
+            detected_province=detected_province,
+            proposed_query=proposed_query,
         )
         row["_address_cleaning"] = result
         return result
 
-    raw_fallback = normalize_address_text(
-        row.get("direccion_limpia")
+    barrio = useful_context_value(row.get("barrio"))
+    ciudad = useful_context_value(row.get("ciudad_final") or row.get("ciudad"))
+    provincia = useful_context_value(row.get("provincia_final") or row.get("provincia"))
+    pais = useful_context_value(row.get("pais")) or "Argentina"
+    if barrio and ciudad and provincia:
+        proposed_query = build_query_from_parts(barrio, ciudad, provincia, pais)
+        result = AddressCleaningResult(
+            cleaned_address=barrio,
+            is_geocodable=False,
+            quality="media",
+            reason="sin_calle_altura_fallback_barrio_ciudad",
+            source="barrio_ciudad",
+            raw_value=primary_raw_value or barrio,
+            skipped_sources=skipped_sources,
+            evaluated_sources=evaluated_sources,
+            readiness="geocoding_ready_review",
+            detected_city=ciudad,
+            detected_province=provincia,
+            proposed_query=proposed_query,
+        )
+        row["_address_cleaning"] = result
+        return result
+    if ciudad and provincia:
+        proposed_query = build_query_from_parts(ciudad, "", provincia, pais)
+        result = AddressCleaningResult(
+            cleaned_address=ciudad,
+            is_geocodable=False,
+            quality="baja",
+            reason="sin_calle_altura_fallback_ciudad_provincia",
+            source="ciudad_provincia",
+            raw_value=primary_raw_value or ciudad,
+            skipped_sources=skipped_sources,
+            evaluated_sources=evaluated_sources,
+            readiness="geocoding_ready_review",
+            detected_city=ciudad,
+            detected_province=provincia,
+            proposed_query=proposed_query,
+        )
+        row["_address_cleaning"] = result
+        return result
+
+    raw_fallback = primary_raw_value or normalize_address_text(
+        row.get("direccion")
+        or row.get("direccion_limpia")
         or row.get("direccion_geocoding_limpia")
+        or row.get("barrio")
+        or row.get("ciudad_final")
         or row.get("titulo")
         or ""
     )
@@ -549,9 +927,13 @@ def prepare_address_for_geocoding(row: Dict[str, Any]) -> AddressCleaningResult:
         cleaned_address="",
         is_geocodable=False,
         quality="muy_baja",
-        reason="sin_calle_altura_confiable",
+        reason=(skipped_sources[0]["reason"] if skipped_sources else "sin_calle_altura_confiable"),
         source="none",
         raw_value=raw_fallback,
+        skipped_sources=skipped_sources,
+        evaluated_sources=evaluated_sources,
+        readiness="geocoding_not_ready",
+        proposed_query="",
     )
     row["_address_cleaning"] = result
     return result
@@ -559,22 +941,15 @@ def prepare_address_for_geocoding(row: Dict[str, Any]) -> AddressCleaningResult:
 
 def normalize_query(row: Dict[str, Any]) -> str:
     address_cleaning = prepare_address_for_geocoding(row)
-    if not address_cleaning.is_geocodable:
+    if address_cleaning.readiness != "geocoding_ready_safe":
         return ""
 
-    base = address_cleaning.cleaned_address
-    ciudad = str(row.get("ciudad_final") or "").strip()
-    provincia = str(row.get("provincia_final") or "").strip()
-    parts = [base]
-    lower = base.lower()
-    if ciudad and ciudad.lower() not in lower:
-        parts.append(ciudad)
-    if provincia and provincia.lower() not in lower:
-        parts.append(provincia)
-    if "argentina" not in lower:
-        parts.append("Argentina")
-    query = ", ".join(part for part in parts if part)
-    return re.sub(r"\s+", " ", query).strip(" ,")
+    if address_cleaning.proposed_query:
+        return address_cleaning.proposed_query
+
+    ciudad = address_cleaning.detected_city or row.get("ciudad_final") or row.get("ciudad")
+    provincia = address_cleaning.detected_province or row.get("provincia_final") or row.get("provincia")
+    return build_query_from_parts(address_cleaning.cleaned_address, ciudad, provincia, row.get("pais"))
 
 
 def build_query_variants(row: Dict[str, Any]) -> List[str]:
@@ -669,6 +1044,10 @@ def enrich_raw_response(
         "provincia_final": provincia_final,
         "pais": pais,
         "calidad_geocoding": address_cleaning.quality if address_cleaning else None,
+        "geocoding_readiness": address_cleaning.readiness if address_cleaning else None,
+        "direccion_propuesta": address_cleaning.proposed_query if address_cleaning else None,
+        "ciudad_detectada_en_raw": address_cleaning.detected_city if address_cleaning else None,
+        "provincia_detectada_en_raw": address_cleaning.detected_province if address_cleaning else None,
         "address_cleaning": address_cleaning.to_metadata() if address_cleaning else None,
         "needs_review": needs_review,
         "quality_flag": "baja_confianza" if needs_review else "aplicable",
@@ -707,6 +1086,17 @@ def get_geocoding_apply_decision(
 ) -> Dict[str, Any]:
     raw_response = row.get("raw_response")
     metadata = get_inmocapital_metadata(raw_response)
+    skip_reasons: List[str] = []
+
+    status = str(row.get("status") or "").lower()
+    if status != "success":
+        skip_reasons.append("status_not_success")
+
+    latitud, longitud = parse_coordinate_pair(row.get("latitud"), row.get("longitud"))
+    if latitud is None or longitud is None:
+        skip_reasons.append("missing_coordinates")
+    elif not is_coordinate_inside_argentina(latitud, longitud):
+        skip_reasons.append("outside_argentina_bounds")
 
     confidence_level = metadata.get("confidence_level")
     if not confidence_level:
@@ -716,13 +1106,16 @@ def get_geocoding_apply_decision(
         )
 
     if "should_apply_to_property" in metadata:
-        should_apply = bool(metadata.get("should_apply_to_property"))
+        should_apply = parse_metadata_bool(metadata.get("should_apply_to_property"))
     else:
         _, should_apply, _ = classify_geocoding_quality(
             str(row.get("status") or ""),
             row.get("precision_geocoding"),
         )
 
+    needs_review = parse_metadata_bool(metadata.get("needs_review"), default=False)
+    quality_flag = str(metadata.get("quality_flag") or "").strip().lower()
+    location_validation = str(metadata.get("location_validation") or "").strip().lower()
     within_city_bounds = metadata.get("within_city_bounds")
     city_bounds_checked = metadata.get("city_bounds_checked")
     if city_bounds_checked is None:
@@ -733,26 +1126,39 @@ def get_geocoding_apply_decision(
             city = city or city_context.get("ciudad") or city_context.get("ciudad_final")
             province = province or city_context.get("provincia") or city_context.get("provincia_final")
             pais = pais or city_context.get("pais")
-        try:
-            latitud = float(row["latitud"])
-            longitud = float(row["longitud"])
-        except (KeyError, TypeError, ValueError):
-            latitud = None
-            longitud = None
         within_city_bounds, city_bounds_checked = evaluate_city_bounds(latitud, longitud, city, province, pais)
         if city_bounds_checked and within_city_bounds is False:
             confidence_level = "low"
             should_apply = False
+    if not location_validation:
+        if within_city_bounds is True:
+            location_validation = "within_city_bounds"
+        elif within_city_bounds is False:
+            location_validation = "outside_city_bounds"
 
     confidence_allowed = str(confidence_level or "").lower() in {"high", "medium"}
-    city_gate = within_city_bounds is True if city_bounds_checked else True
-    can_apply = bool(should_apply and confidence_allowed and city_gate)
+    if not should_apply:
+        skip_reasons.append("should_apply_false")
+    if needs_review:
+        skip_reasons.append("needs_review_true")
+    if quality_flag == "baja_confianza":
+        skip_reasons.append("quality_flag_baja_confianza")
+    if location_validation != "within_city_bounds":
+        skip_reasons.append("location_validation_not_within_city_bounds")
+    if not confidence_allowed:
+        skip_reasons.append("confidence_not_allowed")
+
+    can_apply = not skip_reasons
     return {
         "can_apply": can_apply,
         "confidence_level": confidence_level,
         "should_apply_to_property": should_apply,
+        "needs_review": needs_review,
+        "quality_flag": quality_flag or None,
+        "location_validation": location_validation or None,
         "within_city_bounds": within_city_bounds,
         "city_bounds_checked": city_bounds_checked,
+        "skip_reason": ",".join(dict.fromkeys(skip_reasons)) or None,
     }
 
 
@@ -891,16 +1297,38 @@ def run(limit: int, dry_run: bool = False) -> None:
         address_cleaning = prepare_address_for_geocoding(row)
         queries = build_query_variants(row)
         query = queries[0] if queries else ""
+        display_query = query or address_cleaning.proposed_query
+        evaluated_sources = [
+            item.get("source", "")
+            for item in (address_cleaning.evaluated_sources or [])
+            if item.get("source")
+        ]
         logger.info(
-            "propiedad_id=%s | direccion=%s | calidad_limpieza=%s | source=%s | variantes=%d",
+            "propiedad_id=%s | raw=%s | fuentes=%s | fuente_elegida=%s | direccion_final=%s | ciudad_final=%s | ciudad_detectada_en_raw=%s | calidad_limpieza=%s | readiness=%s | motivo=%s | variantes=%d",
             propiedad_id,
-            query or "-",
-            address_cleaning.quality,
+            address_cleaning.raw_value or "-",
+            ",".join(evaluated_sources) or "-",
             address_cleaning.source,
+            display_query or "-",
+            row.get("ciudad_final") or "-",
+            address_cleaning.detected_city or "-",
+            address_cleaning.quality,
+            address_cleaning.readiness,
+            address_cleaning.reason,
             len(queries),
         )
 
         if not query:
+            if address_cleaning.readiness == "geocoding_ready_review":
+                logger.info(
+                    "%s status=review | no se geocodifica en modo seguro inicial | propuesta=%s | raw=%s | fuentes_evaluadas=%s",
+                    "[dry-run]" if dry_run else "skip",
+                    address_cleaning.proposed_query or "-",
+                    address_cleaning.raw_value or "-",
+                    json.dumps(address_cleaning.evaluated_sources or [], ensure_ascii=False),
+                )
+                skipped += 1
+                continue
             result = GeocodingResult(
                 None,
                 None,
@@ -923,9 +1351,10 @@ def run(limit: int, dry_run: bool = False) -> None:
             )
             if dry_run:
                 logger.info(
-                    "[dry-run] status=error | %s | raw=%s",
+                    "[dry-run] status=error | %s | raw=%s | skipped_sources=%s",
                     result.error_message,
                     address_cleaning.raw_value or "-",
+                    json.dumps(address_cleaning.skipped_sources or [], ensure_ascii=False),
                 )
                 failed += 1
                 continue
@@ -1000,29 +1429,41 @@ def apply_valid_results(limit: int, dry_run: bool = False) -> None:
         return
 
     logger.info("Resultados candidatos recibidos: %d | dry_run=%s", len(rows), dry_run)
+    applicable = 0
     applied = 0
     skipped = 0
     failed = 0
 
     for row in rows:
+        result_id = row.get("id")
         propiedad_id = row.get("propiedad_id")
         precision = row.get("precision_geocoding")
         city_context = client.get_property_location_context(propiedad_id)
         decision = get_geocoding_apply_decision(row, city_context)
         logger.info(
-            "propiedad_id=%s | precision=%s | confidence=%s | should_apply_to_property=%s | bounds=%s | bounds_checked=%s",
+            "geocoding_result_id=%s | propiedad_id=%s | precision=%s | confidence=%s | should_apply=%s | location_validation=%s | quality_flag=%s | needs_review=%s | bounds=%s | bounds_checked=%s | skip_reason=%s",
+            result_id,
             propiedad_id,
             precision,
             decision.get("confidence_level"),
             decision.get("should_apply_to_property"),
+            decision.get("location_validation"),
+            decision.get("quality_flag"),
+            decision.get("needs_review"),
             decision.get("within_city_bounds"),
             decision.get("city_bounds_checked"),
+            decision.get("skip_reason") or "-",
         )
 
         if not decision.get("can_apply"):
             skipped += 1
-            logger.info("skip=needs_review | no se aplica a propiedades")
+            logger.info(
+                "skip=%s | no se aplica a propiedades.id=%s",
+                decision.get("skip_reason") or "not_applicable",
+                propiedad_id,
+            )
             continue
+        applicable += 1
 
         try:
             latitud = float(row["latitud"])
@@ -1063,7 +1504,14 @@ def apply_valid_results(limit: int, dry_run: bool = False) -> None:
             failed += 1
             logger.info("status=error | no se pudo actualizar propiedades.id=%s | %s", propiedad_id, exc)
 
-    logger.info("Aplicacion finalizada | applied=%d | skipped=%d | error=%d", applied, skipped, failed)
+    logger.info(
+        "Aplicacion finalizada | candidates=%d | applicable=%d | updated=%d | skipped=%d | error=%d",
+        len(rows),
+        applicable,
+        applied,
+        skipped,
+        failed,
+    )
 
 
 def validate_applied_results(limit: int) -> None:
