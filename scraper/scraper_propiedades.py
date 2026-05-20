@@ -3009,6 +3009,13 @@ _LOCATION_ALIASES: List[Dict[str, Any]] = [
         "clear_barrio": True,
     },
     {
+        "aliases": ("bahia blanca", "bah\u00eda blanca", "bahia-blanca"),
+        "ciudad": "Bah\u00eda Blanca",
+        "provincia": "Buenos Aires",
+        "motivo": "titulo_url_contiene_bahia_blanca",
+        "specific": True,
+    },
+    {
         "aliases": ("san jose del rincon", "san jose rincon", "san josé del rincón"),
         "ciudad": "San José del Rincón",
         "provincia": "Santa Fe",
@@ -3136,6 +3143,20 @@ def _text_contains_location_alias(text: str, alias: str) -> bool:
     if not alias_key:
         return False
     return bool(re.search(rf"\b{re.escape(alias_key)}\b", text))
+
+
+AMBIGUOUS_LOCATION_STREET_NAMES = {"roldan", "brandsen"}
+
+
+def _has_alias_street_context(text: str, alias_key: str) -> bool:
+    if alias_key not in AMBIGUOUS_LOCATION_STREET_NAMES:
+        return False
+    if alias_key == "roldan" and re.search(r"\bbelisario\s+roldan\b", text):
+        return True
+    return bool(
+        re.search(rf"\b(?:calle|av|avenida|bv|boulevard|pasaje)\s+{re.escape(alias_key)}\b", text)
+        or re.search(rf"\b{re.escape(alias_key)}\s+(?:al\s+)?\d{{2,5}}\b", text)
+    )
 
 
 _FUNES_CITY_CONTEXT_ALIASES = (
@@ -3315,6 +3336,8 @@ def _detect_location_from_text(
             alias_key = _coordinate_location_key(alias)
             blocked_aliases = rule.get("blocked_if_contains") or ()
             if any(_text_contains_location_alias(text, blocked) for blocked in blocked_aliases):
+                continue
+            if _has_alias_street_context(text, alias_key):
                 continue
             if re.search(rf"\b{re.escape(alias_key)}\b", text):
                 return {
@@ -3624,6 +3647,7 @@ CANONICAL_LOCATION_NAMES = {
     "san martin": "San Mart\u00edn",
     "monsenor piaggio": "Monse\u00f1or Piaggio",
     "monse or piaggio": "Monse\u00f1or Piaggio",
+    "bahia blanca": "Bah\u00eda Blanca",
     "cordoba": "C\u00f3rdoba",
     "rio negro": "R\u00edo Negro",
     "san jose del rincon": "San Jos\u00e9 del Rinc\u00f3n",
