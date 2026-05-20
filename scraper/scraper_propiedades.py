@@ -11,7 +11,7 @@ Estrategias (orden de prioridad):
   4. Sitemap crawler
   5. HTML scraper con Playwright (fallback)
   6. ScraperAPI (bypass de bloqueos, auto-activado)
-  7. AI Extractor / Groq (último recurso)
+  7. AI Extractor / Groq (ÃƒÂºltimo recurso)
 """
 
 from __future__ import annotations
@@ -236,7 +236,7 @@ PROPERTY_URL_PATTERNS = re.compile(
 TIPO_MAP: Dict[str, str] = {
     # Casas
     "casa": "casa", "chalet": "casa", "house": "casa", "duplex": "casa",
-    "dúplex": "casa", "townhouse": "casa", "villa": "casa",
+    "dÃƒÂºplex": "casa", "townhouse": "casa", "villa": "casa",
     # Departamentos
     "departamento": "departamento", "depto": "departamento",
     "apartment": "departamento", "flat": "departamento", "dpto": "departamento",
@@ -245,47 +245,47 @@ TIPO_MAP: Dict[str, str] = {
     "ph ": "ph", "p.h": "ph", "penthouse": "ph",
     # Locales
     "local": "local", "comercial": "local", "negocio": "local",
-    "fondo de comercio": "local", "galería": "local",
+    "fondo de comercio": "local", "galerÃƒÂ­a": "local",
     # Oficinas
     "oficina": "oficina", "office": "oficina", "consultorio": "consultorio",
     # Terrenos
     "terreno": "terreno", "lote": "terreno", "land": "terreno",
-    "parcela": "terreno", "fracción": "terreno",
+    "parcela": "terreno", "fracciÃƒÂ³n": "terreno",
     # Campos
     "campo": "campo", "chacra": "campo", "estancia": "campo",
     "finca": "campo", "quinta": "campo", "establecimiento": "campo",
     # Cocheras
     "cochera": "cochera", "garage": "cochera", "garaje": "cochera",
     "estacionamiento": "cochera",
-    # Galpones / depósitos
-    "galpon": "galpon", "galpón": "galpon", "nave industrial": "galpon",
-    "depósito": "deposito", "deposito": "deposito", "bodega": "deposito",
-    "almacén": "deposito",
+    # Galpones / depÃƒÂ³sitos
+    "galpon": "galpon", "galpÃƒÂ³n": "galpon", "nave industrial": "galpon",
+    "depÃƒÂ³sito": "deposito", "deposito": "deposito", "bodega": "deposito",
+    "almacÃƒÂ©n": "deposito",
     # Hoteles
-    "hotel": "hotel", "apart hotel": "hotel", "hostería": "hotel",
+    "hotel": "hotel", "apart hotel": "hotel", "hosterÃƒÂ­a": "hotel",
 }
 
 OPERACION_MAP: Dict[str, str] = {
     "venta": "venta", "sale": "venta", "sell": "venta", "compra": "venta",
     "en venta": "venta", "for sale": "venta",
     "alquiler": "alquiler", "alq ": "alquiler", "rent": "alquiler",
-    "rental": "alquiler", "arrendamiento": "alquiler", "locación": "alquiler",
+    "rental": "alquiler", "arrendamiento": "alquiler", "locaciÃƒÂ³n": "alquiler",
     "en alquiler": "alquiler", "for rent": "alquiler",
     "temporario": "alquiler_temporario", "temporal": "alquiler_temporario",
-    "vacation": "alquiler_temporario", "turístico": "alquiler_temporario",
-    "temporaria": "alquiler_temporario", "por día": "alquiler_temporario",
+    "vacation": "alquiler_temporario", "turÃƒÂ­stico": "alquiler_temporario",
+    "temporaria": "alquiler_temporario", "por dÃƒÂ­a": "alquiler_temporario",
     "por semana": "alquiler_temporario", "short term": "alquiler_temporario",
 }
 
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
-# Tipo de cambio (dólar blue, API gratuita argentina)
+# Tipo de cambio (dÃƒÂ³lar blue, API gratuita argentina)
 # ---------------------------------------------------------------------------
 
 _tc_cache: Dict[str, Any] = {"valor": None, "ts": 0.0}
 
 def get_tipo_cambio() -> float:
-    """Retorna USD→ARS (dólar blue venta). Cachea 1 hora. Fallback: 1200."""
+    """Retorna USDÃ¢â€ â€™ARS (dÃƒÂ³lar blue venta). Cachea 1 hora. Fallback: 1200."""
     ahora = time.time()
     if _tc_cache["valor"] and ahora - _tc_cache["ts"] < 3600:
         return _tc_cache["valor"]
@@ -305,7 +305,7 @@ def get_tipo_cambio() -> float:
 
 def convertir_precio(precio: Optional[float], moneda: str) -> Tuple[Optional[float], Optional[float]]:
     """
-    Devuelve (precio_ars, precio_usd) según la moneda original.
+    Devuelve (precio_ars, precio_usd) segÃƒÂºn la moneda original.
     Siempre completa ambos usando el tipo de cambio blue.
     """
     if precio is None:
@@ -318,7 +318,7 @@ def convertir_precio(precio: Optional[float], moneda: str) -> Tuple[Optional[flo
     return precio, None
 
 # ---------------------------------------------------------------------------
-# Normalización
+# NormalizaciÃƒÂ³n
 # ---------------------------------------------------------------------------
 
 def normalizar_precio(raw: Any) -> Tuple[Optional[float], str]:
@@ -328,26 +328,26 @@ def normalizar_precio(raw: Any) -> Tuple[Optional[float], str]:
     text = str(raw).strip()
     # Detectar moneda
     moneda = "ARS"
-    if re.search(r"U\$S|USD|US\$|u\$s|dólar|dollar", text, re.IGNORECASE):
+    if re.search(r"U\$S|USD|US\$|u\$s|dÃƒÂ³lar|dollar", text, re.IGNORECASE):
         moneda = "USD"
-    elif re.search(r"€|EUR", text, re.IGNORECASE):
+    elif re.search(r"Ã¢â€šÂ¬|EUR", text, re.IGNORECASE):
         moneda = "EUR"
     elif re.search(r"UYU|\$U", text, re.IGNORECASE):
         moneda = "UYU"
-    # Extraer número
+    # Extraer nÃƒÂºmero
     digits = re.sub(r"[^\d.,]", "", text)
     if not digits:
         return None, moneda
     # Formato con punto de miles y coma decimal: 1.500.000 / 1.500,50
     if "." in digits and "," in digits:
         if digits.rindex(".") > digits.rindex(","):
-            # 1,500.00  →  punto decimal
+            # 1,500.00  Ã¢â€ â€™  punto decimal
             digits = digits.replace(",", "")
         else:
-            # 1.500,00  →  coma decimal
+            # 1.500,00  Ã¢â€ â€™  coma decimal
             digits = digits.replace(".", "").replace(",", ".")
     elif "," in digits:
-        # Si hay coma y no punto, podría ser decimal europeo o miles
+        # Si hay coma y no punto, podrÃƒÂ­a ser decimal europeo o miles
         parts = digits.split(",")
         if len(parts) == 2 and len(parts[1]) <= 2:
             digits = digits.replace(",", ".")  # decimal
@@ -405,15 +405,15 @@ def normalizar_int(raw: Any) -> Optional[int]:
 
 
 _DESC_NOISE = re.compile(
-    r"(compartí|comparte|seguinos|síguenos|instagram|facebook|whatsapp|"
-    r"twitter|linkedin|youtube|tel[eé]fono\s*:?\s*[\d\s\-\+]+|"
-    r"copyright|todos los derechos|aviso legal|política de privacidad|"
-    r"cookies|newsletter|suscrib[ií]|registr[aá]te|inicia sesión)",
+    r"(compartÃƒÂ­|comparte|seguinos|sÃƒÂ­guenos|instagram|facebook|whatsapp|"
+    r"twitter|linkedin|youtube|tel[eÃƒÂ©]fono\s*:?\s*[\d\s\-\+]+|"
+    r"copyright|todos los derechos|aviso legal|polÃƒÂ­tica de privacidad|"
+    r"cookies|newsletter|suscrib[iÃƒÂ­]|registr[aÃƒÂ¡]te|inicia sesiÃƒÂ³n)",
     re.IGNORECASE,
 )
 
 def limpiar_descripcion(texto: Optional[str]) -> Optional[str]:
-    """Elimina ruido de redes sociales, teléfonos y boilerplate de la descripción."""
+    """Elimina ruido de redes sociales, telÃƒÂ©fonos y boilerplate de la descripciÃƒÂ³n."""
     if not texto:
         return None
     lines = []
@@ -445,7 +445,7 @@ def calcular_score(prop: Dict) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Deduplicación
+# DeduplicaciÃƒÂ³n
 # ---------------------------------------------------------------------------
 
 _DEDUP_TRACKING_QUERY_PARAMS = {
@@ -591,7 +591,7 @@ def _deadline_remaining_seconds(deadline: Optional[float]) -> float:
 def _check_deadline(deadline: Optional[float], label: str) -> None:
     if deadline is not None and time.time() >= deadline:
         if label == "item":
-            raise ItemTimeoutError("item_timeout: Tiempo mÃ¡ximo por inmobiliaria excedido")
+            raise ItemTimeoutError("item_timeout: Tiempo mÃƒÆ’Ã‚Â¡ximo por inmobiliaria excedido")
         raise StrategyTimeoutError(f"timeout_{label}: excedio el limite configurado")
 
 
@@ -1419,7 +1419,7 @@ class SupabasePropiedades:
             pass
 
     def upsert_job(self, job: Dict) -> Dict:
-        """Inserción individual — solo se usa como fallback."""
+        """InserciÃƒÂ³n individual Ã¢â‚¬â€ solo se usa como fallback."""
         try:
             r = self.session.post(
                 f"{SUPABASE_URL}/rest/v1/scraping_jobs",
@@ -1450,7 +1450,7 @@ class SupabasePropiedades:
                 if isinstance(created, list):
                     return {row["inmobiliaria_id"]: row["id"] for row in created if "id" in row}
         except Exception as e:
-            logger.warning("bulk_create_jobs falló: %s", e)
+            logger.warning("bulk_create_jobs fallÃƒÂ³: %s", e)
         return {}
 
     def update_job(self, job_id: int, patch: Dict) -> None:
@@ -1462,7 +1462,7 @@ class SupabasePropiedades:
             timeout=20,
         )
         if r.status_code not in {200, 204}:
-            logger.warning("update_job %s → %s", job_id, r.status_code)
+            logger.warning("update_job %s Ã¢â€ â€™ %s", job_id, r.status_code)
 
     # ------ Scraping control queue ------
 
@@ -2204,7 +2204,7 @@ class SupabasePropiedades:
     def mark_inactivos(self, inmob_id: int, active_hashes: set) -> int:
         """
         Marca como 'inactivo' las propiedades de esta agencia que ya no
-        aparecen en el listado actual. Retorna cuántas se marcaron.
+        aparecen en el listado actual. Retorna cuÃƒÂ¡ntas se marcaron.
         """
         if not active_hashes:
             return 0
@@ -2263,13 +2263,13 @@ def _http_get(url: str, session: requests.Session, timeout: int = 20,
     r = session.get(url, headers=headers, timeout=timeout_value, verify=False, **kwargs)
     # Si bloqueado y tenemos ScraperAPI, reintentar
     if use_scraper_on_block and r.status_code in (403, 429, 503) and SCRAPERAPI_KEY:
-        logger.debug("Bloqueado (%s) → reintentando con ScraperAPI: %s", r.status_code, url)
+        logger.debug("Bloqueado (%s) Ã¢â€ â€™ reintentando con ScraperAPI: %s", r.status_code, url)
         r = _scraperapi_get(url, session, timeout)
     return r
 
 
 def _decode_response_text(response: requests.Response) -> str:
-    """Devuelve HTML con encoding razonable para evitar mojibake tipo Ã³."""
+    """Devuelve HTML con encoding razonable para evitar mojibake tipo ÃƒÆ’Ã‚Â³."""
     try:
         if not response.encoding or response.encoding.lower() in {"iso-8859-1", "windows-1252"}:
             response.encoding = response.apparent_encoding or "utf-8"
@@ -2301,7 +2301,7 @@ def _fix_mojibake_text(value: Any) -> str:
     if value is None:
         return ""
     text = str(value).replace("\xa0", " ")
-    if "Ã" in text or "Â" in text or "â" in text:
+    if "ÃƒÆ’" in text or "Ãƒâ€š" in text or "ÃƒÂ¢" in text:
         try:
             repaired = text.encode("latin1", errors="ignore").decode("utf-8", errors="ignore")
             if repaired and len(repaired.strip()) >= max(3, int(len(text.strip()) * 0.6)):
@@ -2312,7 +2312,7 @@ def _fix_mojibake_text(value: Any) -> str:
 
 
 def _scraperapi_get(url: str, session: requests.Session, timeout: int = 30, js_render: bool = False) -> requests.Response:
-    """Request via ScraperAPI — bypass blocks, CAPTCHAs, rate limits."""
+    """Request via ScraperAPI Ã¢â‚¬â€ bypass blocks, CAPTCHAs, rate limits."""
     if not SCRAPERAPI_KEY:
         return _http_get(url, session, timeout, use_scraper_on_block=False)
     params = {
@@ -2335,7 +2335,7 @@ _GMAPS_RE = re.compile(
 _GMAPS_EMBED_RE = re.compile(r'src="[^"]*google\.com/maps/embed[^"]*"', re.IGNORECASE)
 
 def extraer_coordenadas_gmaps(html: str) -> Tuple[Optional[float], Optional[float]]:
-    """Extrae lat/lon de iframes de Google Maps embebidos en la página."""
+    """Extrae lat/lon de iframes de Google Maps embebidos en la pÃƒÂ¡gina."""
     # Buscar en src del iframe
     for m_src in _GMAPS_EMBED_RE.finditer(html):
         m = _GMAPS_RE.search(m_src.group())
@@ -2358,7 +2358,7 @@ def extraer_coordenadas_gmaps(html: str) -> Tuple[Optional[float], Optional[floa
 
 
 # ---------------------------------------------------------------------------
-# Geocodificación (Nominatim / OpenStreetMap — gratuito)
+# GeocodificaciÃƒÂ³n (Nominatim / OpenStreetMap Ã¢â‚¬â€ gratuito)
 # ---------------------------------------------------------------------------
 
 _GEO_CACHE: Dict[str, Tuple[Optional[float], Optional[float]]] = {}
@@ -2370,8 +2370,8 @@ def geocodificar_direccion(
     direccion: str, ciudad: str = "", provincia: str = ""
 ) -> Tuple[Optional[float], Optional[float]]:
     """
-    Convierte una dirección en lat/lon usando Nominatim (OpenStreetMap).
-    Gratuito, sin API key. Límite: 1 req/s.
+    Convierte una direcciÃƒÂ³n en lat/lon usando Nominatim (OpenStreetMap).
+    Gratuito, sin API key. LÃƒÂ­mite: 1 req/s.
     Cachea resultados en memoria para evitar llamadas repetidas.
     """
     query = ", ".join(filter(None, [direccion, ciudad, provincia, "Argentina"]))
@@ -2415,16 +2415,16 @@ _AMENITIES_KW: Dict[str, str] = {
     "gimnasio": "gimnasio", "gym": "gimnasio",
     "parrilla": "parrilla", "quincho": "quincho",
     "seguridad 24": "seguridad 24hs", "vigilancia 24": "seguridad 24hs",
-    "portero": "portero eléctrico",
-    "lavandería": "lavandería", "laundry": "lavandería", "lavadero": "lavandería",
-    "salón de usos múltiples": "sum", "sum ": "sum",
+    "portero": "portero elÃƒÂ©ctrico",
+    "lavanderÃƒÂ­a": "lavanderÃƒÂ­a", "laundry": "lavanderÃƒÂ­a", "lavadero": "lavanderÃƒÂ­a",
+    "salÃƒÂ³n de usos mÃƒÂºltiples": "sum", "sum ": "sum",
     "terraza": "terraza", "solarium": "solarium",
     "baulera": "baulera",
     "ascensor": "ascensor", "elevator": "ascensor",
-    "jardín": "jardín", "jardin": "jardín",
-    "balcón": "balcón", "balcon": "balcón",
+    "jardÃƒÂ­n": "jardÃƒÂ­n", "jardin": "jardÃƒÂ­n",
+    "balcÃƒÂ³n": "balcÃƒÂ³n", "balcon": "balcÃƒÂ³n",
     "aire acondicionado": "aire acondicionado",
-    "calefacción central": "calefacción central", "calefaccion central": "calefacción central",
+    "calefacciÃƒÂ³n central": "calefacciÃƒÂ³n central", "calefaccion central": "calefacciÃƒÂ³n central",
     "microcine": "microcine", "home cinema": "microcine",
     "coworking": "coworking",
     "pet friendly": "pet friendly", "mascotas permitidas": "mascotas permitidas",
@@ -2437,7 +2437,7 @@ _AMENITIES_KW: Dict[str, str] = {
 
 
 def extraer_amenities_html(soup: BeautifulSoup, page_text: str = "") -> Optional[List[str]]:
-    """Extrae amenities de elementos HTML y texto de la página."""
+    """Extrae amenities de elementos HTML y texto de la pÃƒÂ¡gina."""
     found: set = set()
     text_lower = (page_text or soup.get_text(" ")).lower()
 
@@ -2461,11 +2461,11 @@ def extraer_amenities_html(soup: BeautifulSoup, page_text: str = "") -> Optional
 
 
 _GROQ_LOCK = threading.Lock()
-_GROQ_LAST = [0.0]  # timestamp del último request
+_GROQ_LAST = [0.0]  # timestamp del ÃƒÂºltimo request
 
 def _ai_extraer_propiedad(html_text: str, url: str, inmob: Dict) -> Optional[Dict]:
     """
-    Última instancia: usa Groq llama para extraer datos estructurados de HTML limpio.
+    ÃƒÅ¡ltima instancia: usa Groq llama para extraer datos estructurados de HTML limpio.
     Solo se llama cuando todas las otras estrategias fallaron.
     """
     if not GROQ_API_KEY:
@@ -2480,12 +2480,12 @@ def _ai_extraer_propiedad(html_text: str, url: str, inmob: Dict) -> Optional[Dic
     texto = texto[:3500]
 
     prompt = f"""Sos un extractor de datos de propiedades inmobiliarias argentinas.
-Del siguiente texto de una página web, extraé los datos de la propiedad en JSON.
-Si un campo no está disponible, usá null.
+Del siguiente texto de una pÃƒÂ¡gina web, extraÃƒÂ© los datos de la propiedad en JSON.
+Si un campo no estÃƒÂ¡ disponible, usÃƒÂ¡ null.
 
 Campos requeridos:
-- titulo (string): título de la publicación
-- precio (number): precio numérico sin símbolos
+- titulo (string): tÃƒÂ­tulo de la publicaciÃƒÂ³n
+- precio (number): precio numÃƒÂ©rico sin sÃƒÂ­mbolos
 - moneda (string): "USD" o "ARS"
 - tipo_propiedad (string): casa/departamento/ph/local/oficina/terreno/campo/cochera/galpon/deposito/hotel/otro
 - operacion (string): venta/alquiler/alquiler_temporario
@@ -2500,12 +2500,12 @@ Campos requeridos:
 - agente_nombre (string o null)
 - agente_telefono (string o null)
 
-Respondé SOLO con el JSON, sin texto adicional.
+RespondÃƒÂ© SOLO con el JSON, sin texto adicional.
 
-TEXTO DE LA PÁGINA:
+TEXTO DE LA PÃƒÂGINA:
 {texto}"""
 
-    # Rate limit: mínimo 2s entre requests Groq
+    # Rate limit: mÃƒÂ­nimo 2s entre requests Groq
     with _GROQ_LOCK:
         espera = 2.0 - (time.time() - _GROQ_LAST[0])
         if espera > 0:
@@ -2527,7 +2527,7 @@ TEXTO DE LA PÁGINA:
             _GROQ_LAST[0] = time.time()
 
         if resp.status_code == 429:
-            logger.debug("Groq 429 — saltando AI fallback")
+            logger.debug("Groq 429 Ã¢â‚¬â€ saltando AI fallback")
             return None
         if resp.status_code != 200:
             return None
@@ -2585,19 +2585,19 @@ TEXTO DE LA PÁGINA:
         "estado":              "activo",
     }
     prop["score_calidad"] = calcular_score(prop)
-    logger.info("  ✓ AI extrajo: %s %s %s", prop.get("tipo_propiedad"), prop.get("operacion"), prop.get("precio"))
+    logger.info("  Ã¢Å“â€œ AI extrajo: %s %s %s", prop.get("tipo_propiedad"), prop.get("operacion"), prop.get("precio"))
     return prop
 
 
 _TEL_RE = re.compile(
-    r"(?:tel[eé]fono|celular|cel|whatsapp|contacto|llamar)[:\s]*"
+    r"(?:tel[eÃƒÂ©]fono|celular|cel|whatsapp|contacto|llamar)[:\s]*"
     r"([\+\d\s\-\(\)]{7,20})",
     re.IGNORECASE,
 )
 _TEL_CLEAN_RE = re.compile(r"[^\d\+]")
 
 def extraer_agente(soup: BeautifulSoup) -> Tuple[Optional[str], Optional[str]]:
-    """Extrae nombre del agente y teléfono de contacto del HTML."""
+    """Extrae nombre del agente y telÃƒÂ©fono de contacto del HTML."""
     nombre = None
     telefono = None
 
@@ -2612,7 +2612,7 @@ def extraer_agente(soup: BeautifulSoup) -> Tuple[Optional[str], Optional[str]]:
                 nombre = txt
                 break
 
-    # Teléfono
+    # TelÃƒÂ©fono
     text = soup.get_text(" ")
     m = _TEL_RE.search(text)
     if m:
@@ -2620,7 +2620,7 @@ def extraer_agente(soup: BeautifulSoup) -> Tuple[Optional[str], Optional[str]]:
         if 7 <= len(tel) <= 15:
             telefono = m.group(1).strip()
 
-    # Buscar también en links tel:
+    # Buscar tambiÃƒÂ©n en links tel:
     for a in soup.select("a[href^='tel:'], a[href^='callto:']"):
         href = a.get("href", "")
         tel = _TEL_CLEAN_RE.sub("", href.replace("tel:", "").replace("callto:", ""))
@@ -3003,7 +3003,7 @@ _LOCATION_ALIASES: List[Dict[str, Any]] = [
             "potrero de garay, cordoba",
         ),
         "ciudad": "Potrero de Garay",
-        "provincia": "Córdoba",
+        "provincia": "CÃƒÂ³rdoba",
         "motivo": "titulo_url_contiene_potrero_de_garay",
         "specific": True,
         "clear_barrio": True,
@@ -3016,19 +3016,19 @@ _LOCATION_ALIASES: List[Dict[str, Any]] = [
         "specific": True,
     },
     {
-        "aliases": ("san jose del rincon", "san jose rincon", "san josé del rincón"),
-        "ciudad": "San José del Rincón",
+        "aliases": ("san jose del rincon", "san jose rincon", "san josÃƒÂ© del rincÃƒÂ³n"),
+        "ciudad": "San JosÃƒÂ© del RincÃƒÂ³n",
         "provincia": "Santa Fe",
     },
     {
         "aliases": ("villa carlos paz",),
         "ciudad": "Villa Carlos Paz",
-        "provincia": "Córdoba",
+        "provincia": "CÃƒÂ³rdoba",
     },
     {
         "aliases": ("san carlos de bariloche", "bariloche"),
         "ciudad": "San Carlos de Bariloche",
-        "provincia": "Río Negro",
+        "provincia": "RÃƒÂ­o Negro",
     },
     {
         "aliases": ("pueblo esther",),
@@ -3036,8 +3036,8 @@ _LOCATION_ALIASES: List[Dict[str, Any]] = [
         "provincia": "Santa Fe",
     },
     {
-        "aliases": ("roldan", "roldán"),
-        "ciudad": "Roldán",
+        "aliases": ("roldan", "roldÃƒÂ¡n"),
+        "ciudad": "RoldÃƒÂ¡n",
         "provincia": "Santa Fe",
     },
     {
@@ -3046,13 +3046,13 @@ _LOCATION_ALIASES: List[Dict[str, Any]] = [
         "provincia": "Santa Fe",
     },
     {
-        "aliases": ("cosquin", "cosquín"),
-        "ciudad": "Cosquín",
-        "provincia": "Córdoba",
+        "aliases": ("cosquin", "cosquÃƒÂ­n"),
+        "ciudad": "CosquÃƒÂ­n",
+        "provincia": "CÃƒÂ³rdoba",
     },
     {
-        "aliases": ("mar del tuyu", "mar del tuyÃº"),
-        "ciudad": "Mar del TuyÃº",
+        "aliases": ("mar del tuyu", "mar del tuyÃƒÆ’Ã‚Âº"),
+        "ciudad": "Mar del TuyÃƒÆ’Ã‚Âº",
         "provincia": "Buenos Aires",
     },
     {
@@ -3081,8 +3081,8 @@ _LOCATION_ALIASES: List[Dict[str, Any]] = [
         "provincia": "Capital Federal",
     },
     {
-        "aliases": ("sarandi", "sarandÃ­"),
-        "ciudad": "SarandÃ­",
+        "aliases": ("sarandi", "sarandÃƒÆ’Ã‚Â­"),
+        "ciudad": "SarandÃƒÆ’Ã‚Â­",
         "provincia": "Buenos Aires",
     },
     {
@@ -3096,8 +3096,8 @@ _LOCATION_ALIASES: List[Dict[str, Any]] = [
         "provincia": "Buenos Aires",
     },
     {
-        "aliases": ("lanus", "lanÃºs"),
-        "ciudad": "LanÃºs",
+        "aliases": ("lanus", "lanÃƒÆ’Ã‚Âºs"),
+        "ciudad": "LanÃƒÆ’Ã‚Âºs",
         "provincia": "Buenos Aires",
     },
     {
@@ -3129,6 +3129,96 @@ _LOCATION_ALIASES: List[Dict[str, Any]] = [
         "aliases": ("san vicente",),
         "ciudad": "San Vicente",
         "provincia": "Buenos Aires",
+    },
+    {
+        "aliases": ("santo tome", "santo tom\u00e9"),
+        "ciudad": "Santo Tom\u00e9",
+        "provincia": "Santa Fe",
+    },
+    {
+        "aliases": ("gualeguaychu", "gualeguaych\u00fa"),
+        "ciudad": "Gualeguaych\u00fa",
+        "provincia": "Entre R\u00edos",
+    },
+    {
+        "aliases": ("federacion", "federaci\u00f3n"),
+        "ciudad": "Federaci\u00f3n",
+        "provincia": "Entre R\u00edos",
+    },
+    {
+        "aliases": ("concordia",),
+        "ciudad": "Concordia",
+        "provincia": "Entre R\u00edos",
+    },
+    {
+        "aliases": ("moron", "mor\u00f3n"),
+        "ciudad": "Mor\u00f3n",
+        "provincia": "Buenos Aires",
+    },
+    {
+        "aliases": ("ituzaingo", "ituzaing\u00f3"),
+        "ciudad": "Ituzaing\u00f3",
+        "provincia": "Buenos Aires",
+    },
+    {
+        "aliases": ("pinamar",),
+        "ciudad": "Pinamar",
+        "provincia": "Buenos Aires",
+    },
+    {
+        "aliases": ("pilar",),
+        "ciudad": "Pilar",
+        "provincia": "Buenos Aires",
+    },
+    {
+        "aliases": ("castelar",),
+        "ciudad": "Castelar",
+        "provincia": "Buenos Aires",
+    },
+    {
+        "aliases": ("beccar",),
+        "ciudad": "Beccar",
+        "provincia": "Buenos Aires",
+    },
+    {
+        "aliases": ("palermo",),
+        "ciudad": "Palermo",
+        "provincia": "Capital Federal",
+    },
+    {
+        "aliases": ("san isidro",),
+        "ciudad": "San Isidro",
+        "provincia": "Buenos Aires",
+    },
+    {
+        "aliases": ("tigre",),
+        "ciudad": "Tigre",
+        "provincia": "Buenos Aires",
+    },
+    {
+        "aliases": ("lujan", "luj\u00e1n"),
+        "ciudad": "Luj\u00e1n",
+        "provincia": "Buenos Aires",
+    },
+    {
+        "aliases": ("rio cuarto", "r\u00edo cuarto"),
+        "ciudad": "R\u00edo Cuarto",
+        "provincia": "C\u00f3rdoba",
+    },
+    {
+        "aliases": ("punta del este",),
+        "ciudad": "Punta del Este",
+        "provincia": "Maldonado",
+    },
+    {
+        "aliases": ("la barra",),
+        "ciudad": "La Barra",
+        "provincia": "Maldonado",
+    },
+    {
+        "aliases": ("montevideo",),
+        "ciudad": "Montevideo",
+        "provincia": "Montevideo",
     },
     {
         "aliases": ("avellaneda",),
@@ -3257,7 +3347,7 @@ def _has_rosario_city_signal(text: str, ciudad: Any = None, provincia: Any = Non
 def _has_mar_del_plata_street_context(text: str) -> bool:
     if re.search(r"\bmar\s+del\s+plata\s+(?:al\s+)?\d{1,5}\b", text):
         return True
-    return bool(re.search(r"\b(?:y|esquina|esq|interseccion|intersecci[oó]n)\s+mar\s+del\s+plata\b", text))
+    return bool(re.search(r"\b(?:y|esquina|esq|interseccion|intersecci[oÃƒÂ³]n)\s+mar\s+del\s+plata\b", text))
 
 
 def _has_mar_del_plata_city_signal(text: str, ciudad: Any = None, provincia: Any = None) -> bool:
@@ -3302,7 +3392,7 @@ def _detect_location_from_text(
     if _text_contains_location_alias(text, "potrero de garay"):
         return {
             "ciudad": "Potrero de Garay",
-            "provincia": "Córdoba",
+            "provincia": "CÃƒÂ³rdoba",
             "motivo": "titulo_url_contiene_potrero_de_garay",
             "clear_barrio": True,
         }
@@ -3314,7 +3404,7 @@ def _detect_location_from_text(
         re.search(r"\b(?:en|ubicad[oa]\s+en)\s+cordoba\s+capital\b", text)
         and not _text_contains_location_alias(text, "potrero de garay")
     ):
-        return {"ciudad": "Córdoba", "provincia": "Córdoba", "motivo": "titulo_url_cordoba_capital"}
+        return {"ciudad": "CÃƒÂ³rdoba", "provincia": "CÃƒÂ³rdoba", "motivo": "titulo_url_cordoba_capital"}
 
     if re.search(r"\b(?:en|ubicad[oa]\s+en)\s+9\s+de\s+julio\b(?!\s+\d)", text):
         return {"ciudad": "9 de Julio", "provincia": "Buenos Aires", "motivo": "titulo_url_9_de_julio"}
@@ -3648,6 +3738,26 @@ CANONICAL_LOCATION_NAMES = {
     "monsenor piaggio": "Monse\u00f1or Piaggio",
     "monse or piaggio": "Monse\u00f1or Piaggio",
     "bahia blanca": "Bah\u00eda Blanca",
+    "santo tome": "Santo Tom\u00e9",
+    "gualeguaychu": "Gualeguaych\u00fa",
+    "entre rios": "Entre R\u00edos",
+    "federacion": "Federaci\u00f3n",
+    "moron": "Mor\u00f3n",
+    "ituzaingo": "Ituzaing\u00f3",
+    "pinamar": "Pinamar",
+    "pilar": "Pilar",
+    "castelar": "Castelar",
+    "beccar": "Beccar",
+    "palermo": "Palermo",
+    "san isidro": "San Isidro",
+    "tigre": "Tigre",
+    "lujan": "Luj\u00e1n",
+    "concordia": "Concordia",
+    "rio cuarto": "R\u00edo Cuarto",
+    "punta del este": "Punta del Este",
+    "la barra": "La Barra",
+    "maldonado": "Maldonado",
+    "montevideo": "Montevideo",
     "cordoba": "C\u00f3rdoba",
     "rio negro": "R\u00edo Negro",
     "san jose del rincon": "San Jos\u00e9 del Rinc\u00f3n",
@@ -3667,7 +3777,7 @@ def _repair_mojibake_text(value: Any) -> str:
         return ""
     repaired = text
     for _ in range(3):
-        if not any(marker in repaired for marker in ("Ã", "Â", "â")):
+        if not any(marker in repaired for marker in ("\u00c3", "\u00c2", "\u00e2")):
             break
         candidate = None
         for encoding in ("latin1", "cp1252"):
@@ -3734,7 +3844,11 @@ def _valid_coordinate_pair(values: Dict[str, Any]) -> bool:
 
 
 def _coordinate_location_key(value: Any) -> str:
-    text = unicodedata.normalize("NFKD", str(value or "").strip().lower())
+    raw_text = str(value or "").strip()
+    repair_func = globals().get("_repair_mojibake_text")
+    if callable(repair_func):
+        raw_text = repair_func(raw_text)
+    text = unicodedata.normalize("NFKD", raw_text.lower())
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
     return re.sub(r"[^a-z0-9]+", " ", text).strip()
 
@@ -4072,7 +4186,7 @@ def _collect_json_image_values(value: Any, out: List[str]) -> None:
 
 
 def _extraer_imagenes_legacy(soup: BeautifulSoup, base_url: str = "") -> List[str]:
-    """Extrae todas las imágenes de una propiedad, incluyendo lazy loading y srcset."""
+    """Extrae todas las imÃƒÂ¡genes de una propiedad, incluyendo lazy loading y srcset."""
     fotos: List[str] = []
     seen: set = set()
 
@@ -4092,7 +4206,7 @@ def _extraer_imagenes_legacy(soup: BeautifulSoup, base_url: str = "") -> List[st
                 seen.add(src)
                 fotos.append(src)
                 break
-        # srcset: tomar la imagen de mayor resolución
+        # srcset: tomar la imagen de mayor resoluciÃƒÂ³n
         srcset = img.get("srcset", "") or img.get("data-srcset", "")
         if srcset:
             parts = [p.strip().split(" ")[0] for p in srcset.split(",") if p.strip()]
@@ -4101,7 +4215,7 @@ def _extraer_imagenes_legacy(soup: BeautifulSoup, base_url: str = "") -> List[st
                     seen.add(src)
                     fotos.append(src)
 
-    # Buscar también en atributos data-background (sliders CSS)
+    # Buscar tambiÃƒÂ©n en atributos data-background (sliders CSS)
     for el in soup.select('[data-background], [data-bg], [style*="background-image"]'):
         bg = el.get("data-background") or el.get("data-bg", "")
         if not bg:
@@ -4112,7 +4226,7 @@ def _extraer_imagenes_legacy(soup: BeautifulSoup, base_url: str = "") -> List[st
             seen.add(bg)
             fotos.append(bg)
 
-    return fotos[:60]  # máximo 60 fotos
+    return fotos[:60]  # mÃƒÂ¡ximo 60 fotos
 
 
 def extraer_imagenes(
@@ -4472,7 +4586,7 @@ def _map_tokko_property(obj: Dict, inmob: Dict) -> Dict:
     # Tags / amenities
     amenities = [t.get("name", "") for t in obj.get("tags", []) if t.get("name")]
 
-    # Ubicación
+    # UbicaciÃƒÂ³n
     loc = obj.get("location", {}) or {}
 
     # Superficie
@@ -4575,13 +4689,13 @@ def strategy_tokko_api(inmob: Dict, session: requests.Session) -> List[Dict]:
                 if obj_id and (not obj.get("description") or not obj.get("latitude")):
                     detail = _fetch_tokko_detail(obj_id, key, session, inmob)
                     if detail and isinstance(detail, dict):
-                        # Merge: el detalle prevalece para campos vacíos
+                        # Merge: el detalle prevalece para campos vacÃƒÂ­os
                         for field in ("description", "latitude", "longitude",
                                       "real_address", "photos", "tags",
                                       "contact", "accepts_credits"):
                             if detail.get(field) and not obj.get(field):
                                 obj[field] = detail[field]
-                        # Fotos: usar las del detalle si tiene más
+                        # Fotos: usar las del detalle si tiene mÃƒÂ¡s
                         if detail.get("photos") and len(detail["photos"]) > len(obj.get("photos", [])):
                             obj["photos"] = detail["photos"]
                 return _map_tokko_property(obj, inmob)
@@ -4945,7 +5059,7 @@ def _parse_tokko_listing_cards(html: str, source_url: str, inmob: Dict) -> List[
             total_area = None
             rooms = None
             for txt in data_texts:
-                if total_area is None and re.search(r"m\s*(?:2|Â²|²)", txt, re.I):
+                if total_area is None and re.search(r"m\s*(?:2|Ãƒâ€šÃ‚Â²|Ã‚Â²)", txt, re.I):
                     total_area = normalizar_superficie(txt)
                 elif rooms is None:
                     maybe_room = normalizar_int(txt)
@@ -5188,7 +5302,7 @@ def strategy_tokko_html(inmob: Dict, session: requests.Session) -> List[Dict]:
 # ---------------------------------------------------------------------------
 
 def _looks_like_property_list(data: Any) -> bool:
-    """Heurística: JSON que contiene una lista con >=3 objetos con precio o título."""
+    """HeurÃƒÂ­stica: JSON que contiene una lista con >=3 objetos con precio o tÃƒÂ­tulo."""
     def check_list(lst: list) -> bool:
         if len(lst) < 3:
             return False
@@ -5223,7 +5337,7 @@ def _extract_list_from_json(data: Any) -> List[Dict]:
 
 
 def _generic_map_json(item: Dict, inmob: Dict) -> Dict:
-    """Mapeo genérico de un objeto JSON interceptado."""
+    """Mapeo genÃƒÂ©rico de un objeto JSON interceptado."""
     def get(*keys):
         for k in keys:
             for dk in item:
@@ -5276,7 +5390,7 @@ _TOKKO_KEY_RE = re.compile(r"[?&](?:key|api_key)=([a-zA-Z0-9_\-]{20,80})")
 
 
 def strategy_network_intercept(inmob: Dict, pw_context, session: Optional[requests.Session] = None) -> List[Dict]:
-    """Abre la página con Playwright e intercepta respuestas JSON con propiedades.
+    """Abre la pÃƒÂ¡gina con Playwright e intercepta respuestas JSON con propiedades.
     Si detecta una llamada a api.tokkobroker.com, extrae la key y usa la API directamente."""
     url_listado = inmob.get("url_listado") or inmob.get("web", "")
     if not url_listado:
@@ -5303,7 +5417,7 @@ def strategy_network_intercept(inmob: Dict, pw_context, session: Optional[reques
             if m:
                 with lock:
                     detected_tokko_key = m.group(1)
-            return  # No procesar el JSON aquí; lo haremos via API directamente
+            return  # No procesar el JSON aquÃƒÂ­; lo haremos via API directamente
 
         ct = response.headers.get("content-type", "")
         if "json" not in ct:
@@ -5357,7 +5471,7 @@ def strategy_network_intercept(inmob: Dict, pw_context, session: Optional[reques
             http_session = session or _make_http_session()
             return strategy_tokko_api(inmob, http_session)
 
-        # Paginación si detectamos otra API
+        # PaginaciÃƒÂ³n si detectamos otra API
         if detected_api_url and captured:
             page_num = 2
             while page_num <= 50:
@@ -5380,12 +5494,12 @@ def strategy_network_intercept(inmob: Dict, pw_context, session: Optional[reques
         _close_playwright_safely(page, "network_intercept page")
 
     if not captured:
-        raise RuntimeError("sin_propiedades: network intercept no encontró datos")
+        raise RuntimeError("sin_propiedades: network intercept no encontrÃƒÂ³ datos")
     return captured
 
 
 def _guess_next_api_url(base_url: str, page_num: int) -> Optional[str]:
-    """Intenta construir la URL de la siguiente página de la API interceptada."""
+    """Intenta construir la URL de la siguiente pÃƒÂ¡gina de la API interceptada."""
     # offset= pattern
     m = re.search(r"offset=(\d+)", base_url)
     if m:
@@ -5549,7 +5663,7 @@ def strategy_json_ld(inmob: Dict, session: requests.Session) -> List[Dict]:
             pass
 
     if not resultados:
-        raise RuntimeError("sin_propiedades: json-ld no encontró datos")
+        raise RuntimeError("sin_propiedades: json-ld no encontrÃƒÂ³ datos")
     return resultados
 
 
@@ -5696,7 +5810,7 @@ def _fetch_sitemap_urls(base: str, session: requests.Session, inmob: Optional[Di
 
 
 def _extract_detail_page(url: str, inmob: Dict, session: requests.Session) -> Optional[Dict]:
-    """Extrae datos de una página de detalle. Usa ScraperAPI si falla, AI si todo falla."""
+    """Extrae datos de una pÃƒÂ¡gina de detalle. Usa ScraperAPI si falla, AI si todo falla."""
     bounded_strategy = inmob.get("_strategy_name") in {
         "sitemap",
         "wordpress_html",
@@ -5722,7 +5836,7 @@ def _extract_detail_page(url: str, inmob: Dict, session: requests.Session) -> Op
     except Exception:
         pass
 
-    # Intento 2: ScraperAPI si falló o bloqueado
+    # Intento 2: ScraperAPI si fallÃƒÂ³ o bloqueado
     if not raw_html and SCRAPERAPI_KEY and not bounded_strategy:
         try:
             r2 = _scraperapi_get(url, session, timeout=30, js_render=False)
@@ -5762,10 +5876,10 @@ def _extract_detail_page(url: str, inmob: Dict, session: requests.Session) -> Op
         except Exception:
             pass
 
-    # Fallback: extracción heurística HTML
+    # Fallback: extracciÃƒÂ³n heurÃƒÂ­stica HTML
     prop = _html_extract_detail(soup, url, inmob, raw_html)
 
-    # Último recurso: IA
+    # ÃƒÅ¡ltimo recurso: IA
     if prop is None and GROQ_API_KEY:
         prop = _ai_extraer_propiedad(raw_html, url, inmob)
 
@@ -5774,21 +5888,21 @@ def _extract_detail_page(url: str, inmob: Dict, session: requests.Session) -> Op
 
 _GENERIC_BAD_TITLES = {
     "descripcion",
-    "descripción",
+    "descripciÃƒÂ³n",
     "detalle",
     "propiedad",
     "sin titulo",
-    "sin título",
+    "sin tÃƒÂ­tulo",
     "propiedad sin titulo",
-    "propiedad sin título",
+    "propiedad sin tÃƒÂ­tulo",
     "los resultados de su busqueda",
-    "los resultados de su búsqueda",
+    "los resultados de su bÃƒÂºsqueda",
 }
 
 
 _PROPERTY_TITLE_HINTS = re.compile(
     r"(venta|alquiler|casa|departamento|depto|monoambiente|terreno|lote|local|cochera|"
-    r"galpon|galp[oó]n|oficina|ph|ambiente|dormitorio|m2|pozo)",
+    r"galpon|galp[oÃƒÂ³]n|oficina|ph|ambiente|dormitorio|m2|pozo)",
     re.I,
 )
 
@@ -5802,7 +5916,7 @@ def _looks_like_agency_title(value: Any) -> bool:
         "inmobiliaria",
         "propiedades",
         "bienes raices",
-        "bienes raíces",
+        "bienes raÃƒÂ­ces",
         "operaciones inmobiliarias",
         "real estate",
     ))
@@ -5817,7 +5931,7 @@ def _is_useful_scraped_title(value: Any) -> bool:
     key = _normalize_text_key(text)
     if key in {_normalize_text_key(title) for title in _GENERIC_BAD_TITLES}:
         return False
-    if re.fullmatch(r"(descripcion|descripci[oó]n|detalle|propiedad)\s*:?", text, re.I):
+    if re.fullmatch(r"(descripcion|descripci[oÃƒÂ³]n|detalle|propiedad)\s*:?", text, re.I):
         return False
     return True
 
@@ -5883,7 +5997,7 @@ def _normalizar_precio_detalle(raw: Any) -> Tuple[Optional[float], str]:
 def _extract_address_from_text(text: str) -> str:
     fixed = _fix_mojibake_text(text)
     match = re.search(
-        r"\b([A-ZÁÉÍÓÚÑa-záéíóúñ][A-ZÁÉÍÓÚÑa-záéíóúñ.\s]{2,35}\s+\d{2,5}(?:\s*[A-Z]{0,2})?)\b",
+        r"\b([A-ZÃƒÂÃƒâ€°ÃƒÂÃƒâ€œÃƒÅ¡Ãƒâ€˜a-zÃƒÂ¡ÃƒÂ©ÃƒÂ­ÃƒÂ³ÃƒÂºÃƒÂ±][A-ZÃƒÂÃƒâ€°ÃƒÂÃƒâ€œÃƒÅ¡Ãƒâ€˜a-zÃƒÂ¡ÃƒÂ©ÃƒÂ­ÃƒÂ³ÃƒÂºÃƒÂ±.\s]{2,35}\s+\d{2,5}(?:\s*[A-Z]{0,2})?)\b",
         fixed,
     )
     return _fix_mojibake_text(match.group(1)) if match else ""
@@ -5891,7 +6005,7 @@ def _extract_address_from_text(text: str) -> str:
 
 def _html_extract_detail(soup: BeautifulSoup, url: str, inmob: Dict,
                          raw_html: str = "") -> Optional[Dict]:
-    """Extracción heurística de datos de detalle desde HTML."""
+    """ExtracciÃƒÂ³n heurÃƒÂ­stica de datos de detalle desde HTML."""
     def find_text(*selectors):
         for sel in selectors:
             el = soup.select_one(sel)
@@ -5950,7 +6064,7 @@ def _html_extract_detail(soup: BeautifulSoup, url: str, inmob: Dict,
     piso = find_text('[class*="piso"]', '[class*="floor"]', '[class*="planta"]') or None
 
     page_text_lower = page_text.lower()
-    apto_credito      = bool(re.search(r"apto\s+cr[eé]dito|acepta\s+cr[eé]dito|cr[eé]dito\s+hipotecario", page_text_lower))
+    apto_credito      = bool(re.search(r"apto\s+cr[eÃƒÂ©]dito|acepta\s+cr[eÃƒÂ©]dito|cr[eÃƒÂ©]dito\s+hipotecario", page_text_lower))
     apto_profesional  = bool(re.search(r"apto\s+profesional|uso\s+profesional", page_text_lower))
 
     # Video URL (YouTube/Vimeo embed)
@@ -6081,7 +6195,7 @@ def strategy_sitemap(inmob: Dict, session: requests.Session) -> List[Dict]:
         executor.shutdown(wait=False, cancel_futures=True)
 
     if not resultados:
-        raise RuntimeError("sin_propiedades: sitemap URLs encontradas pero sin datos extraíbles")
+        raise RuntimeError("sin_propiedades: sitemap URLs encontradas pero sin datos extraÃƒÂ­bles")
     return resultados
 
 
@@ -6092,7 +6206,7 @@ def strategy_sitemap(inmob: Dict, session: requests.Session) -> List[Dict]:
 _WORDPRESS_LISTING_KEYWORDS = (
     "propiedades", "propiedad", "inmuebles", "inmueble", "venta", "ventas",
     "alquiler", "alquileres", "emprendimiento", "emprendimientos",
-    "desarrollo", "desarrollos", "ver mas", "ver más", "detalle",
+    "desarrollo", "desarrollos", "ver mas", "ver mÃƒÂ¡s", "detalle",
 )
 
 _WORDPRESS_LISTING_PATHS = [
@@ -6353,7 +6467,7 @@ def _extract_wordpress_listing_links(html: str, current_url: str, base_url: str,
             if (
                 re.search(r"/page/\d+", full, re.I)
                 or re.search(r"[?&](paged|page)=\d+", full, re.I)
-                or any(word in text for word in ("siguiente", "next", ">", "mas", "mÃ¡s"))
+                or any(word in text for word in ("siguiente", "next", ">", "mas", "mÃƒÆ’Ã‚Â¡s"))
                 or "property-status" in full.lower()
                 or "property-type" in full.lower()
             ):
@@ -6667,7 +6781,7 @@ _UNIVERSAL_LISTING_KEYWORDS = (
     "propiedades", "propiedad", "inmuebles", "inmueble", "venta", "ventas",
     "alquiler", "alquileres", "emprendimiento", "emprendimientos",
     "desarrollo", "desarrollos", "buscar", "resultado", "listado",
-    "ficha", "detalle", "ver-mas", "ver-más", "ver mas", "ver más",
+    "ficha", "detalle", "ver-mas", "ver-mÃƒÂ¡s", "ver mas", "ver mÃƒÂ¡s",
 )
 
 _UNIVERSAL_LISTING_PATHS = [
@@ -6941,7 +7055,7 @@ def _parse_custom_listing_cards(html: str, source_url: str, inmob: Dict) -> List
         found = [
             node for node in soup.select(selector)
             if len(node.get_text(" ", strip=True)) >= 80
-            and re.search(r"(venta|alquiler|usd|u\$s|\$|amb|m2|mÂ²|departamento|casa|lote|terreno)", node.get_text(" ", strip=True), re.I)
+            and re.search(r"(venta|alquiler|usd|u\$s|\$|amb|m2|mÃƒâ€šÃ‚Â²|departamento|casa|lote|terreno)", node.get_text(" ", strip=True), re.I)
         ]
         if len(found) >= 2:
             cards = found[:80]
@@ -7108,7 +7222,7 @@ def strategy_custom_listing_detail(inmob: Dict, session: requests.Session) -> Li
 
 
 def strategy_static_html(inmob: Dict, session: requests.Session) -> List[Dict]:
-    """Extractor HTTP genérico: descubre links internos y parsea detalles sin browser."""
+    """Extractor HTTP genÃƒÂ©rico: descubre links internos y parsea detalles sin browser."""
     url_inicial = inmob.get("url_listado") or inmob.get("web", "")
     if not url_inicial:
         raise ValueError("sin_url_listado")
@@ -7348,12 +7462,12 @@ def _playwright_goto(page: Page, url: str, retries: int = 2, timeout_ms: int = P
             if attempt == retries - 1:
                 raise
             wait = min(2 ** attempt + random.uniform(0, 1), 3)
-            logger.debug("goto retry %d: %s — esperando %.1fs", attempt + 1, e, wait)
+            logger.debug("goto retry %d: %s Ã¢â‚¬â€ esperando %.1fs", attempt + 1, e, wait)
             time.sleep(wait)
 
 
 def _human_scroll(page: Page, deadline: Optional[float] = None) -> None:
-    """Simula scroll humano para evitar detección."""
+    """Simula scroll humano para evitar detecciÃƒÂ³n."""
     try:
         page.mouse.move(random.randint(100, 800), random.randint(100, 600))
         for _ in range(random.randint(2, 4)):
@@ -7447,7 +7561,7 @@ def _infer_card_selector(page: Page) -> Optional[str]:
 
 
 def _extract_cards_from_page(page: Page, card_sel: str, inmob: Dict, base_url: str) -> List[str]:
-    """Extrae URLs de propiedades de los cards en la página actual."""
+    """Extrae URLs de propiedades de los cards en la pÃƒÂ¡gina actual."""
     urls: List[str] = []
     _check_strategy_deadline(inmob, "html_scraper")
     try:
@@ -7465,8 +7579,8 @@ def _extract_cards_from_page(page: Page, card_sel: str, inmob: Dict, base_url: s
 
 
 def _detect_next_page_url(current_url: str, page: Page) -> Optional[str]:
-    """Detecta la URL de la siguiente página."""
-    # Patrón en URL actual
+    """Detecta la URL de la siguiente pÃƒÂ¡gina."""
+    # PatrÃƒÂ³n en URL actual
     for pattern, template in _PAGINATION_URL_PATTERNS:
         m = re.search(pattern, current_url)
         if m:
@@ -7475,13 +7589,13 @@ def _detect_next_page_url(current_url: str, page: Page) -> Optional[str]:
             new_url = re.sub(pattern, template.format(next_page), current_url)
             return new_url
 
-    # Si no tiene parámetro de página, intentar ?page=2
+    # Si no tiene parÃƒÂ¡metro de pÃƒÂ¡gina, intentar ?page=2
     sep = "&" if "?" in current_url else "?"
     return current_url + sep + "page=2"
 
 
 def _handle_click_pagination(page: Page) -> bool:
-    """Intenta hacer click en el botón Siguiente. Retorna True si tuvo éxito."""
+    """Intenta hacer click en el botÃƒÂ³n Siguiente. Retorna True si tuvo ÃƒÂ©xito."""
     next_selectors = [
         "a[rel='next']", ".next", ".siguiente", "[class*='next']",
         "a:has-text('Siguiente')", "a:has-text('siguiente')",
@@ -7501,8 +7615,8 @@ def _handle_click_pagination(page: Page) -> bool:
 
 
 def _playwright_extract_detail(page: Page, url: str, inmob: Dict) -> Optional[Dict]:
-    """Extrae datos de una página de detalle con Playwright (con imágenes activas)."""
-    # Habilitar imágenes para esta página
+    """Extrae datos de una pÃƒÂ¡gina de detalle con Playwright (con imÃƒÂ¡genes activas)."""
+    # Habilitar imÃƒÂ¡genes para esta pÃƒÂ¡gina
     page.unroute("**/*")
     try:
         _check_strategy_deadline(inmob, "html_scraper")
@@ -7548,12 +7662,12 @@ def _playwright_extract_detail(page: Page, url: str, inmob: Dict) -> Optional[Di
         # Piso
         piso = find_text("[class*='piso']", "[class*='floor']", "[class*='planta']") or None
 
-        # Apto crédito
+        # Apto crÃƒÂ©dito
         try:
             page_text_lower = page.inner_text("body", timeout=_bounded_playwright_timeout_ms(inmob, PLAYWRIGHT_ACTION_TIMEOUT_MS)).lower()
         except Exception:
             page_text_lower = ""
-        apto_credito = bool(re.search(r"apto\s+cr[eé]dito|acepta\s+cr[eé]dito|cr[eé]dito\s+hipotecario", page_text_lower))
+        apto_credito = bool(re.search(r"apto\s+cr[eÃƒÂ©]dito|acepta\s+cr[eÃƒÂ©]dito|cr[eÃƒÂ©]dito\s+hipotecario", page_text_lower))
         apto_profesional = bool(re.search(r"apto\s+profesional|uso\s+profesional", page_text_lower))
 
         # HTML completo para extractores avanzados
@@ -7674,7 +7788,7 @@ def strategy_html_playwright(inmob: Dict, pw_context) -> List[Dict]:
             else:
                 empty_pages = 0
 
-            # Paginación
+            # PaginaciÃƒÂ³n
             if tipo_pag == "scroll_infinito":
                 _check_strategy_deadline(inmob, "html_scraper")
                 prev_height = page.evaluate("document.body.scrollHeight")
@@ -7695,7 +7809,7 @@ def strategy_html_playwright(inmob: Dict, pw_context) -> List[Dict]:
                     _playwright_goto(page, next_url, retries=1, timeout_ms=_bounded_playwright_timeout_ms(inmob, PLAYWRIGHT_NAV_TIMEOUT_MS))
                     _human_scroll(page, deadline=_strategy_deadline(inmob))
                     page.wait_for_load_state("networkidle", timeout=_bounded_playwright_timeout_ms(inmob, PLAYWRIGHT_LOAD_TIMEOUT_MS))
-                    # Verificar que la página cargó contenido
+                    # Verificar que la pÃƒÂ¡gina cargÃƒÂ³ contenido
                     if _count_selector(page, card_sel) == 0:
                         break
                     current_url = page.url
@@ -7709,9 +7823,9 @@ def strategy_html_playwright(inmob: Dict, pw_context) -> List[Dict]:
         _close_playwright_safely(page, "html_scraper listing page")
 
     if not detail_urls:
-        raise RuntimeError("sin_propiedades: html_scraper no encontró URLs")
+        raise RuntimeError("sin_propiedades: html_scraper no encontrÃƒÂ³ URLs")
 
-    # Visitar páginas de detalle
+    # Visitar pÃƒÂ¡ginas de detalle
     detail_page = pw_context.new_page()
     try:
         detail_page.set_default_timeout(PLAYWRIGHT_ACTION_TIMEOUT_MS)
@@ -7771,7 +7885,7 @@ _CARD_SELECTORS_DETECT = [
 
 
 def _buscar_tokko_key_en_html(content: str) -> Optional[str]:
-    """Busca la API key de Tokko en el HTML/JS de una página."""
+    """Busca la API key de Tokko en el HTML/JS de una pÃƒÂ¡gina."""
     m = _TOKKO_KEY_HTML_RE.search(content)
     if m:
         return m.group(1)
@@ -7804,9 +7918,9 @@ def _tiene_cards(page, min_cards: int = 3) -> bool:
 
 def detect_strategy(inmob: Dict, session: requests.Session, pw_context) -> Dict:
     """
-    Fase de detección: visita el sitio y determina la mejor estrategia sin scrapear.
+    Fase de detecciÃƒÂ³n: visita el sitio y determina la mejor estrategia sin scrapear.
     Retorna un dict con los campos a guardar en inmobiliarias_main:
-      estrategia_scraping, tokko_api_key (si la detectó), url_listado
+      estrategia_scraping, tokko_api_key (si la detectÃƒÂ³), url_listado
     """
     url = inmob.get("url_listado") or inmob.get("web", "")
     resultado: Dict = {"estrategia_scraping": None}
@@ -7819,7 +7933,7 @@ def detect_strategy(inmob: Dict, session: requests.Session, pw_context) -> Dict:
         resultado["estrategia_scraping"] = "tokko_api"
         return resultado
 
-    # --- HTTP rápido: buscar Tokko key en HTML, JSON-LD y Sitemap ---
+    # --- HTTP rÃƒÂ¡pido: buscar Tokko key en HTML, JSON-LD y Sitemap ---
     try:
         r = _http_get(url, session, timeout=12)
         html = r.text
@@ -7894,7 +8008,7 @@ def detect_strategy(inmob: Dict, session: requests.Session, pw_context) -> Dict:
             except Exception:
                 pass
 
-        # Si no hay Tokko todavía, probar páginas de listado típicas
+        # Si no hay Tokko todavÃƒÂ­a, probar pÃƒÂ¡ginas de listado tÃƒÂ­picas
         if not detected_tokko_key and not _tiene_cards(page):
             for path in _LISTING_PATHS:
                 listing_url = homepage + path
@@ -9316,14 +9430,14 @@ def run_best_strategy(
         metadata["rejected_reason"] = issues
     raise RuntimeError(f"parsing_failed: ninguna estrategia alcanzo calidad minima; issues={issues}")
 
-    # --- Ir directo a la estrategia guardada (con fallback automático) ---
+    # --- Ir directo a la estrategia guardada (con fallback automÃƒÂ¡tico) ---
     if estrategia_guardada == "tokko_api" and inmob.get("tokko_api_key"):
-        logger.info("  → Tokko API (guardada)")
+        logger.info("  Ã¢â€ â€™ Tokko API (guardada)")
         try:
             props = call("tokko_api", lambda: strategy_tokko_api(inmob, session))
             return props, "tokko_api"
         except Exception as e:
-            logger.warning("  Tokko falló: %s — probando Network Intercept", e)
+            logger.warning("  Tokko fallÃƒÂ³: %s Ã¢â‚¬â€ probando Network Intercept", e)
             if network_available():
                 try:
                     props = call_network()
@@ -9332,12 +9446,12 @@ def run_best_strategy(
                     pass
 
     if estrategia_guardada == "json_ld":
-        logger.info("  → JSON-LD (guardada)")
+        logger.info("  Ã¢â€ â€™ JSON-LD (guardada)")
         try:
             props = call("json_ld", lambda: strategy_json_ld(inmob, session))
             return props, "json_ld"
         except Exception as e:
-            logger.warning("  JSON-LD falló: %s — probando Sitemap", e)
+            logger.warning("  JSON-LD fallÃƒÂ³: %s Ã¢â‚¬â€ probando Sitemap", e)
             try:
                 props = call("sitemap", lambda: strategy_sitemap(inmob, session))
                 return props, "sitemap"
@@ -9345,12 +9459,12 @@ def run_best_strategy(
                 pass
 
     if estrategia_guardada == "sitemap":
-        logger.info("  → Sitemap (guardada)")
+        logger.info("  Ã¢â€ â€™ Sitemap (guardada)")
         try:
             props = call("sitemap", lambda: strategy_sitemap(inmob, session))
             return props, "sitemap"
         except Exception as e:
-            logger.warning("  Sitemap falló: %s — probando JSON-LD", e)
+            logger.warning("  Sitemap fallÃƒÂ³: %s Ã¢â‚¬â€ probando JSON-LD", e)
             try:
                 props = call("json_ld", lambda: strategy_json_ld(inmob, session))
                 return props, "json_ld"
@@ -9363,12 +9477,12 @@ def run_best_strategy(
         estrategia_guardada = None
 
     if estrategia_guardada == "html":
-        logger.info("  → HTML Playwright (guardada)")
+        logger.info("  Ã¢â€ â€™ HTML Playwright (guardada)")
         try:
             props = call("html_scraper", lambda: strategy_html_playwright(inmob, pw_context))
             return props, "html_scraper"
         except Exception as e:
-            logger.warning("  HTML falló: %s — probando Network Intercept", e)
+            logger.warning("  HTML fallÃƒÂ³: %s Ã¢â‚¬â€ probando Network Intercept", e)
             if network_available():
                 try:
                     props = call_network()
@@ -9402,7 +9516,7 @@ def run_best_strategy(
             logger.warning("  Static HTML fallo: %s", e)
 
     if estrategia_guardada == "sin_estrategia":
-        # Dar una última oportunidad con Network Intercept
+        # Dar una ÃƒÂºltima oportunidad con Network Intercept
         if network_available():
             try:
                 props = call_network()
@@ -9411,24 +9525,24 @@ def run_best_strategy(
                 pass
         raise RuntimeError("sin_propiedades: sitio sin estrategia viable confirmada")
 
-    # --- Fallback completo: probar todas en orden (primera vez o re-detección) ---
+    # --- Fallback completo: probar todas en orden (primera vez o re-detecciÃƒÂ³n) ---
 
     # 1. Tokko API key conocida
     if inmob.get("tokko_api_key"):
         try:
-            logger.info("  → Tokko API")
+            logger.info("  Ã¢â€ â€™ Tokko API")
             props = call("tokko_api", lambda: strategy_tokko_api(inmob, session))
             return props, "tokko_api"
         except Exception as e:
-            logger.warning("  Tokko falló: %s", e)
+            logger.warning("  Tokko fallÃƒÂ³: %s", e)
 
     # 2. Network Interception (detecta Tokko key on-the-fly)
     try:
-        logger.info("  → Network Interception")
+        logger.info("  Ã¢â€ â€™ Network Interception")
         props = call_network()
         return props, "network_intercept"
     except Exception as e:
-        logger.warning("  Network Intercept falló: %s", e)
+        logger.warning("  Network Intercept fallÃƒÂ³: %s", e)
 
     if is_tokko_candidate and not tokko_html_failed:
         try:
@@ -9456,22 +9570,22 @@ def run_best_strategy(
 
     # 3. JSON-LD
     try:
-        logger.info("  → JSON-LD")
+        logger.info("  Ã¢â€ â€™ JSON-LD")
         props = call("json_ld", lambda: strategy_json_ld(inmob, session))
         return props, "json_ld"
     except Exception as e:
-        logger.warning("  JSON-LD falló: %s", e)
+        logger.warning("  JSON-LD fallÃƒÂ³: %s", e)
 
     # 4. Sitemap
     try:
-        logger.info("  → Sitemap")
+        logger.info("  Ã¢â€ â€™ Sitemap")
         props = call("sitemap", lambda: strategy_sitemap(inmob, session))
         return props, "sitemap"
     except Exception as e:
-        logger.warning("  Sitemap falló: %s", e)
+        logger.warning("  Sitemap fallÃƒÂ³: %s", e)
 
-    # 5. HTML Playwright (último recurso)
-    logger.info("  → HTML Playwright (último recurso)")
+    # 5. HTML Playwright (ÃƒÂºltimo recurso)
+    logger.info("  Ã¢â€ â€™ HTML Playwright (ÃƒÂºltimo recurso)")
     if not allow_playwright_fallback:
         inmob.setdefault("_scraper_metadata", {})["playwright_fallback_skipped"] = True
         diagnostic = diagnose_inmob(
@@ -9494,11 +9608,11 @@ def run_best_strategy(
 # ---------------------------------------------------------------------------
 
 def _make_detect_session() -> requests.Session:
-    """Sesión HTTP para detección: sin reintentos en DNS/conexión, falla rápido."""
+    """SesiÃƒÂ³n HTTP para detecciÃƒÂ³n: sin reintentos en DNS/conexiÃƒÂ³n, falla rÃƒÂ¡pido."""
     s = requests.Session()
     s.trust_env = False
     retry = Retry(
-        total=0,              # sin reintentos — falla rápido
+        total=0,              # sin reintentos Ã¢â‚¬â€ falla rÃƒÂ¡pido
         connect=0,
         read=1,               # 1 reintento solo para read timeouts
         status_forcelist=[429, 500, 502, 503],
@@ -9511,7 +9625,7 @@ def _make_detect_session() -> requests.Session:
 
 def _detect_http_only(inmob: Dict, session: requests.Session) -> Dict:
     """
-    Detección rápida SIN browser: JSON-LD y Sitemap vía HTTP.
+    DetecciÃƒÂ³n rÃƒÂ¡pida SIN browser: JSON-LD y Sitemap vÃƒÂ­a HTTP.
     Retorna el resultado si encuentra algo, o {"estrategia_scraping": None} si no.
     """
     url = inmob.get("url_listado") or inmob.get("web", "")
@@ -9551,10 +9665,10 @@ def _detect_http_only(inmob: Dict, session: requests.Session) -> Dict:
     except requests.exceptions.ConnectionError as e:
         if _es_dns_error(e):
             return {"estrategia_scraping": "dominio_caido"}
-        # SSL, connection refused, etc. → dejar que el browser lo intente
+        # SSL, connection refused, etc. Ã¢â€ â€™ dejar que el browser lo intente
         return {"estrategia_scraping": None}
     except Exception:
-        # Timeout u otro error → no sabemos si está caído, browser decide
+        # Timeout u otro error Ã¢â€ â€™ no sabemos si estÃƒÂ¡ caÃƒÂ­do, browser decide
         return {"estrategia_scraping": None}
 
     # Sitemap
@@ -9568,7 +9682,7 @@ def _detect_http_only(inmob: Dict, session: requests.Session) -> Dict:
         except Exception:
             pass
 
-    # Sin resultado HTTP → necesita browser
+    # Sin resultado HTTP Ã¢â€ â€™ necesita browser
     return {"estrategia_scraping": None}
 
 
@@ -9580,7 +9694,7 @@ def detect_worker_fn(
     lock: threading.Lock,
     stats: dict,
 ) -> None:
-    """Worker HTTP-only para detección. Sin browser (evita problemas de threading con Playwright)."""
+    """Worker HTTP-only para detecciÃƒÂ³n. Sin browser (evita problemas de threading con Playwright)."""
     session = _make_detect_session()
 
     while True:
@@ -9609,7 +9723,7 @@ def detect_worker_fn(
             estrategia = resultado.get("estrategia_scraping") or "necesita_browser"
             if resultado.get("estrategia_scraping"):
                 _save_estrategia(db, inmob["id"], resultado)
-            logger.info("[%d/%d] %s → %s", idx, total, nombre[:40], estrategia)
+            logger.info("[%d/%d] %s Ã¢â€ â€™ %s", idx, total, nombre[:40], estrategia)
             with lock:
                 stats[estrategia] = stats.get(estrategia, 0) + 1
         except Exception as exc:
@@ -9643,7 +9757,7 @@ def worker_fn(
                     idx = counter[0]
 
                 nombre = inmob.get("nombre", inmob.get("web", "?"))
-                logger.info("[%d/%d] %s — iniciando", idx, total, nombre)
+                logger.info("[%d/%d] %s Ã¢â‚¬â€ iniciando", idx, total, nombre)
 
                 # Marcar como corriendo
                 db.update_job(job["id"], {
@@ -9695,12 +9809,12 @@ def worker_fn(
                                 except Exception:
                                     pass
 
-                    # Marcar inactivas las propiedades que ya no están en el listado
+                    # Marcar inactivas las propiedades que ya no estÃƒÂ¡n en el listado
                     active_hashes = {p["hash_dedup"] for p in props}
                     inactivos = db.mark_inactivos(inmob["id"], active_hashes)
 
                     logger.info(
-                        "[%d/%d] %s → %s: %d extraídas, %d nuevas, %d geocodif., %d inactivas",
+                        "[%d/%d] %s Ã¢â€ â€™ %s: %d extraÃƒÂ­das, %d nuevas, %d geocodif., %d inactivas",
                         idx, total, nombre, estrategia, total_ext, nuevas, geo_count, inactivos,
                     )
                     db.update_job(job["id"], {
@@ -9727,7 +9841,7 @@ def worker_fn(
                         nuevo_estado = "fallido"
 
                     logger.error(
-                        "[%d/%d] %s → ERROR (%s): %s",
+                        "[%d/%d] %s Ã¢â€ â€™ ERROR (%s): %s",
                         idx, total, nombre, tipo_error, str(exc)[:200],
                     )
                     db.update_job(job["id"], {
@@ -9900,7 +10014,7 @@ def _item_timeout_control_error(
         url_usada=url_usada,
         estrategia_usada=estrategia_actual or "item_timeout",
         cantidad_paginas=0,
-        errores_relevantes=["Tiempo mÃ¡ximo por inmobiliaria excedido"],
+        errores_relevantes=["Tiempo mÃƒÆ’Ã‚Â¡ximo por inmobiliaria excedido"],
         extra={
             "timeout_seconds": timeout_seconds,
             "elapsed_seconds": elapsed,
@@ -9910,7 +10024,7 @@ def _item_timeout_control_error(
         },
     )
     return ScrapingControlError(
-        "item_timeout: Tiempo mÃ¡ximo por inmobiliaria excedido",
+        "item_timeout: Tiempo mÃƒÆ’Ã‚Â¡ximo por inmobiliaria excedido",
         metadata=metadata,
         final_url=url_usada,
         http_status=None,
@@ -10481,6 +10595,291 @@ def run_integrity_dry_run(max_items: Optional[int] = 5) -> None:
     logger.info("=" * 60)
 
 
+LOCATION_REPAIR_SELECT = "id,titulo,direccion,barrio,ciudad,provincia,pais,url,descripcion,inmobiliaria_id,updated_at"
+
+LOCATION_REPAIR_KNOWN_BAD_VALUES = [
+    "Bahia Blanca",
+    "bahia blanca",
+    "Santa fe",
+    "santa fe",
+    "Santo Tome",
+    "santo tome",
+    "Gualeguaychu",
+    "gualeguaychu",
+    "Entre Rios",
+    "entre rios",
+    "Federacion",
+    "federacion",
+    "Moron",
+    "moron",
+    "Sarandi",
+    "SarandÃ­",
+    "Lanus",
+    "LanÃºs",
+]
+
+
+def _append_unique_location_repair_rows(
+    rows: List[Dict[str, Any]],
+    seen_ids: set,
+    page: List[Dict[str, Any]],
+    scan_limit: int,
+) -> None:
+    for row in page:
+        row_id = row.get("id")
+        if row_id in seen_ids:
+            continue
+        seen_ids.add(row_id)
+        rows.append(row)
+        if len(rows) >= scan_limit:
+            break
+
+
+def _fetch_location_repair_rows_by_params(
+    db: SupabasePropiedades,
+    base_params: Dict[str, Any],
+    scan_limit: int,
+    rows: List[Dict[str, Any]],
+    seen_ids: set,
+) -> None:
+    page_size = min(max(scan_limit, 1), 1000)
+    offset = 0
+    while len(rows) < scan_limit:
+        current_limit = min(page_size, scan_limit - len(rows))
+        params = {
+            "select": LOCATION_REPAIR_SELECT,
+            "order": "id.asc",
+            "limit": current_limit,
+            "offset": offset,
+            **base_params,
+        }
+        r = db.session.get(
+            f"{SUPABASE_URL}/rest/v1/propiedades",
+            headers=db._headers,
+            params=params,
+            timeout=30,
+        )
+        r.raise_for_status()
+        page = r.json()
+        if not page:
+            break
+        _append_unique_location_repair_rows(rows, seen_ids, page, scan_limit)
+        if len(page) < current_limit:
+            break
+        offset += len(page)
+
+
+def _load_known_bad_location_repair_rows(
+    db: SupabasePropiedades,
+    scan_limit: int,
+    rows: List[Dict[str, Any]],
+    seen_ids: set,
+) -> None:
+    # Estas consultas dirigidas evitan depender solo de updated_at: un valor presente
+    # pero mal normalizado tambien debe entrar al repair aunque sea historico.
+    for field in ("ciudad", "provincia"):
+        for value in LOCATION_REPAIR_KNOWN_BAD_VALUES:
+            if len(rows) >= scan_limit:
+                return
+            _fetch_location_repair_rows_by_params(
+                db,
+                {field: f"eq.{value}"},
+                scan_limit=scan_limit,
+                rows=rows,
+                seen_ids=seen_ids,
+            )
+
+
+def _load_location_repair_scan_rows(db: SupabasePropiedades, scan_limit: int) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    seen_ids: set = set()
+
+    _load_known_bad_location_repair_rows(db, scan_limit=scan_limit, rows=rows, seen_ids=seen_ids)
+
+    for params in (
+        {"ciudad": "is.null"},
+        {"provincia": "is.null"},
+        {"ciudad": "eq."},
+        {"provincia": "eq."},
+    ):
+        if len(rows) >= scan_limit:
+            break
+        _fetch_location_repair_rows_by_params(
+            db,
+            params,
+            scan_limit=scan_limit,
+            rows=rows,
+            seen_ids=seen_ids,
+        )
+
+    if len(rows) < scan_limit:
+        _fetch_location_repair_rows_by_params(
+            db,
+            {},
+            scan_limit=scan_limit,
+            rows=rows,
+            seen_ids=seen_ids,
+        )
+    return rows
+
+
+def _row_text_for_location_detection(row: Dict[str, Any]) -> str:
+    return _location_text_key(
+        row.get("titulo"),
+        row.get("url"),
+        row.get("direccion"),
+        row.get("barrio"),
+        row.get("descripcion"),
+    )
+
+
+def _clear_ambiguous_street_city_for_repair(row: Dict[str, Any], work: Dict[str, Any]) -> Optional[str]:
+    city_key = _coordinate_location_key(work.get("ciudad"))
+    text = _row_text_for_location_detection(row)
+    if city_key in AMBIGUOUS_LOCATION_STREET_NAMES and _has_alias_street_context(text, city_key):
+        work["ciudad"] = ""
+        work["provincia"] = ""
+        return f"ciudad_ambigua_detectada_como_calle_{city_key}"
+    return None
+
+
+def _build_location_repair_proposal(
+    row: Dict[str, Any],
+    agency_row: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    stats = _new_update_protection_stats()
+    original_city = row.get("ciudad")
+    original_province = row.get("provincia")
+    original_country = row.get("pais")
+    work = dict(row)
+    if agency_row:
+        work["_agency_location_context"] = {
+            "id": agency_row.get("id"),
+            "nombre": _agency_row_name(agency_row),
+            "ciudad": agency_row.get("ciudad"),
+            "provincia": agency_row.get("provincia"),
+            "pais": agency_row.get("pais") or "Argentina",
+        }
+
+    ambiguous_reason = _clear_ambiguous_street_city_for_repair(row, work)
+    work = normalize_property_location_encoding(work, stats)
+    work = sanitize_property_location(work, stats)
+    work = apply_agency_location_fallback(work, stats)
+    work = normalize_property_location_encoding(work, stats)
+
+    patch: Dict[str, Any] = {}
+    new_city = work.get("ciudad")
+    new_province = work.get("provincia")
+    new_country = work.get("pais") or original_country
+    if _useful_text(new_city) and str(new_city).strip() != str(original_city or "").strip():
+        patch["ciudad"] = new_city
+    if _useful_text(new_province) and str(new_province).strip() != str(original_province or "").strip():
+        patch["provincia"] = new_province
+    if not _useful_text(original_country) and _useful_text(new_country):
+        patch["pais"] = new_country
+
+    if not patch:
+        return {}
+
+    reasons = []
+    if ambiguous_reason:
+        reasons.append(ambiguous_reason)
+    if work.get("_location_normalization_motivo"):
+        reasons.append(str(work.get("_location_normalization_motivo")))
+    if work.get("_ciudad_encoding_normalizada") or work.get("_provincia_encoding_normalizada"):
+        reasons.append("encoding_o_nombre_canonico_normalizado")
+    if work.get("_ubicacion_fallback_from_agency"):
+        reasons.append("fallback_from_inmobiliarias_main")
+    if not reasons:
+        reasons.append("ubicacion_normalizada_por_sanitizer")
+
+    return {
+        "property_id": row.get("id"),
+        "patch": patch,
+        "ciudad_anterior": original_city,
+        "provincia_anterior": original_province,
+        "ciudad_nueva": patch.get("ciudad", original_city),
+        "provincia_nueva": patch.get("provincia", original_province),
+        "motivo": ",".join(dict.fromkeys(reasons)),
+        "stats": stats,
+        "agency_id": agency_row.get("id") if agency_row else None,
+        "agency_ciudad": agency_row.get("ciudad") if agency_row else None,
+        "agency_provincia": agency_row.get("provincia") if agency_row else None,
+        "titulo": row.get("titulo"),
+        "url": row.get("url"),
+    }
+
+
+def _patch_property_location(db: SupabasePropiedades, property_id: Any, patch: Dict[str, Any]) -> str:
+    r = db.session.patch(
+        f"{SUPABASE_URL}/rest/v1/propiedades",
+        headers=db._headers_minimal,
+        params={"id": f"eq.{property_id}"},
+        json=patch,
+        timeout=20,
+    )
+    if r.status_code in {200, 204}:
+        return "updated"
+    raise RuntimeError(f"propiedades location repair {r.status_code}: {r.text[:500]}")
+
+
+def run_repair_existing_location_quality(limit: int = 100, dry_run: bool = True) -> None:
+    db = SupabasePropiedades()
+    target_limit = max(int(limit or 0), 0)
+    if target_limit <= 0:
+        logger.info("No se procesan reparaciones porque --limit=%s", limit)
+        return
+
+    scan_limit = max(target_limit * 20, 1000)
+    rows = _load_location_repair_scan_rows(db, scan_limit=scan_limit)
+    agency_cache: Dict[Any, Optional[Dict[str, Any]]] = {}
+    scanned = 0
+    candidates = 0
+    updated = 0
+    errors = 0
+
+    logger.info("=" * 60)
+    logger.info("REPAIR UBICACION EXISTENTE | dry_run=%s | limit=%d | scan_limit=%d", dry_run, target_limit, scan_limit)
+    logger.info("Campos que puede modificar: ciudad, provincia, pais si estaba vacio")
+    logger.info("No toca url_normalizada, hash_dedup, inmobiliaria_id, imagenes, precios ni geocoder")
+
+    for row in rows:
+        if candidates >= target_limit:
+            break
+        scanned += 1
+        agency_id = row.get("inmobiliaria_id")
+        if agency_id not in agency_cache:
+            agency_cache[agency_id] = db.load_main_agency_by_id(agency_id)
+        proposal = _build_location_repair_proposal(row, agency_cache.get(agency_id))
+        if not proposal:
+            continue
+        candidates += 1
+        logger.info(
+            "propiedad_id=%s | ciudad_anterior=%s | provincia_anterior=%s | ciudad_nueva=%s | provincia_nueva=%s | motivo=%s",
+            proposal.get("property_id"),
+            proposal.get("ciudad_anterior") or "-",
+            proposal.get("provincia_anterior") or "-",
+            proposal.get("ciudad_nueva") or "-",
+            proposal.get("provincia_nueva") or "-",
+            proposal.get("motivo"),
+        )
+        if dry_run:
+            logger.info("[dry-run] patch=%s", json.dumps(proposal.get("patch"), ensure_ascii=False, sort_keys=True))
+            continue
+        try:
+            status = _patch_property_location(db, proposal["property_id"], proposal["patch"])
+            updated += 1
+            logger.info("status=%s | propiedades.id=%s", status, proposal["property_id"])
+        except Exception as exc:
+            errors += 1
+            logger.error("status=error | propiedades.id=%s | %s", proposal.get("property_id"), str(exc)[:500])
+
+    logger.info("=" * 60)
+    logger.info("REPAIR UBICACION FINALIZADO")
+    logger.info("scanned=%d | candidates=%d | updated=%d | errors=%d | dry_run=%s", scanned, candidates, updated, errors, dry_run)
+    logger.info("=" * 60)
+
+
 def run_controlled_queue(
     max_items: Optional[int] = None,
     allow_playwright_fallback: bool = False,
@@ -10716,7 +11115,7 @@ def run(
     # =========================================================
     if detect_only:
         logger.info("=" * 60)
-        logger.info("MODO DETECCIÓN — sin scrapear propiedades")
+        logger.info("MODO DETECCIÃƒâ€œN Ã¢â‚¬â€ sin scrapear propiedades")
         logger.info("=" * 60)
 
         agency_q: queue.Queue = queue.Queue()
@@ -10748,19 +11147,19 @@ def run(
                              or a.get("estrategia_scraping") == "necesita_browser"]
 
         if necesitan_browser:
-            logger.info("Fase 2 — detección con browser: %d sitios", len(necesitan_browser))
-            http_session = _make_detect_session()  # sin reintentos → falla rápido en sitios lentos
+            logger.info("Fase 2 Ã¢â‚¬â€ detecciÃƒÂ³n con browser: %d sitios", len(necesitan_browser))
+            http_session = _make_detect_session()  # sin reintentos Ã¢â€ â€™ falla rÃƒÂ¡pido en sitios lentos
             with sync_playwright() as pw:
                 browser_inst, pw_context = _make_playwright_context(pw)
                 try:
                     for i, inmob in enumerate(necesitan_browser, 1):
                         nombre = inmob.get("nombre", inmob.get("web", "?"))
-                        logger.info("[%d/%d] %s — browser detect...", i, len(necesitan_browser), nombre[:40])
+                        logger.info("[%d/%d] %s Ã¢â‚¬â€ browser detect...", i, len(necesitan_browser), nombre[:40])
                         try:
                             resultado = detect_strategy(inmob, http_session, pw_context)
                             estrategia = resultado.get("estrategia_scraping", "sin_estrategia")
                             _save_estrategia(db, inmob["id"], resultado)
-                            logger.info("  → %s", estrategia)
+                            logger.info("  Ã¢â€ â€™ %s", estrategia)
                             stats[estrategia] = stats.get(estrategia, 0) + 1
                             # Quitar el conteo previo de "necesita_browser"
                             stats["necesita_browser"] = max(0, stats.get("necesita_browser", 1) - 1)
@@ -10775,7 +11174,7 @@ def run(
 
         elapsed = time.time() - t_inicio
         logger.info("=" * 60)
-        logger.info("DETECCIÓN COMPLETADA en %.1f min", elapsed / 60)
+        logger.info("DETECCIÃƒâ€œN COMPLETADA en %.1f min", elapsed / 60)
         for k, v in sorted(stats.items(), key=lambda x: -x[1]):
             if v > 0:
                 logger.info("  %-20s : %d", k, v)
@@ -10805,7 +11204,7 @@ def run(
         job = existing_by_inmob.get(inmob_id)
 
         if job is None:
-            # No existe → crear
+            # No existe Ã¢â€ â€™ crear
             new_jobs_data.append({
                 "inmobiliaria_id": inmob_id,
                 "estado": "pendiente",
@@ -10815,7 +11214,7 @@ def run(
                 "max_intentos": 4,
             })
         elif job["estado"] == "completado":
-            # Completado → verificar si pasaron 24 horas para refrescar
+            # Completado Ã¢â€ â€™ verificar si pasaron 24 horas para refrescar
             completado_en = job.get("completado_en")
             if completado_en:
                 try:
@@ -10826,9 +11225,9 @@ def run(
                         continue
                 except Exception:
                     pass
-            # Completado recientemente → saltar
+            # Completado recientemente Ã¢â€ â€™ saltar
         else:
-            # pendiente o fallido → encolar
+            # pendiente o fallido Ã¢â€ â€™ encolar
             job_pairs.append((job, inmob))
 
     # Resetear jobs completados que necesitan refresh
@@ -11058,7 +11457,7 @@ if __name__ == "__main__":
     parser.add_argument("--detect-only",  action="store_true",
                         help="Solo detectar estrategia de scraping por sitio, sin scrapear propiedades")
     parser.add_argument("--incremental",  action="store_true",
-                        help="Solo scrapear agencias no actualizadas en las últimas 6 horas")
+                        help="Solo scrapear agencias no actualizadas en las ÃƒÂºltimas 6 horas")
     parser.add_argument("--max-items",    type=int, default=None,
                         help="Limite de items a procesar desde scraping_run_items (ej: 5)")
     parser.add_argument("--test-url",     type=str, default=None,
@@ -11079,13 +11478,21 @@ if __name__ == "__main__":
                         help="Usar el flujo anterior basado en scraping_jobs")
     parser.add_argument("--integrity-dry-run", action="store_true",
                         help="Validar IDs canonicos de items pending sin consumir cola, scrapear ni guardar")
+    parser.add_argument("--repair-existing-location-quality", action="store_true",
+                        help="Reparar ciudad/provincia existentes usando sanitizer central de ubicacion")
+    parser.add_argument("--limit", type=int, default=100,
+                        help="Limite para modos tecnicos como --repair-existing-location-quality")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Mostrar cambios sin escribir en modos tecnicos compatibles")
     args = parser.parse_args()
 
     technical_mode = args.technical_review or args.retry_errors
     allow_network = args.allow_network_interception or technical_mode
     allow_playwright = args.allow_playwright_fallback or args.allow_playwright or technical_mode
 
-    if args.integrity_dry_run:
+    if args.repair_existing_location_quality:
+        run_repair_existing_location_quality(limit=args.limit, dry_run=args.dry_run)
+    elif args.integrity_dry_run:
         run_integrity_dry_run(max_items=args.max_items)
     elif args.diagnose_url:
         diagnose_single_url(
