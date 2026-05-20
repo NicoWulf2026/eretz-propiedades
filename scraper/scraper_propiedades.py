@@ -1778,6 +1778,7 @@ class SupabasePropiedades:
         else:
             clean.pop("url_normalizada", None)
         clean = sanitize_property_location(clean, getattr(self, "last_save_protection_stats", None))
+        clean = apply_agency_location_fallback(clean, getattr(self, "last_save_protection_stats", None))
         clean = sanitize_property_coordinates(clean, getattr(self, "last_save_protection_stats", None))
         clean = sanitize_property_prices(clean, getattr(self, "last_save_protection_stats", None))
         clean = sanitize_property_integers(clean, getattr(self, "last_save_protection_stats", None))
@@ -1809,6 +1810,18 @@ class SupabasePropiedades:
             clean["calidad_score"] = clean["score_calidad"]
 
         filtered = {key: value for key, value in clean.items() if key in columns}
+        for private_key in (
+            "_agency_location_context",
+            "_ubicacion_fallback_from_agency",
+            "_fallback_ciudad_from_agency",
+            "_fallback_provincia_from_agency",
+            "_original_city_before_agency_fallback",
+            "_original_province_before_agency_fallback",
+            "_ciudad_detectada_from_text",
+            "_provincia_detectada_from_text",
+        ):
+            if private_key in clean:
+                filtered[private_key] = clean.get(private_key)
         dropped = sorted(set(clean) - set(filtered))
         if dropped:
             logger.debug("Campos omitidos en propiedades: %s", ", ".join(dropped))
@@ -2782,6 +2795,10 @@ def _new_update_protection_stats() -> Dict[str, Any]:
         "dedup_por_hash": 0,
         "dedup_existing_duplicados": 0,
         "dedup_existing_duplicados_ejemplos": [],
+        "ubicacion_fallback_from_agency": 0,
+        "fallback_ciudad_from_agency": 0,
+        "fallback_provincia_from_agency": 0,
+        "ubicacion_fallback_from_agency_ejemplos": [],
     }
 
 
@@ -3021,6 +3038,76 @@ _LOCATION_ALIASES: List[Dict[str, Any]] = [
         "ciudad": "Cosquín",
         "provincia": "Córdoba",
     },
+    {
+        "aliases": ("mar del tuyu", "mar del tuyÃº"),
+        "ciudad": "Mar del TuyÃº",
+        "provincia": "Buenos Aires",
+    },
+    {
+        "aliases": ("san justo",),
+        "ciudad": "San Justo",
+        "provincia": "Buenos Aires",
+    },
+    {
+        "aliases": ("mataderos",),
+        "ciudad": "Mataderos",
+        "provincia": "Capital Federal",
+    },
+    {
+        "aliases": ("tandil",),
+        "ciudad": "Tandil",
+        "provincia": "Buenos Aires",
+    },
+    {
+        "aliases": ("capital federal", "caba", "ciudad autonoma de buenos aires"),
+        "ciudad": "Capital Federal",
+        "provincia": "Capital Federal",
+    },
+    {
+        "aliases": ("barracas",),
+        "ciudad": "Barracas",
+        "provincia": "Capital Federal",
+    },
+    {
+        "aliases": ("sarandi", "sarandÃ­"),
+        "ciudad": "SarandÃ­",
+        "provincia": "Buenos Aires",
+    },
+    {
+        "aliases": ("wilde",),
+        "ciudad": "Wilde",
+        "provincia": "Buenos Aires",
+    },
+    {
+        "aliases": ("gerli",),
+        "ciudad": "Gerli",
+        "provincia": "Buenos Aires",
+    },
+    {
+        "aliases": ("lanus", "lanÃºs"),
+        "ciudad": "LanÃºs",
+        "provincia": "Buenos Aires",
+    },
+    {
+        "aliases": ("quilmes",),
+        "ciudad": "Quilmes",
+        "provincia": "Buenos Aires",
+    },
+    {
+        "aliases": ("brandsen",),
+        "ciudad": "Brandsen",
+        "provincia": "Buenos Aires",
+    },
+    {
+        "aliases": ("san vicente",),
+        "ciudad": "San Vicente",
+        "provincia": "Buenos Aires",
+    },
+    {
+        "aliases": ("avellaneda",),
+        "ciudad": "Avellaneda",
+        "provincia": "Buenos Aires",
+    },
 ]
 
 
@@ -3229,6 +3316,15 @@ def _is_suspicious_location_value(value: Any) -> bool:
         "la capital",
         "rio negro",
         "buenos aires",
+        "g b a",
+        "gba",
+        "g b a zona sur",
+        "gba zona sur",
+        "gran buenos aires",
+        "gran buenos aires zona sur",
+        "zona sur",
+        "zona norte",
+        "zona oeste",
         "castellanos",
         "punilla",
         "maldonado",
@@ -3328,6 +3424,8 @@ def _record_location_normalization(stats: Optional[Dict[str, Any]], prop: Dict[s
             "location_normalized": True,
             "ciudad_original": normalized.get("ciudad_original"),
             "provincia_original": normalized.get("provincia_original"),
+            "ciudad_detectada_from_text": normalized.get("ciudad_final"),
+            "provincia_detectada_from_text": normalized.get("provincia_final"),
             "ciudad_final": normalized.get("ciudad_final"),
             "provincia_final": normalized.get("provincia_final"),
             "barrio_original": normalized.get("barrio_original"),
@@ -3360,6 +3458,8 @@ def sanitize_property_location(prop: Dict[str, Any], stats: Optional[Dict[str, A
     prop["pais"] = normalized.get("pais") or "Argentina"
     prop["_location_normalized"] = True
     prop["_location_normalization_motivo"] = normalized.get("motivo")
+    prop["_ciudad_detectada_from_text"] = normalized.get("ciudad_final")
+    prop["_provincia_detectada_from_text"] = normalized.get("provincia_final")
     prop["_clear_barrio_due_location_normalization"] = bool(normalized.get("clear_barrio"))
     motivo = str(normalized.get("motivo") or "")
     if motivo == "titulo_url_contiene_potrero_de_garay":
@@ -3390,6 +3490,103 @@ def sanitize_property_location(prop: Dict[str, Any], stats: Optional[Dict[str, A
             normalized.get("motivo"),
             prop.get("url"),
         )
+    return prop
+
+
+GENERIC_CITY_FOR_AGENCY_FALLBACK = {
+    "",
+    "-",
+    "g b a",
+    "gba",
+    "g b a zona sur",
+    "gba zona sur",
+    "gran buenos aires",
+    "gran buenos aires zona sur",
+    "zona sur",
+    "zona norte",
+    "zona oeste",
+    "buenos aires",
+    "provincia de buenos aires",
+    "argentina",
+}
+
+
+def _needs_agency_city_fallback(value: Any) -> bool:
+    key = _coordinate_location_key(value)
+    return not key or key in GENERIC_CITY_FOR_AGENCY_FALLBACK
+
+
+def _needs_agency_province_fallback(value: Any) -> bool:
+    return not _useful_text(value)
+
+
+def _record_agency_location_fallback(
+    stats: Optional[Dict[str, Any]],
+    prop: Dict[str, Any],
+    agency_context: Dict[str, Any],
+    fallback_city: bool,
+    fallback_province: bool,
+) -> None:
+    if stats is None or not (fallback_city or fallback_province):
+        return
+    stats["ubicacion_fallback_from_agency"] = int(stats.get("ubicacion_fallback_from_agency") or 0) + 1
+    if fallback_city:
+        stats["fallback_ciudad_from_agency"] = int(stats.get("fallback_ciudad_from_agency") or 0) + 1
+    if fallback_province:
+        stats["fallback_provincia_from_agency"] = int(stats.get("fallback_provincia_from_agency") or 0) + 1
+    examples = stats.setdefault("ubicacion_fallback_from_agency_ejemplos", [])
+    if len(examples) < 12:
+        examples.append({
+            "ubicacion_fallback_from_agency": True,
+            "fallback_ciudad_from_agency": fallback_city,
+            "fallback_provincia_from_agency": fallback_province,
+            "ciudad_detectada_from_text": prop.get("_ciudad_detectada_from_text"),
+            "provincia_detectada_from_text": prop.get("_provincia_detectada_from_text"),
+            "ciudad_original": prop.get("_original_city_before_agency_fallback"),
+            "provincia_original": prop.get("_original_province_before_agency_fallback"),
+            "ciudad_final": prop.get("ciudad"),
+            "provincia_final": prop.get("provincia"),
+            "agency_id": agency_context.get("id"),
+            "agency_nombre": agency_context.get("nombre"),
+            "agency_ciudad": agency_context.get("ciudad"),
+            "agency_provincia": agency_context.get("provincia"),
+            "titulo": prop.get("titulo"),
+            "url": prop.get("url"),
+        })
+
+
+def apply_agency_location_fallback(prop: Dict[str, Any], stats: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Completa ciudad/provincia desde inmobiliarias_main solo cuando la propiedad no trae dato util."""
+    agency_context = prop.get("_agency_location_context")
+    if not isinstance(agency_context, dict):
+        return prop
+
+    agency_city = str(agency_context.get("ciudad") or "").strip()
+    agency_province = str(agency_context.get("provincia") or "").strip()
+    agency_country = str(agency_context.get("pais") or "").strip() or "Argentina"
+    if not agency_city and not agency_province:
+        return prop
+
+    original_city = prop.get("ciudad")
+    original_province = prop.get("provincia")
+    fallback_city = bool(agency_city and _needs_agency_city_fallback(original_city))
+    fallback_province = bool(agency_province and _needs_agency_province_fallback(original_province))
+
+    if not fallback_city and not fallback_province:
+        return prop
+
+    prop["_original_city_before_agency_fallback"] = original_city
+    prop["_original_province_before_agency_fallback"] = original_province
+    if fallback_city:
+        prop["ciudad"] = agency_city
+    if fallback_province:
+        prop["provincia"] = agency_province
+    if not _useful_text(prop.get("pais")):
+        prop["pais"] = agency_country
+    prop["_ubicacion_fallback_from_agency"] = True
+    prop["_fallback_ciudad_from_agency"] = fallback_city
+    prop["_fallback_provincia_from_agency"] = fallback_province
+    _record_agency_location_fallback(stats, prop, agency_context, fallback_city, fallback_province)
     return prop
 
 
@@ -3614,6 +3811,8 @@ def build_protected_update_payload(
     stats: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Arma un PATCH que nunca degrada campos valiosos existentes."""
+    fallback_city_from_agency = bool(incoming.get("_fallback_ciudad_from_agency"))
+    fallback_province_from_agency = bool(incoming.get("_fallback_provincia_from_agency"))
     payload = {
         key: value
         for key, value in incoming.items()
@@ -3688,6 +3887,14 @@ def build_protected_update_payload(
             payload[field] = cleaned or None
         if field == "barrio" and payload.get("_clear_barrio_due_location_normalization"):
             continue
+        if field == "ciudad" and fallback_city_from_agency and not _needs_agency_city_fallback(existing_for_rules.get("ciudad")):
+            _record_protected_field(stats, field, True)
+            payload.pop(field, None)
+            continue
+        if field == "provincia" and fallback_province_from_agency and _is_existing_value_useful(field, existing_for_rules.get(field)):
+            _record_protected_field(stats, field, True)
+            payload.pop(field, None)
+            continue
         safe_incoming = _is_new_value_safe(field, payload.get(field), payload)
         if safe_incoming:
             continue
@@ -3702,6 +3909,14 @@ def build_protected_update_payload(
     payload.pop("_location_normalization_motivo", None)
     payload.pop("_clear_barrio_due_location_normalization", None)
     payload.pop("_location_validation", None)
+    payload.pop("_agency_location_context", None)
+    payload.pop("_ubicacion_fallback_from_agency", None)
+    payload.pop("_fallback_ciudad_from_agency", None)
+    payload.pop("_fallback_provincia_from_agency", None)
+    payload.pop("_original_city_before_agency_fallback", None)
+    payload.pop("_original_province_before_agency_fallback", None)
+    payload.pop("_ciudad_detectada_from_text", None)
+    payload.pop("_provincia_detectada_from_text", None)
     return payload
 
 
@@ -9724,6 +9939,13 @@ def _save_queue_properties(
 
     for prop in props:
         prop["inmobiliaria_id"] = main_id
+        prop["_agency_location_context"] = {
+            "id": main_id,
+            "nombre": _agency_row_name(main_row),
+            "ciudad": main_row.get("ciudad"),
+            "provincia": main_row.get("provincia"),
+            "pais": main_row.get("pais") or "Argentina",
+        }
         prop["hash_dedup"] = hash_propiedad(main_id, prop.get("id_externo"), prop.get("url"))
 
     props_with_images, props_without_images = _count_real_image_props(props)
