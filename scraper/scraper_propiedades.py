@@ -1779,6 +1779,7 @@ class SupabasePropiedades:
             clean.pop("url_normalizada", None)
         clean = sanitize_property_location(clean, getattr(self, "last_save_protection_stats", None))
         clean = apply_agency_location_fallback(clean, getattr(self, "last_save_protection_stats", None))
+        clean = normalize_property_location_encoding(clean, getattr(self, "last_save_protection_stats", None))
         clean = sanitize_property_coordinates(clean, getattr(self, "last_save_protection_stats", None))
         clean = sanitize_property_prices(clean, getattr(self, "last_save_protection_stats", None))
         clean = sanitize_property_integers(clean, getattr(self, "last_save_protection_stats", None))
@@ -1819,6 +1820,8 @@ class SupabasePropiedades:
             "_original_province_before_agency_fallback",
             "_ciudad_detectada_from_text",
             "_provincia_detectada_from_text",
+            "_ciudad_encoding_normalizada",
+            "_provincia_encoding_normalizada",
         ):
             if private_key in clean:
                 filtered[private_key] = clean.get(private_key)
@@ -2799,6 +2802,8 @@ def _new_update_protection_stats() -> Dict[str, Any]:
         "fallback_ciudad_from_agency": 0,
         "fallback_provincia_from_agency": 0,
         "ubicacion_fallback_from_agency_ejemplos": [],
+        "ubicaciones_encoding_corregidas": 0,
+        "ubicaciones_encoding_corregidas_ejemplos": [],
     }
 
 
@@ -3089,6 +3094,21 @@ _LOCATION_ALIASES: List[Dict[str, Any]] = [
         "provincia": "Buenos Aires",
     },
     {
+        "aliases": ("pineyro", "pi\u00f1eyro"),
+        "ciudad": "Pi\u00f1eyro",
+        "provincia": "Buenos Aires",
+    },
+    {
+        "aliases": ("remedios de escalada",),
+        "ciudad": "Remedios de Escalada",
+        "provincia": "Buenos Aires",
+    },
+    {
+        "aliases": ("monsenor piaggio", "monse\u00f1or piaggio"),
+        "ciudad": "Monse\u00f1or Piaggio",
+        "provincia": "Buenos Aires",
+    },
+    {
         "aliases": ("quilmes",),
         "ciudad": "Quilmes",
         "provincia": "Buenos Aires",
@@ -3366,8 +3386,8 @@ def normalize_location_fields(
     if not detected:
         return result
 
-    detected_city = detected["ciudad"]
-    detected_province = detected["provincia"]
+    detected_city = canonicalize_location_name(detected["ciudad"])
+    detected_province = canonicalize_location_name(detected["provincia"])
     current_city_key = _coordinate_location_key(current_city)
     detected_city_key = _coordinate_location_key(detected_city)
     current_province_key = _coordinate_location_key(current_province)
@@ -3592,6 +3612,92 @@ def apply_agency_location_fallback(prop: Dict[str, Any], stats: Optional[Dict[st
 
 def _useful_text(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
+
+
+CANONICAL_LOCATION_NAMES = {
+    "sarandi": "Sarand\u00ed",
+    "lanus": "Lan\u00fas",
+    "mar del tuyu": "Mar del Tuy\u00fa",
+    "pineyro": "Pi\u00f1eyro",
+    "pin eyro": "Pi\u00f1eyro",
+    "remedios de escalada": "Remedios de Escalada",
+    "san martin": "San Mart\u00edn",
+    "monsenor piaggio": "Monse\u00f1or Piaggio",
+    "monse or piaggio": "Monse\u00f1or Piaggio",
+    "cordoba": "C\u00f3rdoba",
+    "rio negro": "R\u00edo Negro",
+    "san jose del rincon": "San Jos\u00e9 del Rinc\u00f3n",
+    "roldan": "Rold\u00e1n",
+    "cosquin": "Cosqu\u00edn",
+    "mar del plata": "Mar del Plata",
+    "capital federal": "Capital Federal",
+    "buenos aires": "Buenos Aires",
+    "santa fe": "Santa Fe",
+    "san luis": "San Luis",
+}
+
+
+def _repair_mojibake_text(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    repaired = text
+    for _ in range(3):
+        if not any(marker in repaired for marker in ("Ã", "Â", "â")):
+            break
+        candidate = None
+        for encoding in ("latin1", "cp1252"):
+            try:
+                decoded = repaired.encode(encoding).decode("utf-8")
+            except UnicodeError:
+                continue
+            if decoded != repaired:
+                candidate = decoded
+                break
+        if candidate is None:
+            break
+        repaired = candidate
+    return repaired.strip()
+
+
+def canonicalize_location_name(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    repaired = _repair_mojibake_text(value)
+    key = _coordinate_location_key(repaired)
+    return CANONICAL_LOCATION_NAMES.get(key, repaired)
+
+
+def normalize_property_location_encoding(prop: Dict[str, Any], stats: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    for field in ("ciudad", "provincia", "barrio"):
+        original = prop.get(field)
+        if not isinstance(original, str) or not original.strip():
+            continue
+        normalized = canonicalize_location_name(original)
+        if normalized == original:
+            continue
+        prop[field] = normalized
+        if field == "ciudad":
+            prop["_ciudad_encoding_normalizada"] = normalized
+            if prop.get("_ciudad_detectada_from_text") == original:
+                prop["_ciudad_detectada_from_text"] = normalized
+        elif field == "provincia":
+            prop["_provincia_encoding_normalizada"] = normalized
+            if prop.get("_provincia_detectada_from_text") == original:
+                prop["_provincia_detectada_from_text"] = normalized
+        if stats is not None:
+            stats["ubicaciones_encoding_corregidas"] = int(stats.get("ubicaciones_encoding_corregidas") or 0) + 1
+            examples = stats.setdefault("ubicaciones_encoding_corregidas_ejemplos", [])
+            if len(examples) < 12:
+                examples.append({
+                    "field": field,
+                    "valor_original": original,
+                    "valor_normalizado": normalized,
+                    "titulo": prop.get("titulo"),
+                    "url": prop.get("url"),
+                    "estrategia_usada": prop.get("fuente_extraccion") or prop.get("_strategy_name"),
+                })
+    return prop
 
 
 def _valid_coordinate_pair(values: Dict[str, Any]) -> bool:
@@ -3822,6 +3928,7 @@ def build_protected_update_payload(
         payload = {key: value for key, value in payload.items() if key in columns}
 
     payload = sanitize_property_location(payload, stats)
+    payload = normalize_property_location_encoding(payload, stats)
     payload = sanitize_property_prices(payload, stats)
     payload = sanitize_property_integers(payload, stats)
 
@@ -3917,6 +4024,8 @@ def build_protected_update_payload(
     payload.pop("_original_province_before_agency_fallback", None)
     payload.pop("_ciudad_detectada_from_text", None)
     payload.pop("_provincia_detectada_from_text", None)
+    payload.pop("_ciudad_encoding_normalizada", None)
+    payload.pop("_provincia_encoding_normalizada", None)
     return payload
 
 
