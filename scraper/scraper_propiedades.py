@@ -10119,6 +10119,120 @@ def _partial_retry_metadata_get(metadata: Dict[str, Any], key: str, default: Any
     return default
 
 
+_COMPLETION_STATUS_LABELS: Dict[str, str] = {
+    "complete": "extraccion_completa",
+    "likely_complete": "extraccion_probablemente_completa",
+    "partial": "extraccion_parcial",
+    "incomplete": "extraccion_incompleta",
+    "unknown": "estado_desconocido",
+}
+
+
+def _completion_status_label(status: str) -> str:
+    return _COMPLETION_STATUS_LABELS.get(str(status or ""), "estado_desconocido")
+
+
+def _compute_url_discovery_stats(
+    strategy_metadata: Dict[str, Any],
+    diagnostic: Dict[str, Any],
+    saved_count: int = 0,
+) -> Dict[str, Any]:
+    """
+    Consolida stats de descubrimiento de URLs en campos canónicos.
+    Derivado 100% de metadata existente, sin acceso a base de datos.
+    Devuelve siempre todos los campos, con 0 / [] / None cuando no hay dato.
+    """
+    sm = strategy_metadata or {}
+    dg = diagnostic or {}
+
+    # --- property_urls_discovered ---
+    sitemap_total = max(
+        _safe_int(sm.get("sitemap_total_urls")),
+        _safe_int(dg.get("sitemap_property_urls_count")),
+    )
+    link_total = max(
+        _safe_int(sm.get("unique_property_urls_total")),
+        _safe_int(sm.get("static_html_links_propiedad_detectados")),
+        _safe_int(sm.get("property_links_count")),
+        _safe_int(dg.get("property_links_count")),
+        _safe_int(dg.get("urls_validas_detectadas")),
+    )
+    visible_total = _safe_int(dg.get("visible_properties_count"))
+    if visible_total > 500:  # señal ruidosa sin sitemap → descartar
+        visible_total = 0
+    pages_detected = max(
+        _safe_int(sm.get("pages_detected")),
+        _safe_int(dg.get("pages_detected")),
+    )
+    pages_processed = _safe_int(sm.get("pages_processed") or sm.get("cantidad_paginas"))
+    links_found = link_total or _safe_int(dg.get("cards_posibles"))
+    pagination_estimate = (
+        min(links_found * pages_detected, MAX_LISTING_URLS_PER_SITE)
+        if pages_detected >= 2 and links_found > 0
+        else 0
+    )
+    discovered = max(sitemap_total, link_total, visible_total, pagination_estimate)
+
+    # --- property_urls_processed ---
+    sitemap_processed = _safe_int(sm.get("sitemap_processed_urls"))
+    links_per_page = max(1, link_total // pages_detected) if pages_detected > 0 and link_total > 0 else 0
+    pagination_processed = pages_processed * links_per_page if pages_processed and links_per_page else 0
+    processed_explicit = max(sitemap_processed, pagination_processed)
+    # saved_count como cota inferior solo cuando no hay señal explícita
+    processed = processed_explicit if processed_explicit > 0 else saved_count
+    processed_is_estimated = processed_explicit == 0
+
+    # --- property_urls_pending ---
+    if discovered > 0 and processed > 0:
+        pending = max(discovered - processed, 0)
+    elif discovered > 0 and not processed_is_estimated:
+        pending = discovered
+    else:
+        pending = 0
+
+    # --- discovery_sources ---
+    sources_used: List[str] = []
+    sources_successful: List[str] = []
+    sources_failed: List[str] = []
+
+    def _reg(name: str, found: int) -> None:
+        sources_used.append(name)
+        if found > 0:
+            sources_successful.append(name)
+        else:
+            sources_failed.append(name)
+
+    if sitemap_total > 0 or sm.get("sitemap_url") or dg.get("sitemap_ok"):
+        _reg("sitemap", sitemap_total)
+    if pages_detected > 0 or sm.get("pagination_detected") or dg.get("pagination_detected"):
+        _reg("pagination", pages_detected)
+    if _safe_int(sm.get("static_html_links_propiedad_detectados")) > 0:
+        _reg("static_html_links", _safe_int(sm.get("static_html_links_propiedad_detectados")))
+    if _safe_int(sm.get("unique_property_urls_total")) > 0 and "detail_url_scan" not in sources_used:
+        _reg("detail_url_scan", _safe_int(sm.get("unique_property_urls_total")))
+    if not sources_used:
+        primary = (
+            sm.get("primary_strategy")
+            or sm.get("estrategia_final")
+            or sm.get("estrategia_elegida")
+        )
+        if primary:
+            _reg(str(primary), saved_count)
+
+    return {
+        "property_urls_discovered": discovered,
+        "property_urls_processed": processed,
+        "property_urls_pending": pending,
+        "property_urls_saved": None,
+        "property_urls_duplicate": None,
+        "property_urls_error": None,
+        "discovery_sources_used": sources_used,
+        "discovery_sources_successful": sources_successful,
+        "discovery_sources_failed": sources_failed,
+        "_processed_is_estimated": processed_is_estimated,
+    }
+
+
 def evaluate_extraction_completeness(
     props: List[Dict[str, Any]],
     diagnostic: Dict[str, Any],
@@ -10130,6 +10244,7 @@ def evaluate_extraction_completeness(
     quality = quality or {}
     strategy_metadata = strategy_metadata or {}
     saved_count = len(props or [])
+    url_stats = _compute_url_discovery_stats(strategy_metadata, diagnostic, saved_count=saved_count)
     diagnostic_expected = _safe_int(diagnostic.get("expected_properties_count") or diagnostic.get("expected_property_count"))
     quality_expected = _safe_int(quality.get("expected_property_count"))
     visible_count = _safe_int(diagnostic.get("visible_properties_count"))
@@ -10254,9 +10369,26 @@ def evaluate_extraction_completeness(
     if status in {"partial", "incomplete"} and retry_strategy is None:
         retry_strategy = "retry_with_more_budget" if signals else "manual_review"
 
-    retry_recommended = status in {"partial", "incomplete"} and bool(retry_strategy)
+    # Regla C: si discovered > processed (señal explícita, no estimada), no puede ser complete
+    _ud = url_stats["property_urls_discovered"]
+    _up = url_stats["property_urls_processed"]
+    if _ud > 0 and _up > 0 and not url_stats["_processed_is_estimated"] and _ud > _up:
+        if status in {"complete", "likely_complete"}:
+            status = "partial"
+            if "discovered_exceeds_processed" not in signals:
+                signals.append("discovered_exceeds_processed")
+            if retry_strategy is None:
+                retry_strategy = "manual_review"
+
+    # Regla D: si hay pending > 0, retry_recommended = True
+    _pending = url_stats["property_urls_pending"]
+    retry_recommended = (status in {"partial", "incomplete"} and bool(retry_strategy)) or (_pending > 0)
+    if _pending > 0 and retry_strategy is None:
+        retry_strategy = "manual_review"
+
     return {
         "extraction_completeness_status": status,
+        "completion_status": _completion_status_label(status),
         "expected_properties_count": int(expected_count or 0),
         "saved_properties_count": int(saved_count),
         "completion_ratio": completion_ratio,
@@ -10274,6 +10406,15 @@ def evaluate_extraction_completeness(
         "stop_reason": stop_reason or (";".join(signals) if signals else None),
         "incomplete_signals": list(dict.fromkeys(signals)),
         "strategy": strategy_name or strategy_metadata.get("primary_strategy") or strategy_metadata.get("estrategia_final"),
+        "property_urls_discovered": url_stats["property_urls_discovered"],
+        "property_urls_processed": url_stats["property_urls_processed"],
+        "property_urls_pending": url_stats["property_urls_pending"],
+        "property_urls_saved": None,
+        "property_urls_duplicate": None,
+        "property_urls_error": None,
+        "discovery_sources_used": url_stats["discovery_sources_used"],
+        "discovery_sources_successful": url_stats["discovery_sources_successful"],
+        "discovery_sources_failed": url_stats["discovery_sources_failed"],
     }
 
 
@@ -11814,6 +11955,27 @@ def _process_scraping_control_item(
             "retry_recommended": False,
             "retry_strategy": None,
         }
+    # Post-save: campos canónicos de URL discovery
+    _url_saved = saved_or_matched_count
+    _url_duplicate = int(counts.get("propiedades_sin_cambios") or 0)
+    _url_error = int(counts.get("propiedades_error") or 0)
+    _url_pending_pre = _safe_int(completeness_after_save.get("property_urls_pending"))
+    _url_pending_post = max(_url_pending_pre - int(counts.get("propiedades_nuevas") or 0), 0)
+    completeness_after_save.setdefault("property_urls_discovered", 0)
+    completeness_after_save.setdefault("property_urls_processed", 0)
+    completeness_after_save["property_urls_saved"] = _url_saved
+    completeness_after_save["property_urls_duplicate"] = _url_duplicate
+    completeness_after_save["property_urls_error"] = _url_error
+    completeness_after_save["property_urls_pending"] = _url_pending_post
+    completeness_after_save.setdefault("discovery_sources_used", [])
+    completeness_after_save.setdefault("discovery_sources_successful", [])
+    completeness_after_save.setdefault("discovery_sources_failed", [])
+    completeness_after_save["completion_status"] = _completion_status_label(
+        completeness_after_save.get("extraction_completeness_status") or "unknown"
+    )
+    # Regla D post-save: si aún hay pending, retry_recommended = True
+    if _url_pending_post > 0 and not completeness_after_save.get("retry_recommended"):
+        completeness_after_save["retry_recommended"] = True
     metadata_extra = {
         "geocodificadas": counts["geocodificadas"],
         "geocoding_omitido_por_timeout": counts.get("geocoding_omitido_por_timeout", 0),
@@ -11828,6 +11990,16 @@ def _process_scraping_control_item(
         "completion_confidence": completeness_after_save.get("completion_confidence"),
         "retry_recommended": completeness_after_save.get("retry_recommended"),
         "retry_strategy": completeness_after_save.get("retry_strategy"),
+        "completion_status": completeness_after_save.get("completion_status"),
+        "property_urls_discovered": completeness_after_save.get("property_urls_discovered"),
+        "property_urls_processed": completeness_after_save.get("property_urls_processed"),
+        "property_urls_pending": completeness_after_save.get("property_urls_pending"),
+        "property_urls_saved": completeness_after_save.get("property_urls_saved"),
+        "property_urls_duplicate": completeness_after_save.get("property_urls_duplicate"),
+        "property_urls_error": completeness_after_save.get("property_urls_error"),
+        "discovery_sources_used": completeness_after_save.get("discovery_sources_used"),
+        "discovery_sources_successful": completeness_after_save.get("discovery_sources_successful"),
+        "discovery_sources_failed": completeness_after_save.get("discovery_sources_failed"),
         "partial_extraction": bool(
             strategy_meta.get("partial_extraction")
             or strategy_meta.get("sitemap_partial")
@@ -11864,6 +12036,7 @@ def _process_scraping_control_item(
             "errores_relevantes",
             "extraction_completeness",
             "extraction_completeness_status",
+            "completion_status",
             "expected_properties_count",
             "saved_properties_count",
             "completion_ratio",
@@ -11871,6 +12044,15 @@ def _process_scraping_control_item(
             "retry_recommended",
             "retry_strategy",
             "partial_extraction",
+            "property_urls_discovered",
+            "property_urls_processed",
+            "property_urls_pending",
+            "property_urls_saved",
+            "property_urls_duplicate",
+            "property_urls_error",
+            "discovery_sources_used",
+            "discovery_sources_successful",
+            "discovery_sources_failed",
         }:
             metadata_extra[key] = value
     combined_errors = errores_relevantes + list(strategy_meta.get("errores_relevantes") or [])
@@ -13022,10 +13204,18 @@ def _partial_retry_recalculate_metadata(
             status = "partial"
     elif total_saved_count > 0 and not stop_reason:
         status = "likely_complete"
-    retry_recommended = status in {"partial", "incomplete"} and bool(retry_strategy)
+    # Regla D: pending > 0 → retry_recommended = True
+    _pending_post = remaining if remaining is not None else 0
+    retry_recommended = (status in {"partial", "incomplete"} and bool(retry_strategy)) or (_pending_post > 0)
+    _discovered_post = max(
+        expected_count,
+        _safe_int(retry_meta.get("property_urls_discovered")),
+        _safe_int((metadata.get("extraction_completeness") or {}).get("property_urls_discovered")),
+    )
     completeness = dict(metadata.get("extraction_completeness") or {})
     completeness.update({
         "extraction_completeness_status": status,
+        "completion_status": _completion_status_label(status),
         "expected_properties_count": expected_count,
         "saved_properties_count": total_saved_count,
         "completion_ratio": new_ratio,
@@ -13034,6 +13224,12 @@ def _partial_retry_recalculate_metadata(
         "retry_recommended": retry_recommended,
         "retry_strategy": retry_strategy if retry_recommended else None,
         "stop_reason": stop_reason,
+        "property_urls_discovered": _discovered_post,
+        "property_urls_processed": total_saved_count,
+        "property_urls_pending": _pending_post,
+        "property_urls_saved": total_saved_count,
+        "property_urls_duplicate": int(counts.get("propiedades_sin_cambios") or 0),
+        "property_urls_error": int(counts.get("propiedades_error") or 0),
     })
     for key in (
         "pagination_detected",
@@ -13043,6 +13239,9 @@ def _partial_retry_recalculate_metadata(
         "sitemap_processed_urls",
         "load_more_detected",
         "ajax_endpoint_detected",
+        "discovery_sources_used",
+        "discovery_sources_successful",
+        "discovery_sources_failed",
     ):
         if key in retry_meta:
             completeness[key] = retry_meta.get(key)
@@ -13061,12 +13260,19 @@ def _partial_retry_recalculate_metadata(
         "partial_retry_batch_size_urls": batch_size_urls,
         "extraction_completeness": completeness,
         "extraction_completeness_status": status,
+        "completion_status": _completion_status_label(status),
         "expected_properties_count": expected_count,
         "saved_properties_count": total_saved_count,
         "completion_ratio": new_ratio,
         "retry_recommended": retry_recommended,
         "retry_strategy": retry_strategy if retry_recommended else None,
         "partial_extraction": status in {"partial", "incomplete"},
+        "property_urls_discovered": _discovered_post,
+        "property_urls_processed": total_saved_count,
+        "property_urls_pending": _pending_post,
+        "property_urls_saved": total_saved_count,
+        "property_urls_duplicate": int(counts.get("propiedades_sin_cambios") or 0),
+        "property_urls_error": int(counts.get("propiedades_error") or 0),
     })
     return updated
 
