@@ -11525,6 +11525,65 @@ def _path_from_property_url_candidate(value: Any) -> str:
     return unquote(parsed.path or "").lower().strip("/")
 
 
+# Palabras clave que indican que un slug NO es solo una zona/ciudad geográfica.
+# Usadas por _is_listing_geography_slug para distinguir filtros de fichas reales.
+_PROPERTY_TYPE_SLUG_WORDS: frozenset = frozenset({
+    "casa", "departamento", "depto", "dpto", "ph", "local",
+    "terreno", "lote", "campo", "cochera", "galpon", "deposito",
+    "hotel", "oficina", "monoambiente", "studio", "duplex", "triplex",
+    "loft", "nave", "galpones", "chalet", "townhouse", "villa",
+    "consultorio", "depositos", "locales", "cocheras",
+})
+_OPERATION_SLUG_WORDS: frozenset = frozenset({
+    "venta", "alquiler", "compra", "renta", "sale", "rent",
+    "temporal", "temporario", "temporaria",
+})
+
+
+def _is_listing_geography_slug(slug: str) -> bool:
+    """
+    Devuelve True si el slug parece ser solo un nombre de ciudad/zona/barrio,
+    sin palabras clave de tipo de propiedad ni operación y sin ID numérico.
+    Ejemplos que devuelven True (filtro geográfico):
+      banfield, lanus-este, remedios-de-escalada, mar-del-plata, san-vicente
+    Ejemplos que devuelven False (propiedad real):
+      departamento-en-venta-en-banfield, casa-en-venta, ph-en-venta, 611674
+    """
+    if not slug or not isinstance(slug, str):
+        return False
+    slug_norm = slug.lower().strip("-")
+    # ID numérico de 3+ dígitos → URL de propiedad real
+    if re.search(r"\d{3,}", slug_norm):
+        return False
+    # Palabras clave de tipo de propiedad u operación → URL de propiedad real
+    parts = set(re.split(r"[-_]", slug_norm))
+    if parts & _PROPERTY_TYPE_SLUG_WORDS:
+        return False
+    if parts & _OPERATION_SLUG_WORDS:
+        return False
+    # Patrón "-en-" largo típico de fichas: "depto-en-venta-en-zona"
+    if "-en-" in slug_norm and len(slug_norm) > 15:
+        return False
+    return True
+
+
+def _title_matches_url_slug(titulo: str, path: str) -> bool:
+    """
+    Devuelve True si el título (normalizado) coincide con el último segmento del path.
+    Detecta el caso: titulo='Banfield', path='propiedades/banfield'.
+    """
+    if not titulo or not path:
+        return False
+    # Normalizar título: minúsculas, sin tildes, espacios → guiones
+    t = unicodedata.normalize("NFKD", titulo.lower().strip())
+    t = "".join(ch for ch in t if not unicodedata.combining(ch))
+    t = re.sub(r"\s+", "-", t)
+    t = re.sub(r"[^a-z0-9-]", "", t)
+    # Último segmento del path
+    last_seg = path.rstrip("/").rsplit("/", 1)[-1]
+    return bool(t and last_seg and t == last_seg)
+
+
 def _listing_url_not_property_detail_reason(url: Any, url_normalizada: Any = None) -> Optional[str]:
     """Detecta URLs de listado que nunca deben persistirse como propiedades."""
     paths = [
@@ -11541,17 +11600,32 @@ def _listing_url_not_property_detail_reason(url: Any, url_normalizada: Any = Non
             return f"listing_url_paginated:{path}"
         if re.fullmatch(r"(propiedades|inmuebles|venta|ventas|alquiler|alquileres)/(?:page|pagina)/\d+", path):
             return f"listing_url_paginated:{path}"
+        # /propiedades/{slug-ciudad-o-zona} — filtro geográfico, no ficha real.
+        # Ej: /propiedades/banfield, /propiedades/lanus-este → descartado.
+        # Ej: /propiedades/departamento-en-venta → NO descartado (tiene tipo/operación).
+        geo_m = re.fullmatch(r"(propiedades|inmuebles)/([a-z0-9][a-z0-9-]{2,60})", path)
+        if geo_m and _is_listing_geography_slug(geo_m.group(2)):
+            return f"listing_url_geo_filter:{path}"
     return None
 
 
 def _invalid_listing_property_reason(prop: Dict[str, Any]) -> Optional[str]:
+    titulo_raw = _fix_mojibake_text(prop.get("titulo") or "")
+    titulo_low = titulo_raw.lower().strip()
+
+    # Títulos de páginas de resultados de búsqueda → siempre inválido
+    # Ejemplos: "Se encontraron 60 resultados para Banfield", "Se encontró 1 resultado para Alta Gracia"
+    if re.search(r"^se encontr[oó]\b", titulo_low) or "resultados para" in titulo_low:
+        return "titulo_resultados_busqueda"
+
     reason = _listing_url_not_property_detail_reason(prop.get("url"), prop.get("url_normalizada"))
     if not reason:
         return None
+
     title_key = re.sub(
         r"[^a-z0-9]+",
         " ",
-        unicodedata.normalize("NFKD", _fix_mojibake_text(prop.get("titulo")).lower()),
+        unicodedata.normalize("NFKD", titulo_low),
     ).strip()
     generic_title = title_key in {
         "",
@@ -11565,6 +11639,16 @@ def _invalid_listing_property_reason(prop: Dict[str, Any]) -> Optional[str]:
         "propiedad sin titulo",
     }
     weak_payload = not prop.get("precio") and not prop.get("descripcion") and not prop.get("direccion")
+
+    # Geo-filtros: también inválido si el título coincide exactamente con el slug de ciudad/zona
+    # Ejemplo: titulo="Banfield", url="/propiedades/banfield"
+    if reason.startswith("listing_url_geo_filter:"):
+        url_path = _path_from_property_url_candidate(
+            prop.get("url") or prop.get("url_normalizada") or ""
+        )
+        if _title_matches_url_slug(titulo_raw, url_path):
+            return reason
+
     if generic_title or weak_payload:
         return reason
     return None
@@ -11574,6 +11658,11 @@ def _is_listing_like_property_payload(prop: Dict[str, Any]) -> bool:
     """Evita guardar paginas de listado parseadas por error como si fueran fichas."""
     listing_reason = _listing_url_not_property_detail_reason(prop.get("url"), prop.get("url_normalizada"))
     if listing_reason:
+        return True
+    # Títulos de páginas de resultados de búsqueda filtrada por ciudad/zona.
+    # Ejemplos: "Se encontraron 60 resultados para Banfield", "Se encontró 1 resultado para Alta Gracia"
+    _titulo_low = _fix_mojibake_text(prop.get("titulo") or "").lower().strip()
+    if re.search(r"^se encontr[oó]\b", _titulo_low) or "resultados para" in _titulo_low:
         return True
     url = prop.get("url")
     if not url or _partial_retry_is_detail_url(url):
