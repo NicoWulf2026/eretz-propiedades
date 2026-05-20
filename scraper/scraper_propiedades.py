@@ -17,7 +17,7 @@ Estrategias (orden de prioridad):
 from __future__ import annotations
 
 import hashlib
-import html
+import html as html_lib
 import json
 import logging
 import math
@@ -112,6 +112,38 @@ PLAYWRIGHT_NAV_TIMEOUT_MS = 12000
 PLAYWRIGHT_LOAD_TIMEOUT_MS = 8000
 PLAYWRIGHT_ACTION_TIMEOUT_MS = 2500
 PLAYWRIGHT_CLOSE_TIMEOUT_SECONDS = 3.0
+MAX_PAGINATION_PAGES_PER_SITE = 20
+MAX_LISTING_URLS_PER_SITE = 300
+
+RETRYABLE_SCRAPING_ERROR_TYPES = {
+    "requires_playwright",
+    "playwright_required",
+    "requires_network_interception",
+    "item_timeout",
+    "timeout",
+    "static_timeout",
+    "timeout_static_html",
+    "parsing_too_few_vs_expected",
+    "sitemap_too_large_partial",
+    "extraction_partial_timeout",
+    "strategy_quality_failed",
+}
+
+PARTIAL_RETRY_STRATEGIES = {
+    "sitemap_batch",
+    "pagination_deep_scan",
+    "playwright_or_ajax_load_more",
+}
+
+NON_RETRYABLE_SCRAPING_ERROR_TYPES = {
+    "site_down_confirmed",
+    "site_down",
+    "data_integrity_mismatch",
+    "canonical_id_resolution_failed",
+    "canonical_id_mismatch",
+    "final_url_domain_mismatch",
+    "save_failed",
+}
 
 FALSE_IMAGE_PATTERNS = (
     "static.tokkobroker.com/tfw/img/prop-icons",
@@ -229,7 +261,7 @@ def _make_http_session() -> requests.Session:
 
 
 PROPERTY_URL_PATTERNS = re.compile(
-    r"/(propiedad|property|inmueble|listing|ficha|imovel|prop|detalle)[s]?[/_-]",
+    r"/(propiedad|property|inmueble|listing|ficha|imovel|prop|detalle|ad)[s]?[/_-]",
     re.IGNORECASE,
 )
 
@@ -555,12 +587,26 @@ def clasificar_error(e: Exception) -> str:
         return "item_timeout"
     if "save_failed" in msg or isinstance(e, SavePropertiesError):
         return "save_failed"
+    if "site_down_confirmed" in msg:
+        return "site_down_confirmed"
     if "site_down" in msg or "dominio_caido" in msg:
         return "site_down"
+    if "sitemap_too_large_partial" in msg:
+        return "sitemap_too_large_partial"
+    if "too_few_vs_expected" in msg or "parsing_too_few_vs_expected" in msg:
+        return "parsing_too_few_vs_expected"
+    if "extraction_partial_timeout" in msg or "partial_extraction" in msg:
+        return "extraction_partial_timeout"
+    if "strategy_quality_failed" in msg or "calidad minima" in msg or "calidad mínima" in msg:
+        return "strategy_quality_failed"
+    if "timeout_static_html" in msg or "timeout_static" in msg or "static_timeout" in msg:
+        return "static_timeout"
     if "requires_network_interception" in msg or "network_interception_requerida" in msg:
         return "requires_network_interception"
     if "requires_playwright" in msg or "playwright_requerido" in msg:
         return "requires_playwright"
+    if "no_property_links_confirmed" in msg:
+        return "no_property_links_confirmed"
     if "no_property_links" in msg or "sin_links_propiedad" in msg:
         return "no_property_links"
     if "unsupported_cms" in msg:
@@ -1525,6 +1571,232 @@ class SupabasePropiedades:
         for row in rows:
             row["scraping_run_item_id"] = row.get("id")
         return rows
+
+    def load_retryable_error_items(self, limit: int = 5) -> List[Dict[str, Any]]:
+        """Carga items con error accionable para --retry-errors sin tocar site_down reciente."""
+        fetch_limit = max(int(limit or 5) * 8, 25)
+        r = self.session.get(
+            f"{SUPABASE_URL}/rest/v1/scraping_run_items",
+            headers=self._headers,
+            params={
+                "select": (
+                    "id,scraping_run_id,inmobiliaria_id,inmobiliaria_nombre,ciudad,provincia,"
+                    "web,url_listado,cms_detectado,status,final_url,error_type,error_message,metadata,updated_at,created_at"
+                ),
+                "status": "eq.error",
+                "order": "updated_at.desc,id.desc",
+                "limit": fetch_limit,
+            },
+            timeout=15,
+        )
+        if r.status_code != 200:
+            raise RuntimeError(f"No se pudieron leer items error para retry: {r.status_code} {r.text[:300]}")
+        rows: List[Dict[str, Any]] = []
+        for row in r.json():
+            error_type = str(row.get("error_type") or "").strip()
+            web = str(row.get("web") or row.get("url_listado") or "").strip()
+            if not web:
+                continue
+            if error_type in NON_RETRYABLE_SCRAPING_ERROR_TYPES:
+                continue
+            if error_type not in RETRYABLE_SCRAPING_ERROR_TYPES:
+                continue
+            row["scraping_run_item_id"] = row.get("id")
+            rows.append(row)
+            if len(rows) >= max(int(limit or 5), 1):
+                break
+        return rows
+
+    def load_partial_extraction_items(self, limit: int = 5) -> List[Dict[str, Any]]:
+        """Carga items terminados que dejaron metadata de extraccion parcial y reintento recomendado."""
+        wanted_limit = max(int(limit or 5), 1)
+        fetch_limit = max(wanted_limit * 40, 120)
+        r = self.session.get(
+            f"{SUPABASE_URL}/rest/v1/scraping_run_items",
+            headers=self._headers,
+            params={
+                "select": (
+                    "id,scraping_run_id,inmobiliaria_id,inmobiliaria_nombre,ciudad,provincia,"
+                    "web,url_listado,cms_detectado,status,final_url,error_type,error_message,"
+                    "metadata,updated_at,created_at"
+                ),
+                "metadata": "not.is.null",
+                "order": "updated_at.desc,id.desc",
+                "limit": fetch_limit,
+            },
+            timeout=20,
+        )
+        if r.status_code != 200:
+            raise RuntimeError(f"No se pudieron leer items parciales: {r.status_code} {r.text[:300]}")
+
+        rows: List[Dict[str, Any]] = []
+        for row in r.json():
+            metadata = _coerce_metadata_dict(row.get("metadata"))
+            status = _partial_retry_metadata_get(metadata, "extraction_completeness_status")
+            retry_recommended = bool(_partial_retry_metadata_get(metadata, "retry_recommended"))
+            retry_strategy = str(_partial_retry_metadata_get(metadata, "retry_strategy") or "").strip()
+            if status not in {"partial", "incomplete"}:
+                continue
+            if not retry_recommended:
+                continue
+            if retry_strategy not in PARTIAL_RETRY_STRATEGIES:
+                continue
+            if not (row.get("web") or row.get("url_listado") or row.get("final_url")):
+                continue
+            row["metadata"] = metadata
+            row["scraping_run_item_id"] = row.get("id")
+            rows.append(row)
+
+        strategy_rank = {"sitemap_batch": 0, "pagination_deep_scan": 1, "playwright_or_ajax_load_more": 2}
+
+        def sort_key(row: Dict[str, Any]) -> Tuple[int, float, int, int, int]:
+            metadata = _coerce_metadata_dict(row.get("metadata"))
+            strategy = str(_partial_retry_metadata_get(metadata, "retry_strategy") or "")
+            ratio = _safe_float(_partial_retry_metadata_get(metadata, "completion_ratio"), default=1.0)
+            expected = _safe_int(_partial_retry_metadata_get(metadata, "expected_properties_count"))
+            saved = _safe_int(_partial_retry_metadata_get(metadata, "saved_properties_count"))
+            return (
+                strategy_rank.get(strategy, 9),
+                ratio,
+                -expected,
+                saved,
+                -_safe_int(row.get("id")),
+            )
+
+        rows.sort(key=sort_key)
+        return rows[:wanted_limit]
+
+    def load_existing_url_normalizadas(self, inmobiliaria_id: Any) -> set:
+        """URLs normalizadas ya guardadas para una inmobiliaria canonica."""
+        try:
+            agency_id = int(inmobiliaria_id)
+        except (TypeError, ValueError):
+            return set()
+        existing: set = set()
+        offset = 0
+        page_size = 1000
+        while True:
+            r = self.session.get(
+                f"{SUPABASE_URL}/rest/v1/propiedades",
+                headers=self._headers,
+                params={
+                    "select": "id,url,url_normalizada",
+                    "inmobiliaria_id": f"eq.{agency_id}",
+                    "url": "not.is.null",
+                    "order": "id.asc",
+                    "limit": page_size,
+                    "offset": offset,
+                },
+                timeout=25,
+            )
+            if r.status_code != 200:
+                logger.warning("No se pudieron leer url_normalizadas existentes: %s %s", r.status_code, r.text[:200])
+                break
+            rows = r.json()
+            for row in rows:
+                url_key = row.get("url_normalizada") or normalize_property_url_for_dedup(row.get("url"))
+                if url_key:
+                    existing.add(url_key)
+            if len(rows) < page_size:
+                break
+            offset += page_size
+        return existing
+
+    def patch_scraping_run_item_metadata(
+        self,
+        item_id: Any,
+        metadata: Dict[str, Any],
+        status: Optional[str] = None,
+        final_url: Optional[str] = None,
+        error_type: Optional[str] = None,
+        error_message: Optional[str] = None,
+        counts: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Actualiza metadata/campos resumen de un item historico sin pasar por RPC de cola."""
+        payload: Dict[str, Any] = {"metadata": metadata}
+        if status:
+            payload["status"] = status
+        if final_url:
+            payload["final_url"] = final_url
+        if error_type is not None:
+            payload["error_type"] = error_type
+        if error_message is not None:
+            payload["error_message"] = str(error_message)[:1000]
+        if counts:
+            payload.update({
+                "propiedades_detectadas": int(counts.get("propiedades_detectadas") or 0),
+                "propiedades_nuevas": int(counts.get("propiedades_nuevas") or 0),
+                "propiedades_actualizadas": int(counts.get("propiedades_actualizadas") or 0),
+                "propiedades_sin_cambios": int(counts.get("propiedades_sin_cambios") or 0),
+                "propiedades_error": int(counts.get("propiedades_error") or 0),
+            })
+        r = self.session.patch(
+            f"{SUPABASE_URL}/rest/v1/scraping_run_items",
+            headers=self._headers_minimal,
+            params={"id": f"eq.{item_id}"},
+            json=payload,
+            timeout=15,
+        )
+        if r.status_code not in {200, 204}:
+            raise RuntimeError(f"No se pudo actualizar metadata parcial item {item_id}: {r.status_code} {r.text[:500]}")
+
+    def load_invalid_listing_property_candidates(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Busca propiedades historicas que en realidad son paginas de listado guardadas por error."""
+        candidates: List[Dict[str, Any]] = []
+        offset = 0
+        page_size = 1000
+        while True:
+            r = self.session.get(
+                f"{SUPABASE_URL}/rest/v1/propiedades",
+                headers=self._headers,
+                params={
+                    "select": "id,inmobiliaria_id,titulo,url,url_normalizada,precio,descripcion,direccion,created_at",
+                    "order": "id.desc",
+                    "limit": page_size,
+                    "offset": offset,
+                },
+                timeout=30,
+            )
+            if r.status_code != 200:
+                raise RuntimeError(f"No se pudieron leer propiedades para repair listing: {r.status_code} {r.text[:300]}")
+            rows = r.json()
+            for row in rows:
+                reason = _invalid_listing_property_reason(row)
+                if not reason:
+                    continue
+                row["motivo"] = reason
+                candidates.append(row)
+                if limit and len(candidates) >= limit:
+                    return candidates
+            if len(rows) < page_size:
+                break
+            offset += page_size
+        return candidates
+
+    def delete_properties_by_ids(self, ids: List[Any]) -> int:
+        deleted = 0
+        clean_ids = [str(int(value)) for value in ids if str(value).isdigit()]
+        for i in range(0, len(clean_ids), 100):
+            chunk = clean_ids[i:i + 100]
+            if not chunk:
+                continue
+            r = self.session.delete(
+                f"{SUPABASE_URL}/rest/v1/propiedades",
+                headers=self._headers_minimal,
+                params={"id": f"in.({','.join(chunk)})"},
+                timeout=20,
+            )
+            if r.status_code not in {200, 204}:
+                raise RuntimeError(f"No se pudieron eliminar propiedades invalidas: {r.status_code} {r.text[:500]}")
+            deleted += len(chunk)
+        return deleted
+
+    def retry_scraping_item(self, item_id: Any) -> Any:
+        return self._rpc_with_parameter_fallback(
+            "retry_scraping_item",
+            {"item_id": item_id},
+            timeout=10,
+        )
 
     def start_scraping_item(self, item_id: Any) -> Any:
         return self._rpc_with_parameter_fallback(
@@ -4249,7 +4521,7 @@ def extraer_imagenes(
         text = str(value or "")
         if not text:
             return
-        text = html.unescape(text).replace("\\/", "/")
+        text = html_lib.unescape(text).replace("\\/", "/")
         for match in re.findall(
             r"(?:https?:)?//[^\"'\s<>\\]+?\.(?:jpe?g|png|webp|avif)(?:\?[^\"'\s<>\\]*)?",
             text,
@@ -4808,8 +5080,10 @@ _NON_DIAGNOSTIC_PATH_RE = re.compile(
 )
 
 _DIAGNOSTIC_USEFUL_PATHS = (
-    "/propiedades", "/inmuebles", "/venta", "/ventas", "/alquiler", "/alquileres",
-    "/emprendimientos", "/desarrollos", "/listing", "/listings",
+    "/propiedades", "/propiedad", "/properties", "/property",
+    "/inmuebles", "/inmueble", "/venta", "/ventas", "/alquiler", "/alquileres",
+    "/listado", "/listados", "/listing", "/listings", "/buscar", "/busqueda",
+    "/catalogo", "/portfolio", "/emprendimientos", "/desarrollos",
 )
 
 
@@ -5132,6 +5406,11 @@ def strategy_tokko_html(inmob: Dict, session: requests.Session) -> List[Dict]:
     internal_links_detected = 0
     templates_detected: List[str] = []
     motivo_sin_propiedades = "sin_cards_tokko"
+    pagination_next_urls: List[str] = []
+    property_urls_by_page: Dict[str, int] = {}
+    duplicated_property_urls_skipped = 0
+    pagination_stop_reason = ""
+    pagination_partial = False
 
     try:
         r0 = _http_get(url_inicial, session, timeout=_bounded_http_timeout(inmob, 20))
@@ -5183,8 +5462,12 @@ def strategy_tokko_html(inmob: Dict, session: requests.Session) -> List[Dict]:
 
             page_props = _parse_tokko_listing_cards(html, candidate, inmob)
             if page_props:
+                property_urls_by_page[candidate] = len(page_props)
                 paginas_leidas += 1
+                before_total = len(resultados)
                 resultados.extend(page_props)
+                resultados = _dedupe_props(resultados)
+                duplicated_property_urls_skipped += max(before_total + len(page_props) - len(resultados), 0)
                 _update_strategy_progress(
                     inmob,
                     "tokko_html",
@@ -5196,24 +5479,33 @@ def strategy_tokko_html(inmob: Dict, session: requests.Session) -> List[Dict]:
                     current_url=candidate,
                 )
 
-                max_pages = min(int(inmob.get("paginas_estimadas") or 12), 30)
+                max_pages = min(int(inmob.get("paginas_estimadas") or 12), MAX_PAGINATION_PAGES_PER_SITE)
                 for page_num in range(2, max_pages + 1):
                     _check_strategy_deadline(inmob, "tokko_html")
                     if _deadline_remaining_seconds(_strategy_deadline(inmob)) <= 8:
                         errores_relevantes.append("paginacion_tokko_detenida_por_presupuesto")
+                        pagination_partial = bool(resultados)
+                        pagination_stop_reason = "presupuesto"
                         break
                     next_url = _add_query_param(candidate, "p", page_num)
+                    if next_url not in pagination_next_urls:
+                        pagination_next_urls.append(next_url)
                     urls_probadas.append(next_url)
                     try:
                         pr = _http_get(next_url, session, timeout=_bounded_http_timeout(inmob, 10))
                         if pr.status_code != 200 or "--NoMoreProperties--" in pr.text:
+                            pagination_stop_reason = pagination_stop_reason or f"http_{pr.status_code}_o_no_more"
                             break
                         more_props = _parse_tokko_listing_cards(pr.text, next_url, inmob)
                         if not more_props:
+                            property_urls_by_page[next_url] = 0
+                            pagination_stop_reason = pagination_stop_reason or "sin_mas_propiedades"
                             break
+                        property_urls_by_page[next_url] = len(more_props)
                         before = len(resultados)
                         resultados.extend(more_props)
                         resultados = _dedupe_props(resultados)
+                        duplicated_property_urls_skipped += max(before + len(more_props) - len(resultados), 0)
                         paginas_leidas += 1
                         _update_strategy_progress(
                             inmob,
@@ -5227,9 +5519,11 @@ def strategy_tokko_html(inmob: Dict, session: requests.Session) -> List[Dict]:
                             page_num=page_num,
                         )
                         if len(resultados) == before:
+                            pagination_stop_reason = pagination_stop_reason or "sin_urls_nuevas"
                             break
                     except Exception as exc:
                         errores_relevantes.append(f"{next_url}: {type(exc).__name__}: {str(exc)[:180]}")
+                        pagination_stop_reason = pagination_stop_reason or type(exc).__name__
                         break
 
                 resultados = _dedupe_props(resultados)
@@ -5241,6 +5535,17 @@ def strategy_tokko_html(inmob: Dict, session: requests.Session) -> List[Dict]:
                     "plantilla_tokko_detectada": templates_detected[0] if templates_detected else "unknown",
                     "plantillas_tokko_detectadas": templates_detected,
                     "extractor_tokko_version": TOKKO_HTML_EXTRACTOR_VERSION,
+                    "pagination_detected": bool(pagination_next_urls),
+                    "pagination_strategy": ["tokko_p_param"] if pagination_next_urls else [],
+                    "pages_detected": max(len(pagination_next_urls) + 1, paginas_leidas) if pagination_next_urls else paginas_leidas,
+                    "pages_processed": len(urls_probadas),
+                    "next_urls_found": pagination_next_urls[:40],
+                    "property_urls_by_page": property_urls_by_page,
+                    "unique_property_urls_total": len(resultados),
+                    "duplicated_property_urls_skipped": duplicated_property_urls_skipped,
+                    "pagination_stop_reason": pagination_stop_reason or ("sin_mas_paginas" if pagination_next_urls else "sin_paginacion"),
+                    "pagination_partial": bool(pagination_partial),
+                    "partial_extraction": bool(pagination_partial and resultados),
                     **image_metadata,
                     "errores_relevantes": errores_relevantes[-5:],
                 }
@@ -5286,6 +5591,17 @@ def strategy_tokko_html(inmob: Dict, session: requests.Session) -> List[Dict]:
         "plantillas_tokko_detectadas": templates_detected,
         "motivo_sin_propiedades": motivo_sin_propiedades,
         "extractor_tokko_version": TOKKO_HTML_EXTRACTOR_VERSION,
+        "pagination_detected": bool(pagination_next_urls),
+        "pagination_strategy": ["tokko_p_param"] if pagination_next_urls else [],
+        "pages_detected": max(len(pagination_next_urls) + 1, paginas_leidas) if pagination_next_urls else paginas_leidas,
+        "pages_processed": len(urls_probadas),
+        "next_urls_found": pagination_next_urls[:40],
+        "property_urls_by_page": property_urls_by_page,
+        "unique_property_urls_total": len(resultados),
+        "duplicated_property_urls_skipped": duplicated_property_urls_skipped,
+        "pagination_stop_reason": pagination_stop_reason or ("sin_mas_paginas" if pagination_next_urls else "sin_paginacion"),
+        "pagination_partial": bool(pagination_partial),
+        "partial_extraction": bool(pagination_partial and resultados),
         "imagenes_falsas_descartadas": int(image_stats.get("imagenes_falsas_descartadas") or 0),
         "imagenes_descartadas_por_motivo": dict(image_stats.get("imagenes_descartadas_por_motivo") or {}),
         "fuentes_imagenes": dict(image_stats.get("fuentes_imagenes") or {}),
@@ -5683,9 +5999,22 @@ def strategy_wordpress_sitemap_detail(inmob: Dict, session: requests.Session) ->
 
     urls_probadas: List[str] = []
     detail_urls: List[str] = []
+    for seeded_url in inmob.get("_diagnostic_detail_urls") or []:
+        if (
+            seeded_url
+            and seeded_url not in detail_urls
+            and (
+                _looks_like_real_property_url(str(seeded_url))
+                or _looks_like_wordpress_plugin_property_url(str(seeded_url), "wordpress_generic")
+            )
+        ):
+            detail_urls.append(str(seeded_url))
     errores_relevantes: List[str] = []
 
-    for base in base_candidates[:6]:
+    if detail_urls:
+        errores_relevantes.append(f"wordpress_sitemap_detail_usando_urls_diagnostico:{len(detail_urls)}")
+
+    for base in ([] if detail_urls else base_candidates[:6]):
         _check_strategy_deadline(inmob, "wordpress_sitemap_detail")
         if not base or base in urls_probadas:
             continue
@@ -5719,6 +6048,7 @@ def strategy_wordpress_sitemap_detail(inmob: Dict, session: requests.Session) ->
             return None
 
     max_urls = min(len(detail_urls), 300)
+    sitemap_partial = len(detail_urls) > max_urls
     executor = ThreadPoolExecutor(max_workers=6)
     try:
         futures = {executor.submit(_fetch_one, detail_url): detail_url for detail_url in detail_urls[:max_urls]}
@@ -5732,6 +6062,7 @@ def strategy_wordpress_sitemap_detail(inmob: Dict, session: requests.Session) ->
                 pass
     except TimeoutError:
         errores_relevantes.append("wordpress_sitemap_detail_detenido_por_timeout")
+        sitemap_partial = True
     finally:
         executor.shutdown(wait=False, cancel_futures=True)
 
@@ -5740,6 +6071,10 @@ def strategy_wordpress_sitemap_detail(inmob: Dict, session: requests.Session) ->
         **dict(inmob.get("_scraper_metadata") or {}),
         "wordpress_sitemap_urls_probadas": urls_probadas,
         "wordpress_sitemap_urls_detectadas": len(detail_urls),
+        "sitemap_total_urls": len(detail_urls),
+        "sitemap_processed_urls": min(max_urls, len(detail_urls)),
+        "sitemap_partial": bool(sitemap_partial),
+        "partial_extraction": bool(sitemap_partial),
         "cantidad_paginas": len(detail_urls),
         "errores_relevantes": errores_relevantes[-8:],
     }
@@ -5757,8 +6092,15 @@ SITEMAP_PATHS = [
     "/sitemap.xml",
     "/wp-sitemap.xml",
     "/sitemap_index.xml",
+    "/wp-sitemap-posts-property-1.xml",
+    "/wp-sitemap-posts-propiedad-1.xml",
+    "/wp-sitemap-posts-inmueble-1.xml",
+    "/wp-sitemap-posts-estate_property-1.xml",
+    "/wp-sitemap-posts-es_property-1.xml",
     "/sitemap-propiedades.xml",
     "/sitemap-properties.xml",
+    "/properties-sitemap.xml",
+    "/propiedad-sitemap.xml",
     "/sitemap-inmuebles.xml",
     "/property-sitemap.xml",
     "/propiedades-sitemap.xml",
@@ -6167,6 +6509,8 @@ def strategy_sitemap(inmob: Dict, session: requests.Session) -> List[Dict]:
         raise RuntimeError("sin_propiedades: sitemap sin URLs de propiedades")
 
     resultados: List[Dict] = []
+    max_urls = min(len(urls), 500)
+    sitemap_partial = len(urls) > max_urls
 
     def _fetch_one(url: str) -> Optional[Dict]:
         try:
@@ -6181,7 +6525,7 @@ def strategy_sitemap(inmob: Dict, session: requests.Session) -> List[Dict]:
 
     executor = ThreadPoolExecutor(max_workers=5)
     try:
-        futures = {executor.submit(_fetch_one, u): u for u in urls[:500]}
+        futures = {executor.submit(_fetch_one, u): u for u in urls[:max_urls]}
         for future in as_completed(futures, timeout=max(1.0, _deadline_remaining_seconds(_strategy_deadline(inmob)))):
             try:
                 prop = future.result()
@@ -6191,8 +6535,22 @@ def strategy_sitemap(inmob: Dict, session: requests.Session) -> List[Dict]:
                 pass
     except TimeoutError:
         logger.warning("  Sitemap timeout: se corta extraccion de detalles")
+        sitemap_partial = True
     finally:
         executor.shutdown(wait=False, cancel_futures=True)
+
+    previous_meta = dict(inmob.get("_scraper_metadata") or {})
+    inmob["_scraper_metadata"] = {
+        **previous_meta,
+        "sitemap_total_urls": len(urls),
+        "sitemap_processed_urls": max_urls,
+        "sitemap_partial": bool(sitemap_partial),
+        "partial_extraction": bool(sitemap_partial),
+        "errores_relevantes": (
+            list(previous_meta.get("errores_relevantes") or [])
+            + (["sitemap_detail_timeout_or_budget_partial"] if sitemap_partial else [])
+        )[-8:],
+    }
 
     if not resultados:
         raise RuntimeError("sin_propiedades: sitemap URLs encontradas pero sin datos extraÃƒÂ­bles")
@@ -6359,6 +6717,171 @@ def _wordpress_base_url(url: str) -> str:
 
 def _same_site_url(url: str, base_url: str) -> bool:
     return bool(urlparse(url).netloc) and urlparse(url).netloc == urlparse(base_url).netloc
+
+
+def _site_host_key(url: str) -> str:
+    parsed = urlparse(_normalize_queue_url(url))
+    host = (parsed.netloc or "").lower()
+    return host[4:] if host.startswith("www.") else host
+
+
+def _same_site_url_loose(url: str, base_url: str) -> bool:
+    return bool(_site_host_key(url)) and _site_host_key(url) == _site_host_key(base_url)
+
+
+def _listing_url_key(url: str) -> str:
+    parsed = urlparse(_normalize_queue_url(url))
+    host = (parsed.netloc or "").lower()
+    if host.startswith("www."):
+        host = host[4:]
+    path = unquote(parsed.path or "/").rstrip("/").lower() or "/"
+    query = urlencode(sorted(parse_qsl(parsed.query, keep_blank_values=True)))
+    return urlunparse(("", host, path, "", query, ""))
+
+
+def _dedupe_url_list(urls: List[str], limit: Optional[int] = None) -> List[str]:
+    seen: set = set()
+    result: List[str] = []
+    for raw in urls or []:
+        clean = _normalize_queue_url(str(raw).split("#", 1)[0])
+        if not clean:
+            continue
+        key = _listing_url_key(clean)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(clean)
+        if limit is not None and len(result) >= limit:
+            break
+    return result
+
+
+def _pagination_pattern_urls(current_url: str, max_pages: int = MAX_PAGINATION_PAGES_PER_SITE) -> List[str]:
+    """Genera variantes comunes de paginacion sin ejecutar JS."""
+    urls: List[str] = []
+    normalized = _normalize_queue_url(current_url)
+    if not normalized:
+        return urls
+
+    def add(candidate: str) -> None:
+        clean = _normalize_queue_url(candidate).split("#", 1)[0]
+        if clean and _same_site_url_loose(clean, normalized) and clean not in urls:
+            urls.append(clean)
+
+    parsed = urlparse(normalized)
+    base_path = re.sub(r"/(?:page|pagina)/\d+/?$", "", parsed.path.rstrip("/"), flags=re.I)
+    if not base_path:
+        base_path = ""
+
+    for page_num in range(2, max_pages + 1):
+        for key in ("page", "pagina", "paged"):
+            add(_add_query_param(normalized, key, page_num))
+        for marker in ("page", "pagina"):
+            new_path = f"{base_path}/{marker}/{page_num}/"
+            if not new_path.startswith("/"):
+                new_path = "/" + new_path
+            add(urlunparse(parsed._replace(path=new_path, query="")))
+    return urls
+
+
+def _extract_pagination_signals(
+    html: str,
+    current_url: str,
+    max_pages: int = MAX_PAGINATION_PAGES_PER_SITE,
+    include_pattern_urls: bool = False,
+) -> Dict[str, Any]:
+    """Detecta paginacion HTML comun y senales de "cargar mas"."""
+    soup = BeautifulSoup(html or "", "html.parser")
+    next_urls: List[str] = []
+    strategies: List[str] = []
+    page_numbers: List[int] = []
+
+    def add_url(raw: str, strategy: str) -> None:
+        if not raw:
+            return
+        full = urljoin(current_url, raw).split("#", 1)[0]
+        if not _same_site_url_loose(full, current_url):
+            return
+        if _is_noise_property_url(full) or _looks_like_real_property_url(full):
+            return
+        clean = _normalize_queue_url(full)
+        if clean and _listing_url_key(clean) != _listing_url_key(current_url) and clean not in next_urls:
+            next_urls.append(clean)
+        if strategy not in strategies:
+            strategies.append(strategy)
+
+    selectors = [
+        "a[rel='next']", "link[rel='next']",
+        ".next[href]", ".next a[href]",
+        ".pagination a[href]", ".page-numbers a[href]", ".pager a[href]",
+        ".nav-links a[href]",
+        "a[href*='page=']", "a[href*='pagina=']", "a[href*='paged=']",
+        "a[href*='/page/']", "a[href*='/pagina/']",
+    ]
+    for selector in selectors:
+        for node in soup.select(selector):
+            href = (node.get("href") or "").strip()
+            if not href:
+                continue
+            add_url(href, "html_selector")
+
+    for node in soup.select("a[href]"):
+        href = (node.get("href") or "").strip()
+        if not href:
+            continue
+        text = _normalize_text_key(node.get_text(" ", strip=True))
+        classes = " ".join(node.get("class") or []).lower()
+        rel = " ".join(node.get("rel") or []).lower()
+        full = urljoin(current_url, href).split("#", 1)[0]
+        href_low = full.lower()
+        numeric_text = text.strip()
+        is_numeric_page = numeric_text.isdigit() and 2 <= int(numeric_text) <= max_pages
+        if is_numeric_page:
+            page_numbers.append(int(numeric_text))
+        href_page_match = re.search(r"(?:/page/|/pagina/|[?&](?:page|pagina|paged)=)(\d+)", href_low, re.I)
+        if href_page_match:
+            try:
+                page_numbers.append(int(href_page_match.group(1)))
+            except ValueError:
+                pass
+        if (
+            "next" in rel
+            or "next" in classes
+            or any(marker in text for marker in ("siguiente", "proxima", "proxima pagina", "next"))
+            or text in {">", ">>", "\xbb"}
+            or is_numeric_page
+            or bool(href_page_match)
+        ):
+            add_url(href, "anchor_text_or_number" if is_numeric_page else "anchor_next")
+
+    low = _normalize_text_key(html or "")
+    load_more_markers = {
+        "load_more": ("load more", "load_more", "load-more"),
+        "cargar_mas": ("cargar mas", "ver mas", "mostrar mas"),
+        "data_pagination": ("data-page", "data-next", "data-paged"),
+        "wordpress_ajax": ("ajaxurl", "admin-ajax.php"),
+        "rest_api": ("wp-json",),
+    }
+    load_more_signals: List[str] = []
+    for signal, markers in load_more_markers.items():
+        if any(marker in low for marker in markers):
+            load_more_signals.append(signal)
+
+    if include_pattern_urls:
+        for pattern_url in _pagination_pattern_urls(current_url, max_pages=max_pages):
+            if pattern_url not in next_urls:
+                next_urls.append(pattern_url)
+        if "pattern_probe" not in strategies:
+            strategies.append("pattern_probe")
+
+    pages_detected = max(page_numbers) if page_numbers else (2 if next_urls else 0)
+    return {
+        "pagination_detected": bool(next_urls or load_more_signals),
+        "pagination_strategy": strategies,
+        "pages_detected": min(max(pages_detected, 0), max_pages),
+        "next_urls_found": _dedupe_url_list(next_urls, limit=max_pages * 4),
+        "load_more_signals": list(dict.fromkeys(load_more_signals)),
+    }
 
 
 def _looks_like_wordpress_plugin_property_url(url: str, plugin: str = "wordpress_generic") -> bool:
@@ -6642,12 +7165,24 @@ def _strategy_wordpress_plugin_detail(inmob: Dict, session: requests.Session, pl
     candidates = _wordpress_plugin_candidate_urls(inmob, first_html, final_url, plugin_detectado)
     max_listing_pages = _WORDPRESS_PLUGIN_MAX_LISTING_PAGES.get(plugin_detectado, 22)
     max_details = _WORDPRESS_PLUGIN_MAX_DETAILS.get(plugin_detectado, 140)
+    detail_url_keys: set = set()
+    listing_url_keys: set = {_listing_url_key(url) for url in candidates}
+    property_urls_by_page: Dict[str, int] = {}
+    pagination_next_urls: List[str] = []
+    pagination_strategies: List[str] = []
+    load_more_signals: List[str] = []
+    pages_detected = 0
+    duplicated_property_urls_skipped = 0
+    pagination_partial = False
+    pagination_stop_reason = ""
 
     idx = 0
     while idx < len(candidates) and len(urls_probadas) < max_listing_pages:
         _check_strategy_deadline(inmob, strategy_name)
         if _deadline_remaining_seconds(_strategy_deadline(inmob)) <= 10:
             errores_relevantes.append(f"{strategy_name}_listados_detenidos_por_presupuesto")
+            pagination_partial = bool(detail_urls)
+            pagination_stop_reason = "presupuesto"
             break
         candidate = candidates[idx]
         idx += 1
@@ -6666,20 +7201,64 @@ def _strategy_wordpress_plugin_detail(inmob: Dict, session: requests.Session, pl
             detected = _detect_wordpress_plugin(html)
             if plugin_detectado in {"unknown", "wordpress_generic"} and detected != "unknown":
                 plugin_detectado = detected
+            script_signals = _extract_script_property_signals(html, candidate)
             candidate_detail_links = list(dict.fromkeys(
                 [
                     url for url in _extract_generic_property_links(html, candidate)
                     if _looks_like_wordpress_plugin_property_url(url, plugin_detectado) or _looks_like_real_property_url(url)
                 ]
                 + _extract_wordpress_plugin_property_links(html, candidate, plugin_detectado)
+                + [
+                    url for url in (script_signals.get("property_urls") or [])
+                    if _looks_like_wordpress_plugin_property_url(url, plugin_detectado) or _looks_like_real_property_url(url)
+                ]
+                + [
+                    url for url in (script_signals.get("property_like_urls") or [])
+                    if _looks_like_wordpress_plugin_property_url(url, plugin_detectado) or _looks_like_real_property_url(url)
+                ]
             ))
+            property_urls_by_page[candidate] = len(candidate_detail_links)
             for link in candidate_detail_links:
-                if link not in detail_urls:
+                key = normalize_property_url_for_dedup(link) or _listing_url_key(link)
+                if key in detail_url_keys:
+                    duplicated_property_urls_skipped += 1
+                    continue
+                detail_url_keys.add(key)
+                if len(detail_urls) < MAX_LISTING_URLS_PER_SITE:
                     detail_urls.append(link)
-            for link in _extract_wordpress_listing_links(html, candidate, base_url, plugin_detectado):
-                if link not in candidates and link not in urls_probadas:
+            listing_candidates = (
+                _extract_wordpress_listing_links(html, candidate, base_url, plugin_detectado)
+                + (script_signals.get("listing_urls") or [])
+            )
+            pagination = _extract_pagination_signals(
+                html,
+                candidate,
+                include_pattern_urls=bool(candidate_detail_links or _count_html_cards(html) >= 2),
+            )
+            if pagination.get("pagination_detected"):
+                pages_detected = max(pages_detected, int(pagination.get("pages_detected") or 0))
+                for strategy in pagination.get("pagination_strategy") or []:
+                    if strategy not in pagination_strategies:
+                        pagination_strategies.append(strategy)
+                for signal in pagination.get("load_more_signals") or []:
+                    if signal not in load_more_signals:
+                        load_more_signals.append(signal)
+                for next_url in pagination.get("next_urls_found") or []:
+                    if next_url not in pagination_next_urls:
+                        pagination_next_urls.append(next_url)
+                listing_candidates.extend(pagination.get("next_urls_found") or [])
+            for link in listing_candidates:
+                if not _same_site_url_loose(link, base_url):
+                    continue
+                if _looks_like_wordpress_plugin_property_url(link, plugin_detectado) or _looks_like_real_property_url(link):
+                    continue
+                key = _listing_url_key(link)
+                if key not in listing_url_keys and len(candidates) < MAX_LISTING_URLS_PER_SITE:
+                    listing_url_keys.add(key)
                     candidates.append(link)
             if len(detail_urls) >= max_details:
+                pagination_partial = len(candidates) > len(urls_probadas)
+                pagination_stop_reason = "max_details"
                 break
         except Exception as exc:
             errores_relevantes.append(f"{candidate}: {type(exc).__name__}: {str(exc)[:180]}")
@@ -6692,6 +7271,9 @@ def _strategy_wordpress_plugin_detail(inmob: Dict, session: requests.Session, pl
             detail_urls_total=len(detail_urls),
             errores_relevantes=errores_relevantes[-5:],
         )
+    if idx < len(candidates) and len(urls_probadas) >= max_listing_pages:
+        pagination_partial = True
+        pagination_stop_reason = pagination_stop_reason or "max_pages_per_site"
 
     if not detail_urls:
         raise RuntimeError(f"no_property_links: {strategy_name} sin URLs reales de propiedades")
@@ -6725,6 +7307,18 @@ def _strategy_wordpress_plugin_detail(inmob: Dict, session: requests.Session, pl
         "urls_validas_detectadas": len(detail_urls),
         "property_links_count": len(detail_urls),
         "wordpress_detail_urls_sample": detail_urls[:12],
+        "pagination_detected": bool(pagination_next_urls or load_more_signals),
+        "pagination_strategy": pagination_strategies,
+        "pages_detected": pages_detected,
+        "pages_processed": len(urls_probadas),
+        "next_urls_found": pagination_next_urls[:40],
+        "property_urls_by_page": property_urls_by_page,
+        "unique_property_urls_total": len(detail_urls),
+        "duplicated_property_urls_skipped": duplicated_property_urls_skipped,
+        "load_more_signals": load_more_signals,
+        "pagination_stop_reason": pagination_stop_reason or ("sin_mas_paginas" if pagination_next_urls else "sin_paginacion"),
+        "pagination_partial": bool(pagination_partial),
+        "partial_extraction": bool(pagination_partial and resultados),
         "imagenes_detectadas": with_images,
         "imagenes_guardadas": sum(len(clean_property_images(prop.get("imagenes") or [])) for prop in resultados),
         "imagenes_descartadas": int(image_stats.get("imagenes_falsas_descartadas") or 0),
@@ -6785,10 +7379,11 @@ _UNIVERSAL_LISTING_KEYWORDS = (
 )
 
 _UNIVERSAL_LISTING_PATHS = [
-    "/", "/propiedades", "/propiedades/", "/propiedad", "/inmuebles",
-    "/inmuebles/", "/venta", "/Venta", "/ventas", "/Ventas",
-    "/alquiler", "/Alquiler", "/alquileres", "/buscar", "/busqueda",
-    "/emprendimientos", "/desarrollos",
+    "/", "/propiedades", "/propiedades/", "/propiedad", "/properties", "/property",
+    "/inmuebles", "/inmuebles/", "/inmueble", "/venta", "/Venta", "/ventas", "/Ventas",
+    "/alquiler", "/Alquiler", "/alquileres", "/listado", "/listados",
+    "/buscar", "/busqueda", "/catalogo", "/portfolio",
+    "/emprendimientos", "/desarrollos", "/listings", "/listing",
 ]
 
 _NON_PROPERTY_URL_PATTERNS = re.compile(
@@ -6859,6 +7454,8 @@ def _looks_like_real_property_url(url: str) -> bool:
             return True
     detail_patterns = (
         r"(^|/)p/\d{3,}",
+        r"(^|/)ad/[^/?#]{8,}",
+        r"(^|/)ad[-/]\d{3,}",
         r"(^|/)propiedad[-/]\d{3,}",
         r"(^|/)property[-/]\d{3,}",
         r"(^|/)inmueble[-/]\d{3,}",
@@ -6926,7 +7523,7 @@ def _looks_like_custom_property_url(url: str, link_text: str = "") -> bool:
         return False
     if re.search(r"^(blog|prensa|desarrollos?|contactenos?|contacto|nosotros|login)(/|$)", path):
         return False
-    if re.search(r"^(ad|avisos?|ficha|detalle|propiedad|inmueble)/[^/?#]{8,}", path):
+    if re.search(r"^(ad|avisos?|ficha|detalle|propiedad|propiedades|inmueble|inmuebles|property|properties)/[^/?#]{8,}", path):
         text = _fix_mojibake_text(link_text).lower()
         if any(noise in text for noise in ("ingresar", "contacto", "instagram", "facebook", "desarrollado")):
             return False
@@ -6975,7 +7572,8 @@ def _extract_custom_property_links(html: str, current_url: str) -> List[str]:
 
     selectors = [
         "a[href*='/ad/']", "a[href*='/aviso/']", "a[href*='/ficha/']",
-        "a[href*='/detalle/']", "a[href*='/propiedad/']", "a[href*='/inmueble/']",
+        "a[href*='/detalle/']", "a[href*='/propiedad/']", "a[href*='/propiedades/']",
+        "a[href*='/inmueble/']", "a[href*='/inmuebles/']", "a[href*='/property/']", "a[href*='/properties/']",
         "[class*='listing'] a[href]", "[class*='property'] a[href]",
         "[class*='propiedad'] a[href]", "[class*='inmueble'] a[href]",
         ".card a[href]", "article a[href]",
@@ -6984,7 +7582,7 @@ def _extract_custom_property_links(html: str, current_url: str) -> List[str]:
         for a in soup.select(selector):
             add((a.get("href") or "").strip(), a.get_text(" ", strip=True))
 
-    for match in re.findall(r"""["']([^"']*/(?:ad|aviso|ficha|detalle|propiedad|inmueble)/[^"']{8,})["']""", html or "", flags=re.I):
+    for match in re.findall(r"""["']([^"']*/(?:ad|aviso|ficha|detalle|propiedad|propiedades|inmueble|inmuebles|property|properties)/[^"']{8,})["']""", html or "", flags=re.I):
         add(match)
     return links[:500]
 
@@ -7137,6 +7735,15 @@ def strategy_custom_listing_detail(inmob: Dict, session: requests.Session) -> Li
     detail_urls: List[str] = []
     errores_relevantes: List[str] = []
     card_props: List[Dict] = []
+    listing_url_keys: set = set()
+    property_urls_by_page: Dict[str, int] = {}
+    pagination_next_urls: List[str] = []
+    pagination_strategies: List[str] = []
+    load_more_signals: List[str] = []
+    pages_detected = 0
+    duplicated_property_urls_skipped = 0
+    pagination_partial = False
+    pagination_stop_reason = ""
 
     try:
         r0 = _http_get(final_url, session, timeout=_bounded_http_timeout(inmob, 8), use_scraper_on_block=False)
@@ -7152,12 +7759,15 @@ def strategy_custom_listing_detail(inmob: Dict, session: requests.Session) -> Li
         urls_detectadas.append(final_url)
     if not urls_detectadas:
         raise RuntimeError("no_property_links: custom_listing_detail sin URLs /listing")
+    listing_url_keys = {_listing_url_key(url) for url in urls_detectadas}
 
     idx = 0
-    while idx < len(urls_detectadas) and len(urls_probadas) < 35:
+    while idx < len(urls_detectadas) and len(urls_probadas) < MAX_PAGINATION_PAGES_PER_SITE:
         _check_strategy_deadline(inmob, strategy_name)
         if _deadline_remaining_seconds(_strategy_deadline(inmob)) <= 8:
             errores_relevantes.append("custom_listing_detenido_por_presupuesto")
+            pagination_partial = bool(detail_urls or card_props)
+            pagination_stop_reason = "presupuesto"
             break
         listing_url = urls_detectadas[idx]
         idx += 1
@@ -7174,17 +7784,50 @@ def strategy_custom_listing_detail(inmob: Dict, session: requests.Session) -> Li
                     continue
                 html = _decode_response_text(r)
             for link in _extract_custom_listing_urls(html, listing_url):
-                if link not in urls_detectadas and link not in urls_probadas:
+                key = _listing_url_key(link)
+                if key not in listing_url_keys and link not in urls_probadas:
+                    listing_url_keys.add(key)
                     urls_detectadas.append(link)
-            for link in _extract_custom_property_links(html, listing_url):
-                if link not in detail_urls:
+            page_links = _extract_custom_property_links(html, listing_url)
+            property_urls_by_page[listing_url] = len(page_links)
+            for link in page_links:
+                key = normalize_property_url_for_dedup(link) or _listing_url_key(link)
+                if any((normalize_property_url_for_dedup(existing) or _listing_url_key(existing)) == key for existing in detail_urls):
+                    duplicated_property_urls_skipped += 1
+                    continue
+                if len(detail_urls) < MAX_LISTING_URLS_PER_SITE:
                     detail_urls.append(link)
+            pagination = _extract_pagination_signals(
+                html,
+                listing_url,
+                include_pattern_urls=bool(page_links or _count_html_cards(html) >= 2),
+            )
+            if pagination.get("pagination_detected"):
+                pages_detected = max(pages_detected, int(pagination.get("pages_detected") or 0))
+                for strategy in pagination.get("pagination_strategy") or []:
+                    if strategy not in pagination_strategies:
+                        pagination_strategies.append(strategy)
+                for signal in pagination.get("load_more_signals") or []:
+                    if signal not in load_more_signals:
+                        load_more_signals.append(signal)
+                for next_url in pagination.get("next_urls_found") or []:
+                    if next_url not in pagination_next_urls:
+                        pagination_next_urls.append(next_url)
+                    key = _listing_url_key(next_url)
+                    if key not in listing_url_keys and len(urls_detectadas) < MAX_LISTING_URLS_PER_SITE:
+                        listing_url_keys.add(key)
+                        urls_detectadas.append(next_url)
             if not detail_urls:
                 card_props.extend(_parse_custom_listing_cards(html, listing_url, inmob))
             if len(detail_urls) >= 180:
+                pagination_partial = len(urls_detectadas) > len(urls_probadas)
+                pagination_stop_reason = "max_detail_urls"
                 break
         except Exception as exc:
             errores_relevantes.append(f"{listing_url}: {type(exc).__name__}: {str(exc)[:180]}")
+    if idx < len(urls_detectadas) and len(urls_probadas) >= MAX_PAGINATION_PAGES_PER_SITE:
+        pagination_partial = True
+        pagination_stop_reason = pagination_stop_reason or "max_pages_per_site"
 
     resultados: List[Dict] = []
     for detail_url in detail_urls[:180]:
@@ -7211,6 +7854,18 @@ def strategy_custom_listing_detail(inmob: Dict, session: requests.Session) -> Li
         "custom_listing_links_propiedad_detectados": len(detail_urls),
         "custom_listing_detail_urls_sample": detail_urls[:12],
         "cantidad_paginas": len(urls_probadas),
+        "pagination_detected": bool(pagination_next_urls or load_more_signals),
+        "pagination_strategy": pagination_strategies,
+        "pages_detected": pages_detected,
+        "pages_processed": len(urls_probadas),
+        "next_urls_found": pagination_next_urls[:40],
+        "property_urls_by_page": property_urls_by_page,
+        "unique_property_urls_total": len(detail_urls),
+        "duplicated_property_urls_skipped": duplicated_property_urls_skipped,
+        "load_more_signals": load_more_signals,
+        "pagination_stop_reason": pagination_stop_reason or ("sin_mas_paginas" if pagination_next_urls else "sin_paginacion"),
+        "pagination_partial": bool(pagination_partial),
+        "partial_extraction": bool(pagination_partial and resultados),
         "errores_relevantes": errores_relevantes[-10:],
     }
     if not detail_urls and not card_props:
@@ -7233,6 +7888,16 @@ def strategy_static_html(inmob: Dict, session: requests.Session) -> List[Dict]:
     errores_relevantes: List[str] = []
     first_html = ""
     http_statuses: List[int] = []
+    detail_url_keys: set = set()
+    listing_url_keys: set = set()
+    property_urls_by_page: Dict[str, int] = {}
+    pagination_next_urls: List[str] = []
+    pagination_strategies: List[str] = []
+    load_more_signals: List[str] = []
+    pages_detected = 0
+    duplicated_property_urls_skipped = 0
+    pagination_partial = False
+    pagination_stop_reason = ""
 
     try:
         r0 = _http_get(url_inicial, session, timeout=_bounded_http_timeout(inmob, 10))
@@ -7242,11 +7907,17 @@ def strategy_static_html(inmob: Dict, session: requests.Session) -> List[Dict]:
         errores_relevantes.append(f"{url_inicial}: {type(exc).__name__}: {str(exc)[:180]}")
 
     candidates = _generic_candidate_urls(inmob, first_html=first_html, first_url=url_inicial)
-    for candidate in candidates:
+    listing_url_keys = {_listing_url_key(url) for url in candidates}
+    idx = 0
+    while idx < len(candidates) and len(urls_probadas) < MAX_PAGINATION_PAGES_PER_SITE:
         _check_strategy_deadline(inmob, "static_html")
         if _deadline_remaining_seconds(_strategy_deadline(inmob)) <= 8:
             errores_relevantes.append("static_html_detenido_por_presupuesto")
+            pagination_partial = bool(detail_urls)
+            pagination_stop_reason = "presupuesto"
             break
+        candidate = candidates[idx]
+        idx += 1
         if candidate in urls_probadas:
             continue
         urls_probadas.append(candidate)
@@ -7261,10 +7932,52 @@ def strategy_static_html(inmob: Dict, session: requests.Session) -> List[Dict]:
                 if status != 200:
                     continue
                 html = r.text
-            for link in _extract_generic_property_links(html, candidate):
-                if link not in detail_urls:
+            script_signals = _extract_script_property_signals(html, candidate)
+            page_links = list(dict.fromkeys(
+                _extract_generic_property_links(html, candidate)
+                + (script_signals.get("property_urls") or [])
+                + [
+                    url for url in (script_signals.get("property_like_urls") or [])
+                    if _looks_like_real_property_url(url) or _looks_like_custom_property_url(url)
+                ]
+            ))
+            property_urls_by_page[candidate] = len(page_links)
+            for link in page_links:
+                key = normalize_property_url_for_dedup(link) or _listing_url_key(link)
+                if key in detail_url_keys:
+                    duplicated_property_urls_skipped += 1
+                    continue
+                detail_url_keys.add(key)
+                if len(detail_urls) < MAX_LISTING_URLS_PER_SITE:
                     detail_urls.append(link)
-            if len(detail_urls) >= 80:
+            cards_count = _count_html_cards(html)
+            pagination = _extract_pagination_signals(
+                html,
+                candidate,
+                include_pattern_urls=bool(page_links or cards_count >= 2 or script_signals.get("listing_urls")),
+            )
+            if pagination.get("pagination_detected"):
+                pages_detected = max(pages_detected, int(pagination.get("pages_detected") or 0))
+                for strategy in pagination.get("pagination_strategy") or []:
+                    if strategy not in pagination_strategies:
+                        pagination_strategies.append(strategy)
+                for signal in pagination.get("load_more_signals") or []:
+                    if signal not in load_more_signals:
+                        load_more_signals.append(signal)
+                for next_url in pagination.get("next_urls_found") or []:
+                    if next_url not in pagination_next_urls:
+                        pagination_next_urls.append(next_url)
+                    key = _listing_url_key(next_url)
+                    if (
+                        key not in listing_url_keys
+                        and len(candidates) < MAX_LISTING_URLS_PER_SITE
+                        and len(candidates) < MAX_PAGINATION_PAGES_PER_SITE * 8
+                    ):
+                        listing_url_keys.add(key)
+                        candidates.append(next_url)
+            if len(detail_urls) >= MAX_LISTING_URLS_PER_SITE:
+                pagination_partial = True
+                pagination_stop_reason = "max_listing_urls_per_site"
                 break
         except Exception as exc:
             errores_relevantes.append(f"{candidate}: {type(exc).__name__}: {str(exc)[:180]}")
@@ -7277,9 +7990,12 @@ def strategy_static_html(inmob: Dict, session: requests.Session) -> List[Dict]:
             detail_urls_total=len(detail_urls),
             errores_relevantes=errores_relevantes[-5:],
         )
+    if idx < len(candidates) and len(urls_probadas) >= MAX_PAGINATION_PAGES_PER_SITE:
+        pagination_partial = True
+        pagination_stop_reason = pagination_stop_reason or "max_pages_per_site"
 
     resultados: List[Dict] = []
-    detail_slice = detail_urls[:120]
+    detail_slice = detail_urls[:160]
     _update_strategy_progress(
         inmob,
         "static_html",
@@ -7315,6 +8031,18 @@ def strategy_static_html(inmob: Dict, session: requests.Session) -> List[Dict]:
         "static_html_urls_probadas": urls_probadas,
         "static_html_links_propiedad_detectados": len(detail_urls),
         "static_html_http_statuses": http_statuses[-10:],
+        "pagination_detected": bool(pagination_next_urls or load_more_signals),
+        "pagination_strategy": pagination_strategies,
+        "pages_detected": pages_detected,
+        "pages_processed": len(urls_probadas),
+        "next_urls_found": pagination_next_urls[:40],
+        "property_urls_by_page": property_urls_by_page,
+        "unique_property_urls_total": len(detail_urls),
+        "duplicated_property_urls_skipped": duplicated_property_urls_skipped,
+        "load_more_signals": load_more_signals,
+        "pagination_stop_reason": pagination_stop_reason or ("sin_mas_paginas" if pagination_next_urls else "sin_paginacion"),
+        "pagination_partial": bool(pagination_partial),
+        "partial_extraction": bool(pagination_partial and resultados),
         "errores_relevantes": errores_relevantes[-8:],
     }
 
@@ -8077,6 +8805,31 @@ def _count_html_cards(html: str) -> int:
     return max_count
 
 
+def _extract_visible_properties_count(html: str) -> Optional[int]:
+    """Detecta contadores visibles tipo '133 propiedades' o 'resultados encontrados'."""
+    if not html:
+        return None
+    soup = BeautifulSoup(html or "", "html.parser")
+    text = _fix_mojibake_text(soup.get_text(" ", strip=True))
+    text = re.sub(r"\s+", " ", text)
+    candidates: List[int] = []
+    patterns = (
+        r"\b(\d{1,5})\s+(?:propiedades?|inmuebles?|avisos?|resultados?|publicaciones?)\b",
+        r"\b(?:propiedades?|inmuebles?|avisos?|resultados?|publicaciones?)\s+(?:encontrad[oa]s?|disponibles?|publicad[oa]s?)?\s*:?\s*(\d{1,5})\b",
+        r"\bse\s+encontraron\s+(\d{1,5})\s+(?:propiedades?|inmuebles?|avisos?|resultados?)\b",
+        r"\bmostrando\s+\d{1,5}\s*[-–]\s*\d{1,5}\s+de\s+(\d{1,5})\s+(?:propiedades?|inmuebles?|avisos?|resultados?)\b",
+    )
+    for pattern in patterns:
+        for match in re.findall(pattern, text, flags=re.I):
+            try:
+                value = int(match)
+            except (TypeError, ValueError):
+                continue
+            if 1 <= value <= 50000:
+                candidates.append(value)
+    return max(candidates) if candidates else None
+
+
 def _is_site_down_status(status: Optional[int]) -> bool:
     return isinstance(status, int) and status in {500, 502, 503, 504, 521, 522, 523, 524}
 
@@ -8131,9 +8884,21 @@ def _extract_script_property_signals(html: str, current_url: str) -> Dict[str, L
     """Busca URLs inmobiliarias dentro de scripts embebidos sin ejecutar JS."""
     soup = BeautifulSoup(html or "", "html.parser")
     script_text = "\n".join(script.get_text(" ", strip=False) for script in soup.find_all("script"))
+    data_attr_values: List[str] = []
+    for tag in soup.select("[data-href], [data-url], [data-link], [data-permalink], [href]"):
+        for attr in ("data-href", "data-url", "data-link", "data-permalink", "href"):
+            value = tag.get(attr)
+            if value:
+                data_attr_values.append(str(value))
+    search_text = "\n".join([
+        html_lib.unescape(script_text or ""),
+        html_lib.unescape(" ".join(data_attr_values)),
+        html_lib.unescape(html or ""),
+    ])
     links: List[str] = []
     listings: List[str] = []
     projects: List[str] = []
+    property_like_urls: List[str] = []
     current_netloc = urlparse(current_url).netloc
 
     def add(raw: str) -> None:
@@ -8149,20 +8914,26 @@ def _extract_script_property_signals(html: str, current_url: str) -> Dict[str, L
         if _looks_like_real_property_url(full):
             if full not in links:
                 links.append(full)
+            if full not in property_like_urls:
+                property_like_urls.append(full)
         elif _looks_like_custom_listing_url(full):
             if full not in listings:
                 listings.append(full)
         elif _looks_like_developer_project_url(full):
             if full not in projects:
                 projects.append(full)
+        elif PROPERTY_URL_PATTERNS.search(full) and not _is_noise_property_url(full):
+            if full not in property_like_urls:
+                property_like_urls.append(full)
 
-    for match in re.findall(r"""https?://[^"'\\<>\s]+|/[^"'\\<>\s]*(?:propiedad|property|inmueble|ficha|detalle|listing|desarrollo|emprendimiento|proyecto)[^"'\\<>\s]*""", script_text, flags=re.I):
+    for match in re.findall(r"""https?://[^"'\\<>\s]+|/[^"'\\<>\s]*(?:propiedad|propiedades|property|properties|inmueble|inmuebles|ficha|detalle|listing|ad|desarrollo|emprendimiento|proyecto)[^"'\\<>\s]*""", search_text, flags=re.I):
         add(match)
 
     return {
         "property_urls": links[:200],
         "listing_urls": listings[:100],
         "project_urls": projects[:100],
+        "property_like_urls": property_like_urls[:300],
     }
 
 
@@ -8290,24 +9061,50 @@ def _wordpress_rest_links_for_diagnosis(base_url: str, session: requests.Session
 
 
 def _html_requires_js(html: str, property_links_count: int = 0, cards_count: int = 0) -> bool:
+    signals = _requires_playwright_signals(html, property_links_count, cards_count)
+    return bool(signals)
+
+
+def _requires_playwright_signals(html: str, property_links_count: int = 0, cards_count: int = 0) -> List[str]:
     low = (html or "").lower()
-    js_markers = (
-        "__next_data__", "next/static", "data-reactroot", "id=\"root\"",
-        "id=\"app\"", "vue", "nuxt", "window.__initial_state__",
-        "apollo-state", "webpack", "vite", "chunk.js", "main.js",
-        "app.js", "window.__", "data-v-app", "ng-version",
-    )
-    if any(marker in low for marker in js_markers) and property_links_count == 0 and cards_count == 0:
-        return True
+    signals: List[str] = []
+    marker_map = {
+        "__next_data__": "__NEXT_DATA__",
+        "next/static": "next_static_bundle",
+        "data-reactroot": "react_root",
+        "id=\"root\"": "root_div",
+        "id=\"app\"": "app_div",
+        "vue": "vue_app",
+        "nuxt": "nuxt_app",
+        "window.__initial_state__": "window_initial_state",
+        "apollo-state": "apollo_state",
+        "webpack": "webpack_bundle",
+        "vite": "vite_bundle",
+        "chunk.js": "chunk_js",
+        "main.js": "main_js",
+        "app.js": "app_js",
+        "window.__": "window_state",
+        "data-v-app": "vue_mount",
+        "ng-version": "angular_app",
+    }
+    for marker, signal in marker_map.items():
+        if marker in low:
+            signals.append(signal)
     body_text = BeautifulSoup(html or "", "html.parser").get_text(" ", strip=True)
     loading_markers = ("cargando", "loading", "please enable javascript", "habilite javascript")
-    return (
-        len(body_text) < 300 and len(re.findall(r"<script\b", html or "", re.I)) >= 5
-    ) or (
+    if len(body_text) < 300 and len(re.findall(r"<script\b", html or "", re.I)) >= 5:
+        signals.append("thin_html_many_scripts")
+    if (
         len(body_text) < 500
         and any(marker in low for marker in loading_markers)
         and len(re.findall(r"<script\b", html or "", re.I)) >= 3
-    )
+    ):
+        signals.append("loading_shell")
+    if signals and property_links_count == 0 and cards_count == 0:
+        return list(dict.fromkeys(signals))
+    if property_links_count == 0 and cards_count == 0 and ("root_div" in signals or "app_div" in signals):
+        return list(dict.fromkeys(signals))
+    return []
 
 
 def _jsonld_type_count(html: str) -> int:
@@ -8341,6 +9138,7 @@ def classify_diagnostic_failure(
     custom_listing_count = int(diagnostic.get("custom_listing_urls_count") or 0)
     rest_count = int(diagnostic.get("wordpress_rest_property_urls_count") or 0)
     project_count = int(diagnostic.get("developer_project_urls_count") or 0)
+    property_like_count = int(diagnostic.get("property_like_links_detectados") or 0)
     cards_count = int(diagnostic.get("cards_posibles") or 0)
     plugin = str(diagnostic.get("wordpress_plugin_detectado") or "").strip().lower()
     possible_detail_urls = diagnostic.get("posibles_urls_detalle") or []
@@ -8368,7 +9166,7 @@ def classify_diagnostic_failure(
         return "scrapeable_wordpress_html"
     if custom_listing_count > 0:
         return "scrapeable_custom_listing"
-    if property_links_count > 0:
+    if property_links_count > 0 or property_like_count > 0:
         return "scrapeable_static_html"
     if sitemap_count > 0:
         return "scrapeable_sitemap"
@@ -8387,9 +9185,9 @@ def classify_diagnostic_failure(
 
     if diagnostic.get("requires_network_interception") and not allow_network_interception:
         return "requires_network_interception"
-    if diagnostic.get("requires_playwright") and not allow_playwright:
+    if diagnostic.get("requires_playwright"):
         return "requires_playwright"
-    if property_links_count == 0 and sitemap_count == 0 and custom_listing_count == 0 and rest_count == 0 and project_count == 0:
+    if property_links_count == 0 and property_like_count == 0 and sitemap_count == 0 and custom_listing_count == 0 and rest_count == 0 and project_count == 0:
         return "no_property_links_confirmed"
     if diagnostic.get("unsupported_cms"):
         return "unsupported_cms"
@@ -8447,8 +9245,18 @@ def diagnose_inmob(
         "developer_project_urls_count": 0,
         "wordpress_rest_property_urls_count": 0,
         "cards_posibles": 0,
+        "visible_properties_count": None,
         "json_ld_property_items": 0,
         "sitemap_property_urls_count": 0,
+        "links_detectados_total": 0,
+        "property_like_links_detectados": 0,
+        "js_urls_detectadas": 0,
+        "pagination_detected": False,
+        "pagination_strategy": [],
+        "pages_detected": 0,
+        "next_urls_found": [],
+        "load_more_signals": [],
+        "requires_playwright_signals": [],
         "requires_js": False,
         "requires_playwright": False,
         "requires_network_interception": False,
@@ -8464,6 +9272,7 @@ def diagnose_inmob(
         diagnostic["site_down"] = True
         diagnostic["site_down_reason"] = "sin_url"
         diagnostic["classification"] = "site_down_confirmed"
+        diagnostic["expected_properties_count"] = 0
         return diagnostic
 
     first_html = ""
@@ -8532,7 +9341,7 @@ def diagnose_inmob(
                 diagnostic["site_down_reason"] = diagnostic.get("site_down_reason") or reason
                 if is_base_candidate(candidate) and candidate not in failed_base_variants:
                     failed_base_variants.append(candidate)
-                if fast_site_down_errors >= 2:
+                if fast_site_down_errors >= 2 and len(tried_fetch_urls) >= minimum_base_probe_count:
                     break
 
     diagnostic["failed_base_variants"] = failed_base_variants
@@ -8547,6 +9356,7 @@ def diagnose_inmob(
         else:
             diagnostic["motivo_no_scrapeable"] = "html_vacio_o_sin_respuesta"
         diagnostic["classification"] = classify_diagnostic_failure(diagnostic, allow_playwright, allow_network_interception)
+        diagnostic["expected_properties_count"] = _diagnostic_expected_property_count(diagnostic)
         return diagnostic
 
     # Escaneo liviano de rutas inmobiliarias alternativas. Esto evita diagnosticar
@@ -8613,11 +9423,17 @@ def diagnose_inmob(
     custom_listing_urls: List[str] = []
     developer_project_urls: List[str] = []
     script_property_urls: List[str] = []
+    script_property_like_urls: List[str] = []
     script_listing_urls: List[str] = []
     script_project_urls: List[str] = []
     jsonld_count = 0
     cards_count = 0
     route_diagnostics: List[Dict[str, Any]] = []
+    pagination_next_urls: List[str] = []
+    pagination_strategies: List[str] = []
+    pagination_load_more_signals: List[str] = []
+    pagination_pages_detected = 0
+    visible_properties_count: Optional[int] = None
 
     for page_html, page_url in html_pages:
         page_generic_links = _extract_generic_property_links(page_html, page_url)
@@ -8639,9 +9455,11 @@ def diagnose_inmob(
         developer_project_urls.extend(page_developer_project_urls)
         script_signals = _extract_script_property_signals(page_html, page_url)
         page_script_property_urls = script_signals["property_urls"]
+        page_script_property_like_urls = script_signals.get("property_like_urls") or []
         page_script_listing_urls = script_signals["listing_urls"]
         page_script_project_urls = script_signals["project_urls"]
         script_property_urls.extend(page_script_property_urls)
+        script_property_like_urls.extend(page_script_property_like_urls)
         script_listing_urls.extend(page_script_listing_urls)
         script_project_urls.extend(page_script_project_urls)
         if any(script_signals.values()):
@@ -8650,6 +9468,25 @@ def diagnose_inmob(
         jsonld_count += page_jsonld_count
         page_cards_count = _count_html_cards(page_html)
         cards_count = max(cards_count, page_cards_count)
+        page_visible_count = _extract_visible_properties_count(page_html)
+        if page_visible_count is not None:
+            visible_properties_count = max(visible_properties_count or 0, page_visible_count)
+        page_pagination = _extract_pagination_signals(
+            page_html,
+            page_url,
+            include_pattern_urls=False,
+        )
+        if page_pagination.get("pagination_detected"):
+            pagination_pages_detected = max(pagination_pages_detected, int(page_pagination.get("pages_detected") or 0))
+            for strategy in page_pagination.get("pagination_strategy") or []:
+                if strategy not in pagination_strategies:
+                    pagination_strategies.append(strategy)
+            for next_url in page_pagination.get("next_urls_found") or []:
+                if next_url not in pagination_next_urls:
+                    pagination_next_urls.append(next_url)
+            for signal in page_pagination.get("load_more_signals") or []:
+                if signal not in pagination_load_more_signals:
+                    pagination_load_more_signals.append(signal)
 
         route_extractors: List[str] = []
         if _is_tokko_html(page_html):
@@ -8680,12 +9517,20 @@ def diagnose_inmob(
             "generic_property_links_count": len(page_generic_links),
             "plugin_property_links_count": len(page_plugin_links),
             "script_property_urls_count": len(page_script_property_urls),
+            "script_property_like_urls_count": len(page_script_property_like_urls),
             "listing_links_count": len(page_listing_links),
             "custom_listing_urls_count": len(page_custom_listing_urls),
             "developer_project_urls_count": len(page_developer_project_urls),
             "cards_posibles": page_cards_count,
+            "visible_properties_count": page_visible_count,
             "json_ld_property_items": page_jsonld_count,
+            "pagination_detected": bool(page_pagination.get("pagination_detected")),
+            "pagination_strategy": page_pagination.get("pagination_strategy") or [],
+            "pages_detected": page_pagination.get("pages_detected") or 0,
+            "next_urls_found": (page_pagination.get("next_urls_found") or [])[:12],
+            "load_more_signals": page_pagination.get("load_more_signals") or [],
             "requires_js": _html_requires_js(page_html, len(page_generic_links) + len(page_plugin_links) + len(page_script_property_urls), page_cards_count),
+            "requires_playwright_signals": _requires_playwright_signals(page_html, len(page_generic_links) + len(page_plugin_links) + len(page_script_property_urls), page_cards_count),
             "extractores_detectados": list(dict.fromkeys(route_extractors)),
             "motivos_descarte": discard_reasons,
         })
@@ -8699,6 +9544,10 @@ def diagnose_inmob(
             diagnostic["url_usada"] = page_url
 
     diagnostic["route_diagnostics"] = route_diagnostics[:30]
+    if html_pages and any((diag.get("url") or "").startswith("http") for diag in diagnostic["route_diagnostics"]):
+        diagnostic["site_down"] = False
+        if diagnostic.get("http_status") == 200:
+            diagnostic["site_down_reason"] = None
 
     if wp_plugin != "unknown":
         property_links = [
@@ -8712,12 +9561,29 @@ def diagnose_inmob(
     developer_project_urls = list(dict.fromkeys(developer_project_urls + script_project_urls))
     diagnostic["property_links_count"] = len(property_links)
     diagnostic["urls_validas_detectadas"] = len([url for url in property_links if _looks_like_real_property_url(url) or _looks_like_wordpress_plugin_property_url(url, wp_plugin)])
+    diagnostic["property_like_links_detectados"] = len(list(dict.fromkeys(script_property_like_urls)))
+    diagnostic["js_urls_detectadas"] = len(list(dict.fromkeys(script_property_urls + script_property_like_urls + script_listing_urls + script_project_urls)))
+    diagnostic["links_detectados_total"] = len(list(dict.fromkeys(
+        generic_property_links
+        + plugin_property_links
+        + script_property_urls
+        + script_property_like_urls
+        + listing_links
+        + custom_listing_urls
+        + developer_project_urls
+    )))
+    diagnostic["pagination_detected"] = bool(pagination_next_urls or pagination_load_more_signals)
+    diagnostic["pagination_strategy"] = pagination_strategies
+    diagnostic["pages_detected"] = pagination_pages_detected
+    diagnostic["next_urls_found"] = pagination_next_urls[:40]
+    diagnostic["load_more_signals"] = pagination_load_more_signals
+    diagnostic["visible_properties_count"] = visible_properties_count
     diagnostic["posibles_urls_detalle"] = property_links[:20]
     diagnostic["custom_listing_urls_count"] = len(custom_listing_urls)
     diagnostic["custom_listing_urls_detectadas"] = custom_listing_urls[:30]
     diagnostic["developer_project_urls_count"] = len(developer_project_urls)
     diagnostic["developer_project_urls_detectadas"] = developer_project_urls[:20]
-    diagnostic["posibles_urls_listado"] = list(dict.fromkeys(diagnostic["posibles_urls_listado"] + listing_links + custom_listing_urls))[:30]
+    diagnostic["posibles_urls_listado"] = list(dict.fromkeys(diagnostic["posibles_urls_listado"] + listing_links + custom_listing_urls + pagination_next_urls))[:30]
     if custom_listing_urls:
         diagnostic["extractores_posibles"].append("custom_listing_detail")
     if property_links:
@@ -8778,8 +9644,18 @@ def diagnose_inmob(
     if developer_project_urls and "developer_projects" not in diagnostic["extractores_posibles"]:
         diagnostic["extractores_posibles"].append("developer_projects")
 
-    requires_js = _html_requires_js(combined_html, len(property_links), cards_count)
+    requires_playwright_signals = _requires_playwright_signals(combined_html, len(property_links), cards_count)
+    for route_diag in route_diagnostics:
+        for signal in route_diag.get("requires_playwright_signals") or []:
+            if signal not in requires_playwright_signals:
+                requires_playwright_signals.append(signal)
+    for signal in pagination_load_more_signals:
+        load_more_signal = f"load_more_{signal}"
+        if load_more_signal not in requires_playwright_signals:
+            requires_playwright_signals.append(load_more_signal)
+    requires_js = bool(requires_playwright_signals) or _html_requires_js(combined_html, len(property_links), cards_count)
     diagnostic["requires_js"] = requires_js
+    diagnostic["requires_playwright_signals"] = requires_playwright_signals
     diagnostic["requires_playwright"] = requires_js and not property_links and not jsonld_count and not diagnostic["sitemap_property_urls_count"]
     diagnostic["requires_network_interception"] = (
         "tokko" in " ".join(diagnostic["tecnologias_detectadas"])
@@ -8812,7 +9688,7 @@ def diagnose_inmob(
         finally:
             _close_playwright_safely(page, "diagnose page")
 
-    if not property_links and not diagnostic["sitemap_property_urls_count"] and not custom_listing_urls and not developer_project_urls:
+    if not property_links and not diagnostic.get("property_like_links_detectados") and not diagnostic["sitemap_property_urls_count"] and not custom_listing_urls and not developer_project_urls:
         if diagnostic.get("requires_playwright"):
             diagnostic["motivo_no_scrapeable"] = "html_responde_pero_contenido_cargado_por_js"
         else:
@@ -8822,6 +9698,7 @@ def diagnose_inmob(
     diagnostic["tecnologias_detectadas"] = list(dict.fromkeys(diagnostic["tecnologias_detectadas"])) or ["unknown"]
     diagnostic["elapsed_seconds"] = round(time.time() - started_at, 2)
     diagnostic["classification"] = classify_diagnostic_failure(diagnostic, allow_playwright, allow_network_interception)
+    diagnostic["expected_properties_count"] = _diagnostic_expected_property_count(diagnostic)
     return diagnostic
 
 
@@ -8833,13 +9710,25 @@ def _diagnostic_expected_property_count(diagnostic: Dict[str, Any]) -> int:
     forma acotada para no rechazar resultados validos por ruido visual.
     """
     property_links = int(diagnostic.get("property_links_count") or 0)
+    property_like_count = int(diagnostic.get("property_like_links_detectados") or 0)
     valid_urls = int(diagnostic.get("urls_validas_detectadas") or 0)
+    visible_count = int(diagnostic.get("visible_properties_count") or 0)
     sitemap_count = int(diagnostic.get("sitemap_property_urls_count") or 0)
     custom_listing_count = int(diagnostic.get("custom_listing_urls_count") or 0)
     cards = int(diagnostic.get("cards_posibles") or 0)
+    pages_detected = int(diagnostic.get("pages_detected") or 0)
     url_signal = max(property_links, valid_urls)
+    if visible_count > 500 and sitemap_count == 0:
+        # Muchos sitios mezclan alturas, codigos o superficies cerca de la palabra
+        # "propiedades". Sin sitemap que lo confirme, no usamos ese numero gigante
+        # como total esperado.
+        visible_count = 0
+    if visible_count >= 5:
+        return max(visible_count, url_signal)
     if sitemap_count >= 5:
         return max(sitemap_count, url_signal)
+    if pages_detected >= 2 and url_signal > 0:
+        return max(url_signal, min(url_signal * pages_detected, 500))
     if url_signal > 0:
         card_cap = min(cards, max(url_signal * 2, url_signal))
         return max(url_signal, card_cap)
@@ -8883,6 +9772,7 @@ def select_best_scraping_strategy(diagnostic: Dict[str, Any], history: Optional[
     technologies = set(diagnostic.get("tecnologias_detectadas") or [])
     extractores_posibles = list(diagnostic.get("extractores_posibles") or [])
     property_links = int(diagnostic.get("property_links_count") or 0)
+    property_like_count = int(diagnostic.get("property_like_links_detectados") or 0)
     sitemap_count = int(diagnostic.get("sitemap_property_urls_count") or 0)
     custom_listing_count = int(diagnostic.get("custom_listing_urls_count") or 0)
     cards = int(diagnostic.get("cards_posibles") or 0)
@@ -8920,6 +9810,35 @@ def select_best_scraping_strategy(diagnostic: Dict[str, Any], history: Optional[
         reason = f"estrategia historica: {saved_strategy}"
         confidence = "high"
 
+    # Tokko clasico debe ganar frente a falsos positivos de WordPress/plugin:
+    # varios sitios Tokko exponen assets o clases que parecen WordPress, pero
+    # las cards y URLs /p/ son la senal mas confiable para este CMS.
+    if primary is None and "tokko_api" in technologies:
+        primary = "tokko_api"
+        fallbacks = ["tokko_html", "static_html_tokko_detail"]
+        reason = "Tokko API key detectada"
+        confidence = "high"
+
+    if primary is None and "tokko_html" in technologies:
+        if _detail_urls_have_tokko_classic_shape(diagnostic) and cards >= 3:
+            primary = "tokko_html"
+            fallbacks = ["static_html_tokko_detail", "json_ld", "sitemap"]
+            reason = f"Tokko clasico con cards HTML ({cards}) y URLs /p/"
+            confidence = "high"
+        elif property_links > 0 or _detail_urls_have_real_property_shape(diagnostic):
+            primary = "static_html_tokko_detail"
+            fallbacks = ["tokko_html", "static_html_detail", "json_ld"]
+            reason = "Tokko custom/estatico: hay fichas reales pero no cards clasicas suficientes"
+            confidence = "medium"
+        elif classification == "scrapeable_tokko" or cards > 0 or "tokko_html" in extractores_posibles:
+            primary = "tokko_html"
+            fallbacks = ["static_html_tokko_detail", "json_ld", "sitemap"]
+            reason = (
+                "Tokko detectado sin links estaticos de detalle; "
+                "se prueban rutas Tokko conocidas (/Venta, /Propiedades, /Alquiler)"
+            )
+            confidence = "medium"
+
     if primary is None and "wordpress" in technologies:
         if plugin in {"essential_real_estate", "estatik", "realhomes"}:
             primary = _wordpress_plugin_strategy_name(plugin)
@@ -8951,32 +9870,6 @@ def select_best_scraping_strategy(diagnostic: Dict[str, Any], history: Optional[
             reason = f"wordpress con links HTML de propiedades ({property_links})"
             confidence = "medium"
 
-    if primary is None and "tokko_api" in technologies:
-        primary = "tokko_api"
-        fallbacks = ["tokko_html", "static_html_tokko_detail"]
-        reason = "Tokko API key detectada"
-        confidence = "high"
-
-    if primary is None and "tokko_html" in technologies:
-        if _detail_urls_have_tokko_classic_shape(diagnostic) and cards >= 3:
-            primary = "tokko_html"
-            fallbacks = ["static_html_tokko_detail", "json_ld", "sitemap"]
-            reason = f"Tokko clasico con cards HTML ({cards}) y URLs /p/"
-            confidence = "high"
-        elif property_links > 0 or _detail_urls_have_real_property_shape(diagnostic):
-            primary = "static_html_tokko_detail"
-            fallbacks = ["tokko_html", "static_html_detail", "json_ld"]
-            reason = "Tokko custom/estatico: hay fichas reales pero no cards clasicas suficientes"
-            confidence = "medium"
-        elif classification == "scrapeable_tokko" or cards > 0 or "tokko_html" in extractores_posibles:
-            primary = "tokko_html"
-            fallbacks = ["static_html_tokko_detail", "json_ld", "sitemap"]
-            reason = (
-                "Tokko detectado sin links estaticos de detalle; "
-                "se prueban rutas Tokko conocidas (/Venta, /Propiedades, /Alquiler)"
-            )
-            confidence = "medium"
-
     if primary is None and (classification == "scrapeable_custom_listing" or custom_listing_count > 0):
         primary = "custom_listing_detail"
         fallbacks = ["static_html_detail"]
@@ -8994,6 +9887,12 @@ def select_best_scraping_strategy(diagnostic: Dict[str, Any], history: Optional[
         fallbacks = ["json_ld"]
         reason = f"HTML estatico con links reales de propiedades ({property_links})"
         confidence = "medium"
+
+    if primary is None and classification == "scrapeable_static_html" and property_like_count > 0:
+        primary = "static_html_detail"
+        fallbacks = ["json_ld", "sitemap"]
+        reason = f"HTML/JS embebido con URLs candidatas de propiedades ({property_like_count})"
+        confidence = "low"
 
     if primary is None and classification == "scrapeable_developer_projects":
         primary = "static_html_detail"
@@ -9074,6 +9973,7 @@ def evaluate_scrape_quality(
     expected = int(strategy_plan.get("expected_property_count") or 0)
     diagnostic_property_links = int(diagnostic.get("property_links_count") or 0)
     diagnostic_sitemap_count = int(diagnostic.get("sitemap_property_urls_count") or 0)
+    strategy_name = str(strategy_plan.get("primary_strategy") or "")
     if total == 0:
         return {
             "accepted": False,
@@ -9107,9 +10007,16 @@ def evaluate_scrape_quality(
     address_ratio = _ratio(address_count, total)
 
     issues: List[str] = []
+    large_sitemap_partial = (
+        diagnostic_sitemap_count >= 300
+        and strategy_name in {"sitemap", "wordpress_sitemap_detail"}
+        and total >= 12
+    )
     strong_missing_signal = diagnostic_sitemap_count >= 20 or diagnostic_property_links >= 30
-    if strong_missing_signal and expected >= 50 and total < max(10, int(expected * 0.08)):
+    if strong_missing_signal and expected >= 50 and total < max(10, int(expected * 0.08)) and not large_sitemap_partial:
         issues.append(f"too_few_vs_expected:{total}/{expected}")
+    if large_sitemap_partial and total < expected:
+        issues.append(f"sitemap_partial:{total}/{diagnostic_sitemap_count}")
     if url_ratio < 0.6:
         issues.append("urls_invalidas")
     if title_ratio < 0.5:
@@ -9121,6 +10028,14 @@ def evaluate_scrape_quality(
     if image_ratio == 0:
         issues.append("sin_fotos_reales")
 
+    partial_too_few_valid = (
+        expected >= 20
+        and total >= 1
+        and url_ratio >= 0.95
+        and title_ratio >= 0.95
+        and absurd_price_count == 0
+    )
+
     score = 0
     score += min(20, total * 2)
     score += int(url_ratio * 15)
@@ -9130,6 +10045,10 @@ def evaluate_scrape_quality(
     score += int(address_ratio * 10)
     score += 10 if absurd_price_count == 0 else 0
     accepted = score >= 55 and "too_few_vs_expected" not in " ".join(issues) and url_ratio >= 0.6 and title_ratio >= 0.5
+    if large_sitemap_partial and score >= 50 and url_ratio >= 0.6 and title_ratio >= 0.5 and not absurd_price_count:
+        accepted = True
+    if partial_too_few_valid:
+        accepted = True
     if absurd_price_count:
         accepted = False
 
@@ -9146,7 +10065,233 @@ def evaluate_scrape_quality(
         "generic_title_count": generic_title_count,
         "absurd_price_count": absurd_price_count,
         "issues": issues,
+        "sitemap_total_urls": diagnostic_sitemap_count,
+        "sitemap_partial": bool(large_sitemap_partial and total < diagnostic_sitemap_count),
+        "sitemap_processed_urls": total if large_sitemap_partial else None,
+        "partial_extraction": bool(partial_too_few_valid or (large_sitemap_partial and total < diagnostic_sitemap_count)),
+        "quality_warning": "too_few_vs_expected" if partial_too_few_valid and any("too_few_vs_expected" in issue for issue in issues) else None,
     }
+
+
+def _safe_int(value: Any, default: int = 0) -> int:
+    try:
+        if value is None or value == "":
+            return default
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_ratio(numerator: int, denominator: int) -> Optional[float]:
+    if denominator <= 0:
+        return None
+    return round(numerator / denominator, 3)
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        if value is None or value == "":
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _coerce_metadata_dict(value: Any) -> Dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            return {}
+    return {}
+
+
+def _partial_retry_metadata_get(metadata: Dict[str, Any], key: str, default: Any = None) -> Any:
+    metadata = metadata or {}
+    if key in metadata:
+        return metadata.get(key)
+    completeness = metadata.get("extraction_completeness")
+    if isinstance(completeness, dict) and key in completeness:
+        return completeness.get(key)
+    return default
+
+
+def evaluate_extraction_completeness(
+    props: List[Dict[str, Any]],
+    diagnostic: Dict[str, Any],
+    strategy_metadata: Dict[str, Any],
+    quality: Optional[Dict[str, Any]] = None,
+    strategy_name: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Evalua si la cantidad extraida parece representar el inventario completo."""
+    quality = quality or {}
+    strategy_metadata = strategy_metadata or {}
+    saved_count = len(props or [])
+    diagnostic_expected = _safe_int(diagnostic.get("expected_properties_count") or diagnostic.get("expected_property_count"))
+    quality_expected = _safe_int(quality.get("expected_property_count"))
+    visible_count = _safe_int(diagnostic.get("visible_properties_count"))
+    sitemap_total = max(
+        _safe_int(strategy_metadata.get("sitemap_total_urls")),
+        _safe_int(diagnostic.get("sitemap_property_urls_count")),
+    )
+    if visible_count > 500 and sitemap_total == 0:
+        visible_count = 0
+    sitemap_processed = _safe_int(strategy_metadata.get("sitemap_processed_urls"))
+    pages_detected = max(
+        _safe_int(strategy_metadata.get("pages_detected")),
+        _safe_int(diagnostic.get("pages_detected")),
+    )
+    pages_processed = _safe_int(strategy_metadata.get("pages_processed") or strategy_metadata.get("cantidad_paginas"))
+    cards_count = _safe_int(diagnostic.get("cards_posibles"))
+    property_links = max(
+        _safe_int(diagnostic.get("property_links_count")),
+        _safe_int(diagnostic.get("urls_validas_detectadas")),
+        _safe_int(strategy_metadata.get("unique_property_urls_total")),
+        _safe_int(strategy_metadata.get("static_html_links_propiedad_detectados")),
+        _safe_int(strategy_metadata.get("property_links_count")),
+    )
+    candidate_expected = max(
+        diagnostic_expected,
+        quality_expected,
+        visible_count,
+        sitemap_total,
+        property_links,
+        cards_count if cards_count >= 6 else 0,
+    )
+    if pages_detected >= 2 and property_links > 0:
+        candidate_expected = max(candidate_expected, min(property_links * pages_detected, MAX_LISTING_URLS_PER_SITE))
+
+    expected_count = candidate_expected
+    completion_ratio = _safe_ratio(saved_count, expected_count)
+    pagination_detected = bool(strategy_metadata.get("pagination_detected") or diagnostic.get("pagination_detected"))
+    load_more_signals = list(dict.fromkeys(
+        list(strategy_metadata.get("load_more_signals") or [])
+        + list(diagnostic.get("load_more_signals") or [])
+    ))
+    load_more_detected = bool(load_more_signals)
+    ajax_endpoint_detected = any(
+        signal in {"wordpress_ajax", "rest_api", "data_pagination"}
+        or "ajax" in str(signal)
+        or "wp-json" in str(signal)
+        for signal in load_more_signals
+    )
+    stop_reason = str(
+        strategy_metadata.get("pagination_stop_reason")
+        or strategy_metadata.get("stop_reason")
+        or ""
+    )
+    issue_text = " | ".join(str(issue) for issue in (quality.get("issues") or []))
+    error_text = " | ".join(str(value) for value in (strategy_metadata.get("errores_relevantes") or []))
+
+    signals: List[str] = []
+    if pagination_detected:
+        signals.append("pagination_detected")
+    if pages_detected and pages_processed and pages_processed < pages_detected:
+        signals.append("pagination_not_fully_processed")
+    if strategy_metadata.get("pagination_partial"):
+        signals.append("pagination_partial")
+    if sitemap_total >= 50:
+        signals.append("sitemap_large")
+    if sitemap_total and sitemap_processed and sitemap_processed < sitemap_total:
+        signals.append("sitemap_not_fully_processed")
+    if load_more_detected:
+        signals.append("load_more_detected")
+    if ajax_endpoint_detected:
+        signals.append("ajax_endpoint_detected")
+    if "too_few_vs_expected" in issue_text:
+        signals.append("too_few_vs_expected")
+    if "timeout" in error_text.lower() or "presupuesto" in error_text.lower() or "detenido" in error_text.lower():
+        signals.append("timeout_or_budget_stop")
+    if property_links >= 20 and saved_count < max(5, int(property_links * 0.25)):
+        signals.append("many_candidate_urls_few_results")
+
+    confidence = "low"
+    if visible_count >= 5 or sitemap_total >= 5:
+        confidence = "high"
+    elif pages_detected >= 2 or property_links >= 5 or cards_count >= 6:
+        confidence = "medium"
+
+    retry_strategy: Optional[str] = None
+    if sitemap_total >= 50 and (not sitemap_processed or sitemap_processed < sitemap_total or (completion_ratio is not None and completion_ratio < 0.7)):
+        retry_strategy = "sitemap_batch"
+    elif load_more_detected or ajax_endpoint_detected:
+        retry_strategy = "playwright_or_ajax_load_more"
+    elif pagination_detected and (not pages_processed or not pages_detected or pages_processed < pages_detected or strategy_metadata.get("pagination_partial")):
+        retry_strategy = "pagination_deep_scan"
+    elif "timeout_or_budget_stop" in signals:
+        retry_strategy = "retry_with_more_budget"
+    elif "many_candidate_urls_few_results" in signals:
+        retry_strategy = "detail_extraction_deep_scan"
+
+    if saved_count == 0:
+        status = "incomplete" if expected_count or signals else "unknown"
+    elif expected_count <= 0:
+        status = "partial" if signals else "likely_complete"
+    elif completion_ratio is not None and completion_ratio >= 0.9 and not any(
+        signal in signals
+        for signal in (
+            "pagination_not_fully_processed",
+            "pagination_partial",
+            "sitemap_not_fully_processed",
+            "load_more_detected",
+            "ajax_endpoint_detected",
+            "timeout_or_budget_stop",
+        )
+    ):
+        status = "complete"
+    elif completion_ratio is not None and completion_ratio >= 0.6 and not retry_strategy:
+        status = "likely_complete"
+    else:
+        status = "partial"
+
+    if expected_count >= 20 and saved_count > 0 and completion_ratio is not None and completion_ratio < 0.5:
+        status = "partial"
+    if expected_count >= 50 and saved_count > 0 and completion_ratio is not None and completion_ratio < 0.1:
+        status = "partial"
+    if status in {"partial", "incomplete"} and retry_strategy is None:
+        retry_strategy = "retry_with_more_budget" if signals else "manual_review"
+
+    retry_recommended = status in {"partial", "incomplete"} and bool(retry_strategy)
+    return {
+        "extraction_completeness_status": status,
+        "expected_properties_count": int(expected_count or 0),
+        "saved_properties_count": int(saved_count),
+        "completion_ratio": completion_ratio,
+        "completion_confidence": confidence if expected_count or signals else "low",
+        "pagination_detected": pagination_detected,
+        "pages_detected": int(pages_detected or 0),
+        "pages_processed": int(pages_processed or 0),
+        "sitemap_total_urls": int(sitemap_total or 0),
+        "sitemap_processed_urls": int(sitemap_processed or 0),
+        "load_more_detected": load_more_detected,
+        "ajax_endpoint_detected": ajax_endpoint_detected,
+        "partial_extraction": status in {"partial", "incomplete"},
+        "retry_recommended": retry_recommended,
+        "retry_strategy": retry_strategy,
+        "stop_reason": stop_reason or (";".join(signals) if signals else None),
+        "incomplete_signals": list(dict.fromkeys(signals)),
+        "strategy": strategy_name or strategy_metadata.get("primary_strategy") or strategy_metadata.get("estrategia_final"),
+    }
+
+
+def _quality_failure_error_type(quality_results: List[Dict[str, Any]]) -> str:
+    if not quality_results:
+        return "strategy_quality_failed"
+    issues_text = " | ".join(
+        str(issue)
+        for result in quality_results
+        for issue in (result.get("issues") or [])
+    ).lower()
+    if "too_few_vs_expected" in issues_text:
+        return "parsing_too_few_vs_expected"
+    if "sitemap_partial" in issues_text:
+        return "sitemap_too_large_partial"
+    if "timeout" in issues_text or "presupuesto" in issues_text:
+        return "extraction_partial_timeout"
+    return "strategy_quality_failed"
 
 
 def run_best_strategy(
@@ -9288,6 +10433,7 @@ def run_best_strategy(
         allow_playwright=allow_playwright_fallback,
         allow_network_interception=allow_network_interception,
     )
+    inmob["_diagnostic_detail_urls"] = list(diagnostic.get("posibles_urls_detalle") or [])
     strategy_plan = select_best_scraping_strategy(
         diagnostic,
         history={
@@ -9342,9 +10488,21 @@ def run_best_strategy(
         "plugin_detectado": diagnostic.get("wordpress_plugin_detectado"),
         "estrategia_elegida": strategy_plan.get("primary_strategy"),
         "primary_strategy": strategy_plan.get("primary_strategy"),
+        "strategy_suggested": strategy_plan.get("primary_strategy"),
         "motivo_eleccion_estrategia": strategy_plan.get("reason"),
         "expected_property_count": strategy_plan.get("expected_property_count"),
         "property_links_count": diagnostic.get("property_links_count"),
+        "rutas_probadas": diagnostic.get("rutas_alternativas_probadas"),
+        "sitemaps_probados": diagnostic.get("sitemap_urls_probadas"),
+        "links_detectados_total": diagnostic.get("links_detectados_total"),
+        "property_like_links_detectados": diagnostic.get("property_like_links_detectados"),
+        "js_urls_detectadas": diagnostic.get("js_urls_detectadas"),
+        "pagination_detected": diagnostic.get("pagination_detected"),
+        "pagination_strategy": diagnostic.get("pagination_strategy"),
+        "pages_detected": diagnostic.get("pages_detected"),
+        "next_urls_found": diagnostic.get("next_urls_found"),
+        "load_more_signals": diagnostic.get("load_more_signals"),
+        "requires_playwright_signals": diagnostic.get("requires_playwright_signals"),
         "custom_listing_urls_detectadas": diagnostic.get("custom_listing_urls_detectadas"),
         "custom_listing_urls_count": diagnostic.get("custom_listing_urls_count"),
         "cards_posibles": diagnostic.get("cards_posibles"),
@@ -9356,6 +10514,7 @@ def run_best_strategy(
     primary_strategy = strategy_plan.get("primary_strategy")
     if not primary_strategy:
         classification = strategy_plan.get("classification") or diagnostic.get("classification") or "no_property_links"
+        metadata["motivo_final"] = f"{classification}: sin estrategia scrapeable segun diagnostico"
         raise RuntimeError(f"{classification}: sin estrategia scrapeable segun diagnostico")
 
     logger.info("  Diagnostico: %s", diagnostic.get("classification"))
@@ -9391,16 +10550,50 @@ def run_best_strategy(
             metadata["extractores_ejecutados"] = attempts
             inmob["_scraper_metadata"] = metadata
             props = _sanitize_scraped_props_for_quality(props, metadata)
-            quality = evaluate_scrape_quality(props, strategy_plan, diagnostic)
+            quality_plan = dict(strategy_plan)
+            quality_plan["primary_strategy"] = strategy_name
+            quality = evaluate_scrape_quality(props, quality_plan, diagnostic)
             quality["strategy"] = strategy_name
+            completeness = evaluate_extraction_completeness(
+                props,
+                diagnostic,
+                metadata,
+                quality=quality,
+                strategy_name=strategy_name,
+            )
+            quality["extraction_completeness"] = completeness
             quality_results.append(quality)
             metadata["resultado_calidad"] = quality
             metadata["resultados_calidad_por_estrategia"] = quality_results
+            metadata["extraction_completeness"] = completeness
+            for key, value in completeness.items():
+                if key != "incomplete_signals":
+                    metadata[key] = value
             if quality.get("accepted"):
                 metadata["fallback_usado"] = index > 0
                 metadata["estrategia_final"] = strategy_name
                 metadata["should_save_strategy_for_future"] = bool(strategy_plan.get("should_save_strategy_for_future"))
+                if (
+                    quality.get("partial_extraction")
+                    or quality.get("quality_warning")
+                    or completeness.get("partial_extraction")
+                ):
+                    metadata["partial_extraction"] = True
+                    metadata["quality_warning"] = quality.get("quality_warning") or "partial_extraction"
+                    if completeness.get("extraction_completeness_status") in {"partial", "incomplete"}:
+                        metadata["quality_warning"] = "incomplete_extraction"
+                    metadata["expected_count"] = completeness.get("expected_properties_count") or quality.get("expected_property_count")
+                    metadata["saved_count"] = len(props)
+                    metadata["retry_recommended"] = bool(completeness.get("retry_recommended"))
+                    metadata["retry_strategy"] = completeness.get("retry_strategy")
                 logger.info("  Calidad aceptada: score=%s props=%s", quality.get("score"), len(props))
+                logger.info(
+                    "  Completitud: %s ratio=%s expected=%s retry=%s",
+                    completeness.get("extraction_completeness_status"),
+                    completeness.get("completion_ratio"),
+                    completeness.get("expected_properties_count"),
+                    completeness.get("retry_strategy"),
+                )
                 return props, strategy_name
             logger.warning(
                 "  Calidad insuficiente en %s: score=%s issues=%s",
@@ -9420,15 +10613,19 @@ def run_best_strategy(
     metadata["resultado_calidad"] = quality_results[-1] if quality_results else None
     metadata["resultados_calidad_por_estrategia"] = quality_results
     if not quality_results and "requires_playwright" in skipped_reasons:
+        metadata["motivo_final"] = "requires_playwright: sitio requiere renderizado JS y --allow-playwright no esta habilitado"
         raise RuntimeError("requires_playwright: sitio requiere renderizado JS y --allow-playwright no esta habilitado")
     if not quality_results and "requires_network_interception" in skipped_reasons:
+        metadata["motivo_final"] = "requires_network_interception: sitio requiere inspeccion de red y --allow-network-interception no esta habilitado"
         raise RuntimeError("requires_network_interception: sitio requiere inspeccion de red y --allow-network-interception no esta habilitado")
     if last_error and not quality_results:
         raise last_error
     issues = (quality_results[-1].get("issues") if quality_results else []) or []
     if issues:
         metadata["rejected_reason"] = issues
-    raise RuntimeError(f"parsing_failed: ninguna estrategia alcanzo calidad minima; issues={issues}")
+    failure_type = _quality_failure_error_type(quality_results)
+    metadata["motivo_final"] = f"{failure_type}: ninguna estrategia alcanzo calidad minima; issues={issues}"
+    raise RuntimeError(f"{failure_type}: ninguna estrategia alcanzo calidad minima; issues={issues}")
 
     # --- Ir directo a la estrategia guardada (con fallback automÃƒÂ¡tico) ---
     if estrategia_guardada == "tokko_api" and inmob.get("tokko_api_key"):
@@ -10145,6 +11342,16 @@ def _scrape_queue_item(
 def _metadata_indicates_partial_extraction(strategy_meta: Optional[Dict[str, Any]]) -> bool:
     if not isinstance(strategy_meta, dict):
         return False
+    completeness = strategy_meta.get("extraction_completeness")
+    if isinstance(completeness, dict):
+        if completeness.get("extraction_completeness_status") not in {None, "", "complete", "likely_complete"}:
+            return True
+        if completeness.get("retry_recommended"):
+            return True
+    if strategy_meta.get("extraction_completeness_status") not in {None, "", "complete", "likely_complete"}:
+        return True
+    if strategy_meta.get("partial_extraction") or strategy_meta.get("sitemap_partial"):
+        return True
     error_text = " | ".join(str(value) for value in strategy_meta.get("errores_relevantes") or [])
     if re.search(r"timeout|presupuesto|detenido|pendientes sin consultar", error_text, re.I):
         return True
@@ -10160,6 +11367,94 @@ def _metadata_indicates_partial_extraction(strategy_meta: Optional[Dict[str, Any
                 except (TypeError, ValueError):
                     continue
     return False
+
+
+def _path_from_property_url_candidate(value: Any) -> str:
+    if not value:
+        return ""
+    raw = str(value).strip()
+    if not raw:
+        return ""
+    if not re.match(r"^https?://", raw, re.I):
+        raw = f"http://{raw.lstrip('/')}"
+    try:
+        parsed = urlparse(raw)
+    except Exception:
+        return ""
+    return unquote(parsed.path or "").lower().strip("/")
+
+
+def _listing_url_not_property_detail_reason(url: Any, url_normalizada: Any = None) -> Optional[str]:
+    """Detecta URLs de listado que nunca deben persistirse como propiedades."""
+    paths = [
+        _path_from_property_url_candidate(url),
+        _path_from_property_url_candidate(url_normalizada),
+    ]
+    listing_roots = ("propiedades", "inmuebles", "venta", "ventas", "alquiler", "alquileres")
+    for path in paths:
+        if not path:
+            continue
+        if path in listing_roots:
+            return f"listing_url:{path}"
+        if re.fullmatch(r"(propiedades|inmuebles|venta|ventas|alquiler|alquileres)/\d+", path):
+            return f"listing_url_paginated:{path}"
+        if re.fullmatch(r"(propiedades|inmuebles|venta|ventas|alquiler|alquileres)/(?:page|pagina)/\d+", path):
+            return f"listing_url_paginated:{path}"
+    return None
+
+
+def _invalid_listing_property_reason(prop: Dict[str, Any]) -> Optional[str]:
+    reason = _listing_url_not_property_detail_reason(prop.get("url"), prop.get("url_normalizada"))
+    if not reason:
+        return None
+    title_key = re.sub(
+        r"[^a-z0-9]+",
+        " ",
+        unicodedata.normalize("NFKD", _fix_mojibake_text(prop.get("titulo")).lower()),
+    ).strip()
+    generic_title = title_key in {
+        "",
+        "propiedad",
+        "propiedades",
+        "inmueble",
+        "inmuebles",
+        "descripcion",
+        "detalle",
+        "sin titulo",
+        "propiedad sin titulo",
+    }
+    weak_payload = not prop.get("precio") and not prop.get("descripcion") and not prop.get("direccion")
+    if generic_title or weak_payload:
+        return reason
+    return None
+
+
+def _is_listing_like_property_payload(prop: Dict[str, Any]) -> bool:
+    """Evita guardar paginas de listado parseadas por error como si fueran fichas."""
+    listing_reason = _listing_url_not_property_detail_reason(prop.get("url"), prop.get("url_normalizada"))
+    if listing_reason:
+        return True
+    url = prop.get("url")
+    if not url or _partial_retry_is_detail_url(url):
+        return False
+    title_key = re.sub(
+        r"[^a-z0-9]+",
+        " ",
+        unicodedata.normalize("NFKD", _fix_mojibake_text(prop.get("titulo")).lower()),
+    ).strip()
+    generic_title = title_key in {
+        "",
+        "propiedad",
+        "propiedades",
+        "inmueble",
+        "inmuebles",
+        "descripcion",
+        "detalle",
+        "sin titulo",
+        "propiedad sin titulo",
+    }
+    weak_payload = not prop.get("precio") and not prop.get("descripcion") and not prop.get("direccion")
+    return bool(generic_title or weak_payload)
 
 
 def _save_queue_properties(
@@ -10183,6 +11478,33 @@ def _save_queue_properties(
         item.get("inmobiliaria_id"),
         main_id, scraping_id, method,
     )
+
+    dropped_listing_payloads: List[Dict[str, Any]] = []
+    filtered_props: List[Dict[str, Any]] = []
+    for prop in props:
+        if _is_listing_like_property_payload(prop):
+            dropped_listing_payloads.append({
+                "url": prop.get("url"),
+                "titulo": prop.get("titulo"),
+                "fuente_extraccion": prop.get("fuente_extraccion"),
+            })
+            continue
+        filtered_props.append(prop)
+    if dropped_listing_payloads:
+        logger.warning(
+            "  Propiedades descartadas por parecer paginas de listado: %d | ejemplos=%s",
+            len(dropped_listing_payloads),
+            dropped_listing_payloads[:3],
+        )
+        if isinstance(strategy_meta, dict):
+            strategy_meta["propiedades_descartadas_por_url_no_detalle"] = len(dropped_listing_payloads)
+            strategy_meta["propiedades_descartadas_por_url_no_detalle_ejemplos"] = dropped_listing_payloads[:5]
+    props = filtered_props
+    if not props:
+        raise SavePropertiesError(
+            "save_failed: todas las propiedades detectadas parecian paginas de listado o payloads genericos",
+            errors=dropped_listing_payloads,
+        )
 
     for prop in props:
         prop["inmobiliaria_id"] = main_id
@@ -10469,12 +11791,65 @@ def _process_scraping_control_item(
             final_url=url_usada,
             http_status=None,
         ) from exc
+    completeness_after_save = dict(strategy_meta.get("extraction_completeness") or {})
+    saved_or_matched_count = (
+        int(counts.get("propiedades_nuevas") or 0)
+        + int(counts.get("propiedades_actualizadas") or 0)
+        + int(counts.get("propiedades_sin_cambios") or 0)
+    )
+    if completeness_after_save:
+        expected_for_ratio = _safe_int(completeness_after_save.get("expected_properties_count"))
+        completeness_after_save["saved_properties_count"] = saved_or_matched_count
+        completeness_after_save["completion_ratio"] = _safe_ratio(saved_or_matched_count, expected_for_ratio)
+        if completeness_after_save.get("extraction_completeness_status") in {"partial", "incomplete"}:
+            completeness_after_save["retry_recommended"] = True
+    else:
+        completeness_after_save = {
+            "extraction_completeness_status": "unknown",
+            "expected_properties_count": 0,
+            "saved_properties_count": saved_or_matched_count,
+            "completion_ratio": None,
+            "completion_confidence": "low",
+            "partial_extraction": False,
+            "retry_recommended": False,
+            "retry_strategy": None,
+        }
     metadata_extra = {
         "geocodificadas": counts["geocodificadas"],
         "geocoding_omitido_por_timeout": counts.get("geocoding_omitido_por_timeout", 0),
         "propiedades_inactivas_marcadas": counts["propiedades_inactivas_marcadas"],
         "inactivos_omitidos_por_timeout": counts.get("inactivos_omitidos_por_timeout", False),
         "inactivos_omitidos_por_extraccion_parcial": counts.get("inactivos_omitidos_por_extraccion_parcial", False),
+        "extraction_completeness": completeness_after_save,
+        "extraction_completeness_status": completeness_after_save.get("extraction_completeness_status"),
+        "expected_properties_count": completeness_after_save.get("expected_properties_count"),
+        "saved_properties_count": completeness_after_save.get("saved_properties_count"),
+        "completion_ratio": completeness_after_save.get("completion_ratio"),
+        "completion_confidence": completeness_after_save.get("completion_confidence"),
+        "retry_recommended": completeness_after_save.get("retry_recommended"),
+        "retry_strategy": completeness_after_save.get("retry_strategy"),
+        "partial_extraction": bool(
+            strategy_meta.get("partial_extraction")
+            or strategy_meta.get("sitemap_partial")
+            or completeness_after_save.get("partial_extraction")
+        ),
+        "timeout_after_saved": bool(
+            (strategy_meta.get("partial_extraction") or strategy_meta.get("sitemap_partial") or completeness_after_save.get("partial_extraction"))
+            and (
+                "timeout" in " ".join(str(x) for x in strategy_meta.get("errores_relevantes") or []).lower()
+                or "presupuesto" in " ".join(str(x) for x in strategy_meta.get("errores_relevantes") or []).lower()
+            )
+        ),
+        "strategy_progress": strategy_meta.get("strategy_progress"),
+        "urls_detectadas": (
+            strategy_meta.get("sitemap_total_urls")
+            or strategy_meta.get("wordpress_sitemap_urls_detectadas")
+            or strategy_meta.get("static_html_links_propiedad_detectados")
+        ),
+        "urls_procesadas": (
+            strategy_meta.get("sitemap_processed_urls")
+            or strategy_meta.get("sitemap_processed_urls")
+        ),
         "inmobiliaria_main_id": counts["inmobiliaria_main_id"],
         "inmobiliaria_scraping_id": counts["inmobiliaria_scraping_id"],
         "metodo_resolucion_inmobiliaria": counts["metodo_resolucion_inmobiliaria"],
@@ -10484,7 +11859,19 @@ def _process_scraping_control_item(
         "image_save_diagnostics": counts.get("image_save_diagnostics", {}),
     }
     for key, value in strategy_meta.items():
-        if key not in {"cantidad_paginas", "errores_relevantes"}:
+        if key not in {
+            "cantidad_paginas",
+            "errores_relevantes",
+            "extraction_completeness",
+            "extraction_completeness_status",
+            "expected_properties_count",
+            "saved_properties_count",
+            "completion_ratio",
+            "completion_confidence",
+            "retry_recommended",
+            "retry_strategy",
+            "partial_extraction",
+        }:
             metadata_extra[key] = value
     combined_errors = errores_relevantes + list(strategy_meta.get("errores_relevantes") or [])
     metadata = _queue_metadata(
@@ -11083,6 +12470,872 @@ def run_controlled_queue(
     logger.info("=" * 60)
 
 
+def run_retry_errors_queue(
+    max_items: Optional[int] = 5,
+    allow_playwright_fallback: bool = True,
+    allow_network_interception: bool = True,
+) -> None:
+    """Reintenta items con errores accionables en modo tecnico controlado."""
+    t_inicio = time.time()
+    db = SupabasePropiedades()
+    limit = max_items if max_items is not None and max_items > 0 else 5
+    items = db.load_retryable_error_items(limit=limit)
+    session = SupabasePropiedades._make_session()
+    processed = success = failed = 0
+    total_detected = total_new = total_updated = total_unchanged = total_property_errors = 0
+
+    logger.info("=" * 60)
+    logger.info("RETRY ERRORES TECNICO")
+    logger.info("Items candidatos: %d | limite=%d", len(items), limit)
+    logger.info("Playwright=%s | Network=%s", allow_playwright_fallback, allow_network_interception)
+
+    if not items:
+        logger.info("No hay errores accionables para reintentar")
+        return
+
+    pw = browser = pw_context = None
+    use_playwright = allow_playwright_fallback or allow_network_interception
+    if use_playwright:
+        pw = sync_playwright().start()
+        browser, pw_context = _make_playwright_context(pw)
+    try:
+        for item in items:
+            processed += 1
+            item_id = item.get("scraping_run_item_id") or item.get("id")
+            run_id = item.get("scraping_run_id")
+            item_started_at = time.time()
+            logger.info("=" * 60)
+            logger.info(
+                "Retry item=%s | run=%s | inmobiliaria=%s | error_previo=%s",
+                item_id,
+                run_id,
+                item.get("inmobiliaria_nombre"),
+                item.get("error_type"),
+            )
+            try:
+                db.retry_scraping_item(item_id)
+                result = _process_scraping_control_item(
+                    db,
+                    item,
+                    session,
+                    pw_context,
+                    allow_playwright_fallback=allow_playwright_fallback,
+                    allow_network_interception=allow_network_interception,
+                )
+                metadata = result["metadata_json"]
+                metadata["retry_errors_mode"] = True
+                metadata["previous_error_type"] = item.get("error_type")
+                db.finish_scraping_item_success(
+                    item_id=item_id,
+                    propiedades_detectadas=result["propiedades_detectadas"],
+                    propiedades_nuevas=result["propiedades_nuevas"],
+                    propiedades_actualizadas=result["propiedades_actualizadas"],
+                    propiedades_sin_cambios=result["propiedades_sin_cambios"],
+                    propiedades_error=result["propiedades_error"],
+                    final_url=result["final_url"],
+                    metadata_json=metadata,
+                )
+                success += 1
+                total_detected += int(result.get("propiedades_detectadas") or 0)
+                total_new += int(result.get("propiedades_nuevas") or 0)
+                total_updated += int(result.get("propiedades_actualizadas") or 0)
+                total_unchanged += int(result.get("propiedades_sin_cambios") or 0)
+                total_property_errors += int(result.get("propiedades_error") or 0)
+                logger.info("Retry success | item=%s | detectadas=%s nuevas=%s actualizadas=%s",
+                            item_id, result["propiedades_detectadas"], result["propiedades_nuevas"], result["propiedades_actualizadas"])
+            except Exception as exc:
+                failed += 1
+                control_exc = exc if isinstance(exc, ScrapingControlError) else None
+                metadata = (
+                    control_exc.metadata
+                    if control_exc
+                    else _queue_metadata(
+                        item=item,
+                        started_at=item_started_at,
+                        url_usada=item.get("url_listado") or item.get("web"),
+                        estrategia_usada="retry_errors",
+                        cantidad_paginas=0,
+                        errores_relevantes=[str(exc)[:500]],
+                        extra={"retry_errors_mode": True, "previous_error_type": item.get("error_type")},
+                    )
+                )
+                if isinstance(metadata, dict):
+                    metadata["retry_errors_mode"] = True
+                    metadata["previous_error_type"] = item.get("error_type")
+                error_type = clasificar_error(exc)
+                logger.error("Retry error | item=%s | %s | %s", item_id, error_type, str(exc)[:500])
+                try:
+                    db.finish_scraping_item_error(
+                        item_id=item_id,
+                        error_message=str(exc),
+                        error_type=error_type,
+                        http_status=control_exc.http_status if control_exc else _extract_http_status(exc),
+                        final_url=control_exc.final_url if control_exc else item.get("url_listado") or item.get("web"),
+                        metadata_json=metadata,
+                    )
+                except Exception as close_exc:
+                    logger.error("No se pudo cerrar retry item %s: %s", item_id, close_exc)
+            finally:
+                if run_id:
+                    try:
+                        db.close_scraping_run_if_finished(run_id)
+                    except Exception as exc:
+                        logger.warning("No se pudo cerrar run %s si estaba finalizado: %s", run_id, exc)
+    finally:
+        if use_playwright:
+            _close_playwright_safely(pw_context, "retry playwright context")
+            _close_playwright_safely(browser, "retry playwright browser")
+            _close_playwright_safely(pw, "retry playwright driver")
+
+    elapsed = time.time() - t_inicio
+    logger.info("=" * 60)
+    logger.info("RETRY ERRORES FINALIZADO")
+    logger.info("Items procesados: %d", processed)
+    logger.info("Exitos: %d", success)
+    logger.info("Errores: %d", failed)
+    logger.info("Propiedades detectadas: %d", total_detected)
+    logger.info("Propiedades nuevas: %d", total_new)
+    logger.info("Propiedades actualizadas: %d", total_updated)
+    logger.info("Propiedades sin cambios: %d", total_unchanged)
+    logger.info("Propiedades con error: %d", total_property_errors)
+    logger.info("Tiempo total: %.1f s (%.1f min)", elapsed, elapsed / 60)
+    logger.info("=" * 60)
+
+
+def _metadata_url_values(value: Any) -> List[str]:
+    """Extrae URLs desde metadata anidada sin depender de nombres de claves exactos."""
+    urls: List[str] = []
+    if isinstance(value, str):
+        if value.startswith(("http://", "https://", "/")):
+            urls.append(value)
+        urls.extend(re.findall(r"https?://[^\s\"'<>]+", value))
+    elif isinstance(value, list):
+        for item in value:
+            urls.extend(_metadata_url_values(item))
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            if "url" in str(key).lower() or isinstance(item, (dict, list)):
+                urls.extend(_metadata_url_values(item))
+    return _dedupe_url_list(urls, limit=600)
+
+
+def _partial_retry_base_urls(item: Dict[str, Any], metadata: Dict[str, Any]) -> List[str]:
+    urls = [
+        item.get("url_listado"),
+        item.get("web"),
+        item.get("final_url"),
+        metadata.get("url_usada"),
+        metadata.get("final_url"),
+    ]
+    diagnostic = metadata.get("diagnostico_inicial")
+    if isinstance(diagnostic, dict):
+        urls.extend([
+            diagnostic.get("url_diagnostico_usada"),
+            diagnostic.get("url_base_derivada"),
+            diagnostic.get("final_url"),
+        ])
+    normalized: List[str] = []
+    for url in urls:
+        clean = _normalize_queue_url(url)
+        if clean and clean not in normalized:
+            normalized.append(clean)
+    return normalized
+
+
+def _partial_retry_known_detail_urls(metadata: Dict[str, Any]) -> List[str]:
+    urls = []
+    for raw in _metadata_url_values(metadata):
+        if _looks_like_real_property_url(raw) or _looks_like_custom_property_url(raw):
+            urls.append(raw)
+    return _dedupe_url_list(urls, limit=800)
+
+
+def _partial_retry_known_listing_urls(item: Dict[str, Any], metadata: Dict[str, Any], max_pages_per_site: int) -> List[str]:
+    urls: List[str] = []
+    urls.extend(_partial_retry_base_urls(item, metadata))
+    for raw in _metadata_url_values(metadata):
+        if not raw:
+            continue
+        if _looks_like_real_property_url(raw) or _is_noise_property_url(raw):
+            continue
+        if _same_site_url_loose(raw, item.get("web") or item.get("url_listado") or raw):
+            urls.append(raw)
+    for base_url in list(urls[:8]):
+        urls.extend(_pagination_pattern_urls(base_url, max_pages=max_pages_per_site))
+    return _dedupe_url_list(urls, limit=max_pages_per_site * 5)
+
+
+def _filter_new_detail_urls(urls: List[str], existing_url_keys: set, limit: int) -> Tuple[List[str], int]:
+    selected: List[str] = []
+    skipped_existing = 0
+    seen: set = set()
+    for url in urls:
+        if not _partial_retry_is_detail_url(url):
+            continue
+        key = normalize_property_url_for_dedup(url) or _listing_url_key(url)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        if key in existing_url_keys:
+            skipped_existing += 1
+            continue
+        selected.append(url)
+        if len(selected) >= limit:
+            break
+    return selected, skipped_existing
+
+
+def _partial_retry_is_detail_url(url: Any) -> bool:
+    if not url:
+        return False
+    if _listing_url_not_property_detail_reason(url):
+        return False
+    text = str(url)
+    parsed = urlparse(text)
+    path = unquote((parsed.path or "").lower()).strip("/")
+    if not path:
+        return False
+    listing_only = {
+        "propiedad", "propiedades", "inmueble", "inmuebles", "property", "properties",
+        "venta", "ventas", "alquiler", "alquileres", "listado", "listings", "buscar", "busqueda",
+    }
+    if path in listing_only:
+        return False
+    if re.fullmatch(r"(propiedades|inmuebles|properties|property|venta|ventas|alquiler|alquileres)/?\d*", path):
+        return False
+    if re.search(r"^(property-status|property-type|property-feature|property-city|property-state|categoria|category|tag|tipo-propiedad|estado)/", path):
+        return False
+    if parsed.query and not _looks_like_custom_property_url(text) and not _looks_like_real_property_url(text):
+        query = unquote(parsed.query or "").lower()
+        if any(marker in query for marker in ("operacion=", "ciudad=", "dormitorios=", "banios=", "inmueble_id=", "pagina=", "page=")):
+            return False
+    return (
+        _looks_like_real_property_url(text)
+        or _looks_like_custom_property_url(text)
+        or _looks_like_developer_project_url(text)
+    )
+
+
+def _filter_props_for_current_item(
+    props: List[Dict[str, Any]],
+    item: Dict[str, Any],
+    canonical_resolution: Dict[str, Any],
+) -> Tuple[List[Dict[str, Any]], int]:
+    source_domains = set(_unique_domains(item.get("web"), item.get("url_listado")))
+    main_row = canonical_resolution.get("main_row") or {}
+    source_domains.update(_unique_domains(main_row.get("web"), main_row.get("url_listado")))
+    filtered: List[Dict[str, Any]] = []
+    discarded = 0
+    for prop in props:
+        url = prop.get("url")
+        if url and not _partial_retry_is_detail_url(url):
+            title_key = _normalize_text_key(prop.get("titulo"))
+            if title_key in {"propiedad", "propiedades", "inmueble", "inmuebles"}:
+                discarded += 1
+                continue
+        if url:
+            prop_domains = _unique_domains(url)
+            if prop_domains and source_domains and not any(domain in source_domains for domain in prop_domains):
+                discarded += 1
+                continue
+        filtered.append(prop)
+    return filtered, discarded
+
+
+def _extract_detail_urls_for_partial_retry(
+    detail_urls: List[str],
+    inmob: Dict[str, Any],
+    session: requests.Session,
+    item_deadline: Optional[float],
+    strategy_name: str,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    props: List[Dict[str, Any]] = []
+    errors: List[str] = []
+    processed = 0
+
+    def worker() -> List[Dict[str, Any]]:
+        nonlocal processed
+        out: List[Dict[str, Any]] = []
+        for detail_url in detail_urls:
+            _check_deadline(item_deadline, "item")
+            if _deadline_remaining_seconds(_strategy_deadline(inmob)) <= 3:
+                errors.append("partial_retry_detalles_detenidos_por_presupuesto")
+                break
+            processed += 1
+            try:
+                prop = _extract_detail_page(detail_url, inmob, session)
+                if prop:
+                    prop["fuente_extraccion"] = strategy_name
+                    out.append(prop)
+                time.sleep(random.uniform(0.04, 0.12))
+            except Exception as exc:
+                if len(errors) < 10:
+                    errors.append(f"{detail_url}: {type(exc).__name__}: {str(exc)[:180]}")
+        return out
+
+    runtime_strategy = "wordpress_sitemap_detail" if strategy_name == "partial_sitemap_batch" else "static_html"
+    try:
+        props = _run_strategy_with_deadline(runtime_strategy, inmob, item_deadline, worker)
+    except StrategyTimeoutError:
+        errors.append(f"{strategy_name}_timeout")
+    return _dedupe_props(props), {
+        "partial_retry_urls_processed": processed,
+        "errores_relevantes": errors[-10:],
+        "retry_partial_stop_reason": "timeout_or_budget" if errors else None,
+    }
+
+
+def _partial_retry_sitemap_batch(
+    item: Dict[str, Any],
+    inmob: Dict[str, Any],
+    metadata: Dict[str, Any],
+    session: requests.Session,
+    existing_url_keys: set,
+    batch_size_urls: int,
+    item_deadline: Optional[float],
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    detail_urls = _partial_retry_known_detail_urls(metadata)
+    sitemaps_tried: List[str] = []
+    sitemap_errors: List[str] = []
+    for base_url in _partial_retry_base_urls(item, metadata):
+        if _deadline_remaining_seconds(item_deadline) <= 8:
+            break
+        try:
+            prop_urls, project_urls, tried, errors = _fetch_sitemap_urls_for_diagnosis(base_url, session)
+            sitemaps_tried.extend(tried)
+            sitemap_errors.extend(errors)
+            detail_urls.extend(prop_urls)
+            detail_urls.extend(project_urls)
+        except Exception as exc:
+            sitemap_errors.append(f"{base_url}: {type(exc).__name__}: {str(exc)[:180]}")
+    detail_urls = _dedupe_url_list([
+        url for url in detail_urls
+        if _looks_like_real_property_url(url) or _looks_like_custom_property_url(url) or _looks_like_developer_project_url(url)
+    ], limit=2000)
+    selected_urls, skipped_existing = _filter_new_detail_urls(detail_urls, existing_url_keys, max(batch_size_urls, 1))
+    props, extract_meta = _extract_detail_urls_for_partial_retry(
+        selected_urls,
+        inmob,
+        session,
+        item_deadline,
+        "partial_sitemap_batch",
+    )
+    meta = {
+        **extract_meta,
+        "partial_retry_urls_total": len(detail_urls),
+        "partial_retry_urls_selected": len(selected_urls),
+        "partial_retry_existing_urls_skipped": skipped_existing,
+        "sitemap_total_urls": len(detail_urls) or _safe_int(_partial_retry_metadata_get(metadata, "sitemap_total_urls")),
+        "sitemap_processed_urls": _safe_int(_partial_retry_metadata_get(metadata, "sitemap_processed_urls")) + len(selected_urls),
+        "sitemap_urls_probadas": sitemaps_tried[:80],
+        "sitemap_errors": sitemap_errors[:10],
+        "retry_partial_stop_reason": extract_meta.get("retry_partial_stop_reason") or (
+            "batch_limit" if len(selected_urls) < len(detail_urls) - skipped_existing else "batch_complete"
+        ),
+    }
+    return props, meta
+
+
+def _partial_retry_pagination_deep_scan(
+    item: Dict[str, Any],
+    inmob: Dict[str, Any],
+    metadata: Dict[str, Any],
+    session: requests.Session,
+    existing_url_keys: set,
+    batch_size_urls: int,
+    max_pages_per_site: int,
+    item_deadline: Optional[float],
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    listing_urls = _partial_retry_known_listing_urls(item, metadata, max_pages_per_site=max_pages_per_site)
+    listing_seen = {_listing_url_key(url) for url in listing_urls}
+    listing_queue = list(listing_urls)
+    pages_processed = 0
+    detail_urls: List[str] = []
+    card_props: List[Dict[str, Any]] = []
+    detail_keys: set = set()
+    property_urls_by_page: Dict[str, int] = {}
+    next_urls_found: List[str] = []
+    load_more_signals: List[str] = []
+    pagination_strategy: List[str] = []
+    errors: List[str] = []
+    duplicated_property_urls_skipped = 0
+    pages_detected = _safe_int(_partial_retry_metadata_get(metadata, "pages_detected"))
+
+    while listing_queue and pages_processed < max_pages_per_site:
+        _check_deadline(item_deadline, "item")
+        if _deadline_remaining_seconds(item_deadline) <= 8:
+            errors.append("partial_retry_paginacion_detenida_por_presupuesto")
+            break
+        listing_url = listing_queue.pop(0)
+        try:
+            response = _http_get(listing_url, session, timeout=_bounded_http_timeout(inmob, 8), use_scraper_on_block=False)
+            if response.status_code != 200:
+                errors.append(f"{listing_url}: HTTP {response.status_code}")
+                continue
+            pages_processed += 1
+            html = _decode_response_text(response)
+            script_signals = _extract_script_property_signals(html, listing_url)
+            page_links = list(dict.fromkeys(
+                _extract_generic_property_links(html, listing_url)
+                + _extract_wordpress_property_links(html, listing_url)
+                + _extract_wordpress_plugin_property_links(html, listing_url, str(metadata.get("plugin_detectado") or "wordpress_generic"))
+                + (script_signals.get("property_urls") or [])
+                + [
+                    url for url in (script_signals.get("property_like_urls") or [])
+                    if _looks_like_real_property_url(url) or _looks_like_custom_property_url(url)
+                ]
+            ))
+            page_links = [link for link in page_links if _partial_retry_is_detail_url(link)]
+            tokko_props = _parse_tokko_listing_cards(html, listing_url, inmob) if "tokko" in str(item.get("cms_detectado") or "").lower() else []
+            card_props.extend(tokko_props)
+            property_urls_by_page[listing_url] = len(page_links) + len(tokko_props)
+            for link in page_links:
+                key = normalize_property_url_for_dedup(link) or _listing_url_key(link)
+                if not key or key in detail_keys:
+                    duplicated_property_urls_skipped += 1
+                    continue
+                detail_keys.add(key)
+                detail_urls.append(link)
+            pagination = _extract_pagination_signals(
+                html,
+                listing_url,
+                max_pages=max_pages_per_site,
+                include_pattern_urls=bool(page_links or tokko_props or _count_html_cards(html) >= 2),
+            )
+            pages_detected = max(pages_detected, _safe_int(pagination.get("pages_detected")))
+            for strategy in pagination.get("pagination_strategy") or []:
+                if strategy not in pagination_strategy:
+                    pagination_strategy.append(strategy)
+            for signal in pagination.get("load_more_signals") or []:
+                if signal not in load_more_signals:
+                    load_more_signals.append(signal)
+            for next_url in pagination.get("next_urls_found") or []:
+                key = _listing_url_key(next_url)
+                if key in listing_seen:
+                    continue
+                listing_seen.add(key)
+                next_urls_found.append(next_url)
+                if len(listing_queue) + pages_processed < max_pages_per_site:
+                    listing_queue.append(next_url)
+        except Exception as exc:
+            errors.append(f"{listing_url}: {type(exc).__name__}: {str(exc)[:180]}")
+
+    detail_urls = _dedupe_url_list(detail_urls, limit=max(batch_size_urls * 3, batch_size_urls))
+    selected_urls, skipped_existing = _filter_new_detail_urls(detail_urls, existing_url_keys, max(batch_size_urls, 1))
+    props_from_details, extract_meta = _extract_detail_urls_for_partial_retry(
+        selected_urls,
+        inmob,
+        session,
+        item_deadline,
+        "partial_pagination_deep_scan",
+    )
+    props = _dedupe_props(card_props + props_from_details)
+    partial = bool(listing_queue or len(detail_urls) > len(selected_urls) + skipped_existing)
+    stop_reason = (
+        extract_meta.get("retry_partial_stop_reason")
+        or ("max_pages_per_site" if listing_queue else None)
+        or ("batch_limit" if len(selected_urls) < len(detail_urls) - skipped_existing else "pagination_batch_complete")
+    )
+    meta = {
+        **extract_meta,
+        "partial_retry_urls_total": len(detail_urls),
+        "partial_retry_urls_selected": len(selected_urls),
+        "partial_retry_urls_processed": extract_meta.get("partial_retry_urls_processed", 0),
+        "partial_retry_existing_urls_skipped": skipped_existing,
+        "partial_retry_pages_processed": pages_processed,
+        "pages_processed": _safe_int(_partial_retry_metadata_get(metadata, "pages_processed")) + pages_processed,
+        "pages_detected": pages_detected,
+        "pagination_detected": bool(pagination_strategy or next_urls_found or load_more_signals),
+        "pagination_strategy": pagination_strategy,
+        "property_urls_by_page": property_urls_by_page,
+        "next_urls_found": next_urls_found[:80],
+        "load_more_signals": load_more_signals,
+        "unique_property_urls_total": len(detail_urls),
+        "duplicated_property_urls_skipped": duplicated_property_urls_skipped,
+        "pagination_partial": partial,
+        "retry_partial_stop_reason": stop_reason,
+        "errores_relevantes": (extract_meta.get("errores_relevantes") or []) + errors[-8:],
+    }
+    return props, meta
+
+
+def _partial_retry_playwright_or_ajax(
+    item: Dict[str, Any],
+    session: requests.Session,
+    pw_context,
+    canonical_resolution: Dict[str, Any],
+    item_deadline: Optional[float],
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    if pw_context is None:
+        return [], {
+            "retry_partial_stop_reason": "playwright_context_unavailable",
+            "errores_relevantes": ["Playwright no disponible para partial retry"],
+        }
+    started_at = time.time()
+    try:
+        props, estrategia, url_usada, errores, strategy_meta = _scrape_queue_item(
+            item=item,
+            session=session,
+            pw_context=pw_context,
+            started_at=started_at,
+            canonical_resolution=canonical_resolution,
+            allow_playwright_fallback=True,
+            allow_network_interception=True,
+        )
+        return props, {
+            **dict(strategy_meta or {}),
+            "partial_retry_playwright_strategy": estrategia,
+            "url_usada": url_usada,
+            "errores_relevantes": errores + list((strategy_meta or {}).get("errores_relevantes") or []),
+        }
+    except Exception as exc:
+        return [], {
+            "retry_partial_stop_reason": clasificar_error(exc),
+            "errores_relevantes": [str(exc)[:500]],
+        }
+
+
+def _partial_retry_recalculate_metadata(
+    metadata: Dict[str, Any],
+    retry_strategy: str,
+    expected_count: int,
+    previous_saved_count: int,
+    total_saved_count: int,
+    counts: Dict[str, Any],
+    retry_meta: Dict[str, Any],
+    batch_size_urls: int,
+) -> Dict[str, Any]:
+    previous_ratio = _safe_ratio(previous_saved_count, expected_count)
+    new_ratio = _safe_ratio(total_saved_count, expected_count)
+    detected_now = int(counts.get("propiedades_detectadas") or 0)
+    new_now = int(counts.get("propiedades_nuevas") or 0)
+    updated_now = int(counts.get("propiedades_actualizadas") or 0)
+    remaining = max(expected_count - total_saved_count, 0) if expected_count else None
+    stop_reason = retry_meta.get("retry_partial_stop_reason")
+    status = str(_partial_retry_metadata_get(metadata, "extraction_completeness_status") or "partial")
+    if expected_count and new_ratio is not None:
+        if new_ratio >= 0.9 and stop_reason in {"batch_complete", "pagination_batch_complete", None, ""}:
+            status = "complete"
+        elif new_ratio >= 0.65 and stop_reason not in {"max_pages_per_site", "timeout_or_budget", "batch_limit"}:
+            status = "likely_complete"
+        else:
+            status = "partial"
+    elif total_saved_count > 0 and not stop_reason:
+        status = "likely_complete"
+    retry_recommended = status in {"partial", "incomplete"} and bool(retry_strategy)
+    completeness = dict(metadata.get("extraction_completeness") or {})
+    completeness.update({
+        "extraction_completeness_status": status,
+        "expected_properties_count": expected_count,
+        "saved_properties_count": total_saved_count,
+        "completion_ratio": new_ratio,
+        "completion_confidence": completeness.get("completion_confidence") or "medium",
+        "partial_extraction": status in {"partial", "incomplete"},
+        "retry_recommended": retry_recommended,
+        "retry_strategy": retry_strategy if retry_recommended else None,
+        "stop_reason": stop_reason,
+    })
+    for key in (
+        "pagination_detected",
+        "pages_detected",
+        "pages_processed",
+        "sitemap_total_urls",
+        "sitemap_processed_urls",
+        "load_more_detected",
+        "ajax_endpoint_detected",
+    ):
+        if key in retry_meta:
+            completeness[key] = retry_meta.get(key)
+
+    updated = dict(metadata)
+    updated.update({
+        **retry_meta,
+        "partial_retry_attempted": True,
+        "partial_retry_strategy": retry_strategy,
+        "partial_retry_new_properties": new_now,
+        "partial_retry_updated_properties": updated_now,
+        "partial_retry_detected_properties": detected_now,
+        "partial_retry_remaining_estimated": remaining,
+        "previous_completion_ratio": previous_ratio,
+        "new_completion_ratio": new_ratio,
+        "partial_retry_batch_size_urls": batch_size_urls,
+        "extraction_completeness": completeness,
+        "extraction_completeness_status": status,
+        "expected_properties_count": expected_count,
+        "saved_properties_count": total_saved_count,
+        "completion_ratio": new_ratio,
+        "retry_recommended": retry_recommended,
+        "retry_strategy": retry_strategy if retry_recommended else None,
+        "partial_extraction": status in {"partial", "incomplete"},
+    })
+    return updated
+
+
+def run_retry_partial_extractions(
+    max_items: Optional[int] = 5,
+    dry_run: bool = False,
+    batch_size_urls: int = 50,
+    max_pages_per_site: int = 40,
+) -> None:
+    """Continua extracciones parciales usando metadata existente sin hardcodear dominios."""
+    t_inicio = time.time()
+    limit = max(int(max_items or 5), 1)
+    db = SupabasePropiedades()
+    items = db.load_partial_extraction_items(limit=limit)
+    session = SupabasePropiedades._make_session()
+    processed = success = failed = 0
+    total_detected = total_new = total_updated = total_unchanged = total_property_errors = 0
+
+    logger.info("=" * 60)
+    logger.info("RETRY EXTRACCIONES PARCIALES")
+    logger.info(
+        "Items candidatos: %d | limite=%d | dry_run=%s | batch_size_urls=%d | max_pages_per_site=%d",
+        len(items),
+        limit,
+        dry_run,
+        batch_size_urls,
+        max_pages_per_site,
+    )
+    if not items:
+        logger.info("No hay extracciones parciales con retry_recommended=true")
+        return
+
+    need_playwright = any(
+        _partial_retry_metadata_get(_coerce_metadata_dict(item.get("metadata")), "retry_strategy")
+        == "playwright_or_ajax_load_more"
+        for item in items
+    )
+    pw = browser = pw_context = None
+    if need_playwright and not dry_run:
+        pw = sync_playwright().start()
+        browser, pw_context = _make_playwright_context(pw)
+
+    try:
+        for item in items:
+            processed += 1
+            item_id = item.get("scraping_run_item_id") or item.get("id")
+            metadata = _coerce_metadata_dict(item.get("metadata"))
+            retry_strategy = str(_partial_retry_metadata_get(metadata, "retry_strategy") or "").strip()
+            expected_count = _safe_int(_partial_retry_metadata_get(metadata, "expected_properties_count"))
+            previous_saved_count = _safe_int(_partial_retry_metadata_get(metadata, "saved_properties_count"))
+            completion_ratio = _safe_float(_partial_retry_metadata_get(metadata, "completion_ratio"), default=0.0)
+            logger.info("=" * 60)
+            logger.info(
+                "Partial retry item=%s | inmobiliaria=%s | strategy=%s | expected=%s saved=%s ratio=%s",
+                item_id,
+                item.get("inmobiliaria_nombre"),
+                retry_strategy,
+                expected_count,
+                previous_saved_count,
+                completion_ratio,
+            )
+            try:
+                canonical_resolution = db.resolve_canonical_inmobiliaria_id(item)
+                main_id = canonical_resolution.get("canonical_main_id")
+                existing_keys = db.load_existing_url_normalizadas(main_id)
+                logger.info("  canonical_main_id=%s | urls_existentes=%d", main_id, len(existing_keys))
+                inmob = _queue_item_to_inmob(
+                    item,
+                    _normalize_queue_url(item.get("url_listado") or item.get("web") or item.get("final_url")),
+                    canonical_resolution=canonical_resolution,
+                )
+                inmob["_scraper_metadata"] = dict(metadata)
+                timeout_seconds = _item_timeout_seconds(item, allow_playwright=(retry_strategy == "playwright_or_ajax_load_more"), strategy_hint=retry_strategy)
+                item_deadline = time.time() + timeout_seconds
+
+                if dry_run:
+                    if retry_strategy == "sitemap_batch":
+                        known_urls = _partial_retry_known_detail_urls(metadata)
+                        discovered_total = len(known_urls)
+                        sitemap_tried: List[str] = []
+                        for base_url in _partial_retry_base_urls(item, metadata):
+                            prop_urls, project_urls, tried, _errors = _fetch_sitemap_urls_for_diagnosis(base_url, session)
+                            sitemap_tried.extend(tried)
+                            known_urls.extend(prop_urls + project_urls)
+                        known_urls = _dedupe_url_list(known_urls, limit=2000)
+                        selected, skipped = _filter_new_detail_urls(known_urls, existing_keys, batch_size_urls)
+                        logger.info(
+                            "  DRY-RUN sitemap_batch | urls_metadata=%d urls_total=%d sitemaps_probados=%d ya_guardadas=%d procesaria=%d",
+                            discovered_total,
+                            len(known_urls),
+                            len(sitemap_tried),
+                            skipped,
+                            len(selected),
+                        )
+                    elif retry_strategy == "pagination_deep_scan":
+                        listing_urls = _partial_retry_known_listing_urls(item, metadata, max_pages_per_site)
+                        logger.info(
+                            "  DRY-RUN pagination_deep_scan | paginas_seed=%d max_pages=%d batch_size_urls=%d",
+                            len(listing_urls),
+                            max_pages_per_site,
+                            batch_size_urls,
+                        )
+                        logger.info("  Primeras paginas: %s", listing_urls[:8])
+                    else:
+                        logger.info(
+                            "  DRY-RUN playwright_or_ajax_load_more | intentaria modo tecnico Playwright/AJAX | urls_existentes=%d",
+                            len(existing_keys),
+                        )
+                    success += 1
+                    continue
+
+                if retry_strategy == "sitemap_batch":
+                    props, retry_meta = _partial_retry_sitemap_batch(
+                        item, inmob, metadata, session, existing_keys, batch_size_urls, item_deadline
+                    )
+                elif retry_strategy == "pagination_deep_scan":
+                    props, retry_meta = _partial_retry_pagination_deep_scan(
+                        item, inmob, metadata, session, existing_keys, batch_size_urls, max_pages_per_site, item_deadline
+                    )
+                elif retry_strategy == "playwright_or_ajax_load_more":
+                    props, retry_meta = _partial_retry_playwright_or_ajax(
+                        item, session, pw_context, canonical_resolution, item_deadline
+                    )
+                else:
+                    retry_meta = {"retry_partial_stop_reason": "unknown_retry_strategy"}
+                    props = []
+
+                props, discarded_domain = _filter_props_for_current_item(props, item, canonical_resolution)
+                retry_meta["partial_retry_props_descartadas_por_dominio"] = discarded_domain
+                retry_meta["partial_retry_strategy"] = retry_strategy
+                retry_meta["partial_retry_attempted"] = True
+                retry_meta["partial_retry_batch_size_urls"] = batch_size_urls
+                retry_meta["partial_retry_max_pages_per_site"] = max_pages_per_site
+                if props:
+                    counts = _save_queue_properties(
+                        db,
+                        item,
+                        props,
+                        item_deadline=item_deadline,
+                        canonical_resolution=canonical_resolution,
+                        strategy_meta={**metadata, **retry_meta, "partial_extraction": True},
+                    )
+                else:
+                    counts = {
+                        "propiedades_detectadas": 0,
+                        "propiedades_nuevas": 0,
+                        "propiedades_actualizadas": 0,
+                        "propiedades_sin_cambios": 0,
+                        "propiedades_error": 0,
+                    }
+                existing_after = db.load_existing_url_normalizadas(main_id)
+                total_saved_count = len(existing_after)
+                effective_expected = max(
+                    expected_count,
+                    _safe_int(retry_meta.get("partial_retry_urls_total")),
+                    _safe_int(retry_meta.get("sitemap_total_urls")),
+                    _safe_int(retry_meta.get("pages_detected")) * max(1, int(round((_safe_int(retry_meta.get("unique_property_urls_total")) or 0) / max(_safe_int(retry_meta.get("partial_retry_pages_processed")), 1))))
+                    if _safe_int(retry_meta.get("pages_detected")) else 0,
+                )
+                updated_metadata = _partial_retry_recalculate_metadata(
+                    metadata,
+                    retry_strategy,
+                    effective_expected,
+                    previous_saved_count,
+                    total_saved_count,
+                    counts,
+                    retry_meta,
+                    batch_size_urls,
+                )
+                status_after = "success" if (
+                    counts.get("propiedades_detectadas")
+                    or item.get("status") == "success"
+                ) else item.get("status")
+                error_type_after = None if status_after == "success" else item.get("error_type")
+                error_message_after = None if status_after == "success" else item.get("error_message")
+                db.patch_scraping_run_item_metadata(
+                    item_id=item_id,
+                    metadata=updated_metadata,
+                    status=status_after,
+                    final_url=item.get("final_url") or item.get("url_listado") or item.get("web"),
+                    error_type=error_type_after,
+                    error_message=error_message_after,
+                    counts=counts,
+                )
+                success += 1
+                total_detected += int(counts.get("propiedades_detectadas") or 0)
+                total_new += int(counts.get("propiedades_nuevas") or 0)
+                total_updated += int(counts.get("propiedades_actualizadas") or 0)
+                total_unchanged += int(counts.get("propiedades_sin_cambios") or 0)
+                total_property_errors += int(counts.get("propiedades_error") or 0)
+                logger.info(
+                    "  Partial retry OK | detectadas=%s nuevas=%s actualizadas=%s total_guardadas=%s ratio=%s status=%s",
+                    counts.get("propiedades_detectadas"),
+                    counts.get("propiedades_nuevas"),
+                    counts.get("propiedades_actualizadas"),
+                    total_saved_count,
+                    updated_metadata.get("completion_ratio"),
+                    updated_metadata.get("extraction_completeness_status"),
+                )
+            except Exception as exc:
+                failed += 1
+                logger.error("  Partial retry error | item=%s | %s | %s", item_id, clasificar_error(exc), str(exc)[:500])
+                if not dry_run:
+                    try:
+                        failure_metadata = dict(metadata)
+                        failure_metadata.update({
+                            "partial_retry_attempted": True,
+                            "partial_retry_strategy": retry_strategy,
+                            "retry_partial_stop_reason": clasificar_error(exc),
+                            "partial_retry_error": str(exc)[:500],
+                        })
+                        db.patch_scraping_run_item_metadata(
+                            item_id=item_id,
+                            metadata=failure_metadata,
+                            status=item.get("status"),
+                            final_url=item.get("final_url") or item.get("url_listado") or item.get("web"),
+                        )
+                    except Exception as patch_exc:
+                        logger.warning("  No se pudo registrar metadata de fallo parcial item %s: %s", item_id, patch_exc)
+    finally:
+        if need_playwright and not dry_run:
+            _close_playwright_safely(pw_context, "partial retry playwright context")
+            _close_playwright_safely(browser, "partial retry playwright browser")
+            _close_playwright_safely(pw, "partial retry playwright driver")
+
+    elapsed = time.time() - t_inicio
+    logger.info("=" * 60)
+    logger.info("RETRY EXTRACCIONES PARCIALES FINALIZADO")
+    logger.info("Items procesados: %d", processed)
+    logger.info("Exitos: %d", success)
+    logger.info("Errores: %d", failed)
+    logger.info("Propiedades detectadas: %d", total_detected)
+    logger.info("Propiedades nuevas: %d", total_new)
+    logger.info("Propiedades actualizadas: %d", total_updated)
+    logger.info("Propiedades sin cambios: %d", total_unchanged)
+    logger.info("Propiedades con error: %d", total_property_errors)
+    logger.info("Tiempo total: %.1f s (%.1f min)", elapsed, elapsed / 60)
+    logger.info("=" * 60)
+
+
+def run_repair_invalid_listing_properties(dry_run: bool = True, limit: Optional[int] = None) -> None:
+    """Elimina propiedades que son claramente paginas de listado guardadas por error."""
+    db = SupabasePropiedades()
+    candidates = db.load_invalid_listing_property_candidates(limit=limit)
+    logger.info("=" * 60)
+    logger.info("REPAIR PROPIEDADES INVALIDAS DE LISTADO")
+    logger.info("Modo dry-run: %s", dry_run)
+    logger.info("Candidatas detectadas: %d", len(candidates))
+    for row in candidates:
+        logger.info(
+            "id=%s inmobiliaria_id=%s titulo=%s url=%s url_normalizada=%s motivo=%s",
+            row.get("id"),
+            row.get("inmobiliaria_id"),
+            row.get("titulo"),
+            row.get("url"),
+            row.get("url_normalizada"),
+            row.get("motivo"),
+        )
+    if dry_run:
+        logger.info("DRY-RUN: no se elimino ninguna propiedad.")
+        logger.info("=" * 60)
+        return
+    ids = [row.get("id") for row in candidates]
+    deleted = db.delete_properties_by_ids(ids)
+    logger.info("Propiedades eliminadas: %d", deleted)
+    logger.info("=" * 60)
+
+
 # ---------------------------------------------------------------------------
 # Legacy queue runner
 # ---------------------------------------------------------------------------
@@ -11424,11 +13677,21 @@ def diagnose_single_url(
         logger.info("HTTP status: %s", diagnostic.get("http_status"))
         logger.info("Final URL: %s", diagnostic.get("final_url"))
         logger.info("Links propiedad: %s", diagnostic.get("property_links_count"))
+        logger.info("Links property-like: %s", diagnostic.get("property_like_links_detectados"))
+        logger.info("URLs detectadas en JS/HTML: %s", diagnostic.get("js_urls_detectadas"))
         logger.info("Cards posibles: %s", diagnostic.get("cards_posibles"))
+        logger.info("Contador visible propiedades: %s", diagnostic.get("visible_properties_count"))
+        logger.info("Expected properties estimado: %s", diagnostic.get("expected_properties_count"))
+        logger.info("Paginacion detectada: %s", diagnostic.get("pagination_detected"))
+        logger.info("Estrategia paginacion: %s", ", ".join(diagnostic.get("pagination_strategy") or []))
+        logger.info("Paginas detectadas: %s", diagnostic.get("pages_detected"))
+        logger.info("URLs de pagina encontradas: %s", (diagnostic.get("next_urls_found") or [])[:8])
+        logger.info("Load more signals: %s", ", ".join(diagnostic.get("load_more_signals") or []))
         logger.info("Sitemap propiedades: %s", diagnostic.get("sitemap_property_urls_count"))
         logger.info("JSON-LD items: %s", diagnostic.get("json_ld_property_items"))
         logger.info("Requiere JS: %s", diagnostic.get("requires_js"))
         logger.info("Requiere Playwright: %s", diagnostic.get("requires_playwright"))
+        logger.info("Señales Playwright: %s", ", ".join(diagnostic.get("requires_playwright_signals") or []))
         logger.info("Requiere Network Interception: %s", diagnostic.get("requires_network_interception"))
         logger.info("Clasificacion: %s", diagnostic.get("classification"))
         logger.info("Estrategia sugerida: %s", strategy_plan.get("primary_strategy"))
@@ -11468,6 +13731,8 @@ if __name__ == "__main__":
                         help="Modo tecnico: habilita Network Interception y fallback Playwright con timeouts")
     parser.add_argument("--retry-errors", action="store_true",
                         help="Alias de modo tecnico para reintentos manuales controlados")
+    parser.add_argument("--retry-partial-extractions", action="store_true",
+                        help="Continuar extracciones parciales usando metadata y evitando URLs ya guardadas")
     parser.add_argument("--allow-network-interception", action="store_true",
                         help="Permitir Network Interception con Playwright en modo cola (default: desactivado)")
     parser.add_argument("--allow-playwright-fallback", action="store_true",
@@ -11480,8 +13745,14 @@ if __name__ == "__main__":
                         help="Validar IDs canonicos de items pending sin consumir cola, scrapear ni guardar")
     parser.add_argument("--repair-existing-location-quality", action="store_true",
                         help="Reparar ciudad/provincia existentes usando sanitizer central de ubicacion")
+    parser.add_argument("--repair-invalid-listing-properties", action="store_true",
+                        help="Eliminar propiedades invalidas que son paginas de listado guardadas por error")
     parser.add_argument("--limit", type=int, default=100,
-                        help="Limite para modos tecnicos como --repair-existing-location-quality")
+                        help="Limite para modos tecnicos como --repair-existing-location-quality o --retry-partial-extractions")
+    parser.add_argument("--batch-size-urls", type=int, default=50,
+                        help="Cantidad maxima de URLs de detalle a procesar por item en --retry-partial-extractions")
+    parser.add_argument("--max-pages-per-site", type=int, default=40,
+                        help="Maximo de paginas de listado a recorrer por item en --retry-partial-extractions")
     parser.add_argument("--dry-run", action="store_true",
                         help="Mostrar cambios sin escribir en modos tecnicos compatibles")
     args = parser.parse_args()
@@ -11490,7 +13761,9 @@ if __name__ == "__main__":
     allow_network = args.allow_network_interception or technical_mode
     allow_playwright = args.allow_playwright_fallback or args.allow_playwright or technical_mode
 
-    if args.repair_existing_location_quality:
+    if args.repair_invalid_listing_properties:
+        run_repair_invalid_listing_properties(limit=args.limit, dry_run=args.dry_run)
+    elif args.repair_existing_location_quality:
         run_repair_existing_location_quality(limit=args.limit, dry_run=args.dry_run)
     elif args.integrity_dry_run:
         run_integrity_dry_run(max_items=args.max_items)
@@ -11507,6 +13780,20 @@ if __name__ == "__main__":
             cms=args.cms,
             allow_playwright_fallback=allow_playwright,
             allow_network_interception=allow_network,
+        )
+    elif args.retry_errors:
+        run_retry_errors_queue(
+            max_items=args.max_items,
+            allow_playwright_fallback=allow_playwright,
+            allow_network_interception=allow_network,
+        )
+    elif args.retry_partial_extractions:
+        retry_limit = args.max_items if args.max_items is not None else args.limit
+        run_retry_partial_extractions(
+            max_items=retry_limit,
+            dry_run=args.dry_run,
+            batch_size_urls=args.batch_size_urls,
+            max_pages_per_site=args.max_pages_per_site,
         )
     elif args.legacy_jobs or args.detect_only:
         run(
