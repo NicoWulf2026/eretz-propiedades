@@ -10,3 +10,7 @@ __pycache__/
 *.xlsx
 *.db
 node_modules/
+
+# Local AI/editor state
+.claude/
+
