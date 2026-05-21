@@ -159,6 +159,8 @@ FALSE_IMAGE_PATTERNS = (
     "surface",
     "superficie",
     "placeholder",
+    "imagen-de-relleno",
+    "imagen_de_relleno",
     "no-photo",
     "no_photo",
     "no-image",
@@ -266,35 +268,36 @@ PROPERTY_URL_PATTERNS = re.compile(
 )
 
 TIPO_MAP: Dict[str, str] = {
-    # Casas
-    "casa": "casa", "chalet": "casa", "house": "casa", "duplex": "casa",
-    "dÃƒÂºplex": "casa", "townhouse": "casa", "villa": "casa",
+    # Casas — keys en ASCII limpio; los acentos se normalizan en normalizar_tipo()
+    "casa": "casa", "chalet": "casa", "house": "casa",
+    "duplex": "casa", "townhouse": "casa", "villa": "casa",
+    "triplex": "casa", "loft": "casa",
     # Departamentos
-    "departamento": "departamento", "depto": "departamento",
-    "apartment": "departamento", "flat": "departamento", "dpto": "departamento",
+    "departamento": "departamento", "depto": "departamento", "dpto": "departamento",
+    "dto": "departamento",          # abreviatura arg. muy común
+    "apartment": "departamento", "flat": "departamento",
     "monoambiente": "departamento", "studio": "departamento",
-    # PH
-    "ph ": "ph", "p.h": "ph", "penthouse": "ph",
+    # PH — se busca como palabra completa para evitar falsos positivos
+    "penthouse": "ph", "p.h.": "ph",
     # Locales
     "local": "local", "comercial": "local", "negocio": "local",
-    "fondo de comercio": "local", "galerÃƒÂ­a": "local",
+    "fondo de comercio": "local", "galeria": "local",
     # Oficinas
     "oficina": "oficina", "office": "oficina", "consultorio": "consultorio",
-    # Terrenos
+    # Terrenos (sin acento: fraccion, no fracción)
     "terreno": "terreno", "lote": "terreno", "land": "terreno",
-    "parcela": "terreno", "fracciÃƒÂ³n": "terreno",
+    "parcela": "terreno", "fraccion": "terreno",
     # Campos
     "campo": "campo", "chacra": "campo", "estancia": "campo",
     "finca": "campo", "quinta": "campo", "establecimiento": "campo",
     # Cocheras
     "cochera": "cochera", "garage": "cochera", "garaje": "cochera",
     "estacionamiento": "cochera",
-    # Galpones / depÃƒÂ³sitos
-    "galpon": "galpon", "galpÃƒÂ³n": "galpon", "nave industrial": "galpon",
-    "depÃƒÂ³sito": "deposito", "deposito": "deposito", "bodega": "deposito",
-    "almacÃƒÂ©n": "deposito",
+    # Galpones / depósitos (sin acento: galpon, deposito)
+    "galpon": "galpon", "nave industrial": "galpon",
+    "deposito": "deposito", "bodega": "deposito", "almacen": "deposito",
     # Hoteles
-    "hotel": "hotel", "apart hotel": "hotel", "hosterÃƒÂ­a": "hotel",
+    "hotel": "hotel", "apart hotel": "hotel", "hosteria": "hotel",
 }
 
 OPERACION_MAP: Dict[str, str] = {
@@ -360,9 +363,9 @@ def normalizar_precio(raw: Any) -> Tuple[Optional[float], str]:
     text = str(raw).strip()
     # Detectar moneda
     moneda = "ARS"
-    if re.search(r"U\$S|USD|US\$|u\$s|dÃƒÂ³lar|dollar", text, re.IGNORECASE):
+    if re.search(r"U\$S|USD|US\$|u\$s|d[oó]lar(?:es)?|dollar", text, re.IGNORECASE):
         moneda = "USD"
-    elif re.search(r"Ã¢â€šÂ¬|EUR", text, re.IGNORECASE):
+    elif re.search(r"€|EUR", text, re.IGNORECASE):
         moneda = "EUR"
     elif re.search(r"UYU|\$U", text, re.IGNORECASE):
         moneda = "UYU"
@@ -396,10 +399,28 @@ def normalizar_precio(raw: Any) -> Tuple[Optional[float], str]:
         return None, moneda
 
 
+def _strip_accents(s: str) -> str:
+    """Convierte texto con acentos a ASCII equivalente: dúplex → duplex, galpón → galpon."""
+    return "".join(
+        c for c in unicodedata.normalize("NFD", s)
+        if unicodedata.category(c) != "Mn"
+    )
+
+
 def normalizar_tipo(raw: Any) -> str:
+    """Normaliza tipo de propiedad.
+
+    Aplica strip de acentos antes de buscar en TIPO_MAP, de modo que inputs como
+    'dúplex', 'galpón', 'depósito' matcheen correctamente las keys ASCII del mapa.
+    Maneja también el caso especial de 'PH' como palabra completa.
+    """
     if not raw:
         return "otro"
-    text = str(raw).lower().strip()
+    text = _strip_accents(str(raw).lower().strip())
+    # Caso especial: "ph" como tipo de propiedad (no como parte de otra palabra)
+    # Evita falsos positivos en palabras como "php", "shepherd", etc.
+    if re.search(r"\bph\b", text):
+        return "ph"
     for key, val in TIPO_MAP.items():
         if key in text:
             return val
@@ -1629,6 +1650,8 @@ class SupabasePropiedades:
         if r.status_code != 200:
             raise RuntimeError(f"No se pudieron leer items parciales: {r.status_code} {r.text[:300]}")
 
+        # Strategies considered actionable for candidate selection
+        _ACTIONABLE_STRATEGIES = {"sitemap_batch", "pagination_deep_scan"}
         rows: List[Dict[str, Any]] = []
         for row in r.json():
             metadata = _coerce_metadata_dict(row.get("metadata"))
@@ -1639,9 +1662,13 @@ class SupabasePropiedades:
                 continue
             if not retry_recommended:
                 continue
-            if retry_strategy not in PARTIAL_RETRY_STRATEGIES:
+            if retry_strategy not in _ACTIONABLE_STRATEGIES:
                 continue
             if not (row.get("web") or row.get("url_listado") or row.get("final_url")):
+                continue
+            # Skip items where property_urls_pending is explicitly tracked and is 0
+            pending_raw = _partial_retry_metadata_get(metadata, "property_urls_pending")
+            if pending_raw is not None and _safe_int(pending_raw) == 0:
                 continue
             row["metadata"] = metadata
             row["scraping_run_item_id"] = row.get("id")
@@ -1649,17 +1676,18 @@ class SupabasePropiedades:
 
         strategy_rank = {"sitemap_batch": 0, "pagination_deep_scan": 1, "playwright_or_ajax_load_more": 2}
 
-        def sort_key(row: Dict[str, Any]) -> Tuple[int, float, int, int, int]:
+        def sort_key(row: Dict[str, Any]) -> tuple:
             metadata = _coerce_metadata_dict(row.get("metadata"))
             strategy = str(_partial_retry_metadata_get(metadata, "retry_strategy") or "")
             ratio = _safe_float(_partial_retry_metadata_get(metadata, "completion_ratio"), default=1.0)
-            expected = _safe_int(_partial_retry_metadata_get(metadata, "expected_properties_count"))
-            saved = _safe_int(_partial_retry_metadata_get(metadata, "saved_properties_count"))
+            pending = _safe_int(_partial_retry_metadata_get(metadata, "property_urls_pending"))
+            # ISO timestamp strings sort correctly as strings for ASC ordering
+            updated_at_str = str(row.get("updated_at") or "")
             return (
-                strategy_rank.get(strategy, 9),
-                ratio,
-                -expected,
-                saved,
+                -pending,                        # most pending first (DESC)
+                ratio,                           # worst completion first (ASC)
+                strategy_rank.get(strategy, 9),  # sitemap_batch before pagination
+                updated_at_str,                  # oldest first (ASC)
                 -_safe_int(row.get("id")),
             )
 
@@ -1861,6 +1889,35 @@ class SupabasePropiedades:
             {"run_id": run_id},
             timeout=10,
         )
+
+    def _finish_item_success_direct_rest_fallback(
+        self,
+        item_id: Any,
+        final_url: Optional[str],
+        metadata_json: Dict[str, Any],
+    ) -> bool:
+        """Fallback: PATCH directo a scraping_run_items cuando la RPC finish_scraping_item_success falla.
+
+        Solo actualiza status='success', final_url y metadata (columnas que sabemos que existen).
+        Devuelve True si el PATCH fue exitoso (2xx), False en cualquier otro caso.
+        No lanza excepción — el caller decide cómo loguear.
+        """
+        try:
+            patch = {
+                "status": "success",
+                "final_url": final_url,
+                "metadata": metadata_json,
+            }
+            r = self.session.patch(
+                f"{SUPABASE_URL}/rest/v1/scraping_run_items",
+                headers=self._headers_minimal,
+                params={"id": f"eq.{item_id}"},
+                json=patch,
+                timeout=10,
+            )
+            return r.status_code in {200, 204}
+        except Exception:
+            return False
 
     # ------ Properties ------
 
@@ -2967,8 +3024,10 @@ def fake_property_image_reason(image_url: Any) -> Optional[str]:
     if not low:
         return "empty_url"
     parsed = urlparse(low)
+    host = parsed.netloc or ""
     path = parsed.path or low
     filename = path.rsplit("/", 1)[-1]
+    filename_stem = filename.rsplit(".", 1)[0]
     if path.endswith((".svg", ".ico")):
         return "svg_or_icon_file"
     has_image_extension = bool(re.search(r"\.(?:jpe?g|png|webp|avif)(?:[?#]|$)", path, re.I))
@@ -2982,6 +3041,20 @@ def fake_property_image_reason(image_url: Any) -> Optional[str]:
         return "not_image_url"
     if "/wp-content/themes/" in low or "/wp-content/plugins/" in low:
         return "theme_or_plugin_asset"
+    if host.endswith("afip.gob.ar"):
+        return "logo_or_brand"
+    if "static.tokkobroker.com/tfw/img/phone" in low:
+        return "icon_or_surface_asset"
+    if "static.tokkobroker.com/static/img/user" in low:
+        return "avatar"
+    if "2clics.app" in host and re.search(r"(?:instagram|facebook|whatsapp|linkedin|youtube|social)", filename_stem):
+        return "logo_or_brand"
+    if "/web-multimedia/" in low and re.search(
+        r"(?:cucicba|cmcpsi|ccin|colegio|matricula|matr[ií]cula|dataweb|afip|logo|isotipo|imagotipo)",
+        filename_stem,
+        re.I,
+    ):
+        return "logo_or_brand"
     if filename.startswith("cropped-") or "mesa-de-trabajo" in filename:
         return "logo_or_brand"
     if "banner" in filename and "/wp-content/uploads/" not in low:
@@ -5844,6 +5917,21 @@ _JSONLD_TYPES = {
     "Residence", "Product", "LodgingBusiness", "Place",
 }
 
+# Tipos schema.org que son demasiado genéricos para inferir el tipo de propiedad.
+# Cuando el @type del JSON-LD es uno de estos, se ignora como fuente del tipo
+# y se infiere desde el título/descripción del item.
+_GENERIC_JSONLD_SCHEMA_TYPES: frozenset = frozenset({
+    "RealEstateListing",    # genérico — no dice si es casa, depto, terreno, etc.
+    "Residence",            # genérico
+    "SingleFamilyResidence",# "single family" podría inferir casa, pero el titulo es más fiable
+    "Product",              # completamente genérico
+    "Offer",                # completamente genérico
+    "Thing",                # completamente genérico
+    "Place",                # completamente genérico
+    "LodgingBusiness",      # puede ser hotel pero también otro tipo de alojamiento
+    "ItemList",             # lista, no una propiedad individual
+})
+
 
 def _parse_jsonld_item(item: Dict, inmob: Dict, source_url: str) -> Optional[Dict]:
     schema_type = item.get("@type", "")
@@ -5892,18 +5980,34 @@ def _parse_jsonld_item(item: Dict, inmob: Dict, source_url: str) -> Optional[Dic
                 fotos.append(img.get("url", ""))
     fotos = clean_property_images(fotos)
 
+    # Inferir tipo_propiedad con prioridad: título → descripción → schema_type → "otro"
+    _titulo_raw  = str(item.get("name", "") or "")
+    _desc_raw    = str(item.get("description", "") or "")
+    if not precio and _desc_raw:
+        precio_desc, moneda_desc = _normalizar_precio_detalle(_desc_raw)
+        if precio_desc:
+            precio, moneda = precio_desc, moneda_desc
+    _tipo_prop   = "otro"
+    if schema_type not in _GENERIC_JSONLD_SCHEMA_TYPES:
+        # schema_type es específico (ej. "Apartment", "House") — intentarlo primero
+        _tipo_prop = normalizar_tipo(schema_type)
+    if _tipo_prop == "otro" and _titulo_raw:
+        _tipo_prop = normalizar_tipo(_titulo_raw)
+    if _tipo_prop == "otro" and _desc_raw:
+        _tipo_prop = normalizar_tipo(_desc_raw[:300])
+
     prop = {
         "inmobiliaria_id":     inmob_id,
         "url":                 url_prop,
         "id_externo":          id_ext,
         "hash_dedup":          hash_propiedad(inmob_id, id_ext, url_prop),
-        "titulo":              item.get("name", ""),
-        "descripcion":         limpiar_descripcion(item.get("description", "")),
+        "titulo":              _titulo_raw,
+        "descripcion":         limpiar_descripcion(_desc_raw),
         "precio":              precio,
         "moneda":              moneda,
         "precio_ars":          convertir_precio(precio, moneda)[0],
         "precio_usd":          convertir_precio(precio, moneda)[1],
-        "tipo_propiedad":      normalizar_tipo(schema_type),
+        "tipo_propiedad":      _tipo_prop,
         "operacion":           normalizar_operacion(item.get("businessFunction", "")),
         "ambientes":           normalizar_int(item.get("numberOfRooms")),
         "dormitorios":         normalizar_int(item.get("numberOfBedrooms")),
@@ -6327,6 +6431,15 @@ def _normalizar_precio_detalle(raw: Any) -> Tuple[Optional[float], str]:
         if precise_currency == "ARS" and precise_price < 10000:
             return None, precise_currency
         return precise_price, precise_currency
+    # Texto puramente numérico (sólo dígitos, puntos y comas) sin símbolo de moneda.
+    # Ejemplo: "1.200.000" o "350.000" — común en elementos HTML donde la moneda
+    # se muestra en un elemento separado. El guard de grupos de dígitos no aplica aquí.
+    _stripped = fixed.strip()
+    if re.fullmatch(r"[\d.,]+", _stripped):
+        price, currency = normalizar_precio(_stripped)
+        if price and price >= 10_000:
+            return price, currency
+        return None, "ARS"
     # Evita convertir textos largos con direccion/superficie/telefono en un precio concatenado.
     if len(fixed) > 80 or len(re.findall(r"\d+", fixed)) > 2:
         return None, "ARS"
@@ -6379,7 +6492,21 @@ def _html_extract_detail(soup: BeautifulSoup, url: str, inmob: Dict,
     if not precio:
         precio, moneda = _normalizar_precio_detalle(page_text)
 
-    tipo_raw = find_text('[class*="tipo"]', '[class*="type"]', ".property-type") or title or page_text[:300]
+    # Fallback progresivo para tipo_propiedad:
+    # Intentamos el selector CSS primero; si resulta "otro", escalamos al titulo y luego
+    # al page_text[:300]. Esto evita que un valor genérico como "Venta" o "Residencial"
+    # en una clase CSS bloquee la inferencia desde el título.
+    _tipo_from_class = find_text('[class*="tipo"]', '[class*="type"]', ".property-type")
+    _tipo_from_title = normalizar_tipo(title) if title else "otro"
+    _tipo_from_page  = normalizar_tipo(page_text[:300]) if page_text else "otro"
+    if _tipo_from_class and normalizar_tipo(_tipo_from_class) != "otro":
+        tipo_raw = _tipo_from_class
+    elif _tipo_from_title != "otro":
+        tipo_raw = title
+    elif _tipo_from_page != "otro":
+        tipo_raw = page_text[:300]
+    else:
+        tipo_raw = _tipo_from_class or title or page_text[:300]
     op_raw   = find_text('[class*="operaci"]', '[class*="operation"]') or title or url
 
     address_raw = find_text(
@@ -11527,17 +11654,100 @@ def _path_from_property_url_candidate(value: Any) -> str:
 
 # Palabras clave que indican que un slug NO es solo una zona/ciudad geográfica.
 # Usadas por _is_listing_geography_slug para distinguir filtros de fichas reales.
+# Incluye formas plurales porque los filtros de listado usan el tipo en plural:
+# /propiedades/casas_venta_banfield → "casas" (plural), no "casa" (singular).
 _PROPERTY_TYPE_SLUG_WORDS: frozenset = frozenset({
-    "casa", "departamento", "depto", "dpto", "ph", "local",
-    "terreno", "lote", "campo", "cochera", "galpon", "deposito",
-    "hotel", "oficina", "monoambiente", "studio", "duplex", "triplex",
-    "loft", "nave", "galpones", "chalet", "townhouse", "villa",
-    "consultorio", "depositos", "locales", "cocheras",
+    "casa", "casas",
+    "departamento", "departamentos", "depto", "deptos", "dpto", "dptos",
+    "ph",
+    "local", "locales",
+    "terreno", "terrenos", "lote", "lotes",
+    "campo", "campos", "chacra", "chacras", "quinta", "quintas",
+    "cochera", "cocheras",
+    "galpon", "galpones",
+    "deposito", "depositos",
+    "hotel", "hoteles",
+    "oficina", "oficinas",
+    "monoambiente", "monoambientes",
+    "studio", "duplex", "triplex", "loft",
+    "nave", "naves", "chalet", "townhouse", "villa", "villas",
+    "consultorio", "consultorios",
+    "inmueble", "inmuebles",
 })
 _OPERATION_SLUG_WORDS: frozenset = frozenset({
-    "venta", "alquiler", "compra", "renta", "sale", "rent",
+    "venta", "ventas", "alquiler", "alquileres", "compra", "renta", "sale", "rent",
     "temporal", "temporario", "temporaria",
 })
+
+# Patrones de texto que indican páginas de listado/resultados de búsqueda.
+# Se aplican tanto al título como a la descripción.
+# Nota: cubre "se encontró" (singular) y "se encontraron" (plural) explícitamente,
+# ya que encontr[oó] solo matchea la forma singular.
+_LISTING_TEXT_RE: re.Pattern = re.compile(
+    r"se\s+encontr(?:[oó]|aron?)\b"                # "se encontró / encontraron"
+    r"|resultados?\s+para\b"                        # "resultados para"
+    r"|propiedades?\s+encontradas?"                 # "propiedades encontradas"
+    r"|listado\s+de\s+(?:propiedades?|inmuebles?)"  # "listado de propiedades"
+    r"|no\s+se\s+encontraron\s+resultados?"         # "no se encontraron resultados"
+    r"|ver\s+m[aá]s\s+propiedades?"                # "ver más propiedades"
+    r"|buscar\s+propiedades?"                       # "buscar propiedades"
+    r"|\b\d+\s+resultados?\b"                      # "32 resultados" (sin exigir "para")
+    r"|(?:^|\s)\d+\s+propiedades?\s+(?:en\s+)?(?:venta|alquiler)\s+en\s+\w+\s*$",  # "32 propiedades en venta en Banfield"
+    re.I,
+)
+
+# ---------------------------------------------------------------------------
+# Detección de propiedades no disponibles (vendidas, reservadas, alquiladas…)
+# ---------------------------------------------------------------------------
+#
+# Detecta formas PARTICIPIO PASADO (estado) y NO confunde con SUSTANTIVO (operación).
+#   vendid[oa]  = vendido/vendida → estado INACTIVO
+#   venta       = sustantivo → operación ACTIVA  (no matchea)
+#   alquilad[oa]= alquilado/alquilada → estado INACTIVO
+#   alquiler    = sustantivo → operación ACTIVA  (no matchea)
+#
+# Usa (?<!\w) / (?!\w) en lugar de \b para soportar "RESERVAD@" donde
+# el "@" no es un carácter de palabra (\w) y \b no hace límite correcto.
+_UNAVAILABLE_STATE_RE: re.Pattern = re.compile(
+    r"(?<!\w)(?:"
+    r"vendid[oa]s?"               # vendido / vendida / vendidos / vendidas
+    r"|reservad[oa@]s?"           # reservado / reservada / reservad@ / reservad@s
+    r"|alquilad[oa]s?"            # alquilado / alquilada
+    r"|suspendid[oa]s?"           # suspendido / suspendida
+    r"|pausad[oa]s?"              # pausado / pausada
+    r"|no\s+(?:est[aáa]\s+)?disponible"  # "no disponible" / "no está disponible"
+    r"|sin\s+disponibilidad"             # sin disponibilidad
+    r"|fuera\s+de\s+(?:mercado|servicio)"  # fuera de mercado / servicio
+    r")(?!\w)",
+    re.I,
+)
+
+
+def _detectar_estado_no_disponible(titulo: Any, descripcion: Any) -> bool:
+    """Devuelve True si el título o la descripción indican que la propiedad
+    ya no está disponible (vendida, reservada, alquilada, suspendida, etc.).
+
+    Solo detecta FORMAS PARTICIPIO (vendida, alquilada, reservada) y NO confunde
+    con los SUSTANTIVOS de operación (venta, alquiler).
+
+    Ejemplos que devuelven True:
+      - "VENDIDO!!! Chalet de 4 ambientes"
+      - "RESERVAD@!! Dto 2 ambientes"
+      - "Alquilado - Departamento céntrico"
+      - "Casa no disponible"
+      - "Este inmueble se encuentra vendido"
+
+    Ejemplos que devuelven False (propiedades activas):
+      - "Departamento en venta"
+      - "Casa en alquiler"
+      - "Excelente propiedad disponible"
+    """
+    titulo_norm = _strip_accents(str(titulo or "").lower())
+    desc_norm   = _strip_accents(str(descripcion or "").lower())
+    return bool(
+        _UNAVAILABLE_STATE_RE.search(titulo_norm)
+        or _UNAVAILABLE_STATE_RE.search(desc_norm)
+    )
 
 
 def _is_listing_geography_slug(slug: str) -> bool:
@@ -11606,17 +11816,32 @@ def _listing_url_not_property_detail_reason(url: Any, url_normalizada: Any = Non
         geo_m = re.fullmatch(r"(propiedades|inmuebles)/([a-z0-9][a-z0-9-]{2,60})", path)
         if geo_m and _is_listing_geography_slug(geo_m.group(2)):
             return f"listing_url_geo_filter:{path}"
+        # Slugs con guiones BAJOS (_) bajo /propiedades/ o /inmuebles/ que combinan
+        # tipo de propiedad + operación → son filtros de listado, no fichas reales.
+        # Ej: /propiedades/casas_venta_banfield_5_ambientes
+        # Ej: /inmuebles/departamentos_alquiler_2_ambientes
+        # Las fichas reales con underscore siempre empiezan con ID numérico:
+        # /propiedades/173857_terreno-lote-en-venta... → tiene dígitos, se descarta antes.
+        combo_m = re.fullmatch(r"(propiedades|inmuebles)/([a-z0-9][a-z0-9_-]{4,100})", path)
+        if combo_m:
+            slug = combo_m.group(2)
+            if "_" in slug and not re.match(r"^\d{3,}", slug):
+                # Separa solo por underscore para detectar dimensiones del filtro
+                us_parts = set(slug.split("_"))
+                if us_parts & _PROPERTY_TYPE_SLUG_WORDS and us_parts & _OPERATION_SLUG_WORDS:
+                    return f"listing_url_filter_combo:{path}"
     return None
 
 
 def _invalid_listing_property_reason(prop: Dict[str, Any]) -> Optional[str]:
     titulo_raw = _fix_mojibake_text(prop.get("titulo") or "")
     titulo_low = titulo_raw.lower().strip()
+    desc_low   = _fix_mojibake_text(prop.get("descripcion") or "").lower().strip()
 
-    # Títulos de páginas de resultados de búsqueda → siempre inválido
-    # Ejemplos: "Se encontraron 60 resultados para Banfield", "Se encontró 1 resultado para Alta Gracia"
-    if re.search(r"^se encontr[oó]\b", titulo_low) or "resultados para" in titulo_low:
-        return "titulo_resultados_busqueda"
+    # Título o descripción con patrones inequívocos de página de resultados → siempre inválido
+    # Ejemplos: "Se encontraron 60 resultados para Banfield", "Listado de propiedades en alquiler"
+    if _LISTING_TEXT_RE.search(titulo_low) or _LISTING_TEXT_RE.search(desc_low):
+        return "texto_resultados_busqueda"
 
     reason = _listing_url_not_property_detail_reason(prop.get("url"), prop.get("url_normalizada"))
     if not reason:
@@ -11655,18 +11880,48 @@ def _invalid_listing_property_reason(prop: Dict[str, Any]) -> Optional[str]:
 
 
 def _is_listing_like_property_payload(prop: Dict[str, Any]) -> bool:
-    """Evita guardar paginas de listado parseadas por error como si fueran fichas."""
+    """Evita guardar paginas de listado parseadas por error como si fueran fichas.
+
+    Revisa URL, título y descripción. Una propiedad se descarta si:
+    - La URL es un listado/filtro conocido, O
+    - El título o la descripción contiene patrones inequívocos de página de resultados.
+    """
     listing_reason = _listing_url_not_property_detail_reason(prop.get("url"), prop.get("url_normalizada"))
     if listing_reason:
         return True
-    # Títulos de páginas de resultados de búsqueda filtrada por ciudad/zona.
-    # Ejemplos: "Se encontraron 60 resultados para Banfield", "Se encontró 1 resultado para Alta Gracia"
-    _titulo_low = _fix_mojibake_text(prop.get("titulo") or "").lower().strip()
-    if re.search(r"^se encontr[oó]\b", _titulo_low) or "resultados para" in _titulo_low:
+
+    _titulo_raw = _fix_mojibake_text(prop.get("titulo") or "")
+    _titulo_low = _titulo_raw.lower().strip()
+    _desc_raw   = _fix_mojibake_text(prop.get("descripcion") or "")
+    _desc_low   = _desc_raw.lower().strip()
+
+    # Título o descripción con patrones inequívocos de página de resultados.
+    # Ejemplos: "Se encontraron 60 resultados para Banfield", "Listado de propiedades"
+    if _LISTING_TEXT_RE.search(_titulo_low) or _LISTING_TEXT_RE.search(_desc_low):
         return True
+
+    # Títulos tipo filtro de listado: "{tipo plural} {operacion} {zona}"
+    # Ej: "Casas Venta Banfield 5 Ambientes" — no tiene preposición "en".
+    # Fichas reales tienen: "Casa en venta en Banfield" (preposición presente).
+    _LISTING_TITLE_RE = re.compile(
+        r"^(?:casas?|departamentos?|deptos?|dptos?|lotes?|terrenos?|locales?|"
+        r"oficinas?|cocheras?|galpones?|inmuebles?|propiedades?)"
+        r"(?:\s+(?:venta|alquiler|en\s+renta|en\s+venta|en\s+alquiler))"
+        r"(?:\s+\w+){0,6}$",
+        re.I,
+    )
+    # Solo se descarta si el título tiene forma de filtro Y NO tiene preposición "en"
+    # antes de la operación (lo que distinguiría una ficha real).
+    if _LISTING_TITLE_RE.match(_titulo_low):
+        # "casas en venta en banfield" podría ser una ficha real (tiene "en venta")
+        # "casas venta banfield" es claramente un filtro (no tiene "en")
+        if not re.search(r"\ben\s+(?:venta|alquiler|renta|locacion)\b", _titulo_low):
+            return True
+
     url = prop.get("url")
     if not url or _partial_retry_is_detail_url(url):
         return False
+
     title_key = re.sub(
         r"[^a-z0-9]+",
         " ",
@@ -11685,6 +11940,25 @@ def _is_listing_like_property_payload(prop: Dict[str, Any]) -> bool:
     }
     weak_payload = not prop.get("precio") and not prop.get("descripcion") and not prop.get("direccion")
     return bool(generic_title or weak_payload)
+
+
+def _repair_images_skip_url_reason(url: Any, url_normalizada: Any = None) -> Optional[str]:
+    """Evita que el repair de imagenes visite listados o paginas paginadas."""
+    reason = _listing_url_not_property_detail_reason(url, url_normalizada)
+    if reason:
+        return reason
+    paths = [
+        _path_from_property_url_candidate(url),
+        _path_from_property_url_candidate(url_normalizada),
+    ]
+    for path in paths:
+        if not path:
+            continue
+        if re.fullmatch(r"(?:property|properties|propiedad|propiedades|inmueble|inmuebles)/(?:page|pagina)/\d+", path):
+            return f"listing_url_paginated:{path}"
+        if re.fullmatch(r"(?:property|properties|propiedad|propiedades|inmueble|inmuebles)/\d+", path):
+            return f"listing_url_paginated:{path}"
+    return None
 
 
 def _save_queue_properties(
@@ -11736,6 +12010,10 @@ def _save_queue_properties(
             errors=dropped_listing_payloads,
         )
 
+    # Post-procesamiento de estado de disponibilidad.
+    # Detecta propiedades vendidas/reservadas/alquiladas y las guarda como inactivas.
+    # No se descartan (a diferencia del filtro de listados) — quedan en la BD para tracking.
+    unavailable_props: List[Dict[str, Any]] = []
     for prop in props:
         prop["inmobiliaria_id"] = main_id
         prop["_agency_location_context"] = {
@@ -11746,6 +12024,22 @@ def _save_queue_properties(
             "pais": main_row.get("pais") or "Argentina",
         }
         prop["hash_dedup"] = hash_propiedad(main_id, prop.get("id_externo"), prop.get("url"))
+        # Detección de estado no disponible (overrides el "activo" por defecto)
+        if _detectar_estado_no_disponible(prop.get("titulo"), prop.get("descripcion")):
+            prop["estado"] = "inactivo"
+            unavailable_props.append({
+                "url":    prop.get("url"),
+                "titulo": prop.get("titulo"),
+            })
+    if unavailable_props:
+        logger.warning(
+            "  Propiedades marcadas como inactivas (vendidas/reservadas/alquiladas): %d | ejemplos=%s",
+            len(unavailable_props),
+            unavailable_props[:3],
+        )
+        if isinstance(strategy_meta, dict):
+            strategy_meta["propiedades_marcadas_inactivas_por_estado"] = len(unavailable_props)
+            strategy_meta["propiedades_inactivas_ejemplos"] = unavailable_props[:5]
 
     props_with_images, props_without_images = _count_real_image_props(props)
     image_urls_detected = 0
@@ -12611,16 +12905,44 @@ def run_controlled_queue(
                         allow_playwright_fallback=allow_playwright_fallback,
                         allow_network_interception=allow_network_interception,
                     )
-                    db.finish_scraping_item_success(
-                        item_id=item_id,
-                        propiedades_detectadas=result["propiedades_detectadas"],
-                        propiedades_nuevas=result["propiedades_nuevas"],
-                        propiedades_actualizadas=result["propiedades_actualizadas"],
-                        propiedades_sin_cambios=result["propiedades_sin_cambios"],
-                        propiedades_error=result["propiedades_error"],
-                        final_url=result["final_url"],
-                        metadata_json=result["metadata_json"],
-                    )
+                    # Cierre del item en la queue — separado del scraping para que
+                    # un fallo de RPC no invalide una extracción que sí funcionó.
+                    _closure_fallback_used = False
+                    try:
+                        db.finish_scraping_item_success(
+                            item_id=item_id,
+                            propiedades_detectadas=result["propiedades_detectadas"],
+                            propiedades_nuevas=result["propiedades_nuevas"],
+                            propiedades_actualizadas=result["propiedades_actualizadas"],
+                            propiedades_sin_cambios=result["propiedades_sin_cambios"],
+                            propiedades_error=result["propiedades_error"],
+                            final_url=result["final_url"],
+                            metadata_json=result["metadata_json"],
+                        )
+                    except Exception as _close_exc:
+                        logger.warning(
+                            "RPC finish_scraping_item_success falló para item %s: %s — "
+                            "intentando fallback REST directo sobre scraping_run_items",
+                            item_id, _close_exc,
+                        )
+                        _fb_ok = db._finish_item_success_direct_rest_fallback(
+                            item_id=item_id,
+                            final_url=result.get("final_url"),
+                            metadata_json=result.get("metadata_json") or {},
+                        )
+                        if _fb_ok:
+                            logger.info(
+                                "Fallback REST exitoso: item %s marcado como success via PATCH directo",
+                                item_id,
+                            )
+                            _closure_fallback_used = True
+                        else:
+                            logger.error(
+                                "Fallback REST también falló para item %s — "
+                                "el item puede quedar sin cerrar en la queue (propiedades ya guardadas)",
+                                item_id,
+                            )
+                            _closure_fallback_used = True  # Marca igual: el scraping fue exitoso
                     success += 1
                     total_detected += int(result.get("propiedades_detectadas") or 0)
                     total_new += int(result.get("propiedades_nuevas") or 0)
@@ -12639,7 +12961,10 @@ def run_controlled_queue(
                     logger.info("Actualizadas: %d", result["propiedades_actualizadas"])
                     logger.info("Sin cambios: %d", result["propiedades_sin_cambios"])
                     logger.info("Errores: %d", result["propiedades_error"])
-                    logger.info("Estado final: success")
+                    logger.info(
+                        "Estado final: success%s",
+                        " [cierre_via_fallback_rest]" if _closure_fallback_used else "",
+                    )
                 except KeyboardInterrupt:
                     interrupted = True
                     failed += 1
@@ -12796,24 +13121,56 @@ def run_retry_errors_queue(
                 metadata = result["metadata_json"]
                 metadata["retry_errors_mode"] = True
                 metadata["previous_error_type"] = item.get("error_type")
-                db.finish_scraping_item_success(
-                    item_id=item_id,
-                    propiedades_detectadas=result["propiedades_detectadas"],
-                    propiedades_nuevas=result["propiedades_nuevas"],
-                    propiedades_actualizadas=result["propiedades_actualizadas"],
-                    propiedades_sin_cambios=result["propiedades_sin_cambios"],
-                    propiedades_error=result["propiedades_error"],
-                    final_url=result["final_url"],
-                    metadata_json=metadata,
-                )
+                # Cierre del item — separado del scraping para que un fallo de RPC
+                # no invalide una extracción que sí funcionó.
+                _retry_closure_fallback_used = False
+                try:
+                    db.finish_scraping_item_success(
+                        item_id=item_id,
+                        propiedades_detectadas=result["propiedades_detectadas"],
+                        propiedades_nuevas=result["propiedades_nuevas"],
+                        propiedades_actualizadas=result["propiedades_actualizadas"],
+                        propiedades_sin_cambios=result["propiedades_sin_cambios"],
+                        propiedades_error=result["propiedades_error"],
+                        final_url=result["final_url"],
+                        metadata_json=metadata,
+                    )
+                except Exception as _close_exc:
+                    logger.warning(
+                        "RPC finish_scraping_item_success falló para retry item %s: %s — "
+                        "intentando fallback REST directo sobre scraping_run_items",
+                        item_id, _close_exc,
+                    )
+                    _fb_ok = db._finish_item_success_direct_rest_fallback(
+                        item_id=item_id,
+                        final_url=result.get("final_url"),
+                        metadata_json=metadata,
+                    )
+                    if _fb_ok:
+                        logger.info(
+                            "Fallback REST exitoso: retry item %s marcado como success via PATCH directo",
+                            item_id,
+                        )
+                        _retry_closure_fallback_used = True
+                    else:
+                        logger.error(
+                            "Fallback REST también falló para retry item %s — "
+                            "el item puede quedar sin cerrar en la queue (propiedades ya guardadas)",
+                            item_id,
+                        )
+                        _retry_closure_fallback_used = True  # Scraping fue exitoso igual
                 success += 1
                 total_detected += int(result.get("propiedades_detectadas") or 0)
                 total_new += int(result.get("propiedades_nuevas") or 0)
                 total_updated += int(result.get("propiedades_actualizadas") or 0)
                 total_unchanged += int(result.get("propiedades_sin_cambios") or 0)
                 total_property_errors += int(result.get("propiedades_error") or 0)
-                logger.info("Retry success | item=%s | detectadas=%s nuevas=%s actualizadas=%s",
-                            item_id, result["propiedades_detectadas"], result["propiedades_nuevas"], result["propiedades_actualizadas"])
+                logger.info(
+                    "Retry success%s | item=%s | detectadas=%s nuevas=%s actualizadas=%s",
+                    " [cierre_via_fallback_rest]" if _retry_closure_fallback_used else "",
+                    item_id, result["propiedades_detectadas"], result["propiedades_nuevas"],
+                    result["propiedades_actualizadas"],
+                )
             except Exception as exc:
                 failed += 1
                 control_exc = exc if isinstance(exc, ScrapingControlError) else None
@@ -13284,7 +13641,14 @@ def _partial_retry_recalculate_metadata(
     remaining = max(expected_count - total_saved_count, 0) if expected_count else None
     stop_reason = retry_meta.get("retry_partial_stop_reason")
     status = str(_partial_retry_metadata_get(metadata, "extraction_completeness_status") or "partial")
-    if expected_count and new_ratio is not None:
+    no_progress_this_run = detected_now == 0 and new_now == 0 and updated_now == 0
+    if no_progress_this_run:
+        # No properties found in this retry — keep status as partial/incomplete, do NOT upgrade
+        if status not in {"partial", "incomplete"}:
+            status = "partial"
+        if not stop_reason:
+            stop_reason = "no_new_properties_found"
+    elif expected_count and new_ratio is not None:
         if new_ratio >= 0.9 and stop_reason in {"batch_complete", "pagination_batch_complete", None, ""}:
             status = "complete"
         elif new_ratio >= 0.65 and stop_reason not in {"max_pages_per_site", "timeout_or_budget", "batch_limit"}:
@@ -13319,6 +13683,7 @@ def _partial_retry_recalculate_metadata(
         "property_urls_saved": total_saved_count,
         "property_urls_duplicate": int(counts.get("propiedades_sin_cambios") or 0),
         "property_urls_error": int(counts.get("propiedades_error") or 0),
+        "partial_retry_no_progress": no_progress_this_run,
     })
     for key in (
         "pagination_detected",
@@ -13347,6 +13712,7 @@ def _partial_retry_recalculate_metadata(
         "previous_completion_ratio": previous_ratio,
         "new_completion_ratio": new_ratio,
         "partial_retry_batch_size_urls": batch_size_urls,
+        "partial_retry_no_progress": no_progress_this_run,
         "extraction_completeness": completeness,
         "extraction_completeness_status": status,
         "completion_status": _completion_status_label(status),
@@ -13378,7 +13744,7 @@ def run_retry_partial_extractions(
     db = SupabasePropiedades()
     items = db.load_partial_extraction_items(limit=limit)
     session = SupabasePropiedades._make_session()
-    processed = success = failed = 0
+    processed = success = failed = no_progress = 0
     total_detected = total_new = total_updated = total_unchanged = total_property_errors = 0
 
     logger.info("=" * 60)
@@ -13439,6 +13805,22 @@ def run_retry_partial_extractions(
                 item_deadline = time.time() + timeout_seconds
 
                 if dry_run:
+                    _drun_discovered = _safe_int(_partial_retry_metadata_get(metadata, "property_urls_discovered"))
+                    _drun_processed = _safe_int(_partial_retry_metadata_get(metadata, "property_urls_processed"))
+                    _drun_pending = _safe_int(_partial_retry_metadata_get(metadata, "property_urls_pending"))
+                    _drun_ratio = _safe_float(_partial_retry_metadata_get(metadata, "completion_ratio"), default=0.0)
+                    logger.info(
+                        "  DRY-RUN item=%s | inmobiliaria=%s | strategy=%s"
+                        " | discovered=%d processed=%d pending=%d ratio=%.2f | existentes_db=%d",
+                        item_id,
+                        item.get("inmobiliaria_nombre"),
+                        retry_strategy,
+                        _drun_discovered,
+                        _drun_processed,
+                        _drun_pending,
+                        _drun_ratio,
+                        len(existing_keys),
+                    )
                     if retry_strategy == "sitemap_batch":
                         known_urls = _partial_retry_known_detail_urls(metadata)
                         discovered_total = len(known_urls)
@@ -13448,14 +13830,18 @@ def run_retry_partial_extractions(
                             sitemap_tried.extend(tried)
                             known_urls.extend(prop_urls + project_urls)
                         known_urls = _dedupe_url_list(known_urls, limit=2000)
+                        # Count URLs that would be filtered as listing pages (not real property detail URLs)
+                        _drun_filtered_listing = sum(1 for u in known_urls if not _partial_retry_is_detail_url(u))
                         selected, skipped = _filter_new_detail_urls(known_urls, existing_keys, batch_size_urls)
                         logger.info(
-                            "  DRY-RUN sitemap_batch | urls_metadata=%d urls_total=%d sitemaps_probados=%d ya_guardadas=%d procesaria=%d",
+                            "  DRY-RUN sitemap_batch | urls_metadata=%d urls_total=%d sitemaps_probados=%d"
+                            " | candidatas=%d ya_guardadas=%d filtradas_listado=%d",
                             discovered_total,
                             len(known_urls),
                             len(sitemap_tried),
-                            skipped,
                             len(selected),
+                            skipped,
+                            _drun_filtered_listing,
                         )
                     elif retry_strategy == "pagination_deep_scan":
                         listing_urls = _partial_retry_known_listing_urls(item, metadata, max_pages_per_site)
@@ -13532,8 +13918,27 @@ def run_retry_partial_extractions(
                     retry_meta,
                     batch_size_urls,
                 )
+                _item_detected = int(counts.get("propiedades_detectadas") or 0)
+                _item_new = int(counts.get("propiedades_nuevas") or 0)
+                _item_updated = int(counts.get("propiedades_actualizadas") or 0)
+                _made_progress = bool(_item_detected or _item_new or _item_updated)
+                if not _made_progress:
+                    # No new properties found — classify as no_progress, not success
+                    _no_progress_reason = (
+                        updated_metadata.get("retry_partial_stop_reason")
+                        or retry_meta.get("retry_partial_stop_reason")
+                        or "no_new_properties_found"
+                    )
+                    updated_metadata["partial_retry_no_progress"] = True
+                    updated_metadata["partial_retry_no_progress_reason"] = _no_progress_reason
+                    if not updated_metadata.get("retry_partial_stop_reason"):
+                        updated_metadata["retry_partial_stop_reason"] = _no_progress_reason
+                    _ec = dict(updated_metadata.get("extraction_completeness") or {})
+                    _ec["partial_retry_no_progress"] = True
+                    _ec["retry_partial_stop_reason"] = _no_progress_reason
+                    updated_metadata["extraction_completeness"] = _ec
                 status_after = "success" if (
-                    counts.get("propiedades_detectadas")
+                    _made_progress
                     or item.get("status") == "success"
                 ) else item.get("status")
                 error_type_after = None if status_after == "success" else item.get("error_type")
@@ -13547,17 +13952,21 @@ def run_retry_partial_extractions(
                     error_message=error_message_after,
                     counts=counts,
                 )
-                success += 1
-                total_detected += int(counts.get("propiedades_detectadas") or 0)
-                total_new += int(counts.get("propiedades_nuevas") or 0)
-                total_updated += int(counts.get("propiedades_actualizadas") or 0)
+                if _made_progress:
+                    success += 1
+                else:
+                    no_progress += 1
+                total_detected += _item_detected
+                total_new += _item_new
+                total_updated += _item_updated
                 total_unchanged += int(counts.get("propiedades_sin_cambios") or 0)
                 total_property_errors += int(counts.get("propiedades_error") or 0)
                 logger.info(
-                    "  Partial retry OK | detectadas=%s nuevas=%s actualizadas=%s total_guardadas=%s ratio=%s status=%s",
-                    counts.get("propiedades_detectadas"),
-                    counts.get("propiedades_nuevas"),
-                    counts.get("propiedades_actualizadas"),
+                    "  Partial retry %s | detectadas=%s nuevas=%s actualizadas=%s total_guardadas=%s ratio=%s status=%s",
+                    "OK" if _made_progress else "SIN_PROGRESO",
+                    _item_detected,
+                    _item_new,
+                    _item_updated,
                     total_saved_count,
                     updated_metadata.get("completion_ratio"),
                     updated_metadata.get("extraction_completeness_status"),
@@ -13592,7 +14001,8 @@ def run_retry_partial_extractions(
     logger.info("=" * 60)
     logger.info("RETRY EXTRACCIONES PARCIALES FINALIZADO")
     logger.info("Items procesados: %d", processed)
-    logger.info("Exitos: %d", success)
+    logger.info("Exitos (con progreso): %d", success)
+    logger.info("Sin progreso (no_actionable): %d", no_progress)
     logger.info("Errores: %d", failed)
     logger.info("Propiedades detectadas: %d", total_detected)
     logger.info("Propiedades nuevas: %d", total_new)
@@ -13628,6 +14038,204 @@ def run_repair_invalid_listing_properties(dry_run: bool = True, limit: Optional[
     ids = [row.get("id") for row in candidates]
     deleted = db.delete_properties_by_ids(ids)
     logger.info("Propiedades eliminadas: %d", deleted)
+    logger.info("=" * 60)
+
+
+def _load_properties_for_image_repair(db: SupabasePropiedades, agency_id: int) -> List[Dict[str, Any]]:
+    """Carga propiedades existentes de una inmobiliaria para repair de imagenes."""
+    rows: List[Dict[str, Any]] = []
+    start = 0
+    page_size = 1000
+    while True:
+        r = db.session.get(
+            f"{SUPABASE_URL}/rest/v1/propiedades",
+            headers={**db._headers, "Range": f"{start}-{start + page_size - 1}"},
+            params={
+                "select": "id,inmobiliaria_id,titulo,url,url_normalizada,imagenes,updated_at",
+                "inmobiliaria_id": f"eq.{agency_id}",
+                "order": "id.asc",
+            },
+            timeout=30,
+        )
+        r.raise_for_status()
+        batch = r.json()
+        rows.extend(batch)
+        if len(batch) < page_size:
+            break
+        start += page_size
+    return rows
+
+
+def _extract_clean_images_for_repair(prop: Dict[str, Any], session: requests.Session) -> Tuple[List[str], Dict[str, Any], Optional[str]]:
+    """Extrae imagenes limpias desde la URL existente de una propiedad."""
+    stats = _new_image_stats()
+    url = prop.get("url")
+    if not url:
+        return [], stats, "sin_url"
+    skip_reason = _repair_images_skip_url_reason(url, prop.get("url_normalizada"))
+    if skip_reason:
+        return [], stats, skip_reason
+    try:
+        response = _http_get(str(url), session, timeout=12, use_scraper_on_block=False)
+        if response.status_code != 200:
+            return [], stats, f"HTTP {response.status_code}"
+        final_url = str(getattr(response, "url", "") or url)
+        final_skip_reason = _repair_images_skip_url_reason(final_url, None)
+        if final_skip_reason:
+            return [], stats, f"final_url_{final_skip_reason}"
+        soup = BeautifulSoup(_decode_response_text(response), "html.parser")
+        images = extraer_imagenes(soup, final_url, stats)
+        return images, stats, None
+    except Exception as exc:
+        return [], stats, f"{type(exc).__name__}: {str(exc)[:180]}"
+
+
+def _patch_property_images_only(db: SupabasePropiedades, property_id: Any, images: List[str]) -> None:
+    """PATCH seguro: solo actualiza el campo imagenes."""
+    r = db.session.patch(
+        f"{SUPABASE_URL}/rest/v1/propiedades",
+        headers=db._headers_minimal,
+        params={"id": f"eq.{property_id}"},
+        json={"imagenes": images},
+        timeout=20,
+    )
+    if r.status_code not in (200, 204):
+        raise RuntimeError(f"PATCH imagenes fallo {r.status_code}: {r.text[:500]}")
+
+
+def run_repair_images(agency_id: int, limit: Optional[int] = None, dry_run: bool = True) -> None:
+    """Repara solo imagenes de propiedades existentes sin fotos limpias."""
+    db = SupabasePropiedades()
+    session = SupabasePropiedades._make_session()
+    rows = _load_properties_for_image_repair(db, agency_id)
+    skipped_clean = 0
+    skipped_invalid_url = 0
+    candidates: List[Dict[str, Any]] = []
+    invalid_url_examples: List[Dict[str, Any]] = []
+
+    for row in rows:
+        raw_images = row.get("imagenes") or []
+        if isinstance(raw_images, str):
+            raw_images = [raw_images]
+        if clean_property_images(raw_images if isinstance(raw_images, list) else []):
+            skipped_clean += 1
+            continue
+        skip_reason = _repair_images_skip_url_reason(row.get("url"), row.get("url_normalizada"))
+        if skip_reason:
+            skipped_invalid_url += 1
+            if len(invalid_url_examples) < 5:
+                invalid_url_examples.append({
+                    "id": row.get("id"),
+                    "url": row.get("url"),
+                    "motivo": skip_reason,
+                })
+            continue
+        candidates.append(row)
+
+    selected = candidates[:limit] if limit is not None else candidates
+    found = 0
+    updated = 0
+    no_images = 0
+    errors = 0
+    total_new_images = 0
+    update_examples: List[Dict[str, Any]] = []
+    error_examples: List[Dict[str, Any]] = []
+    no_image_examples: List[Dict[str, Any]] = []
+    discarded_examples: List[Dict[str, Any]] = []
+    discard_reasons: Dict[str, int] = {}
+
+    logger.info("=" * 60)
+    logger.info("REPAIR IMAGENES HISTORICAS")
+    logger.info("agency_id=%s limit=%s dry_run=%s", agency_id, limit, dry_run)
+    logger.info("Total propiedades revisadas: %d", len(rows))
+    logger.info("Saltadas por ya tener imagenes limpias: %d", skipped_clean)
+    logger.info("Saltadas por URL de listado/paginacion: %d", skipped_invalid_url)
+    logger.info("Candidatas sin imagenes limpias: %d", len(candidates))
+    logger.info("Candidatas a procesar en esta ejecucion: %d", len(selected))
+    if invalid_url_examples:
+        logger.info("Ejemplos URLs omitidas por no ser detalle: %s", invalid_url_examples)
+
+    for row in selected:
+        images, image_stats, error = _extract_clean_images_for_repair(row, session)
+        for reason, count in (image_stats.get("imagenes_descartadas_por_motivo") or {}).items():
+            discard_reasons[reason] = int(discard_reasons.get(reason) or 0) + int(count or 0)
+        for example in image_stats.get("ejemplos_descartados") or []:
+            if len(discarded_examples) < 8:
+                discarded_examples.append({
+                    "property_id": row.get("id"),
+                    **example,
+                })
+
+        if error:
+            errors += 1
+            if len(error_examples) < 8:
+                error_examples.append({
+                    "id": row.get("id"),
+                    "url": row.get("url"),
+                    "error": error,
+                })
+            continue
+        if not images:
+            no_images += 1
+            if len(no_image_examples) < 8:
+                no_image_examples.append({
+                    "id": row.get("id"),
+                    "titulo": row.get("titulo"),
+                    "url": row.get("url"),
+                })
+            continue
+
+        found += 1
+        total_new_images += len(images)
+        example = {
+            "id": row.get("id"),
+            "titulo": row.get("titulo"),
+            "url": row.get("url"),
+            "imagenes_nuevas": len(images),
+            "primeras_imagenes": images[:3],
+        }
+        if len(update_examples) < 8:
+            update_examples.append(example)
+        if dry_run:
+            logger.info(
+                "DRY-RUN actualizaría id=%s imagenes=%d url=%s",
+                row.get("id"),
+                len(images),
+                row.get("url"),
+            )
+        else:
+            try:
+                _patch_property_images_only(db, row.get("id"), images)
+                updated += 1
+                logger.info("Actualizada propiedad id=%s imagenes=%d", row.get("id"), len(images))
+            except Exception as exc:
+                errors += 1
+                if len(error_examples) < 8:
+                    error_examples.append({
+                        "id": row.get("id"),
+                        "url": row.get("url"),
+                        "error": f"patch: {type(exc).__name__}: {str(exc)[:180]}",
+                    })
+
+    logger.info("-" * 60)
+    logger.info("Resumen repair imagenes")
+    logger.info("Total propiedades revisadas: %d", len(rows))
+    logger.info("Candidatas sin imagenes limpias: %d", len(candidates))
+    logger.info("Procesadas en esta ejecucion: %d", len(selected))
+    logger.info("Saltadas por ya tener imagenes limpias: %d", skipped_clean)
+    logger.info("Saltadas por URL invalida/listado: %d", skipped_invalid_url)
+    logger.info("Propiedades donde encontro imagenes nuevas: %d", found)
+    logger.info("Imagenes nuevas detectadas: %d", total_new_images)
+    logger.info("Propiedades sin imagenes encontradas: %d", no_images)
+    logger.info("URLs con error: %d", errors)
+    logger.info("Propiedades actualizadas: %d", updated)
+    logger.info("Motivos de imagenes descartadas: %s", discard_reasons)
+    logger.info("Ejemplos que actualizaria/actualizo: %s", update_examples[:3])
+    logger.info("Ejemplos descartados: %s", discarded_examples[:5])
+    logger.info("Ejemplos sin imagenes nuevas: %s", no_image_examples[:5])
+    logger.info("Ejemplos de errores: %s", error_examples[:5])
+    if dry_run:
+        logger.info("DRY-RUN: no se escribio nada en Supabase.")
     logger.info("=" * 60)
 
 
@@ -13908,11 +14516,18 @@ def test_single_url(
         for prop in props[:5]:
             images = prop.get("imagenes") or []
             first_image = images[0] if images else "sin foto real"
+            _estado_test = (
+                "inactivo"
+                if _detectar_estado_no_disponible(prop.get("titulo"), prop.get("descripcion"))
+                else "activo"
+            )
             logger.info(
-                " - %s | %s %s | fotos=%d | %s | %s",
+                " - %s | %s %s | tipo=%s | estado=%s | fotos=%d | %s | %s",
                 prop.get("titulo"),
                 prop.get("moneda"),
                 prop.get("precio"),
+                prop.get("tipo_propiedad"),
+                _estado_test,
                 len(images),
                 first_image,
                 prop.get("url"),
@@ -14042,8 +14657,12 @@ if __name__ == "__main__":
                         help="Reparar ciudad/provincia existentes usando sanitizer central de ubicacion")
     parser.add_argument("--repair-invalid-listing-properties", action="store_true",
                         help="Eliminar propiedades invalidas que son paginas de listado guardadas por error")
+    parser.add_argument("--repair-images", action="store_true",
+                        help="Reparar solo imagenes de propiedades existentes sin fotos limpias")
+    parser.add_argument("--agency-id", type=int, default=None,
+                        help="ID de inmobiliarias_main para modos de reparacion acotados")
     parser.add_argument("--limit", type=int, default=100,
-                        help="Limite para modos tecnicos como --repair-existing-location-quality o --retry-partial-extractions")
+                        help="Limite para modos tecnicos como --repair-existing-location-quality, --repair-images o --retry-partial-extractions")
     parser.add_argument("--batch-size-urls", type=int, default=50,
                         help="Cantidad maxima de URLs de detalle a procesar por item en --retry-partial-extractions")
     parser.add_argument("--max-pages-per-site", type=int, default=40,
@@ -14058,6 +14677,10 @@ if __name__ == "__main__":
 
     if args.repair_invalid_listing_properties:
         run_repair_invalid_listing_properties(limit=args.limit, dry_run=args.dry_run)
+    elif args.repair_images:
+        if args.agency_id is None:
+            raise SystemExit("--repair-images requiere --agency-id")
+        run_repair_images(agency_id=args.agency_id, limit=args.limit, dry_run=args.dry_run)
     elif args.repair_existing_location_quality:
         run_repair_existing_location_quality(limit=args.limit, dry_run=args.dry_run)
     elif args.integrity_dry_run:

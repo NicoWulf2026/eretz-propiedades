@@ -45,6 +45,23 @@ CITY_BOUNDS = {
     "funes": (-33.00, -32.80, -60.90, -60.70),
     "roldan": (-33.00, -32.80, -61.00, -60.80),
     "san jose del rincon": (-31.70, -31.50, -60.65, -60.45),
+    "banfield": (-34.78, -34.70, -58.45, -58.35),
+    "bahia blanca": (-38.85, -38.60, -62.40, -62.05),
+    "pilar": (-34.55, -34.35, -59.05, -58.75),
+    "mar del plata": (-38.15, -37.85, -57.75, -57.45),
+    "avellaneda": (-34.72, -34.62, -58.40, -58.30),
+    "tigre": (-34.50, -34.30, -58.75, -58.45),
+    "moron": (-34.70, -34.60, -58.70, -58.55),
+    "ituzaingo": (-34.70, -34.60, -58.75, -58.60),
+    "pinamar": (-37.20, -37.00, -56.95, -56.75),
+    "lomas de zamora": (-34.82, -34.70, -58.48, -58.35),
+    "lanus": (-34.75, -34.65, -58.45, -58.35),
+    "escobar": (-34.42, -34.25, -58.90, -58.65),
+    "belen de escobar": (-34.42, -34.25, -58.90, -58.65),
+    "san vicente": (-35.10, -34.85, -58.65, -58.35),
+    "capital federal": (-34.72, -34.52, -58.55, -58.32),
+    "caba": (-34.72, -34.52, -58.55, -58.32),
+    "ciudad autonoma de buenos aires": (-34.72, -34.52, -58.55, -58.32),
 }
 URUGUAY_BOUNDS = (-35.20, -30.00, -58.80, -53.00)
 ARGENTINA_BOUNDS = (-56.00, -21.00, -74.00, -53.00)
@@ -687,6 +704,21 @@ def strip_unit_suffix(text: str) -> str:
     return normalize_address_text(value)
 
 
+def is_surface_fragment(value: str) -> bool:
+    text = normalize_address_text(value)
+    if not text:
+        return False
+    if re.search(
+        r"\b(?:m2|m²|metros?\s+cuadrados?|superficie|cubierta|semicubierta|total|terreno)\b",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        return True
+    if re.fullmatch(r"(?:de|desde|hasta)\s+\d{2,5}", text, flags=re.IGNORECASE):
+        return True
+    return False
+
+
 def extract_street_number_address(segment: str) -> Optional[str]:
     value = strip_ui_noise(segment)
     value = strip_unit_suffix(strip_real_estate_prefixes(value))
@@ -696,6 +728,8 @@ def extract_street_number_address(segment: str) -> Optional[str]:
     value = normalize_address_text(value)
 
     if not value:
+        return None
+    if is_surface_fragment(value):
         return None
 
     route_match = ROUTE_ADDRESS_RE.search(value)
@@ -708,11 +742,14 @@ def extract_street_number_address(segment: str) -> Optional[str]:
     if not matches:
         return None
 
-    house_number_match = matches[-1]
+    house_number_match = next(
+        (match for match in matches if int(match.group(0)) >= 100),
+        matches[-1],
+    )
     base = value[:house_number_match.end()]
     base = strip_unit_suffix(normalize_address_text(base))
 
-    if is_generic_address(base):
+    if is_surface_fragment(base) or is_generic_address(base):
         return None
     return base
 
