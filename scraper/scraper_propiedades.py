@@ -99,7 +99,7 @@ STRATEGY_TIMEOUT_SECONDS: Dict[str, int] = {
     "wordpress_sitemap_detail": 90,
     "wordpress_essential_real_estate_detail": 75,
     "wordpress_estatik_detail": 75,
-    "wordpress_realhomes_detail": 75,
+    "wordpress_realhomes_detail": 230,
     "wordpress_generic_detail": 65,
     "custom_listing_detail": 75,
     "json_ld": 20,
@@ -6269,6 +6269,56 @@ def _fetch_sitemap_urls(base: str, session: requests.Session, inmob: Optional[Di
     return list(dict.fromkeys(prop_urls))  # deduplicate preserving order
 
 
+def _correct_realhomes_currency(prop: Optional[Dict], soup: BeautifulSoup, inmob: Dict) -> Optional[Dict]:
+    """Corrige la moneda de una ficha RealHomes cuando la pagina muestra el
+    precio explicitamente en USD (prefijo U$S / US$ / USD / dolar) pero la ficha
+    quedo clasificada en ARS. Causas tipicas: el JSON-LD trae priceCurrency
+    ambiguo ("U$S" no contiene la subcadena "USD") o el selector de precio
+    capturo solo el numero sin el prefijo de moneda.
+
+    Solo actua para la estrategia wordpress_realhomes_detail. Es estrictamente
+    basado en evidencia: exige que EL MISMO importe aparezca en la pagina
+    precedido por un marcador USD. Sin esa evidencia no cambia nada (no inventa
+    moneda). Los alquileres en pesos se publican con "$" pelado, sin marcador
+    USD, por lo que quedan correctamente en ARS."""
+    if not isinstance(prop, dict):
+        return prop
+    if inmob.get("_strategy_name") != "wordpress_realhomes_detail":
+        return prop
+    if str(prop.get("moneda") or "").upper() != "ARS":
+        return prop
+    precio = prop.get("precio")
+    if not _positive_number(precio):
+        return prop
+    try:
+        entero = int(round(float(precio)))
+    except (TypeError, ValueError):
+        return prop
+    if entero < 1000:
+        return prop
+    try:
+        page_text = _fix_mojibake_text(soup.get_text(" ", strip=True))
+    except Exception:
+        page_text = ""
+    if not page_text:
+        return prop
+    # variantes de formato del importe: 88500 / 88,500 / 88.500 / 88 500
+    miles = f"{entero:,}"
+    variantes = {str(entero), miles, miles.replace(",", "."), miles.replace(",", " ")}
+    marcador = r"(?:U\$S|US\$|U\$D|USD|d[oó]lar(?:es)?|dollars?)"
+    for v in variantes:
+        if re.search(marcador + r"\s*\$?\s*" + re.escape(v) + r"(?!\d)", page_text, re.I):
+            try:
+                nuevo_ars, nuevo_usd = convertir_precio(float(precio), "USD")
+                prop["moneda"] = "USD"
+                prop["precio_ars"] = nuevo_ars
+                prop["precio_usd"] = nuevo_usd
+            except Exception:
+                prop["moneda"] = "USD"
+            return prop
+    return prop
+
+
 def _extract_detail_page(url: str, inmob: Dict, session: requests.Session) -> Optional[Dict]:
     """Extrae datos de una pÃƒÂ¡gina de detalle. Usa ScraperAPI si falla, AI si todo falla."""
     bounded_strategy = inmob.get("_strategy_name") in {
@@ -6289,7 +6339,17 @@ def _extract_detail_page(url: str, inmob: Dict, session: requests.Session) -> Op
 
     # Intento 1: request directo
     try:
-        timeout = _bounded_http_timeout(inmob, 6) if bounded_strategy else 20
+        if bounded_strategy:
+            # Usamos tupla (connect, read) para las paginas de detalle.
+            # _http_get limita el read timeout a 6s cuando recibe un escalar;
+            # pasar una tupla bypasea ese cap y permite hasta 14s de read timeout.
+            # WordPress en hosting compartido puede tardar 10-14s en renderizar
+            # una ficha individual (la pagina de listado suele estar cacheada).
+            _check_strategy_deadline(inmob, str(inmob.get("_strategy_name") or "detail"))
+            remaining = max(1.0, _deadline_remaining_seconds(_strategy_deadline(inmob)))
+            timeout = (min(3.0, remaining), min(14.0, remaining))
+        else:
+            timeout = 20
         r = _http_get(url, session, timeout=timeout)
         if r.status_code == 200:
             raw_html = _decode_response_text(r)
@@ -6332,7 +6392,7 @@ def _extract_detail_page(url: str, inmob: Dict, session: requests.Session) -> Op
                             raw_json["imagenes_enriquecidas_desde_html"] = True
                             raw_json["imagenes_reales"] = len(html_images)
                             prop_jsonld["raw_json"] = raw_json
-                        return prop_jsonld
+                        return _correct_realhomes_currency(prop_jsonld, soup, inmob)
         except Exception:
             pass
 
@@ -6343,7 +6403,7 @@ def _extract_detail_page(url: str, inmob: Dict, session: requests.Session) -> Op
     if prop is None and GROQ_API_KEY:
         prop = _ai_extraer_propiedad(raw_html, url, inmob)
 
-    return prop
+    return _correct_realhomes_currency(prop, soup, inmob)
 
 
 _GENERIC_BAD_TITLES = {
@@ -7469,6 +7529,26 @@ def _strategy_wordpress_plugin_detail(inmob: Dict, session: requests.Session, pl
         "propiedades_sin_fotos_reales": without_images,
         "errores_relevantes": errores_relevantes[-10:],
     }
+    # --- Reporte de discovery/extraccion (solo logs, no altera el comportamiento) ---
+    # Permite ver en --test-url donde se pierde cobertura sin guardar nada.
+    _detalle_procesadas = min(len(detail_urls), max_details)
+    _con_precio = sum(1 for _p in resultados if _positive_number(_p.get("precio")))
+    logger.info(
+        "[wp-discovery] %s/%s | candidatos_listado=%d paginas_visitadas=%d/%d "
+        "detalle_urls=%d duplicados_omitidos=%d paginacion=%s pages_detected=%d corte=%s",
+        strategy_name, plugin_detectado,
+        len(candidates), len(urls_probadas), max_listing_pages,
+        len(detail_urls), duplicated_property_urls_skipped,
+        bool(pagination_next_urls or load_more_signals), pages_detected,
+        pagination_stop_reason or ("sin_mas_paginas" if pagination_next_urls else "sin_paginacion"),
+    )
+    logger.info(
+        "[wp-extraction] %s | detalle_urls=%d procesadas=%d propiedades=%d "
+        "con_precio=%d con_fotos=%d fallidas=%d parcial=%s",
+        strategy_name, len(detail_urls), _detalle_procesadas, len(resultados),
+        _con_precio, with_images, max(_detalle_procesadas - len(resultados), 0),
+        bool(pagination_partial),
+    )
     if not resultados:
         raise RuntimeError(f"parsing_failed: {strategy_name} encontro links pero no datos extraibles")
     logger.info(
@@ -7504,8 +7584,455 @@ def strategy_wordpress_estatik_detail(inmob: Dict, session: requests.Session) ->
     return props
 
 
+# ===========================================================================
+# Flujo WordPress / RealHomes rediseñado.
+# Fases separadas: discovery -> listing crawl -> detail extraction -> quality.
+# AISLADO: solo lo usa strategy_wordpress_realhomes_detail. Los plugins
+# essential_real_estate, estatik y wordpress_generic siguen usando
+# _strategy_wordpress_plugin_detail sin cambios.
+# ===========================================================================
+
+_RH_PAGINATION_RE = re.compile(
+    r"(?:/page/\d+|/pagina/\d+|[?&](?:paged|page|pagina)=\d+)", re.I
+)
+_RH_CATEGORY_RE = re.compile(
+    r"/(?:property-status|property-type|property-city|property-area|property-feature|"
+    r"propiedades|properties|inmuebles|venta|ventas|alquiler|alquileres|"
+    r"emprendimiento|emprendimientos|operacion|tipo-de-propiedad)(?:/|$|\?)",
+    re.I,
+)
+
+
+def _wp_seconds_left(inmob: Dict) -> float:
+    """Segundos restantes del deadline de la estrategia (inf si no hay deadline)."""
+    return _deadline_remaining_seconds(_strategy_deadline(inmob))
+
+
+def _classify_wordpress_url(url: str, base_url: str, plugin: str) -> str:
+    """Clasifica una URL WordPress: detail / pagination / category / listing / invalid."""
+    if not url:
+        return "invalid"
+    clean = _normalize_queue_url(str(url).split("#", 1)[0])
+    if not clean or not _same_site_url_loose(clean, base_url):
+        return "invalid"
+    if _is_noise_property_url(clean):
+        return "invalid"
+    low = clean.lower()
+    # paginacion primero: una URL de detalle real nunca tiene /page/N/
+    if _RH_PAGINATION_RE.search(low):
+        return "pagination"
+    if _looks_like_real_property_url(clean) or _looks_like_wordpress_plugin_property_url(clean, plugin):
+        return "detail"
+    if _RH_CATEGORY_RE.search(low):
+        return "category"
+    if any(kw in low for kw in _UNIVERSAL_LISTING_KEYWORDS):
+        return "listing"
+    return "invalid"
+
+
+def _discover_wordpress_realhomes_urls(
+    inmob: Dict, session: requests.Session, base_url: str,
+    first_html: str, first_url: str, plugin: str,
+) -> Dict[str, Any]:
+    """FASE A (discovery): junta detail URLs y listing URLs desde sitemap, HTML,
+    scripts embebidos, paginacion y rutas conocidas. Dedup por URL normalizada."""
+    detail_urls: Dict[str, str] = {}            # clave -> url
+    listing_urls: Dict[str, Any] = {}           # clave -> (url, kind)
+    report: Dict[str, Any] = {
+        "detail_from_sitemap": 0, "detail_from_html": 0, "detail_from_scripts": 0,
+        "listing_found": 0, "pages_detected": 0, "discarded": {},
+    }
+
+    def discard(reason: str) -> None:
+        report["discarded"][reason] = report["discarded"].get(reason, 0) + 1
+
+    def add_detail(url: str, source: str) -> None:
+        key = normalize_property_url_for_dedup(url) or _listing_url_key(url)
+        if not key:
+            discard("detalle_sin_clave")
+            return
+        if key in detail_urls:
+            discard("detalle_duplicado")
+            return
+        detail_urls[key] = _normalize_queue_url(url)
+        report[f"detail_from_{source}"] = report.get(f"detail_from_{source}", 0) + 1
+
+    def add_listing(url: str, kind: str) -> None:
+        key = _listing_url_key(url)
+        if not key or key in listing_urls:
+            return
+        listing_urls[key] = (_normalize_queue_url(url), kind)
+        report["listing_found"] += 1
+
+    def absorb(urls: List[str], detail_source: str) -> None:
+        for u in urls or []:
+            cls = _classify_wordpress_url(u, base_url, plugin)
+            if cls == "detail":
+                add_detail(u, detail_source)
+            elif cls in ("pagination", "category", "listing"):
+                add_listing(u, cls)
+            else:
+                discard(f"{detail_source}_invalid")
+
+    # A.1 sitemap (URLs de detalle directas)
+    try:
+        for u in _fetch_sitemap_urls(base_url, session, inmob):
+            if _classify_wordpress_url(u, base_url, plugin) == "detail":
+                add_detail(u, "sitemap")
+            else:
+                add_listing(u, "category")
+    except Exception:
+        discard("sitemap_error")
+
+    # A.2 / A.3 HTML del home: links, cards, plugin links y scripts embebidos
+    if first_html:
+        absorb(
+            list(dict.fromkeys(
+                _extract_generic_property_links(first_html, first_url)
+                + _extract_wordpress_plugin_property_links(first_html, first_url, plugin)
+            )),
+            "html",
+        )
+        try:
+            signals = _extract_script_property_signals(first_html, first_url)
+        except Exception:
+            signals = {}
+        absorb(
+            list((signals.get("property_urls") or []) + (signals.get("property_like_urls") or [])),
+            "scripts",
+        )
+        for u in (signals.get("listing_urls") or []):
+            cls = _classify_wordpress_url(u, base_url, plugin)
+            if cls in ("pagination", "category", "listing"):
+                add_listing(u, cls)
+        # A.4 listing links + paginacion del home
+        try:
+            for u in _extract_wordpress_listing_links(first_html, first_url, base_url, plugin):
+                cls = _classify_wordpress_url(u, base_url, plugin)
+                if cls in ("pagination", "category", "listing"):
+                    add_listing(u, cls)
+            pg = _extract_pagination_signals(first_html, first_url, include_pattern_urls=True)
+            for u in (pg.get("next_urls_found") or []):
+                add_listing(u, "pagination")
+            report["pages_detected"] = int(pg.get("pages_detected") or 0)
+        except Exception:
+            discard("pagination_error")
+
+    # A.5 rutas conocidas RealHomes como semilla de listado (kind="seed": baja prioridad)
+    for path in _WORDPRESS_PLUGIN_LISTING_PATHS.get(plugin, _WORDPRESS_PLUGIN_LISTING_PATHS["wordpress_generic"]):
+        seed = urljoin(base_url.rstrip("/") + "/", path.lstrip("/"))
+        key = _listing_url_key(seed)
+        if key and key not in listing_urls:
+            listing_urls[key] = (_normalize_queue_url(seed), "seed")
+
+    return {
+        "detail_urls": list(detail_urls.values()),
+        "listing_urls": list(listing_urls.values()),
+        "report": report,
+    }
+
+
+def _crawl_wordpress_realhomes_listings(
+    inmob: Dict, session: requests.Session, base_url: str,
+    seed_listings: List[Any], plugin: str, reserve_seconds: float,
+) -> Dict[str, Any]:
+    """FASE B (listing crawl): recorre listing/pagination/category con prioridad.
+    Presupuesto contado por CLAVE LOGICA (no por string), asi las variantes
+    http/https/www no consumen presupuesto y el orden deja de importar."""
+    strategy_name = "wordpress_realhomes_detail"
+    buckets: Dict[str, List[str]] = {"pagination": [], "category": [], "listing": [], "seed": []}
+    queued_keys: set = set()
+
+    def enqueue(url: str, kind: str) -> None:
+        key = _listing_url_key(url)
+        if not key or key in queued_keys:
+            return
+        queued_keys.add(key)
+        buckets.get(kind, buckets["listing"]).append(_normalize_queue_url(url))
+
+    for item in seed_listings:
+        enqueue(item[0], item[1])
+
+    def pop_next() -> Any:
+        # prioridad fija: paginacion real > categoria > listado > semilla generica
+        for k in ("pagination", "category", "listing", "seed"):
+            if buckets[k]:
+                return buckets[k].pop(0), k
+        return None, None
+
+    visited_keys: set = set()
+    detail_urls: Dict[str, str] = {}
+    report: Dict[str, Any] = {
+        "listing_urls_found": len(queued_keys), "listing_urls_visited": 0,
+        "detail_from_crawl": 0, "discarded": {}, "cutoff_reason": "completo",
+    }
+    max_pages = _WORDPRESS_PLUGIN_MAX_LISTING_PAGES.get(plugin, 28)
+
+    while True:
+        if report["listing_urls_visited"] >= max_pages:
+            report["cutoff_reason"] = "max_pages"
+            break
+        if _wp_seconds_left(inmob) < reserve_seconds:
+            report["cutoff_reason"] = "reserva_para_detalle"
+            break
+        url, kind = pop_next()
+        if url is None:
+            break
+        key = _listing_url_key(url)
+        if key in visited_keys:
+            continue
+        visited_keys.add(key)
+        try:
+            r = _http_get(url, session, timeout=_bounded_http_timeout(inmob, 6), use_scraper_on_block=False)
+            if r.status_code != 200:
+                tag = f"http_{r.status_code}"
+                report["discarded"][tag] = report["discarded"].get(tag, 0) + 1
+                continue
+            html = _decode_response_text(r)
+        except StrategyTimeoutError:
+            report["cutoff_reason"] = "deadline"
+            break
+        except Exception:
+            report["discarded"]["fetch_error"] = report["discarded"].get("fetch_error", 0) + 1
+            continue
+        report["listing_urls_visited"] += 1
+
+        # detail URLs de esta pagina (links + plugin links + scripts)
+        page_links = list(dict.fromkeys(
+            _extract_generic_property_links(html, url)
+            + _extract_wordpress_plugin_property_links(html, url, plugin)
+        ))
+        try:
+            signals = _extract_script_property_signals(html, url)
+            page_links += (signals.get("property_urls") or []) + (signals.get("property_like_urls") or [])
+        except Exception:
+            pass
+        for u in page_links:
+            if _classify_wordpress_url(u, base_url, plugin) != "detail":
+                continue
+            dkey = normalize_property_url_for_dedup(u) or _listing_url_key(u)
+            if dkey and dkey not in detail_urls:
+                detail_urls[dkey] = _normalize_queue_url(u)
+                report["detail_from_crawl"] += 1
+
+        # nuevas paginas de listado / paginacion (van al bucket por prioridad)
+        try:
+            new_listings = list(_extract_wordpress_listing_links(html, url, base_url, plugin))
+            pg = _extract_pagination_signals(html, url, include_pattern_urls=True)
+            new_listings += (pg.get("next_urls_found") or [])
+        except Exception:
+            new_listings = []
+        for u in new_listings:
+            cls = _classify_wordpress_url(u, base_url, plugin)
+            if cls in ("pagination", "category", "listing"):
+                enqueue(u, cls)
+        report["listing_urls_found"] = len(queued_keys)
+
+    return {"detail_urls": list(detail_urls.values()), "report": report}
+
+
+def _extract_wordpress_realhomes_details_batch(
+    inmob: Dict, session: requests.Session, detail_urls: List[str],
+    strategy_name: str, max_details: int, max_workers: int = 3,
+) -> Dict[str, Any]:
+    """FASE C (detail extraction): extrae fichas en lotes chicos con concurrencia
+    baja (3 workers) para no saturar WordPress lento. Una ficha lenta o rota no
+    aborta el lote; se cortan los lotes cuando se agota el deadline."""
+    urls = list(dict.fromkeys(detail_urls))[:max_details]
+    metrics: Dict[str, int] = {
+        "detail_total": len(urls), "fetched_ok": 0, "failed": 0,
+        "extracted": 0, "stopped_by_deadline": 0,
+    }
+    props: List[Dict] = []
+    batch_size = max(max_workers * 2, 6)
+
+    def fetch_one(u: str) -> Any:
+        try:
+            return ("ok", _extract_detail_page(u, inmob, session))
+        except StrategyTimeoutError:
+            return ("deadline", None)
+        except Exception:
+            return ("error", None)
+
+    idx = 0
+    while idx < len(urls):
+        if _wp_seconds_left(inmob) <= 6:
+            metrics["stopped_by_deadline"] = len(urls) - idx
+            break
+        batch = urls[idx:idx + batch_size]
+        idx += len(batch)
+        executor = ThreadPoolExecutor(max_workers=max_workers)
+        stop = False
+        try:
+            futures = {executor.submit(fetch_one, u): u for u in batch}
+            wait_budget = max(2.0, min(75.0, _wp_seconds_left(inmob)))
+            for future in as_completed(futures, timeout=wait_budget):
+                status, prop = future.result()
+                if status == "deadline":
+                    stop = True
+                    continue
+                if status == "ok" and prop:
+                    prop["fuente_extraccion"] = strategy_name
+                    prop["cms_origen"] = inmob.get("cms_detectado") or "wordpress"
+                    props.append(prop)
+                    metrics["fetched_ok"] += 1
+                else:
+                    metrics["failed"] += 1
+        except Exception:
+            # incluye concurrent.futures.TimeoutError de as_completed:
+            # se conserva lo ya recolectado y se corta la fase de detalle.
+            stop = True
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
+        _update_strategy_progress(
+            inmob, strategy_name,
+            detail_urls_total=len(urls),
+            detail_urls_processed=min(idx, len(urls)),
+            detail_urls_remaining=max(len(urls) - idx, 0),
+            propiedades_detectadas=len(props),
+        )
+        if stop:
+            break
+
+    deduped = _dedupe_props(props)
+    metrics["extracted"] = len(deduped)
+    return {"props": deduped, "metrics": metrics}
+
+
+def _run_wordpress_realhomes_flow(inmob: Dict, session: requests.Session) -> List[Dict]:
+    """Orquestador del flujo RealHomes: discovery -> crawl -> detail -> quality."""
+    strategy_name = "wordpress_realhomes_detail"
+    plugin = "realhomes"
+    url_inicial = inmob.get("url_listado") or inmob.get("web") or ""
+    if not url_inicial:
+        raise ValueError("sin_url_listado")
+    _check_strategy_deadline(inmob, strategy_name)
+
+    # --- HTML inicial ---
+    first_url = _normalize_queue_url(url_inicial)
+    first_html = ""
+    try:
+        r0 = _http_get(first_url, session, timeout=_bounded_http_timeout(inmob, 8), use_scraper_on_block=False)
+        if r0.status_code == 200:
+            first_html = _decode_response_text(r0)
+            first_url = r0.url or first_url
+    except StrategyTimeoutError:
+        raise
+    except Exception:
+        pass
+    base_url = _wordpress_base_url(first_url)
+
+    # ===== FASE A: DISCOVERY =====
+    discovery = _discover_wordpress_realhomes_urls(inmob, session, base_url, first_html, first_url, plugin)
+    disc_report = discovery["report"]
+
+    # ===== FASE B: LISTING CRAWL =====
+    total_budget = max(1.0, _wp_seconds_left(inmob))
+    # se reserva ~55% del tiempo restante para la fase de detalle
+    reserve_for_detail = max(45.0, total_budget * 0.55)
+    crawl: Dict[str, Any] = {
+        "detail_urls": [],
+        "report": {"listing_urls_found": len(discovery["listing_urls"]), "listing_urls_visited": 0,
+                   "detail_from_crawl": 0, "discarded": {}, "cutoff_reason": "sin_crawl"},
+    }
+    try:
+        crawl = _crawl_wordpress_realhomes_listings(
+            inmob, session, base_url, discovery["listing_urls"], plugin, reserve_for_detail)
+    except StrategyTimeoutError:
+        crawl["report"]["cutoff_reason"] = "deadline"
+    except Exception as exc:
+        crawl["report"]["cutoff_reason"] = f"error:{type(exc).__name__}"
+    crawl_report = crawl["report"]
+
+    # detail URLs combinadas (discovery + crawl), dedup final por clave normalizada
+    merged: Dict[str, str] = {}
+    for u in list(discovery["detail_urls"]) + list(crawl["detail_urls"]):
+        k = normalize_property_url_for_dedup(u) or _listing_url_key(u)
+        if k and k not in merged:
+            merged[k] = u
+    all_detail_urls = list(merged.values())
+
+    # ===== FASE C: DETAIL EXTRACTION =====
+    max_details = _WORDPRESS_PLUGIN_MAX_DETAILS.get(plugin, 180)
+    extraction: Dict[str, Any] = {
+        "props": [],
+        "metrics": {"detail_total": len(all_detail_urls), "fetched_ok": 0,
+                    "failed": 0, "extracted": 0, "stopped_by_deadline": 0},
+    }
+    if all_detail_urls:
+        try:
+            extraction = _extract_wordpress_realhomes_details_batch(
+                inmob, session, all_detail_urls, strategy_name, max_details, max_workers=3)
+        except StrategyTimeoutError:
+            pass
+        except Exception:
+            pass
+    resultados = list(extraction["props"])
+    metrics = extraction["metrics"]
+
+    # ===== FASE D: QUALITY + REPORT =====
+    with_images, without_images = _count_real_image_props(resultados)
+    con_precio = sum(1 for p in resultados if _positive_number(p.get("precio")))
+    detail_total = len(all_detail_urls)
+    # extraccion parcial: hay claras senales de mas propiedades de las extraidas
+    partial = bool(resultados) and len(resultados) < max(8, int(detail_total * 0.5))
+
+    inmob["_scraper_metadata"] = {
+        **dict(inmob.get("_scraper_metadata") or {}),
+        "plugin_detectado": plugin,
+        "primary_strategy": strategy_name,
+        "wordpress_flow": "realhomes_v2",
+        "discovery_report": disc_report,
+        "crawl_report": crawl_report,
+        "detail_metrics": metrics,
+        "detail_urls_total": detail_total,
+        "urls_validas_detectadas": detail_total,
+        "property_links_count": detail_total,
+        "wordpress_detail_urls_sample": all_detail_urls[:12],
+        "listing_urls_found": crawl_report.get("listing_urls_found", 0),
+        "listing_urls_visited": crawl_report.get("listing_urls_visited", 0),
+        "pages_detected": disc_report.get("pages_detected", 0),
+        "pagination_detected": disc_report.get("pages_detected", 0) > 1,
+        "cutoff_reason": crawl_report.get("cutoff_reason"),
+        "partial_extraction": partial,
+        "propiedades_con_fotos_reales": with_images,
+        "propiedades_sin_fotos_reales": without_images,
+        "imagenes_detectadas": with_images,
+        "errores_relevantes": [],
+    }
+
+    logger.info(
+        "[wp-discovery] %s | detail(sitemap=%d html=%d scripts=%d crawl=%d) "
+        "listing_found=%d listing_visited=%d detail_total=%d pages_detected=%d corte=%s descartes=%s",
+        strategy_name,
+        disc_report.get("detail_from_sitemap", 0), disc_report.get("detail_from_html", 0),
+        disc_report.get("detail_from_scripts", 0), crawl_report.get("detail_from_crawl", 0),
+        crawl_report.get("listing_urls_found", 0), crawl_report.get("listing_urls_visited", 0),
+        detail_total, disc_report.get("pages_detected", 0),
+        crawl_report.get("cutoff_reason"), dict(crawl_report.get("discarded", {})),
+    )
+    logger.info(
+        "[wp-extraction] %s | detail_total=%d extraidas=%d con_precio=%d con_fotos=%d "
+        "fallidas=%d sin_procesar_por_deadline=%d parcial=%s",
+        strategy_name, detail_total, len(resultados), con_precio, with_images,
+        metrics.get("failed", 0), metrics.get("stopped_by_deadline", 0), partial,
+    )
+
+    if not resultados:
+        if not all_detail_urls:
+            raise RuntimeError(
+                f"no_property_links: {strategy_name} sin URLs de detalle (discovery+crawl vacios)")
+        raise RuntimeError(
+            f"parsing_failed: {strategy_name} encontro {detail_total} URLs de detalle pero 0 datos extraibles")
+
+    logger.info(
+        "  %s: %d propiedades desde %d URLs de detalle (realhomes_v2%s)",
+        strategy_name, len(resultados), detail_total, ", parcial" if partial else "")
+    return resultados
+
+
 def strategy_wordpress_realhomes_detail(inmob: Dict, session: requests.Session) -> List[Dict]:
-    return _strategy_wordpress_plugin_detail(inmob, session, "realhomes")
+    return _run_wordpress_realhomes_flow(inmob, session)
 
 
 def strategy_wordpress_generic_detail(inmob: Dict, session: requests.Session) -> List[Dict]:
@@ -14486,7 +15013,6 @@ def test_single_url(
     allow_network_interception: bool = False,
 ) -> None:
     """Prueba una URL puntual sin consumir items de la cola ni guardar propiedades."""
-    started_at = time.time()
     session = SupabasePropiedades._make_session()
     estrategia = _strategy_from_cms(cms)
     inmob: Dict[str, Any] = {
@@ -14507,13 +15033,32 @@ def test_single_url(
         if use_playwright:
             pw = sync_playwright().start()
             browser, pw_context = _make_playwright_context(pw)
+        # El cronometro del item arranca DESPUES de inicializar Playwright.
+        # sync_playwright().start() + _make_playwright_context() pueden tardar
+        # 10-60s y no son trabajo de scraping; si se cuentan contra el
+        # presupuesto del item el diagnostico + estrategias se quedan sin tiempo
+        # y fallan con item_timeout antes de ejecutar (extractores_intentados=[]).
+        started_at = time.time()
+        # Presupuesto explicito del modo --test-url:
+        #  - con Playwright: 300s (igual que el flujo real de produccion, ver
+        #    _item_timeout_seconds -> PLAYWRIGHT_ITEM_TIMEOUT_SECONDS). Con 180s
+        #    el diagnostico (~30 sondas HTTP) consumia todo el presupuesto.
+        #  - sin Playwright: 180s (CONTROL_ITEM_TIMEOUT_SECONDS).
+        test_item_timeout_seconds = (
+            PLAYWRIGHT_ITEM_TIMEOUT_SECONDS if use_playwright else CONTROL_ITEM_TIMEOUT_SECONDS
+        )
+        logger.info(
+            "test-url: presupuesto de item = %ds (%s)",
+            test_item_timeout_seconds,
+            "playwright" if use_playwright else "directo",
+        )
         props, strategy = run_best_strategy(
             inmob,
             session,
             pw_context,
             allow_playwright_fallback=allow_playwright_fallback,
             allow_network_interception=allow_network_interception,
-            item_deadline=started_at + CONTROL_ITEM_TIMEOUT_SECONDS,
+            item_deadline=started_at + test_item_timeout_seconds,
             allow_explicit_strategy_fallback=True,
         )
         metadata = dict(inmob.get("_scraper_metadata") or {})
