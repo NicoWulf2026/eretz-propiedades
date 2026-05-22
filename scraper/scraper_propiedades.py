@@ -103,7 +103,7 @@ STRATEGY_TIMEOUT_SECONDS: Dict[str, int] = {
     "wordpress_generic_detail": 65,
     "custom_listing_detail": 75,
     "json_ld": 20,
-    "sitemap": 20,
+    "sitemap": 200,
     "html_scraper": 45,
     "playwright_html": 45,
 }
@@ -6706,6 +6706,25 @@ def _html_extract_detail(soup: BeautifulSoup, url: str, inmob: Dict,
     return prop
 
 
+# Maximo de URLs de detalle a procesar en UNA corrida de strategy_sitemap.
+# Un sitemap puede tener miles de URLs (ej: bahiablancapropiedades.com ~10.928);
+# procesarlas todas de golpe agota el presupuesto y solo se extraen unas pocas.
+# El resto continua por lotes con --retry-partial-extractions (estrategia
+# sitemap_batch), que deduplica contra las URLs ya guardadas en la DB.
+_SITEMAP_SINGLE_RUN_LIMIT = 150
+
+
+def _sitemap_url_recency_key(url: str) -> int:
+    """Heuristica de recencia: el id numerico mas alto del path suele ser el id
+    de publicacion (mayor = mas reciente). Best-effort: si no hay id util, solo
+    cambia el orden del lote, nunca la correctitud (el resto sale por retry)."""
+    try:
+        nums = re.findall(r"\d{2,}", urlparse(url).path or "")
+        return max((int(n) for n in nums), default=0)
+    except Exception:
+        return 0
+
+
 def strategy_sitemap(inmob: Dict, session: requests.Session) -> List[Dict]:
     _check_strategy_deadline(inmob, "sitemap")
     base = inmob.get("web", "")
@@ -6716,9 +6735,17 @@ def strategy_sitemap(inmob: Dict, session: requests.Session) -> List[Dict]:
     if not urls:
         raise RuntimeError("sin_propiedades: sitemap sin URLs de propiedades")
 
+    total_urls = len(urls)
+    # Sitemap grande: se procesa solo un lote inicial acotado. Priorizamos las
+    # URLs mas recientes (id numerico mas alto) para que el primer lote tenga las
+    # publicaciones nuevas. Un sitemap chico (<= limite) se procesa completo.
+    if total_urls > _SITEMAP_SINGLE_RUN_LIMIT:
+        urls = sorted(urls, key=_sitemap_url_recency_key, reverse=True)
+    batch = urls[:_SITEMAP_SINGLE_RUN_LIMIT]
+
     resultados: List[Dict] = []
-    max_urls = min(len(urls), 500)
-    sitemap_partial = len(urls) > max_urls
+    processed = 0
+    deadline_cut = False
 
     def _fetch_one(url: str) -> Optional[Dict]:
         try:
@@ -6733,8 +6760,9 @@ def strategy_sitemap(inmob: Dict, session: requests.Session) -> List[Dict]:
 
     executor = ThreadPoolExecutor(max_workers=5)
     try:
-        futures = {executor.submit(_fetch_one, u): u for u in urls[:max_urls]}
+        futures = {executor.submit(_fetch_one, u): u for u in batch}
         for future in as_completed(futures, timeout=max(1.0, _deadline_remaining_seconds(_strategy_deadline(inmob)))):
+            processed += 1
             try:
                 prop = future.result()
                 if prop:
@@ -6742,26 +6770,40 @@ def strategy_sitemap(inmob: Dict, session: requests.Session) -> List[Dict]:
             except Exception:
                 pass
     except TimeoutError:
-        logger.warning("  Sitemap timeout: se corta extraccion de detalles")
-        sitemap_partial = True
+        logger.warning("  Sitemap timeout: lote cortado por presupuesto")
+        deadline_cut = True
     finally:
         executor.shutdown(wait=False, cancel_futures=True)
+
+    # processed = URLs realmente completadas en este lote (no las submitidas).
+    pending = max(total_urls - processed, 0)
+    sitemap_partial = bool(pending > 0 or deadline_cut)
 
     previous_meta = dict(inmob.get("_scraper_metadata") or {})
     inmob["_scraper_metadata"] = {
         **previous_meta,
-        "sitemap_total_urls": len(urls),
-        "sitemap_processed_urls": max_urls,
-        "sitemap_partial": bool(sitemap_partial),
-        "partial_extraction": bool(sitemap_partial),
+        "sitemap_total_urls": total_urls,
+        "sitemap_processed_urls": processed,
+        "sitemap_pending_count": pending,
+        "sitemap_batch_size": len(batch),
+        "sitemap_single_run_limit": _SITEMAP_SINGLE_RUN_LIMIT,
+        "sitemap_partial": sitemap_partial,
+        "partial_extraction": sitemap_partial,
+        "retry_reason": "sitemap_batch" if sitemap_partial else None,
         "errores_relevantes": (
             list(previous_meta.get("errores_relevantes") or [])
-            + (["sitemap_detail_timeout_or_budget_partial"] if sitemap_partial else [])
+            + (["sitemap_lote_parcial_continuar_con_retry_partial_extractions"] if sitemap_partial else [])
         )[-8:],
     }
 
+    logger.info(
+        "  [sitemap] lote: %d/%d URLs procesadas | %d propiedades | %d pendientes%s",
+        processed, total_urls, len(resultados), pending,
+        " | continuar con --retry-partial-extractions" if sitemap_partial else "",
+    )
+
     if not resultados:
-        raise RuntimeError("sin_propiedades: sitemap URLs encontradas pero sin datos extraÃƒÂ­bles")
+        raise RuntimeError("sin_propiedades: sitemap URLs encontradas pero sin datos extraibles")
     return resultados
 
 
