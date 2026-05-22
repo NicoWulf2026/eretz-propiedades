@@ -1628,10 +1628,17 @@ class SupabasePropiedades:
                 break
         return rows
 
-    def load_partial_extraction_items(self, limit: int = 5) -> List[Dict[str, Any]]:
+    def load_partial_extraction_items(
+        self,
+        limit: int = 5,
+        canonical_agency_id: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
         """Carga items terminados que dejaron metadata de extraccion parcial y reintento recomendado."""
         wanted_limit = max(int(limit or 5), 1)
         fetch_limit = max(wanted_limit * 40, 120)
+        requested_agency_id = int(canonical_agency_id) if canonical_agency_id is not None else None
+        if requested_agency_id is not None:
+            fetch_limit = max(fetch_limit, 1000)
         r = self.session.get(
             f"{SUPABASE_URL}/rest/v1/scraping_run_items",
             headers=self._headers,
@@ -1670,6 +1677,21 @@ class SupabasePropiedades:
             pending_raw = _partial_retry_metadata_get(metadata, "property_urls_pending")
             if pending_raw is not None and _safe_int(pending_raw) == 0:
                 continue
+            if requested_agency_id is not None:
+                try:
+                    canonical_resolution = self.resolve_canonical_inmobiliaria_id(row)
+                except Exception as exc:
+                    logger.warning(
+                        "Partial retry candidato descartado | requested_agency_id=%s | item_id=%s | error=%s",
+                        requested_agency_id,
+                        row.get("id"),
+                        str(exc)[:300],
+                    )
+                    continue
+                canonical_main_id = _safe_int(canonical_resolution.get("canonical_main_id"))
+                if canonical_main_id != requested_agency_id:
+                    continue
+                row["_canonical_resolution"] = canonical_resolution
             row["metadata"] = metadata
             row["scraping_run_item_id"] = row.get("id")
             rows.append(row)
@@ -14339,12 +14361,25 @@ def run_retry_partial_extractions(
     dry_run: bool = False,
     batch_size_urls: int = 50,
     max_pages_per_site: int = 40,
+    agency_id: Optional[int] = None,
 ) -> None:
     """Continua extracciones parciales usando metadata existente sin hardcodear dominios."""
     t_inicio = time.time()
     limit = max(int(max_items or 5), 1)
     db = SupabasePropiedades()
-    items = db.load_partial_extraction_items(limit=limit)
+    requested_agency_id = int(agency_id) if agency_id is not None else None
+    requested_agency_row = None
+    if requested_agency_id is not None:
+        requested_agency_row = db.load_main_agency_by_id(requested_agency_id)
+        if not requested_agency_row:
+            raise SystemExit(f"--agency-id {requested_agency_id} no existe en inmobiliarias_main")
+        logger.info(
+            "Filtro partial retry | agency_id_recibido=%s | origen=inmobiliarias_main.id | nombre=%s | web=%s",
+            requested_agency_id,
+            _agency_row_name(requested_agency_row),
+            requested_agency_row.get("web") or requested_agency_row.get("url_listado") or "-",
+        )
+    items = db.load_partial_extraction_items(limit=limit, canonical_agency_id=requested_agency_id)
     session = SupabasePropiedades._make_session()
     processed = success = failed = no_progress = 0
     total_detected = total_new = total_updated = total_unchanged = total_property_errors = 0
@@ -14352,15 +14387,22 @@ def run_retry_partial_extractions(
     logger.info("=" * 60)
     logger.info("RETRY EXTRACCIONES PARCIALES")
     logger.info(
-        "Items candidatos: %d | limite=%d | dry_run=%s | batch_size_urls=%d | max_pages_per_site=%d",
+        "Items candidatos: %d | limite=%d | dry_run=%s | batch_size_urls=%d | max_pages_per_site=%d | agency_id=%s",
         len(items),
         limit,
         dry_run,
         batch_size_urls,
         max_pages_per_site,
+        requested_agency_id or "-",
     )
     if not items:
-        logger.info("No hay extracciones parciales con retry_recommended=true")
+        if requested_agency_id is not None:
+            logger.info(
+                "No hay extracciones parciales con retry_recommended=true para inmobiliarias_main.id=%s",
+                requested_agency_id,
+            )
+        else:
+            logger.info("No hay extracciones parciales con retry_recommended=true")
         return
 
     need_playwright = any(
@@ -14393,8 +14435,29 @@ def run_retry_partial_extractions(
                 completion_ratio,
             )
             try:
-                canonical_resolution = db.resolve_canonical_inmobiliaria_id(item)
+                canonical_resolution = item.get("_canonical_resolution") or db.resolve_canonical_inmobiliaria_id(item)
                 main_id = canonical_resolution.get("canonical_main_id")
+                if requested_agency_id is not None and _safe_int(main_id) != requested_agency_id:
+                    raise SystemExit(
+                        "partial_retry_agency_id_mismatch: "
+                        f"requested_agency_id={requested_agency_id} canonical_main_id={main_id} "
+                        f"item_id={item_id}"
+                    )
+                main_row = canonical_resolution.get("main_row") or {}
+                logger.info(
+                    "Partial retry target | agency_id_recibido=%s | origen=inmobiliarias_main.id"
+                    " | run_item_id=%s | run_item_inmobiliaria_id=%s | canonical_main_id=%s"
+                    " | nombre_item=%s | nombre_main=%s | web_item=%s | web_main=%s | final_url=%s",
+                    requested_agency_id or "-",
+                    item_id,
+                    item.get("inmobiliaria_id"),
+                    main_id,
+                    item.get("inmobiliaria_nombre") or "-",
+                    _agency_row_name(main_row) or "-",
+                    item.get("web") or item.get("url_listado") or "-",
+                    main_row.get("web") or main_row.get("url_listado") or "-",
+                    item.get("final_url") or item.get("url_listado") or item.get("web") or "-",
+                )
                 existing_keys = db.load_existing_url_normalizadas(main_id)
                 logger.info("  canonical_main_id=%s | urls_existentes=%d", main_id, len(existing_keys))
                 inmob = _queue_item_to_inmob(
@@ -15280,7 +15343,7 @@ if __name__ == "__main__":
     parser.add_argument("--repair-images", action="store_true",
                         help="Reparar solo imagenes de propiedades existentes sin fotos limpias")
     parser.add_argument("--agency-id", type=int, default=None,
-                        help="ID de inmobiliarias_main para modos de reparacion acotados")
+                        help="ID de inmobiliarias_main para modos acotados, incluido --retry-partial-extractions")
     parser.add_argument("--limit", type=int, default=100,
                         help="Limite para modos tecnicos como --repair-existing-location-quality, --repair-images o --retry-partial-extractions")
     parser.add_argument("--batch-size-urls", type=int, default=50,
@@ -15332,6 +15395,7 @@ if __name__ == "__main__":
             dry_run=args.dry_run,
             batch_size_urls=args.batch_size_urls,
             max_pages_per_site=args.max_pages_per_site,
+            agency_id=args.agency_id,
         )
     elif args.legacy_jobs or args.detect_only:
         run(
