@@ -25,6 +25,8 @@ import os
 import queue
 import random
 import re
+import subprocess
+import sys
 import threading
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -111,6 +113,10 @@ PLAYWRIGHT_LAUNCH_TIMEOUT_MS = 15000
 PLAYWRIGHT_NAV_TIMEOUT_MS = 12000
 PLAYWRIGHT_LOAD_TIMEOUT_MS = 8000
 PLAYWRIGHT_ACTION_TIMEOUT_MS = 2500
+PLAYWRIGHT_TEST_NAV_TIMEOUT_MS = 30000
+PLAYWRIGHT_TEST_LOAD_TIMEOUT_MS = 45000
+PLAYWRIGHT_TEST_ACTION_TIMEOUT_MS = 5000
+PLAYWRIGHT_TEST_STRATEGY_TIMEOUT_SECONDS = 120
 PLAYWRIGHT_CLOSE_TIMEOUT_SECONDS = 3.0
 MAX_PAGINATION_PAGES_PER_SITE = 20
 MAX_LISTING_URLS_PER_SITE = 300
@@ -689,13 +695,39 @@ def _bounded_playwright_timeout_ms(inmob: Dict, requested_ms: int) -> int:
     return max(500, min(requested_ms, remaining_ms))
 
 
+def _playwright_requested_timeout_ms(inmob: Dict, key: str, default_ms: int) -> int:
+    overrides = inmob.get("_playwright_timeouts_ms")
+    if not isinstance(overrides, dict):
+        return default_ms
+    try:
+        value = int(overrides.get(key) or default_ms)
+    except (TypeError, ValueError):
+        return default_ms
+    return max(500, value)
+
+
+def _playwright_strategy_timeout_seconds(inmob: Dict, strategy_name: str, default_seconds: int) -> int:
+    overrides = inmob.get("_strategy_timeout_seconds")
+    if not isinstance(overrides, dict):
+        return default_seconds
+    try:
+        value = int(overrides.get(strategy_name) or default_seconds)
+    except (TypeError, ValueError):
+        return default_seconds
+    return max(1, value)
+
+
 def _run_strategy_with_deadline(
     strategy_name: str,
     inmob: Dict,
     item_deadline: Optional[float],
     func: Callable[[], List[Dict]],
 ) -> List[Dict]:
-    strategy_seconds = STRATEGY_TIMEOUT_SECONDS.get(strategy_name, 45)
+    strategy_seconds = _playwright_strategy_timeout_seconds(
+        inmob,
+        strategy_name,
+        STRATEGY_TIMEOUT_SECONDS.get(strategy_name, 45),
+    )
     now = time.time()
     strategy_deadline = now + strategy_seconds
     if item_deadline is not None:
@@ -8224,8 +8256,8 @@ def _looks_like_real_property_url(url: str) -> bool:
         r"(^|/)inmueble[-/]\d{3,}",
         r"(^|/)ficha[-/]\d{3,}",
         r"(^|/)detalle[-/]\d{3,}",
-        r"(^|/)propiedades/[^/]{8,}",
-        r"(^|/)inmuebles/[^/]{8,}",
+        r"(^|/)propiedades/(?:\d{3,}|[^/]{8,})",
+        r"(^|/)inmuebles/(?:\d{3,}|[^/]{8,})",
     )
     return any(re.search(pattern, path, re.I) for pattern in detail_patterns)
 
@@ -8957,6 +8989,130 @@ def _playwright_goto(page: Page, url: str, retries: int = 2, timeout_ms: int = P
             time.sleep(wait)
 
 
+def _playwright_wait_networkidle(page: Page, inmob: Dict, label: str) -> bool:
+    timeout_ms = _bounded_playwright_timeout_ms(
+        inmob,
+        _playwright_requested_timeout_ms(inmob, "load", PLAYWRIGHT_LOAD_TIMEOUT_MS),
+    )
+    try:
+        page.wait_for_load_state("networkidle", timeout=timeout_ms)
+        logger.info("playwright_html | %s | load_state=networkidle | timeout_ms=%d", label, timeout_ms)
+        return True
+    except PlaywrightError as exc:
+        metadata = inmob.setdefault("_scraper_metadata", {})
+        metadata.setdefault("playwright_networkidle_warnings", []).append({
+            "label": label,
+            "url": getattr(page, "url", ""),
+            "timeout_ms": timeout_ms,
+            "error": str(exc)[:220],
+        })
+        if inmob.get("_playwright_continue_after_networkidle_timeout"):
+            logger.warning(
+                "playwright_html | %s | networkidle_timeout | timeout_ms=%d | url=%s | se continua con HTML renderizado",
+                label,
+                timeout_ms,
+                page.url,
+            )
+            return False
+        raise
+
+
+def _playwright_render_diagnostics(page: Page, base_url: str) -> Dict[str, Any]:
+    try:
+        html = page.content()
+    except Exception:
+        html = ""
+    try:
+        hrefs = page.eval_on_selector_all(
+            "a[href]",
+            "els => els.map(el => el.getAttribute('href')).filter(Boolean)",
+        )
+    except Exception:
+        hrefs = []
+    generic_links = _extract_generic_property_links(html, base_url) if html else []
+    script_signals = _extract_script_property_signals(html, base_url) if html else {}
+    script_property_urls = list(script_signals.get("property_urls") or [])
+    script_property_like_urls = list(script_signals.get("property_like_urls") or [])
+    property_links = [
+        url for url in list(dict.fromkeys(generic_links + script_property_urls))
+        if _looks_like_real_property_url(url)
+    ]
+    return {
+        "html_len": len(html),
+        "all_links_count": len(hrefs),
+        "property_links": property_links,
+        "property_links_count": len(property_links),
+        "cards_count": _count_html_cards(html) if html else 0,
+        "script_property_urls_count": len(script_property_urls),
+        "script_property_like_urls_count": len(script_property_like_urls),
+    }
+
+
+def _playwright_detect_tokko_proxy_urls(page: Page) -> List[str]:
+    try:
+        resources = page.evaluate("performance.getEntriesByType('resource').map(e => e.name)")
+    except Exception:
+        resources = []
+    urls: List[str] = []
+    for url in resources or []:
+        text = str(url or "")
+        if "/api/api/tokko/property" in text and text not in urls:
+            urls.append(text)
+    return urls
+
+
+def _strategy_playwright_tokko_proxy_api(inmob: Dict, page: Page) -> List[Dict]:
+    api_urls = _playwright_detect_tokko_proxy_urls(page)
+    if not api_urls:
+        return []
+    max_items = int(inmob.get("_playwright_api_limit") or 150)
+    session = _make_http_session()
+    props: List[Dict] = []
+    for api_url in api_urls[:2]:
+        _check_strategy_deadline(inmob, "html_scraper")
+        parsed = urlparse(api_url)
+        query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+        query["limit"] = str(max_items)
+        query.setdefault("offset", "0")
+        api_limited = urlunparse(parsed._replace(query=urlencode(query)))
+        logger.info("playwright_html | tokko_proxy_api_detectada=%s", api_limited)
+        try:
+            response = session.get(api_limited, timeout=_bounded_http_timeout(inmob, 30))
+            response.raise_for_status()
+            data = response.json()
+        except Exception as exc:
+            logger.warning("playwright_html | tokko_proxy_api_error | %s | %s", api_limited, str(exc)[:220])
+            continue
+        objects = data.get("objects") if isinstance(data, dict) else []
+        if not isinstance(objects, list):
+            continue
+        for obj in objects[:max_items]:
+            if not isinstance(obj, dict):
+                continue
+            obj = dict(obj)
+            prop_id = obj.get("id")
+            if prop_id and not obj.get("web_url"):
+                obj["web_url"] = urljoin(inmob.get("web") or api_limited, f"/propiedades/{prop_id}")
+            if obj.get("geo_lat") and not obj.get("latitude"):
+                obj["latitude"] = obj.get("geo_lat")
+            if obj.get("geo_long") and not obj.get("longitude"):
+                obj["longitude"] = obj.get("geo_long")
+            try:
+                props.append(_map_tokko_property(obj, inmob))
+            except Exception as exc:
+                logger.debug("playwright tokko proxy map error %s: %s", prop_id, exc)
+        if props:
+            metadata = inmob.setdefault("_scraper_metadata", {})
+            metadata["playwright_tokko_proxy_api"] = {
+                "api_url": api_limited,
+                "objects_count": len(objects),
+                "props_mapped": len(props),
+                "total_count": (data.get("meta") or {}).get("total_count") if isinstance(data, dict) else None,
+            }
+            return _dedupe_props(props)
+    return _dedupe_props(props)
+
+
 def _human_scroll(page: Page, deadline: Optional[float] = None) -> None:
     """Simula scroll humano para evitar detecciÃƒÂ³n."""
     try:
@@ -9111,16 +9267,24 @@ def _playwright_extract_detail(page: Page, url: str, inmob: Dict) -> Optional[Di
     page.unroute("**/*")
     try:
         _check_strategy_deadline(inmob, "html_scraper")
-        _playwright_goto(page, url, retries=1, timeout_ms=_bounded_playwright_timeout_ms(inmob, PLAYWRIGHT_NAV_TIMEOUT_MS))
+        nav_timeout_ms = _playwright_requested_timeout_ms(inmob, "nav", PLAYWRIGHT_NAV_TIMEOUT_MS)
+        action_timeout_ms = _playwright_requested_timeout_ms(inmob, "action", PLAYWRIGHT_ACTION_TIMEOUT_MS)
+        page.set_default_timeout(action_timeout_ms)
+        page.set_default_navigation_timeout(nav_timeout_ms)
+        _playwright_goto(page, url, retries=1, timeout_ms=_bounded_playwright_timeout_ms(inmob, nav_timeout_ms))
         _human_scroll(page, deadline=_strategy_deadline(inmob))
-        page.wait_for_load_state("networkidle", timeout=_bounded_playwright_timeout_ms(inmob, PLAYWRIGHT_LOAD_TIMEOUT_MS))
+        _playwright_wait_networkidle(page, inmob, "detail")
+        if inmob.get("_playwright_fast_detail_extract"):
+            raw_html = page.content()
+            soup = BeautifulSoup(raw_html or "", "html.parser")
+            return _html_extract_detail(soup, page.url or url, inmob, raw_html)
 
         def find_text(*sels):
             for sel in sels:
                 try:
                     _check_strategy_deadline(inmob, "html_scraper")
                     el = page.locator(sel).first
-                    t = el.inner_text(timeout=_bounded_playwright_timeout_ms(inmob, PLAYWRIGHT_ACTION_TIMEOUT_MS)).strip()
+                    t = el.inner_text(timeout=_bounded_playwright_timeout_ms(inmob, action_timeout_ms)).strip()
                     if t:
                         return t
                 except Exception:
@@ -9155,7 +9319,7 @@ def _playwright_extract_detail(page: Page, url: str, inmob: Dict) -> Optional[Di
 
         # Apto crÃƒÂ©dito
         try:
-            page_text_lower = page.inner_text("body", timeout=_bounded_playwright_timeout_ms(inmob, PLAYWRIGHT_ACTION_TIMEOUT_MS)).lower()
+            page_text_lower = page.inner_text("body", timeout=_bounded_playwright_timeout_ms(inmob, action_timeout_ms)).lower()
         except Exception:
             page_text_lower = ""
         apto_credito = bool(re.search(r"apto\s+cr[eÃƒÂ©]dito|acepta\s+cr[eÃƒÂ©]dito|cr[eÃƒÂ©]dito\s+hipotecario", page_text_lower))
@@ -9248,22 +9412,58 @@ def strategy_html_playwright(inmob: Dict, pw_context) -> List[Dict]:
 
     page = pw_context.new_page()
     try:
-        page.set_default_timeout(PLAYWRIGHT_ACTION_TIMEOUT_MS)
-        page.set_default_navigation_timeout(PLAYWRIGHT_NAV_TIMEOUT_MS)
-        _playwright_goto(page, url_listado, retries=2, timeout_ms=_bounded_playwright_timeout_ms(inmob, PLAYWRIGHT_NAV_TIMEOUT_MS))
+        action_timeout_ms = _playwright_requested_timeout_ms(inmob, "action", PLAYWRIGHT_ACTION_TIMEOUT_MS)
+        nav_timeout_ms = _playwright_requested_timeout_ms(inmob, "nav", PLAYWRIGHT_NAV_TIMEOUT_MS)
+        load_timeout_ms = _playwright_requested_timeout_ms(inmob, "load", PLAYWRIGHT_LOAD_TIMEOUT_MS)
+        page.set_default_timeout(action_timeout_ms)
+        page.set_default_navigation_timeout(nav_timeout_ms)
+        logger.info(
+            "playwright_html | url=%s | nav_timeout_ms=%d | load_timeout_ms=%d | action_timeout_ms=%d",
+            url_listado,
+            nav_timeout_ms,
+            load_timeout_ms,
+            action_timeout_ms,
+        )
+        _playwright_goto(page, url_listado, retries=2, timeout_ms=_bounded_playwright_timeout_ms(inmob, nav_timeout_ms))
         _human_scroll(page, deadline=_strategy_deadline(inmob))
-        page.wait_for_load_state("networkidle", timeout=_bounded_playwright_timeout_ms(inmob, PLAYWRIGHT_LOAD_TIMEOUT_MS))
+        _playwright_wait_networkidle(page, inmob, "listing_initial")
+        render_diag = _playwright_render_diagnostics(page, page.url or url_listado)
+        inmob.setdefault("_scraper_metadata", {})["playwright_html_render_diagnostics"] = {
+            key: value for key, value in render_diag.items() if key != "property_links"
+        }
+        logger.info(
+            "playwright_html | render | url=%s | links=%d | property_links=%d | cards=%d | script_urls=%d | script_like=%d | html_len=%d",
+            page.url,
+            render_diag.get("all_links_count", 0),
+            render_diag.get("property_links_count", 0),
+            render_diag.get("cards_count", 0),
+            render_diag.get("script_property_urls_count", 0),
+            render_diag.get("script_property_like_urls_count", 0),
+            render_diag.get("html_len", 0),
+        )
+        if inmob.get("_playwright_use_detected_api"):
+            api_props = _strategy_playwright_tokko_proxy_api(inmob, page)
+            if api_props:
+                return api_props
 
         card_sel = _infer_card_selector(page)
         if not card_sel:
-            raise RuntimeError("sin_propiedades: no se detectaron cards de propiedades")
+            detail_urls = list(render_diag.get("property_links") or [])
+            if not detail_urls:
+                raise RuntimeError(
+                    "sin_propiedades: no se detectaron cards de propiedades "
+                    f"(links={render_diag.get('all_links_count', 0)}, "
+                    f"property_links={render_diag.get('property_links_count', 0)}, "
+                    f"script_urls={render_diag.get('script_property_urls_count', 0)})"
+                )
+            logger.info("playwright_html | sin card selector, usando %d links de propiedad renderizados", len(detail_urls))
 
         empty_pages = 0
         max_pages = inmob.get("paginas_estimadas") or 50
         current_url = url_listado
         page_num = 1
 
-        while page_num <= max_pages:
+        while card_sel and page_num <= max_pages:
             _check_strategy_deadline(inmob, "html_scraper")
             new_urls = _extract_cards_from_page(page, card_sel, inmob, current_url)
             before = len(detail_urls)
@@ -9297,9 +9497,9 @@ def strategy_html_playwright(inmob: Dict, pw_context) -> List[Dict]:
                 if not next_url or next_url == current_url:
                     break
                 try:
-                    _playwright_goto(page, next_url, retries=1, timeout_ms=_bounded_playwright_timeout_ms(inmob, PLAYWRIGHT_NAV_TIMEOUT_MS))
+                    _playwright_goto(page, next_url, retries=1, timeout_ms=_bounded_playwright_timeout_ms(inmob, nav_timeout_ms))
                     _human_scroll(page, deadline=_strategy_deadline(inmob))
-                    page.wait_for_load_state("networkidle", timeout=_bounded_playwright_timeout_ms(inmob, PLAYWRIGHT_LOAD_TIMEOUT_MS))
+                    _playwright_wait_networkidle(page, inmob, f"listing_page_{page_num + 1}")
                     # Verificar que la pÃƒÂ¡gina cargÃƒÂ³ contenido
                     if _count_selector(page, card_sel) == 0:
                         break
@@ -9319,8 +9519,8 @@ def strategy_html_playwright(inmob: Dict, pw_context) -> List[Dict]:
     # Visitar pÃƒÂ¡ginas de detalle
     detail_page = pw_context.new_page()
     try:
-        detail_page.set_default_timeout(PLAYWRIGHT_ACTION_TIMEOUT_MS)
-        detail_page.set_default_navigation_timeout(PLAYWRIGHT_NAV_TIMEOUT_MS)
+        detail_page.set_default_timeout(action_timeout_ms)
+        detail_page.set_default_navigation_timeout(nav_timeout_ms)
         for durl in detail_urls[:300]:
             _check_strategy_deadline(inmob, "html_scraper")
             try:
@@ -12526,6 +12726,8 @@ def _is_listing_like_property_payload(prop: Dict[str, Any]) -> bool:
     if listing_reason:
         return True
 
+    url = prop.get("url")
+    url_is_strong_detail = bool(url and _partial_retry_is_detail_url(url))
     _titulo_raw = _fix_mojibake_text(prop.get("titulo") or "")
     _titulo_low = _titulo_raw.lower().strip()
     _desc_raw   = _fix_mojibake_text(prop.get("descripcion") or "")
@@ -12535,6 +12737,27 @@ def _is_listing_like_property_payload(prop: Dict[str, Any]) -> bool:
     # Ejemplos: "Se encontraron 60 resultados para Banfield", "Listado de propiedades"
     if _LISTING_TEXT_RE.search(_titulo_low) or _LISTING_TEXT_RE.search(_desc_low):
         return True
+
+    title_key = re.sub(
+        r"[^a-z0-9]+",
+        " ",
+        unicodedata.normalize("NFKD", _fix_mojibake_text(prop.get("titulo")).lower()),
+    ).strip()
+    generic_title = title_key in {
+        "",
+        "propiedad",
+        "propiedades",
+        "inmueble",
+        "inmuebles",
+        "descripcion",
+        "detalle",
+        "sin titulo",
+        "propiedad sin titulo",
+    }
+    # A strong detail URL is a better signal than a terse title such as
+    # "Departamento Alquiler en Calle 123", which is common in custom sites.
+    if url_is_strong_detail and not generic_title:
+        return False
 
     # Títulos tipo filtro de listado: "{tipo plural} {operacion} {zona}"
     # Ej: "Casas Venta Banfield 5 Ambientes" — no tiene preposición "en".
@@ -12554,26 +12777,9 @@ def _is_listing_like_property_payload(prop: Dict[str, Any]) -> bool:
         if not re.search(r"\ben\s+(?:venta|alquiler|renta|locacion)\b", _titulo_low):
             return True
 
-    url = prop.get("url")
     if not url or _partial_retry_is_detail_url(url):
         return False
 
-    title_key = re.sub(
-        r"[^a-z0-9]+",
-        " ",
-        unicodedata.normalize("NFKD", _fix_mojibake_text(prop.get("titulo")).lower()),
-    ).strip()
-    generic_title = title_key in {
-        "",
-        "propiedad",
-        "propiedades",
-        "inmueble",
-        "inmuebles",
-        "descripcion",
-        "detalle",
-        "sin titulo",
-        "propiedad sin titulo",
-    }
     weak_payload = not prop.get("precio") and not prop.get("descripcion") and not prop.get("direccion")
     return bool(generic_title or weak_payload)
 
@@ -13749,6 +13955,98 @@ def run_controlled_queue(
     logger.info("Propiedades sin cambios: %d", total_unchanged)
     logger.info("Propiedades con error: %d", total_property_errors)
     logger.info("Tiempo total: %.1f s (%.1f min)", elapsed, elapsed / 60)
+    logger.info("=" * 60)
+
+
+def run_controlled_queue_parallel_processes(
+    max_items: Optional[int] = None,
+    workers: int = 1,
+    allow_playwright_fallback: bool = False,
+    allow_network_interception: bool = False,
+) -> None:
+    """Run the controlled queue with multiple independent claim workers.
+
+    The Supabase RPC claim_next_scraping_item is the concurrency boundary. Each
+    child process claims one item at a time and saves using the same canonical ID
+    checks as the single-worker path. This keeps --workers meaningful without
+    sharing requests sessions or Playwright contexts across Python threads.
+    """
+    worker_count = max(int(workers or 1), 1)
+    if worker_count <= 1:
+        run_controlled_queue(
+            max_items=max_items,
+            allow_playwright_fallback=allow_playwright_fallback,
+            allow_network_interception=allow_network_interception,
+        )
+        return
+    if max_items is not None and max_items <= 0:
+        run_controlled_queue(
+            max_items=max_items,
+            allow_playwright_fallback=allow_playwright_fallback,
+            allow_network_interception=allow_network_interception,
+        )
+        return
+
+    quotas: List[Optional[int]]
+    if max_items is None:
+        quotas = [None for _ in range(worker_count)]
+    else:
+        base = max_items // worker_count
+        remainder = max_items % worker_count
+        quotas = [base + (1 if idx < remainder else 0) for idx in range(worker_count)]
+        quotas = [quota for quota in quotas if quota and quota > 0]
+
+    script_path = os.path.abspath(__file__)
+    processes: List[Tuple[int, subprocess.Popen]] = []
+    logger.info("=" * 60)
+    logger.info(
+        "SCRAPING CONTROLADO PARALELO | workers=%d | max_items=%s | quotas=%s",
+        len(quotas),
+        max_items if max_items is not None else "-",
+        quotas,
+    )
+    for idx, quota in enumerate(quotas, start=1):
+        cmd = [sys.executable, script_path, "--workers", "1"]
+        if quota is not None:
+            cmd.extend(["--max-items", str(quota)])
+        if allow_playwright_fallback:
+            cmd.append("--allow-playwright-fallback")
+        if allow_network_interception:
+            cmd.append("--allow-network-interception")
+        env = os.environ.copy()
+        env["INMOCAPITAL_QUEUE_WORKER_INDEX"] = str(idx)
+        env["INMOCAPITAL_QUEUE_WORKER_TOTAL"] = str(len(quotas))
+        logger.info("Lanzando worker %d/%d | quota=%s", idx, len(quotas), quota if quota is not None else "-")
+        processes.append((idx, subprocess.Popen(cmd, cwd=os.getcwd(), env=env)))
+
+    failed: List[Tuple[int, int]] = []
+    interrupted = False
+    try:
+        for idx, process in processes:
+            returncode = process.wait()
+            logger.info("Worker %d finalizo con returncode=%s", idx, returncode)
+            if returncode:
+                failed.append((idx, int(returncode)))
+    except KeyboardInterrupt:
+        interrupted = True
+        logger.warning("Interrupcion manual: terminando workers hijos")
+        for _, process in processes:
+            if process.poll() is None:
+                process.terminate()
+        for _, process in processes:
+            try:
+                process.wait(timeout=10)
+            except Exception:
+                if process.poll() is None:
+                    process.kill()
+        raise
+    finally:
+        if interrupted:
+            logger.warning("Scraping paralelo interrumpido.")
+
+    if failed:
+        raise SystemExit(f"Workers con error: {failed}")
+    logger.info("SCRAPING CONTROLADO PARALELO FINALIZADO")
     logger.info("=" * 60)
 
 
@@ -15286,6 +15584,19 @@ def test_single_url(
         inmob["estrategia_scraping"] = estrategia
 
     use_playwright = allow_playwright_fallback or allow_network_interception
+    if use_playwright:
+        inmob["_playwright_timeouts_ms"] = {
+            "nav": PLAYWRIGHT_TEST_NAV_TIMEOUT_MS,
+            "load": PLAYWRIGHT_TEST_LOAD_TIMEOUT_MS,
+            "action": PLAYWRIGHT_TEST_ACTION_TIMEOUT_MS,
+        }
+        inmob["_strategy_timeout_seconds"] = {
+            "playwright_html": PLAYWRIGHT_TEST_STRATEGY_TIMEOUT_SECONDS,
+        }
+        inmob["_playwright_continue_after_networkidle_timeout"] = True
+        inmob["_playwright_fast_detail_extract"] = True
+        inmob["_playwright_use_detected_api"] = True
+        inmob["_playwright_api_limit"] = 150
     pw = browser = pw_context = None
     try:
         if use_playwright:
@@ -15542,8 +15853,9 @@ if __name__ == "__main__":
             refresh_horas=6 if args.incremental else 24,
         )
     else:
-        run_controlled_queue(
+        run_controlled_queue_parallel_processes(
             max_items=args.max_items,
+            workers=args.workers,
             allow_playwright_fallback=allow_playwright,
             allow_network_interception=allow_network,
         )

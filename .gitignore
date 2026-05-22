@@ -9,6 +9,7 @@ __pycache__/
 *.csv
 *.xlsx
 *.db
+logs/
 node_modules/
 
 # Local AI/editor state
