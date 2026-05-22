@@ -2381,7 +2381,7 @@ class SupabasePropiedades:
             return update_existing_property(prop, existing_prop, "url_normalizada_unique_violation")
 
         def insert_one_after_batch_failure(prop: Dict[str, Any]) -> None:
-            nonlocal inserted, failed
+            nonlocal inserted, failed, unchanged
             single = self._normalize_payload_batch_keys([prop], columns)
             r_single = self.session.post(
                 f"{SUPABASE_URL}/rest/v1/propiedades?on_conflict=hash_dedup",
@@ -2392,7 +2392,21 @@ class SupabasePropiedades:
             if r_single.status_code in {200, 201}:
                 inserted += 1
                 return
-            if self._is_unique_url_violation(r_single.status_code, r_single.text) and recover_unique_url_violation(prop, r_single.text):
+            if self._is_unique_url_violation(r_single.status_code, r_single.text):
+                if recover_unique_url_violation(prop, r_single.text):
+                    return
+                # El 409 sobre idx_propiedades_unique_inmobiliaria_url_normalizada confirma
+                # que la propiedad YA EXISTE en DB (misma inmobiliaria_id + url_normalizada).
+                # La recuperacion via lookup fallo (timeout, race condition, etc.), pero el
+                # dato esta seguro — no hay perdida. Contar como sin_cambios para no marcar
+                # el item como save_failed cuando el unico fallo es un duplicado esperado.
+                logger.warning(
+                    "save_propiedades: 409 url_normalizada sin recuperacion para "
+                    "inmobiliaria_id=%s url_normalizada=%s — contado como sin_cambios",
+                    prop.get("inmobiliaria_id"),
+                    prop.get("url_normalizada") or normalize_property_url_for_dedup(prop.get("url")),
+                )
+                unchanged += 1
                 return
             failed += 1
             save_errors.append({
