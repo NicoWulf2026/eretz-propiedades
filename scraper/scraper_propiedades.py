@@ -97,7 +97,7 @@ STRATEGY_TIMEOUT_SECONDS: Dict[str, int] = {
     "static_html_detail": 45,
     "static_html_tokko_detail": 45,
     "wordpress_sitemap_detail": 90,
-    "wordpress_essential_real_estate_detail": 75,
+    "wordpress_essential_real_estate_detail": 230,
     "wordpress_estatik_detail": 75,
     "wordpress_realhomes_detail": 230,
     "wordpress_generic_detail": 65,
@@ -6269,21 +6269,28 @@ def _fetch_sitemap_urls(base: str, session: requests.Session, inmob: Optional[Di
     return list(dict.fromkeys(prop_urls))  # deduplicate preserving order
 
 
-def _correct_realhomes_currency(prop: Optional[Dict], soup: BeautifulSoup, inmob: Dict) -> Optional[Dict]:
-    """Corrige la moneda de una ficha RealHomes cuando la pagina muestra el
-    precio explicitamente en USD (prefijo U$S / US$ / USD / dolar) pero la ficha
-    quedo clasificada en ARS. Causas tipicas: el JSON-LD trae priceCurrency
-    ambiguo ("U$S" no contiene la subcadena "USD") o el selector de precio
-    capturo solo el numero sin el prefijo de moneda.
+_WORDPRESS_V2_CURRENCY_STRATEGIES = frozenset({
+    "wordpress_realhomes_detail",
+    "wordpress_essential_real_estate_detail",
+})
 
-    Solo actua para la estrategia wordpress_realhomes_detail. Es estrictamente
-    basado en evidencia: exige que EL MISMO importe aparezca en la pagina
-    precedido por un marcador USD. Sin esa evidencia no cambia nada (no inventa
-    moneda). Los alquileres en pesos se publican con "$" pelado, sin marcador
-    USD, por lo que quedan correctamente en ARS."""
+
+def _correct_wordpress_currency(prop: Optional[Dict], soup: BeautifulSoup, inmob: Dict) -> Optional[Dict]:
+    """Corrige la moneda de una ficha WordPress v2 (RealHomes / Essential Real
+    Estate) cuando la pagina muestra el precio explicitamente en USD (prefijo
+    U$S / US$ / USD / dolar) pero la ficha quedo clasificada en ARS. Causas
+    tipicas: el JSON-LD trae priceCurrency ambiguo ("U$S" no contiene la
+    subcadena "USD") o el selector de precio capturo solo el numero sin el
+    prefijo de moneda.
+
+    Solo actua para las estrategias de _WORDPRESS_V2_CURRENCY_STRATEGIES. Es
+    estrictamente basado en evidencia: exige que EL MISMO importe aparezca en la
+    pagina precedido por un marcador USD. Sin esa evidencia no cambia nada (no
+    inventa moneda). Los alquileres en pesos se publican con "$" pelado, sin
+    marcador USD, por lo que quedan correctamente en ARS."""
     if not isinstance(prop, dict):
         return prop
-    if inmob.get("_strategy_name") != "wordpress_realhomes_detail":
+    if inmob.get("_strategy_name") not in _WORDPRESS_V2_CURRENCY_STRATEGIES:
         return prop
     if str(prop.get("moneda") or "").upper() != "ARS":
         return prop
@@ -6392,7 +6399,7 @@ def _extract_detail_page(url: str, inmob: Dict, session: requests.Session) -> Op
                             raw_json["imagenes_enriquecidas_desde_html"] = True
                             raw_json["imagenes_reales"] = len(html_images)
                             prop_jsonld["raw_json"] = raw_json
-                        return _correct_realhomes_currency(prop_jsonld, soup, inmob)
+                        return _correct_wordpress_currency(prop_jsonld, soup, inmob)
         except Exception:
             pass
 
@@ -6403,7 +6410,7 @@ def _extract_detail_page(url: str, inmob: Dict, session: requests.Session) -> Op
     if prop is None and GROQ_API_KEY:
         prop = _ai_extraer_propiedad(raw_html, url, inmob)
 
-    return _correct_realhomes_currency(prop, soup, inmob)
+    return _correct_wordpress_currency(prop, soup, inmob)
 
 
 _GENERIC_BAD_TITLES = {
@@ -7562,7 +7569,12 @@ def _strategy_wordpress_plugin_detail(inmob: Dict, session: requests.Session, pl
 
 
 def strategy_wordpress_essential_real_estate_detail(inmob: Dict, session: requests.Session) -> List[Dict]:
-    return _strategy_wordpress_plugin_detail(inmob, session, "essential_real_estate")
+    # Migrado al flujo WordPress v2 (discovery/crawl/detail/quality), igual que
+    # RealHomes. El extractor anterior (_strategy_wordpress_plugin_detail) gastaba
+    # el presupuesto en el crawl de listados y no dejaba tiempo para extraer las
+    # fichas (detalle_urls=50 -> propiedades=0). El flujo v2 reserva ~55% del
+    # tiempo para la fase de detalle.
+    return _run_wordpress_v2_flow(inmob, session, "essential_real_estate", "wordpress_essential_real_estate_detail")
 
 
 def strategy_wordpress_estatik_detail(inmob: Dict, session: requests.Session) -> List[Dict]:
@@ -7899,10 +7911,17 @@ def _extract_wordpress_realhomes_details_batch(
     return {"props": deduped, "metrics": metrics}
 
 
-def _run_wordpress_realhomes_flow(inmob: Dict, session: requests.Session) -> List[Dict]:
-    """Orquestador del flujo RealHomes: discovery -> crawl -> detail -> quality."""
-    strategy_name = "wordpress_realhomes_detail"
-    plugin = "realhomes"
+def _run_wordpress_v2_flow(
+    inmob: Dict, session: requests.Session, plugin: str, strategy_name: str,
+) -> List[Dict]:
+    """Orquestador del flujo WordPress v2: discovery -> crawl -> detail -> quality.
+
+    Generico y parametrizado por `plugin` / `strategy_name`. Lo usan RealHomes y
+    Essential Real Estate. Las auxiliares _discover_wordpress_realhomes_urls /
+    _crawl_wordpress_realhomes_listings / _extract_wordpress_realhomes_details_batch
+    ya son plugin-genericas (reciben `plugin`): aqui NO se duplica logica, solo se
+    inyectan los parametros del plugin. El comportamiento para realhomes es
+    identico al anterior (mismos valores que estaban hardcodeados)."""
     url_inicial = inmob.get("url_listado") or inmob.get("web") or ""
     if not url_inicial:
         raise ValueError("sin_url_listado")
@@ -7981,7 +8000,7 @@ def _run_wordpress_realhomes_flow(inmob: Dict, session: requests.Session) -> Lis
         **dict(inmob.get("_scraper_metadata") or {}),
         "plugin_detectado": plugin,
         "primary_strategy": strategy_name,
-        "wordpress_flow": "realhomes_v2",
+        "wordpress_flow": f"{plugin}_v2",
         "discovery_report": disc_report,
         "crawl_report": crawl_report,
         "detail_metrics": metrics,
@@ -8026,13 +8045,13 @@ def _run_wordpress_realhomes_flow(inmob: Dict, session: requests.Session) -> Lis
             f"parsing_failed: {strategy_name} encontro {detail_total} URLs de detalle pero 0 datos extraibles")
 
     logger.info(
-        "  %s: %d propiedades desde %d URLs de detalle (realhomes_v2%s)",
-        strategy_name, len(resultados), detail_total, ", parcial" if partial else "")
+        "  %s: %d propiedades desde %d URLs de detalle (%s_v2%s)",
+        strategy_name, len(resultados), detail_total, plugin, ", parcial" if partial else "")
     return resultados
 
 
 def strategy_wordpress_realhomes_detail(inmob: Dict, session: requests.Session) -> List[Dict]:
-    return _run_wordpress_realhomes_flow(inmob, session)
+    return _run_wordpress_v2_flow(inmob, session, "realhomes", "wordpress_realhomes_detail")
 
 
 def strategy_wordpress_generic_detail(inmob: Dict, session: requests.Session) -> List[Dict]:
