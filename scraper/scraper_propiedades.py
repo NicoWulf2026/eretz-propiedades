@@ -1593,9 +1593,16 @@ class SupabasePropiedades:
             row["scraping_run_item_id"] = row.get("id")
         return rows
 
-    def load_retryable_error_items(self, limit: int = 5) -> List[Dict[str, Any]]:
+    def load_retryable_error_items(
+        self,
+        limit: int = 5,
+        canonical_agency_id: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
         """Carga items con error accionable para --retry-errors sin tocar site_down reciente."""
+        requested_agency_id = int(canonical_agency_id) if canonical_agency_id is not None else None
         fetch_limit = max(int(limit or 5) * 8, 25)
+        if requested_agency_id is not None:
+            fetch_limit = max(fetch_limit, 1000)
         r = self.session.get(
             f"{SUPABASE_URL}/rest/v1/scraping_run_items",
             headers=self._headers,
@@ -1622,6 +1629,16 @@ class SupabasePropiedades:
                 continue
             if error_type not in RETRYABLE_SCRAPING_ERROR_TYPES:
                 continue
+            if requested_agency_id is not None:
+                canonical_resolution = validate_retry_item_agency_filter(
+                    self,
+                    row,
+                    requested_agency_id,
+                    mode="retry_errors",
+                )
+                if canonical_resolution is None:
+                    continue
+                row["_canonical_resolution"] = canonical_resolution
             row["scraping_run_item_id"] = row.get("id")
             rows.append(row)
             if len(rows) >= max(int(limit or 5), 1):
@@ -1678,18 +1695,13 @@ class SupabasePropiedades:
             if pending_raw is not None and _safe_int(pending_raw) == 0:
                 continue
             if requested_agency_id is not None:
-                try:
-                    canonical_resolution = self.resolve_canonical_inmobiliaria_id(row)
-                except Exception as exc:
-                    logger.warning(
-                        "Partial retry candidato descartado | requested_agency_id=%s | item_id=%s | error=%s",
-                        requested_agency_id,
-                        row.get("id"),
-                        str(exc)[:300],
-                    )
-                    continue
-                canonical_main_id = _safe_int(canonical_resolution.get("canonical_main_id"))
-                if canonical_main_id != requested_agency_id:
+                canonical_resolution = validate_retry_item_agency_filter(
+                    self,
+                    row,
+                    requested_agency_id,
+                    mode="partial_retry",
+                )
+                if canonical_resolution is None:
                     continue
                 row["_canonical_resolution"] = canonical_resolution
             row["metadata"] = metadata
@@ -13171,6 +13183,56 @@ def run_integrity_dry_run(max_items: Optional[int] = 5) -> None:
     logger.info("=" * 60)
 
 
+def validate_retry_item_agency_filter(
+    db: SupabasePropiedades,
+    item: Dict[str, Any],
+    agency_id: Optional[int],
+    mode: str,
+) -> Optional[Dict[str, Any]]:
+    """Valida que un retry tecnico acotado apunte al inmobiliarias_main.id pedido."""
+    if agency_id is None:
+        return None
+    requested_agency_id = int(agency_id)
+    item_id = item.get("scraping_run_item_id") or item.get("id")
+    try:
+        canonical_resolution = item.get("_canonical_resolution") or db.resolve_canonical_inmobiliaria_id(item)
+    except Exception as exc:
+        logger.warning(
+            "%s candidato descartado | agency_id_recibido=%s | origen=inmobiliarias_main.id"
+            " | run_item_id=%s | run_item_inmobiliaria_id=%s | error=%s",
+            mode,
+            requested_agency_id,
+            item_id,
+            item.get("inmobiliaria_id"),
+            str(exc)[:300],
+        )
+        return None
+
+    canonical_main_id = _safe_int(canonical_resolution.get("canonical_main_id"))
+    main_row = canonical_resolution.get("main_row") or {}
+    if canonical_main_id != requested_agency_id:
+        logger.info(
+            "%s candidato excluido por agency_id | agency_id_recibido=%s | origen=inmobiliarias_main.id"
+            " | run_item_id=%s | scraping_run_id=%s | run_item_inmobiliaria_id=%s"
+            " | canonical_main_id=%s | source_space=%s | nombre_item=%s | nombre_main=%s"
+            " | web_item=%s | web_main=%s | final_url=%s",
+            mode,
+            requested_agency_id,
+            item_id,
+            item.get("scraping_run_id"),
+            item.get("inmobiliaria_id"),
+            canonical_main_id,
+            canonical_resolution.get("source_id_space"),
+            item.get("inmobiliaria_nombre") or "-",
+            _agency_row_name(main_row) or "-",
+            item.get("web") or item.get("url_listado") or "-",
+            main_row.get("web") or main_row.get("url_listado") or "-",
+            item.get("final_url") or item.get("url_listado") or item.get("web") or "-",
+        )
+        return None
+    return canonical_resolution
+
+
 LOCATION_REPAIR_SELECT = "id,titulo,direccion,barrio,ciudad,provincia,pais,url,descripcion,inmobiliaria_id,updated_at"
 
 LOCATION_REPAIR_KNOWN_BAD_VALUES = [
@@ -13694,23 +13756,68 @@ def run_retry_errors_queue(
     max_items: Optional[int] = 5,
     allow_playwright_fallback: bool = True,
     allow_network_interception: bool = True,
+    dry_run: bool = False,
+    agency_id: Optional[int] = None,
 ) -> None:
     """Reintenta items con errores accionables en modo tecnico controlado."""
     t_inicio = time.time()
     db = SupabasePropiedades()
     limit = max_items if max_items is not None and max_items > 0 else 5
-    items = db.load_retryable_error_items(limit=limit)
+    requested_agency_id = int(agency_id) if agency_id is not None else None
+    if requested_agency_id is not None:
+        requested_agency_row = db.load_main_agency_by_id(requested_agency_id)
+        if not requested_agency_row:
+            raise SystemExit(f"--agency-id {requested_agency_id} no existe en inmobiliarias_main")
+        logger.info(
+            "Filtro retry-errors | agency_id_recibido=%s | origen=inmobiliarias_main.id | nombre=%s | web=%s",
+            requested_agency_id,
+            _agency_row_name(requested_agency_row),
+            requested_agency_row.get("web") or requested_agency_row.get("url_listado") or "-",
+        )
+    items = db.load_retryable_error_items(limit=limit, canonical_agency_id=requested_agency_id)
     session = SupabasePropiedades._make_session()
     processed = success = failed = 0
     total_detected = total_new = total_updated = total_unchanged = total_property_errors = 0
 
     logger.info("=" * 60)
     logger.info("RETRY ERRORES TECNICO")
-    logger.info("Items candidatos: %d | limite=%d", len(items), limit)
+    logger.info("Items candidatos: %d | limite=%d | dry_run=%s | agency_id=%s", len(items), limit, dry_run, requested_agency_id or "-")
     logger.info("Playwright=%s | Network=%s", allow_playwright_fallback, allow_network_interception)
 
     if not items:
-        logger.info("No hay errores accionables para reintentar")
+        if requested_agency_id is not None:
+            logger.info("No hay errores retryables para inmobiliarias_main.id=%s", requested_agency_id)
+        else:
+            logger.info("No hay errores accionables para reintentar")
+        return
+
+    for candidate in items:
+        item_id = candidate.get("scraping_run_item_id") or candidate.get("id")
+        canonical_resolution = candidate.get("_canonical_resolution") or db.resolve_canonical_inmobiliaria_id(candidate)
+        main_row = canonical_resolution.get("main_row") or {}
+        logger.info(
+            "Retry candidate | agency_id_recibido=%s | origen=inmobiliarias_main.id"
+            " | run_item_id=%s | scraping_run_id=%s | run_item_inmobiliaria_id=%s"
+            " | canonical_main_id=%s | source_space=%s | nombre_item=%s | nombre_main=%s"
+            " | web_item=%s | web_main=%s | final_url=%s | error_type=%s",
+            requested_agency_id or "-",
+            item_id,
+            candidate.get("scraping_run_id"),
+            candidate.get("inmobiliaria_id"),
+            canonical_resolution.get("canonical_main_id"),
+            canonical_resolution.get("source_id_space"),
+            candidate.get("inmobiliaria_nombre") or "-",
+            _agency_row_name(main_row) or "-",
+            candidate.get("web") or candidate.get("url_listado") or "-",
+            main_row.get("web") or main_row.get("url_listado") or "-",
+            candidate.get("final_url") or candidate.get("url_listado") or candidate.get("web") or "-",
+            candidate.get("error_type") or "-",
+        )
+
+    if dry_run:
+        logger.info(
+            "DRY-RUN retry-errors: no se ejecuta diagnostico, scraping, Playwright, actualizaciones de scraping_run_items ni guardado de propiedades"
+        )
         return
 
     pw = browser = pw_context = None
@@ -13733,6 +13840,33 @@ def run_retry_errors_queue(
                 item.get("error_type"),
             )
             try:
+                canonical_resolution = item.get("_canonical_resolution") or db.resolve_canonical_inmobiliaria_id(item)
+                main_id = canonical_resolution.get("canonical_main_id")
+                if requested_agency_id is not None and _safe_int(main_id) != requested_agency_id:
+                    logger.error(
+                        "retry_errors_agency_id_mismatch | agency_id_recibido=%s | item=%s | canonical_main_id=%s | no se procesa",
+                        requested_agency_id,
+                        item_id,
+                        main_id,
+                    )
+                    failed += 1
+                    continue
+                main_row = canonical_resolution.get("main_row") or {}
+                logger.info(
+                    "Retry target | agency_id_recibido=%s | origen=inmobiliarias_main.id"
+                    " | run_item_id=%s | run_item_inmobiliaria_id=%s | canonical_main_id=%s"
+                    " | source_space=%s | nombre_item=%s | nombre_main=%s | web_item=%s | web_main=%s | final_url=%s",
+                    requested_agency_id or "-",
+                    item_id,
+                    item.get("inmobiliaria_id"),
+                    main_id,
+                    canonical_resolution.get("source_id_space"),
+                    item.get("inmobiliaria_nombre") or "-",
+                    _agency_row_name(main_row) or "-",
+                    item.get("web") or item.get("url_listado") or "-",
+                    main_row.get("web") or main_row.get("url_listado") or "-",
+                    item.get("final_url") or item.get("url_listado") or item.get("web") or "-",
+                )
                 db.retry_scraping_item(item_id)
                 result = _process_scraping_control_item(
                     db,
@@ -15343,7 +15477,7 @@ if __name__ == "__main__":
     parser.add_argument("--repair-images", action="store_true",
                         help="Reparar solo imagenes de propiedades existentes sin fotos limpias")
     parser.add_argument("--agency-id", type=int, default=None,
-                        help="ID de inmobiliarias_main para modos acotados, incluido --retry-partial-extractions")
+                        help="ID de inmobiliarias_main para modos acotados, incluidos --retry-errors y --retry-partial-extractions")
     parser.add_argument("--limit", type=int, default=100,
                         help="Limite para modos tecnicos como --repair-existing-location-quality, --repair-images o --retry-partial-extractions")
     parser.add_argument("--batch-size-urls", type=int, default=50,
@@ -15387,6 +15521,8 @@ if __name__ == "__main__":
             max_items=args.max_items,
             allow_playwright_fallback=allow_playwright,
             allow_network_interception=allow_network,
+            dry_run=args.dry_run,
+            agency_id=args.agency_id,
         )
     elif args.retry_partial_extractions:
         retry_limit = args.max_items if args.max_items is not None else args.limit
