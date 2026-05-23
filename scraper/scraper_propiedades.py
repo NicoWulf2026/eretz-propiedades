@@ -12811,7 +12811,24 @@ def _save_queue_properties(
     canonical_resolution: Optional[Dict[str, Any]] = None,
     strategy_meta: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    _check_deadline(item_deadline, "item")
+    def mark_save_after_deadline() -> None:
+        logger.warning(
+            "  Presupuesto de item agotado despues de extraer %d propiedades; "
+            "se guarda como extraccion parcial antes de cerrar",
+            len(props),
+        )
+        if isinstance(strategy_meta, dict):
+            strategy_meta["partial_extraction"] = True
+            strategy_meta["timeout_after_detection"] = True
+            strategy_meta["save_started_after_item_deadline"] = True
+            strategy_meta.setdefault("errores_relevantes", [])
+            if "item_deadline_exhausted_after_detection" not in strategy_meta["errores_relevantes"]:
+                strategy_meta["errores_relevantes"].append("item_deadline_exhausted_after_detection")
+
+    if props and item_deadline is not None and _deadline_remaining_seconds(item_deadline) <= 0:
+        mark_save_after_deadline()
+    else:
+        _check_deadline(item_deadline, "item")
     agency_resolution = canonical_resolution or db.resolve_canonical_inmobiliaria_id(item)
     main_id = agency_resolution["canonical_main_id"]
     scraping_row = agency_resolution.get("scraping_row") or {}
@@ -12893,7 +12910,10 @@ def _save_queue_properties(
             image_urls_detected += len(clean_property_images(raw_images))
 
     try:
-        _check_deadline(item_deadline, "item")
+        if props and item_deadline is not None and _deadline_remaining_seconds(item_deadline) <= 0:
+            mark_save_after_deadline()
+        else:
+            _check_deadline(item_deadline, "item")
         total_ext, nuevas = db.save_propiedades(props)
     except SavePropertiesError as exc:
         save_protection = dict(getattr(db, "last_save_protection_stats", {}) or {})
@@ -13065,7 +13085,18 @@ def _process_scraping_control_item(
             allow_playwright_fallback=allow_playwright_fallback,
             allow_network_interception=allow_network_interception,
         )
-        _check_deadline(item_deadline, "item")
+        if item_deadline is not None and _deadline_remaining_seconds(item_deadline) <= 0 and props:
+            logger.warning(
+                "Scraping termino con %d propiedades pero sin presupuesto restante; "
+                "continua guardado parcial seguro",
+                len(props),
+            )
+            strategy_meta["partial_extraction"] = True
+            strategy_meta["timeout_after_detection"] = True
+            strategy_meta.setdefault("errores_relevantes", [])
+            strategy_meta["errores_relevantes"].append("item_deadline_exhausted_after_detection")
+        else:
+            _check_deadline(item_deadline, "item")
     except ItemTimeoutError as exc:
         raise _item_timeout_control_error(item, started_at, timeout_seconds, None, "sin_estrategia", "scraping") from exc
 
@@ -13773,8 +13804,14 @@ def run_controlled_queue(
             while max_items is None or processed < max_items:
                 item = db.claim_next_scraping_item()
                 if not item:
-                    logger.info("No hay items pendientes")
-                    break
+                    claim_retry = 0
+                    while claim_retry < 3 and not item:
+                        claim_retry += 1
+                        time.sleep(3)
+                        item = db.claim_next_scraping_item()
+                    if not item:
+                        logger.info("No hay items pendientes")
+                        break
 
                 processed += 1
                 item_id = item.get("scraping_run_item_id")
