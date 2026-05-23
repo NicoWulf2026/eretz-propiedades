@@ -137,6 +137,11 @@ RETRYABLE_SCRAPING_ERROR_TYPES = {
     "sin_propiedades",
 }
 
+DISCOVERY_FALSE_NEGATIVE_ERROR_TYPES = {
+    "no_property_links",
+    "no_property_links_confirmed",
+}
+
 PARTIAL_RETRY_STRATEGIES = {
     "sitemap_batch",
     "pagination_deep_scan",
@@ -152,6 +157,52 @@ NON_RETRYABLE_SCRAPING_ERROR_TYPES = {
     "final_url_domain_mismatch",
     "save_failed",
 }
+
+
+def _looks_like_retryable_discovery_false_negative(row: Dict[str, Any]) -> bool:
+    """Detecta no_property_links historicos que merecen reintento tecnico.
+
+    No convierte todos los no_property_links en retryables: solo los que dejaron
+    evidencia objetiva de que el diagnostico vio una app JS, cards/listados,
+    URLs tipo propiedad, sitemap o volumen alto de links. Es la red de seguridad
+    para fixes generales de discovery/render que llegan despues de una corrida.
+    """
+    error_type = str(row.get("error_type") or "").strip()
+    if error_type not in DISCOVERY_FALSE_NEGATIVE_ERROR_TYPES:
+        return False
+
+    metadata = _coerce_metadata_dict(row.get("metadata"))
+    signals = metadata.get("requires_playwright_signals") or []
+    if isinstance(signals, str):
+        signals = [signals]
+    if signals:
+        return True
+
+    if _safe_int(metadata.get("property_links_count")) > 0:
+        return True
+    if _safe_int(metadata.get("property_like_links_detectados")) > 0:
+        return True
+    if _safe_int(metadata.get("sitemap_property_urls_count")) > 0:
+        return True
+    if _safe_int(metadata.get("custom_listing_urls_count")) > 0:
+        return True
+
+    cards_count = max(
+        _safe_int(metadata.get("cards_posibles")),
+        _safe_int(metadata.get("playwright_render_cards_count")),
+    )
+    if cards_count >= 3:
+        return True
+
+    load_more = metadata.get("load_more_signals") or []
+    if load_more:
+        return True
+
+    links_count = max(
+        _safe_int(metadata.get("links_detectados_total")),
+        _safe_int(metadata.get("playwright_render_links_count")),
+    )
+    return links_count >= 50
 
 FALSE_IMAGE_PATTERNS = (
     "static.tokkobroker.com/tfw/img/prop-icons",
@@ -1667,8 +1718,11 @@ class SupabasePropiedades:
                 continue
             if error_type in NON_RETRYABLE_SCRAPING_ERROR_TYPES:
                 continue
-            if error_type not in RETRYABLE_SCRAPING_ERROR_TYPES:
+            discovery_false_negative = _looks_like_retryable_discovery_false_negative(row)
+            if error_type not in RETRYABLE_SCRAPING_ERROR_TYPES and not discovery_false_negative:
                 continue
+            if discovery_false_negative:
+                row.setdefault("_retry_reason", "possible_discovery_false_negative")
             if requested_agency_id is not None:
                 canonical_resolution = validate_retry_item_agency_filter(
                     self,
@@ -13655,7 +13709,7 @@ def validate_retry_item_agency_filter(
     canonical_main_id = _safe_int(canonical_resolution.get("canonical_main_id"))
     main_row = canonical_resolution.get("main_row") or {}
     if canonical_main_id != requested_agency_id:
-        logger.info(
+        logger.debug(
             "%s candidato excluido por agency_id | agency_id_recibido=%s | origen=inmobiliarias_main.id"
             " | run_item_id=%s | scraping_run_id=%s | run_item_inmobiliaria_id=%s"
             " | canonical_main_id=%s | source_space=%s | nombre_item=%s | nombre_main=%s"
