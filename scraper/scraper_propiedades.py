@@ -120,6 +120,7 @@ PLAYWRIGHT_TEST_STRATEGY_TIMEOUT_SECONDS = 120
 PLAYWRIGHT_CLOSE_TIMEOUT_SECONDS = 3.0
 MAX_PAGINATION_PAGES_PER_SITE = 20
 MAX_LISTING_URLS_PER_SITE = 300
+STATIC_HTML_DETAIL_DISCOVERY_THRESHOLD = 120
 
 RETRYABLE_SCRAPING_ERROR_TYPES = {
     "requires_playwright",
@@ -8248,6 +8249,8 @@ def _looks_like_real_property_url(url: str) -> bool:
         return False
     if re.search(r"^(property-status|property-feature|property-city|property-state|location|tag)/", path):
         return False
+    if re.search(r"(^|/)(property|propiedad|inmueble|ficha|detalle)/\d{2,}(?:/|$)", path, re.I):
+        return True
     singular_slug_match = re.search(r"(^|/)(property|propiedad|inmueble|ficha|detalle)/([^/?#]{6,})$", path, re.I)
     if singular_slug_match:
         slug = singular_slug_match.group(3).strip("/").lower()
@@ -8702,6 +8705,8 @@ def strategy_static_html(inmob: Dict, session: requests.Session) -> List[Dict]:
     duplicated_property_urls_skipped = 0
     pagination_partial = False
     pagination_stop_reason = ""
+    deadline_cut = False
+    detail_urls_processed = 0
 
     try:
         r0 = _http_get(url_inicial, session, timeout=_bounded_http_timeout(inmob, 10))
@@ -8713,87 +8718,98 @@ def strategy_static_html(inmob: Dict, session: requests.Session) -> List[Dict]:
     candidates = _generic_candidate_urls(inmob, first_html=first_html, first_url=url_inicial)
     listing_url_keys = {_listing_url_key(url) for url in candidates}
     idx = 0
-    while idx < len(candidates) and len(urls_probadas) < MAX_PAGINATION_PAGES_PER_SITE:
-        _check_strategy_deadline(inmob, "static_html")
-        if _deadline_remaining_seconds(_strategy_deadline(inmob)) <= 8:
-            errores_relevantes.append("static_html_detenido_por_presupuesto")
-            pagination_partial = bool(detail_urls)
-            pagination_stop_reason = "presupuesto"
-            break
-        candidate = candidates[idx]
-        idx += 1
-        if candidate in urls_probadas:
-            continue
-        urls_probadas.append(candidate)
-        try:
-            if candidate == url_inicial and first_html:
-                html = first_html
-                status = 200
-            else:
-                r = _http_get(candidate, session, timeout=_bounded_http_timeout(inmob, 8))
-                status = r.status_code
-                http_statuses.append(status)
-                if status != 200:
-                    continue
-                html = r.text
-            script_signals = _extract_script_property_signals(html, candidate)
-            page_links = list(dict.fromkeys(
-                _extract_generic_property_links(html, candidate)
-                + (script_signals.get("property_urls") or [])
-                + [
-                    url for url in (script_signals.get("property_like_urls") or [])
-                    if _looks_like_real_property_url(url) or _looks_like_custom_property_url(url)
-                ]
-            ))
-            property_urls_by_page[candidate] = len(page_links)
-            for link in page_links:
-                key = normalize_property_url_for_dedup(link) or _listing_url_key(link)
-                if key in detail_url_keys:
-                    duplicated_property_urls_skipped += 1
-                    continue
-                detail_url_keys.add(key)
-                if len(detail_urls) < MAX_LISTING_URLS_PER_SITE:
-                    detail_urls.append(link)
-            cards_count = _count_html_cards(html)
-            pagination = _extract_pagination_signals(
-                html,
-                candidate,
-                include_pattern_urls=bool(page_links or cards_count >= 2 or script_signals.get("listing_urls")),
-            )
-            if pagination.get("pagination_detected"):
-                pages_detected = max(pages_detected, int(pagination.get("pages_detected") or 0))
-                for strategy in pagination.get("pagination_strategy") or []:
-                    if strategy not in pagination_strategies:
-                        pagination_strategies.append(strategy)
-                for signal in pagination.get("load_more_signals") or []:
-                    if signal not in load_more_signals:
-                        load_more_signals.append(signal)
+    try:
+        while idx < len(candidates) and len(urls_probadas) < MAX_PAGINATION_PAGES_PER_SITE:
+            _check_strategy_deadline(inmob, "static_html")
+            if _deadline_remaining_seconds(_strategy_deadline(inmob)) <= 8:
+                errores_relevantes.append("static_html_detenido_por_presupuesto")
+                pagination_partial = bool(detail_urls)
+                pagination_stop_reason = "presupuesto"
+                deadline_cut = True
+                break
+            candidate = candidates[idx]
+            idx += 1
+            if candidate in urls_probadas:
+                continue
+            urls_probadas.append(candidate)
+            try:
+                if candidate == url_inicial and first_html:
+                    html = first_html
+                    status = 200
+                else:
+                    r = _http_get(candidate, session, timeout=_bounded_http_timeout(inmob, 8))
+                    status = r.status_code
+                    http_statuses.append(status)
+                    if status != 200:
+                        continue
+                    html = r.text
+                script_signals = _extract_script_property_signals(html, candidate)
+                page_links = list(dict.fromkeys(
+                    _extract_generic_property_links(html, candidate)
+                    + (script_signals.get("property_urls") or [])
+                    + [
+                        url for url in (script_signals.get("property_like_urls") or [])
+                        if _looks_like_real_property_url(url) or _looks_like_custom_property_url(url)
+                    ]
+                ))
+                property_urls_by_page[candidate] = len(page_links)
+                for link in page_links:
+                    key = normalize_property_url_for_dedup(link) or _listing_url_key(link)
+                    if key in detail_url_keys:
+                        duplicated_property_urls_skipped += 1
+                        continue
+                    detail_url_keys.add(key)
+                    if len(detail_urls) < MAX_LISTING_URLS_PER_SITE:
+                        detail_urls.append(link)
+                cards_count = _count_html_cards(html)
+                pagination = _extract_pagination_signals(
+                    html,
+                    candidate,
+                    include_pattern_urls=bool(page_links or cards_count >= 2 or script_signals.get("listing_urls")),
+                )
+                if pagination.get("pagination_detected"):
+                    pages_detected = max(pages_detected, int(pagination.get("pages_detected") or 0))
+                    for strategy in pagination.get("pagination_strategy") or []:
+                        if strategy not in pagination_strategies:
+                            pagination_strategies.append(strategy)
+                    for signal in pagination.get("load_more_signals") or []:
+                        if signal not in load_more_signals:
+                            load_more_signals.append(signal)
                 for next_url in pagination.get("next_urls_found") or []:
                     if next_url not in pagination_next_urls:
                         pagination_next_urls.append(next_url)
                     key = _listing_url_key(next_url)
                     if (
-                        key not in listing_url_keys
-                        and len(candidates) < MAX_LISTING_URLS_PER_SITE
-                        and len(candidates) < MAX_PAGINATION_PAGES_PER_SITE * 8
-                    ):
-                        listing_url_keys.add(key)
-                        candidates.append(next_url)
-            if len(detail_urls) >= MAX_LISTING_URLS_PER_SITE:
-                pagination_partial = True
-                pagination_stop_reason = "max_listing_urls_per_site"
-                break
-        except Exception as exc:
-            errores_relevantes.append(f"{candidate}: {type(exc).__name__}: {str(exc)[:180]}")
-        _update_strategy_progress(
-            inmob,
-            "static_html",
-            listing_urls_total=len(candidates),
-            listing_urls_processed=len(urls_probadas),
-            listing_urls_remaining=max(len(candidates) - len(urls_probadas), 0),
-            detail_urls_total=len(detail_urls),
-            errores_relevantes=errores_relevantes[-5:],
-        )
+                            key not in listing_url_keys
+                            and len(candidates) < MAX_LISTING_URLS_PER_SITE
+                            and len(candidates) < MAX_PAGINATION_PAGES_PER_SITE * 8
+                        ):
+                            listing_url_keys.add(key)
+                            candidates.append(next_url)
+                if len(detail_urls) >= STATIC_HTML_DETAIL_DISCOVERY_THRESHOLD:
+                    pagination_partial = True
+                    pagination_stop_reason = pagination_stop_reason or "detail_budget_preserved"
+                    break
+                if len(detail_urls) >= MAX_LISTING_URLS_PER_SITE:
+                    pagination_partial = True
+                    pagination_stop_reason = "max_listing_urls_per_site"
+                    break
+            except Exception as exc:
+                errores_relevantes.append(f"{candidate}: {type(exc).__name__}: {str(exc)[:180]}")
+            _update_strategy_progress(
+                inmob,
+                "static_html",
+                listing_urls_total=len(candidates),
+                listing_urls_processed=len(urls_probadas),
+                listing_urls_remaining=max(len(candidates) - len(urls_probadas), 0),
+                detail_urls_total=len(detail_urls),
+                errores_relevantes=errores_relevantes[-5:],
+            )
+    except StrategyTimeoutError as exc:
+        deadline_cut = True
+        pagination_partial = bool(detail_urls)
+        pagination_stop_reason = pagination_stop_reason or "presupuesto"
+        errores_relevantes.append(f"static_html_discovery_timeout: {str(exc)[:180]}")
     if idx < len(candidates) and len(urls_probadas) >= MAX_PAGINATION_PAGES_PER_SITE:
         pagination_partial = True
         pagination_stop_reason = pagination_stop_reason or "max_pages_per_site"
@@ -8807,33 +8823,47 @@ def strategy_static_html(inmob: Dict, session: requests.Session) -> List[Dict]:
         detail_urls_processed=0,
         detail_urls_remaining=len(detail_slice),
     )
-    for index, durl in enumerate(detail_slice, start=1):
-        _check_strategy_deadline(inmob, "static_html")
-        if _deadline_remaining_seconds(_strategy_deadline(inmob)) <= 4:
-            errores_relevantes.append("static_html_detalles_detenidos_por_presupuesto")
-            break
-        try:
-            prop = _extract_detail_page(durl, inmob, session)
-            if prop:
-                prop["fuente_extraccion"] = "static_html"
-                resultados.append(prop)
-        except Exception as exc:
-            if len(errores_relevantes) < 8:
-                errores_relevantes.append(f"{durl}: {type(exc).__name__}: {str(exc)[:180]}")
-        _update_strategy_progress(
-            inmob,
-            "static_html",
-            detail_urls_total=len(detail_slice),
-            detail_urls_processed=index,
-            detail_urls_remaining=max(len(detail_slice) - index, 0),
-            propiedades_detectadas=len(resultados),
-            errores_relevantes=errores_relevantes[-5:],
-        )
+    try:
+        for index, durl in enumerate(detail_slice, start=1):
+            _check_strategy_deadline(inmob, "static_html")
+            if _deadline_remaining_seconds(_strategy_deadline(inmob)) <= 4:
+                errores_relevantes.append("static_html_detalles_detenidos_por_presupuesto")
+                deadline_cut = True
+                break
+            try:
+                prop = _extract_detail_page(durl, inmob, session)
+                if prop:
+                    prop["fuente_extraccion"] = "static_html"
+                    resultados.append(prop)
+            except StrategyTimeoutError as exc:
+                deadline_cut = True
+                if len(errores_relevantes) < 8:
+                    errores_relevantes.append(f"{durl}: {type(exc).__name__}: {str(exc)[:180]}")
+                break
+            except Exception as exc:
+                if len(errores_relevantes) < 8:
+                    errores_relevantes.append(f"{durl}: {type(exc).__name__}: {str(exc)[:180]}")
+            detail_urls_processed = index
+            _update_strategy_progress(
+                inmob,
+                "static_html",
+                detail_urls_total=len(detail_slice),
+                detail_urls_processed=index,
+                detail_urls_remaining=max(len(detail_slice) - index, 0),
+                propiedades_detectadas=len(resultados),
+                errores_relevantes=errores_relevantes[-5:],
+            )
+    except StrategyTimeoutError as exc:
+        deadline_cut = True
+        errores_relevantes.append(f"static_html_detail_timeout: {str(exc)[:180]}")
 
     inmob["_scraper_metadata"] = {
         **dict(inmob.get("_scraper_metadata") or {}),
         "static_html_urls_probadas": urls_probadas,
         "static_html_links_propiedad_detectados": len(detail_urls),
+        "static_html_detail_urls_total": len(detail_slice),
+        "static_html_detail_urls_processed": detail_urls_processed,
+        "static_html_detail_urls_remaining": max(len(detail_slice) - detail_urls_processed, 0),
         "static_html_http_statuses": http_statuses[-10:],
         "pagination_detected": bool(pagination_next_urls or load_more_signals),
         "pagination_strategy": pagination_strategies,
@@ -8846,13 +8876,19 @@ def strategy_static_html(inmob: Dict, session: requests.Session) -> List[Dict]:
         "load_more_signals": load_more_signals,
         "pagination_stop_reason": pagination_stop_reason or ("sin_mas_paginas" if pagination_next_urls else "sin_paginacion"),
         "pagination_partial": bool(pagination_partial),
-        "partial_extraction": bool(pagination_partial and resultados),
+        "deadline_cut": bool(deadline_cut),
+        "partial_extraction": bool((pagination_partial or deadline_cut or detail_urls_processed < len(detail_slice)) and resultados),
+        "retry_recommended": bool((pagination_partial or deadline_cut or detail_urls_processed < len(detail_slice)) and resultados),
+        "retry_strategy": "pagination_deep_scan" if (pagination_next_urls or load_more_signals) else ("retry_with_more_budget" if resultados else None),
+        "retry_partial_stop_reason": pagination_stop_reason or ("deadline" if deadline_cut else None),
         "errores_relevantes": errores_relevantes[-8:],
     }
 
     if not detail_urls:
         raise RuntimeError("no_property_links: static_html no encontro links de propiedades")
     if not resultados:
+        if deadline_cut:
+            raise StrategyTimeoutError("timeout_static_html: presupuesto agotado sin propiedades extraidas")
         raise RuntimeError("parsing_failed: static_html encontro links pero no datos extraibles")
     return _dedupe_props(resultados)
 
@@ -10957,6 +10993,7 @@ def evaluate_scrape_quality(
 
     accepts_custom_urls = (
         strategy_plan.get("primary_strategy") == "custom_listing_detail"
+        or strategy_name in {"static_html", "static_html_detail", "static_html_tokko_detail"}
         or diagnostic.get("classification") == "scrapeable_custom_listing"
     )
     url_real_count = sum(
