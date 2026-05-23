@@ -5320,9 +5320,12 @@ def _extract_tokko_internal_listing_links(html: str, current_url: str) -> List[s
         href_low = href.lower()
         if not href or href.startswith(("#", "javascript:", "mailto:", "tel:")):
             continue
+        full = urljoin(domain + "/", href)
+        full_path = unquote(urlparse(full).path or "").lower()
+        if re.search(r"/p/\d+", full_path) or _looks_like_real_property_url(full):
+            continue
         if not any(kw in href_low or kw in text for kw in _TOKKO_LISTING_KEYWORDS):
             continue
-        full = urljoin(domain + "/", href)
         if urlparse(full).netloc == urlparse(domain).netloc and full not in links:
             links.append(full)
     return links
@@ -5420,9 +5423,11 @@ def _parse_tokko_listing_cards(html: str, source_url: str, inmob: Dict) -> List[
     markers = _parse_tokko_markers(html)
     cards = (
         soup.select("#propiedades > li[prop-id]")
+        or soup.select("#propiedades > [prop-id]")
         or soup.select("ul.resultados-list > li[prop-id]")
         or soup.select("#prop-list li[prop-id]")
         or soup.select("li[prop-id]")
+        or soup.select("[prop-id]")
     )
 
     propiedades: List[Dict] = []
@@ -5587,6 +5592,10 @@ def strategy_tokko_html(inmob: Dict, session: requests.Session) -> List[Dict]:
         idx += 1
         _check_strategy_deadline(inmob, "tokko_html")
         if candidate in urls_probadas:
+            continue
+        candidate_path = unquote(urlparse(candidate).path or "").lower()
+        if re.search(r"/p/\d+", candidate_path) or _looks_like_real_property_url(candidate):
+            errores_relevantes.append(f"{candidate}: omitida_ficha_detalle_en_cola_listados")
             continue
         urls_probadas.append(candidate)
         try:
