@@ -8241,7 +8241,11 @@ def _is_noise_property_url(url: str) -> bool:
         "twitter.com",
     }:
         return True
-    if _NON_PROPERTY_URL_PATTERNS.search(low):
+    # Aplicar estos patrones solo al path/query. Si se busca sobre la URL completa,
+    # dominios validos como agserviciossrl.com terminan descartando fichas reales
+    # del tipo /property/8072097-2/.
+    noise_target = f"{parsed.path}?{parsed.query}"
+    if _NON_PROPERTY_URL_PATTERNS.search(noise_target):
         return True
     query_keys = {key.lower() for key, _ in parse_qsl(parsed.query, keep_blank_values=True)}
     if query_keys & {"tr_uuid", "fp", "fbclid", "gclid", "utm_source", "utm_medium", "utm_campaign"}:
@@ -8304,6 +8308,7 @@ def _looks_like_real_property_url(url: str) -> bool:
         r"(^|/)[^/?#]*ficha[-_][a-z]{2,}\d{2,}",
         r"(^|/)propiedades/(?:\d{3,}|[^/]{8,})",
         r"(^|/)inmuebles/(?:\d{3,}|[^/]{8,})",
+        r"(^|/)(?:properties|propiedades|inmuebles)-\d+/\d{2,}[^/?#]*",
     )
     return any(re.search(pattern, path, re.I) for pattern in detail_patterns)
 
