@@ -134,6 +134,7 @@ RETRYABLE_SCRAPING_ERROR_TYPES = {
     "sitemap_too_large_partial",
     "extraction_partial_timeout",
     "strategy_quality_failed",
+    "sin_propiedades",
 }
 
 PARTIAL_RETRY_STRATEGIES = {
@@ -179,6 +180,12 @@ FALSE_IMAGE_PATTERNS = (
     "imagotipo",
     "brand",
     "favicon",
+    "inmobiliariaya.com/themes/",
+    "paginas-web-inmobiliarias",
+    "/estilo/assets/",
+    "xintelweb.com/assets/",
+    "menu_suc",
+    "data_fiscal",
     "/web-images/",
     "/users/",
     "_thumbnail",
@@ -1624,7 +1631,7 @@ class SupabasePropiedades:
         rows = r.json()
         for row in rows:
             row["scraping_run_item_id"] = row.get("id")
-        return rows
+        return rows[:max(int(limit or 5), 1)]
 
     def load_retryable_error_items(
         self,
@@ -1674,9 +1681,18 @@ class SupabasePropiedades:
                 row["_canonical_resolution"] = canonical_resolution
             row["scraping_run_item_id"] = row.get("id")
             rows.append(row)
-            if len(rows) >= max(int(limit or 5), 1):
+            if requested_agency_id is None and len(rows) >= max(int(limit or 5), 1):
                 break
-        return rows
+        if requested_agency_id is not None:
+            rows.sort(
+                key=lambda row: (
+                    _safe_int(row.get("scraping_run_id")),
+                    str(row.get("updated_at") or ""),
+                    _safe_int(row.get("id")),
+                ),
+                reverse=True,
+            )
+        return rows[:max(int(limit or 5), 1)]
 
     def load_partial_extraction_items(
         self,
@@ -8238,6 +8254,15 @@ def _looks_like_real_property_url(url: str) -> bool:
         return False
     parsed = urlparse(str(url))
     path = unquote((parsed.path or "").lower()).strip("/")
+    query_pairs = parse_qsl(parsed.query or "", keep_blank_values=True)
+    query = {str(key).lower(): str(value) for key, value in query_pairs}
+    detail_query_keys = {
+        "propiedad", "idprop", "id_prop", "id_propiedad", "propiedad_id",
+        "inmueble", "idinmueble", "id_inmueble", "inmueble_id",
+        "idaviso", "id_aviso", "id_ficha", "ficha_id",
+    }
+    if any(re.fullmatch(r"\d{2,}", query.get(key, "")) for key in detail_query_keys):
+        return True
     if not path:
         return False
     if path in {
@@ -8250,6 +8275,13 @@ def _looks_like_real_property_url(url: str) -> bool:
     if re.search(r"^(property-status|property-feature|property-city|property-state|location|tag)/", path):
         return False
     if re.search(r"(^|/)(property|propiedad|inmueble|ficha|detalle)/\d{2,}(?:/|$)", path, re.I):
+        return True
+    if (
+        re.search(r"(^|/|[-_])(property|propiedad|inmueble|ficha|detalle)(?:[-_/]|\.php|$)", path, re.I)
+        and re.fullmatch(r"\d{2,}", query.get("id", ""))
+    ):
+        return True
+    if re.search(r"(^|/)(ventas?|alquiler(?:es)?)/[a-z0-9_-]{8,}(?:/|$)", path, re.I):
         return True
     singular_slug_match = re.search(r"(^|/)(property|propiedad|inmueble|ficha|detalle)/([^/?#]{6,})$", path, re.I)
     if singular_slug_match:
@@ -8268,6 +8300,8 @@ def _looks_like_real_property_url(url: str) -> bool:
         r"(^|/)inmueble[-/]\d{3,}",
         r"(^|/)ficha[-/]\d{3,}",
         r"(^|/)detalle[-/]\d{3,}",
+        r"(^|/)[^/?#]*(?:venta|alquiler)[^/?#]*ficha[-_][a-z0-9_-]{3,}",
+        r"(^|/)[^/?#]*ficha[-_][a-z]{2,}\d{2,}",
         r"(^|/)propiedades/(?:\d{3,}|[^/]{8,})",
         r"(^|/)inmuebles/(?:\d{3,}|[^/]{8,})",
     )
@@ -8306,6 +8340,20 @@ def _extract_generic_property_links(html: str, current_url: str) -> List[str]:
                 if full not in links:
                     links.append(full)
     return links[:400]
+
+
+def _normalize_rendered_detail_url(raw_url: Any, base_url: str) -> str:
+    if not raw_url:
+        return ""
+    candidate = str(raw_url).replace("\\/", "/").strip()
+    if not candidate or candidate.startswith(("mailto:", "tel:", "javascript:", "#")):
+        return ""
+    full = urljoin(base_url, candidate).split("#", 1)[0]
+    parsed = urlparse(full)
+    if not parsed.scheme or not parsed.netloc:
+        return ""
+    query = [(key, value) for key, value in parse_qsl(parsed.query, keep_blank_values=True) if key.lower() != "_rsc"]
+    return urlunparse(parsed._replace(query=urlencode(query)))
 
 
 def _looks_like_custom_listing_url(url: str) -> bool:
@@ -9078,8 +9126,9 @@ def _playwright_render_diagnostics(page: Page, base_url: str) -> Dict[str, Any]:
     script_signals = _extract_script_property_signals(html, base_url) if html else {}
     script_property_urls = list(script_signals.get("property_urls") or [])
     script_property_like_urls = list(script_signals.get("property_like_urls") or [])
+    resource_property_urls = _playwright_resource_property_urls(page, base_url)
     property_links = [
-        url for url in list(dict.fromkeys(generic_links + script_property_urls))
+        url for url in list(dict.fromkeys(generic_links + script_property_urls + resource_property_urls))
         if _looks_like_real_property_url(url)
     ]
     return {
@@ -9090,6 +9139,8 @@ def _playwright_render_diagnostics(page: Page, base_url: str) -> Dict[str, Any]:
         "cards_count": _count_html_cards(html) if html else 0,
         "script_property_urls_count": len(script_property_urls),
         "script_property_like_urls_count": len(script_property_like_urls),
+        "resource_property_urls_count": len(resource_property_urls),
+        "resource_property_urls_sample": resource_property_urls[:10],
     }
 
 
@@ -9170,6 +9221,19 @@ def _human_scroll(page: Page, deadline: Optional[float] = None) -> None:
         pass
 
 
+def _playwright_block_heavy_route(route) -> None:
+    """Bloquea recursos pesados sin dejar que errores de routing contaminen el scraping."""
+    try:
+        if route.request.resource_type in {"image", "media", "font", "stylesheet"}:
+            route.abort()
+        else:
+            route.continue_()
+    except Exception:
+        # Playwright puede disparar eventos tardios cuando una pagina se cierra o
+        # cambia rutas; si el route ya fue manejado no debe romper ni ensuciar logs.
+        return
+
+
 def _make_playwright_context(pw, headless: bool = True):
     browser = pw.chromium.launch(
         headless=headless,
@@ -9192,12 +9256,7 @@ def _make_playwright_context(pw, headless: bool = True):
     context.set_default_timeout(PLAYWRIGHT_ACTION_TIMEOUT_MS)
     context.set_default_navigation_timeout(PLAYWRIGHT_NAV_TIMEOUT_MS)
     # Block heavy resources
-    context.route(
-        "**/*",
-        lambda route: route.abort()
-        if route.request.resource_type in {"image", "media", "font", "stylesheet"}
-        else route.continue_(),
-    )
+    context.route("**/*", _playwright_block_heavy_route)
     return browser, context
 
 
@@ -9258,14 +9317,68 @@ def _extract_cards_from_page(page: Page, card_sel: str, inmob: Dict, base_url: s
     _check_strategy_deadline(inmob, "html_scraper")
     try:
         hrefs = page.eval_on_selector_all(
-            f"{card_sel} a[href]",
-            "els => els.map(el => el.getAttribute('href')).filter(Boolean)",
+            f"{card_sel} a[href], {card_sel} [data-href], {card_sel} [data-url], {card_sel} [data-link], {card_sel} [onclick]",
+            """els => els.map(el =>
+                el.getAttribute('href') ||
+                el.getAttribute('data-href') ||
+                el.getAttribute('data-url') ||
+                el.getAttribute('data-link') ||
+                el.getAttribute('onclick') ||
+                ''
+            ).filter(Boolean)""",
         )
     except Exception:
         hrefs = []
     for href in hrefs:
-        full = urljoin(base_url, href)
-        if PROPERTY_URL_PATTERNS.search(full) or urlparse(full).netloc == urlparse(base_url).netloc:
+        onclick_urls = re.findall(r"""(?:location(?:\.href)?|window\.open)\s*\(?\s*['"]([^'"]+)['"]""", str(href), flags=re.I)
+        candidates = onclick_urls or [str(href)]
+        for raw in candidates:
+            full = _normalize_rendered_detail_url(raw, base_url)
+            if not full or urlparse(full).netloc != urlparse(base_url).netloc:
+                continue
+            if _looks_like_real_property_url(full) or _looks_like_custom_property_url(full):
+                urls.append(full)
+    if not urls:
+        try:
+            attr_urls = page.eval_on_selector_all(
+                f"{card_sel}",
+                """els => els.flatMap(el => {
+                    const out = [];
+                    const scan = (node) => {
+                        if (!node || !node.attributes) return;
+                        for (const a of Array.from(node.attributes)) {
+                            const v = String(a.value || '');
+                            if (/propiedad|property|inmueble|detalle|ficha|idprop|propiedad=|_rsc=/i.test(v)) out.push(v);
+                        }
+                    };
+                    scan(el);
+                    el.querySelectorAll('*').forEach(scan);
+                    return out;
+                })""",
+            )
+        except Exception:
+            attr_urls = []
+        for raw in attr_urls:
+            full = _normalize_rendered_detail_url(raw, base_url)
+            if full and urlparse(full).netloc == urlparse(base_url).netloc and _looks_like_real_property_url(full):
+                urls.append(full)
+    return list(dict.fromkeys(urls))
+
+
+def _playwright_resource_property_urls(page: Page, base_url: str) -> List[str]:
+    try:
+        resources = page.evaluate("performance.getEntriesByType('resource').map(e => e.name)")
+    except Exception:
+        resources = []
+    urls: List[str] = []
+    base_netloc = urlparse(base_url).netloc
+    for raw in resources or []:
+        full = _normalize_rendered_detail_url(raw, base_url)
+        if not full:
+            continue
+        if base_netloc and urlparse(full).netloc != base_netloc:
+            continue
+        if _looks_like_real_property_url(full) and full not in urls:
             urls.append(full)
     return list(dict.fromkeys(urls))
 
@@ -9437,12 +9550,7 @@ def _playwright_extract_detail(page: Page, url: str, inmob: Dict) -> Optional[Di
         return prop
     finally:
         # Restaurar bloqueo de recursos
-        page.route(
-            "**/*",
-            lambda route: route.abort()
-            if route.request.resource_type in {"image", "media", "font", "stylesheet"}
-            else route.continue_(),
-        )
+        page.route("**/*", _playwright_block_heavy_route)
 
 
 def strategy_html_playwright(inmob: Dict, pw_context) -> List[Dict]:
@@ -9477,13 +9585,14 @@ def strategy_html_playwright(inmob: Dict, pw_context) -> List[Dict]:
             key: value for key, value in render_diag.items() if key != "property_links"
         }
         logger.info(
-            "playwright_html | render | url=%s | links=%d | property_links=%d | cards=%d | script_urls=%d | script_like=%d | html_len=%d",
+            "playwright_html | render | url=%s | links=%d | property_links=%d | cards=%d | script_urls=%d | script_like=%d | resource_urls=%d | html_len=%d",
             page.url,
             render_diag.get("all_links_count", 0),
             render_diag.get("property_links_count", 0),
             render_diag.get("cards_count", 0),
             render_diag.get("script_property_urls_count", 0),
             render_diag.get("script_property_like_urls_count", 0),
+            render_diag.get("resource_property_urls_count", 0),
             render_diag.get("html_len", 0),
         )
         if inmob.get("_playwright_use_detected_api"):
@@ -9491,9 +9600,9 @@ def strategy_html_playwright(inmob: Dict, pw_context) -> List[Dict]:
             if api_props:
                 return api_props
 
+        detail_urls = list(render_diag.get("property_links") or [])
         card_sel = _infer_card_selector(page)
         if not card_sel:
-            detail_urls = list(render_diag.get("property_links") or [])
             if not detail_urls:
                 raise RuntimeError(
                     "sin_propiedades: no se detectaron cards de propiedades "
@@ -9563,20 +9672,56 @@ def strategy_html_playwright(inmob: Dict, pw_context) -> List[Dict]:
 
     # Visitar pÃƒÂ¡ginas de detalle
     detail_page = pw_context.new_page()
+    detail_slice = detail_urls[:300]
+    detail_urls_processed = 0
+    deadline_cut = False
+    detail_errors: List[str] = []
     try:
         detail_page.set_default_timeout(action_timeout_ms)
         detail_page.set_default_navigation_timeout(nav_timeout_ms)
-        for durl in detail_urls[:300]:
-            _check_strategy_deadline(inmob, "html_scraper")
+        for index, durl in enumerate(detail_slice, start=1):
+            try:
+                _check_strategy_deadline(inmob, "html_scraper")
+                if _deadline_remaining_seconds(_strategy_deadline(inmob)) <= 6:
+                    deadline_cut = True
+                    detail_errors.append("playwright_detalles_detenidos_por_presupuesto")
+                    break
+            except StrategyTimeoutError as exc:
+                deadline_cut = True
+                detail_errors.append(f"playwright_detail_timeout: {str(exc)[:180]}")
+                break
             try:
                 prop = _playwright_extract_detail(detail_page, durl, inmob)
                 if prop:
                     resultados.append(prop)
                 time.sleep(min(random.uniform(0.3, 0.8), max(0.1, _deadline_remaining_seconds(_strategy_deadline(inmob)))))
+            except StrategyTimeoutError as exc:
+                deadline_cut = True
+                if len(detail_errors) < 8:
+                    detail_errors.append(f"{durl}: {type(exc).__name__}: {str(exc)[:180]}")
+                break
             except Exception as exc:
                 logger.debug("detail extract error %s: %s", durl, exc)
+                if len(detail_errors) < 8:
+                    detail_errors.append(f"{durl}: {type(exc).__name__}: {str(exc)[:180]}")
+            detail_urls_processed = index
     finally:
         _close_playwright_safely(detail_page, "html_scraper detail page")
+
+    inmob["_scraper_metadata"] = {
+        **dict(inmob.get("_scraper_metadata") or {}),
+        "playwright_detail_urls_total": len(detail_slice),
+        "playwright_detail_urls_processed": detail_urls_processed,
+        "playwright_detail_urls_remaining": max(len(detail_slice) - detail_urls_processed, 0),
+        "playwright_detail_errors": detail_errors[-8:],
+        "deadline_cut": bool(deadline_cut),
+        "partial_extraction": bool((deadline_cut or detail_urls_processed < len(detail_slice)) and resultados),
+        "retry_recommended": bool((deadline_cut or detail_urls_processed < len(detail_slice)) and resultados),
+        "retry_strategy": "playwright_or_ajax_load_more" if resultados else None,
+        "retry_partial_stop_reason": "deadline" if deadline_cut else None,
+        "unique_property_urls_total": len(detail_urls),
+        "property_links_count": len(detail_urls),
+    }
 
     if not resultados:
         raise RuntimeError("sin_propiedades: html_scraper extrajo URLs pero no datos")
@@ -12306,6 +12451,17 @@ def _queue_item_to_inmob(
     }
     if estrategia:
         inmob["estrategia_scraping"] = estrategia
+    for key in ("_playwright_timeouts_ms", "_strategy_timeout_seconds"):
+        if isinstance(item.get(key), dict):
+            inmob[key] = dict(item[key])
+    for key in (
+        "_playwright_continue_after_networkidle_timeout",
+        "_playwright_fast_detail_extract",
+        "_playwright_use_detected_api",
+        "_playwright_api_limit",
+    ):
+        if key in item:
+            inmob[key] = item[key]
     return inmob
 
 
@@ -14212,6 +14368,20 @@ def run_retry_errors_queue(
             item_id = item.get("scraping_run_item_id") or item.get("id")
             run_id = item.get("scraping_run_id")
             item_started_at = time.time()
+            if allow_playwright_fallback:
+                item["_playwright_timeouts_ms"] = {
+                    "nav": PLAYWRIGHT_TEST_NAV_TIMEOUT_MS,
+                    "load": PLAYWRIGHT_TEST_LOAD_TIMEOUT_MS,
+                    "action": PLAYWRIGHT_TEST_ACTION_TIMEOUT_MS,
+                }
+                item["_strategy_timeout_seconds"] = {
+                    **dict(item.get("_strategy_timeout_seconds") or {}),
+                    "playwright_html": PLAYWRIGHT_TEST_STRATEGY_TIMEOUT_SECONDS,
+                }
+                item["_playwright_continue_after_networkidle_timeout"] = True
+                item["_playwright_fast_detail_extract"] = True
+                item["_playwright_use_detected_api"] = True
+                item["_playwright_api_limit"] = 150
             logger.info("=" * 60)
             logger.info(
                 "Retry item=%s | run=%s | inmobiliaria=%s | error_previo=%s",
@@ -14981,6 +15151,20 @@ def run_retry_partial_extractions(
                     canonical_resolution=canonical_resolution,
                 )
                 inmob["_scraper_metadata"] = dict(metadata)
+                if retry_strategy == "playwright_or_ajax_load_more":
+                    inmob["_playwright_timeouts_ms"] = {
+                        "nav": PLAYWRIGHT_TEST_NAV_TIMEOUT_MS,
+                        "load": PLAYWRIGHT_TEST_LOAD_TIMEOUT_MS,
+                        "action": PLAYWRIGHT_TEST_ACTION_TIMEOUT_MS,
+                    }
+                    inmob["_strategy_timeout_seconds"] = {
+                        **dict(inmob.get("_strategy_timeout_seconds") or {}),
+                        "playwright_html": PLAYWRIGHT_TEST_STRATEGY_TIMEOUT_SECONDS,
+                    }
+                    inmob["_playwright_continue_after_networkidle_timeout"] = True
+                    inmob["_playwright_fast_detail_extract"] = True
+                    inmob["_playwright_use_detected_api"] = True
+                    inmob["_playwright_api_limit"] = 150
                 timeout_seconds = _item_timeout_seconds(item, allow_playwright=(retry_strategy == "playwright_or_ajax_load_more"), strategy_hint=retry_strategy)
                 item_deadline = time.time() + timeout_seconds
 
