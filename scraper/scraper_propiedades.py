@@ -10165,7 +10165,7 @@ def _extract_developer_project_links(html: str, current_url: str) -> List[str]:
     return links[:200]
 
 
-def _fetch_sitemap_urls_for_diagnosis(base: str, session: requests.Session) -> Tuple[List[str], List[str], List[str], List[str]]:
+def _fetch_sitemap_urls_for_diagnosis(base: str, session: requests.Session, inmob: Optional[Dict] = None) -> Tuple[List[str], List[str], List[str], List[str]]:
     prop_urls: List[str] = []
     project_urls: List[str] = []
     tried: List[str] = []
@@ -10197,19 +10197,33 @@ def _fetch_sitemap_urls_for_diagnosis(base: str, session: requests.Session) -> T
         return nested, props, projects
 
     for path in SITEMAP_PATHS:
+        if inmob is not None:
+            _check_strategy_deadline(inmob, "diagnose_url")
         sitemap_url = urljoin(root_base.rstrip("/") + "/", path.lstrip("/"))
         tried.append(sitemap_url)
         try:
-            response = _http_get(sitemap_url, session, timeout=4, use_scraper_on_block=False)
+            response = _http_get(
+                sitemap_url,
+                session,
+                timeout=_bounded_http_timeout(inmob, 4) if inmob is not None else 4,
+                use_scraper_on_block=False,
+            )
             if response.status_code != 200:
                 continue
             nested, props, projects = collect_from_xml(_decode_response_text(response))
             prop_urls.extend(props)
             project_urls.extend(projects)
             for sub_url in nested[:12]:
+                if inmob is not None:
+                    _check_strategy_deadline(inmob, "diagnose_url")
                 tried.append(sub_url)
                 try:
-                    sub_response = _http_get(sub_url, session, timeout=4, use_scraper_on_block=False)
+                    sub_response = _http_get(
+                        sub_url,
+                        session,
+                        timeout=_bounded_http_timeout(inmob, 4) if inmob is not None else 4,
+                        use_scraper_on_block=False,
+                    )
                     if sub_response.status_code != 200:
                         continue
                     _, sub_props, sub_projects = collect_from_xml(_decode_response_text(sub_response))
@@ -10231,7 +10245,7 @@ def _fetch_sitemap_urls_for_diagnosis(base: str, session: requests.Session) -> T
     )
 
 
-def _wordpress_rest_links_for_diagnosis(base_url: str, session: requests.Session, plugin: str = "wordpress_generic") -> Tuple[List[str], List[str], List[str], List[str]]:
+def _wordpress_rest_links_for_diagnosis(base_url: str, session: requests.Session, plugin: str = "wordpress_generic", inmob: Optional[Dict] = None) -> Tuple[List[str], List[str], List[str], List[str]]:
     parsed = urlparse(_normalize_queue_url(base_url))
     base = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else base_url.rstrip("/")
     links: List[str] = []
@@ -10240,10 +10254,17 @@ def _wordpress_rest_links_for_diagnosis(base_url: str, session: requests.Session
     errors: List[str] = []
     rest_types = list(dict.fromkeys(_WORDPRESS_REST_TYPES + ["pages", "posts"]))
     for post_type in rest_types:
+        if inmob is not None:
+            _check_strategy_deadline(inmob, "diagnose_url")
         api_url = f"{base}/wp-json/wp/v2/{post_type}?per_page=50"
         tried.append(api_url)
         try:
-            response = _http_get(api_url, session, timeout=4, use_scraper_on_block=False)
+            response = _http_get(
+                api_url,
+                session,
+                timeout=_bounded_http_timeout(inmob, 4) if inmob is not None else 4,
+                use_scraper_on_block=False,
+            )
             if response.status_code != 200:
                 continue
             data = response.json()
@@ -10414,6 +10435,7 @@ def diagnose_inmob(
     allow_network_interception: bool = False,
 ) -> Dict[str, Any]:
     """Diagnostico universal sin guardar propiedades ni consumir cola."""
+    _check_strategy_deadline(inmob, "diagnose_url")
     started_at = time.time()
     url_inicial = inmob.get("url_listado") or inmob.get("web", "")
     start_infos: List[Dict[str, Any]] = []
@@ -10521,9 +10543,10 @@ def diagnose_inmob(
         return normalized in base_set
 
     for candidate in candidates[:8]:
+        _check_strategy_deadline(inmob, "diagnose_url")
         tried_fetch_urls.append(candidate)
         try:
-            response = _http_get(candidate, session, timeout=5, use_scraper_on_block=False)
+            response = _http_get(candidate, session, timeout=_bounded_http_timeout(inmob, 5), use_scraper_on_block=False)
             diagnostic["http_statuses"].append(response.status_code)
             diagnostic["http_status"] = response.status_code
             final_url = response.url or candidate
@@ -10574,13 +10597,14 @@ def diagnose_inmob(
     # Escaneo liviano de rutas inmobiliarias alternativas. Esto evita diagnosticar
     # toda la inmobiliaria desde una pagina tipo contacto o landing institucional.
     for candidate in candidates[:16]:
+        _check_strategy_deadline(inmob, "diagnose_url")
         if len(html_pages) >= 9:
             break
         if candidate in tried_fetch_urls or candidate == final_url:
             continue
         tried_fetch_urls.append(candidate)
         try:
-            response = _http_get(candidate, session, timeout=4, use_scraper_on_block=False)
+            response = _http_get(candidate, session, timeout=_bounded_http_timeout(inmob, 4), use_scraper_on_block=False)
             diagnostic["http_statuses"].append(response.status_code)
             if response.status_code in {403, 429}:
                 diagnostic["blocked"] = True
@@ -10648,6 +10672,7 @@ def diagnose_inmob(
     visible_properties_count: Optional[int] = None
 
     for page_html, page_url in html_pages:
+        _check_strategy_deadline(inmob, "diagnose_url")
         page_generic_links = _extract_generic_property_links(page_html, page_url)
         generic_property_links.extend(page_generic_links)
         page_plugin_links: List[str] = []
@@ -10812,7 +10837,8 @@ def diagnose_inmob(
     parsed = urlparse(final_url)
     base = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else final_url
     try:
-        sitemap_urls, sitemap_project_urls, sitemap_tried, sitemap_errors = _fetch_sitemap_urls_for_diagnosis(base, session)
+        _check_strategy_deadline(inmob, "diagnose_url")
+        sitemap_urls, sitemap_project_urls, sitemap_tried, sitemap_errors = _fetch_sitemap_urls_for_diagnosis(base, session, inmob)
         diagnostic["sitemap_urls_probadas"] = sitemap_tried
         if sitemap_errors:
             diagnostic.setdefault("errores_http", []).extend(f"sitemap: {err}" for err in sitemap_errors[:8])
@@ -10829,7 +10855,8 @@ def diagnose_inmob(
 
     if "wordpress" in diagnostic["tecnologias_detectadas"]:
         try:
-            rest_links, rest_types, rest_tried, rest_errors = _wordpress_rest_links_for_diagnosis(base, session, wp_plugin)
+            _check_strategy_deadline(inmob, "diagnose_url")
+            rest_links, rest_types, rest_tried, rest_errors = _wordpress_rest_links_for_diagnosis(base, session, wp_plugin, inmob)
             diagnostic["rest_api_probada"] = rest_tried
             diagnostic["wordpress_rest_types_detectados"] = rest_types
             rest_property_links = [
@@ -10878,13 +10905,14 @@ def diagnose_inmob(
     if allow_playwright and pw_context is not None:
         page = None
         try:
+            _check_strategy_deadline(inmob, "diagnose_url")
             page = pw_context.new_page()
-            page.set_default_timeout(PLAYWRIGHT_ACTION_TIMEOUT_MS)
-            page.set_default_navigation_timeout(PLAYWRIGHT_NAV_TIMEOUT_MS)
-            _playwright_goto(page, final_url, retries=1, timeout_ms=PLAYWRIGHT_NAV_TIMEOUT_MS)
+            page.set_default_timeout(_bounded_playwright_timeout_ms(inmob, PLAYWRIGHT_ACTION_TIMEOUT_MS))
+            page.set_default_navigation_timeout(_bounded_playwright_timeout_ms(inmob, PLAYWRIGHT_NAV_TIMEOUT_MS))
+            _playwright_goto(page, final_url, retries=1, timeout_ms=_bounded_playwright_timeout_ms(inmob, PLAYWRIGHT_NAV_TIMEOUT_MS))
             _human_scroll(page)
             try:
-                page.wait_for_load_state("networkidle", timeout=PLAYWRIGHT_LOAD_TIMEOUT_MS)
+                page.wait_for_load_state("networkidle", timeout=_bounded_playwright_timeout_ms(inmob, PLAYWRIGHT_LOAD_TIMEOUT_MS))
             except Exception:
                 pass
             rendered_html = page.content()
@@ -16015,6 +16043,8 @@ def diagnose_single_url(
     """Diagnostica una URL sin consumir cola ni guardar propiedades."""
     session = SupabasePropiedades._make_session()
     estrategia = _strategy_from_cms(cms)
+    started_at = time.time()
+    diagnose_timeout_seconds = PLAYWRIGHT_ITEM_TIMEOUT_SECONDS if allow_playwright else SIMPLE_ITEM_TIMEOUT_SECONDS
     inmob: Dict[str, Any] = {
         "id": 0,
         "nombre": "diagnose-url",
@@ -16026,9 +16056,12 @@ def diagnose_single_url(
     }
     if estrategia:
         inmob["estrategia_scraping"] = estrategia
+    inmob["_strategy_name"] = "diagnose_url"
+    inmob["_strategy_deadline"] = started_at + diagnose_timeout_seconds
 
     pw = browser = pw_context = None
     try:
+        logger.info("Diagnostico URL: presupuesto de item = %ss", diagnose_timeout_seconds)
         if allow_playwright:
             pw = sync_playwright().start()
             browser, pw_context = _make_playwright_context(pw)
@@ -16070,6 +16103,12 @@ def diagnose_single_url(
         logger.info("Detalle JSON: %s", json.dumps(diagnostic, ensure_ascii=False)[:5000])
         logger.info("Strategy plan JSON: %s", json.dumps(strategy_plan, ensure_ascii=False)[:3000])
         logger.info("=" * 60)
+    except StrategyTimeoutError as exc:
+        elapsed = round(time.time() - started_at, 2)
+        logger.error("DIAGNOSTICO URL TIMEOUT: %s | elapsed=%ss | presupuesto=%ss", exc, elapsed, diagnose_timeout_seconds)
+    except Exception as exc:
+        elapsed = round(time.time() - started_at, 2)
+        logger.error("DIAGNOSTICO URL ERROR (%s): %s | elapsed=%ss", clasificar_error(exc), str(exc)[:500], elapsed)
     finally:
         if allow_playwright:
             _close_playwright_safely(pw_context, "diagnose-url playwright context")
