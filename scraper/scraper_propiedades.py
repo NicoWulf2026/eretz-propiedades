@@ -13116,6 +13116,9 @@ def _listing_url_not_property_detail_reason(url: Any, url_normalizada: Any = Non
                 us_parts = set(slug.split("_"))
                 if us_parts & _PROPERTY_TYPE_SLUG_WORDS and us_parts & _OPERATION_SLUG_WORDS:
                     return f"listing_url_filter_combo:{path}"
+        hierarchy_m = re.fullmatch(r"(propiedades|inmuebles)/(casas?|departamentos?|deptos?|dptos?|lotes?|terrenos?|locales?|oficinas?|cocheras?|galpones?)(?:/.*)?", path)
+        if hierarchy_m and not re.search(r"\d{3,}", path):
+            return f"listing_url_filter_hierarchy:{path}"
     return None
 
 
@@ -13132,6 +13135,8 @@ def _invalid_listing_property_reason(prop: Dict[str, Any]) -> Optional[str]:
     reason = _listing_url_not_property_detail_reason(prop.get("url"), prop.get("url_normalizada"))
     if not reason:
         return None
+    if reason.startswith("listing_url_filter_hierarchy:"):
+        return reason
 
     title_key = re.sub(
         r"[^a-z0-9]+",
