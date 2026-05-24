@@ -97,7 +97,7 @@ STRATEGY_TIMEOUT_SECONDS: Dict[str, int] = {
     "network_intercept": 30,
     "static_html": 35,
     "static_html_detail": 45,
-    "static_html_tokko_detail": 45,
+    "static_html_tokko_detail": 150,
     "wordpress_sitemap_detail": 90,
     "wordpress_essential_real_estate_detail": 230,
     "wordpress_estatik_detail": 75,
@@ -3893,6 +3893,13 @@ def _detect_location_from_text(
             "clear_barrio": True,
         }
 
+    if _text_contains_location_alias(text, "lujan de cuyo"):
+        return {
+            "ciudad": "Lujan de Cuyo",
+            "provincia": "Mendoza",
+            "motivo": "titulo_url_contiene_lujan_de_cuyo",
+        }
+
     if re.search(r"\b(?:en|ubicad[oa]\s+en)\s+santa\s+fe\s+(?:la\s+capital|capital)\b", text) or "ciudad de santa fe" in text:
         return {"ciudad": "Santa Fe", "provincia": "Santa Fe", "motivo": "titulo_url_santa_fe_la_capital"}
 
@@ -4248,6 +4255,7 @@ CANONICAL_LOCATION_NAMES = {
     "san isidro": "San Isidro",
     "tigre": "Tigre",
     "lujan": "Luj\u00e1n",
+    "lujan de cuyo": "Luj\u00e1n de Cuyo",
     "concordia": "Concordia",
     "rio cuarto": "R\u00edo Cuarto",
     "punta del este": "Punta del Este",
@@ -4264,6 +4272,7 @@ CANONICAL_LOCATION_NAMES = {
     "buenos aires": "Buenos Aires",
     "santa fe": "Santa Fe",
     "san luis": "San Luis",
+    "mendoza": "Mendoza",
 }
 
 
@@ -6580,6 +6589,58 @@ _PROPERTY_TITLE_HINTS = re.compile(
 )
 
 
+_GENERIC_DETAIL_TITLE_KEYS = {
+    "propiedad",
+    "casa",
+    "departamento",
+    "depto",
+    "terreno",
+    "lote",
+    "local",
+    "oficina",
+    "cochera",
+    "galpon",
+    "ph",
+}
+
+_TIPO_TITULO_LABELS = {
+    "casa": "Casa",
+    "departamento": "Departamento",
+    "terreno": "Terreno",
+    "lote": "Lote",
+    "local": "Local",
+    "oficina": "Oficina",
+    "cochera": "Cochera",
+    "galpon": "Galpon",
+    "ph": "PH",
+    "duplex": "Duplex",
+}
+
+
+def _clean_title_location_fragment(value: Any) -> str:
+    text = _fix_mojibake_text(value)
+    text = re.sub(r"\b(DOMICILIO|DIRECCI[OÃƒÆ’Ã‚Â³]N|UBICACI[OÃƒÆ’Ã‚Â³]N)\b", " ", text, flags=re.I)
+    text = re.split(r"\b(DESCRIPCI[OÃƒÆ’Ã‚Â³]N|HACER UNA CONSULTA|CONSULTA|CONTACTO)\b", text, maxsplit=1, flags=re.I)[0]
+    text = re.sub(r"\s+", " ", text).strip(" -|,.;:")
+    if len(text) > 90:
+        text = text[:90].rsplit(" ", 1)[0].strip(" -|,.;:")
+    return text
+
+
+def _synthesize_detail_title(title: Any, tipo_raw: Any, address_raw: Any) -> str:
+    title_text = _fix_mojibake_text(title)
+    title_key = _normalize_text_key(title_text)
+    if title_text and title_key not in _GENERIC_DETAIL_TITLE_KEYS and _is_useful_scraped_title(title_text):
+        return title_text
+    location = _clean_title_location_fragment(address_raw)
+    if not location or len(location) < 3:
+        return title_text
+    tipo = normalizar_tipo(f"{tipo_raw or ''} {title_text or ''}")
+    label = _TIPO_TITULO_LABELS.get(tipo) or "Propiedad"
+    synthesized = f"{label} en {location}"
+    return synthesized if _is_useful_scraped_title(synthesized) else title_text
+
+
 def _looks_like_agency_title(value: Any) -> bool:
     text = _fix_mojibake_text(value)
     low = text.lower()
@@ -6742,6 +6803,7 @@ def _html_extract_detail(soup: BeautifulSoup, url: str, inmob: Dict,
     )
     if not address_raw:
         address_raw = _extract_address_from_text(page_text)
+    title = _synthesize_detail_title(title, tipo_raw, address_raw)
 
     ambientes    = normalizar_int(find_text('[class*="ambiente"]', '[class*="room"]', '[class*="environment"]'))
     dormitorios  = normalizar_int(find_text('[class*="dormitor"]', '[class*="bedroom"]', '[class*="suite"]', '[class*="habitac"]'))
@@ -6800,6 +6862,13 @@ def _html_extract_detail(soup: BeautifulSoup, url: str, inmob: Dict,
     m = re.search(r"/(\d{3,})[/_-]?", url)
     if m:
         id_ext = m.group(1)
+    if not id_ext:
+        query_params = {str(key).lower(): str(value) for key, value in parse_qsl(urlparse(url).query or "", keep_blank_values=False)}
+        for key in ("propiedad_id", "id_propiedad", "idprop", "inmueble_id", "idinmueble", "id"):
+            value = query_params.get(key, "")
+            if re.fullmatch(r"\d{2,}", value):
+                id_ext = value
+                break
 
     if not _is_useful_scraped_title(title) and precio:
         title = _title_from_detail_url(url) or "Propiedad"
@@ -8797,6 +8866,10 @@ def strategy_static_html(inmob: Dict, session: requests.Session) -> List[Dict]:
         raise ValueError("sin_url_listado")
 
     _check_strategy_deadline(inmob, "static_html")
+    strategy_context = str(inmob.get("_strategy_name") or "static_html")
+    detail_discovery_threshold = (
+        40 if strategy_context == "static_html_tokko_detail" else STATIC_HTML_DETAIL_DISCOVERY_THRESHOLD
+    )
     urls_probadas: List[str] = []
     detail_urls: List[str] = []
     errores_relevantes: List[str] = []
@@ -8893,7 +8966,7 @@ def strategy_static_html(inmob: Dict, session: requests.Session) -> List[Dict]:
                         ):
                             listing_url_keys.add(key)
                             candidates.append(next_url)
-                if len(detail_urls) >= STATIC_HTML_DETAIL_DISCOVERY_THRESHOLD:
+                if len(detail_urls) >= detail_discovery_threshold:
                     pagination_partial = True
                     pagination_stop_reason = pagination_stop_reason or "detail_budget_preserved"
                     break
@@ -10902,7 +10975,22 @@ def diagnose_inmob(
         and diagnostic["requires_playwright"]
     )
 
-    if allow_playwright and pw_context is not None:
+    should_render_for_diagnosis = (
+        allow_playwright
+        and pw_context is not None
+        and (
+            diagnostic.get("requires_playwright")
+            or (
+                not property_links
+                and not diagnostic.get("property_like_links_detectados")
+                and not diagnostic["sitemap_property_urls_count"]
+                and not custom_listing_urls
+                and not developer_project_urls
+                and (diagnostic.get("requires_js") or requires_playwright_signals)
+            )
+        )
+    )
+    if should_render_for_diagnosis:
         page = None
         try:
             _check_strategy_deadline(inmob, "diagnose_url")
@@ -11815,13 +11903,32 @@ def run_best_strategy(
             return call("playwright_html", lambda: strategy_html_playwright(inmob, pw_context))
         raise RuntimeError(f"unsupported_cms: estrategia no implementada {strategy_name}")
 
-    diagnostic = diagnose_inmob(
-        inmob,
-        session,
-        pw_context=pw_context if allow_playwright_fallback else None,
-        allow_playwright=allow_playwright_fallback,
-        allow_network_interception=allow_network_interception,
-    )
+    diagnosis_started = time.time()
+    diagnosis_timeout_seconds = 120 if allow_playwright_fallback else SIMPLE_ITEM_TIMEOUT_SECONDS
+    diagnosis_deadline = diagnosis_started + diagnosis_timeout_seconds
+    if item_deadline is not None:
+        diagnosis_deadline = min(diagnosis_deadline, item_deadline)
+    previous_deadline = inmob.get("_strategy_deadline")
+    previous_name = inmob.get("_strategy_name")
+    inmob["_strategy_deadline"] = diagnosis_deadline
+    inmob["_strategy_name"] = "diagnose_url"
+    try:
+        diagnostic = diagnose_inmob(
+            inmob,
+            session,
+            pw_context=pw_context if allow_playwright_fallback else None,
+            allow_playwright=allow_playwright_fallback,
+            allow_network_interception=allow_network_interception,
+        )
+    finally:
+        if previous_deadline is None:
+            inmob.pop("_strategy_deadline", None)
+        else:
+            inmob["_strategy_deadline"] = previous_deadline
+        if previous_name is None:
+            inmob.pop("_strategy_name", None)
+        else:
+            inmob["_strategy_name"] = previous_name
     inmob["_diagnostic_detail_urls"] = list(diagnostic.get("posibles_urls_detalle") or [])
     strategy_plan = select_best_scraping_strategy(
         diagnostic,
