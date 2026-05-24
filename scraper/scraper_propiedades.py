@@ -11200,10 +11200,17 @@ def evaluate_scrape_quality(
         or strategy_name in {"static_html", "static_html_detail", "static_html_tokko_detail"}
         or diagnostic.get("classification") == "scrapeable_custom_listing"
     )
+    wordpress_plugin_by_strategy = {
+        "wordpress_realhomes_detail": "realhomes",
+        "wordpress_essential_real_estate_detail": "essential_real_estate",
+        "wordpress_estatik_detail": "estatik",
+    }
+    wordpress_plugin = wordpress_plugin_by_strategy.get(strategy_name)
     url_real_count = sum(
         1
         for prop in props
         if _looks_like_real_property_url(str(prop.get("url") or ""))
+        or (wordpress_plugin and _looks_like_wordpress_plugin_property_url(str(prop.get("url") or ""), wordpress_plugin))
         or (accepts_custom_urls and _looks_like_custom_property_url(str(prop.get("url") or "")))
     )
     useful_title_count = sum(1 for prop in props if _is_useful_scraped_title(prop.get("titulo")))
