@@ -3733,6 +3733,34 @@ def _text_contains_location_alias(text: str, alias: str) -> bool:
 
 AMBIGUOUS_LOCATION_STREET_NAMES = {"roldan", "brandsen"}
 
+_ARG_PROVINCE_KEYS = {
+    "buenos aires": "Buenos Aires",
+    "capital federal": "Capital Federal",
+    "caba": "Capital Federal",
+    "santa fe": "Santa Fe",
+    "cordoba": "CÃƒÆ’Ã‚Â³rdoba",
+    "mendoza": "Mendoza",
+    "misiones": "Misiones",
+    "corrientes": "Corrientes",
+    "la pampa": "La Pampa",
+    "entre rios": "Entre RÃƒÆ’Ã‚Â­os",
+    "san luis": "San Luis",
+    "tucuman": "TucumÃƒÆ’Ã‚Â¡n",
+    "rio negro": "RÃƒÆ’Ã‚Â­o Negro",
+}
+
+_LOCATION_PROVINCE_OVERRIDES = {
+    ("ituzaingo", "corrientes"): ("Ituzaing\u00f3", "Corrientes", "titulo_url_contiene_ituzaingo_corrientes"),
+    ("san vicente", "misiones"): ("San Vicente", "Misiones", "titulo_url_contiene_san_vicente_misiones"),
+}
+
+
+def _explicit_province_from_text(text: str) -> str:
+    for province_key, province_name in _ARG_PROVINCE_KEYS.items():
+        if re.search(rf"\b{re.escape(province_key)}\b", text):
+            return province_name
+    return ""
+
 
 def _has_alias_street_context(text: str, alias_key: str) -> bool:
     if alias_key not in AMBIGUOUS_LOCATION_STREET_NAMES:
@@ -3874,6 +3902,7 @@ def _detect_location_from_text(
     provincia: Any = None,
     pais: Any = None,
 ) -> Optional[Dict[str, str]]:
+    source_text = _location_text_key(titulo, url, direccion, barrio, descripcion, pais)
     text = _location_text_key(titulo, url, direccion, barrio, descripcion, ciudad, provincia, pais)
     if not text:
         return None
@@ -3924,11 +3953,23 @@ def _detect_location_from_text(
     if _has_funes_city_signal(text, ciudad=ciudad, provincia=provincia, barrio=barrio):
         return {"ciudad": "Funes", "provincia": "Santa Fe", "motivo": "titulo_url_contiene_funes"}
 
+    explicit_province = _explicit_province_from_text(source_text)
+    for (alias_key, province_key), (city_name, province_name, motivo) in _LOCATION_PROVINCE_OVERRIDES.items():
+        if explicit_province == province_name and _text_contains_location_alias(text, alias_key):
+            return {"ciudad": city_name, "provincia": province_name, "motivo": motivo}
+
     for rule in _LOCATION_ALIASES:
         for alias in rule["aliases"]:
             alias_key = _coordinate_location_key(alias)
             blocked_aliases = rule.get("blocked_if_contains") or ()
             if any(_text_contains_location_alias(text, blocked) for blocked in blocked_aliases):
+                continue
+            if (
+                explicit_province
+                and explicit_province != rule["provincia"]
+                and not rule.get("specific")
+                and _text_contains_location_alias(text, alias_key)
+            ):
                 continue
             if _has_alias_street_context(text, alias_key):
                 continue
@@ -4273,6 +4314,9 @@ CANONICAL_LOCATION_NAMES = {
     "santa fe": "Santa Fe",
     "san luis": "San Luis",
     "mendoza": "Mendoza",
+    "misiones": "Misiones",
+    "corrientes": "Corrientes",
+    "la pampa": "La Pampa",
 }
 
 
@@ -8348,6 +8392,8 @@ def _is_noise_property_url(url: str) -> bool:
     if low.startswith(("mailto:", "tel:", "whatsapp:", "javascript:", "#")):
         return True
     parsed = urlparse(low)
+    if re.search(r"\.(?:jpe?g|png|webp|gif|svg|ico|bmp|avif)(?:$|\?)", parsed.path or "", re.I):
+        return True
     if parsed.netloc in {
         "wa.me",
         "api.whatsapp.com",
@@ -8427,6 +8473,7 @@ def _looks_like_real_property_url(url: str) -> bool:
         r"(^|/)inmueble[-/]\d{3,}",
         r"(^|/)ficha[-/]\d{3,}",
         r"(^|/)detalle[-/]\d{3,}",
+        r"(^|/)propiedad-[^/?#]*(?:venta|alquiler)[^/?#]*-\d{2,}$",
         r"(^|/)[^/?#]*(?:venta|alquiler)[^/?#]*ficha[-_][a-z0-9_-]{3,}",
         r"(^|/)[^/?#]*ficha[-_][a-z]{2,}\d{2,}",
         r"(^|/)propiedades/(?:\d{3,}|[^/]{8,})",
