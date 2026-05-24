@@ -3607,6 +3607,20 @@ _LOCATION_ALIASES: List[Dict[str, Any]] = [
         "provincia": "Buenos Aires",
     },
     {
+        "aliases": ("berisso", "los talas berisso", "los talas"),
+        "ciudad": "Berisso",
+        "provincia": "Buenos Aires",
+        "motivo": "titulo_url_contiene_berisso",
+        "specific": True,
+    },
+    {
+        "aliases": ("la plata", "la-plata"),
+        "ciudad": "La Plata",
+        "provincia": "Buenos Aires",
+        "motivo": "titulo_url_contiene_la_plata",
+        "specific": True,
+    },
+    {
         "aliases": ("monsenor piaggio", "monse\u00f1or piaggio"),
         "ciudad": "Monse\u00f1or Piaggio",
         "provincia": "Buenos Aires",
@@ -3731,7 +3745,7 @@ def _text_contains_location_alias(text: str, alias: str) -> bool:
     return bool(re.search(rf"\b{re.escape(alias_key)}\b", text))
 
 
-AMBIGUOUS_LOCATION_STREET_NAMES = {"roldan", "brandsen"}
+AMBIGUOUS_LOCATION_STREET_NAMES = {"roldan", "brandsen", "montevideo"}
 
 _ARG_PROVINCE_KEYS = {
     "buenos aires": "Buenos Aires",
@@ -3752,6 +3766,8 @@ _ARG_PROVINCE_KEYS = {
 _LOCATION_PROVINCE_OVERRIDES = {
     ("ituzaingo", "corrientes"): ("Ituzaing\u00f3", "Corrientes", "titulo_url_contiene_ituzaingo_corrientes"),
     ("san vicente", "misiones"): ("San Vicente", "Misiones", "titulo_url_contiene_san_vicente_misiones"),
+    ("berisso", "buenos aires"): ("Berisso", "Buenos Aires", "titulo_url_contiene_berisso_buenos_aires"),
+    ("la plata", "buenos aires"): ("La Plata", "Buenos Aires", "titulo_url_contiene_la_plata_buenos_aires"),
 }
 
 
@@ -4278,6 +4294,8 @@ CANONICAL_LOCATION_NAMES = {
     "pineyro": "Pi\u00f1eyro",
     "pin eyro": "Pi\u00f1eyro",
     "remedios de escalada": "Remedios de Escalada",
+    "berisso": "Berisso",
+    "la plata": "La Plata",
     "san martin": "San Mart\u00edn",
     "monsenor piaggio": "Monse\u00f1or Piaggio",
     "monse or piaggio": "Monse\u00f1or Piaggio",
