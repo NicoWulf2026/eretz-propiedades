@@ -15436,21 +15436,15 @@ def run_retry_partial_extractions(
                     if retry_strategy == "sitemap_batch":
                         known_urls = _partial_retry_known_detail_urls(metadata)
                         discovered_total = len(known_urls)
-                        sitemap_tried: List[str] = []
-                        for base_url in _partial_retry_base_urls(item, metadata):
-                            prop_urls, project_urls, tried, _errors = _fetch_sitemap_urls_for_diagnosis(base_url, session)
-                            sitemap_tried.extend(tried)
-                            known_urls.extend(prop_urls + project_urls)
                         known_urls = _dedupe_url_list(known_urls, limit=2000)
                         # Count URLs that would be filtered as listing pages (not real property detail URLs)
                         _drun_filtered_listing = sum(1 for u in known_urls if not _partial_retry_is_detail_url(u))
                         selected, skipped = _filter_new_detail_urls(known_urls, existing_keys, batch_size_urls)
                         logger.info(
-                            "  DRY-RUN sitemap_batch | urls_metadata=%d urls_total=%d sitemaps_probados=%d"
+                            "  DRY-RUN sitemap_batch | urls_metadata=%d urls_total=%d sitemaps_probados=0(no_network_dry_run)"
                             " | candidatas=%d ya_guardadas=%d filtradas_listado=%d",
                             discovered_total,
                             len(known_urls),
-                            len(sitemap_tried),
                             len(selected),
                             skipped,
                             _drun_filtered_listing,
