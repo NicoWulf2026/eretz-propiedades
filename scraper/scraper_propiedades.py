@@ -135,6 +135,11 @@ RETRYABLE_SCRAPING_ERROR_TYPES = {
     "extraction_partial_timeout",
     "strategy_quality_failed",
     "sin_propiedades",
+    # Errores transitorios de red/Supabase: reintentables
+    "nav_error",
+    # Cierres manuales pendientes de fix de código ya aplicado
+    "manual_process_closed_for_code_fix",
+    "manual_process_closed_for_retry_cleanup",
 }
 
 DISCOVERY_FALSE_NEGATIVE_ERROR_TYPES = {
