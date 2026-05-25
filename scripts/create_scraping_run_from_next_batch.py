@@ -167,41 +167,30 @@ def fetch_existing_active_item_agency_ids(session: requests.Session, base_url: s
     return result
 
 
-def fetch_candidates(
-    session: requests.Session,
-    base_url: str,
-    key: str,
-    *,
-    desired_limit: int,
-    source_view: str,
+_CANDIDATE_SELECT = (
+    "inmobiliaria_id,nombre,ciudad,provincia,pais,web,url_listado,"
+    "cms_detectado,estrategia_scraping,total_propiedades,"
+    "total_propiedades_normalizado,prioridad_scraping_score,"
+    "prioridad_scraping,lista_para_batch,tipo_paginacion,"
+    "necesidades_detectadas,recomendacion,tiene_antibot"
+)
+_CANDIDATE_ORDER = (
+    "prioridad_scraping_score.desc.nullslast,"
+    "total_propiedades_normalizado.desc.nullslast,"
+    "inmobiliaria_id.asc"
+)
+
+
+def _filter_and_collect(
+    rows: List[Dict[str, Any]],
+    selected: List[Dict[str, Any]],
+    seen: Set[int],
     active_agency_ids: Set[int],
-) -> List[Dict[str, Any]]:
-    rows = fetch_all(
-        session,
-        base_url,
-        key,
-        source_view,
-        params={
-            "select": (
-                "inmobiliaria_id,nombre,ciudad,provincia,pais,web,url_listado,"
-                "cms_detectado,estrategia_scraping,total_propiedades,"
-                "total_propiedades_normalizado,prioridad_scraping_score,"
-                "prioridad_scraping,lista_para_batch,tipo_paginacion,"
-                "necesidades_detectadas,recomendacion"
-            ),
-            "lista_para_batch": "eq.true",
-            "order": (
-                "prioridad_scraping_score.desc.nullslast,"
-                "total_propiedades_normalizado.desc.nullslast,"
-                "inmobiliaria_id.asc"
-            ),
-        },
-        page_size=500,
-        max_rows=max(desired_limit * 5, desired_limit + 100),
-    )
-    selected: List[Dict[str, Any]] = []
-    seen: Set[int] = set()
+    desired_limit: int,
+) -> None:
     for row in rows:
+        if len(selected) >= desired_limit:
+            break
         try:
             agency_id = int(row["inmobiliaria_id"])
         except Exception:
@@ -210,10 +199,60 @@ def fetch_candidates(
             continue
         if not row.get("web") and not row.get("url_listado"):
             continue
+        if row.get("tiene_antibot"):
+            continue
         seen.add(agency_id)
         selected.append(row)
-        if len(selected) >= desired_limit:
-            break
+
+
+def fetch_candidates(
+    session: requests.Session,
+    base_url: str,
+    key: str,
+    *,
+    desired_limit: int,
+    source_view: str,
+    active_agency_ids: Set[int],
+    include_new: bool = False,
+) -> List[Dict[str, Any]]:
+    # Primera pasada: agencias lista_para_batch=true
+    rows = fetch_all(
+        session,
+        base_url,
+        key,
+        source_view,
+        params={
+            "select": _CANDIDATE_SELECT,
+            "lista_para_batch": "eq.true",
+            "order": _CANDIDATE_ORDER,
+        },
+        page_size=500,
+        max_rows=max(desired_limit * 5, desired_limit + 100),
+    )
+    selected: List[Dict[str, Any]] = []
+    seen: Set[int] = set()
+    _filter_and_collect(rows, selected, seen, active_agency_ids, desired_limit)
+
+    # Segunda pasada: agencias nuevas (nunca scrapeadas o sin estrategia) si faltan lugares
+    if include_new and len(selected) < desired_limit:
+        remaining = desired_limit - len(selected)
+        new_rows = fetch_all(
+            session,
+            base_url,
+            key,
+            source_view,
+            params={
+                "select": _CANDIDATE_SELECT,
+                "lista_para_batch": "eq.false",
+                "tiene_web": "eq.true",
+                "tiene_antibot": "eq.false",
+                "order": _CANDIDATE_ORDER,
+            },
+            page_size=500,
+            max_rows=max(remaining * 5, remaining + 50),
+        )
+        _filter_and_collect(new_rows, selected, seen, active_agency_ids, desired_limit)
+
     return selected
 
 
@@ -340,6 +379,10 @@ def main() -> None:
     parser.add_argument("--insert-batch-size", type=int, default=100, help="Tamanio de insert de items")
     parser.add_argument("--dry-run", action="store_true", help="No escribe en Supabase")
     parser.add_argument("--commit", action="store_true", help="Crear la run y los items")
+    parser.add_argument(
+        "--include-new", action="store_true",
+        help="Complementar con agencias nuevas (lista_para_batch=false, tienen web, sin antibot) si no hay suficientes listas",
+    )
     args = parser.parse_args()
 
     if args.limit <= 0:
@@ -362,6 +405,7 @@ def main() -> None:
         desired_limit=args.limit,
         source_view=args.source_view,
         active_agency_ids=active_agency_ids,
+        include_new=args.include_new,
     )
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     run_type = args.run_type or f"auto_batch_{args.limit}_{ts}"
@@ -377,6 +421,7 @@ def main() -> None:
     print(f"source_view={args.source_view}")
     print(f"requested_limit={args.limit}")
     print(f"active_pending_or_running_agencies={len(active_agency_ids)}")
+    print(f"include_new={args.include_new}")
     print(f"selected_candidates={len(candidates)}")
     print(f"run_type={run_type}")
     print("-" * 72)
