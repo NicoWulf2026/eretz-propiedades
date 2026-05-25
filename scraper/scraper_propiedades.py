@@ -90,6 +90,7 @@ CONTROL_ITEM_TIMEOUT_SECONDS = 180
 SIMPLE_ITEM_TIMEOUT_SECONDS = 90
 CUSTOM_OR_SITEMAP_ITEM_TIMEOUT_SECONDS = 240
 PLAYWRIGHT_ITEM_TIMEOUT_SECONDS = 300
+GEOCODING_MAX_SECONDS_PER_ITEM = 35
 STRATEGY_TIMEOUT_SECONDS: Dict[str, int] = {
     "tokko_api": 45,
     "tokko_html": 150,
@@ -13480,52 +13481,76 @@ def _save_queue_properties(
         sanitize_property_location(prop, None)
     propiedades_error = int(save_result.get("failed") or max(len(props) - total_ext, 0))
 
-    geo_count = 0
-    geocoding_skipped_by_budget = 0
+    geo_done = 0
+    geo_failed = 0
+    geo_skipped_no_addr = 0
+    geo_skipped_budget = 0
+    geo_already_has_coords = 0
+
+    # Presupuesto dedicado de geocoding: no consume todo el tiempo restante del item
+    _geo_deadline = time.time() + GEOCODING_MAX_SECONDS_PER_ITEM
+    if item_deadline is not None:
+        _geo_deadline = min(_geo_deadline, item_deadline - 6)
+
     for prop in props:
-        if item_deadline is not None and _deadline_remaining_seconds(item_deadline) <= 6:
-            geocoding_skipped_by_budget += 1
-            logger.info("  Geocoding omitido por presupuesto de item agotado")
-            break
+        if prop.get("latitud") is not None:
+            geo_already_has_coords += 1
+            continue
+        if not (prop.get("direccion") or prop.get("ciudad")):
+            geo_skipped_no_addr += 1
+            continue
+        if time.time() >= _geo_deadline:
+            geo_skipped_budget += 1
+            continue
         _check_deadline(item_deadline, "item")
-        if prop.get("latitud") is None and (prop.get("direccion") or prop.get("ciudad")):
-            lat, lon = geocodificar_direccion(
-                prop.get("direccion", ""),
-                prop.get("ciudad", ""),
-                prop.get("provincia", ""),
-            )
-            if lat and lon:
-                validation = validate_property_coordinate_context({
+        lat, lon = geocodificar_direccion(
+            prop.get("direccion", ""),
+            prop.get("ciudad", ""),
+            prop.get("provincia", ""),
+        )
+        if lat and lon:
+            validation = validate_property_coordinate_context({
+                **prop,
+                "latitud": lat,
+                "longitud": lon,
+            })
+            if not validation.get("valid"):
+                _record_coordinate_outlier(save_protection, {
                     **prop,
                     "latitud": lat,
                     "longitud": lon,
-                })
-                if not validation.get("valid"):
-                    _record_coordinate_outlier(save_protection, {
-                        **prop,
-                        "latitud": lat,
-                        "longitud": lon,
-                    }, validation)
-                    logger.info(
-                        "  Geocoding omitido por outlier | ciudad=%s provincia=%s lat=%s lon=%s hash=%s",
-                        prop.get("ciudad"),
-                        prop.get("provincia"),
-                        lat,
-                        lon,
-                        prop.get("hash_dedup"),
-                    )
-                    continue
-                try:
-                    db.session.patch(
-                        f"{SUPABASE_URL}/rest/v1/propiedades"
-                        f"?hash_dedup=eq.{prop['hash_dedup']}",
-                        headers=db._headers_minimal,
-                        json={"latitud": lat, "longitud": lon},
-                        timeout=10,
-                    )
-                    geo_count += 1
-                except Exception:
-                    pass
+                }, validation)
+                logger.info(
+                    "  Geocoding outlier | ciudad=%s provincia=%s lat=%s lon=%s hash=%s",
+                    prop.get("ciudad"),
+                    prop.get("provincia"),
+                    lat,
+                    lon,
+                    prop.get("hash_dedup"),
+                )
+                geo_failed += 1
+                continue
+            try:
+                db.session.patch(
+                    f"{SUPABASE_URL}/rest/v1/propiedades"
+                    f"?hash_dedup=eq.{prop['hash_dedup']}",
+                    headers=db._headers_minimal,
+                    json={"latitud": lat, "longitud": lon},
+                    timeout=10,
+                )
+                geo_done += 1
+            except Exception:
+                geo_failed += 1
+        else:
+            geo_failed += 1
+
+    geo_count = geo_done
+    geocoding_skipped_by_budget = geo_skipped_budget
+    if geo_done or geo_failed or geo_skipped_budget:
+        logger.info(
+            "  Geocoding | done=%d failed=%d pending=%d no_addr=%d ya_tiene=%d",
+            geo_done, geo_failed, geo_skipped_budget, geo_skipped_no_addr, geo_already_has_coords,
+        )
 
     inactivos = 0
     inactivos_omitidos_por_timeout = False
@@ -13549,6 +13574,11 @@ def _save_queue_properties(
         "propiedades_sin_cambios": int(save_result.get("unchanged") or 0),
         "propiedades_error": propiedades_error,
         "geocodificadas": geo_count,
+        "geocoding_done": geo_done,
+        "geocoding_failed": geo_failed,
+        "geocoding_pending": geo_skipped_budget,
+        "geocoding_skipped_no_addr": geo_skipped_no_addr,
+        "geocoding_already_has_coords": geo_already_has_coords,
         "geocoding_omitido_por_timeout": geocoding_skipped_by_budget,
         "propiedades_inactivas_marcadas": inactivos,
         "inactivos_omitidos_por_timeout": inactivos_omitidos_por_timeout,
@@ -13766,6 +13796,11 @@ def _process_scraping_control_item(
         completeness_after_save["retry_recommended"] = True
     metadata_extra = {
         "geocodificadas": counts["geocodificadas"],
+        "geocoding_done": counts.get("geocoding_done", counts["geocodificadas"]),
+        "geocoding_failed": counts.get("geocoding_failed", 0),
+        "geocoding_pending": counts.get("geocoding_pending", 0),
+        "geocoding_skipped_no_addr": counts.get("geocoding_skipped_no_addr", 0),
+        "geocoding_already_has_coords": counts.get("geocoding_already_has_coords", 0),
         "geocoding_omitido_por_timeout": counts.get("geocoding_omitido_por_timeout", 0),
         "propiedades_inactivas_marcadas": counts["propiedades_inactivas_marcadas"],
         "inactivos_omitidos_por_timeout": counts.get("inactivos_omitidos_por_timeout", False),
