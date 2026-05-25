@@ -2032,6 +2032,49 @@ class SupabasePropiedades:
             timeout=10,
         )
 
+    def _update_inmobiliaria_main_scraping_timestamps(
+        self,
+        inmobiliaria_id: Any,
+        *,
+        success: bool,
+        error_type: Optional[str] = None,
+    ) -> None:
+        if not inmobiliaria_id:
+            return
+        from datetime import timedelta
+        now_dt = datetime.now(timezone.utc)
+        if success:
+            days = 7
+        elif error_type in {"nav_error"}:
+            days = 1  # Supabase 500 intermitente — reintentar pronto
+        elif error_type in {"site_down_confirmed", "site_down", "empty_site"}:
+            days = 30
+        elif error_type in {"sin_propiedades", "no_property_links", "no_property_links_confirmed"}:
+            days = 14
+        elif error_type == "save_failed":
+            days = 3
+        else:
+            days = 7
+        proximo = (now_dt + timedelta(days=days)).isoformat()
+        try:
+            r = self.session.patch(
+                f"{SUPABASE_URL}/rest/v1/inmobiliarias_main",
+                headers=self._headers_minimal,
+                params={"id": f"eq.{inmobiliaria_id}"},
+                json={"ultimo_scraping": now_dt.isoformat(), "proximo_scraping": proximo},
+                timeout=10,
+            )
+            if r.status_code not in {200, 204}:
+                logger.warning(
+                    "_update_inmobiliaria_main: HTTP %s para inmobiliaria_id=%s",
+                    r.status_code, inmobiliaria_id,
+                )
+        except Exception as exc:
+            logger.warning(
+                "_update_inmobiliaria_main: excepcion para inmobiliaria_id=%s: %s",
+                inmobiliaria_id, exc,
+            )
+
     def _finish_item_success_direct_rest_fallback(
         self,
         item_id: Any,
@@ -14362,6 +14405,11 @@ def run_controlled_queue(
                             )
                             _closure_fallback_used = True  # Marca igual: el scraping fue exitoso
                     success += 1
+                    _canonical_id_success = (
+                        (result.get("metadata_json") or {}).get("canonical_resolution", {}).get("canonical_main_id")
+                        or item.get("inmobiliaria_id")
+                    )
+                    db._update_inmobiliaria_main_scraping_timestamps(_canonical_id_success, success=True)
                     total_detected += int(result.get("propiedades_detectadas") or 0)
                     total_new += int(result.get("propiedades_nuevas") or 0)
                     total_updated += int(result.get("propiedades_actualizadas") or 0)
@@ -14439,6 +14487,9 @@ def run_controlled_queue(
                         skipped_final_domain += 1
 
                     logger.error("Estado final: error (%s): %s", error_type, str(exc)[:500])
+                    db._update_inmobiliaria_main_scraping_timestamps(
+                        item.get("inmobiliaria_id"), success=False, error_type=error_type
+                    )
                     try:
                         db.finish_scraping_item_error(
                             item_id=item_id,
@@ -14756,6 +14807,11 @@ def run_retry_errors_queue(
                         )
                         _retry_closure_fallback_used = True  # Scraping fue exitoso igual
                 success += 1
+                _canonical_id_retry = (
+                    (result.get("metadata_json") or {}).get("canonical_resolution", {}).get("canonical_main_id")
+                    or item.get("inmobiliaria_id")
+                )
+                db._update_inmobiliaria_main_scraping_timestamps(_canonical_id_retry, success=True)
                 total_detected += int(result.get("propiedades_detectadas") or 0)
                 total_new += int(result.get("propiedades_nuevas") or 0)
                 total_updated += int(result.get("propiedades_actualizadas") or 0)
@@ -14788,6 +14844,9 @@ def run_retry_errors_queue(
                     metadata["previous_error_type"] = item.get("error_type")
                 error_type = clasificar_error(exc)
                 logger.error("Retry error | item=%s | %s | %s", item_id, error_type, str(exc)[:500])
+                db._update_inmobiliaria_main_scraping_timestamps(
+                    item.get("inmobiliaria_id"), success=False, error_type=error_type
+                )
                 try:
                     db.finish_scraping_item_error(
                         item_id=item_id,
