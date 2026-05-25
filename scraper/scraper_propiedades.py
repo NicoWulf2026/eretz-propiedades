@@ -11990,6 +11990,17 @@ def run_best_strategy(
             allow_playwright=allow_playwright_fallback,
             allow_network_interception=allow_network_interception,
         )
+    except StrategyTimeoutError as _diag_exc:
+        if isinstance(_diag_exc, ItemTimeoutError) or not is_tokko_candidate:
+            raise
+        diagnostic = {
+            "classification": "timeout_diagnose_url",
+            "extractores_posibles": ["tokko_html"],
+            "tecnologias_detectadas": ["tokko_html_cms_hint"],
+            "posibles_urls_detalle": [],
+            "expected_properties_count": inmob.get("total_propiedades_normalizado"),
+            "motivo_no_scrapeable": "timeout_diagnose_url",
+        }
     finally:
         if previous_deadline is None:
             inmob.pop("_strategy_deadline", None)
@@ -12026,7 +12037,7 @@ def run_best_strategy(
         "playwright_html",
     }
     if (
-        allow_explicit_strategy_fallback
+        (allow_explicit_strategy_fallback or is_tokko_candidate)
         and not strategy_plan.get("primary_strategy")
         and estrategia_guardada in supported_explicit_strategies
     ):
