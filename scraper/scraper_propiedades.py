@@ -11144,6 +11144,44 @@ def diagnose_inmob(
     return diagnostic
 
 
+_MULTI_AGENCY_MARKETPLACE_HOSTS = (
+    "inmoup.com.ar",
+    "argenprop.com",
+    "properati.com",
+    "properati.com.ar",
+    "zonaprop.com.ar",
+    "mercadolibre.com",
+    "mercadolibre.com.ar",
+    "mudafy.com",
+    "mudafy.com.ar",
+    "bienesonline.com",
+    "remax.com.ar",
+)
+
+
+def _diagnostic_is_multi_agency_marketplace(diagnostic: Dict[str, Any]) -> bool:
+    """Detecta si el final_url pertenece a un marketplace multi-agency conocido.
+
+    En esos sitios, el sitemap general devuelve TODAS las propiedades del marketplace,
+    no solo las de la agencia. No se debe usar ese sitemap_count como expected.
+    """
+    candidate_urls = (
+        diagnostic.get("final_url"),
+        diagnostic.get("url_usada"),
+    )
+    for url in candidate_urls:
+        if not url:
+            continue
+        try:
+            host = urlparse(str(url)).netloc.lower().lstrip("www.")
+        except Exception:
+            continue
+        for marketplace in _MULTI_AGENCY_MARKETPLACE_HOSTS:
+            if host == marketplace or host.endswith("." + marketplace):
+                return True
+    return False
+
+
 def _diagnostic_expected_property_count(diagnostic: Dict[str, Any]) -> int:
     """Estimacion conservadora para quality scoring.
 
@@ -11165,6 +11203,17 @@ def _diagnostic_expected_property_count(diagnostic: Dict[str, Any]) -> int:
         # "propiedades". Sin sitemap que lo confirme, no usamos ese numero gigante
         # como total esperado.
         visible_count = 0
+    # Guardrail: sitios multi-agency (inmoup, argenprop, mudafy, etc.) devuelven
+    # el sitemap del marketplace entero, no solo de la agencia. No se debe inflar
+    # el expected con ese count. Solo confiar en cards/urls que SI provienen del
+    # listado especifico de la agencia.
+    if sitemap_count >= 500 and _diagnostic_is_multi_agency_marketplace(diagnostic):
+        sitemap_count = 0
+    # Guardrail generico: sitemap_count desproporcionado vs. evidencia local.
+    # Si sitemap dice miles pero no hay cards ni urls visibles que lo respalden,
+    # probablemente sea un sitemap externo/global y no represente a la agencia.
+    if sitemap_count > 2000 and url_signal < 50 and visible_count < 50 and cards < 50:
+        sitemap_count = max(url_signal, visible_count, cards, 50)
     if visible_count >= 5:
         return max(visible_count, url_signal)
     if sitemap_count >= 5:
@@ -13165,6 +13214,31 @@ def _listing_url_not_property_detail_reason(url: Any, url_normalizada: Any = Non
         _path_from_property_url_candidate(url_normalizada),
     ]
     listing_roots = ("propiedades", "inmuebles", "venta", "ventas", "alquiler", "alquileres")
+    # Patrones de URL claramente NO son fichas (categorías WP, búsquedas, taxonomías)
+    wp_taxonomy_re = re.compile(r"(?:^|/)(property[-_]?category|property[-_]?action[-_]?category|property[-_]?type|property[-_]?status|category|tag|author|page|paged)/", re.I)
+    # Operacion en query string (?tipo=, ?operacion=) sin ID numerico real
+    operation_query_re = re.compile(r"[?&](tipo|operacion|categoria|category|filtro|filter)=", re.I)
+    for raw_url in (url, url_normalizada):
+        if not raw_url:
+            continue
+        url_str = str(raw_url)
+        if wp_taxonomy_re.search(url_str):
+            # No es ficha si la URL contiene segmento de taxonomia y NO tiene ID numerico de propiedad
+            # (las fichas reales casi siempre tienen un ID de 3+ digitos)
+            tail = url_str.split("?", 1)[0]
+            if not re.search(r"/\d{4,}", tail):
+                return f"listing_url_taxonomy:{url_str[:120]}"
+        if operation_query_re.search(url_str) and not re.search(r"\b(id|prop_id|property_id)=\d{3,}", url_str):
+            # Ej: ?tipo=campos, ?operacion=alquiler - sin id de propiedad real
+            return f"listing_url_query_filter:{url_str[:120]}"
+    # /busqueda y derivados (en cualquier segmento del path, no solo al inicio)
+    for path in paths:
+        if not path:
+            continue
+        if re.search(r"(?:^|/)(?:busqueda|busquedas|search|buscar)(?:/|$)", path):
+            # No es listado si hay un ID numerico de propiedad despues
+            if not re.search(r"/\d{4,}", path):
+                return f"listing_url_search:{path}"
     for path in paths:
         if not path:
             continue
@@ -13174,6 +13248,14 @@ def _listing_url_not_property_detail_reason(url: Any, url_normalizada: Any = Non
             return f"listing_url_paginated:{path}"
         if re.fullmatch(r"(propiedades|inmuebles|venta|ventas|alquiler|alquileres)/(?:page|pagina)/\d+", path):
             return f"listing_url_paginated:{path}"
+        # /propiedades/alquileres, /propiedades/ventas - listados de operación bajo propiedades
+        operation_listing_re = re.fullmatch(r"(propiedades|inmuebles)/(ventas?|alquileres?|temporal(?:es)?|emprendimientos?)", path)
+        if operation_listing_re:
+            return f"listing_url_operation:{path}"
+        # /propiedades/alquileres/departamentos, /propiedades/ventas/casas - filtros tipo+operacion en path
+        operation_hierarchy_re = re.fullmatch(r"(propiedades|inmuebles)/(ventas?|alquileres?|temporal(?:es)?)/(casas?|departamentos?|deptos?|dptos?|lotes?|terrenos?|locales?|oficinas?|cocheras?|galpones?|campos?)(?:/.*)?", path)
+        if operation_hierarchy_re and not re.search(r"\d{4,}", path):
+            return f"listing_url_operation_hierarchy:{path}"
         # /propiedades/{slug-ciudad-o-zona} — filtro geográfico, no ficha real.
         # Ej: /propiedades/banfield, /propiedades/lanus-este → descartado.
         # Ej: /propiedades/departamento-en-venta → NO descartado (tiene tipo/operación).
@@ -13213,7 +13295,19 @@ def _invalid_listing_property_reason(prop: Dict[str, Any]) -> Optional[str]:
     reason = _listing_url_not_property_detail_reason(prop.get("url"), prop.get("url_normalizada"))
     if not reason:
         return None
-    if reason.startswith("listing_url_filter_hierarchy:"):
+    # Reasons inequivocos: URL es claramente listado/taxonomia/busqueda, no ficha
+    unequivocal_prefixes = (
+        "listing_url_filter_hierarchy:",
+        "listing_url_taxonomy:",
+        "listing_url_query_filter:",
+        "listing_url_search:",
+        "listing_url_operation:",
+        "listing_url_operation_hierarchy:",
+        "listing_url_filter_combo:",
+        "listing_url_paginated:",
+        "listing_url:",
+    )
+    if any(reason.startswith(p) for p in unequivocal_prefixes):
         return reason
 
     title_key = re.sub(
