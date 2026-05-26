@@ -13215,29 +13215,42 @@ def _listing_url_not_property_detail_reason(url: Any, url_normalizada: Any = Non
     ]
     listing_roots = ("propiedades", "inmuebles", "venta", "ventas", "alquiler", "alquileres")
     # Patrones de URL claramente NO son fichas (categorías WP, búsquedas, taxonomías)
-    wp_taxonomy_re = re.compile(r"(?:^|/)(property[-_]?category|property[-_]?action[-_]?category|property[-_]?type|property[-_]?status|category|tag|author|page|paged)/", re.I)
+    # NOTA: NO se incluyen aqui `page/paged` solos porque algunos CMS arman URLs
+    # validas tipo `/index.php/page/N/propiedad-X` donde el ID real esta en el
+    # ultimo segmento. Para listados de WP por categoria, los segmentos suelen ser
+    # `property-category`, `category`, `tag`, etc.
+    wp_taxonomy_re = re.compile(r"(?:^|/)(property[-_]?category|property[-_]?action[-_]?category|property[-_]?type|property[-_]?status|category|tag|author)/", re.I)
     # Operacion en query string (?tipo=, ?operacion=) sin ID numerico real
     operation_query_re = re.compile(r"[?&](tipo|operacion|categoria|category|filtro|filter)=", re.I)
+    # ID de propiedad en query string (cubre id, idInmueble, prop_id, property_id, idProp, etc.)
+    property_id_qs_re = re.compile(r"[?&](?:id|id[-_]?inmueble|id[-_]?propiedad|id[-_]?prop|prop[-_]?id|property[-_]?id|propid|ficha[-_]?id)=\d{2,}", re.I)
+    # Detector de ID de propiedad en path (no solo /NNNN; acepta /1234, -1234)
+    has_property_id_path_re = re.compile(r"(?:[-_/]|^)\d{3,}", re.I)
     for raw_url in (url, url_normalizada):
         if not raw_url:
             continue
         url_str = str(raw_url)
+        # Ignorar query string para el chequeo de ID de path
+        path_part = url_str.split("?", 1)[0]
+        has_id_in_path = bool(has_property_id_path_re.search(path_part))
+        has_id_in_qs = bool(property_id_qs_re.search(url_str))
         if wp_taxonomy_re.search(url_str):
-            # No es ficha si la URL contiene segmento de taxonomia y NO tiene ID numerico de propiedad
-            # (las fichas reales casi siempre tienen un ID de 3+ digitos)
-            tail = url_str.split("?", 1)[0]
-            if not re.search(r"/\d{4,}", tail):
+            # No es ficha si la URL contiene segmento de taxonomia y no hay ID
+            # numerico que represente una propiedad real (acepta /1234, -1234, id=1234).
+            if not has_id_in_path and not has_id_in_qs:
                 return f"listing_url_taxonomy:{url_str[:120]}"
-        if operation_query_re.search(url_str) and not re.search(r"\b(id|prop_id|property_id)=\d{3,}", url_str):
+        if operation_query_re.search(url_str):
             # Ej: ?tipo=campos, ?operacion=alquiler - sin id de propiedad real
-            return f"listing_url_query_filter:{url_str[:120]}"
+            if not has_id_in_path and not has_id_in_qs:
+                return f"listing_url_query_filter:{url_str[:120]}"
     # /busqueda y derivados (en cualquier segmento del path, no solo al inicio)
     for path in paths:
         if not path:
             continue
         if re.search(r"(?:^|/)(?:busqueda|busquedas|search|buscar)(?:/|$)", path):
-            # No es listado si hay un ID numerico de propiedad despues
-            if not re.search(r"/\d{4,}", path):
+            # No es listado si hay un ID numerico de propiedad (3+ digitos)
+            # en cualquier posicion del path despues de busqueda. Acepta /1234 o -1234.
+            if not re.search(r"(?:[-_/]|id=)\d{3,}", path):
                 return f"listing_url_search:{path}"
     for path in paths:
         if not path:
@@ -13253,9 +13266,16 @@ def _listing_url_not_property_detail_reason(url: Any, url_normalizada: Any = Non
         if operation_listing_re:
             return f"listing_url_operation:{path}"
         # /propiedades/alquileres/departamentos, /propiedades/ventas/casas - filtros tipo+operacion en path
-        operation_hierarchy_re = re.fullmatch(r"(propiedades|inmuebles)/(ventas?|alquileres?|temporal(?:es)?)/(casas?|departamentos?|deptos?|dptos?|lotes?|terrenos?|locales?|oficinas?|cocheras?|galpones?|campos?)(?:/.*)?", path)
-        if operation_hierarchy_re and not re.search(r"\d{4,}", path):
-            return f"listing_url_operation_hierarchy:{path}"
+        # Excluye casos donde despues del tipo hay un slug largo de propiedad real
+        # (ej: /propiedades/venta/departamento/se-vende-departamento-en-san-luis con slug largo)
+        operation_hierarchy_re = re.fullmatch(r"(propiedades|inmuebles)/(ventas?|alquileres?|temporal(?:es)?)/(casas?|departamentos?|deptos?|dptos?|lotes?|terrenos?|locales?|oficinas?|cocheras?|galpones?|campos?)(?:/(.*))?", path)
+        if operation_hierarchy_re and not re.search(r"\d{3,}", path):
+            tail_after_type = operation_hierarchy_re.group(4) or ""
+            tail_after_type = tail_after_type.strip("/")
+            # Si despues del tipo hay un slug largo con varios guiones (>= 3 palabras
+            # separadas por guion) es una ficha real con titulo descriptivo, no listado.
+            if not tail_after_type or tail_after_type.count("-") < 3:
+                return f"listing_url_operation_hierarchy:{path}"
         # /propiedades/{slug-ciudad-o-zona} — filtro geográfico, no ficha real.
         # Ej: /propiedades/banfield, /propiedades/lanus-este → descartado.
         # Ej: /propiedades/departamento-en-venta → NO descartado (tiene tipo/operación).
