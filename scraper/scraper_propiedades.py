@@ -1912,36 +1912,46 @@ class SupabasePropiedades:
             raise RuntimeError(f"No se pudo actualizar metadata parcial item {item_id}: {r.status_code} {r.text[:500]}")
 
     def load_invalid_listing_property_candidates(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
-        """Busca propiedades historicas que en realidad son paginas de listado guardadas por error."""
+        """Busca propiedades historicas que en realidad son paginas de listado guardadas por error.
+
+        Usa keyset pagination (id < last_id) en vez de offset, porque Supabase
+        devuelve HTTP 500 al paginar muy profundo con OFFSET sobre tablas grandes.
+        """
         candidates: List[Dict[str, Any]] = []
-        offset = 0
+        last_id: Optional[int] = None
         page_size = 1000
         while True:
+            params = {
+                "select": "id,inmobiliaria_id,titulo,url,url_normalizada,precio,descripcion,direccion,created_at",
+                "order": "id.desc",
+                "limit": page_size,
+            }
+            if last_id is not None:
+                params["id"] = f"lt.{last_id}"
             r = self.session.get(
                 f"{SUPABASE_URL}/rest/v1/propiedades",
                 headers=self._headers,
-                params={
-                    "select": "id,inmobiliaria_id,titulo,url,url_normalizada,precio,descripcion,direccion,created_at",
-                    "order": "id.desc",
-                    "limit": page_size,
-                    "offset": offset,
-                },
+                params=params,
                 timeout=30,
             )
             if r.status_code != 200:
                 raise RuntimeError(f"No se pudieron leer propiedades para repair listing: {r.status_code} {r.text[:300]}")
             rows = r.json()
+            if not rows:
+                break
             for row in rows:
                 reason = _invalid_listing_property_reason(row)
-                if not reason:
-                    continue
-                row["motivo"] = reason
-                candidates.append(row)
-                if limit and len(candidates) >= limit:
-                    return candidates
+                if reason:
+                    row["motivo"] = reason
+                    candidates.append(row)
+                    if limit and len(candidates) >= limit:
+                        return candidates
+            try:
+                last_id = int(rows[-1]["id"])
+            except Exception:
+                break
             if len(rows) < page_size:
                 break
-            offset += page_size
         return candidates
 
     def delete_properties_by_ids(self, ids: List[Any]) -> int:
