@@ -8510,9 +8510,22 @@ def _looks_like_real_property_url(url: str) -> bool:
         "propiedad", "idprop", "id_prop", "id_propiedad", "propiedad_id",
         "inmueble", "idinmueble", "id_inmueble", "inmueble_id",
         "idaviso", "id_aviso", "id_ficha", "ficha_id",
+        "oferta", "id_oferta", "oferta_id", "ofertaid",
+        "aviso", "ad_id", "adid", "publicacion", "id_publicacion",
+        "cod", "codigo", "id_codigo", "ref", "referencia",
     }
+    if any(re.fullmatch(r"[A-Za-z0-9_-]{3,}", query.get(key, "")) and re.search(r"\d", query.get(key, "")) for key in detail_query_keys):
+        return True
     if any(re.fullmatch(r"\d{2,}", query.get(key, "")) for key in detail_query_keys):
         return True
+    # Paths tipo ficha.aspx / ficha.php / detalle.aspx / detalle.php con cualquier
+    # query identificadora (oferta=, id=, ref=, codigo=, etc.) que tenga digitos
+    detail_path_re = re.search(r"(?:^|/)(ficha|detalle|property|propiedad|inmueble|aviso|publicacion|prop)\.(?:aspx|php|asp|jsp|html?)$", path, re.I)
+    if detail_path_re and query:
+        # Cualquier valor del query con >=3 chars y al menos un digito -> probable ID
+        for v in query.values():
+            if v and re.search(r"\d", v) and 3 <= len(v) <= 40:
+                return True
     if not path:
         return False
     if path in {
