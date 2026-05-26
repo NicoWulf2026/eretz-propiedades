@@ -8519,13 +8519,23 @@ def _looks_like_real_property_url(url: str) -> bool:
     if any(re.fullmatch(r"\d{2,}", query.get(key, "")) for key in detail_query_keys):
         return True
     # Paths tipo ficha.aspx / ficha.php / detalle.aspx / detalle.php con cualquier
-    # query identificadora (oferta=, id=, ref=, codigo=, etc.) que tenga digitos
-    detail_path_re = re.search(r"(?:^|/)(ficha|detalle|property|propiedad|inmueble|aviso|publicacion|prop)\.(?:aspx|php|asp|jsp|html?)$", path, re.I)
+    # query identificadora (oferta=, id=, ref=, codigo=, etc.) que tenga digitos.
+    # Soporta tambien guiones (propertie-details, property-details, prop-details).
+    detail_path_re = re.search(
+        r"(?:^|/)(?:ficha|detalle|property|propiedad|inmueble|aviso|publicacion|prop|"
+        r"propertie[-_]details?|property[-_]details?|prop[-_]details?|inmueble[-_]details?|"
+        r"property[-_]single|propiedad[-_]detalle|detalle[-_]propiedad|detalle[-_]inmueble|"
+        r"show[-_]property|view[-_]property|ver[-_]propiedad|ver[-_]inmueble)"
+        r"\.(?:aspx|php|asp|jsp|html?)$",
+        path, re.I,
+    )
     if detail_path_re and query:
-        # Cualquier valor del query con >=3 chars y al menos un digito -> probable ID
-        for v in query.values():
-            if v and re.search(r"\d", v) and 3 <= len(v) <= 40:
-                return True
+        # Si hay ID numerico o codigo alfanumerico con digitos, es detalle.
+        # Tambien aceptamos id= directamente cuando hay path de detalle.
+        if any(v and re.fullmatch(r"\d{2,}", v) for v in query.values()):
+            return True
+        if any(v and re.search(r"\d", v) and 3 <= len(v) <= 40 for v in query.values()):
+            return True
     if not path:
         return False
     if path in {
@@ -8581,6 +8591,9 @@ def _extract_generic_property_links(html: str, current_url: str) -> List[str]:
         "a[href*='propiedad']", "a[href*='propiedades']",
         "a[href*='inmueble']", "a[href*='inmuebles']",
         "a[href*='ficha']", "a[href*='detalle']",
+        "a[href*='property']", "a[href*='properties']",
+        "a[href*='propertie']", "a[href*='details']",
+        "a[href*='aviso']", "a[href*='publicacion']",
         "a[href*='/p/']", "a[href*='venta']", "a[href*='alquiler']",
         "[class*='property'] a[href]", "[class*='propiedad'] a[href]",
         "[class*='inmueble'] a[href]", "[class*='listing'] a[href]",
