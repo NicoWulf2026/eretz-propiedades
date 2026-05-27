@@ -63,8 +63,18 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Constantes
 # ---------------------------------------------------------------------------
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return str(raw).strip().lower() in {"1", "true", "t", "yes", "y", "on"}
+
+
 SUPABASE_URL: str = os.environ.get("SUPABASE_URL", "").rstrip("/")
 SUPABASE_KEY: str = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "") or os.environ.get("SUPABASE_KEY", "")
+USE_INTERNAL_DB: bool = _env_flag("USE_INTERNAL_DB", default=False)
+INTERNAL_DB_URL: str = os.environ.get("INTERNAL_DB_URL", "").strip()
+INTERNAL_DB_ENABLED: bool = USE_INTERNAL_DB and bool(INTERNAL_DB_URL)
 
 TOKKO_API_BASE = "https://api.tokkobroker.com/api/v1/property/"
 TOKKO_LIMIT    = 100
@@ -1048,6 +1058,186 @@ def _effective_final_url(url_usada: Optional[str], strategy_meta: Optional[Dict[
 # Supabase client
 # ---------------------------------------------------------------------------
 
+INTERNAL_QUEUE_TABLES = {
+    "scraping_runs",
+    "scraping_run_items",
+    "geocoding_results",
+    "inmobiliarias_staging",
+}
+
+
+class InternalDBClient:
+    """Cliente opcional para tablas internas en PostgreSQL/Neon.
+
+    La base publica de Supabase sigue siendo canonica para propiedades,
+    inmobiliarias_main y vistas de frontend. Esta clase solo se usa si
+    USE_INTERNAL_DB=true e INTERNAL_DB_URL esta seteado; si no, el scraper
+    conserva el flujo actual 100% Supabase. La base interna requiere schema
+    y funciones RPC compatibles antes de activarse.
+    """
+
+    _RPC_ARGUMENTS = {
+        "claim_next_scraping_item": [],
+        "retry_scraping_item": ["item_id"],
+        "start_scraping_item": ["item_id"],
+        "close_scraping_run_if_finished": ["run_id"],
+        "finish_scraping_item_success": [
+            "item_id",
+            "propiedades_detectadas",
+            "propiedades_nuevas",
+            "propiedades_actualizadas",
+            "propiedades_sin_cambios",
+            "propiedades_error",
+            "final_url",
+            "metadata_json",
+        ],
+        "finish_scraping_item_error": [
+            "item_id",
+            "error_message",
+            "error_type",
+            "http_status",
+            "final_url",
+            "metadata_json",
+        ],
+    }
+
+    def __init__(self, db_url: str) -> None:
+        self.db_url = (db_url or "").strip()
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.db_url)
+
+    def _connect(self):
+        if not self.enabled:
+            raise RuntimeError("INTERNAL_DB_URL no esta configurado")
+        try:
+            import psycopg  # type: ignore
+            from psycopg.rows import dict_row  # type: ignore
+        except ImportError as exc:
+            raise RuntimeError(
+                "USE_INTERNAL_DB=true e INTERNAL_DB_URL esta configurado, pero falta instalar psycopg. "
+                "Instalar psycopg/psycopg-binary antes de activar la base interna."
+            ) from exc
+        return psycopg.connect(self.db_url, row_factory=dict_row)
+
+    @staticmethod
+    def _json_value(value: Any) -> Any:
+        if isinstance(value, (dict, list)):
+            try:
+                from psycopg.types.json import Jsonb  # type: ignore
+                return Jsonb(value)
+            except Exception:
+                return json.dumps(value, ensure_ascii=False)
+        return value
+
+    @staticmethod
+    def _safe_identifier(name: str) -> str:
+        if not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", str(name or "")):
+            raise ValueError(f"Identificador SQL interno invalido: {name}")
+        return name
+
+    @staticmethod
+    def _where_from_filters(filters: Dict[str, Any]) -> Tuple[str, List[Any]]:
+        clauses: List[str] = []
+        values: List[Any] = []
+        for column, raw in (filters or {}).items():
+            column_sql = InternalDBClient._safe_identifier(column)
+            value = str(raw)
+            if value.startswith("eq."):
+                clauses.append(f"{column_sql} = %s")
+                values.append(value[3:])
+            elif value == "not.is.null":
+                clauses.append(f"{column_sql} IS NOT NULL")
+            elif value == "is.null":
+                clauses.append(f"{column_sql} IS NULL")
+            elif value.startswith("in.(") and value.endswith(")"):
+                entries = [entry.strip() for entry in value[4:-1].split(",") if entry.strip()]
+                if entries:
+                    placeholders = ",".join(["%s"] * len(entries))
+                    clauses.append(f"{column_sql} IN ({placeholders})")
+                    values.extend(entries)
+            else:
+                raise ValueError(f"Filtro interno no soportado: {column}={raw}")
+        return (" WHERE " + " AND ".join(clauses)) if clauses else "", values
+
+    @staticmethod
+    def _order_sql(order: Optional[str]) -> str:
+        if not order:
+            return ""
+        fragments: List[str] = []
+        for raw_part in str(order).split(","):
+            part = raw_part.strip()
+            if not part:
+                continue
+            bits = [bit for bit in part.split(".") if bit]
+            column = InternalDBClient._safe_identifier(bits[0])
+            direction = "DESC" if any(bit.lower() == "desc" for bit in bits[1:]) else "ASC"
+            fragments.append(f"{column} {direction}")
+        return " ORDER BY " + ", ".join(fragments) if fragments else ""
+
+    def fetch_rows(
+        self,
+        table: str,
+        *,
+        select: str,
+        filters: Optional[Dict[str, Any]] = None,
+        order: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        table_sql = self._safe_identifier(table)
+        if table_sql not in INTERNAL_QUEUE_TABLES:
+            raise ValueError(f"Tabla no habilitada para base interna: {table_sql}")
+        columns = "*" if select == "*" else ", ".join(self._safe_identifier(col.strip()) for col in select.split(",") if col.strip())
+        where_sql, values = self._where_from_filters(filters or {})
+        order_sql = self._order_sql(order)
+        limit_sql = ""
+        if limit is not None:
+            limit_sql = " LIMIT %s"
+            values.append(int(limit))
+        query = f"SELECT {columns} FROM public.{table_sql}{where_sql}{order_sql}{limit_sql}"
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, values)
+                return [dict(row) for row in cur.fetchall()]
+
+    def patch_row_by_id(self, table: str, row_id: Any, payload: Dict[str, Any]) -> None:
+        table_sql = self._safe_identifier(table)
+        if table_sql not in INTERNAL_QUEUE_TABLES:
+            raise ValueError(f"Tabla no habilitada para base interna: {table_sql}")
+        if not payload:
+            return
+        assignments: List[str] = []
+        values: List[Any] = []
+        for key, value in payload.items():
+            assignments.append(f"{self._safe_identifier(key)} = %s")
+            values.append(self._json_value(value))
+        values.append(row_id)
+        query = f"UPDATE public.{table_sql} SET {', '.join(assignments)} WHERE id = %s"
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, values)
+            conn.commit()
+
+    def call_function(self, function_name: str, payload: Optional[Dict[str, Any]] = None) -> Any:
+        function_sql = self._safe_identifier(function_name)
+        if function_sql not in self._RPC_ARGUMENTS:
+            raise ValueError(f"Funcion interna no habilitada: {function_sql}")
+        payload = payload or {}
+        arg_names = self._RPC_ARGUMENTS[function_sql]
+        values = [self._json_value(payload.get(name)) for name in arg_names]
+        placeholders = ", ".join(["%s"] * len(values))
+        query = f"SELECT * FROM public.{function_sql}({placeholders})"
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, values)
+                if cur.description is None:
+                    return None
+                rows = [dict(row) for row in cur.fetchall()]
+            conn.commit()
+        return rows
+
+
 class SupabasePropiedades:
     """Cliente Supabase orientado a las tablas propiedades y scraping_jobs."""
 
@@ -1105,11 +1295,21 @@ class SupabasePropiedades:
     _SCRAPING_AGENCY_COLUMNS = {"id", "nombre", "web", "ciudad", "provincia"}
     _OPTIONAL_SCRAPING_AGENCY_COLUMNS = {"pais", "fuente", "estado_scraping"}
     _scraping_agency_columns_cache: Optional[set] = None
+    _internal_db_state_logged = False
 
     def __init__(self) -> None:
         if not SUPABASE_URL or not SUPABASE_KEY:
             raise RuntimeError("SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY son requeridas en .env")
         self.session = self._make_session()
+        self.internal_db = InternalDBClient(INTERNAL_DB_URL) if INTERNAL_DB_ENABLED else None
+        if not SupabasePropiedades._internal_db_state_logged:
+            if INTERNAL_DB_ENABLED:
+                logger.info("[internal-db] enabled: using INTERNAL_DB_URL for queue tables")
+            elif INTERNAL_DB_URL and not USE_INTERNAL_DB:
+                logger.info("[internal-db] disabled: USE_INTERNAL_DB is not true; using Supabase for queue")
+            else:
+                logger.info("[internal-db] disabled: using Supabase for queue")
+            SupabasePropiedades._internal_db_state_logged = True
         self.last_save_protection_stats = _new_update_protection_stats()
         self.last_save_result = {"inserted": 0, "updated": 0, "unchanged": 0, "failed": 0, "errors": []}
         self._headers = {
@@ -1676,6 +1876,8 @@ class SupabasePropiedades:
 
     def _rpc(self, function_name: str, payload: Optional[Dict[str, Any]] = None,
              timeout: int = 15) -> Any:
+        if self.internal_db and self.internal_db.enabled:
+            return self.internal_db.call_function(function_name, payload or {})
         r = self.session.post(
             f"{SUPABASE_URL}/rest/v1/rpc/{function_name}",
             headers=self._headers_rpc,
@@ -1716,11 +1918,23 @@ class SupabasePropiedades:
 
     def load_pending_scraping_items_for_integrity(self, limit: int = 5) -> List[Dict[str, Any]]:
         """Read-only preview of pending queue items for ID-integrity dry runs."""
+        select_cols = "id,scraping_run_id,inmobiliaria_id,inmobiliaria_nombre,ciudad,provincia,web,url_listado,cms_detectado,status,final_url,metadata,created_at"
+        if self.internal_db and self.internal_db.enabled:
+            rows = self.internal_db.fetch_rows(
+                "scraping_run_items",
+                select=select_cols,
+                filters={"status": "eq.pending"},
+                order="created_at.asc",
+                limit=max(int(limit or 5), 1),
+            )
+            for row in rows:
+                row["scraping_run_item_id"] = row.get("id")
+            return rows[:max(int(limit or 5), 1)]
         r = self.session.get(
             f"{SUPABASE_URL}/rest/v1/scraping_run_items",
             headers=self._headers,
             params={
-                "select": "id,scraping_run_id,inmobiliaria_id,inmobiliaria_nombre,ciudad,provincia,web,url_listado,cms_detectado,status,final_url,metadata,created_at",
+                "select": select_cols,
                 "status": "eq.pending",
                 "order": "created_at.asc",
                 "limit": max(int(limit or 5), 1),
@@ -1744,24 +1958,35 @@ class SupabasePropiedades:
         fetch_limit = max(int(limit or 5) * 8, 25)
         if requested_agency_id is not None:
             fetch_limit = max(fetch_limit, 1000)
-        r = self.session.get(
-            f"{SUPABASE_URL}/rest/v1/scraping_run_items",
-            headers=self._headers,
-            params={
-                "select": (
-                    "id,scraping_run_id,inmobiliaria_id,inmobiliaria_nombre,ciudad,provincia,"
-                    "web,url_listado,cms_detectado,status,final_url,error_type,error_message,metadata,updated_at,created_at"
-                ),
-                "status": "eq.error",
-                "order": "updated_at.desc,id.desc",
-                "limit": fetch_limit,
-            },
-            timeout=15,
+        select_cols = (
+            "id,scraping_run_id,inmobiliaria_id,inmobiliaria_nombre,ciudad,provincia,"
+            "web,url_listado,cms_detectado,status,final_url,error_type,error_message,metadata,updated_at,created_at"
         )
-        if r.status_code != 200:
-            raise RuntimeError(f"No se pudieron leer items error para retry: {r.status_code} {r.text[:300]}")
+        if self.internal_db and self.internal_db.enabled:
+            raw_rows = self.internal_db.fetch_rows(
+                "scraping_run_items",
+                select=select_cols,
+                filters={"status": "eq.error"},
+                order="updated_at.desc,id.desc",
+                limit=fetch_limit,
+            )
+        else:
+            r = self.session.get(
+                f"{SUPABASE_URL}/rest/v1/scraping_run_items",
+                headers=self._headers,
+                params={
+                    "select": select_cols,
+                    "status": "eq.error",
+                    "order": "updated_at.desc,id.desc",
+                    "limit": fetch_limit,
+                },
+                timeout=15,
+            )
+            if r.status_code != 200:
+                raise RuntimeError(f"No se pudieron leer items error para retry: {r.status_code} {r.text[:300]}")
+            raw_rows = r.json()
         rows: List[Dict[str, Any]] = []
-        for row in r.json():
+        for row in raw_rows:
             error_type = str(row.get("error_type") or "").strip()
             web = str(row.get("web") or row.get("url_listado") or "").strip()
             if not web:
@@ -1809,28 +2034,39 @@ class SupabasePropiedades:
         requested_agency_id = int(canonical_agency_id) if canonical_agency_id is not None else None
         if requested_agency_id is not None:
             fetch_limit = max(fetch_limit, 1000)
-        r = self.session.get(
-            f"{SUPABASE_URL}/rest/v1/scraping_run_items",
-            headers=self._headers,
-            params={
-                "select": (
-                    "id,scraping_run_id,inmobiliaria_id,inmobiliaria_nombre,ciudad,provincia,"
-                    "web,url_listado,cms_detectado,status,final_url,error_type,error_message,"
-                    "metadata,updated_at,created_at"
-                ),
-                "metadata": "not.is.null",
-                "order": "updated_at.desc,id.desc",
-                "limit": fetch_limit,
-            },
-            timeout=20,
+        select_cols = (
+            "id,scraping_run_id,inmobiliaria_id,inmobiliaria_nombre,ciudad,provincia,"
+            "web,url_listado,cms_detectado,status,final_url,error_type,error_message,"
+            "metadata,updated_at,created_at"
         )
-        if r.status_code != 200:
-            raise RuntimeError(f"No se pudieron leer items parciales: {r.status_code} {r.text[:300]}")
+        if self.internal_db and self.internal_db.enabled:
+            raw_rows = self.internal_db.fetch_rows(
+                "scraping_run_items",
+                select=select_cols,
+                filters={"metadata": "not.is.null"},
+                order="updated_at.desc,id.desc",
+                limit=fetch_limit,
+            )
+        else:
+            r = self.session.get(
+                f"{SUPABASE_URL}/rest/v1/scraping_run_items",
+                headers=self._headers,
+                params={
+                    "select": select_cols,
+                    "metadata": "not.is.null",
+                    "order": "updated_at.desc,id.desc",
+                    "limit": fetch_limit,
+                },
+                timeout=20,
+            )
+            if r.status_code != 200:
+                raise RuntimeError(f"No se pudieron leer items parciales: {r.status_code} {r.text[:300]}")
+            raw_rows = r.json()
 
         # Strategies considered actionable for candidate selection
         _ACTIONABLE_STRATEGIES = {"sitemap_batch", "pagination_deep_scan"}
         rows: List[Dict[str, Any]] = []
-        for row in r.json():
+        for row in raw_rows:
             metadata = _coerce_metadata_dict(row.get("metadata"))
             status = _partial_retry_metadata_get(metadata, "extraction_completeness_status")
             retry_recommended = bool(_partial_retry_metadata_get(metadata, "retry_recommended"))
@@ -1945,6 +2181,9 @@ class SupabasePropiedades:
                 "propiedades_sin_cambios": int(counts.get("propiedades_sin_cambios") or 0),
                 "propiedades_error": int(counts.get("propiedades_error") or 0),
             })
+        if self.internal_db and self.internal_db.enabled:
+            self.internal_db.patch_row_by_id("scraping_run_items", item_id, payload)
+            return
         r = self.session.patch(
             f"{SUPABASE_URL}/rest/v1/scraping_run_items",
             headers=self._headers_minimal,
@@ -2148,6 +2387,9 @@ class SupabasePropiedades:
                 "final_url": final_url,
                 "metadata": metadata_json,
             }
+            if self.internal_db and self.internal_db.enabled:
+                self.internal_db.patch_row_by_id("scraping_run_items", item_id, patch)
+                return True
             r = self.session.patch(
                 f"{SUPABASE_URL}/rest/v1/scraping_run_items",
                 headers=self._headers_minimal,

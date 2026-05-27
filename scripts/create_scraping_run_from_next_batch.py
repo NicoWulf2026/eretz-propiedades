@@ -52,6 +52,13 @@ def load_env() -> None:
     load_env_file(REPO_ROOT / ".env.local")
 
 
+def env_flag(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return str(raw).strip().lower() in {"1", "true", "t", "yes", "y", "on"}
+
+
 def supabase_config() -> tuple[str, str]:
     load_env()
     base_url = (
@@ -68,6 +75,106 @@ def supabase_config() -> tuple[str, str]:
     if not base_url or not key:
         raise SystemExit("Faltan SUPABASE_URL/SUPABASE_KEY en el entorno.")
     return base_url, key
+
+
+def internal_db_config() -> tuple[bool, str]:
+    # La DB interna es deliberadamente opt-in para evitar activacion accidental:
+    # requiere USE_INTERNAL_DB=true e INTERNAL_DB_URL. Tambien requiere schema y
+    # funciones compatibles antes de usarse en corridas reales.
+    db_url = os.getenv("INTERNAL_DB_URL", "").strip()
+    enabled = env_flag("USE_INTERNAL_DB", default=False) and bool(db_url)
+    return enabled, db_url
+
+
+class InternalRunDBClient:
+    """Cliente minimo para crear scraping_runs/items en PostgreSQL interno."""
+
+    def __init__(self, db_url: str) -> None:
+        self.db_url = db_url
+
+    def _connect(self):
+        try:
+            import psycopg  # type: ignore
+            from psycopg.rows import dict_row  # type: ignore
+        except ImportError as exc:
+            raise RuntimeError(
+                "USE_INTERNAL_DB=true e INTERNAL_DB_URL esta configurado, "
+                "pero falta instalar psycopg/psycopg-binary."
+            ) from exc
+        return psycopg.connect(self.db_url, row_factory=dict_row)
+
+    @staticmethod
+    def _json_value(value: Any) -> Any:
+        if isinstance(value, (dict, list)):
+            try:
+                from psycopg.types.json import Jsonb  # type: ignore
+                return Jsonb(value)
+            except Exception:
+                return json.dumps(value, ensure_ascii=False)
+        return value
+
+    @staticmethod
+    def _insert_sql(table: str, payload: Dict[str, Any], *, returning: bool = False) -> tuple[str, List[Any]]:
+        columns = list(payload.keys())
+        placeholders = ", ".join(["%s"] * len(columns))
+        column_sql = ", ".join(columns)
+        suffix = " RETURNING id" if returning else ""
+        values = [InternalRunDBClient._json_value(payload[column]) for column in columns]
+        return f"INSERT INTO public.{table} ({column_sql}) VALUES ({placeholders}){suffix}", values
+
+    def fetch_existing_active_item_agency_ids(self) -> Set[int]:
+        query = (
+            "SELECT inmobiliaria_id FROM public.scraping_run_items "
+            "WHERE status IN ('pending', 'running') ORDER BY created_at ASC"
+        )
+        result: Set[int] = set()
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query)
+                for row in cur.fetchall():
+                    try:
+                        result.add(int(row["inmobiliaria_id"]))
+                    except Exception:
+                        continue
+        return result
+
+    def insert_run_and_items(
+        self,
+        *,
+        run_payload: Dict[str, Any],
+        item_candidates: Sequence[Dict[str, Any]],
+        insert_batch_size: int,
+    ) -> tuple[int, int]:
+        with self._connect() as conn:
+            try:
+                with conn.cursor() as cur:
+                    run_sql, run_values = self._insert_sql("scraping_runs", run_payload, returning=True)
+                    cur.execute(run_sql, run_values)
+                    run_row = cur.fetchone()
+                    if not run_row:
+                        raise RuntimeError("La DB interna no devolvio la scraping_run creada.")
+                    run_id = int(run_row["id"])
+                    item_payloads = build_item_payloads(run_id, item_candidates)
+                    inserted = 0
+                    for batch in chunks(item_payloads, insert_batch_size):
+                        if not batch:
+                            continue
+                        first = dict(batch[0])
+                        columns = list(first.keys())
+                        placeholders = ", ".join(["%s"] * len(columns))
+                        column_sql = ", ".join(columns)
+                        sql = f"INSERT INTO public.scraping_run_items ({column_sql}) VALUES ({placeholders})"
+                        values = [
+                            [self._json_value(dict(item).get(column)) for column in columns]
+                            for item in batch
+                        ]
+                        cur.executemany(sql, values)
+                        inserted += len(batch)
+                conn.commit()
+                return run_id, inserted
+            except Exception:
+                conn.rollback()
+                raise
 
 
 def make_headers(key: str, *, prefer: Optional[str] = None) -> Dict[str, str]:
@@ -395,9 +502,19 @@ def main() -> None:
         args.dry_run = True
 
     base_url, key = supabase_config()
+    use_internal_db, internal_db_url = internal_db_config()
     session = requests.Session()
+    internal_client = InternalRunDBClient(internal_db_url) if use_internal_db else None
 
-    active_agency_ids = fetch_existing_active_item_agency_ids(session, base_url, key)
+    if internal_client:
+        print("[internal-db] enabled: creating scraping_runs/items in INTERNAL_DB_URL")
+        active_agency_ids = internal_client.fetch_existing_active_item_agency_ids()
+    elif os.getenv("INTERNAL_DB_URL", "").strip() and not env_flag("USE_INTERNAL_DB", default=False):
+        print("[internal-db] disabled: USE_INTERNAL_DB is not true; creating queue in Supabase")
+        active_agency_ids = fetch_existing_active_item_agency_ids(session, base_url, key)
+    else:
+        print("[internal-db] disabled: creating queue in Supabase")
+        active_agency_ids = fetch_existing_active_item_agency_ids(session, base_url, key)
     candidates = fetch_candidates(
         session,
         base_url,
@@ -418,6 +535,7 @@ def main() -> None:
     print("=" * 72)
     print("CREATE SCRAPING RUN FROM NEXT BATCH")
     print(f"mode={'commit' if args.commit else 'dry-run'}")
+    print(f"queue_target={'internal_db' if internal_client else 'supabase'}")
     print(f"source_view={args.source_view}")
     print(f"requested_limit={args.limit}")
     print(f"active_pending_or_running_agencies={len(active_agency_ids)}")
@@ -442,14 +560,21 @@ def main() -> None:
         print("=" * 72)
         return
 
-    run_id, inserted = insert_run_and_items(
-        session,
-        base_url,
-        key,
-        run_payload=run_payload,
-        item_candidates=candidates,
-        insert_batch_size=args.insert_batch_size,
-    )
+    if internal_client:
+        run_id, inserted = internal_client.insert_run_and_items(
+            run_payload=run_payload,
+            item_candidates=candidates,
+            insert_batch_size=args.insert_batch_size,
+        )
+    else:
+        run_id, inserted = insert_run_and_items(
+            session,
+            base_url,
+            key,
+            run_payload=run_payload,
+            item_candidates=candidates,
+            insert_batch_size=args.insert_batch_size,
+        )
     print("-" * 72)
     print(f"CREATED run_id={run_id}")
     print(f"INSERTED scraping_run_items={inserted}")
