@@ -5383,10 +5383,17 @@ def strategy_tokko_api(inmob: Dict, session: requests.Session) -> List[Dict]:
                 timeout = max(1.0, _deadline_remaining_seconds(_strategy_deadline(inmob)))
             for future in as_completed(futures, timeout=timeout):
                 try:
-                    mapped.append(future.result())
+                    prop_mapped = future.result()
+                    mapped.append(prop_mapped)
+                    if prop_mapped:
+                        _record_partial_for_rescue(inmob, prop_mapped)
                 except Exception:
                     pass
         except TimeoutError as exc:
+            # Registrar los lotes mapeados ya acumulados antes de propagar.
+            # _record_partial_for_rescue ya se llamo arriba uno por uno, pero
+            # aseguramos que extend tambien sucede para resultados locales.
+            resultados.extend(p for p in mapped if p is not None)
             raise StrategyTimeoutError("timeout_tokko_api: excedio el limite configurado") from exc
         finally:
             executor.shutdown(wait=False, cancel_futures=True)
@@ -10029,6 +10036,7 @@ def strategy_html_playwright(inmob: Dict, pw_context) -> List[Dict]:
                 prop = _playwright_extract_detail(detail_page, durl, inmob)
                 if prop:
                     resultados.append(prop)
+                    _record_partial_for_rescue(inmob, prop)
                 time.sleep(min(random.uniform(0.3, 0.8), max(0.1, _deadline_remaining_seconds(_strategy_deadline(inmob)))))
             except StrategyTimeoutError as exc:
                 deadline_cut = True
@@ -13134,6 +13142,65 @@ def _scrape_queue_item(
             errores_relevantes.append(error_msg)
             logger.warning("Fallo URL %s: %s", url_usada, str(exc)[:250])
             if idx == len(urls):
+                # FAMILIA 4: rescate parcial cuando la estrategia fallo en la
+                # ultima URL probada pero acumulo props en el buffer (ej.
+                # StrategyTimeoutError de tokko_api/playwright que no llego al
+                # path ItemTimeoutError).
+                strategy_meta = dict(inmob.get("_scraper_metadata") or {})
+                partial_rescue = _drain_partial_rescue_buffer(inmob)
+                classified = clasificar_error(exc)
+                if partial_rescue and classified in {"item_timeout", "timeout"}:
+                    estrategia_partial = (
+                        strategy_meta.get("estrategia_final")
+                        or strategy_meta.get("estrategia_elegida")
+                        or strategy_meta.get("primary_strategy")
+                        or "deadline_continuation"
+                    )
+                    elapsed = round(time.time() - started_at, 2)
+                    strategy_meta["partial_extraction"] = True
+                    strategy_meta["partial_rescued_from_strategy_timeout"] = True
+                    strategy_meta["timeout_stage"] = (
+                        strategy_meta.get("timeout_stage") or "strategy"
+                    )
+                    strategy_meta["timeout_after_detection"] = True
+                    strategy_meta["retry_recommended"] = True
+                    strategy_meta["retry_strategy"] = (
+                        strategy_meta.get("retry_strategy") or "deadline_continuation"
+                    )
+                    strategy_meta["extraction_completeness_status"] = "partial"
+                    strategy_meta["saved_properties_count"] = len(partial_rescue)
+                    strategy_meta.setdefault(
+                        "expected_properties_count",
+                        strategy_meta.get("expected_count")
+                        or strategy_meta.get("expected_property_count")
+                        or len(partial_rescue),
+                    )
+                    expected_for_ratio = max(
+                        int(strategy_meta.get("expected_properties_count") or 0),
+                        len(partial_rescue),
+                    )
+                    strategy_meta["completion_ratio"] = round(
+                        len(partial_rescue) / expected_for_ratio, 3
+                    ) if expected_for_ratio else 1.0
+                    strategy_meta["deadline_seconds"] = timeout_seconds
+                    strategy_meta["elapsed_seconds"] = elapsed
+                    strategy_meta.setdefault("errores_relevantes", [])
+                    if "strategy_timeout_with_partial_rescue" not in strategy_meta["errores_relevantes"]:
+                        strategy_meta["errores_relevantes"].append(
+                            "strategy_timeout_with_partial_rescue"
+                        )
+                    logger.warning(
+                        "  Strategy timeout en ultima URL; rescatando %d "
+                        "propiedades parciales acumuladas (estrategia=%s elapsed=%.1fs).",
+                        len(partial_rescue), estrategia_partial, elapsed,
+                    )
+                    return (
+                        partial_rescue,
+                        estrategia_partial,
+                        url_usada,
+                        errores_relevantes,
+                        strategy_meta,
+                    )
                 metadata = _queue_metadata(
                     item=item,
                     started_at=started_at,
