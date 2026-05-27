@@ -742,6 +742,50 @@ def _check_strategy_deadline(inmob: Dict, label: Optional[str] = None) -> None:
     _check_deadline(_strategy_deadline(inmob), label or str(inmob.get("_strategy_name") or "strategy"))
 
 
+def _record_partial_for_rescue(inmob: Dict, prop: Dict) -> None:
+    """Agrega prop a un buffer accesible para rescate ante ItemTimeoutError.
+
+    Los extractores llaman este helper apenas extraen una propiedad valida, para
+    que el caller pueda recuperar lo acumulado si vence el deadline del item
+    en medio de la estrategia. Sin esto, las props extraidas pero no devueltas
+    aun se pierden cuando el deadline corta el bucle.
+    """
+    if not isinstance(inmob, dict) or not isinstance(prop, dict):
+        return
+    if not prop.get("url") and not prop.get("hash_dedup"):
+        return
+    buf = inmob.get("_partial_results_buffer")
+    if not isinstance(buf, list):
+        buf = []
+        inmob["_partial_results_buffer"] = buf
+    buf.append(prop)
+
+
+def _drain_partial_rescue_buffer(inmob: Dict) -> List[Dict]:
+    """Devuelve y limpia las props acumuladas en el buffer de rescate."""
+    if not isinstance(inmob, dict):
+        return []
+    buf = inmob.pop("_partial_results_buffer", None)
+    if not isinstance(buf, list):
+        return []
+    seen_keys: set = set()
+    unique: List[Dict] = []
+    for prop in buf:
+        if not isinstance(prop, dict):
+            continue
+        key = (
+            prop.get("hash_dedup")
+            or prop.get("url")
+            or prop.get("url_normalizada")
+            or id(prop)
+        )
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        unique.append(prop)
+    return unique
+
+
 def _bounded_http_timeout(inmob: Dict, requested: int) -> float:
     deadline = _strategy_deadline(inmob)
     _check_deadline(deadline, str(inmob.get("_strategy_name") or "strategy"))
@@ -6675,7 +6719,9 @@ def _extract_detail_page(url: str, inmob: Dict, session: requests.Session) -> Op
                             raw_json["imagenes_enriquecidas_desde_html"] = True
                             raw_json["imagenes_reales"] = len(html_images)
                             prop_jsonld["raw_json"] = raw_json
-                        return _correct_wordpress_currency(prop_jsonld, soup, inmob)
+                        prop_jsonld = _correct_wordpress_currency(prop_jsonld, soup, inmob)
+                        _record_partial_for_rescue(inmob, prop_jsonld)
+                        return prop_jsonld
         except Exception:
             pass
 
@@ -6686,7 +6732,10 @@ def _extract_detail_page(url: str, inmob: Dict, session: requests.Session) -> Op
     if prop is None and GROQ_API_KEY:
         prop = _ai_extraer_propiedad(raw_html, url, inmob)
 
-    return _correct_wordpress_currency(prop, soup, inmob)
+    prop = _correct_wordpress_currency(prop, soup, inmob)
+    if prop:
+        _record_partial_for_rescue(inmob, prop)
+    return prop
 
 
 _GENERIC_BAD_TITLES = {
@@ -13010,6 +13059,63 @@ def _scrape_queue_item(
         except Exception as exc:
             if isinstance(exc, ItemTimeoutError) or clasificar_error(exc) == "item_timeout":
                 strategy_meta = dict(inmob.get("_scraper_metadata") or {})
+                # FAMILIA 4: rescatar propiedades parciales acumuladas por el
+                # extractor antes de marcar como item_timeout. Si hay algo
+                # extraido y validable, se guarda como extraccion parcial en
+                # lugar de descartar todo el item.
+                partial_rescue = _drain_partial_rescue_buffer(inmob)
+                if partial_rescue:
+                    estrategia_partial = (
+                        strategy_meta.get("estrategia_final")
+                        or strategy_meta.get("estrategia_elegida")
+                        or strategy_meta.get("primary_strategy")
+                        or "deadline_continuation"
+                    )
+                    elapsed = round(time.time() - started_at, 2)
+                    strategy_meta["partial_extraction"] = True
+                    strategy_meta["partial_rescued_from_item_timeout"] = True
+                    strategy_meta["timeout_stage"] = (
+                        strategy_meta.get("timeout_stage") or "strategy"
+                    )
+                    strategy_meta["timeout_after_detection"] = True
+                    strategy_meta["retry_recommended"] = True
+                    strategy_meta["retry_strategy"] = (
+                        strategy_meta.get("retry_strategy") or "deadline_continuation"
+                    )
+                    strategy_meta["extraction_completeness_status"] = "partial"
+                    strategy_meta["saved_properties_count"] = len(partial_rescue)
+                    strategy_meta.setdefault(
+                        "expected_properties_count",
+                        strategy_meta.get("expected_count")
+                        or strategy_meta.get("expected_property_count")
+                        or len(partial_rescue),
+                    )
+                    expected_for_ratio = max(
+                        int(strategy_meta.get("expected_properties_count") or 0),
+                        len(partial_rescue),
+                    )
+                    strategy_meta["completion_ratio"] = round(
+                        len(partial_rescue) / expected_for_ratio, 3
+                    ) if expected_for_ratio else 1.0
+                    strategy_meta["deadline_seconds"] = timeout_seconds
+                    strategy_meta["elapsed_seconds"] = elapsed
+                    strategy_meta.setdefault("errores_relevantes", [])
+                    if "item_timeout_with_partial_rescue" not in strategy_meta["errores_relevantes"]:
+                        strategy_meta["errores_relevantes"].append(
+                            "item_timeout_with_partial_rescue"
+                        )
+                    logger.warning(
+                        "  Item deadline vencido durante estrategia; rescatando %d "
+                        "propiedades parciales acumuladas (estrategia=%s elapsed=%.1fs).",
+                        len(partial_rescue), estrategia_partial, elapsed,
+                    )
+                    return (
+                        partial_rescue,
+                        estrategia_partial,
+                        url_usada,
+                        errores_relevantes,
+                        strategy_meta,
+                    )
                 raise _item_timeout_control_error(
                     item,
                     started_at,
