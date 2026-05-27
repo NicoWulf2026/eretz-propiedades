@@ -5874,6 +5874,8 @@ def strategy_tokko_html(inmob: Dict, session: requests.Session) -> List[Dict]:
                 before_total = len(resultados)
                 resultados.extend(page_props)
                 resultados = _dedupe_props(resultados)
+                for _p in page_props:
+                    _record_partial_for_rescue(inmob, _p)
                 duplicated_property_urls_skipped += max(before_total + len(page_props) - len(resultados), 0)
                 _update_strategy_progress(
                     inmob,
@@ -5912,6 +5914,8 @@ def strategy_tokko_html(inmob: Dict, session: requests.Session) -> List[Dict]:
                         before = len(resultados)
                         resultados.extend(more_props)
                         resultados = _dedupe_props(resultados)
+                        for _p in more_props:
+                            _record_partial_for_rescue(inmob, _p)
                         duplicated_property_urls_skipped += max(before + len(more_props) - len(resultados), 0)
                         paginas_leidas += 1
                         _update_strategy_progress(
