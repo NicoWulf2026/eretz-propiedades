@@ -1063,6 +1063,7 @@ INTERNAL_QUEUE_TABLES = {
     "scraping_run_items",
     "geocoding_results",
     "inmobiliarias_staging",
+    "propiedades_raw",
 }
 
 
@@ -1218,6 +1219,30 @@ class InternalDBClient:
             with conn.cursor() as cur:
                 cur.execute(query, values)
             conn.commit()
+
+    def insert_rows(self, table: str, rows: List[Dict[str, Any]]) -> int:
+        if not rows:
+            return 0
+        table_sql = self._safe_identifier(table)
+        if table_sql not in INTERNAL_QUEUE_TABLES:
+            raise ValueError(f"Tabla no habilitada para base interna: {table_sql}")
+        columns = [self._safe_identifier(column) for column in rows[0].keys()]
+        if not columns:
+            return 0
+        placeholders = ", ".join(["%s"] * len(columns))
+        query = f"INSERT INTO public.{table_sql} ({', '.join(columns)}) VALUES ({placeholders})"
+        if table_sql == "propiedades_raw":
+            query += " ON CONFLICT (hash_dedup) DO NOTHING"
+        inserted_count = 0
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                for row in rows:
+                    values = [self._json_value(row.get(column)) for column in columns]
+                    cur.execute(query, values)
+                    if cur.rowcount and cur.rowcount > 0:
+                        inserted_count += cur.rowcount
+            conn.commit()
+        return inserted_count
 
     def call_function(self, function_name: str, payload: Optional[Dict[str, Any]] = None) -> Any:
         function_sql = self._safe_identifier(function_name)
@@ -13905,6 +13930,48 @@ def _repair_images_skip_url_reason(url: Any, url_normalizada: Any = None) -> Opt
     return None
 
 
+def _build_raw_row(item: Dict, prop: Dict) -> Dict:
+    return {
+        "scraping_run_item_id": item.get("scraping_run_item_id") or item.get("id"),
+        "inmobiliaria_id": prop.get("inmobiliaria_id"),
+        "hash_dedup": prop.get("hash_dedup"),
+        "titulo": prop.get("titulo"),
+        "descripcion": (prop.get("descripcion") or "")[:500],
+        "precio": prop.get("precio"),
+        "moneda": prop.get("moneda"),
+        "superficie_total": prop.get("superficie_total"),
+        "superficie_cubierta": prop.get("superficie_cubierta"),
+        "tipo_propiedad": prop.get("tipo_propiedad"),
+        "operacion": prop.get("operacion"),
+        "url": prop.get("url"),
+        "url_normalizada": normalize_property_url_for_dedup(prop.get("url")),
+        "direccion_raw": prop.get("direccion"),
+        "barrio": prop.get("barrio"),
+        "ciudad": prop.get("ciudad"),
+        "provincia": prop.get("provincia"),
+        "pais": prop.get("pais") or "Argentina",
+        "latitud": prop.get("latitud"),
+        "longitud": prop.get("longitud"),
+        "imagenes": (prop.get("imagenes") or [])[:10],
+        "datos_extra": {},
+        "status": "raw",
+    }
+
+
+def _save_raw_to_neon(db: "SupabasePropiedades", item: Dict, props: List[Dict]) -> None:
+    internal_db = getattr(db, "internal_db", None)
+    if not internal_db or not getattr(internal_db, "enabled", False):
+        return
+    rows = [_build_raw_row(item, prop) for prop in props if prop.get("hash_dedup")]
+    if not rows:
+        return
+    try:
+        inserted = internal_db.insert_rows("propiedades_raw", rows)
+        logger.debug("  Copia raw guardada en Neon propiedades_raw: %d filas", inserted)
+    except Exception as exc:
+        logger.warning("  No se pudo guardar copia raw en Neon: %s", str(exc)[:200])
+
+
 def _save_queue_properties(
     db: SupabasePropiedades,
     item: Dict,
@@ -14010,6 +14077,8 @@ def _save_queue_properties(
             raw_images = [raw_images]
         if isinstance(raw_images, list):
             image_urls_detected += len(clean_property_images(raw_images))
+
+    _save_raw_to_neon(db, item, props)
 
     try:
         if props and item_deadline is not None and _deadline_remaining_seconds(item_deadline) <= 0:

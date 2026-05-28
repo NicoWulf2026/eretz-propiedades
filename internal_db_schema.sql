@@ -483,7 +483,7 @@ CREATE TABLE IF NOT EXISTS public.propiedades_raw (
 
 CREATE INDEX IF NOT EXISTS idx_propiedades_raw_status
     ON public.propiedades_raw(status);
-CREATE INDEX IF NOT EXISTS idx_propiedades_raw_hash_dedup
+CREATE UNIQUE INDEX IF NOT EXISTS idx_propiedades_raw_hash_dedup
     ON public.propiedades_raw(hash_dedup);
 CREATE INDEX IF NOT EXISTS idx_propiedades_raw_inmobiliaria_status
     ON public.propiedades_raw(inmobiliaria_id, status);
