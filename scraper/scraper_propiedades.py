@@ -1939,6 +1939,7 @@ class SupabasePropiedades:
             return None
         if all(value is None for value in data.values()):
             return None
+        data["scraping_run_item_id"] = data.get("id")
         return data
 
     def load_pending_scraping_items_for_integrity(self, limit: int = 5) -> List[Dict[str, Any]]:
