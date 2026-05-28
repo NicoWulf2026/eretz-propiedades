@@ -441,6 +441,219 @@ $$;
 
 
 -- =============================================================================
+-- STAGING / PUBLICACION DIARIA
+-- =============================================================================
+
+
+-- -----------------------------------------------------------------------------
+-- Tabla: propiedades_raw
+-- Captura cruda de propiedades detectadas por scraping antes de normalizar,
+-- validar, geocodificar y publicar en Supabase.
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.propiedades_raw (
+    id                    BIGSERIAL PRIMARY KEY,
+    scraping_run_item_id  BIGINT REFERENCES public.scraping_run_items(id)
+                          ON DELETE SET NULL,
+    inmobiliaria_id       BIGINT NOT NULL,
+    hash_dedup            TEXT NOT NULL,
+    titulo                TEXT,
+    descripcion           TEXT,
+    precio                NUMERIC,
+    moneda                TEXT,
+    superficie_total      NUMERIC,
+    superficie_cubierta   NUMERIC,
+    tipo_propiedad        TEXT,
+    operacion             TEXT,
+    url                   TEXT,
+    url_normalizada       TEXT,
+    direccion_raw         TEXT,
+    barrio                TEXT,
+    ciudad                TEXT,
+    provincia             TEXT,
+    pais                  TEXT DEFAULT 'Argentina',
+    latitud               NUMERIC,
+    longitud              NUMERIC,
+    imagenes              JSONB DEFAULT '[]'::jsonb,
+    datos_extra           JSONB DEFAULT '{}'::jsonb,
+    scraped_at            TIMESTAMPTZ DEFAULT now(),
+    status                TEXT NOT NULL DEFAULT 'raw',
+    CONSTRAINT propiedades_raw_status_chk
+        CHECK (status IN ('raw','validated','rejected','published'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_propiedades_raw_status
+    ON public.propiedades_raw(status);
+CREATE INDEX IF NOT EXISTS idx_propiedades_raw_hash_dedup
+    ON public.propiedades_raw(hash_dedup);
+CREATE INDEX IF NOT EXISTS idx_propiedades_raw_inmobiliaria_status
+    ON public.propiedades_raw(inmobiliaria_id, status);
+CREATE INDEX IF NOT EXISTS idx_propiedades_raw_scraped_at
+    ON public.propiedades_raw(scraped_at);
+CREATE INDEX IF NOT EXISTS idx_propiedades_raw_url_normalizada
+    ON public.propiedades_raw(url_normalizada);
+
+
+-- -----------------------------------------------------------------------------
+-- Tabla: propiedades_staging
+-- Propiedades normalizadas y listas para validacion final / cola de publicacion.
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.propiedades_staging (
+    id                    BIGSERIAL PRIMARY KEY,
+    raw_id                BIGINT REFERENCES public.propiedades_raw(id)
+                          ON DELETE SET NULL,
+    inmobiliaria_id       BIGINT NOT NULL,
+    hash_dedup            TEXT NOT NULL,
+    titulo                TEXT,
+    descripcion           TEXT,
+    precio                NUMERIC,
+    moneda                TEXT,
+    superficie_total      NUMERIC,
+    superficie_cubierta   NUMERIC,
+    tipo_propiedad        TEXT,
+    operacion             TEXT,
+    url                   TEXT,
+    url_normalizada       TEXT,
+    direccion_normalizada TEXT,
+    barrio                TEXT,
+    ciudad                TEXT,
+    provincia             TEXT,
+    pais                  TEXT DEFAULT 'Argentina',
+    latitud               NUMERIC,
+    longitud              NUMERIC,
+    imagenes              JSONB DEFAULT '[]'::jsonb,
+    geocoding_status      TEXT NOT NULL DEFAULT 'pending',
+    validation_score      SMALLINT DEFAULT 0,
+    staged_at             TIMESTAMPTZ DEFAULT now(),
+    status                TEXT NOT NULL DEFAULT 'staging',
+    CONSTRAINT propiedades_staging_geocoding_status_chk
+        CHECK (geocoding_status IN ('pending','done','failed','skipped')),
+    CONSTRAINT propiedades_staging_status_chk
+        CHECK (status IN ('staging','queued','published','rejected'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_propiedades_staging_status
+    ON public.propiedades_staging(status);
+CREATE INDEX IF NOT EXISTS idx_propiedades_staging_geocoding_status
+    ON public.propiedades_staging(geocoding_status, status);
+CREATE INDEX IF NOT EXISTS idx_propiedades_staging_hash_dedup
+    ON public.propiedades_staging(hash_dedup);
+CREATE INDEX IF NOT EXISTS idx_propiedades_staging_inmobiliaria_id
+    ON public.propiedades_staging(inmobiliaria_id);
+CREATE INDEX IF NOT EXISTS idx_propiedades_staging_url_normalizada
+    ON public.propiedades_staging(url_normalizada);
+
+
+-- -----------------------------------------------------------------------------
+-- Tabla: publish_queue
+-- Cola interna para publicar cambios diarios hacia Supabase.
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.publish_queue (
+    id                    BIGSERIAL PRIMARY KEY,
+    staging_id            BIGINT REFERENCES public.propiedades_staging(id)
+                          ON DELETE SET NULL,
+    propiedad_supabase_id BIGINT,
+    action                TEXT NOT NULL DEFAULT 'upsert',
+    priority              SMALLINT DEFAULT 1,
+    attempts              SMALLINT DEFAULT 0,
+    last_attempt_at       TIMESTAMPTZ,
+    error_message         TEXT,
+    status                TEXT NOT NULL DEFAULT 'pending',
+    queued_at             TIMESTAMPTZ DEFAULT now(),
+    CONSTRAINT publish_queue_action_chk
+        CHECK (action IN ('upsert','deactivate')),
+    CONSTRAINT publish_queue_status_chk
+        CHECK (status IN ('pending','publishing','done','failed'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_publish_queue_status_priority_queued
+    ON public.publish_queue(status, priority, queued_at);
+CREATE INDEX IF NOT EXISTS idx_publish_queue_staging_id
+    ON public.publish_queue(staging_id);
+CREATE INDEX IF NOT EXISTS idx_publish_queue_propiedad_supabase_id
+    ON public.publish_queue(propiedad_supabase_id);
+
+
+-- -----------------------------------------------------------------------------
+-- Tabla: data_quality_issues
+-- Observaciones de calidad detectadas durante validacion y staging.
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.data_quality_issues (
+    id            BIGSERIAL PRIMARY KEY,
+    raw_id        BIGINT REFERENCES public.propiedades_raw(id)
+                  ON DELETE SET NULL,
+    issue_type    TEXT NOT NULL,
+    issue_detail  TEXT,
+    detected_at   TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_data_quality_issues_raw_id
+    ON public.data_quality_issues(raw_id);
+CREATE INDEX IF NOT EXISTS idx_data_quality_issues_issue_type
+    ON public.data_quality_issues(issue_type);
+CREATE INDEX IF NOT EXISTS idx_data_quality_issues_detected_at
+    ON public.data_quality_issues(detected_at);
+
+
+-- -----------------------------------------------------------------------------
+-- Tabla: daily_update_summary
+-- Resumen agregado de cada ciclo diario de scraping, staging y publicacion.
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.daily_update_summary (
+    id                           BIGSERIAL PRIMARY KEY,
+    run_date                     DATE NOT NULL UNIQUE,
+    inmobiliarias_intentadas     INT DEFAULT 0,
+    inmobiliarias_ok             INT DEFAULT 0,
+    inmobiliarias_error          INT DEFAULT 0,
+    propiedades_scraped          INT DEFAULT 0,
+    propiedades_nuevas           INT DEFAULT 0,
+    propiedades_actualizadas     INT DEFAULT 0,
+    propiedades_publicadas       INT DEFAULT 0,
+    propiedades_rechazadas       INT DEFAULT 0,
+    geocoding_ok                 INT DEFAULT 0,
+    geocoding_failed             INT DEFAULT 0,
+    duracion_segundos            INT DEFAULT 0,
+    notas                        TEXT,
+    created_at                   TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_daily_update_summary_run_date
+    ON public.daily_update_summary(run_date);
+
+
+-- -----------------------------------------------------------------------------
+-- cleanup_old_neon_data()
+-- Limpia datos internos historicos que ya no hacen falta para operacion diaria.
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.cleanup_old_neon_data()
+RETURNS VOID
+LANGUAGE plpgsql AS $$
+BEGIN
+    DELETE FROM public.publish_queue
+     WHERE status = 'done'
+       AND queued_at < now() - INTERVAL '7 days';
+
+    DELETE FROM public.propiedades_staging
+     WHERE status = 'published'
+       AND staged_at < now() - INTERVAL '14 days';
+
+    DELETE FROM public.propiedades_raw
+     WHERE status = 'published'
+       AND scraped_at < now() - INTERVAL '30 days';
+
+    DELETE FROM public.propiedades_raw
+     WHERE status = 'rejected'
+       AND scraped_at < now() - INTERVAL '7 days';
+
+    DELETE FROM public.scraping_run_items
+     WHERE created_at < now() - INTERVAL '90 days';
+
+    DELETE FROM public.data_quality_issues
+     WHERE detected_at < now() - INTERVAL '60 days';
+END;
+$$;
+
+
+-- =============================================================================
 -- FIN
 -- =============================================================================
 -- Para aplicar:
