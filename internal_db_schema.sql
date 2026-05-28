@@ -454,7 +454,7 @@ CREATE TABLE IF NOT EXISTS public.propiedades_raw (
     id                    BIGSERIAL PRIMARY KEY,
     scraping_run_item_id  BIGINT REFERENCES public.scraping_run_items(id)
                           ON DELETE SET NULL,
-    inmobiliaria_id       BIGINT NOT NULL,
+    inmobiliaria_id       INTEGER NOT NULL,
     hash_dedup            TEXT NOT NULL,
     titulo                TEXT,
     descripcion           TEXT,
@@ -501,7 +501,7 @@ CREATE TABLE IF NOT EXISTS public.propiedades_staging (
     id                    BIGSERIAL PRIMARY KEY,
     raw_id                BIGINT REFERENCES public.propiedades_raw(id)
                           ON DELETE SET NULL,
-    inmobiliaria_id       BIGINT NOT NULL,
+    inmobiliaria_id       INTEGER NOT NULL,
     hash_dedup            TEXT NOT NULL,
     titulo                TEXT,
     descripcion           TEXT,
@@ -615,10 +615,6 @@ CREATE TABLE IF NOT EXISTS public.daily_update_summary (
     notas                        TEXT,
     created_at                   TIMESTAMPTZ DEFAULT now()
 );
-
-CREATE INDEX IF NOT EXISTS idx_daily_update_summary_run_date
-    ON public.daily_update_summary(run_date);
-
 
 -- -----------------------------------------------------------------------------
 -- cleanup_old_neon_data()
