@@ -142,3 +142,130 @@ A partir de ahora, cada avance importante debería registrarse en alguna de esta
 Hoy se avanzó en la organización general del proyecto.
 
 El foco no fue programar, sino ordenar la información para que el desarrollo futuro sea más claro, seguro y fácil de continuar.
+
+```
+# 2026-05-27 - Supabase caído - pausa técnica## EstadoSupabase no está respondiendo correctamente.Se ejecutó un health check liviano contra:`propiedades?select=id&limit=1`Resultado:```textReadTimeoutread timeout=15
+```
+
+Esto confirma que Supabase no responde ni siquiera a una consulta mínima.
+
+---
+
+## Decisión tomada
+
+No seguir golpeando Supabase mientras esté en este estado.
+
+No ejecutar:
+
+- scraping
+- retry-errors
+- retry-partial-extractions
+- repair-images
+- geocoder
+- mediciones globales
+- count exact
+- consultas pesadas
+- Table Editor
+
+---
+
+## Estado seguro actual
+
+- GitHub está actualizado.
+- Neon ya está preparado con schema interno.
+- `USE_INTERNAL_DB=false`.
+- `INTERNAL_DB_URL` está cargado pero inactivo.
+- Supabase sigue siendo el comportamiento por defecto.
+- FAMILIA 4 queda pendiente de validar.
+- No hay procesos corriendo.
+
+---
+
+## Causa probable
+
+El problema parece ser infraestructura/carga de Supabase, no código local.
+
+Las fotos no son el problema principal porque se guardan como links externos, no en Supabase Storage.
+
+La saturación probablemente viene de:
+
+- consultas pesadas
+- `count=exact`
+- lectura masiva de `scraping_run_items.metadata`
+- retries
+- geocoding
+- repairs
+- procesos simultáneos
+  
+```
+## Backup realizadoSe exportaron y guardaron las principales tablas de inmobiliarias desde Supabase:- `inmobiliarias_main`- `inmobiliarias_scraping`- `inmobiliarias_staging`Ubicación local:`D:\INMO CAPITAL\Inmo-Capital-main\backups supabase`Estado:- Backup de inmobiliarias realizado correctamente.- Pendiente exportar `propiedades` por lotes.- No ejecutar scraping hasta estabilizar Supabase.- Neon queda preparado pero inactivo.
+```
+
+## Etapa 1 Neon completada  
+  
+Se completó la preparación de Neon como base interna para InmoCapital.  
+  
+Tablas existentes en Neon:  
+  
+- `scraping_runs`  
+- `scraping_run_items`  
+- `geocoding_results`  
+- `inmobiliarias_staging`  
+- `propiedades_raw`  
+- `propiedades_staging`  
+- `publish_queue`  
+- `data_quality_issues`  
+- `daily_update_summary`  
+  
+Funciones existentes:  
+  
+- `claim_next_scraping_item`  
+- `start_scraping_item`  
+- `retry_scraping_item`  
+- `finish_scraping_item_success`  
+- `finish_scraping_item_error`  
+- `close_scraping_run_if_finished`  
+- `cleanup_old_neon_data`  
+  
+Estado:  
+  
+- Neon preparado.  
+- `USE_INTERNAL_DB` sigue en `false`.  
+- No se activó scraping con Neon todavía.  
+- Supabase sigue siendo la base pública/liviana.  
+- Próxima etapa: adaptar el scraper para escribir también en `propiedades_raw` en Neon.
+  
+  ## Etapa 2 completada - Modo dual Supabase + Neon
+
+Se validó correctamente el modo dual del scraper.
+
+Resultado de prueba:
+
+- Inmobiliaria procesada: Inmobiliaria Berengeno
+- Items procesados: 1
+- Estado: success
+- Propiedades detectadas: 240
+- Propiedades nuevas: 22
+- Propiedades actualizadas: 218
+- Errores: 0
+
+Supabase:
+- Recibió correctamente las propiedades finales.
+- El flujo anterior no se rompió.
+
+Neon:
+- Recibió copia cruda en `propiedades_raw`.
+- Las filas quedaron con status `raw`.
+- Se confirmó `hash_dedup`, título, precio, inmobiliaria_id y scraped_at.
+
+Corrección realizada:
+- Se corrigió el mapeo `id → scraping_run_item_id` en `claim_next_scraping_item`.
+
+Limpieza:
+- El item de prueba fallido quedó marcado como `error / test_aborted`.
+- No quedaron items en estado `running`.
+- `USE_INTERNAL_DB` volvió a modo seguro.
+
+Estado:
+- Etapa 2 validada.
+- Próxima etapa: crear validador `propiedades_raw → propiedades_staging`.
