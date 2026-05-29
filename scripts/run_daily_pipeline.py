@@ -333,6 +333,82 @@ def sleep_phase(args: argparse.Namespace) -> None:
         time.sleep(args.phase_sleep)
 
 
+def print_dry_run_plan(args: argparse.Namespace, run_day: date) -> None:
+    notes = f"daily {run_day.isoformat()}"
+    create_cmd = [
+        sys.executable,
+        "scripts/create_scraping_run_from_next_batch.py",
+        "--limit",
+        str(args.inmobiliarias),
+        "--include-new",
+        "--notes",
+        notes,
+        "--commit",
+    ]
+    scrape_cmd = [
+        sys.executable,
+        "scraper/scraper_propiedades.py",
+        "--max-items",
+        str(args.inmobiliarias),
+        "--workers",
+        str(args.workers),
+    ]
+    validate_cmd = [
+        sys.executable,
+        "scripts/validate_raw_properties.py",
+        "--limit",
+        str(args.validate_limit),
+        "--commit",
+    ]
+    queue_cmd = [
+        sys.executable,
+        "scripts/build_publish_queue.py",
+        "--limit",
+        str(args.queue_limit),
+        "--min-score",
+        str(args.min_score),
+        "--commit",
+    ]
+    publish_cmd = [
+        sys.executable,
+        "scripts/publish_to_supabase.py",
+        "--limit",
+        str(args.publish_limit),
+        "--max-supabase-writes",
+        str(args.max_writes_per_tanda),
+        "--min-score",
+        str(args.min_score),
+        "--sleep",
+        str(args.publish_sleep),
+        "--commit",
+    ]
+    if args.allow_pending_geo:
+        queue_cmd.append("--allow-pending-geo")
+        publish_cmd.append("--allow-pending-geo")
+
+    print("=" * 72)
+    print("DRY-RUN PLAN ONLY")
+    print("No se ejecutan subprocess ni escrituras en dry-run.")
+    print(f"inmobiliarias={args.inmobiliarias}")
+    print(f"workers={args.workers}")
+    print(f"validate_limit={args.validate_limit}")
+    print(f"queue_limit={args.queue_limit}")
+    print(f"publish_limit={args.publish_limit}")
+    print(f"max_validate_iterations={args.max_validate_iterations}")
+    print(f"max_queue_iterations={args.max_queue_iterations}")
+    print(f"max_publish_iterations={args.max_publish_iterations}")
+    print(f"max_writes_per_tanda={args.max_writes_per_tanda}")
+    print(f"max_writes_total={args.max_writes_total}")
+    print(f"min_score={args.min_score}")
+    print(f"allow_pending_geo={args.allow_pending_geo}")
+    print("-" * 72)
+    print_command("create-queue", create_cmd)
+    print_command("scraper", scrape_cmd)
+    print_command("validate-raw", validate_cmd)
+    print_command("build-queue", queue_cmd)
+    print_command("publish", publish_cmd)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Orquestador diario controlado del pipeline dual")
     parser.add_argument("--inmobiliarias", type=int, default=10)
@@ -342,6 +418,9 @@ def main() -> None:
     parser.add_argument("--publish-limit", type=int, default=5)
     parser.add_argument("--max-writes-per-tanda", type=int, default=10)
     parser.add_argument("--max-writes-total", type=int, default=100)
+    parser.add_argument("--max-validate-iterations", type=int, default=5)
+    parser.add_argument("--max-queue-iterations", type=int, default=5)
+    parser.add_argument("--max-publish-iterations", type=int, default=5)
     parser.add_argument("--min-score", type=int, default=60)
     parser.add_argument("--publish-sleep", type=float, default=1.5)
     parser.add_argument("--phase-sleep", type=float, default=5)
@@ -364,6 +443,9 @@ def main() -> None:
             raise SystemExit(f"--{name.replace('_', '-')} debe ser mayor a 0")
     if args.max_writes_per_tanda <= 0 or args.max_writes_total <= 0:
         raise SystemExit("--max-writes-per-tanda y --max-writes-total deben ser mayores a 0")
+    for name in ("max_validate_iterations", "max_queue_iterations", "max_publish_iterations"):
+        if getattr(args, name) <= 0:
+            raise SystemExit(f"--{name.replace('_', '-')} debe ser mayor a 0")
 
     started = time.monotonic()
     run_day = date.today()
@@ -381,6 +463,9 @@ def main() -> None:
     run_id: Optional[int] = None
     inserted_items = 0
     stopped_reason = "completed"
+    validate_iterations_used = 0
+    queue_iterations_used = 0
+    publish_iterations_used = 0
 
     supabase_url, supabase_key, internal_db_url = config()
     env = pipeline_env(internal_db_url)
@@ -389,10 +474,18 @@ def main() -> None:
     print("RUN DAILY PIPELINE")
     print(f"mode={mode}")
     print(f"run_date={run_day.isoformat()}")
+    print(f"max_validate_iterations={args.max_validate_iterations}")
+    print(f"max_queue_iterations={args.max_queue_iterations}")
+    print(f"max_publish_iterations={args.max_publish_iterations}")
+    print(f"max_writes_total={args.max_writes_total}")
     print("=" * 72)
 
     try:
         run_preflight(args, supabase_url, supabase_key, internal_db_url)
+        if args.dry_run:
+            stopped_reason = "plan_only"
+            print_dry_run_plan(args, run_day)
+            return
         sleep_phase(args)
 
         print("=" * 72)
@@ -464,9 +557,11 @@ def main() -> None:
             str(args.validate_limit),
         ]
         if args.dry_run:
+            validate_iterations_used = 1
             run_step("validate-raw dry-run", validate_cmd_base + ["--dry-run"], env=env, timeout=args.step_timeout)
         else:
-            for idx in range(50):
+            for idx in range(args.max_validate_iterations):
+                validate_iterations_used = idx + 1
                 result = run_step("validate-raw", validate_cmd_base + ["--commit"], env=env, timeout=args.step_timeout)
                 values = parse_key_values(result.stdout)
                 read_count = parse_int(values, "filas_leidas")
@@ -491,9 +586,11 @@ def main() -> None:
         if args.allow_pending_geo:
             queue_cmd_base.append("--allow-pending-geo")
         if args.dry_run:
+            queue_iterations_used = 1
             run_step("build-queue dry-run", queue_cmd_base + ["--dry-run"], env=env, timeout=args.step_timeout)
         else:
-            for idx in range(50):
+            for idx in range(args.max_queue_iterations):
+                queue_iterations_used = idx + 1
                 result = run_step("build-queue", queue_cmd_base + ["--commit"], env=env, timeout=args.step_timeout)
                 values = parse_key_values(result.stdout)
                 encoladas = parse_int(values, "encoladas")
@@ -523,9 +620,11 @@ def main() -> None:
                 env=env,
                 timeout=args.step_timeout,
             )
+            publish_iterations_used = 1
         else:
             writes_total = 0
-            while writes_total < args.max_writes_total:
+            while writes_total < args.max_writes_total and publish_iterations_used < args.max_publish_iterations:
+                publish_iterations_used += 1
                 remaining = args.max_writes_total - writes_total
                 writes_limit = min(remaining, args.max_writes_per_tanda)
                 result = run_step(
@@ -588,6 +687,9 @@ def main() -> None:
         print(f"mode={mode}")
         print(f"run_id={run_id}")
         print(f"inserted_items={inserted_items}")
+        print(f"validate_iterations_used={validate_iterations_used}")
+        print(f"queue_iterations_used={queue_iterations_used}")
+        print(f"publish_iterations_used={publish_iterations_used}")
         for key in sorted(summary):
             print(f"{key}={summary[key]}")
         print(f"duracion_segundos={duration_seconds}")
