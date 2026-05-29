@@ -312,6 +312,8 @@ def upsert_daily_summary(
         "propiedades_actualizadas": summary.get("propiedades_actualizadas", 0),
         "propiedades_publicadas": summary.get("propiedades_publicadas", 0),
         "propiedades_rechazadas": summary.get("propiedades_rechazadas", 0),
+        "geocoding_ok": summary.get("geocoding_ok", 0),
+        "geocoding_failed": summary.get("geocoding_failed", 0),
         "duracion_segundos": duration_seconds,
         "notas": notes,
     }
@@ -360,6 +362,15 @@ def print_dry_run_plan(args: argparse.Namespace, run_day: date) -> None:
         str(args.validate_limit),
         "--commit",
     ]
+    geocode_cmd = [
+        sys.executable,
+        "scripts/geocode_staging.py",
+        "--limit",
+        str(args.geocode_limit),
+        "--max-requests",
+        str(args.max_geocode_requests),
+        "--commit",
+    ]
     queue_cmd = [
         sys.executable,
         "scripts/build_publish_queue.py",
@@ -392,9 +403,12 @@ def print_dry_run_plan(args: argparse.Namespace, run_day: date) -> None:
     print(f"inmobiliarias={args.inmobiliarias}")
     print(f"workers={args.workers}")
     print(f"validate_limit={args.validate_limit}")
+    print(f"geocode_limit={args.geocode_limit}")
+    print(f"max_geocode_requests={args.max_geocode_requests}")
     print(f"queue_limit={args.queue_limit}")
     print(f"publish_limit={args.publish_limit}")
     print(f"max_validate_iterations={args.max_validate_iterations}")
+    print(f"max_geocode_iterations={args.max_geocode_iterations}")
     print(f"max_queue_iterations={args.max_queue_iterations}")
     print(f"max_publish_iterations={args.max_publish_iterations}")
     print(f"max_writes_per_tanda={args.max_writes_per_tanda}")
@@ -402,11 +416,13 @@ def print_dry_run_plan(args: argparse.Namespace, run_day: date) -> None:
     print(f"min_score={args.min_score}")
     print(f"allow_pending_geo={args.allow_pending_geo}")
     print("-" * 72)
-    print_command("create-queue", create_cmd)
-    print_command("scraper", scrape_cmd)
-    print_command("validate-raw", validate_cmd)
-    print_command("build-queue", queue_cmd)
-    print_command("publish", publish_cmd)
+    print_command("FASE 1 create-queue", create_cmd)
+    print_command("FASE 2 scraper", scrape_cmd)
+    print_command("FASE 3 validate-raw", validate_cmd)
+    print("FASE 3.5 - GEOCODING STAGING")
+    print_command("FASE 3.5 geocode-staging", geocode_cmd)
+    print_command("FASE 4 build-queue", queue_cmd)
+    print_command("FASE 5 publish", publish_cmd)
 
 
 def main() -> None:
@@ -414,6 +430,9 @@ def main() -> None:
     parser.add_argument("--inmobiliarias", type=int, default=10)
     parser.add_argument("--workers", type=int, default=2)
     parser.add_argument("--validate-limit", type=int, default=50)
+    parser.add_argument("--geocode-limit", type=int, default=20)
+    parser.add_argument("--max-geocode-requests", type=int, default=30)
+    parser.add_argument("--max-geocode-iterations", type=int, default=3)
     parser.add_argument("--queue-limit", type=int, default=20)
     parser.add_argument("--publish-limit", type=int, default=5)
     parser.add_argument("--max-writes-per-tanda", type=int, default=10)
@@ -438,12 +457,14 @@ def main() -> None:
         raise SystemExit("Usar --dry-run o --commit, no ambos")
     if not args.commit:
         args.dry_run = True
-    for name in ("inmobiliarias", "workers", "validate_limit", "queue_limit", "publish_limit"):
+    for name in ("inmobiliarias", "workers", "validate_limit", "geocode_limit", "queue_limit", "publish_limit"):
         if getattr(args, name) <= 0:
             raise SystemExit(f"--{name.replace('_', '-')} debe ser mayor a 0")
+    if args.max_geocode_requests <= 0:
+        raise SystemExit("--max-geocode-requests debe ser mayor a 0")
     if args.max_writes_per_tanda <= 0 or args.max_writes_total <= 0:
         raise SystemExit("--max-writes-per-tanda y --max-writes-total deben ser mayores a 0")
-    for name in ("max_validate_iterations", "max_queue_iterations", "max_publish_iterations"):
+    for name in ("max_validate_iterations", "max_geocode_iterations", "max_queue_iterations", "max_publish_iterations"):
         if getattr(args, name) <= 0:
             raise SystemExit(f"--{name.replace('_', '-')} debe ser mayor a 0")
 
@@ -459,13 +480,20 @@ def main() -> None:
         "propiedades_actualizadas": 0,
         "propiedades_publicadas": 0,
         "propiedades_rechazadas": 0,
+        "geocoding_ok": 0,
+        "geocoding_failed": 0,
     }
     run_id: Optional[int] = None
     inserted_items = 0
     stopped_reason = "completed"
     validate_iterations_used = 0
+    geocode_iterations_used = 0
     queue_iterations_used = 0
     publish_iterations_used = 0
+    geocoding_done_total = 0
+    geocoding_failed_total = 0
+    geocoding_skipped_total = 0
+    geocoding_requests_total = 0
 
     supabase_url, supabase_key, internal_db_url = config()
     env = pipeline_env(internal_db_url)
@@ -475,6 +503,7 @@ def main() -> None:
     print(f"mode={mode}")
     print(f"run_date={run_day.isoformat()}")
     print(f"max_validate_iterations={args.max_validate_iterations}")
+    print(f"max_geocode_iterations={args.max_geocode_iterations}")
     print(f"max_queue_iterations={args.max_queue_iterations}")
     print(f"max_publish_iterations={args.max_publish_iterations}")
     print(f"max_writes_total={args.max_writes_total}")
@@ -571,6 +600,46 @@ def main() -> None:
                 if read_count == 0 or (validated + rejected) == 0:
                     break
                 print(f"validate_iteration={idx + 1}")
+        sleep_phase(args)
+
+        print("=" * 72)
+        print("FASE 3.5 - GEOCODING STAGING")
+        geocode_cmd_base = [
+            sys.executable,
+            "scripts/geocode_staging.py",
+            "--limit",
+            str(args.geocode_limit),
+            "--max-requests",
+            str(args.max_geocode_requests),
+        ]
+        if args.dry_run:
+            geocode_iterations_used = 1
+            print_command("geocode-staging dry-run", geocode_cmd_base + ["--dry-run"])
+            print("DRY-RUN: no se ejecuta geocoding real.")
+        else:
+            for idx in range(args.max_geocode_iterations):
+                geocode_iterations_used = idx + 1
+                result = run_step("geocode-staging", geocode_cmd_base + ["--commit"], env=env, timeout=args.step_timeout)
+                values = parse_key_values(result.stdout)
+                read_count = parse_int(values, "filas_leidas")
+                done = parse_int(values, "done")
+                failed = parse_int(values, "failed")
+                skipped = parse_int(values, "skipped")
+                requests_used = parse_int(values, "requests_usados")
+                geocoding_done_total += done
+                geocoding_failed_total += failed
+                geocoding_skipped_total += skipped
+                geocoding_requests_total += requests_used
+                print(
+                    f"geocode_iteration={idx + 1} done={done} failed={failed} "
+                    f"skipped={skipped} requests={requests_used}"
+                )
+                if read_count == 0:
+                    break
+                if (done + failed + skipped) == 0:
+                    break
+            summary["geocoding_ok"] = geocoding_done_total
+            summary["geocoding_failed"] = geocoding_failed_total
         sleep_phase(args)
 
         print("=" * 72)
@@ -688,8 +757,13 @@ def main() -> None:
         print(f"run_id={run_id}")
         print(f"inserted_items={inserted_items}")
         print(f"validate_iterations_used={validate_iterations_used}")
+        print(f"geocode_iterations_used={geocode_iterations_used}")
         print(f"queue_iterations_used={queue_iterations_used}")
         print(f"publish_iterations_used={publish_iterations_used}")
+        print(f"geocoding_done={geocoding_done_total}")
+        print(f"geocoding_failed={geocoding_failed_total}")
+        print(f"geocoding_skipped={geocoding_skipped_total}")
+        print(f"geocoding_requests_used={geocoding_requests_total}")
         for key in sorted(summary):
             print(f"{key}={summary[key]}")
         print(f"duracion_segundos={duration_seconds}")
