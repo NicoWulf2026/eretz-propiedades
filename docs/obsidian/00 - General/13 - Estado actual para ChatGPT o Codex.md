@@ -872,3 +872,60 @@ Cola actual v_next_geocoding_batch: 100
 - Resultado viejo malo 271: invalidado
 - Últimos pendientes: mayormente review/skipped
 - No conviene seguir automático hoy
+
+---
+
+# Estado técnico actual (2026-05-29)
+
+## Arquitectura actual (pipeline dual)
+
+```text
+Scraper
+  → Neon propiedades_raw
+  → validate_raw_properties.py
+  → Neon propiedades_staging
+  → geocode_staging.py
+  → build_publish_queue.py
+  → Neon publish_queue
+  → publish_to_supabase.py
+  → Supabase propiedades
+  → Frontend
+```
+
+Neon es la base **interna/operativa** (raw, staging, geocoding, cola de publicación).
+Supabase es la base **pública/canónica** que alimenta el frontend (mapa).
+
+## Scripts existentes
+
+- `scripts/validate_raw_properties.py` — propiedades_raw → propiedades_staging.
+- `scripts/build_publish_queue.py` — propiedades_staging → publish_queue.
+- `scripts/publish_to_supabase.py` — publish_queue → Supabase.
+- `scripts/run_daily_pipeline.py` — orquestador diario (coordina todas las fases por subprocess).
+- `scripts/geocode_staging.py` — geocoding interno de staging (FASE 3.5).
+- `scripts/create_scraping_run_from_next_batch.py` — arma la cola de scraping.
+- `scraper/scraper_propiedades.py` — scraper principal (dual Supabase + Neon).
+
+## Flags importantes
+
+- `USE_INTERNAL_DB=true` → activa Neon (modo dual).
+- `USE_INTERNAL_DB=false` → mantiene el modo seguro (comportamiento por defecto, solo Supabase).
+- `--allow-playwright` → existe en el orquestador, pero **no se usa por defecto**. Si se activa, propaga `--allow-playwright` al scraper. Valida que Playwright esté instalado antes de seguir.
+- `--allow-pending-geo` → existe, pero **no conviene usarlo masivamente**: publicaría propiedades sin coordenadas.
+- `geocode_staging.py` → ahora permite **evitar** `--allow-pending-geo`, porque geocodifica antes de armar la cola.
+
+## Orden de fases del orquestador
+
+```text
+FASE 0/1  crear cola (create_scraping_run_from_next_batch.py)
+FASE 2    scraping (scraper_propiedades.py)
+FASE 3    validate (validate_raw_properties.py)
+FASE 3.5  geocoding staging (geocode_staging.py)   ← nuevo
+FASE 4    build publish_queue (build_publish_queue.py)
+FASE 5    publish a Supabase (publish_to_supabase.py)
+```
+
+Default del orquestador: **dry-run**. Solo escribe con `--commit`.
+
+## Diagnóstico vigente
+
+La familia de error dominante del scraping es `requires_playwright`. La mejora general de mayor impacto es habilitar Playwright de forma controlada (`--allow-playwright`). Detalle en [[12 - Errores y soluciones]] (sección "Diagnóstico run53").

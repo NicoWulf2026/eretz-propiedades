@@ -712,6 +712,55 @@ En revisión
 
 ---
 
+# Diagnóstico run53 (2026-05-29) - Errores de scraping por familias
+
+Diagnóstico sobre la última corrida completa (**run53**, 2026-05-25). Fuente: logs `*_err.log` (el scraper loguea el detalle a stderr).
+
+## Números globales
+
+```text
+Intentos de item: 498
+Éxitos:           169 (34%)
+Errores:          329 (66%)
+```
+
+## Distribución de errores
+
+| error_type | Cantidad | % de errores |
+|---|---:|---:|
+| requires_playwright | 123 | 37% |
+| no_property_links_confirmed | 84 | 26% |
+| timeout | 26 | 8% |
+| sin_propiedades | 24 | 7% |
+| item_timeout | 23 | 7% |
+| site_down_confirmed | 15 | 5% |
+| strategy_quality_failed | 13 | 4% |
+| no_property_links | 12 | 4% |
+| blocked (403/429/captcha) | 6 | 2% |
+| final_url_domain_mismatch | 2 | <1% |
+| save_failed | 1 | <1% |
+
+## Familias de error
+
+- **Familia 1 - requires_playwright (123, ~37%)**: sitios que renderizan el listado con JavaScript. Causa general: Playwright apagado por defecto y el orquestador diario no lo activaba. **Corrección general** (mayor impacto). Prioridad máxima.
+- **Familia 2 - no_property_links / confirmed (96, ~29%)**: parte se solapa con Familia 1 (sin JS no aparecen links). Re-medir DESPUÉS de habilitar Playwright. Parcialmente general.
+- **Familia 3 - timeouts (timeout + item_timeout = 49, ~15%)**: sitios lentos / sitemaps grandes, agravado por concurrencia alta. General (ajuste de timeouts/workers). Prioridad media.
+- **Familia 4 - strategy_quality_failed + sin_propiedades (37, ~11%)**: extrajo pero con baja calidad o sin propiedades publicadas. Mixto. Re-medir después de Familias 1 y 3.
+- **Familia 5 - site_down_confirmed (15)**: sitio realmente caído. No-código / específico.
+- **Familia 6 - blocked (6)**: antibot/captcha/rate-limit. Mayormente no-código.
+- **Familia 7 - final_url_domain_mismatch + save_failed (3)**: marginal. Específico.
+
+## Conclusión
+
+El primer cambio general de **alto impacto** es permitir **Playwright de forma controlada** (`--allow-playwright`), sin activarlo por defecto. La calidad de datos post-extracción (precio, imágenes, ciudad/provincia) está sana: el problema está en descubrimiento, render JS y timeouts, no en normalización.
+
+## Corrección aplicada (parcial)
+
+- Se agregó `--allow-playwright` al orquestador `run_daily_pipeline.py` (commit `7af5248`).
+- Pendiente: retest controlado con `--test-url --allow-playwright` antes de habilitarlo en corridas reales. Ver [[11 - Pendientes]].
+
+---
+
 # Historial de soluciones aplicadas
 
 Usar esta sección cuando un error haya sido realmente corregido.

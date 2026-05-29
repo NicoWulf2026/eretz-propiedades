@@ -118,3 +118,57 @@ Evitar mezclar todo en un mismo lugar y reducir el desorden.
 
 ### Impacto
 No se debe usar Obsidian como base de datos real ni como reemplazo de GitHub. Obsidian es para documentar y pensar el proyecto.
+
+---
+
+## Decisión 6: Arquitectura dual Supabase + Neon
+
+### Fecha
+29/05/2026
+
+### Decisión
+Usar **Neon** como base interna/operativa (scraping crudo, staging, geocoding, cola de publicación) y **Supabase** como base pública/canónica que alimenta el frontend. El flujo es:
+Scraper → Neon `propiedades_raw` → staging → geocoding → `publish_queue` → Supabase `propiedades` → Frontend.
+
+### Motivo
+Separar el trabajo pesado y crudo (que satura) de la base pública liviana. Supabase no debe recibir cargas masivas sin control.
+
+### Impacto
+- `USE_INTERNAL_DB=true` activa Neon; `USE_INTERNAL_DB=false` mantiene el modo seguro (solo Supabase) sin romper nada.
+- Las escrituras a Supabase pasan por la cola controlada `publish_to_supabase.py`, en lotes chicos.
+
+---
+
+## Decisión 7: Diagnosticar y corregir el scraping por familias de error
+
+### Fecha
+29/05/2026
+
+### Decisión
+Antes de corregir, **agrupar los errores por familias** y atacar las **causas generales**, no inmobiliarias una por una. Los casos específicos de una sola inmobiliaria se corrigen aparte, solo si vale la pena.
+
+### Motivo
+Corregir agencia por agencia no escala. Una sola causa general suele explicar decenas de fallos.
+
+### Impacto
+- No correr todas las inmobiliarias de golpe ni hacer scraping masivo.
+- Probar siempre en dry-run y lotes chicos.
+- Casos antibot / site_down se tratan como no-código o específicos.
+
+---
+
+## Decisión 8: Playwright como opción controlada, no por defecto
+
+### Fecha
+29/05/2026
+
+### Decisión
+Playwright se habilita con el flag `--allow-playwright` en el orquestador, **no por defecto**. La familia `requires_playwright` es la dominante (~37% de los errores de run53), pero activarlo siempre encarece y enlentece las corridas.
+
+### Motivo
+Equilibrar impacto (destrabar sitios JS) con costo (Playwright es pesado y necesita navegadores instalados).
+
+### Impacto
+- Si no se pasa el flag, el comportamiento del scraper no cambia.
+- El pipeline diario debe seguir siendo conservador.
+- Antes de habilitarlo en corridas reales, hacer retest controlado con `--test-url --allow-playwright`.

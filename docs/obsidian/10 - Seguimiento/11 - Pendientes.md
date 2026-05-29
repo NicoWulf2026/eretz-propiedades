@@ -140,3 +140,39 @@ Estas tareas son importantes a futuro, pero no son urgentes ahora.
 - [ ] Crear nota decisiones importantes.
 - [ ] Crear nota pendientes.
 - [ ] Crear nota errores y soluciones.
+      
+      ## Pendiente crítico - Supabase inestable  
+  
+- [ ] Esperar que Supabase vuelva a responder.  
+- [ ] Ejecutar health check liviano con `select=id&limit=1`.  
+- [ ] No correr scraping, geocoder, repairs ni retries mientras haya ReadTimeout.  
+- [ ] Validar FAMILIA 4 solo cuando Supabase responda con `status: 200`.  
+- [ ] Mantener Neon preparado pero inactivo.  
+- [ ] No activar `USE_INTERNAL_DB=true` todavía.
+
+---
+
+## Próximos pasos (2026-05-29) - Pipeline dual y Playwright
+
+### Inmediatos
+
+- [ ] Commitear si queda pendiente algún cambio de `run_daily_pipeline.py`.
+- [ ] Test controlado con `--test-url` y `--allow-playwright` sobre `modernia.com.ar`.
+  - Comando: `python scraper/scraper_propiedades.py --test-url "https://www.modernia.com.ar/" --allow-playwright --workers 1`
+  - `--test-url` no consume cola y no escribe en Neon ni Supabase.
+- [ ] Si funciona, repetir con otro caso de la familia `requires_playwright` (ej. `gama-sa.com`).
+
+### Reglas de seguridad para estos pasos
+
+- [ ] NO correr el pipeline completo todavía.
+- [ ] NO correr scraping masivo. NO usar workers altos.
+- [ ] NO `run_daily_pipeline.py --commit` durante las pruebas.
+- [ ] NO publicar a Supabase durante el retest.
+- [ ] NO usar `count(*)` ni `count=exact`.
+
+### Mejoras a diseñar después (por familia de error)
+
+- [ ] `no_property_links` / `no_property_links_confirmed`: re-medir DESPUÉS de habilitar Playwright; lo que siga fallando se trata como mejora general de detección de links.
+- [ ] Timeouts (`timeout` / `item_timeout`): ajustar timeouts de sitemap/static/diagnose y/o bajar workers para sitios lentos.
+- [ ] `strategy_quality_failed`: revisar umbral de calidad tras extracción.
+- [ ] Antibot (`blocked`) y `site_down_confirmed`: tratar como casos **no-código** o **específicos** (no se arreglan con cambios generales del scraper).

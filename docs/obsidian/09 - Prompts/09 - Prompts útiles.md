@@ -1,604 +1,755 @@
-# Prompts útiles
+# Supabase y base de datos
 
-Esta nota sirve para guardar prompts importantes de InmoCapital.
+Esta nota documenta la estructura general de Supabase dentro de InmoCapital.
 
-La idea es tener textos listos para copiar y pegar en ChatGPT, Codex, Claude Code u otra herramienta de IA cuando necesite pedir ayuda técnica, estratégica, comercial o de documentación.
-
----
-
-## Regla principal
-
-Antes de usar un prompt técnico, conviene pegar primero el contexto general del proyecto desde la nota:
-
-[[13 - Estado actual para ChatGPT o Codex]]
-
-Después agregar el problema puntual.
+La base de datos es una de las partes más importantes del proyecto porque guarda la información de inmobiliarias, propiedades, scraping, historial de precios, eventos y calidad de datos.
 
 ---
 
-## Prompt base para ChatGPT, Codex o Claude
+## Rol de Supabase en InmoCapital
 
-Estoy trabajando en InmoCapital, una plataforma proptech para centralizar, estandarizar y analizar información inmobiliaria de distintas inmobiliarias.
+Supabase funciona como la base de datos principal del proyecto.
 
-El proyecto está ubicado localmente en:
+En Supabase se guarda:
 
-D:\INMO CAPITAL\Inmo-Capital-main
+- Información de inmobiliarias.
+- Información de propiedades.
+- Datos extraídos por scraping.
+- Historial de precios.
+- Estados de corridas de scraping.
+- Eventos de propiedades.
+- Resultados de geocoding.
+- Vistas para calidad de datos.
+- Vistas para frontend.
 
-Uso Next.js, Tailwind, Leaflet, Python, Playwright, Supabase y GitHub.
+---
 
-Reglas importantes:
+## Reglas principales
 
 - No borrar tablas sin revisar.
-- No modificar la base de datos de forma destructiva.
-- No corregir errores manualmente en Supabase si pueden corregirse desde el código.
-- Los errores de scraping deben corregirse en el scraper para que no vuelvan a repetirse.
-- Necesito instrucciones paso a paso porque no soy experto programando.
-- Antes de cambiar algo importante, explicame qué se va a modificar y por qué.
-- No quiero soluciones improvisadas.
-- Quiero priorizar estabilidad, calidad de datos y escalabilidad.
-
-Prioridad actual:
-
-Mejorar el scraping, corregir errores desde código, aumentar propiedades correctamente guardadas y mantener la calidad de datos.
-
----
-
-## Prompt para corregir errores de scraping
-
-Estoy trabajando en el scraper de InmoCapital.
-
-Necesito que analices el error que te voy a pasar y me ayudes a corregirlo desde el código, no desde Supabase manualmente.
-
-Reglas importantes:
-
-- No borrar tablas.
 - No modificar datos de forma destructiva.
-- No hacer cambios grandes sin explicar.
-- No corregir datos a mano si el problema viene del scraper.
-- La solución debe evitar que el error vuelva a repetirse en futuros scrapeos.
-- Quiero instrucciones paso a paso.
-- Indicame qué archivo tocar, qué cambiar y cómo probarlo.
-
-Objetivo:
-
-Detectar la causa del error, corregirlo desde el código, mejorar logs si hace falta y confirmar que el scraper pueda seguir funcionando sin trabarse.
-
-Te paso el error o salida de consola:
-
-[Pegar acá el error]
+- No corregir manualmente errores que deberían corregirse desde el scraper.
+- Antes de cambiar una tabla, entender qué la usa.
+- Antes de borrar campos, revisar si el frontend o scraper dependen de ellos.
+- Usar consultas de revisión antes de aplicar cambios.
+- Priorizar calidad de datos antes que cantidad.
+- Registrar cambios importantes en Obsidian.
 
 ---
 
-## Prompt para revisar una corrida de scraping
+## Tablas principales
 
-Estoy trabajando en InmoCapital y acabo de ejecutar una corrida de scraping.
+### propiedades
 
-Necesito que me ayudes a interpretar el resultado.
+Tabla principal donde se guardan las propiedades scrapeadas.
 
-Quiero saber:
+Campos importantes:
 
-- Qué salió bien.
-- Qué salió mal.
-- Qué errores son importantes.
-- Qué errores se repiten.
-- Qué debería corregirse primero.
-- Si hay problemas con propiedades detectadas pero no guardadas.
-- Si quedaron items trabados en running.
-- Si hay problemas de coordenadas, imágenes, precios o duplicados.
-- Qué debería pedirle a Codex que corrija.
-
-Reglas:
-
-- No quiero corregir manualmente en Supabase si se puede corregir desde código.
-- Quiero priorizar errores que afecten el guardado de propiedades.
-- Quiero una explicación clara y paso a paso.
-
-Resultado de la corrida:
-
-[Pegar acá la salida de consola o tabla]
-
----
-
-## Prompt para pedir mejora de logs del scraper
-
-Estoy trabajando en el scraper de InmoCapital.
-
-Necesito mejorar los logs para entender mejor qué pasa en cada inmobiliaria procesada.
-
-Quiero que el scraper muestre claramente:
-
-- ID de inmobiliaria.
-- Nombre de inmobiliaria.
-- URL procesada.
-- Estrategia usada.
-- Estado final.
-- Propiedades detectadas.
-- Propiedades nuevas.
-- Propiedades actualizadas.
-- Propiedades descartadas.
-- Propiedades con error.
-- Motivo de descarte.
-- Error type.
-- Error message.
-- Duración del proceso.
-
-Reglas:
-
-- No romper el funcionamiento actual.
-- No borrar datos.
-- No modificar Supabase de forma destructiva.
-- Hacer cambios chicos y claros.
-- Explicarme qué archivos se van a tocar.
-- Darme comandos para probar.
-
-Objetivo:
-
-Que después de cada corrida pueda entender exactamente qué pasó y qué hay que corregir.
+- id
+- inmobiliaria_id
+- url
+- id_externo
+- hash_dedup
+- titulo
+- descripcion
+- precio
+- moneda
+- precio_usd
+- expensas
+- expensas_moneda
+- tipo_propiedad
+- operacion
+- ambientes
+- dormitorios
+- banos
+- toilettes
+- cocheras
+- antiguedad
+- piso
+- superficie_total
+- superficie_cubierta
+- superficie_terreno
+- direccion
+- barrio
+- ciudad
+- provincia
+- pais
+- latitud
+- longitud
+- created_at
+- updated_at
 
 ---
 
-## Prompt para revisar Supabase
+### inmobiliarias_main
 
-Estoy trabajando en Supabase para InmoCapital.
+Tabla principal de inmobiliarias.
 
-Necesito que me ayudes a revisar el estado de la base de datos sin hacer cambios destructivos.
+Puede contener información general y consolidada de cada inmobiliaria.
 
-Quiero consultas SQL para revisar:
+Campos importantes:
 
-- Total de propiedades.
-- Propiedades con coordenadas.
-- Propiedades sin coordenadas.
-- Propiedades con imágenes.
-- Propiedades sin imágenes.
-- Propiedades con precio.
-- Propiedades sin precio.
-- Propiedades por ciudad.
-- Propiedades por provincia.
-- Posibles duplicados.
-- Últimas corridas de scraping.
-- Items trabados en running.
-- Errores de scraping más frecuentes.
-
-Reglas:
-
-- Solo consultas SELECT.
-- No DELETE.
-- No DROP.
-- No TRUNCATE.
-- No UPDATE masivo.
-- Explicame qué hace cada consulta.
-- Quiero resultados fáciles de interpretar.
+- id
+- nombre
+- direccion
+- telefono
+- email
+- web
+- ciudad
+- provincia
+- pais
+- logo
+- created_at
+- updated_at
 
 ---
 
-## Prompt para pedir una consulta SQL
+### inmobiliarias_scraping
 
-Necesito una consulta SQL para Supabase/PostgreSQL dentro del proyecto InmoCapital.
+Tabla relacionada con las inmobiliarias a scrapear.
 
-Objetivo de la consulta:
+Campos importantes:
 
-[Explicar qué quiero ver]
-
-Tablas relacionadas:
-
-[Indicar tabla o tablas si las sé]
-
-Reglas:
-
-- Solo SELECT salvo que yo pida explícitamente otra cosa.
-- No borrar datos.
-- No modificar datos.
-- Que la consulta sea clara.
-- Que tenga alias entendibles.
-- Que ordene los resultados de forma útil.
-- Explicame brevemente qué hace.
+- id
+- nombre
+- direccion
+- telefono_principal
+- email_principal
+- web
+- rating
+- resenas
+- categoria
+- ciudad
+- fuente
+- estado_scraping
+- ultimo_scrapeo
+- created_at
+- barrio
+- provincia
+- pais
+- telefono
+- logo
+- link_zonaprop
+- nombre_normalizado
+- updated_at
 
 ---
 
-## Prompt para revisar datos de propiedades
+### inmobiliarias_staging
 
-Estoy trabajando con la tabla de propiedades de InmoCapital.
+Tabla de carga o revisión previa de inmobiliarias.
 
-Necesito revisar la calidad de los datos.
+Sirve para ordenar datos antes de consolidarlos.
 
-Quiero detectar:
+Uso posible:
 
-- Propiedades sin coordenadas.
-- Propiedades sin imágenes.
-- Propiedades sin precio.
-- Propiedades sin ciudad.
-- Propiedades sin provincia.
-- Propiedades con moneda incorrecta.
-- Propiedades con operación faltante.
-- Propiedades con tipo de propiedad faltante.
-- Posibles duplicados.
+- Importar inmobiliarias nuevas.
+- Revisar duplicados.
+- Normalizar nombres.
+- Revisar webs.
+- Preparar datos antes de pasarlos a tablas principales.
+
+---
+
+### historial_precios
+
+Tabla para guardar cambios de precio de las propiedades.
+
+Uso esperado:
+
+- Registrar precio anterior.
+- Registrar precio nuevo.
+- Detectar variaciones.
+- Analizar aumentos o bajas.
+- Comparar evolución histórica.
+
+Campos posibles:
+
+- id
+- propiedad_id
+- precio_anterior
+- precio_nuevo
+- moneda
+- fecha
+- created_at
+
+---
+
+### scraping_runs
+
+Tabla para registrar corridas generales de scraping.
+
+Uso esperado:
+
+- Identificar cada corrida.
+- Registrar tipo de corrida.
+- Registrar fecha de inicio.
+- Registrar fecha de finalización.
+- Registrar estado general.
+- Registrar cantidad de inmobiliarias procesadas.
+
+Campos posibles:
+
+- id
+- run_type
+- status
+- started_at
+- finished_at
+- total_items
+- success_count
+- failed_count
+- pending_count
+- created_at
+
+---
+
+### scraping_run_items
+
+Tabla para registrar cada inmobiliaria o item dentro de una corrida de scraping.
+
+Uso esperado:
+
+- Saber qué inmobiliaria se procesó.
+- Saber si terminó bien o falló.
+- Guardar errores.
+- Guardar cantidad de propiedades detectadas, nuevas y actualizadas.
+- Evitar que queden items trabados en running.
+
+Campos posibles:
+
+- id
+- scraping_run_id
+- inmobiliaria_id
+- inmobiliaria_nombre
+- web
+- status
+- propiedades_detectadas
+- propiedades_nuevas
+- propiedades_actualizadas
+- propiedades_error
+- error_type
+- error_message
+- final_url
+- duration_seconds
+- created_at
+- updated_at
+
+---
+
+### property_events
+
+Tabla para registrar eventos sobre propiedades.
+
+Uso esperado:
+
+- Clicks.
+- Aperturas de WhatsApp.
+- Aperturas de mail.
+- Clicks en publicación original.
+- Favoritos.
+- Interacciones del usuario.
+
+Sirve para medir leads e interés real.
+
+---
+
+### property_scores
+
+Tabla para guardar puntajes o métricas calculadas de propiedades.
+
+Uso posible:
+
+- Score de oportunidad.
+- Score de ubicación.
+- Score de precio.
+- Score de riesgo.
+- Score de calidad del dato.
+
+---
+
+### geocoding_results
+
+Tabla para guardar resultados de geocodificación.
+
+Uso esperado:
+
+- Guardar direcciones procesadas.
+- Guardar coordenadas obtenidas.
+- Evitar repetir geocoding innecesariamente.
+- Registrar errores de geocoding.
+- Detectar coordenadas inválidas.
+
+---
+
+## Vistas importantes
+
+### v_propiedades_frontend_mapa
+
+Vista usada por el frontend para mostrar propiedades en el mapa.
+
+Uso:
+
+- Alimentar el mapa.
+- Mostrar propiedades activas.
+- Filtrar propiedades visibles.
+- Evitar exponer campos innecesarios.
+
+---
+
+### v_next_scraping_batch
+
+Vista para determinar próximas inmobiliarias a scrapear.
+
+Uso:
+
+- Armar lotes de scraping.
+- Priorizar inmobiliarias pendientes.
+- Evitar repetir inmobiliarias recientes.
+- Organizar cola de trabajo.
+
+---
+
+### v_geocoding_priority
+
+Vista para priorizar propiedades que necesitan coordenadas.
+
+Uso:
+
+- Detectar propiedades sin latitud y longitud.
+- Priorizar geocoding.
+- Ordenar por importancia.
+
+---
+
+### v_geocoding_priority_clean
+
+Versión más limpia o filtrada de propiedades para geocoding.
+
+Uso:
+
+- Evitar direcciones inválidas.
+- Mejorar calidad del geocoding.
+- Reducir errores.
+
+---
+
+### v_data_quality_summary
+
+Vista de resumen de calidad de datos.
+
+Uso:
+
+- Revisar propiedades con problemas.
+- Ver cuántas tienen coordenadas.
+- Ver cuántas tienen imágenes.
+- Ver cuántas tienen precio.
+- Detectar campos vacíos importantes.
+
+---
+
+### v_inmocapital_radar
+
+Vista para análisis general del proyecto.
+
+Uso posible:
+
+- Detectar oportunidades.
+- Analizar cobertura.
+- Revisar calidad de datos.
+- Priorizar mejoras.
+
+---
+
+### v_agency_scraping_priority
+
+Vista para priorizar inmobiliarias a scrapear.
+
+Uso:
+
+- Ordenar inmobiliarias según necesidad.
+- Revisar pendientes.
+- Organizar corridas.
+
+---
+
+### v_agency_scraping_priority_v2
+
+Versión mejorada de priorización de scraping.
+
+---
+
+### v_agency_scraping_priority_v3
+
+Versión más actualizada de priorización de scraping.
+
+---
+
+### v_city_launch_readiness
+
+Vista para revisar qué tan lista está una ciudad para lanzamiento.
+
+Uso posible:
+
+- Medir cantidad de propiedades.
+- Medir cantidad de inmobiliarias.
+- Medir cobertura de datos.
+- Medir calidad de datos por ciudad.
+
+---
+
+### v_location_inconsistencies
+
+Vista para detectar inconsistencias de ubicación.
+
+Uso:
+
+- Ciudades mal cargadas.
+- Provincias faltantes.
+- Barrios mal ubicados.
 - Coordenadas fuera de rango.
-- Ciudades o provincias mal normalizadas.
+
+---
+
+### v_location_inconsistencies_v2
+
+Versión mejorada de inconsistencias de ubicación.
+
+---
+
+### v_city_normalization_review
+
+Vista para revisar normalización de ciudades.
+
+Uso:
+
+- Detectar ciudades duplicadas.
+- Detectar variantes de nombres.
+- Revisar errores de escritura.
+- Normalizar automáticamente.
+
+---
+
+### v_city_normalized_summary
+
+Vista de resumen de ciudades normalizadas.
+
+Uso:
+
+- Ver ciudades limpias.
+- Comparar cantidad de propiedades por ciudad.
+- Medir cobertura territorial.
+
+---
+
+## Problemas frecuentes a revisar
+
+### Propiedades sin coordenadas
+
+Revisar:
+
+- latitud vacía
+- longitud vacía
+- dirección incompleta
+- ciudad mal cargada
+- provincia faltante
+- coordenadas fuera de rango
+
+---
+
+### Propiedades sin imágenes
+
+Revisar:
+
+- propiedades sin imagen
+- propiedades con placeholder
+- logos detectados como imagen
+- URLs inválidas
+- galerías no extraídas
+
+---
+
+### Propiedades sin precio
+
+Revisar:
+
+- precio vacío
+- precio como “Consultar”
+- moneda vacía
+- moneda incorrecta
+- expensas confundidas con precio
+
+---
+
+### Duplicados
+
+Revisar:
+
+- URL repetida
+- hash_dedup repetido
+- título muy similar
+- misma dirección
+- misma inmobiliaria
+- diferencias mínimas de URL
+
+---
+
+### Ubicación mal normalizada
+
+Revisar:
+
+- barrio cargado como ciudad
+- ciudad cargada como provincia
+- provincia vacía
+- país vacío
+- zonas comerciales en vez de localidad real
+
+---
+
+## Consultas útiles
+
+### Ver cantidad total de propiedades
+
+select count(*) as total_propiedades
+from propiedades;
+
+---
+
+### Ver propiedades sin coordenadas
+
+select count(*) as sin_coordenadas
+from propiedades
+where latitud is null
+   or longitud is null;
+
+---
+
+### Ver propiedades con coordenadas
+
+select count(*) as con_coordenadas
+from propiedades
+where latitud is not null
+  and longitud is not null;
+
+---
+
+### Ver propiedades sin precio
+
+select count(*) as sin_precio
+from propiedades
+where precio is null;
+
+---
+
+### Ver propiedades por ciudad
+
+select ciudad, provincia, count(*) as cantidad
+from propiedades
+group by ciudad, provincia
+order by cantidad desc;
+
+---
+
+### Ver propiedades por operación
+
+select operacion, count(*) as cantidad
+from propiedades
+group by operacion
+order by cantidad desc;
+
+---
+
+### Ver propiedades por tipo
+
+select tipo_propiedad, count(*) as cantidad
+from propiedades
+group by tipo_propiedad
+order by cantidad desc;
+
+---
+
+### Ver propiedades recientes
+
+select id, titulo, ciudad, provincia, precio, moneda, created_at
+from propiedades
+order by created_at desc
+limit 50;
+
+---
+
+### Ver últimas corridas de scraping
+
+select *
+from scraping_runs
+order by created_at desc
+limit 20;
+
+---
+
+### Ver últimos items de scraping
+
+select *
+from scraping_run_items
+order by created_at desc
+limit 50;
+
+---
+
+### Ver items trabados en running
+
+select *
+from scraping_run_items
+where status = 'running'
+order by updated_at asc;
+
+---
+
+### Ver errores de scraping más frecuentes
+
+select error_type, count(*) as cantidad
+from scraping_run_items
+where error_type is not null
+group by error_type
+order by cantidad desc;
+
+---
+
+## Checklist antes de tocar Supabase
+
+Antes de hacer cambios importantes:
+
+- [ ] Entender qué tabla se va a tocar.
+- [ ] Revisar si el frontend usa esa tabla o vista.
+- [ ] Revisar si el scraper usa esa tabla.
+- [ ] Hacer primero una consulta SELECT.
+- [ ] Evitar DELETE, DROP o TRUNCATE sin confirmación.
+- [ ] Evitar UPDATE masivo sin WHERE.
+- [ ] Guardar la consulta usada.
+- [ ] Registrar la decisión en Obsidian.
+- [ ] Probar en pequeño antes de aplicar en grande.
+
+---
+
+## Checklist de calidad de datos
+
+Revisar periódicamente:
+
+- [ ] Cantidad total de propiedades.
+- [ ] Propiedades con coordenadas.
+- [ ] Propiedades sin coordenadas.
+- [ ] Propiedades con imágenes reales.
+- [ ] Propiedades sin imágenes.
+- [ ] Propiedades con precio.
+- [ ] Propiedades sin precio.
+- [ ] Propiedades por ciudad.
+- [ ] Propiedades por provincia.
+- [ ] Propiedades duplicadas.
+- [ ] Inmobiliarias pendientes de scraping.
+- [ ] Inmobiliarias con errores.
+- [ ] Últimas corridas de scraping.
+- [ ] Items trabados en running.
+
+---
+
+## Notas generales
+
+Supabase debe mantenerse ordenado porque es el centro de los datos reales del proyecto.
+
+La base de datos no debe ser corregida manualmente cada vez que aparece un error. Si el error viene del scraping, la corrección debe hacerse en el scraper.
+
+Esta nota debe actualizarse cada vez que se creen tablas, vistas, campos importantes o consultas útiles.
+
+---
+
+# Prompts útiles para scraping y pipeline (2026-05-29)
+
+Esta sección guarda prompts listos para pegarle a Claude o Codex. Todos incluyen reglas de seguridad para no romper nada.
+
+---
+
+## Prompt 1: Diagnóstico de familias de errores de scraping
+
+```text
+Necesito que diagnostiques y agrupes los errores del scraping de InmoCapital por familias.
+
+Trabajá SOLO en modo diagnóstico:
+- No modifiques código.
+- No ejecutes scraping.
+- No publiques a Supabase.
+- No uses count(*) ni count=exact.
+- No corras el pipeline completo.
+
+Fuentes: los logs más recientes (los *_err.log tienen el detalle real porque el scraper loguea a stderr).
+
+Agrupá los errores en familias con, para cada una:
+- error_type y cantidad.
+- ejemplos de inmobiliarias/URLs.
+- causa probable.
+- impacto.
+- si la corrección es general o específica.
+- prioridad.
+
+Cerrá con el hallazgo principal y la corrección general de mayor impacto.
+Primero presentá el diagnóstico y esperá mi aprobación antes de tocar código.
+```
+
+---
+
+## Prompt 2: Retest controlado con --test-url y --allow-playwright
+
+```text
+Quiero un retest controlado de una sola inmobiliaria de la familia requires_playwright.
 
 Reglas:
+- workers 1, una sola URL.
+- USE_INTERNAL_DB=true solo en la terminal, sin tocar .env.
+- Sin scraping masivo, sin publicación, sin run_daily_pipeline.py --commit.
+- No modifiques código. No hagas commits ni push.
 
-- No modificar datos.
-- Solo consultas de diagnóstico.
-- Priorizar problemas que afecten el frontend y la experiencia del usuario.
-- Darme consultas SQL listas para pegar.
+Usá el modo --test-url del scraper (no consume cola y no escribe en Neon ni Supabase):
+
+  python scraper/scraper_propiedades.py --test-url "<URL>" --allow-playwright --workers 1
+
+Después decime qué verificar en el bloque "TEST URL FINALIZADO":
+- Estrategia usada (esperado playwright_html).
+- Propiedades detectadas (esperado > 0).
+- Que no aparezca el error requires_playwright.
+
+Y cómo comparar contra el error anterior.
+```
 
 ---
 
-## Prompt para pedir corrección automática de normalización
+## Prompt 3: Corrección general por familia de errores
 
-Estoy trabajando en InmoCapital y necesito mejorar la normalización de datos desde el código.
-
-El problema es:
-
-[Explicar problema: ciudad, provincia, barrio, precio, moneda, operación, tipo de propiedad, etc.]
+```text
+Corregí la causa GENERAL de la familia de error [NOMBRE_FAMILIA] del scraping de InmoCapital.
 
 Reglas:
+- Corregir la causa común, no inmobiliarias una por una.
+- Si un error es específico de una sola inmobiliaria, marcarlo como caso específico y no mezclarlo.
+- Un commit por familia de error o por cambio lógico. No mezclar refactors grandes.
+- No romper el flujo actual. Mantener compatibilidad Supabase + Neon.
+- Si USE_INTERNAL_DB=false, el scraper debe seguir funcionando igual.
+- Si USE_INTERNAL_DB=true, debe seguir escribiendo raw en Neon.
 
-- No quiero corregir estos datos manualmente en Supabase.
-- Quiero que el scraper o el proceso de normalización lo resuelva automáticamente.
-- No borrar datos.
-- No hacer cambios destructivos.
-- Mantener valor original si puede ser útil.
-- Explicarme qué archivo tocar.
-- Darme una forma de probar la corrección.
-
-Objetivo:
-
-Que los próximos scrapeos guarden los datos correctamente y que el problema no vuelva a repetirse.
+Antes de implementar, presentá: archivos a tocar, funciones, cambios, riesgos, validación y agencias de test.
+```
 
 ---
 
-## Prompt para frontend
-
-Estoy trabajando en el frontend de InmoCapital.
-
-Uso Next.js, Tailwind, App Router y Leaflet.
-
-Necesito ayuda con:
-
-[Explicar problema o mejora]
-
-Reglas:
-
-- No romper la conexión con Supabase.
-- No borrar componentes importantes.
-- Mantener diseño responsive.
-- Priorizar mobile.
-- Evitar cambios innecesarios.
-- Explicarme paso a paso qué archivo modificar.
-- Darme el código listo para pegar si corresponde.
-- Indicar cómo probar el cambio.
-
-Objetivo:
-
-Mejorar la experiencia del usuario sin romper el proyecto.
-
----
-
-## Prompt para mejorar cards de propiedades
-
-Estoy trabajando en las cards de propiedades de InmoCapital.
-
-Quiero que las cards sean más claras, modernas y útiles.
-
-Deben mostrar:
-
-- Imagen real o placeholder propio.
-- Precio.
-- Moneda.
-- Título.
-- Ubicación.
-- Tipo de propiedad.
-- Operación.
-- Ambientes.
-- Dormitorios.
-- Superficie.
-- Inmobiliaria.
-- Botón o link de contacto.
-
-Reglas:
-
-- No mostrar campos vacíos de forma fea.
-- No romper el diseño mobile.
-- No mostrar imágenes rotas.
-- No modificar Supabase.
-- Mantener diseño limpio y profesional.
-
-Objetivo:
-
-Mejorar la experiencia visual y hacer que la card ayude al usuario a decidir rápido.
-
----
-
-## Prompt para mapa
-
-Estoy trabajando en el mapa de InmoCapital.
-
-Uso Leaflet.
-
-Necesito ayuda para:
-
-[Explicar problema o mejora]
-
-Reglas:
-
-- No mostrar propiedades sin coordenadas válidas.
-- No romper el listado lateral.
-- Mantener buena experiencia mobile.
-- Usar datos desde Supabase.
-- Evitar que el mapa se vuelva lento.
-- Explicarme qué archivos tocar.
-- Darme pasos para probar.
-
-Objetivo:
-
-Que el mapa sea claro, rápido y útil para explorar propiedades.
-
----
-
-## Prompt para GitHub
-
-Estoy trabajando en el proyecto InmoCapital en mi computadora.
-
-Ubicación local:
-
-D:\INMO CAPITAL\Inmo-Capital-main
-
-Necesito ayuda para usar Git/GitHub sin romper nada.
-
-Quiero que me expliques paso a paso, como si no supiera usar Git.
-
-Reglas:
-
-- No usar comandos destructivos.
-- No hacer force push salvo que sea absolutamente necesario y explicado.
-- Antes de subir cambios, revisar estado.
-- Explicarme qué hace cada comando.
-- Darme los comandos en orden.
-- No asumir que sé programar.
-
-Objetivo:
-
-Guardar correctamente los cambios del proyecto y subirlos a GitHub de forma segura.
-
----
-
-## Prompt para actualizar Obsidian
-
-Estoy trabajando en Obsidian como centro de control de InmoCapital.
-
-Necesito actualizar la documentación del proyecto con esta información:
-
-[Pegar información nueva]
-
-Quiero que me ayudes a decidir:
-
-- En qué nota debería guardarse.
-- Cómo debería redactarse.
-- Si corresponde agregarlo a decisiones importantes.
-- Si corresponde agregarlo a errores y soluciones.
-- Si corresponde agregarlo a pendientes.
-- Si corresponde actualizar estado actual para ChatGPT o Codex.
-
-Reglas:
-
-- Mantener orden.
-- No duplicar información innecesariamente.
-- Redactar en formato claro, listo para copiar y pegar.
-
----
-
-## Prompt para estrategia
-
-Estoy trabajando en la estrategia de InmoCapital.
-
-Necesito analizar:
-
-[Explicar tema: modelo de negocio, lanzamiento, inmobiliarias, pricing, expansión, diferenciación, etc.]
-
-Contexto:
-
-InmoCapital busca centralizar, estandarizar y analizar información inmobiliaria. No quiere ser solo otro portal de propiedades, sino una herramienta para entender mejor el mercado.
-
-Quiero una respuesta clara, estratégica y realista.
-
-Tener en cuenta:
-
-- Calidad de datos.
-- Usuarios.
-- Inmobiliarias.
-- Modelo B2B.
-- Riesgos legales.
-- Costos.
-- Diferenciación.
-- Escalabilidad.
-
----
-
-## Prompt para marketing
-
-Estoy trabajando en el marketing de InmoCapital.
-
-Necesito ayuda para:
-
-[Explicar necesidad: landing, redes, propuesta de valor, textos, presentación para inmobiliarias, etc.]
-
-Contexto:
-
-InmoCapital no es simplemente otro portal de propiedades. La propuesta es centralizar datos inmobiliarios y ayudar a usuarios a entender mejor el mercado.
-
-Tono deseado:
-
-- Claro.
-- Profesional.
-- Moderno.
-- Simple.
-- Confiable.
-- No exagerado.
-- No demasiado técnico.
-
-Quiero textos listos para copiar y pegar.
-
----
-
-## Prompt para finanzas
-
-Estoy trabajando en el modelo de negocio de InmoCapital.
-
-Necesito analizar:
-
-[Explicar tema: ingresos, costos, pricing, leads, planes para inmobiliarias, reportes, etc.]
-
-Contexto:
-
-El modelo pensado es principalmente B2B. La plataforma podría generar ingresos con inmobiliarias, leads, publicidad no invasiva, reportes de mercado y herramientas de analítica.
-
-Quiero una respuesta realista, con ventajas, riesgos y recomendaciones.
-
----
-
-## Prompt para legal
-
-Estoy trabajando en los riesgos legales de InmoCapital.
-
-Necesito analizar:
-
-[Explicar tema: scraping, uso de datos, imágenes, términos y condiciones, privacidad, inmobiliarias, etc.]
-
-Importante:
-
-No necesito asesoramiento legal definitivo, sino ordenar riesgos, preguntas y criterios para consultar con un abogado.
-
-Tener en cuenta:
-
-- Scraping.
-- Datos públicos.
-- Imágenes.
-- Datos personales.
-- Links a fuentes originales.
-- Reclamos de inmobiliarias.
-- Términos y condiciones.
-- Política de privacidad.
-- Publicidad y leads.
-
----
-
-## Prompt para crear documento formal
-
-Necesito redactar un documento formal sobre InmoCapital.
-
-Tema:
-
-[Indicar tema]
-
-Quiero que el documento esté listo para copiar y pegar en Word.
-
-Tono:
-
-- Formal.
-- Claro.
-- Profesional.
-- Ordenado.
-- Sin emojis.
-- Con títulos y secciones.
-
-Contexto:
-
-InmoCapital es una plataforma proptech orientada a centralizar, estandarizar y analizar información inmobiliaria de distintas inmobiliarias para ayudar a usuarios, inmobiliarias e inversores a entender mejor el mercado.
-
----
-
-## Prompt para hacer resumen ejecutivo
-
-Necesito un resumen ejecutivo de InmoCapital.
-
-Debe explicar:
-
-- Qué es InmoCapital.
-- Qué problema resuelve.
-- Cuál es la solución.
-- A quién está dirigido.
-- Cómo se diferencia.
-- Modelo de negocio posible.
-- Estado actual del proyecto.
-- Próximos pasos.
-
-Tono:
-
-- Claro.
-- Profesional.
-- Directo.
-- Entendible para alguien que no conoce el proyecto.
-
----
-
-## Prompt para pedir plan de trabajo
-
-Estoy trabajando en InmoCapital y necesito un plan de trabajo.
-
-Objetivo:
-
-[Indicar objetivo]
-
-Quiero que me armes un plan paso a paso, ordenado por prioridad.
-
-Tener en cuenta:
-
-- No soy experto programando.
-- Necesito instrucciones claras.
-- No quiero romper el proyecto.
-- Quiero avanzar de forma segura.
-- Priorizar lo urgente y lo que más impacto tiene.
-
-Formato deseado:
-
-- Fase 1.
-- Fase 2.
-- Fase 3.
-- Tareas concretas.
-- Orden recomendado.
-- Qué revisar al terminar cada fase.
-
----
-
-## Prompt para diagnóstico general del proyecto
-
-Necesito hacer un diagnóstico general del estado actual de InmoCapital.
-
-Quiero revisar:
-
-- Desarrollo técnico.
-- Scraping.
-- Supabase.
-- Calidad de datos.
-- Frontend.
-- Producto.
-- Marketing.
-- Finanzas.
-- Legal.
-- Pendientes.
-- Riesgos principales.
-
-Quiero que me indiques:
-
-- Qué está bien.
-- Qué está incompleto.
-- Qué es urgente.
-- Qué puede esperar.
-- Qué harías primero.
-- Qué decisiones habría que tomar.
-
----
-
-## Prompts pendientes por crear
-
-- Prompt para presentación comercial a inmobiliarias.
-- Prompt para landing page completa.
-- Prompt para análisis de competencia.
-- Prompt para estrategia de lanzamiento.
-- Prompt para dashboard de métricas.
-- Prompt para IA asesora inmobiliaria.
-- Prompt para política de privacidad.
-- Prompt para términos y condiciones.
-- Prompt para pitch de inversión.
-- Prompt para roadmap técnico.
+## Prompt 4: Reglas de seguridad para no correr scraping masivo
+
+```text
+REGLAS DE SEGURIDAD para cualquier tarea de scraping/pipeline en InmoCapital:
+
+- No correr todas las inmobiliarias de golpe.
+- No ejecutar scraping masivo. No usar workers altos.
+- No usar count(*) ni count=exact. No hacer select * masivo.
+- No borrar datos. No modificar Supabase manualmente.
+- No modificar Neon manualmente salvo que sea necesario y me lo expliques antes.
+- No tocar .env.
+- No hacer push sin mi autorización. No hacer cambios destructivos.
+- No publicar a Supabase durante el diagnóstico.
+- No correr run_daily_pipeline.py en --commit.
+- Probar siempre primero en dry-run y en lotes chicos.
+```
