@@ -97,6 +97,27 @@ def print_command(label: str, command: Sequence[str]) -> None:
     print(f"[{label}] " + " ".join(command))
 
 
+def playwright_is_installed() -> bool:
+    """Safe, read-only check. Never installs anything."""
+    try:
+        import importlib.util
+
+        return importlib.util.find_spec("playwright") is not None
+    except Exception:
+        return False
+
+
+def assert_playwright_available() -> None:
+    if not playwright_is_installed():
+        raise SystemExit(
+            "Se pidio --allow-playwright pero Playwright no parece instalado.\n"
+            "Instalar manualmente (no lo hago automaticamente):\n"
+            "  pip install playwright\n"
+            "  python -m playwright install\n"
+            "Luego volver a correr con --allow-playwright."
+        )
+
+
 def pipeline_env(internal_db_url: str) -> Dict[str, str]:
     env = os.environ.copy()
     env["USE_INTERNAL_DB"] = "true"
@@ -355,6 +376,8 @@ def print_dry_run_plan(args: argparse.Namespace, run_day: date) -> None:
         "--workers",
         str(args.workers),
     ]
+    if args.allow_playwright:
+        scrape_cmd.append("--allow-playwright")
     validate_cmd = [
         sys.executable,
         "scripts/validate_raw_properties.py",
@@ -415,6 +438,11 @@ def print_dry_run_plan(args: argparse.Namespace, run_day: date) -> None:
     print(f"max_writes_total={args.max_writes_total}")
     print(f"min_score={args.min_score}")
     print(f"allow_pending_geo={args.allow_pending_geo}")
+    print(f"allow_playwright={args.allow_playwright}")
+    if args.allow_playwright:
+        print("playwright=HABILITADO (scraper recibe --allow-playwright)")
+    else:
+        print("playwright=DESHABILITADO (comportamiento por defecto, sin --allow-playwright)")
     print("-" * 72)
     print_command("FASE 1 create-queue", create_cmd)
     print_command("FASE 2 scraper", scrape_cmd)
@@ -448,6 +476,11 @@ def main() -> None:
     parser.add_argument("--max-error-rate", type=float, default=0.40)
     parser.add_argument("--max-publish-fail-rate", type=float, default=0.20)
     parser.add_argument("--allow-pending-geo", action="store_true")
+    parser.add_argument(
+        "--allow-playwright",
+        action="store_true",
+        help="Pasar --allow-playwright al scraper para sitios que requieren render JS",
+    )
     parser.add_argument("--reclaim-stale", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--commit", action="store_true")
@@ -467,6 +500,8 @@ def main() -> None:
     for name in ("max_validate_iterations", "max_geocode_iterations", "max_queue_iterations", "max_publish_iterations"):
         if getattr(args, name) <= 0:
             raise SystemExit(f"--{name.replace('_', '-')} debe ser mayor a 0")
+    if args.allow_playwright:
+        assert_playwright_available()
 
     started = time.monotonic()
     run_day = date.today()
@@ -502,6 +537,7 @@ def main() -> None:
     print("RUN DAILY PIPELINE")
     print(f"mode={mode}")
     print(f"run_date={run_day.isoformat()}")
+    print(f"allow_playwright={args.allow_playwright}")
     print(f"max_validate_iterations={args.max_validate_iterations}")
     print(f"max_geocode_iterations={args.max_geocode_iterations}")
     print(f"max_queue_iterations={args.max_queue_iterations}")
@@ -553,6 +589,8 @@ def main() -> None:
             "--workers",
             str(args.workers),
         ]
+        if args.allow_playwright:
+            scrape_cmd.append("--allow-playwright")
         if args.dry_run:
             print_command("scraper dry-run", scrape_cmd)
             print("DRY-RUN: no se ejecuta scraping real.")
@@ -755,6 +793,7 @@ def main() -> None:
         print("RESUMEN FINAL")
         print(f"mode={mode}")
         print(f"run_id={run_id}")
+        print(f"allow_playwright={args.allow_playwright}")
         print(f"inserted_items={inserted_items}")
         print(f"validate_iterations_used={validate_iterations_used}")
         print(f"geocode_iterations_used={geocode_iterations_used}")
