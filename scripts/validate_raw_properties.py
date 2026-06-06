@@ -13,6 +13,7 @@ import os
 import re
 import sys
 from collections import Counter
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import parse_qsl, unquote, urlparse
@@ -51,12 +52,45 @@ SELECT
   pais,
   latitud,
   longitud,
-  imagenes
+  imagenes,
+  datos_extra
 FROM public.propiedades_raw
 WHERE status = 'raw'
 ORDER BY id ASC
 LIMIT %s
 """
+
+RAW_SELECT_COLUMNS = """
+SELECT
+  id,
+  scraping_run_item_id,
+  inmobiliaria_id,
+  hash_dedup,
+  titulo,
+  descripcion,
+  precio,
+  moneda,
+  superficie_total,
+  superficie_cubierta,
+  tipo_propiedad,
+  operacion,
+  url,
+  url_normalizada,
+  direccion_raw,
+  barrio,
+  ciudad,
+  provincia,
+  pais,
+  latitud,
+  longitud,
+  imagenes,
+  datos_extra
+FROM public.propiedades_raw
+"""
+
+SOURCE_FILTERS = {
+    "captured_json": ("datos_extra->>'imported_by' = %s", "scripts/import_captured_props_to_neon.py"),
+}
 
 STAGING_COLUMNS = [
     "raw_id",
@@ -87,8 +121,19 @@ STAGING_COLUMNS = [
 
 
 try:
-    from scraper.scraper_propiedades import normalize_property_url_for_dedup, OPERACION_MAP
+    from scraper.scraper_propiedades import (
+        normalize_property_url_for_dedup,
+        OPERACION_MAP,
+        normalize_location_fields as pipeline_normalize_location_fields,
+        clean_property_images as pipeline_clean_property_images,
+        _normalizar_precio_detalle as pipeline_price_from_text,
+        normalizar_tipo as pipeline_normalizar_tipo,
+    )
 except Exception:
+    pipeline_normalize_location_fields = None  # type: ignore
+    pipeline_clean_property_images = None  # type: ignore
+    pipeline_price_from_text = None  # type: ignore
+    pipeline_normalizar_tipo = None  # type: ignore
     OPERACION_MAP: Dict[str, str] = {
         "venta": "venta",
         "sale": "venta",
@@ -188,7 +233,15 @@ def connect_internal_db(db_url: str):
         from psycopg.rows import dict_row  # type: ignore
     except ImportError as exc:
         raise RuntimeError("Falta instalar psycopg/psycopg-binary para usar INTERNAL_DB_URL.") from exc
-    return psycopg.connect(db_url, row_factory=dict_row)
+    return psycopg.connect(
+        db_url,
+        row_factory=dict_row,
+        keepalives=1,
+        keepalives_idle=30,
+        keepalives_interval=10,
+        keepalives_count=5,
+        connect_timeout=30,
+    )
 
 
 def json_value(value: Any) -> Any:
@@ -236,6 +289,249 @@ def normalize_operation(value: Any) -> Optional[str]:
         return key
     mapped = OPERACION_MAP.get(key)
     return mapped if mapped in {"venta", "alquiler", "alquiler_temporario"} else None
+
+
+GARBAGE_ADDRESS_PATTERNS = [
+    "contacto",
+    "oficinas",
+    "oficina",
+    "telefono",
+    "teléfono",
+    "tel ",
+    "tel:",
+    "cel ",
+    "cel:",
+    "whatsapp",
+    "email",
+    "mail",
+    "www.",
+    "http://",
+    "https://",
+    "inmobiliaria",
+    "bienes raices",
+    "bienes raíces",
+    "consultar precio",
+    "usd ",
+    "u$s",
+    "superficie",
+    "expensas",
+    "no acepta hipotecario",
+    "acepta hipotecario",
+    "detalles de la propiedad",
+    "estilo a ",
+    "matricula",
+    "cucicba",
+    "cmcpsi",
+]
+
+
+def invalid_address_reason(value: Any) -> Optional[str]:
+    text = collapse_spaces(value)
+    if not text:
+        return None
+    lowered = text.lower()
+    if any(pattern in lowered for pattern in GARBAGE_ADDRESS_PATTERNS):
+        return "contaminated_address"
+    if re.search(r"[\w.%-]+@[\w.-]+\.[A-Za-z]{2,}", text):
+        return "address_is_email"
+    if re.search(r"(?:\+?\d[\d\s().-]{7,}\d)", text):
+        return "address_contains_phone"
+    if re.search(r"(?:u\$s|usd|\$|ars)\s*[\d.,]{2,}", lowered):
+        return "address_contains_price"
+    if re.fullmatch(r"(?:u\$s|usd|\$|ars)?\s*[\d.,]{2,}(?:\s*(?:usd|ars|pesos?))?", lowered):
+        return "address_is_price"
+    if len(text) > 90 and len(re.findall(r"\d+", text)) > 2:
+        return "address_too_long_numeric"
+    return None
+
+
+def normalize_address_value(value: Any) -> Tuple[Optional[str], Optional[str]]:
+    text = collapse_spaces(value)
+    if not text:
+        return None, None
+    reason = invalid_address_reason(text)
+    if reason:
+        return None, reason
+    return text, None
+
+
+def clean_images(value: Any) -> List[str]:
+    if not isinstance(value, list):
+        return []
+    if callable(pipeline_clean_property_images):
+        try:
+            return list(pipeline_clean_property_images(value))[:10]
+        except Exception:
+            pass
+    out: List[str] = []
+    for item in value:
+        url = item.get("url") or item.get("src") if isinstance(item, dict) else item
+        text = clean_text(url)
+        if not text:
+            continue
+        lower = text.lower()
+        if any(token in lower for token in (
+            "placeholder", "sin-imagen", "no-image", "logo", "favicon",
+            "facebook", "instagram", "whatsapp", "linkedin", "youtube",
+            "menu", "boton", "btn", "mapa",
+        )):
+            continue
+        if lower.endswith(".svg") or text.startswith("data:"):
+            continue
+        out.append(text)
+        if len(out) >= 10:
+            break
+    return out
+
+
+# Fix global — safety net standalone: tokens de hostname para inferencia de ubicación.
+# Espejo compacto del dict en scraper_propiedades._HOSTNAME_LOCATION_TOKENS.
+# Solo se activa si pipeline_normalize_location_fields no está disponible O falló.
+_HOSTNAME_LOCATION_TOKENS_FALLBACK: List[Tuple[str, Optional[str], str]] = [
+    ("cafayate",    "Cafayate",                 "Salta"),
+    ("ushuaia",     "Ushuaia",                  "Tierra del Fuego"),
+    ("bariloche",   "San Carlos de Bariloche",  "Río Negro"),
+    ("neuquen",     "Neuquén",                  "Neuquén"),
+    ("resistencia", "Resistencia",              "Chaco"),
+    ("necochea",    "Necochea",                 "Buenos Aires"),
+    ("olavarria",   "Olavarría",                "Buenos Aires"),
+    ("chivilcoy",   "Chivilcoy",                "Buenos Aires"),
+    ("tandil",      "Tandil",                   "Buenos Aires"),
+    ("formosa",     "Formosa",                  "Formosa"),
+    ("posadas",     "Posadas",                  "Misiones"),
+    ("jujuy",       "San Salvador de Jujuy",    "Jujuy"),
+    ("tucuman",     "San Miguel de Tucumán",     "Tucumán"),
+    ("salta",       "Salta",                    "Salta"),
+    ("mendoza",     "Mendoza",                  "Mendoza"),
+    ("cordoba",     "Córdoba",                  "Córdoba"),
+    ("lapampa",     None,                       "La Pampa"),
+    ("chubut",      None,                       "Chubut"),
+]
+
+
+def _normalize_key(value: str) -> str:
+    """Normalización mínima para comparar tokens de hostname: sin acentos, minúsculas."""
+    import unicodedata
+    text = unicodedata.normalize("NFKD", value.lower())
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    return re.sub(r"[^a-z0-9]+", "", text)
+
+
+def _infer_location_from_hostname_standalone(url: Any) -> Optional[Tuple[Optional[str], str, str]]:
+    """Fallback standalone: infiere (ciudad, provincia, motivo) desde hostname del URL.
+    No depende del scraper. Solo actúa si hay exactamente un match no ambiguo.
+    """
+    if not url:
+        return None
+    try:
+        hostname = urlparse(str(url)).hostname or ""
+    except Exception:
+        return None
+    if not hostname:
+        return None
+    if hostname.lower().startswith("www."):
+        hostname = hostname[4:]
+    hostname = re.sub(
+        r"\.(?:com\.ar|net\.ar|org\.ar|gob\.ar|gov\.ar|edu\.ar|com|net|org|ar)$",
+        "", hostname, flags=re.IGNORECASE,
+    )
+    base_key = _normalize_key(hostname)
+    if not base_key or len(base_key) < 4:
+        return None
+    matches = []
+    for token, ciudad, provincia in _HOSTNAME_LOCATION_TOKENS_FALLBACK:
+        token_key = _normalize_key(token)
+        if token_key and token_key in base_key:
+            matches.append((ciudad, provincia))
+    if len(matches) != 1:
+        return None
+    ciudad, provincia = matches[0]
+    return ciudad, provincia, "location_inferred_from_hostname"
+
+
+def infer_location_from_signals(row: Dict[str, Any]) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+    ciudad = clean_text(row.get("ciudad"))
+    provincia = clean_text(row.get("provincia"))
+    barrio = clean_text(row.get("barrio"))
+    datos_extra = row.get("datos_extra") if isinstance(row.get("datos_extra"), dict) else {}
+    urls = [
+        row.get("url"),
+        row.get("url_normalizada"),
+        datos_extra.get("source_url"),
+        datos_extra.get("captured_source_url"),
+    ]
+
+    if callable(pipeline_normalize_location_fields):
+        description = " ".join(
+            str(value or "")
+            for value in (
+                row.get("descripcion"),
+                row.get("titulo"),
+                row.get("url"),
+                datos_extra.get("source_url"),
+                datos_extra.get("captured_source_url"),
+            )
+        )
+        for candidate_url in urls:
+            try:
+                normalized = pipeline_normalize_location_fields(
+                    row.get("titulo"),
+                    row.get("direccion_raw"),
+                    barrio,
+                    ciudad,
+                    provincia,
+                    row.get("pais") or "Argentina",
+                    candidate_url,
+                    description,
+                )
+            except Exception:
+                normalized = None
+            if isinstance(normalized, dict) and normalized.get("location_normalized"):
+                return (
+                    clean_text(normalized.get("ciudad")),
+                    clean_text(normalized.get("provincia")),
+                    clean_text(normalized.get("barrio")),
+                    clean_text(normalized.get("motivo")),
+                )
+
+    # Safety net: si el pipeline no infirió nada y ciudad/provincia siguen vacías,
+    # intentar desde hostname (independiente del scraper).
+    if not ciudad and not provincia:
+        for candidate_url in urls:
+            result = _infer_location_from_hostname_standalone(candidate_url)
+            if result:
+                inferred_ciudad, inferred_provincia, motivo = result
+                return clean_text(inferred_ciudad), inferred_provincia, barrio, motivo
+
+    return ciudad, provincia, barrio, None
+
+
+def infer_price_from_text(row: Dict[str, Any]) -> Tuple[Optional[float], Optional[str], Optional[str]]:
+    if not callable(pipeline_price_from_text):
+        return None, None, None
+    text = " ".join(str(value or "") for value in (row.get("titulo"), row.get("descripcion"), row.get("url")))
+    try:
+        price, currency = pipeline_price_from_text(text)
+    except Exception:
+        return None, None, None
+    if price and price > 0:
+        return float(price), (clean_text(currency) or "").upper(), "price_inferred_from_text"
+    return None, None, None
+
+
+def normalize_type_from_signals(row: Dict[str, Any]) -> Optional[str]:
+    tipo = clean_text(row.get("tipo_propiedad"))
+    if tipo and tipo.lower() != "otro":
+        return tipo.lower()
+    if callable(pipeline_normalizar_tipo):
+        for value in (row.get("titulo"), row.get("descripcion"), row.get("url")):
+            try:
+                inferred = pipeline_normalizar_tipo(value)
+            except Exception:
+                inferred = None
+            if inferred and inferred != "otro":
+                return str(inferred).lower()
+    return tipo.lower() if tipo else None
 
 
 def valid_argentina_coordinates(lat: Optional[float], lon: Optional[float]) -> bool:
@@ -296,15 +592,25 @@ def build_validation(cur, row: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]]
     precio_raw = row.get("precio")
     precio_present = precio_raw is not None and str(precio_raw).strip() != ""
     precio: Optional[float] = None
+    price_inference: Optional[str] = None
+    invalid_price_present = False
     if precio_present:
         try:
             precio = to_float(precio_raw)
             if precio is None or precio <= 0:
                 raise ValueError("non_positive")
         except Exception:
+            invalid_price_present = True
             hard_issues.append(issue("invalid_price", f"precio={precio_raw}"))
+    if precio is None and not invalid_price_present:
+        inferred_price, inferred_currency, price_inference = infer_price_from_text(row)
+        if inferred_price is not None:
+            precio = inferred_price
     moneda = clean_text(row.get("moneda"))
     moneda = moneda.upper() if moneda else None
+    if precio is not None and not moneda and price_inference:
+        _, inferred_currency, _ = infer_price_from_text(row)
+        moneda = inferred_currency
     if precio is not None and moneda not in {"ARS", "USD"}:
         hard_issues.append(issue("invalid_currency", f"moneda={moneda}"))
 
@@ -317,28 +623,35 @@ def build_validation(cur, row: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]]
         hard_issues.append(issue("duplicate", f"hash_dedup={hash_dedup} ya existe en propiedades_staging"))
 
     validation_score = 100
-    ciudad = clean_text(row.get("ciudad"))
-    provincia = clean_text(row.get("provincia"))
+    ciudad, provincia, barrio, location_inference = infer_location_from_signals(row)
     if not ciudad and not provincia:
         validation_score -= 15
         soft_issues.append(issue("missing_location", "sin ciudad ni provincia"))
+    elif location_inference:
+        soft_issues.append(issue("location_inferred_from_text", location_inference))
 
-    tipo_propiedad = clean_text(row.get("tipo_propiedad"))
-    tipo_propiedad = tipo_propiedad.lower() if tipo_propiedad else None
+    tipo_propiedad = normalize_type_from_signals(row)
     if not tipo_propiedad:
         validation_score -= 15
         soft_issues.append(issue("missing_type", "sin tipo_propiedad"))
 
-    imagenes = row.get("imagenes")
-    if not isinstance(imagenes, list):
-        imagenes = []
-    imagenes = imagenes[:10]
+    imagenes = clean_images(row.get("imagenes"))
     if not imagenes:
         validation_score -= 10
         soft_issues.append(issue("missing_images", "sin imagenes"))
 
     if precio is None:
         validation_score -= 20
+    elif price_inference:
+        soft_issues.append(issue("price_inferred_from_text", price_inference))
+
+    direccion_normalizada, address_issue = normalize_address_value(row.get("direccion_raw"))
+    if address_issue:
+        validation_score -= 5
+        soft_issues.append(issue("invalid_address", address_issue))
+    if not direccion_normalizada and (ciudad or provincia):
+        validation_score -= 5
+        soft_issues.append(issue("geocoding_skipped_approx_location", "sin direccion precisa; no se inventan coordenadas"))
 
     latitud = to_float(row.get("latitud"))
     longitud = to_float(row.get("longitud"))
@@ -367,15 +680,21 @@ def build_validation(cur, row: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]]
         "operacion": operacion,
         "url": url,
         "url_normalizada": url_normalizada,
-        "direccion_normalizada": collapse_spaces(row.get("direccion_raw")),
-        "barrio": clean_text(row.get("barrio")),
+        "direccion_normalizada": direccion_normalizada,
+        "barrio": barrio,
         "ciudad": ciudad,
         "provincia": provincia,
         "pais": clean_text(row.get("pais")) or "Argentina",
         "latitud": latitud,
         "longitud": longitud,
         "imagenes": imagenes,
-        "geocoding_status": "done" if latitud is not None and longitud is not None else "pending",
+        "geocoding_status": (
+            "done"
+            if latitud is not None and longitud is not None
+            else "skipped"
+            if not direccion_normalizada and (ciudad or provincia)
+            else "pending"
+        ),
         "validation_score": max(0, validation_score),
         "status": "staging",
     }
@@ -434,14 +753,132 @@ def process_row(cur, row: Dict[str, Any]) -> Tuple[str, List[Dict[str, str]], bo
         return "rejected", [processing_issue], False
 
 
-def fetch_raw_rows(cur, limit: int) -> List[Dict[str, Any]]:
-    cur.execute(RAW_SELECT_SQL, [limit])
+def source_filter_clause(source: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+    if not source:
+        return None, None
+    if source not in SOURCE_FILTERS:
+        valid = ", ".join(sorted(SOURCE_FILTERS))
+        raise SystemExit(f"--source invalido: {source}. Valores validos: {valid}")
+    return SOURCE_FILTERS[source]
+
+
+def fetch_raw_rows(cur, limit: int, source: Optional[str] = None, created_after: Optional[str] = None) -> List[Dict[str, Any]]:
+    clauses = ["status = 'raw'"]
+    params: List[Any] = []
+    source_clause, source_value = source_filter_clause(source)
+    if source_clause:
+        clauses.append(source_clause)
+        params.append(source_value)
+    if created_after:
+        clauses.append("scraped_at >= %s")
+        params.append(created_after)
+    params.append(limit)
+    where_sql = " AND ".join(clauses)
+    sql = f"""
+{RAW_SELECT_COLUMNS}
+WHERE {where_sql}
+ORDER BY id ASC
+LIMIT %s
+"""
+    cur.execute(sql, params)
     return [dict(row) for row in cur.fetchall()]
+
+
+def render_report(summary: Dict[str, Any]) -> str:
+    issue_lines = "\n".join(f"- {key}: {value}" for key, value in sorted(summary["issue_counts"].items())) or "- none: 0"
+    critical_keys = {
+        "missing_hash",
+        "missing_inmobiliaria_id",
+        "missing_url",
+        "missing_title",
+        "invalid_price",
+        "invalid_currency",
+        "invalid_operation",
+        "duplicate",
+    }
+    critical_counts = {key: value for key, value in summary["issue_counts"].items() if key in critical_keys}
+    critical_lines = "\n".join(f"- {key}: {value}" for key, value in sorted(critical_counts.items())) or "- none: 0"
+    return f"""# Validate imported raw properties
+
+Fecha: {summary['timestamp']}
+Modo: {summary['mode']}
+Origen: {summary['source'] or 'all_raw'}
+Destino: public.propiedades_staging
+
+## Resumen
+
+- raw_detectadas: {summary['read_count']}
+- candidatas_a_staging: {summary['validated_count']}
+- pasaron_a_staging: {summary['validated_count'] if summary['mode'] == 'commit' else 0}
+- rechazadas: {summary['rejected_count']}
+- warnings: {summary['warning_count']}
+- duplicadas: {summary['duplicate_count']}
+- accion_final: {summary['final_action']}
+
+## Issues principales
+
+{issue_lines}
+
+## Campos criticos faltantes o invalidos
+
+{critical_lines}
+
+## Seguridad
+
+- no_toca_supabase: true
+- no_publica_supabase: true
+- no_toca_publish_queue: true
+- no_modifica_env: true
+- no_borra_datos: true
+- no_commit_git: true
+- no_push_git: true
+"""
+
+
+def safe_relative_path(path: Path) -> str:
+    try:
+        return str(path.resolve().relative_to(REPO_ROOT))
+    except Exception:
+        return str(path)
+
+
+def write_report(summary: Dict[str, Any], report_path: Path) -> None:
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(render_report(summary), encoding="utf-8")
+
+
+def update_master_progress(summary: Dict[str, Any], report_path: Path) -> None:
+    master_path = REPO_ROOT / "reports" / "scraping_autofix" / "master_progress.md"
+    master_path.parent.mkdir(parents=True, exist_ok=True)
+    entry = (
+        f"\n\n## Validate imported raw {summary['timestamp']}\n\n"
+        f"- Modo: {summary['mode']}\n"
+        f"- Origen: {summary['source'] or 'all_raw'}\n"
+        f"- Raw detectadas: {summary['read_count']}\n"
+        f"- Candidatas a staging: {summary['validated_count']}\n"
+        f"- Rechazadas: {summary['rejected_count']}\n"
+        f"- Warnings: {summary['warning_count']}\n"
+        f"- Duplicadas: {summary['duplicate_count']}\n"
+        f"- Accion final: {summary['final_action']}\n"
+        f"- Reporte: {safe_relative_path(report_path)}\n"
+        f"- Confirmacion: no .env, no borrado, no commit, no push, no publicacion masiva Supabase, no publish_queue, no pipeline commit, no cambios destructivos.\n"
+    )
+    try:
+        if master_path.exists():
+            current = master_path.read_text(encoding="utf-8", errors="ignore")
+        else:
+            current = "# Scraping autofix master progress\n"
+        master_path.write_text(current.rstrip() + entry + "\n", encoding="utf-8")
+    except OSError as exc:
+        print(f"warning: no pude actualizar master_progress.md: {exc}", file=sys.stderr)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Validar propiedades_raw en Neon y pasarlas a staging")
     parser.add_argument("--limit", type=int, default=50, help="Cantidad maxima de filas raw a procesar")
+    parser.add_argument("--source", choices=sorted(SOURCE_FILTERS), help="Filtrar raw por origen seguro")
+    parser.add_argument("--created-after", help="Filtrar raw por scraped_at >= valor ISO/timestamptz")
+    parser.add_argument("--report", type=Path, help="Ruta de reporte markdown")
     parser.add_argument("--dry-run", action="store_true", help="Procesar y hacer rollback")
     parser.add_argument("--commit", action="store_true", help="Persistir cambios en Neon")
     args = parser.parse_args()
@@ -464,12 +901,15 @@ def main() -> None:
     print("VALIDATE RAW PROPERTIES")
     print(f"mode={'commit' if args.commit else 'dry-run'}")
     print(f"limit={args.limit}")
+    print(f"source={args.source or 'all_raw'}")
+    if args.created_after:
+        print(f"created_after={args.created_after}")
     print("target=internal_db")
     print("-" * 72)
 
     with connect_internal_db(db_url) as conn:
         with conn.cursor() as cur:
-            rows = fetch_raw_rows(cur, args.limit)
+            rows = fetch_raw_rows(cur, args.limit, args.source, args.created_after)
             read_count = len(rows)
             for row in rows:
                 status, issues, duplicate = process_row(cur, row)
@@ -499,6 +939,28 @@ def main() -> None:
     else:
         print("  none: 0")
     print(f"accion_final={final_action}")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    report_path = args.report or (
+        REPO_ROOT / "reports" / "scraping_autofix" / f"validate_imported_raw_{timestamp}.md"
+    )
+    if not report_path.is_absolute():
+        report_path = REPO_ROOT / report_path
+    warning_count = sum(issue_counts.values())
+    summary = {
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "mode": "commit" if args.commit else "dry-run",
+        "source": args.source,
+        "read_count": read_count,
+        "validated_count": validated_count,
+        "rejected_count": rejected_count,
+        "warning_count": warning_count,
+        "duplicate_count": duplicate_count,
+        "issue_counts": issue_counts,
+        "final_action": final_action,
+    }
+    write_report(summary, report_path)
+    update_master_progress(summary, report_path)
+    print(f"report={report_path}")
     print("=" * 72)
 
 

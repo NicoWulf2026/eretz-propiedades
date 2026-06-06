@@ -167,6 +167,8 @@ PARTIAL_RETRY_STRATEGIES = {
 NON_RETRYABLE_SCRAPING_ERROR_TYPES = {
     "site_down_confirmed",
     "site_down",
+    "skipped_invalid_source",
+    "invalid_source_url",
     "data_integrity_mismatch",
     "canonical_id_resolution_failed",
     "canonical_id_mismatch",
@@ -393,6 +395,34 @@ OPERACION_MAP: Dict[str, str] = {
     "por semana": "alquiler_temporario", "short term": "alquiler_temporario",
 }
 
+# Fix por familia ASP CMS: inferir operacion desde subfolder de URL de detalle
+# Aplica a: /venta/item.asp, /alquiler/item.asp, /temporario/item.asp (y variantes)
+_ASP_CMS_OP_PATH_RE = re.compile(
+    r"/(?P<op>venta|ventas|alquiler|temporario|alquiler[-_]temporario)"
+    r"/(?:item|ver|ampliar|ficha|detalle)\.aspx?\b",
+    re.IGNORECASE,
+)
+
+# Fix por familia short-ID rural CMS: inferir tipo_propiedad=campo desde URL pattern + hostname
+# Aplica a: /ca266.html, /mo340.html, /mi319.html (2-3 letras + 3-6 digitos + .html)
+_RURAL_SHORTID_URL_RE = re.compile(
+    r"/[a-z]{2,3}\d{3,6}\.html?\b",
+    re.IGNORECASE,
+)
+_RURAL_DOMAIN_SIGNALS: frozenset = frozenset({
+    "campo", "campos", "rural", "agro", "pampa",
+    "hectarea", "hectárea", "haras", "estancia", "chacra",
+})
+_RURAL_TIPO_VALUES: frozenset = frozenset({
+    "campo", "chacra", "estancia", "finca", "quinta",
+})
+# Detecta títulos que son en realidad nombres de archivo del CMS short-ID rural
+# (e.g. "Ca266.Html", "Mo342.Html"). Fix global — no hardcodear por dominio.
+_FILENAME_TITLE_RE = re.compile(
+    r"^[a-zA-Z]{2,4}\d{3,6}\.html?$",
+    re.IGNORECASE,
+)
+
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
 # Tipo de cambio (dÃƒÂ³lar blue, API gratuita argentina)
@@ -516,6 +546,49 @@ def normalizar_operacion(raw: Any) -> str:
         if key in text:
             return val
     return "venta"
+
+
+def _infer_op_from_asp_url_path(url: str) -> Optional[str]:
+    """Familia ASP CMS: inferir operacion desde subfolder /venta/ /alquiler/ /temporario/.
+
+    Solo actua sobre URLs que matcheen el patron ASP CMS con subfolder de operacion.
+    No modifica props de otras familias.
+    """
+    if not url:
+        return None
+    m = _ASP_CMS_OP_PATH_RE.search(url)
+    if not m:
+        return None
+    seg = m.group("op").lower().replace("-", "_")
+    if seg in ("venta", "ventas"):
+        return "venta"
+    if seg in ("temporario", "alquiler_temporario"):
+        return "alquiler_temporario"
+    if seg == "alquiler":
+        return "alquiler"
+    return None
+
+
+def _infer_tipo_from_rural_shortid_url(url: str, tipo_actual: Optional[str]) -> Optional[str]:
+    """Familia short-ID rural CMS: corrige tipo_propiedad a 'campo' cuando la URL es un
+    short-ID (/ca266.html) y el hostname contiene señales rurales.
+
+    No actua si el tipo actual ya es un tipo rural correcto (campo, chacra, estancia, etc.).
+    """
+    if not url:
+        return None
+    if not _RURAL_SHORTID_URL_RE.search(url):
+        return None
+    try:
+        from urllib.parse import urlparse as _urlparse
+        hostname = _urlparse(url).hostname or ""
+    except Exception:
+        hostname = ""
+    if not any(sig in hostname.lower() for sig in _RURAL_DOMAIN_SIGNALS):
+        return None
+    if tipo_actual in _RURAL_TIPO_VALUES:
+        return None
+    return "campo"
 
 
 def normalizar_superficie(raw: Any) -> Optional[float]:
@@ -677,6 +750,8 @@ class SavePropertiesError(RuntimeError):
 
 def clasificar_error(e: Exception) -> str:
     msg = str(e).lower()
+    if "skipped_invalid_source" in msg or "invalid_source_url" in msg:
+        return "skipped_invalid_source"
     if "data_integrity_mismatch" in msg:
         return "data_integrity_mismatch"
     if "canonical_id_resolution_failed" in msg:
@@ -884,6 +959,36 @@ def _update_strategy_progress(inmob: Dict, strategy_name: str, **kwargs: Any) ->
     current["updated_at"] = datetime.now(timezone.utc).isoformat()
     progress[strategy_name] = current
     metadata["estrategia_actual"] = strategy_name
+    metadata["last_stage"] = strategy_name
+    metadata["last_stage_status"] = kwargs.get("status") or current.get("status")
+    _write_metadata_dump_if_configured(inmob)
+
+
+def _write_metadata_dump_if_configured(inmob: Dict) -> None:
+    """Vuelca metadata local para que el runner pueda auditar timeouts externos."""
+    dump_path = inmob.get("_metadata_dump_json")
+    if not dump_path:
+        return
+    try:
+        path = os.path.abspath(str(dump_path))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        metadata = dict(inmob.get("_scraper_metadata") or {})
+        payload = {
+            "url": inmob.get("url_listado") or inmob.get("web"),
+            "domain": urlparse(str(inmob.get("url_listado") or inmob.get("web") or "")).netloc,
+            "last_stage": metadata.get("last_stage") or metadata.get("estrategia_actual"),
+            "last_stage_status": metadata.get("last_stage_status"),
+            "strategy": metadata.get("estrategia_actual") or metadata.get("estrategia_final"),
+            "timeout_internal_expected_seconds": metadata.get("timeout_internal_expected_seconds"),
+            "timeout_mode": metadata.get("timeout_mode"),
+            "metadata": metadata,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, ensure_ascii=False, indent=2, default=str)
+    except Exception:
+        # El dump es solo diagnostico local; no debe alterar el scraping.
+        pass
 
 
 def _close_playwright_safely(resource: Any, label: str, timeout: float = PLAYWRIGHT_CLOSE_TIMEOUT_SECONDS) -> bool:
@@ -3107,9 +3212,10 @@ def _http_get(url: str, session: requests.Session, timeout: int = 20,
     headers.update(kwargs.pop("headers", {}))
     timeout_value = timeout
     if isinstance(timeout, (int, float)):
+        t = float(timeout)
         timeout_value = (
-            max(1.0, min(float(timeout), 2.5)),
-            max(1.0, min(float(timeout), 6.0)),
+            max(1.0, min(t * 0.4, 8.0)),   # connect: 40% of caller timeout, max 8s
+            max(1.0, min(t, 30.0)),          # read: caller timeout, max 30s
         )
     r = session.get(url, headers=headers, timeout=timeout_value, verify=False, **kwargs)
     # Si bloqueado y tenemos ScraperAPI, reintentar
@@ -3558,10 +3664,16 @@ def fake_property_image_reason(image_url: Any) -> Optional[str]:
         "static.tokkobroker.com/w_pics/",
         "static.tokkobroker.com/thumbs/",
         "/wp-content/uploads/",
+        "/portal/listings/",
+        "/portalv1/listings/",
+        "/1200x1200/listings/",
+        "/autox440/listings/",
     ))
     if not has_image_extension and not known_photo_host_path:
         return "not_image_url"
     if "/wp-content/themes/" in low or "/wp-content/plugins/" in low:
+        return "theme_or_plugin_asset"
+    if re.search(r"(?:^|/)(?:assets?|static|img|images?)/(?:icons?|logos?|redes|social|menu|botones?)(?:/|$)", path):
         return "theme_or_plugin_asset"
     if host.endswith("afip.gob.ar"):
         return "logo_or_brand"
@@ -3579,6 +3691,12 @@ def fake_property_image_reason(image_url: Any) -> Optional[str]:
         return "logo_or_brand"
     if filename.startswith("cropped-") or "mesa-de-trabajo" in filename:
         return "logo_or_brand"
+    if re.search(r"(?:logo|isotipo|imagotipo|favicon|placeholder|sin[-_]?imagen|no[-_]?image)", filename_stem, re.I):
+        return "logo_or_brand"
+    if re.search(r"(?:facebook|instagram|whatsapp|linkedin|youtube|twitter|x-|social|menu|boton|btn)", filename_stem, re.I):
+        return "icon_or_surface_asset"
+    if re.search(r"(?:mapa|maps?|ubicacion|location|streetview)", filename_stem, re.I):
+        return "map_or_location"
     if "banner" in filename and "/wp-content/uploads/" not in low:
         return "theme_or_plugin_asset"
     if re.search(r"(?:^|[\/_.-])360(?:[\/_.-]|$)", low):
@@ -4370,6 +4488,93 @@ def _detect_location_from_text(
     return None
 
 
+# Fix global: diccionario de tokens de hostname → (ciudad, provincia) para inferencia de ubicación.
+# Solo tokens con señal unívoca: baja probabilidad de uso genérico como nombre de marca.
+# Formato: (token_substring, ciudad_o_None_si_solo_provincia, provincia)
+# Ordenar del más específico (más largo) al más corto para evitar ambigüedades.
+_HOSTNAME_LOCATION_TOKENS: List[Tuple[str, Optional[str], str]] = [
+    # Ciudades turísticas / nombres únicos (riesgo de falso positivo: muy bajo)
+    ("cafayate",     "Cafayate",                    "Salta"),
+    ("ushuaia",      "Ushuaia",                     "Tierra del Fuego"),
+    ("bariloche",    "San Carlos de Bariloche",     "Río Negro"),
+    ("neuquen",      "Neuquén",                     "Neuquén"),
+    ("resistencia",  "Resistencia",                 "Chaco"),
+    ("necochea",     "Necochea",                    "Buenos Aires"),
+    ("olavarria",    "Olavarría",                   "Buenos Aires"),
+    ("chivilcoy",    "Chivilcoy",                   "Buenos Aires"),
+    ("tandil",       "Tandil",                      "Buenos Aires"),
+    ("formosa",      "Formosa",                     "Formosa"),
+    ("posadas",      "Posadas",                     "Misiones"),
+    # Capitales de provincia cuyo nombre = nombre de provincia (señal sólida en dominio AR)
+    ("jujuy",        "San Salvador de Jujuy",       "Jujuy"),
+    ("tucuman",      "San Miguel de Tucumán",        "Tucumán"),
+    ("salta",        "Salta",                       "Salta"),
+    ("mendoza",      "Mendoza",                     "Mendoza"),
+    ("cordoba",      "Córdoba",                     "Córdoba"),
+    # Señales de provincia sin ciudad segura (compound en hostname)
+    ("lapampa",      None,                          "La Pampa"),   # "camposdelapampa" → lapampa
+    ("chubut",       None,                          "Chubut"),
+]
+
+
+def _infer_location_from_hostname(url: Any) -> Optional[Dict[str, str]]:
+    """Fix global: infiere ciudad/provincia desde el hostname del URL de detalle.
+
+    Actúa SOLO como fallback cuando _detect_location_from_text() no encontró ubicación
+    en el texto (título, URL path, descripción) Y ciudad/provincia están vacías.
+
+    Estrategia:
+    - Extrae el hostname (sin www., sin TLD).
+    - Normaliza con _coordinate_location_key (sin acentos, minúsculas, solo alfanumérico).
+    - Busca cada token de _HOSTNAME_LOCATION_TOKENS como substring del hostname normalizado.
+    - Solo infiere si hay exactamente UN match (evita ambigüedad).
+
+    Ejemplos:
+    - innoacafayate.com → "cafayate" en "innoacafayate" → Cafayate, Salta
+    - camposdelapampa.com.ar → "lapampa" en "camposdelapampa" → None, La Pampa
+    - watsonpropiedades.com → sin match → None
+    """
+    if not url:
+        return None
+    try:
+        hostname = urlparse(str(url)).hostname or ""
+    except Exception:
+        return None
+    if not hostname:
+        return None
+    # Strip www. prefix
+    if hostname.lower().startswith("www."):
+        hostname = hostname[4:]
+    # Strip TLD (.com.ar, .net.ar, .com, .ar, etc.)
+    hostname = re.sub(
+        r"\.(?:com\.ar|net\.ar|org\.ar|gob\.ar|gov\.ar|edu\.ar|com|net|org|ar)$",
+        "",
+        hostname,
+        flags=re.IGNORECASE,
+    )
+    # Normalize: sin acentos, minúsculas, solo alfanumérico (igual que _coordinate_location_key)
+    base_key = _coordinate_location_key(hostname)
+    if not base_key or len(base_key) < 4:
+        return None
+
+    matches: List[Tuple[str, Optional[str], str]] = []
+    for token, ciudad, provincia in _HOSTNAME_LOCATION_TOKENS:
+        token_key = _coordinate_location_key(token)
+        if token_key and token_key in base_key:
+            matches.append((token_key, ciudad, provincia))
+
+    if len(matches) != 1:
+        # Ningún match o match ambiguo → no inferir
+        return None
+
+    _, ciudad, provincia = matches[0]
+    return {
+        "ciudad": ciudad or "",
+        "provincia": provincia,
+        "motivo": "location_inferred_from_hostname",
+    }
+
+
 def _detect_location_from_title_or_url(titulo: Any, url: Any) -> Optional[Dict[str, str]]:
     return _detect_location_from_text(titulo=titulo, url=url)
 
@@ -4428,7 +4633,12 @@ def normalize_location_fields(
         "motivo": None,
     }
     if not detected:
-        return result
+        # Fix global: si el texto no dio ubicación y ciudad/provincia están vacías,
+        # intentar inferencia desde el hostname del URL de detalle.
+        if not current_city and not current_province:
+            detected = _infer_location_from_hostname(url)
+        if not detected:
+            return result
 
     detected_city = canonicalize_location_name(detected["ciudad"])
     detected_province = canonicalize_location_name(detected["provincia"])
@@ -5759,6 +5969,166 @@ _DIAGNOSTIC_USEFUL_PATHS = (
     "/catalogo", "/portfolio", "/emprendimientos", "/desarrollos",
 )
 
+_SOURCE_LISTING_SIGNAL_RE = re.compile(
+    r"(propiedades?|properties?|inmuebles?|venta|ventas|alquiler(?:es)?|"
+    r"list(?:ado|ados|ing|ings)?|buscar|busqueda|catalogo|portfolio|"
+    r"emprendimientos?|desarrollos?|ficha|detalle)",
+    re.I,
+)
+_SOURCE_ADMIN_PATH_RE = re.compile(r"(^|/)(admin|wp-admin|login|panel|dashboard)(/|$)", re.I)
+_SOURCE_INSTITUTIONAL_PATH_RE = re.compile(
+    r"(^|/)(vender|vende|servicios?|contacto|contact|empresa|nosotros|"
+    r"quienes-somos|quienes_somos|tasaciones?|tasacion|inicio|home)(/|$)",
+    re.I,
+)
+_SOURCE_DEVELOPER_SIGNAL_RE = re.compile(
+    r"(constructora|construccion|construcci[oó]n|desarrollos?|emprendimientos?|loteos?|"
+    r"steel|retak|obras?|constructor)",
+    re.I,
+)
+_SOURCE_REALESTATE_SIGNAL_RE = re.compile(
+    r"(inmobiliaria|propiedades|inmuebles|raices|raíces|real\s*estate|remax|broker|martillero)",
+    re.I,
+)
+
+
+def classify_source_preflight(url: Optional[str], agency_name: Any = "") -> Dict[str, Any]:
+    """Clasifica fuentes evidentemente no scrapeables antes de estrategias pesadas."""
+    raw = str(url or "").strip()
+    result: Dict[str, Any] = {
+        "skip": False,
+        "error_type": "",
+        "error_family": "",
+        "subfamily": "",
+        "reason": "",
+        "signals": [],
+        "normalized_url": _normalize_queue_url(raw) if raw else "",
+        "domain": "",
+        "remax_domain": False,
+    }
+    if not raw:
+        result.update({
+            "skip": True,
+            "error_type": "skipped_invalid_source",
+            "error_family": "invalid_source",
+            "subfamily": "invalid_source_url",
+            "reason": "sin_url",
+        })
+        return result
+
+    normalized = result["normalized_url"]
+    parsed = urlparse(normalized)
+    domain = parsed.netloc.lower()
+    path = unquote(parsed.path or "")
+    path_key = path.lower().strip("/")
+    fragment = unquote(parsed.fragment or "").strip().lower()
+    query = unquote(parsed.query or "").lower()
+    combined = " ".join([domain, path_key, query, fragment, str(agency_name or "").lower()])
+    result["domain"] = domain
+    result["remax_domain"] = bool(re.search(r"(^|\.)remax(?:-|\.|$)|redremax", domain))
+
+    if result["remax_domain"]:
+        result["signals"].append("remax_api_detected")
+    if _SOURCE_LISTING_SIGNAL_RE.search(" ".join([path_key, query])):
+        result["signals"].append("listing_signal_in_url")
+    if _SOURCE_REALESTATE_SIGNAL_RE.search(combined):
+        result["signals"].append("real_estate_signal")
+    if _SOURCE_DEVELOPER_SIGNAL_RE.search(combined):
+        result["signals"].append("developer_or_construction_signal")
+
+    has_real_path = bool(path_key)
+    has_listing_signal = "listing_signal_in_url" in result["signals"]
+
+    if _SOURCE_ADMIN_PATH_RE.search(path_key):
+        result.update({
+            "skip": True,
+            "error_type": "skipped_invalid_source",
+            "error_family": "invalid_source",
+            "subfamily": "admin_url",
+            "reason": "url_apunta_a_admin_o_login",
+        })
+        return result
+
+    if fragment and not has_real_path:
+        result.update({
+            "skip": True,
+            "error_type": "skipped_invalid_source",
+            "error_family": "invalid_source",
+            "subfamily": "anchor_only_url",
+            "reason": f"url_solo_con_ancla: #{fragment}",
+        })
+        return result
+
+    if _SOURCE_INSTITUTIONAL_PATH_RE.search(path_key) and not has_listing_signal:
+        result.update({
+            "skip": True,
+            "error_type": "skipped_invalid_source",
+            "error_family": "invalid_source",
+            "subfamily": "institutional_page",
+            "reason": "pagina_institucional_sin_senal_de_listado",
+        })
+        return result
+
+    if "developer_or_construction_signal" in result["signals"] and not has_listing_signal:
+        result.update({
+            "skip": True,
+            "error_type": "skipped_invalid_source",
+            "error_family": "invalid_source",
+            "subfamily": "possible_developer_without_listings",
+            "reason": "fuente_constructora_desarrolladora_sin_senal_de_listado",
+        })
+        return result
+
+    if not (has_listing_signal or "real_estate_signal" in result["signals"] or result["remax_domain"]):
+        result["subfamily"] = "no_listing_signals"
+        result["reason"] = "sin_senales_minimas_de_publicacion_inmobiliaria_en_url"
+
+    return result
+
+
+def subclassify_no_property_links(diagnostic: Dict[str, Any]) -> str:
+    preflight = diagnostic.get("preflight_source") if isinstance(diagnostic.get("preflight_source"), dict) else {}
+    if preflight.get("subfamily") in {
+        "admin_url",
+        "anchor_only_url",
+        "institutional_page",
+        "possible_developer_without_listings",
+        "invalid_source_url",
+    }:
+        return str(preflight.get("subfamily"))
+
+    url = str(diagnostic.get("url_original") or diagnostic.get("url_inicial") or "")
+    parsed = urlparse(_normalize_queue_url(url))
+    path_key = unquote(parsed.path or "").lower().strip("/")
+    fragment = unquote(parsed.fragment or "").lower().strip()
+    if _SOURCE_ADMIN_PATH_RE.search(path_key):
+        return "admin_url"
+    if fragment and not path_key:
+        return "anchor_only_url"
+    if _SOURCE_INSTITUTIONAL_PATH_RE.search(path_key) and not _SOURCE_LISTING_SIGNAL_RE.search(path_key):
+        return "institutional_page"
+
+    if int(diagnostic.get("developer_project_urls_count") or 0) > 0:
+        return "possible_developer_without_listings"
+    if preflight.get("signals") and "developer_or_construction_signal" in preflight.get("signals"):
+        return "possible_developer_without_listings"
+    if diagnostic.get("html_empty"):
+        return "empty_site"
+    if diagnostic.get("requires_playwright") or int(diagnostic.get("playwright_cards_posibles") or 0) == 0 and diagnostic.get("playwright_property_links_count") == 0:
+        if diagnostic.get("requires_js") or diagnostic.get("playwright_cards_posibles") is not None:
+            return "dynamic_site_no_cards"
+
+    route_diags = diagnostic.get("route_diagnostics") or []
+    for route in route_diags:
+        if not isinstance(route, dict):
+            continue
+        if int(route.get("cards_posibles") or 0) > 0 or int(route.get("listing_links_count") or 0) > 0:
+            return "extractor_missing_selector"
+
+    if not int(diagnostic.get("links_detectados_total") or 0) and not int(diagnostic.get("cards_posibles") or 0):
+        return "no_listing_signals"
+    return "unknown_no_property_links"
+
 
 def _url_origin(url: str) -> str:
     parsed = urlparse(_normalize_queue_url(url))
@@ -6459,17 +6829,19 @@ def strategy_network_intercept(inmob: Dict, pw_context, session: Optional[reques
         if detected_tokko_key:
             # Guardar la key para futuras ejecuciones
             inmob["tokko_api_key"] = detected_tokko_key
-            try:
-                db = SupabasePropiedades()
-                db.session.patch(
-                    f"{SUPABASE_URL}/rest/v1/inmobiliarias_main",
-                    headers=db._headers_minimal,
-                    params={"id": f"eq.{inmob['id']}"},
-                    json={"tokko_api_key": detected_tokko_key},
-                    timeout=10,
-                )
-            except Exception:
-                pass
+            # No escribir en Supabase en modo test (id=0 / _test_mode).
+            if not inmob.get("_test_mode") and inmob.get("id"):
+                try:
+                    db = SupabasePropiedades()
+                    db.session.patch(
+                        f"{SUPABASE_URL}/rest/v1/inmobiliarias_main",
+                        headers=db._headers_minimal,
+                        params={"id": f"eq.{inmob['id']}"},
+                        json={"tokko_api_key": detected_tokko_key},
+                        timeout=10,
+                    )
+                except Exception:
+                    pass
             http_session = session or _make_http_session()
             return strategy_tokko_api(inmob, http_session)
 
@@ -6519,6 +6891,505 @@ def _guess_next_api_url(base_url: str, page_num: int) -> Optional[str]:
     if m3:
         return re.sub(r"(p=)\d+", f"\\g<1>{page_num}", base_url)
     return None
+
+
+# ---------------------------------------------------------------------------
+# Strategy: consumo de endpoints JSON internos VISIBLES en HTML/metadata (Fix #1a)
+# Solo HTTP GET de lectura. NO usa Playwright ni intercepta red activamente.
+# Se activa unicamente con la flag --allow-visible-api (inmob["_allow_visible_api"]).
+# Falla limpio (RuntimeError) si no hay endpoints o datos utiles -> el flujo sigue.
+# ---------------------------------------------------------------------------
+_VISIBLE_API_URL_RE = re.compile(r'https?://[^\s"\'<>\\)]+', re.I)
+_VISIBLE_API_PATH_HINTS = (
+    "/api/", "/wp-json/", "/admin-ajax.php", "/rest/", "/graphql",
+    "findall", "/listings/find", "/properties/find", "/inmuebles/find",
+    "/propiedades/find", "/search/listings", "/api-",
+)
+_VISIBLE_API_EXCLUDE = (
+    ".js", ".css", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".woff",
+    ".woff2", ".ttf", ".ico", ".map", ".mp4", ".pdf",
+    "google", "facebook", "gstatic", "gtag", "googletagmanager", "analytics",
+    "visualwebsiteoptimizer", "doubleclick", "hotjar", "cloudflare", "/sockjs",
+    "sentry", "cdn-cgi", "recaptcha",
+)
+
+
+def _looks_like_api_endpoint(url: str) -> bool:
+    low = url.lower()
+    if any(x in low for x in _VISIBLE_API_EXCLUDE):
+        return False
+    return any(h in low for h in _VISIBLE_API_PATH_HINTS)
+
+
+def _scan_api_endpoints_in_html(html: str) -> List[str]:
+    """Extrae URLs absolutas del HTML que parecen endpoints JSON internos."""
+    out: List[str] = []
+    for raw in _VISIBLE_API_URL_RE.findall(html or ""):
+        u = raw.rstrip('",;)\\')
+        if _looks_like_api_endpoint(u):
+            out.append(u)
+    return out
+
+
+_VISIBLE_MEDIA_BASE_PATTERNS = (
+    r'imageCloudfront\s*:\s*["\']([^"\']+)',
+    r'["\']imageCloudfront["\']\s*:\s*["\']([^"\']+)',
+    r'(?:image|media|asset)(?:Bucket)?(?:Resize)?Url\s*:\s*["\']([^"\']+)',
+    r'["\'](?:image|media|asset)(?:Bucket)?(?:Resize)?Url["\']\s*:\s*["\']([^"\']+)',
+)
+
+
+def _scan_visible_media_base(text: str) -> Optional[str]:
+    """Busca una base publica de imagenes declarada por el frontend visible."""
+    for pattern in _VISIBLE_MEDIA_BASE_PATTERNS:
+        match = re.search(pattern, text or "", flags=re.I)
+        if not match:
+            continue
+        value = str(match.group(1) or "").strip().rstrip("/")
+        if value.startswith(("http://", "https://")):
+            return value
+    return None
+
+
+def _discover_visible_media_base_from_html(html: str, page_url: str, session: requests.Session) -> Optional[str]:
+    """Detecta bases de media visibles en HTML/JS del propio sitio.
+
+    Algunas APIs devuelven fotos como paths opacos (ej. ``rawValue``). Solo se
+    resuelven si el sitio declara explicitamente una base de imagenes/media.
+    """
+    base = _scan_visible_media_base(html)
+    if base:
+        return base
+    parsed_page = urlparse(page_url)
+    base_href_match = re.search(r'<base[^>]+href=["\']([^"\']+)["\']', html or "", flags=re.I)
+    script_base_url = urljoin(page_url, base_href_match.group(1)) if base_href_match else page_url
+    script_paths = re.findall(r'(?:src|href)=["\']([^"\']+\.js(?:\?[^"\']*)?)', html or "", flags=re.I)
+    checked = 0
+    pending_scripts = [urljoin(script_base_url, script_path) for script_path in script_paths]
+    seen_scripts: set = set()
+    while pending_scripts and checked < 16:
+        script_url = pending_scripts.pop(0)
+        if script_url in seen_scripts:
+            continue
+        seen_scripts.add(script_url)
+        parsed_script = urlparse(script_url)
+        if parsed_script.netloc and parsed_script.netloc != parsed_page.netloc:
+            continue
+        checked += 1
+        try:
+            resp = _http_get(script_url, session, timeout=8, headers={"Referer": page_url})
+            script_text = _decode_response_text(resp)
+        except Exception:
+            continue
+        base = _scan_visible_media_base(script_text)
+        if base:
+            return base
+        for match in re.finditer(r'(?:from|import)\(?["\'](\./[^"\']+\.js)["\']', script_text):
+            child_url = urljoin(script_url, match.group(1))
+            child_parsed = urlparse(child_url)
+            if child_parsed.netloc == parsed_page.netloc and child_url not in seen_scripts:
+                pending_scripts.append(child_url)
+    return None
+
+
+def _api_nested_value(v: Any) -> Any:
+    """APIs suelen anidar {id, value} en operation/currency/type. Extrae el valor util."""
+    if isinstance(v, dict):
+        return v.get("value") or v.get("name") or v.get("label") or v.get("descripcion")
+    return v
+
+
+def _collect_full_image_urls(photos: Any, base_url: str = "", media_base: str = "") -> List[str]:
+    """Extrae URLs reales desde campos de imagen de APIs visibles.
+
+    Se resuelven rutas relativas contra la URL de listado cuando la API devuelve
+    paths tipo ``/uploads/foto.jpg``. Los paths opacos tipo ``rawValue`` solo se
+    resuelven contra bases de media declaradas por el propio frontend.
+    """
+    urls: List[str] = []
+    image_key_hints = (
+        "url", "src", "href", "full", "original", "secure", "image",
+        "photo", "picture", "thumb", "rawvalue",
+    )
+
+    def _push(val: Any) -> None:
+        if not isinstance(val, str):
+            return
+        text = val.strip()
+        if not text:
+            return
+        if text.startswith("//"):
+            text = "https:" + text
+        elif text.startswith("/") and base_url:
+            text = urljoin(base_url, text)
+        elif media_base and not text.startswith(("http://", "https://")) and "/" in text and not re.search(r"\s|<|>", text):
+            relative = text.lstrip("/")
+            if not re.search(r"\.(?:jpe?g|png|webp|avif)(?:\?|$)", relative, flags=re.I):
+                relative = "portal/" + relative
+            text = urljoin(media_base.rstrip("/") + "/", relative)
+        elif not text.startswith(("http://", "https://")):
+            return
+        if text not in urls:
+            urls.append(text)
+
+    def _walk(value: Any, depth: int = 0, key_hint: str = "") -> None:
+        if depth > 5:
+            return
+        if isinstance(value, str):
+            if key_hint or re.search(r"\.(?:jpe?g|png|webp|avif)(?:\?|$)", value, flags=re.I):
+                _push(value)
+            return
+        if isinstance(value, list):
+            for item in value:
+                _walk(item, depth + 1, key_hint)
+            return
+        if isinstance(value, dict):
+            for key, nested in value.items():
+                low_key = str(key).lower()
+                next_hint = key_hint or any(hint in low_key for hint in image_key_hints)
+                if next_hint or isinstance(nested, (dict, list)):
+                    _walk(nested, depth + 1, str(low_key) if next_hint else "")
+
+    _walk(photos)
+    return urls[:60]
+
+
+# Prefijos comunes de rutas de detalle para reconstruir URLs desde un slug de API.
+# NO es especifico de una inmobiliaria: se prioriza el prefijo que ya aparece en la
+# ruta del listado (señal real del sitio) y luego el orden de esta lista.
+_DETAIL_PATH_PREFIXES = (
+    "propiedades", "propiedad", "inmuebles", "inmueble",
+    "listings", "listing", "properties", "property",
+    "ficha", "detalle", "aviso", "avisos", "p",
+)
+
+
+def _build_detail_url_from_slug(slug: str, base_url: str) -> Optional[str]:
+    """Construye una URL de detalle a partir de un slug de API, de forma generica.
+    Prioriza el prefijo de ruta que ya aparece en la URL de listado del sitio y
+    valida con _looks_like_real_property_url para no inventar rutas invalidas."""
+    slug = str(slug or "").strip().lstrip("/")
+    if not slug:
+        return None
+    parsed = urlparse(base_url)
+    root = "%s://%s" % (parsed.scheme or "https", parsed.netloc)
+    base_path = (parsed.path or "").lower()
+    ranked = sorted(
+        _DETAIL_PATH_PREFIXES,
+        key=lambda p: (p not in base_path, _DETAIL_PATH_PREFIXES.index(p)),
+    )
+    for pref in ranked:
+        candidate = "%s/%s/%s" % (root, pref, slug)
+        if _looks_like_real_property_url(candidate):
+            return candidate
+    joined = urljoin(base_url if base_url.endswith("/") else base_url + "/", slug)
+    if _looks_like_real_property_url(joined):
+        return joined
+    # Fallback: mejor conjetura (prefijo mejor rankeado), aunque no valide.
+    return "%s/%s/%s" % (root, ranked[0], slug)
+
+
+def _map_visible_api_item(item: Dict, inmob: Dict, base_url: str) -> Optional[Dict]:
+    """Mapeo general de un objeto JSON de un endpoint visible al modelo de propiedad.
+    No inventa campos: si no hay titulo ni precio, descarta el item."""
+    if not isinstance(item, dict):
+        return None
+
+    def get(*keys):
+        for k in keys:
+            for dk in item:
+                if dk.lower() == k.lower():
+                    return item[dk]
+        return None
+
+    def _to_float(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+
+    raw_precio = get("price", "precio", "valor", "monto", "amount")
+    precio, moneda = normalizar_precio(raw_precio)
+    cur = _api_nested_value(get("currency", "moneda"))
+    if cur:
+        cur = str(cur).strip().upper()
+        if cur in ("USD", "U$S", "US$", "DOLAR", "DOLARES", "DOLLAR"):
+            moneda = "USD"
+        elif cur in ("ARS", "$", "PESOS", "PESO", "PESO ARGENTINO"):
+            moneda = "ARS"
+        elif not moneda:
+            moneda = cur[:3]
+
+    operacion = normalizar_operacion(_api_nested_value(get("operation", "operacion", "operation_type", "tipo_operacion")))
+    tipo = normalizar_tipo(_api_nested_value(get("type", "tipo", "property_type", "category")))
+
+    sup_total = get("total_surface", "superficie", "area", "size", "dimensionTotalBuilt", "dimensionLand")
+    sup_cub = get("roofed_surface", "covered_area", "superficie_cubierta", "dimensionCovered")
+
+    lat = get("latitude", "lat")
+    lon = get("longitude", "lon", "lng")
+    loc = get("location", "geo")
+    if (lat is None or lon is None) and isinstance(loc, dict):
+        coords = loc.get("coordinates")
+        if isinstance(coords, (list, tuple)) and len(coords) >= 2:
+            lon = lon if lon is not None else coords[0]
+            lat = lat if lat is not None else coords[1]
+
+    url_prop = get("url", "web_url", "link", "permalink", "href")
+    slug = get("slug")
+    if not url_prop and slug:
+        url_prop = _build_detail_url_from_slug(str(slug), base_url)
+    if url_prop and not str(url_prop).startswith("http"):
+        url_prop = urljoin(base_url, str(url_prop))
+
+    titulo = str(get("title", "titulo", "publication_title", "name") or "").strip()
+    if precio is None and not titulo:
+        return None
+
+    id_ext = str(get("id", "codigo", "ref", "reference", "internalId") or "")
+    inmob_id = inmob["id"]
+    direccion = str(get("address", "direccion", "real_address", "displayAddress") or "").strip()
+    geo = str(get("geoLabel", "geo_label") or "")
+    ciudad = str(get("city", "ciudad") or inmob.get("ciudad", "") or "")
+    provincia = str(get("province", "provincia", "state") or inmob.get("provincia", "") or "")
+    if geo:
+        partes = [p.strip() for p in geo.split(",") if p.strip()]
+        if partes and not ciudad:
+            ciudad = partes[0]
+        if len(partes) >= 2 and not provincia:
+            provincia = partes[-1]
+
+    media_base = str(inmob.get("_visible_media_base") or "").strip()
+    imagenes = _collect_full_image_urls(
+        get("photos", "images", "imagenes", "media", "pictures", "fotos"),
+        base_url,
+        media_base,
+    )
+
+    prop = {
+        "inmobiliaria_id":     inmob_id,
+        "url":                 url_prop or None,
+        "id_externo":          id_ext,
+        "hash_dedup":          hash_propiedad(inmob_id, id_ext, url_prop or ""),
+        "titulo":              titulo,
+        "descripcion":         limpiar_descripcion(str(get("description", "descripcion", "body") or "")),
+        "precio":              precio,
+        "moneda":              moneda,
+        "precio_ars":          convertir_precio(precio, moneda)[0],
+        "precio_usd":          convertir_precio(precio, moneda)[1],
+        "tipo_propiedad":      tipo,
+        "operacion":           operacion,
+        "ambientes":           normalizar_int(get("rooms", "ambientes", "totalRooms", "suite_amount")),
+        "dormitorios":         normalizar_int(get("bedrooms", "dormitorios", "bedroom_amount")),
+        "banos":               normalizar_int(get("bathrooms", "banos", "bathroom_amount")),
+        "superficie_total":    normalizar_superficie(sup_total),
+        "superficie_cubierta": normalizar_superficie(sup_cub),
+        "direccion":           direccion,
+        "ciudad":              ciudad,
+        "provincia":           provincia,
+        "pais":                "Argentina",
+        "latitud":             _to_float(lat),
+        "longitud":            _to_float(lon),
+        "imagenes":            imagenes or None,
+        "fuente_extraccion":   "visible_api_endpoint",
+        "cms_origen":          inmob.get("cms_detectado", ""),
+        "estado":              "activo",
+    }
+    prop["score_calidad"] = calcular_score(prop)
+    return prop
+
+
+def _find_property_list_recursive(data: Any, _depth: int = 0) -> List[Dict]:
+    """Busca recursivamente una lista de dicts que parezcan propiedades.
+    Soporta respuestas anidadas tipo {data: {data: [...]}} (ej. RE/MAX)."""
+    if _depth > 6:
+        return []
+    if isinstance(data, list):
+        dicts = [i for i in data if isinstance(i, dict)]
+        if not dicts:
+            return []
+        hits = 0
+        for it in dicts[:10]:
+            keys = {k.lower() for k in it}
+            if keys & {"price", "precio", "title", "titulo", "address", "direccion", "displayaddress", "slug"}:
+                hits += 1
+        return dicts if hits >= 1 and hits >= min(2, len(dicts)) else []
+    if isinstance(data, dict):
+        for key in ("data", "results", "items", "listings", "propiedades", "properties", "content", "rows", "docs"):
+            for dk in data:
+                if dk.lower() == key and isinstance(data[dk], (list, dict)):
+                    found = _find_property_list_recursive(data[dk], _depth + 1)
+                    if found:
+                        return found
+        for v in data.values():
+            if isinstance(v, (list, dict)):
+                found = _find_property_list_recursive(v, _depth + 1)
+                if found:
+                    return found
+    return []
+
+
+def _fetch_visible_api_items(endpoint: str, inmob: Dict, session: requests.Session) -> List[Dict]:
+    """GET paginado de un endpoint JSON. Devuelve items (dicts). Respeta deadline."""
+    items_all: List[Dict] = []
+    seen_keys: set = set()
+    max_pages = int(inmob.get("_visible_api_max_pages") or 25)
+    page_size = 50
+    referer = inmob.get("web") or inmob.get("url_listado") or endpoint
+
+    def build_url(page: int) -> str:
+        if re.search(r'[?&]page=\d+', endpoint):
+            return re.sub(r'(page=)\d+', lambda m: f"{m.group(1)}{page}", endpoint)
+        if re.search(r'[?&]offset=\d+', endpoint):
+            return _guess_next_api_url(endpoint, page + 1) or endpoint
+        sep = '&' if '?' in endpoint else '?'
+        return f"{endpoint}{sep}page={page}&pageSize={page_size}"
+
+    page = 0
+    while page < max_pages:
+        _check_strategy_deadline(inmob, "visible_api_endpoint")
+        if _deadline_remaining_seconds(_strategy_deadline(inmob)) <= 5:
+            break
+        url = build_url(page)
+        try:
+            resp = _http_get(url, session, timeout=15, headers={
+                "Accept": "application/json, text/plain, */*",
+                "Referer": referer,
+            })
+        except Exception:
+            break
+        ct = (resp.headers.get("content-type") or "").lower()
+        if resp.status_code != 200 or ("json" not in ct and "javascript" not in ct):
+            break
+        try:
+            data = resp.json()
+        except Exception:
+            break
+        items = _find_property_list_recursive(data)
+        if not items:
+            break
+        nuevos = 0
+        for it in items:
+            key = str(it.get("id") or it.get("slug") or "") or json.dumps(it, sort_keys=True, ensure_ascii=False)[:160]
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            items_all.append(it)
+            nuevos += 1
+        if nuevos == 0:
+            break
+        page += 1
+        time.sleep(min(0.4, max(0.05, _deadline_remaining_seconds(_strategy_deadline(inmob)))))
+    return items_all
+
+
+def _collect_visible_api_endpoints(inmob: Dict, session: requests.Session,
+                                   url_listado: str, diag: Dict) -> List[str]:
+    """Reune endpoints API candidatos desde:
+      1) next_urls_found del diagnostico (ya parecen API, ej. /api/.../findAll...),
+      2) el HTML de la URL de listado,
+      3) el HTML de las rutas SPA presentes en next_urls_found (ej. /listings/buy?...).
+    Algunas URLs de listado devuelven una pagina anti-bot (202) sin refs a la API;
+    las rutas SPA suelen traer el HTML completo con las refs reales.
+    Devuelve lista priorizada y deduplicada de endpoints candidatos.
+    """
+    next_urls = [u for u in (diag.get("next_urls_found") or []) if isinstance(u, str) and u]
+
+    # 1) endpoints API ya presentes directamente en next_urls_found
+    direct_api = [u for u in next_urls if _looks_like_api_endpoint(u)]
+    # rutas SPA / HTML (no-API) que sirven como semillas para escanear
+    spa_seeds = [u for u in next_urls if not _looks_like_api_endpoint(u)]
+
+    # 2)+3) paginas semilla cuyo HTML se escanea en busca de refs a la API
+    seed_pages: List[str] = []
+    for u in [url_listado] + spa_seeds:
+        if u and u not in seed_pages:
+            seed_pages.append(u)
+
+    endpoints: List[str] = list(direct_api)
+    max_seed_pages = int(inmob.get("_visible_api_max_seed_pages") or 4)
+    for seed in seed_pages[:max_seed_pages]:
+        _check_strategy_deadline(inmob, "visible_api_endpoint")
+        if _deadline_remaining_seconds(_strategy_deadline(inmob)) <= 8:
+            break
+        try:
+            resp = _http_get(seed, session, timeout=12)
+            html = _decode_response_text(resp)
+        except Exception:
+            html = ""
+        if not html:
+            continue
+        if not inmob.get("_visible_media_base"):
+            media_base = _discover_visible_media_base_from_html(html, seed, session)
+            if media_base:
+                inmob["_visible_media_base"] = media_base
+                inmob.setdefault("_scraper_metadata", {})["visible_media_base"] = media_base
+        found = _scan_api_endpoints_in_html(html)
+        logger.info("api_visible_endpoint_scan | seed=%s | refs=%d", seed[:120], len(found))
+        for e in found:
+            if e not in endpoints:
+                endpoints.append(e)
+        if endpoints:
+            # Si ya hay candidatos API, no hace falta seguir escaneando semillas.
+            break
+
+    # Dedup final preservando orden.
+    seen: set = set()
+    deduped: List[str] = []
+    for e in endpoints:
+        if e not in seen:
+            seen.add(e)
+            deduped.append(e)
+    return deduped
+
+
+def strategy_visible_api_endpoint(inmob: Dict, session: requests.Session) -> List[Dict]:
+    """Fix #1a: consume endpoints JSON internos visibles en el HTML/metadata."""
+    url_listado = inmob.get("url_listado") or inmob.get("web", "")
+    if not url_listado:
+        raise ValueError("sin_url_listado")
+    _check_strategy_deadline(inmob, "visible_api_endpoint")
+
+    diag = (inmob.get("_scraper_metadata") or {}).get("diagnostico_inicial") or {}
+    endpoints = _collect_visible_api_endpoints(inmob, session, url_listado, diag)
+    logger.info("api_visible_endpoint_start | url=%s | candidatos=%d", url_listado, len(endpoints))
+    if not endpoints:
+        raise RuntimeError("no_property_links: sin endpoints API visibles en HTML/metadata")
+
+    resultados: List[Dict] = []
+    seen_hashes: set = set()
+    for endpoint in endpoints:
+        _check_strategy_deadline(inmob, "visible_api_endpoint")
+        logger.info("api_visible_endpoint_url | %s", endpoint[:200])
+        items = _fetch_visible_api_items(endpoint, inmob, session)
+        if not items:
+            continue
+        nuevos = 0
+        for it in items:
+            try:
+                prop = _map_visible_api_item(it, inmob, url_listado)
+            except Exception:
+                prop = None
+            if not prop:
+                continue
+            h = prop.get("hash_dedup")
+            if h in seen_hashes:
+                continue
+            seen_hashes.add(h)
+            resultados.append(prop)
+            _record_partial_for_rescue(inmob, prop)
+            nuevos += 1
+        logger.info("api_visible_endpoint_items | %s | items_api=%d | mapeadas=%d | total=%d",
+                    endpoint[:120], len(items), nuevos, len(resultados))
+        if resultados:
+            break  # endpoint productivo: no seguir probando otros
+
+    inmob.setdefault("_scraper_metadata", {})["visible_api_endpoint_count"] = len(resultados)
+    if not resultados:
+        logger.info("api_visible_endpoint_result | exito=False | props=0")
+        raise RuntimeError("no_property_links: endpoints visibles no devolvieron propiedades utiles")
+    logger.info("api_visible_endpoint_result | exito=True | props=%d", len(resultados))
+    return resultados
 
 
 # ---------------------------------------------------------------------------
@@ -7109,12 +7980,25 @@ def _is_useful_scraped_title(value: Any) -> bool:
     text = _fix_mojibake_text(value)
     if len(text) < 5:
         return False
+    low = text.lower()
+    if (
+        "mover a la izquierda" in low
+        or "mover a la derecha" in low
+        or "mover hacia arriba" in low
+        or "mover hacia abajo" in low
+        or "arrastrar" in low and "soltar" in low
+    ):
+        return False
     if _looks_like_agency_title(text):
         return False
     key = _normalize_text_key(text)
     if key in {_normalize_text_key(title) for title in _GENERIC_BAD_TITLES}:
         return False
     if re.fullmatch(r"(descripcion|descripci[oÃƒÂ³]n|detalle|propiedad)\s*:?", text, re.I):
+        return False
+    # Rechazar títulos que son nombres de archivo del CMS short-ID rural
+    # (e.g. "Ca266.Html", "Mo342.Html", "Mo340.Html"). Fix global.
+    if _FILENAME_TITLE_RE.fullmatch(text.strip()):
         return False
     return True
 
@@ -7208,7 +8092,8 @@ def _html_extract_detail(soup: BeautifulSoup, url: str, inmob: Dict,
         return ""
 
     title_candidates = [
-        find_text("h1", ".property-title", ".titulo", ".listing-title"),
+        find_text("h1", ".property-title", ".titulo", ".listing-title",
+                  "section.famie-benefits-area"),  # CMS short-ID rural (camposdelapampa-style)
         _title_from_detail_url(url),
         _first_meta_content(soup, "meta[property='og:title']", "meta[name='twitter:title']"),
         find_text("title"),
@@ -8783,7 +9668,9 @@ _NON_PROPERTY_URL_PATTERNS = re.compile(
     r"(subi-tu-propiedad|publica(?:r)?-tu-propiedad|tasacion|tasaciones|contacto|"
     r"nosotros|quienes-somos|blog|noticia|noticias|prensa|servicio|equipo|staff|login|wp-admin|"
     r"whatsapp|wa\.me|facebook|instagram|linkedin|youtube|twitter|x\.com|"
-    r"mapa|maps|property-outside|tr_uuid|[?&]fp=)",
+    r"mapa|maps|property-outside|tr_uuid|[?&]fp=|"
+    # Páginas de agradecimiento/confirmación de formularios (ej: /propiedades/gracias-propiedades/)
+    r"gracias|thank-?you|enviado)",
     re.I,
 )
 
@@ -8907,11 +9794,100 @@ def _looks_like_real_property_url(url: str) -> bool:
         r"(^|/)propiedades/(?:\d{3,}|[^/]{8,})",
         r"(^|/)inmuebles/(?:\d{3,}|[^/]{8,})",
         r"(^|/)(?:properties|propiedades|inmuebles)-\d+/\d{2,}[^/?#]*",
+        # CMS argentino: /{tipo}s-en-{op}-en-{ciudad}-{direccion}-{id}.html
+        # ej: /casas-en-venta-en-tandil-av-avellaneda-23613-181.html
+        #     /departamentos-en-alquiler-en-pergamino-locacion-dilello-12272
+        r"(^|/)(?:casa|depto|departamento|terreno|local|oficina|lote|campo|chalet|galpon|cochera|duplex|ph|monoambiente)[a-z]*-en-(?:venta|alquiler)-(?:en-)?[^/?#]{20,}(?:\.html?)?$",
+        # CMS argentino / WordPress custom post: /{tipo}-(venta|alquiler)-{direccion}-{ciudad}/
+        # ej: /casa-alquiler-barrio-3-abril-amancay-265-rawson/
+        r"(^|/)(?:casa|depto|departamento|terreno|local|oficina|lote|campo|chalet|galpon|cochera|duplex|ph|monoambiente)[a-z]*[-_](?:venta|alquiler|alq)[-_][^/?#]{15,}(?:/|$)",
+        # CMS argentino: /venta-{tipo}-{barrio/loc}-{ID} con codigo alfanumerico
+        # ej: /venta-casa-barrio--parque_siquiman-V4014
+        r"(^|/)(?:venta|alquiler)[-_](?:casa|depto|departamento|terreno|local|oficina|lote|campo|chalet|galpon|cochera|duplex|ph|monoambiente)[^/?#]*[-_][A-Z]?\d{3,}(?:/|$)",
+        # ASP CMS con subfolder de operacion: /alquiler/item.asp?t=...&id=N
+        # ej: innoacafayate.com/alquiler/item.asp?t=Casa-Lamadrid&id=173
+        r"(^|/)(?:alquiler|venta|ventas|temporario)/(?:item|ver|ampliar|ficha|detalle)\.aspx?$",
+        # Nombre de archivo corto tipo prefijo+ID: /ca266.html /mo340.html /ar123.html
+        # Tipico en CMS propios argentinos con slug {2-3letras}{3-6digitos}.html
+        r"(^|/)[a-z]{2,3}\d{3,6}\.html?$",
+        # Slug limpio con tipo de propiedad al inicio (sin operacion explicita en URL)
+        # ej: watsonpropiedades.com/casa-en-esquina-en-zona-centro (30+ chars)
+        # Requiere tipo + guion + al menos 22 chars mas para evitar categorias cortas
+        r"^(?:casa|depto|departamento|terreno|local|oficina|lote|campo|chalet|galpon|cochera|duplex|ph|monoambiente)[a-z]?-[a-z0-9-]{22,}$",
     )
     return any(re.search(pattern, path, re.I) for pattern in detail_patterns)
 
 
-def _extract_generic_property_links(html: str, current_url: str) -> List[str]:
+# ---------------------------------------------------------------------------
+# Fix #2 (static parse-fail): reconocer fichas estaticas tipo
+#   alquiler_casa_2_dorm_<calle>_<ciudad>.php
+#   casaquinta_12_has_cipolletti.php / chalet_rosauer.php / campo_15100_has_..php
+# distinguiendolas de paginas de categoria (casas_deptos.php, terrenos_lotes.php,
+# alquiler_casasydptos.php, locales-oficinas-galpones.php).
+# Heuristica: el "stem" del archivo debe tener (a) un token de TIPO en SINGULAR y
+# (b) al menos un token "descriptor" (direccion/ciudad/codigo: no operacion, no
+# tipo, no categoria, no relleno). Las categorias usan plurales/compuestos y no
+# tienen descriptor -> quedan descartadas. Va detras de flag (_allow_static_detail).
+# ---------------------------------------------------------------------------
+_STATIC_DETAIL_OP_TOKENS = {
+    "venta", "ventas", "vende", "vendo", "vendido", "alquiler", "alquileres",
+    "alquila", "alquilo", "alquilado", "temporario", "temporal", "temporada",
+}
+_STATIC_DETAIL_SINGULAR_TYPES = {
+    "casa", "casaquinta", "quinta", "departamento", "depto", "dpto", "dto",
+    "monoambiente", "ph", "duplex", "triplex", "chalet", "cabana", "cabania",
+    "chacra", "campo", "local", "oficina", "galpon", "deposito", "terreno",
+    "lote", "cochera", "loft", "estudio", "fondo", "piso", "semipiso", "country",
+}
+_STATIC_DETAIL_CATEGORY_TOKENS = {
+    "propiedades", "propiedad", "inmuebles", "inmueble", "casas", "deptos",
+    "dptos", "departamentos", "casasydptos", "casasydeptos", "locales",
+    "oficinas", "galpones", "terrenos", "lotes", "chacras", "campos", "cocheras",
+    "quintas", "monoambientes", "zonas", "turisticas", "requeridas",
+    "emprendimientos", "desarrollos", "index", "buscar", "busqueda",
+}
+_STATIC_DETAIL_FILLER_TOKENS = {
+    "y", "o", "de", "del", "la", "el", "los", "las", "en", "con", "a", "e", "u",
+    "has", "ha", "dorm", "dorms", "amb", "ambs", "dormitorio", "dormitorios",
+    "ambiente", "ambientes", "amoblada", "amoblado", "amobladas", "amoblados",
+}
+
+
+def _looks_like_static_php_detail_url(url: str) -> bool:
+    """Fix #2: ficha estatica .php/.html (op + tipo singular + descriptor)."""
+    if not url or _is_noise_property_url(url):
+        return False
+    parsed = urlparse(str(url))
+    path = unquote((parsed.path or "").lower()).strip("/")
+    m = re.search(r"([^/]+)\.(?:php|html?|asp|aspx)$", path)
+    if not m:
+        return False
+    stem = m.group(1)
+    tokens = [t for t in re.split(r"[_\-]+", stem) if t]
+    if len(tokens) < 2:
+        return False
+    if not any(t in _STATIC_DETAIL_SINGULAR_TYPES for t in tokens):
+        return False
+
+    def _is_descriptor(tok: str) -> bool:
+        if tok in _STATIC_DETAIL_OP_TOKENS:
+            return False
+        if tok in _STATIC_DETAIL_SINGULAR_TYPES:
+            return False
+        if tok in _STATIC_DETAIL_CATEGORY_TOKENS:
+            return False
+        if tok in _STATIC_DETAIL_FILLER_TOKENS:
+            return False
+        return True
+
+    return any(_is_descriptor(t) for t in tokens)
+
+
+def _extract_generic_property_links(
+    html: str,
+    current_url: str,
+    allow_static_php_detail: bool = False,
+) -> List[str]:
     soup = BeautifulSoup(html or "", "html.parser")
     current_netloc = urlparse(current_url).netloc
     links: List[str] = []
@@ -8926,6 +9902,13 @@ def _extract_generic_property_links(html: str, current_url: str) -> List[str]:
         "[class*='property'] a[href]", "[class*='propiedad'] a[href]",
         "[class*='inmueble'] a[href]", "[class*='listing'] a[href]",
         "[class*='resultado'] a[href]", "article a[href]", ".card a[href]",
+        # Slugs con tipo de propiedad al inicio: /casa-..., /depto-..., /terreno-...
+        # Permite detectar CMSes con clean URLs sin operacion explicita (watsonpropiedades style)
+        "a[href^='/casa-']", "a[href^='/depto-']", "a[href^='/departamento-']",
+        "a[href^='/terreno-']", "a[href^='/lote-']", "a[href^='/local-']",
+        "a[href^='/oficina-']", "a[href^='/campo-']", "a[href^='/chalet-']",
+        "a[href^='/cochera-']", "a[href^='/galpon-']", "a[href^='/duplex-']",
+        "a[href^='/ph-']", "a[href^='/monoambiente-']",
     ]
     for selector in selectors:
         for a in soup.select(selector):
@@ -8942,9 +9925,24 @@ def _extract_generic_property_links(html: str, current_url: str) -> List[str]:
                 PROPERTY_URL_PATTERNS.search(full)
                 and not _is_noise_property_url(full)
                 and any(word in combined for word in ("venta", "alquiler", "dormitorio", "ambiente", "terreno", "casa", "departamento"))
-            ):
+            ) or (allow_static_php_detail and _looks_like_static_php_detail_url(full)):
                 if full not in links:
                     links.append(full)
+    # Fix #2: barrido amplio de archivos estaticos (.php/.html/.asp) cuya ficha
+    # no contiene palabras clave en el href (ej. chalet_rosauer.php) y por eso no
+    # cae en los selectores keyword-based de arriba. Solo con flag activa.
+    if allow_static_php_detail:
+        for a in soup.select("a[href]"):
+            href = (a.get("href") or "").strip()
+            if not href or href.startswith(("#", "javascript:", "mailto:", "tel:")):
+                continue
+            if not re.search(r"\.(?:php|html?|asp|aspx)(?:[?#]|$)", href, re.I):
+                continue
+            full = urljoin(current_url, href)
+            if urlparse(full).netloc != current_netloc:
+                continue
+            if (_looks_like_static_php_detail_url(full) or _looks_like_real_property_url(full)) and full not in links:
+                links.append(full)
     return links[:400]
 
 
@@ -9072,7 +10070,31 @@ def _generic_candidate_urls(inmob: Dict, first_html: str = "", first_url: str = 
     for base in _url_host_variants(inmob.get("web") or first_url):
         for path in _UNIVERSAL_LISTING_PATHS:
             add(urljoin(base.rstrip("/") + "/", path.lstrip("/")))
-    return urls[:50]
+
+    # ── Faceted listing discovery ──────────────────────────────────────────
+    # Generates operation×tipo combinations and x_Tipo CMS variants so that
+    # sites which partition their listings by filter (e.g. /propiedades/venta,
+    # /propiedades/alquiler/casas, or .asp?x_Tipo=N) are fully covered.
+    _faceted_base = first_url or inmob.get("url_listado") or inmob.get("web") or ""
+    if _faceted_base:
+        try:
+            from scraper.faceted_discovery import (  # type: ignore
+                detect_xtipo_cms,
+                generate_xtipo_candidates,
+                generate_faceted_candidates,
+            )
+            _fhtml = (first_html or "")[:30000]
+            if detect_xtipo_cms(_fhtml, _faceted_base):
+                for _fu in generate_xtipo_candidates(_faceted_base):
+                    add(_fu)
+            else:
+                for _fu in generate_faceted_candidates(_faceted_base, existing_urls=urls):
+                    add(_fu)
+        except Exception:
+            pass  # graceful degradation — never break existing logic
+    # ─────────────────────────────────────────────────────────────────────────
+
+    return urls[:80]
 
 
 def _custom_listing_candidate_urls(inmob: Dict, first_html: str = "", first_url: str = "") -> List[str]:
@@ -9402,12 +10424,14 @@ def strategy_static_html(inmob: Dict, session: requests.Session) -> List[Dict]:
                         continue
                     html = r.text
                 script_signals = _extract_script_property_signals(html, candidate)
+                _allow_static_php = bool(inmob.get("_allow_static_detail"))
                 page_links = list(dict.fromkeys(
-                    _extract_generic_property_links(html, candidate)
+                    _extract_generic_property_links(html, candidate, allow_static_php_detail=_allow_static_php)
                     + (script_signals.get("property_urls") or [])
                     + [
                         url for url in (script_signals.get("property_like_urls") or [])
                         if _looks_like_real_property_url(url) or _looks_like_custom_property_url(url)
+                        or (_allow_static_php and _looks_like_static_php_detail_url(url))
                     ]
                 ))
                 property_urls_by_page[candidate] = len(page_links)
@@ -9555,6 +10579,18 @@ def strategy_static_html_detail(inmob: Dict, session: requests.Session) -> List[
     props = strategy_static_html(inmob, session)
     for prop in props:
         prop["fuente_extraccion"] = "static_html_detail"
+        # Fix por familia ASP CMS: si el URL de detalle tiene subfolder de operacion
+        # (/alquiler/item.asp, /venta/item.asp) usarlo como fuente de verdad
+        _op = _infer_op_from_asp_url_path(prop.get("url", ""))
+        if _op:
+            prop["operacion"] = _op
+        # Fix por familia short-ID rural CMS: corregir tipo_propiedad defaulteado
+        # por page_text heurístico cuando hostname contiene señales rurales
+        _tipo = _infer_tipo_from_rural_shortid_url(
+            prop.get("url", ""), prop.get("tipo_propiedad")
+        )
+        if _tipo:
+            prop["tipo_propiedad"] = _tipo
     return props
 
 
@@ -10163,6 +11199,154 @@ def _playwright_extract_detail(page: Page, url: str, inmob: Dict) -> Optional[Di
         page.route("**/*", _playwright_block_heavy_route)
 
 
+def _dynamic_render_signals_present(inmob: Dict, render_diag: Dict) -> List[str]:
+    """Detecta senales de contenido dinamico (JS/AJAX/scroll/paginacion).
+
+    Se usa para decidir si vale la pena un paso activo de carga dinamica antes
+    de declarar sin_propiedades. General para sitios WordPress/AJAX/render JS;
+    no esta atado a ningun dominio puntual.
+    """
+    signals: List[str] = []
+    metadata = inmob.get("_scraper_metadata") or {}
+    diag = metadata.get("diagnostico_inicial")
+    diag = diag if isinstance(diag, dict) else {}
+
+    if diag.get("requires_js"):
+        signals.append("requires_js")
+    if diag.get("pagination_detected"):
+        signals.append("pagination_detected")
+    for s in (diag.get("load_more_signals") or []):
+        signals.append(f"load_more:{s}")
+    for s in (diag.get("requires_playwright_signals") or []):
+        signals.append(f"pw_signal:{s}")
+    techs = {str(t).lower() for t in (diag.get("tecnologias_detectadas") or [])}
+    for tech in ("webpack", "wordpress", "vite", "react", "vue", "nuxt", "angular"):
+        if any(tech in t for t in techs):
+            signals.append(f"tech:{tech}")
+    if render_diag.get("script_property_like_urls_count"):
+        signals.append("script_like_urls")
+    return list(dict.fromkeys(signals))
+
+
+def _playwright_dynamic_content_probe(page, inmob: Dict, render_diag: Dict) -> Dict:
+    """Paso activo de carga dinamica antes de declarar sin_propiedades.
+
+    Cuando el primer render no muestra cards ni property_links pero hay senales
+    de contenido dinamico (requires_js, pagination_detected, load_more_signals,
+    wordpress_ajax, webpack_bundle, etc.), intenta forzar la aparicion de
+    propiedades mediante scroll progresivo y botones "cargar mas"/"ver mas",
+    respetando SIEMPRE el deadline del item. Es general para sitios
+    WordPress/AJAX/render JS (no especifico de ningun dominio).
+
+    Limita los intentos (max 5 pasadas) para no enlentecer cada item. Devuelve
+    el render_diag actualizado: re-ejecuta _playwright_render_diagnostics tras los
+    gestos. Si no corresponde aplicarlo, devuelve el render_diag original.
+    """
+    property_links_count = int(render_diag.get("property_links_count") or 0)
+    cards_count = int(render_diag.get("cards_count") or 0)
+    if property_links_count > 0 or cards_count > 0:
+        return render_diag
+
+    signals = _dynamic_render_signals_present(inmob, render_diag)
+    if not signals:
+        return render_diag
+
+    deadline = _strategy_deadline(inmob)
+    base_url = page.url or inmob.get("url_listado") or ""
+    logger.info(
+        "playwright_html | dynamic_probe_start | url=%s | signals=%s",
+        base_url,
+        ",".join(signals) or "-",
+    )
+
+    def _persist(diag: Dict) -> None:
+        inmob.setdefault("_scraper_metadata", {})["playwright_html_render_diagnostics"] = {
+            key: value for key, value in diag.items() if key != "property_links"
+        }
+
+    max_passes = 5
+    clicked_any = False
+    for attempt in range(1, max_passes + 1):
+        # respetar deadline del item; dejar un margen minimo para no cortar a la mitad
+        if _deadline_remaining_seconds(deadline) <= 2.0:
+            logger.info("playwright_html | dynamic_probe | deadline alcanzado en pass=%d", attempt)
+            break
+        try:
+            _check_strategy_deadline(inmob, "html_scraper")
+        except Exception:
+            break
+
+        # 1) scroll progresivo hacia el fondo (dispara lazy-load/AJAX/scroll infinito)
+        try:
+            prev_height = page.evaluate("document.body.scrollHeight")
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        except Exception:
+            prev_height = 0
+        time.sleep(min(1.2, max(0.2, _deadline_remaining_seconds(deadline))))
+        try:
+            new_height = page.evaluate("document.body.scrollHeight")
+        except Exception:
+            new_height = prev_height
+        logger.info(
+            "playwright_html | dynamic_probe_after_scroll | pass=%d | prev_height=%s | new_height=%s",
+            attempt,
+            prev_height,
+            new_height,
+        )
+
+        # 2) intentar botones cargar mas / ver mas / siguiente (logica reutilizable)
+        clicked = False
+        if _deadline_remaining_seconds(deadline) > 2.0:
+            try:
+                clicked = _handle_click_pagination(page)
+            except Exception:
+                clicked = False
+        if clicked:
+            clicked_any = True
+        logger.info(
+            "playwright_html | dynamic_probe_after_clicks | pass=%d | clicked=%s",
+            attempt,
+            clicked,
+        )
+
+        # esperar que la red se estabilice tras los gestos
+        try:
+            _playwright_wait_networkidle(page, inmob, f"dynamic_probe_{attempt}")
+        except Exception:
+            pass
+
+        # 3) re-evaluar diagnostico de render
+        probe_diag = _playwright_render_diagnostics(page, page.url or base_url)
+        render_diag = probe_diag
+        if int(probe_diag.get("property_links_count") or 0) > 0 or int(probe_diag.get("cards_count") or 0) > 0:
+            _persist(render_diag)
+            logger.info(
+                "playwright_html | dynamic_probe_result | pass=%d | property_links=%d | cards=%d | clicked_any=%s | exito=True",
+                attempt,
+                render_diag.get("property_links_count", 0),
+                render_diag.get("cards_count", 0),
+                clicked_any,
+            )
+            return render_diag
+
+        # cortar si el scroll ya no agrega altura y no hubo ningun click util
+        if new_height == prev_height and not clicked:
+            logger.info(
+                "playwright_html | dynamic_probe | sin avance (height estable, sin click) en pass=%d",
+                attempt,
+            )
+            break
+
+    _persist(render_diag)
+    logger.info(
+        "playwright_html | dynamic_probe_result | property_links=%d | cards=%d | clicked_any=%s | exito=False",
+        render_diag.get("property_links_count", 0),
+        render_diag.get("cards_count", 0),
+        clicked_any,
+    )
+    return render_diag
+
+
 def strategy_html_playwright(inmob: Dict, pw_context) -> List[Dict]:
     url_listado = inmob.get("url_listado") or inmob.get("web", "")
     if not url_listado:
@@ -10209,6 +11393,12 @@ def strategy_html_playwright(inmob: Dict, pw_context) -> List[Dict]:
             api_props = _strategy_playwright_tokko_proxy_api(inmob, page)
             if api_props:
                 return api_props
+
+        # Paso activo de carga dinamica: si el primer render no muestra cards ni
+        # property_links pero hay senales de contenido dinamico (JS/AJAX/scroll/
+        # paginacion), intentar forzar la aparicion de propiedades antes de
+        # declarar sin_propiedades. Respeta el deadline del item.
+        render_diag = _playwright_dynamic_content_probe(page, inmob, render_diag)
 
         detail_urls = list(render_diag.get("property_links") or [])
         card_sel = _infer_card_selector(page)
@@ -11055,10 +12245,24 @@ def diagnose_inmob(
         "elapsed_seconds": 0,
     }
     if not url_inicial:
-        diagnostic["site_down"] = True
-        diagnostic["site_down_reason"] = "sin_url"
-        diagnostic["classification"] = "site_down_confirmed"
+        diagnostic["motivo_no_scrapeable"] = "sin_url"
+        diagnostic["preflight_source"] = classify_source_preflight(url_inicial, inmob.get("nombre"))
+        diagnostic["no_property_links_subfamily"] = "invalid_source_url"
+        diagnostic["classification"] = "skipped_invalid_source"
         diagnostic["expected_properties_count"] = 0
+        return diagnostic
+
+    preflight_source = classify_source_preflight(url_inicial, inmob.get("nombre"))
+    diagnostic["preflight_source"] = preflight_source
+    diagnostic["source_preflight_signals"] = preflight_source.get("signals") or []
+    diagnostic["no_property_links_subfamily"] = preflight_source.get("subfamily") or ""
+    diagnostic["source_preflight_reason"] = preflight_source.get("reason") or ""
+    diagnostic["remax_api_detected"] = bool(preflight_source.get("remax_domain"))
+    if preflight_source.get("skip"):
+        diagnostic["motivo_no_scrapeable"] = preflight_source.get("reason")
+        diagnostic["classification"] = preflight_source.get("error_type") or "skipped_invalid_source"
+        diagnostic["expected_properties_count"] = 0
+        diagnostic["elapsed_seconds"] = round(time.time() - started_at, 2)
         return diagnostic
 
     first_html = ""
@@ -11223,9 +12427,12 @@ def diagnose_inmob(
     pagination_pages_detected = 0
     visible_properties_count: Optional[int] = None
 
+    _diag_allow_static_php = bool(inmob.get("_allow_static_detail"))
     for page_html, page_url in html_pages:
         _check_strategy_deadline(inmob, "diagnose_url")
-        page_generic_links = _extract_generic_property_links(page_html, page_url)
+        page_generic_links = _extract_generic_property_links(
+            page_html, page_url, allow_static_php_detail=_diag_allow_static_php
+        )
         generic_property_links.extend(page_generic_links)
         page_plugin_links: List[str] = []
         if wp_plugin != "unknown":
@@ -11344,12 +12551,16 @@ def diagnose_inmob(
             if _looks_like_wordpress_plugin_property_url(url, wp_plugin) or _looks_like_real_property_url(url)
         ]
     else:
-        property_links = [url for url in list(dict.fromkeys(generic_property_links + script_property_urls)) if _looks_like_real_property_url(url)]
+        property_links = [
+            url for url in list(dict.fromkeys(generic_property_links + script_property_urls))
+            if _looks_like_real_property_url(url)
+            or (_diag_allow_static_php and _looks_like_static_php_detail_url(url))
+        ]
 
     custom_listing_urls = list(dict.fromkeys(custom_listing_urls + script_listing_urls))
     developer_project_urls = list(dict.fromkeys(developer_project_urls + script_project_urls))
     diagnostic["property_links_count"] = len(property_links)
-    diagnostic["urls_validas_detectadas"] = len([url for url in property_links if _looks_like_real_property_url(url) or _looks_like_wordpress_plugin_property_url(url, wp_plugin)])
+    diagnostic["urls_validas_detectadas"] = len([url for url in property_links if _looks_like_real_property_url(url) or _looks_like_wordpress_plugin_property_url(url, wp_plugin) or (_diag_allow_static_php and _looks_like_static_php_detail_url(url))])
     diagnostic["property_like_links_detectados"] = len(list(dict.fromkeys(script_property_like_urls)))
     diagnostic["js_urls_detectadas"] = len(list(dict.fromkeys(script_property_urls + script_property_like_urls + script_listing_urls + script_project_urls)))
     diagnostic["links_detectados_total"] = len(list(dict.fromkeys(
@@ -11505,6 +12716,8 @@ def diagnose_inmob(
     diagnostic["tecnologias_detectadas"] = list(dict.fromkeys(diagnostic["tecnologias_detectadas"])) or ["unknown"]
     diagnostic["elapsed_seconds"] = round(time.time() - started_at, 2)
     diagnostic["classification"] = classify_diagnostic_failure(diagnostic, allow_playwright, allow_network_interception)
+    if diagnostic["classification"] in {"no_property_links", "no_property_links_confirmed", "requires_playwright"}:
+        diagnostic["no_property_links_subfamily"] = subclassify_no_property_links(diagnostic)
     diagnostic["expected_properties_count"] = _diagnostic_expected_property_count(diagnostic)
     return diagnostic
 
@@ -11638,7 +12851,8 @@ def select_best_scraping_strategy(diagnostic: Dict[str, Any], history: Optional[
     no_scrapeable = {
         "site_down", "blocked", "empty_site", "no_property_links",
         "site_down_confirmed", "no_property_links_confirmed",
-        "unsupported_cms", "tracking_only",
+        "unsupported_cms", "tracking_only", "skipped_invalid_source",
+        "invalid_source_url",
     }
     if classification in no_scrapeable:
         return _strategy_plan_noop(classification, diagnostic)
@@ -11744,10 +12958,10 @@ def select_best_scraping_strategy(diagnostic: Dict[str, Any], history: Optional[
         reason = f"HTML estatico con links reales de propiedades ({property_links})"
         confidence = "medium"
 
-    if primary is None and classification == "scrapeable_static_html" and property_like_count > 0:
+    if primary is None and classification == "scrapeable_static_html" and (property_like_count > 0 or property_links > 0):
         primary = "static_html_detail"
         fallbacks = ["json_ld", "sitemap"]
-        reason = f"HTML/JS embebido con URLs candidatas de propiedades ({property_like_count})"
+        reason = f"HTML estatico con URLs candidatas de propiedades (links={property_links}, like={property_like_count})"
         confidence = "low"
 
     if primary is None and classification == "scrapeable_developer_projects":
@@ -11856,6 +13070,7 @@ def evaluate_scrape_quality(
         if _looks_like_real_property_url(str(prop.get("url") or ""))
         or (wordpress_plugin and _looks_like_wordpress_plugin_property_url(str(prop.get("url") or ""), wordpress_plugin))
         or (accepts_custom_urls and _looks_like_custom_property_url(str(prop.get("url") or "")))
+        or (accepts_custom_urls and _looks_like_static_php_detail_url(str(prop.get("url") or "")))
     )
     useful_title_count = sum(1 for prop in props if _is_useful_scraped_title(prop.get("titulo")))
     valid_price_count = sum(1 for prop in props if _positive_number(prop.get("precio")))
@@ -12422,6 +13637,8 @@ def run_best_strategy(
             return call("json_ld", lambda: strategy_json_ld(inmob, session))
         if strategy_name == "sitemap":
             return call("sitemap", lambda: strategy_sitemap(inmob, session))
+        if strategy_name == "visible_api_endpoint":
+            return call("visible_api_endpoint", lambda: strategy_visible_api_endpoint(inmob, session))
         if strategy_name == "network_interception":
             return call_network()
         if strategy_name == "playwright_html":
@@ -12491,6 +13708,7 @@ def run_best_strategy(
         "wordpress_html",
         "json_ld",
         "sitemap",
+        "visible_api_endpoint",
         "network_interception",
         "playwright_html",
     }
@@ -12549,17 +13767,43 @@ def run_best_strategy(
     primary_strategy = strategy_plan.get("primary_strategy")
     if not primary_strategy:
         classification = strategy_plan.get("classification") or diagnostic.get("classification") or "no_property_links"
-        metadata["motivo_final"] = f"{classification}: sin estrategia scrapeable segun diagnostico"
-        raise RuntimeError(f"{classification}: sin estrategia scrapeable segun diagnostico")
+        subfamily = diagnostic.get("no_property_links_subfamily") or diagnostic.get("source_preflight_reason") or ""
+        metadata["error_subfamily"] = subfamily
+        metadata["motivo_final"] = f"{classification}: sin estrategia scrapeable segun diagnostico; subfamily={subfamily}"
+        _write_metadata_dump_if_configured(inmob)
+        raise RuntimeError(f"{classification}: sin estrategia scrapeable segun diagnostico; subfamily={subfamily}")
 
     logger.info("  Diagnostico: %s", diagnostic.get("classification"))
     logger.info("  Estrategia elegida: %s (%s)", primary_strategy, strategy_plan.get("reason"))
 
     candidate_strategies = [primary_strategy] + list(strategy_plan.get("fallback_strategies") or [])
+    # Fix #1a: si la flag --allow-visible-api esta activa, probar primero el consumo
+    # de endpoints JSON internos visibles en el HTML/metadata (RE/MAX y similares).
+    # Es un GET de lectura: si no hay endpoints/datos utiles falla limpio y sigue.
+    if inmob.get("_allow_visible_api") and "visible_api_endpoint" not in candidate_strategies:
+        candidate_strategies = ["visible_api_endpoint"] + candidate_strategies
+    # Fix #1b: si --allow-network-interception esta activa y el sitio requiere JS
+    # (SPA: playwright_html como primary o requires_playwright en el diagnostico),
+    # agregar network_interception como ULTIMO fallback para capturar XHR/fetch.
+    # Es lectura de red: si no captura JSON util falla limpio. Va detras de flag.
+    if (
+        allow_network_interception
+        and "network_interception" not in candidate_strategies
+        and (diagnostic.get("requires_playwright") or "playwright_html" in candidate_strategies)
+    ):
+        candidate_strategies = candidate_strategies + ["network_interception"]
     quality_results: List[Dict[str, Any]] = []
     last_error: Optional[BaseException] = None
     skipped_reasons: List[str] = []
     for index, strategy_name in enumerate(candidate_strategies):
+        if strategy_name == "visible_api_endpoint" and not inmob.get("_allow_visible_api"):
+            skipped_reasons.append("requires_visible_api")
+            attempts.append({
+                "extractor": strategy_name,
+                "status": "skipped",
+                "reason": "allow_visible_api_false",
+            })
+            continue
         if strategy_name == "network_interception" and not allow_network_interception:
             skipped_reasons.append("requires_network_interception")
             attempts.append({
@@ -13116,6 +14360,11 @@ def _normalize_queue_url(url: Optional[str]) -> str:
     clean = str(url).strip()
     if not clean:
         return ""
+    # Anchor-only and relative paths are not standalone scrapeable URLs
+    if clean.startswith("#"):
+        return ""
+    if clean.startswith("/") and not clean.startswith("//"):
+        return ""
     if not re.match(r"^https?://", clean, re.IGNORECASE):
         clean = f"https://{clean.lstrip('/')}"
     return clean
@@ -13282,6 +14531,8 @@ def _scrape_queue_item(
     canonical_resolution: Optional[Dict[str, Any]] = None,
     allow_playwright_fallback: bool = False,
     allow_network_interception: bool = False,
+    allow_visible_api: bool = False,
+    allow_static_detail: bool = False,
 ) -> Tuple[List[Dict], str, str, List[str], Dict[str, Any]]:
     urls = _queue_candidate_urls(item)
     if not urls:
@@ -13317,6 +14568,12 @@ def _scrape_queue_item(
         last_url = url_usada
         inmob = _queue_item_to_inmob(item, url_usada, canonical_resolution=canonical_resolution)
         inmob["_item_timeout_seconds"] = timeout_seconds
+        # Rec #1: flags seguras opt-in propagadas a la ruta productiva (OFF por defecto).
+        # run_best_strategy / diagnose / strategy_static_html leen estas claves del inmob.
+        if allow_visible_api:
+            inmob["_allow_visible_api"] = True
+        if allow_static_detail:
+            inmob["_allow_static_detail"] = True
         logger.info("URL usada: %s", url_usada)
         logger.info("CMS detectado: %s", item.get("cms_detectado") or "sin dato")
 
@@ -13932,6 +15189,36 @@ def _repair_images_skip_url_reason(url: Any, url_normalizada: Any = None) -> Opt
 
 
 def _build_raw_row(item: Dict, prop: Dict) -> Dict:
+    raw_images = prop.get("imagenes") or []
+    if isinstance(raw_images, str):
+        raw_images = [raw_images]
+    cleaned_images = clean_property_images(raw_images if isinstance(raw_images, list) else [])
+    source_url = prop.get("sourceUrl") or prop.get("source_url") or prop.get("url")
+    url_key = normalize_property_url_for_dedup(prop.get("url"))
+    cross_agency_signature = "|".join([
+        normalize_property_url_for_dedup(prop.get("url")),
+        _coordinate_location_key(prop.get("direccion")),
+        _coordinate_location_key(prop.get("ciudad")),
+        _coordinate_location_key(prop.get("provincia")),
+        str(prop.get("precio") or ""),
+    ]).strip("|")
+    datos_extra = {
+        "source_url": source_url,
+        "source_url_normalizada": normalize_property_url_for_dedup(source_url),
+        "canonical_url_key": url_key,
+        "cross_agency_signature": cross_agency_signature,
+        "id_externo": prop.get("id_externo"),
+        "fuente_extraccion": prop.get("fuente_extraccion"),
+        "cms_origen": prop.get("cms_origen"),
+        "score_calidad": prop.get("score_calidad"),
+        "imagenes_originales_count": len(raw_images) if isinstance(raw_images, list) else 0,
+        "imagenes_limpias_count": len(cleaned_images),
+        "location_normalized": bool(prop.get("_location_normalized")),
+        "location_normalization_motivo": prop.get("_location_normalization_motivo"),
+        "ubicacion_fallback_from_agency": bool(prop.get("_ubicacion_fallback_from_agency")),
+        "agency_nombre": prop.get("_agency_location_context", {}).get("nombre") if isinstance(prop.get("_agency_location_context"), dict) else None,
+    }
+    datos_extra = {k: v for k, v in datos_extra.items() if v not in (None, "", [], {})}
     return {
         "scraping_run_item_id": item.get("scraping_run_item_id") or item.get("id"),
         "inmobiliaria_id": prop.get("inmobiliaria_id"),
@@ -13953,8 +15240,8 @@ def _build_raw_row(item: Dict, prop: Dict) -> Dict:
         "pais": prop.get("pais") or "Argentina",
         "latitud": prop.get("latitud"),
         "longitud": prop.get("longitud"),
-        "imagenes": (prop.get("imagenes") or [])[:10],
-        "datos_extra": {},
+        "imagenes": cleaned_images[:10],
+        "datos_extra": datos_extra,
         "status": "raw",
     }
 
@@ -14069,6 +15356,19 @@ def _save_queue_properties(
         if isinstance(strategy_meta, dict):
             strategy_meta["propiedades_marcadas_inactivas_por_estado"] = len(unavailable_props)
             strategy_meta["propiedades_inactivas_ejemplos"] = unavailable_props[:5]
+
+    pipeline_quality_stats = strategy_meta.setdefault("pipeline_quality_normalization", {}) if isinstance(strategy_meta, dict) else {}
+    for prop in props:
+        sanitize_property_location(prop, pipeline_quality_stats)
+        apply_agency_location_fallback(prop, pipeline_quality_stats)
+        normalize_property_location_encoding(prop, pipeline_quality_stats)
+        raw_images = prop.get("imagenes") or []
+        if isinstance(raw_images, str):
+            raw_images = [raw_images]
+        if isinstance(raw_images, list):
+            prop["imagenes"] = clean_property_images(raw_images, stats=pipeline_quality_stats) or None
+        prop.setdefault("sourceUrl", prop.get("url"))
+        prop["score_calidad"] = calcular_score(prop)
 
     props_with_images, props_without_images = _count_real_image_props(props)
     image_urls_detected = 0
@@ -14244,6 +15544,8 @@ def _process_scraping_control_item(
     pw_context,
     allow_playwright_fallback: bool = False,
     allow_network_interception: bool = False,
+    allow_visible_api: bool = False,
+    allow_static_detail: bool = False,
 ) -> Dict[str, Any]:
     started_at = time.time()
     timeout_seconds = _item_timeout_seconds(item, allow_playwright_fallback or allow_network_interception)
@@ -14285,6 +15587,8 @@ def _process_scraping_control_item(
             canonical_resolution=canonical_resolution,
             allow_playwright_fallback=allow_playwright_fallback,
             allow_network_interception=allow_network_interception,
+            allow_visible_api=allow_visible_api,
+            allow_static_detail=allow_static_detail,
         )
         if item_deadline is not None and _deadline_remaining_seconds(item_deadline) <= 0 and props:
             logger.warning(
@@ -14965,6 +16269,8 @@ def run_controlled_queue(
     max_items: Optional[int] = None,
     allow_playwright_fallback: bool = False,
     allow_network_interception: bool = False,
+    allow_visible_api: bool = False,
+    allow_static_detail: bool = False,
 ) -> None:
     """
     Ejecuta el scraper usando el sistema de control de Supabase:
@@ -15039,6 +16345,8 @@ def run_controlled_queue(
                         pw_context,
                         allow_playwright_fallback=allow_playwright_fallback,
                         allow_network_interception=allow_network_interception,
+                        allow_visible_api=allow_visible_api,
+                        allow_static_detail=allow_static_detail,
                     )
                     # Cierre del item en la queue — separado del scraping para que
                     # un fallo de RPC no invalide una extracción que sí funcionó.
@@ -15214,6 +16522,8 @@ def run_controlled_queue_parallel_processes(
     workers: int = 1,
     allow_playwright_fallback: bool = False,
     allow_network_interception: bool = False,
+    allow_visible_api: bool = False,
+    allow_static_detail: bool = False,
 ) -> None:
     """Run the controlled queue with multiple independent claim workers.
 
@@ -15228,6 +16538,8 @@ def run_controlled_queue_parallel_processes(
             max_items=max_items,
             allow_playwright_fallback=allow_playwright_fallback,
             allow_network_interception=allow_network_interception,
+            allow_visible_api=allow_visible_api,
+            allow_static_detail=allow_static_detail,
         )
         return
     if max_items is not None and max_items <= 0:
@@ -15235,6 +16547,8 @@ def run_controlled_queue_parallel_processes(
             max_items=max_items,
             allow_playwright_fallback=allow_playwright_fallback,
             allow_network_interception=allow_network_interception,
+            allow_visible_api=allow_visible_api,
+            allow_static_detail=allow_static_detail,
         )
         return
 
@@ -15264,6 +16578,10 @@ def run_controlled_queue_parallel_processes(
             cmd.append("--allow-playwright-fallback")
         if allow_network_interception:
             cmd.append("--allow-network-interception")
+        if allow_visible_api:
+            cmd.append("--allow-visible-api")
+        if allow_static_detail:
+            cmd.append("--allow-static-detail")
         env = os.environ.copy()
         env["INMOCAPITAL_QUEUE_WORKER_INDEX"] = str(idx)
         env["INMOCAPITAL_QUEUE_WORKER_TOTAL"] = str(len(quotas))
@@ -15307,6 +16625,8 @@ def run_retry_errors_queue(
     allow_network_interception: bool = True,
     dry_run: bool = False,
     agency_id: Optional[int] = None,
+    allow_visible_api: bool = False,
+    allow_static_detail: bool = False,
 ) -> None:
     """Reintenta items con errores accionables en modo tecnico controlado."""
     t_inicio = time.time()
@@ -15438,6 +16758,8 @@ def run_retry_errors_queue(
                     pw_context,
                     allow_playwright_fallback=allow_playwright_fallback,
                     allow_network_interception=allow_network_interception,
+                    allow_visible_api=allow_visible_api,
+                    allow_static_detail=allow_static_detail,
                 )
                 metadata = result["metadata_json"]
                 metadata["retry_errors_mode"] = True
@@ -16848,6 +18170,10 @@ def test_single_url(
     cms: Optional[str] = None,
     allow_playwright_fallback: bool = False,
     allow_network_interception: bool = False,
+    allow_visible_api: bool = False,
+    allow_static_detail: bool = False,
+    dump_props_json: Optional[str] = None,
+    dump_metadata_json: Optional[str] = None,
 ) -> None:
     """Prueba una URL puntual sin consumir items de la cola ni guardar propiedades."""
     session = SupabasePropiedades._make_session()
@@ -16863,6 +18189,14 @@ def test_single_url(
     }
     if estrategia:
         inmob["estrategia_scraping"] = estrategia
+    if allow_visible_api:
+        inmob["_allow_visible_api"] = True
+    if allow_static_detail:
+        inmob["_allow_static_detail"] = True
+    # Modo test: ninguna estrategia debe escribir en Supabase/Neon.
+    inmob["_test_mode"] = True
+    if dump_metadata_json:
+        inmob["_metadata_dump_json"] = dump_metadata_json
 
     use_playwright = allow_playwright_fallback or allow_network_interception
     if use_playwright:
@@ -16897,6 +18231,13 @@ def test_single_url(
         test_item_timeout_seconds = (
             PLAYWRIGHT_ITEM_TIMEOUT_SECONDS if use_playwright else CONTROL_ITEM_TIMEOUT_SECONDS
         )
+        inmob.setdefault("_scraper_metadata", {}).update({
+            "timeout_internal_expected_seconds": test_item_timeout_seconds,
+            "timeout_mode": "playwright" if use_playwright else "directo",
+            "test_url_started_at": datetime.now(timezone.utc).isoformat(),
+            "last_stage": "test_url_start",
+        })
+        _write_metadata_dump_if_configured(inmob)
         logger.info(
             "test-url: presupuesto de item = %ds (%s)",
             test_item_timeout_seconds,
@@ -16941,12 +18282,32 @@ def test_single_url(
                 first_image,
                 prop.get("url"),
             )
+        # Preservacion LOCAL opcional (no escribe en DB): vuelca props a JSON.
+        if dump_props_json:
+            try:
+                _dump_dir = os.path.dirname(os.path.abspath(dump_props_json))
+                if _dump_dir:
+                    os.makedirs(_dump_dir, exist_ok=True)
+                _payload = {
+                    "url": url,
+                    "estrategia": strategy,
+                    "props_count": len(props),
+                    "props": props,
+                    "metadata": metadata,
+                }
+                with open(dump_props_json, "w", encoding="utf-8") as _fh:
+                    json.dump(_payload, _fh, ensure_ascii=False, indent=2, default=str)
+                logger.info("Props volcadas a JSON local: %s (%d props)", dump_props_json, len(props))
+            except Exception as _dump_exc:
+                logger.warning("No se pudo volcar props a JSON local: %s", _dump_exc)
+        _write_metadata_dump_if_configured(inmob)
         logger.info("=" * 60)
     except Exception as exc:
         metadata = dict(inmob.get("_scraper_metadata") or {})
         logger.error("TEST URL ERROR (%s): %s", clasificar_error(exc), str(exc)[:500])
         if metadata:
             logger.info("Metadata: %s", json.dumps(metadata, ensure_ascii=False)[:3000])
+        _write_metadata_dump_if_configured(inmob)
     finally:
         if use_playwright:
             _close_playwright_safely(pw_context, "test-url playwright context")
@@ -17069,6 +18430,14 @@ if __name__ == "__main__":
                         help="Permitir fallback HTML Playwright en modo cola (default: desactivado)")
     parser.add_argument("--allow-playwright", action="store_true",
                         help="Alias de --allow-playwright-fallback")
+    parser.add_argument("--allow-static-detail", action="store_true",
+                        help="Fix #2: reconocer fichas estaticas .php/.html (op+tipo+descriptor) en static_html.")
+    parser.add_argument("--allow-visible-api", action="store_true",
+                        help="Permitir consumo de endpoints JSON internos visibles en HTML/metadata (Fix #1a, GET de lectura; default: desactivado)")
+    parser.add_argument("--dump-props-json", type=str, default=None,
+                        help="Solo con --test-url: volcar las propiedades extraidas a un JSON LOCAL (no escribe en DB). Para preservar datos de casos corregidos.")
+    parser.add_argument("--dump-metadata-json", type=str, default=None,
+                        help="Solo con --test-url: volcar metadata/progreso a un JSON LOCAL para auditar timeouts.")
     parser.add_argument("--legacy-jobs",  action="store_true",
                         help="Usar el flujo anterior basado en scraping_jobs")
     parser.add_argument("--integrity-dry-run", action="store_true",
@@ -17118,6 +18487,10 @@ if __name__ == "__main__":
             cms=args.cms,
             allow_playwright_fallback=allow_playwright,
             allow_network_interception=allow_network,
+            allow_visible_api=args.allow_visible_api,
+            allow_static_detail=args.allow_static_detail,
+            dump_props_json=args.dump_props_json,
+            dump_metadata_json=args.dump_metadata_json,
         )
     elif args.retry_errors:
         run_retry_errors_queue(
@@ -17126,6 +18499,8 @@ if __name__ == "__main__":
             allow_network_interception=allow_network,
             dry_run=args.dry_run,
             agency_id=args.agency_id,
+            allow_visible_api=args.allow_visible_api,
+            allow_static_detail=args.allow_static_detail,
         )
     elif args.retry_partial_extractions:
         retry_limit = args.max_items if args.max_items is not None else args.limit
@@ -17150,4 +18525,6 @@ if __name__ == "__main__":
             workers=args.workers,
             allow_playwright_fallback=allow_playwright,
             allow_network_interception=allow_network,
+            allow_visible_api=args.allow_visible_api,
+            allow_static_detail=args.allow_static_detail,
         )

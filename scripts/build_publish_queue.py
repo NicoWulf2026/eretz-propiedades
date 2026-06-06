@@ -116,8 +116,22 @@ def to_float(value: Any) -> Optional[float]:
     return float(normalized)
 
 
-def fetch_staging_rows(cur, limit: int) -> List[Dict[str, Any]]:
-    cur.execute(STAGING_SELECT_SQL, [limit])
+def fetch_staging_rows(cur, limit: int, ids: Optional[List[int]] = None) -> List[Dict[str, Any]]:
+    if ids:
+        placeholders = ", ".join(["%s"] * len(ids))
+        cur.execute(
+            f"""
+            SELECT id, inmobiliaria_id, hash_dedup, url, url_normalizada,
+                   operacion, precio, validation_score, geocoding_status, status
+            FROM public.propiedades_staging
+            WHERE status = 'staging' AND id IN ({placeholders})
+            ORDER BY validation_score DESC, id ASC
+            LIMIT %s
+            """,
+            ids + [limit],
+        )
+    else:
+        cur.execute(STAGING_SELECT_SQL, [limit])
     return [dict(row) for row in cur.fetchall()]
 
 
@@ -241,6 +255,13 @@ def main() -> None:
     parser.add_argument("--allow-pending-geo", action="store_true", help="Aceptar geocoding_status=pending")
     parser.add_argument("--dry-run", action="store_true", help="Procesar y hacer rollback")
     parser.add_argument("--commit", action="store_true", help="Persistir cambios en Neon")
+    parser.add_argument(
+        "--ids-file",
+        type=Path,
+        default=None,
+        help="CSV con columna 'staging_id' — evalua SOLO esos IDs. "
+             "Garantiza que no se procesen otros rows del staging historico.",
+    )
     args = parser.parse_args()
 
     if args.limit <= 0:
@@ -251,6 +272,24 @@ def main() -> None:
         raise SystemExit("Usar --dry-run o --commit, no ambos")
     if not args.dry_run and not args.commit:
         args.dry_run = True
+
+    # Cargar IDs explícitos desde --ids-file si se provee
+    target_ids: Optional[List[int]] = None
+    if args.ids_file:
+        import csv as _csv
+        ids_path = args.ids_file if args.ids_file.is_absolute() else REPO_ROOT / args.ids_file
+        if not ids_path.exists():
+            raise SystemExit(f"--ids-file no encontrado: {ids_path}")
+        target_ids = []
+        with ids_path.open("r", encoding="utf-8-sig", newline="") as fh:
+            for row in _csv.DictReader(fh):
+                raw_id = row.get("staging_id") or row.get("id") or ""
+                try:
+                    target_ids.append(int(raw_id.strip()))
+                except ValueError:
+                    pass
+        if not target_ids:
+            raise SystemExit(f"--ids-file no contiene staging_id validos: {ids_path}")
 
     db_url = internal_db_config()
     skipped: Counter[str] = Counter()
@@ -265,12 +304,14 @@ def main() -> None:
     print(f"limit={args.limit}")
     print(f"min_score={args.min_score}")
     print(f"allow_pending_geo={args.allow_pending_geo}")
+    if args.ids_file:
+        print(f"ids_file={args.ids_file} ({len(target_ids)} IDs)")
     print("target=internal_db")
     print("-" * 72)
 
     with connect_internal_db(db_url) as conn:
         with conn.cursor() as cur:
-            rows = fetch_staging_rows(cur, args.limit)
+            rows = fetch_staging_rows(cur, args.limit, ids=target_ids)
             read_count = len(rows)
             staging_ids = []
             for row in rows:
