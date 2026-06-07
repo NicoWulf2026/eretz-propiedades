@@ -423,6 +423,17 @@ _FILENAME_TITLE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Regex global para detectar textos de cabeceras de formularios/widgets de búsqueda.
+# Estos textos NUNCA son títulos válidos de propiedades — Fix H (global).
+# Cubre variantes con/sin acento, con/sin signos de apertura (¿¡) y puntuación variable.
+_UI_SEARCH_WIDGET_RE = re.compile(
+    r"(?:qu[eé]\s+est[aá]s\s+buscando"       # "¿Que estás buscando?" / "¿Qué estás buscando?"
+    r"|b[uú]squeda\s+avanzada"                # "Búsqueda avanzada" / "Busqueda avanzada"
+    r"|comenz[aá]r\b.{0,20}b[uú]squeda"      # "Comenzar, búsqueda avanzada" / "¡Comenzar búsqueda!"
+    r"|buscador\s+avanzado)",                 # "Buscador avanzado" (variante genérica)
+    re.I | re.UNICODE,
+)
+
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
 # Tipo de cambio (dÃƒÂ³lar blue, API gratuita argentina)
@@ -8017,6 +8028,11 @@ def _is_useful_scraped_title(value: Any) -> bool:
     # (e.g. "Ca266.Html", "Mo342.Html", "Mo340.Html"). Fix global.
     if _FILENAME_TITLE_RE.fullmatch(text.strip()):
         return False
+    # Rechazar cabeceras de formularios/widgets de búsqueda — Fix H (global).
+    # Ej: "¿Que estás buscando?", "¡Comenzar, búsqueda avanzada!", "Búsqueda avanzada".
+    # Estos textos de UI jamás son títulos válidos de propiedades.
+    if _UI_SEARCH_WIDGET_RE.search(text):
+        return False
     return True
 
 
@@ -8111,9 +8127,9 @@ def _html_extract_detail(soup: BeautifulSoup, url: str, inmob: Dict,
     title_candidates = [
         find_text("h1", ".property-title", ".titulo", ".listing-title",
                   "section.famie-benefits-area"),  # CMS short-ID rural (camposdelapampa-style)
-        _title_from_detail_url(url),
         _first_meta_content(soup, "meta[property='og:title']", "meta[name='twitter:title']"),
-        find_text("title"),
+        find_text("title"),       # <title> tag — más legible que slug de URL (Fix H fallback order)
+        _title_from_detail_url(url),
     ]
     title = next((candidate for candidate in title_candidates if _is_useful_scraped_title(candidate)), "")
     desc = find_text(
