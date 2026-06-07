@@ -8,6 +8,7 @@ Default mode is dry-run; pass --commit to persist changes.
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import re
@@ -762,7 +763,13 @@ def source_filter_clause(source: Optional[str]) -> Tuple[Optional[str], Optional
     return SOURCE_FILTERS[source]
 
 
-def fetch_raw_rows(cur, limit: int, source: Optional[str] = None, created_after: Optional[str] = None) -> List[Dict[str, Any]]:
+def fetch_raw_rows(
+    cur,
+    limit: int,
+    source: Optional[str] = None,
+    created_after: Optional[str] = None,
+    ids: Optional[List[int]] = None,
+) -> List[Dict[str, Any]]:
     clauses = ["status = 'raw'"]
     params: List[Any] = []
     source_clause, source_value = source_filter_clause(source)
@@ -772,14 +779,24 @@ def fetch_raw_rows(cur, limit: int, source: Optional[str] = None, created_after:
     if created_after:
         clauses.append("scraped_at >= %s")
         params.append(created_after)
-    params.append(limit)
     where_sql = " AND ".join(clauses)
-    sql = f"""
+    if ids is not None:
+        # Filtrar exactamente los IDs solicitados — ignora --limit (Fix: --ids-file support)
+        sql = f"""
+{RAW_SELECT_COLUMNS}
+WHERE {where_sql}
+  AND id = ANY(%s)
+ORDER BY id ASC
+"""
+        params.append(ids)
+    else:
+        sql = f"""
 {RAW_SELECT_COLUMNS}
 WHERE {where_sql}
 ORDER BY id ASC
 LIMIT %s
 """
+        params.append(limit)
     cur.execute(sql, params)
     return [dict(row) for row in cur.fetchall()]
 
@@ -881,6 +898,11 @@ def main() -> None:
     parser.add_argument("--report", type=Path, help="Ruta de reporte markdown")
     parser.add_argument("--dry-run", action="store_true", help="Procesar y hacer rollback")
     parser.add_argument("--commit", action="store_true", help="Persistir cambios en Neon")
+    parser.add_argument(
+        "--ids-file",
+        type=Path,
+        help="CSV con header 'id', una raw_id por línea. Cuando se provee, ignora --limit.",
+    )
     args = parser.parse_args()
 
     if args.limit <= 0:
@@ -889,6 +911,21 @@ def main() -> None:
         raise SystemExit("Usar --dry-run o --commit, no ambos")
     if not args.dry_run and not args.commit:
         args.dry_run = True
+
+    # Cargar IDs desde --ids-file si se proveyó
+    raw_ids: Optional[List[int]] = None
+    if args.ids_file:
+        ids_path = args.ids_file if args.ids_file.is_absolute() else REPO_ROOT / args.ids_file
+        if not ids_path.exists():
+            raise SystemExit(f"--ids-file no encontrado: {ids_path}")
+        with open(ids_path, newline="", encoding="utf-8") as _f:
+            reader = csv.DictReader(_f)
+            if "id" not in (reader.fieldnames or []):
+                raise SystemExit(f"--ids-file debe tener header 'id'. Columnas encontradas: {reader.fieldnames}")
+            raw_ids = [int(row["id"]) for row in reader if row.get("id", "").strip().isdigit()]
+        if not raw_ids:
+            raise SystemExit("--ids-file no contiene IDs válidos")
+        print(f"ids_file={ids_path} ({len(raw_ids)} IDs)")
 
     db_url = internal_db_config()
     issue_counts: Counter[str] = Counter()
@@ -900,7 +937,10 @@ def main() -> None:
     print("=" * 72)
     print("VALIDATE RAW PROPERTIES")
     print(f"mode={'commit' if args.commit else 'dry-run'}")
-    print(f"limit={args.limit}")
+    if raw_ids is not None:
+        print(f"ids_count={len(raw_ids)}")
+    else:
+        print(f"limit={args.limit}")
     print(f"source={args.source or 'all_raw'}")
     if args.created_after:
         print(f"created_after={args.created_after}")
@@ -909,7 +949,7 @@ def main() -> None:
 
     with connect_internal_db(db_url) as conn:
         with conn.cursor() as cur:
-            rows = fetch_raw_rows(cur, args.limit, args.source, args.created_after)
+            rows = fetch_raw_rows(cur, args.limit, args.source, args.created_after, ids=raw_ids)
             read_count = len(rows)
             for row in rows:
                 status, issues, duplicate = process_row(cur, row)
