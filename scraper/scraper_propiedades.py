@@ -10089,9 +10089,12 @@ def _looks_like_real_property_url(url: str) -> bool:
         r"(^|/)propiedades/(?:\d{3,}|[^/]{8,})",
         r"(^|/)inmuebles/(?:\d{3,}|[^/]{8,})",
         r"(^|/)(?:properties|propiedades|inmuebles)-\d+/\d{2,}[^/?#]*",
-        # CMS custom con prefijo listing-preview/ (ej: inmobiliariamt.com.ar)
-        # Altamente especifico — listing-preview siempre es una ficha individual
+        # CMS custom con prefijo listing[-preview|-detail|-view]/ o listing/ aislado
+        # ej: inmobiliariamt.com.ar /listing-preview/SLUG
+        #     propiedadesgp.com    /listing/calle-19-esquina-0-barrio-peteco-rodriguez
+        # Nota: listing-category/ no matchea porque tiene '-category' antes del '/'
         r"(^|/)(?:listing-preview|listing-detail|listing-view)/[^/?#]{6,}$",
+        r"(^|/)listing/[^/?#]{8,}$",
         # CMS argentino: /{tipo}s-en-{op}-en-{ciudad}-{direccion}-{id}.html
         # ej: /casas-en-venta-en-tandil-av-avellaneda-23613-181.html
         #     /departamentos-en-alquiler-en-pergamino-locacion-dilello-12272
