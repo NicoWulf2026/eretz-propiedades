@@ -7862,6 +7862,23 @@ def _extract_detail_page(url: str, inmob: Dict, session: requests.Session) -> Op
                 if t in _JSONLD_TYPES:
                     prop_jsonld = _parse_jsonld_item(item, inmob, url)
                     if prop_jsonld:
+                        # Fix global: si JSON-LD no tiene precio, enriquecer desde HTML.
+                        # Causa raiz: sitios con @type=Product en JSON-LD que solo exponen
+                        # name/image pero no offers/price (ej: Watson CMS, esmsv.com).
+                        # El selector CSS puede encontrar el precio que el schema omite.
+                        if prop_jsonld.get("precio") is None:
+                            try:
+                                _html_prop = _html_extract_detail(soup, url, inmob, raw_html)
+                                if _html_prop and _html_prop.get("precio") is not None:
+                                    prop_jsonld["precio"] = _html_prop["precio"]
+                                    prop_jsonld["moneda"] = _html_prop.get("moneda", "ARS")
+                                    prop_jsonld["precio_ars"] = _html_prop.get("precio_ars")
+                                    prop_jsonld["precio_usd"] = _html_prop.get("precio_usd")
+                                    raw_json = prop_jsonld.get("raw_json") if isinstance(prop_jsonld.get("raw_json"), dict) else {}
+                                    raw_json["precio_enriquecido_desde_html"] = True
+                                    prop_jsonld["raw_json"] = raw_json
+                            except Exception:
+                                pass
                         html_images = extraer_imagenes(soup, url)
                         if html_images and not _has_real_images(prop_jsonld.get("imagenes")):
                             prop_jsonld["imagenes"] = html_images
