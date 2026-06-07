@@ -8212,6 +8212,151 @@ def _extract_address_from_text(text: str) -> str:
     return _fix_mojibake_text(match.group(1)) if match else ""
 
 
+# ---------------------------------------------------------------------------
+# Fix K — Validacion y extraccion de direccion desde titulo
+# Previene que fechas, textos de contacto u overflow de descripcion se usen
+# como direccion de calle para geocoding.
+# Usado por el scraper (prevencion futura) y geocode_staging (safety net para
+# datos ya staged con direccion_normalizada incorrecta).
+# ---------------------------------------------------------------------------
+
+# Detecta textos que son fechas de publicacion, no direcciones.
+# Cubre: "de febrero de 2025", "14 de marzo de 2024", "noviembre 2024", etc.
+_DATE_ADDRESS_RE = re.compile(
+    r"^\s*"
+    r"(?:(?:del?|desde)\s+)?"
+    r"(?:\d{1,2}\s+de\s+)?"
+    r"(?:enero|febrero|marzo|abril|mayo|junio|"
+    r"julio|agosto|septiembre|octubre|noviembre|diciembre)"
+    r"(?:\s+(?:de|del)\s+\d{4})?"
+    r"\s*$",
+    re.I | re.UNICODE,
+)
+
+# Detecta textos de contacto / oficina capturados como direccion.
+_CONTACT_ADDRESS_RE = re.compile(
+    r"consultas?\s+online|c\.m\.p\.|llamar\s+a|env[ií]a\s+msj|"
+    r"visitar\s+nuestra|nuestra\s+oficina|datos?\s+de\s+contacto",
+    re.I | re.UNICODE,
+)
+
+# Detecta overflow de descripcion capturado como direccion.
+_DESCRIPTION_OVERFLOW_RE = re.compile(
+    r"\b(?:compartimentado|en\s+su\s+estructura|sobre\s+un\s+(?:lote|terreno))\b",
+    re.I | re.UNICODE,
+)
+
+# Prefijo tipo+operacion en titulos argentinos (para stripped titles).
+_TITULO_OP_PREFIX_RE = re.compile(
+    r"^(?:casas?|departamentos?|d[uú]plex|loft|local(?:es)?|"
+    r"terrenos?|lotes?|campo|quinta|vivienda|oficina|"
+    r"galp[oó]n|ph|monoambiente|cochera|semipiso)"
+    r"(?:\s*\+\s*\S+)?"
+    r"\s+(?:en\s+)?(?:venta|alquiler(?:\s+temporario)?)\s*",
+    re.I | re.UNICODE,
+)
+
+
+def _looks_like_date_address(text: str) -> bool:
+    """True si el texto parece una fecha de publicacion, no una direccion."""
+    return bool(text and _DATE_ADDRESS_RE.match(text.strip()))
+
+
+def _looks_like_contact_address(text: str) -> bool:
+    """True si el texto parece informacion de contacto/oficina, no una direccion."""
+    return bool(text and _CONTACT_ADDRESS_RE.search(text))
+
+
+def _looks_like_description_overflow(text: str) -> bool:
+    """True si el texto parece overflow de descripcion capturado como direccion."""
+    if not text:
+        return False
+    if len(text) > 100:
+        return True
+    return bool(_DESCRIPTION_OVERFLOW_RE.search(text))
+
+
+def _is_invalid_scraped_address(text):
+    """True si el texto NO es una direccion de calle valida para geocoding.
+
+    Detecta fechas, textos de contacto/oficina y overflow de descripcion.
+    Exportada para uso en geocode_staging.py (safety net datos ya staged).
+    """
+    if not text or not isinstance(text, str):
+        return True
+    t = text.strip()
+    if not t or len(t) < 3:
+        return True
+    return (
+        _looks_like_date_address(t)
+        or _looks_like_contact_address(t)
+        or _looks_like_description_overflow(t)
+    )
+
+
+def _extract_address_from_titulo(titulo):
+    """Extrae una direccion de calle usable desde el titulo de la propiedad.
+
+    Soporta patrones estructurales de titulos argentinos:
+    - "{Tipo} en {oper}, {Calle Nro}, {Ciudad}"    -> "Calle Nro"
+    - "{Tipo} en {oper} - {Calle Nro}, {Ciudad}"   -> "Calle Nro"
+    - "{Categoria} - {Calle Nro}"                   -> "Calle Nro"
+
+    Requiere al menos un digito (calle + altura, o "al XXXX").
+    Retorna None si no puede extraer una direccion confiable.
+    No hardcodea dominios ni ciudades; opera sobre patrones estructurales.
+    """
+    if not titulo:
+        return None
+    titulo = str(titulo).strip()
+    if not titulo:
+        return None
+
+    candidates = []
+
+    # Patron A: separacion por coma
+    # "{Tipo en oper}, {Calle Nro[, extra...]}, {Ciudad}"
+    if "," in titulo:
+        parts = [p.strip() for p in titulo.split(",")]
+        if len(parts) >= 3:
+            # parts[0] = tipo+oper, parts[1] = direccion, parts[-1] = ciudad
+            raw = parts[1]
+            # Separar sufijo "- Barrio X" o "- B. Covitre" si existe
+            raw = re.split(r"\s+[–—\-]\s+", raw)[0].strip()
+            candidates.append(raw)
+        elif len(parts) == 2:
+            # "{Tipo - Calle Nro}, {Ciudad}" — tipo y calle en el mismo segmento
+            # Solo agregar si el prefijo fue realmente removido (evita candidatos inflados)
+            first = _TITULO_OP_PREFIX_RE.sub("", parts[0]).strip(" ,–—-")
+            if first and len(first) < len(parts[0].strip()):
+                candidates.append(first)
+
+    # Patron B: separador largo-dash o dash con espacios
+    # "{Tipo en oper} - {Calle Nro}, {Ciudad}"
+    for dash in (" – ", " - "):
+        if dash in titulo:
+            after = titulo.split(dash, 1)[1].strip()
+            if "," in after:
+                cands = [p.strip() for p in after.split(",")]
+                candidates.append(cands[0])
+            else:
+                candidates.append(after.strip(" ,–—-"))
+            break
+
+    # Validar candidatos: necesita digito, longitud razonable, no invalido
+    for c in candidates:
+        c = c.strip()
+        if not c or len(c) > 80 or len(c) < 3:
+            continue
+        if _is_invalid_scraped_address(c):
+            continue
+        if not re.search(r"\d", c):
+            continue  # Requiere numero de altura o "al XXXX"
+        return c
+
+    return None
+
+
 def _html_extract_detail(soup: BeautifulSoup, url: str, inmob: Dict,
                          raw_html: str = "") -> Optional[Dict]:
     """ExtracciÃƒÂ³n heurÃƒÂ­stica de datos de detalle desde HTML."""
@@ -8270,6 +8415,13 @@ def _html_extract_detail(soup: BeautifulSoup, url: str, inmob: Dict,
     )
     if not address_raw:
         address_raw = _extract_address_from_text(page_text)
+    # Fix K: descartar si parece fecha / contacto / overflow; intentar desde titulo.
+    if address_raw and _is_invalid_scraped_address(address_raw):
+        address_raw = ""
+    if not address_raw:
+        _addr_from_title = _extract_address_from_titulo(title)
+        if _addr_from_title:
+            address_raw = _addr_from_title
     title = _synthesize_detail_title(title, tipo_raw, address_raw)
 
     ambientes    = normalizar_int(find_text('[class*="ambiente"]', '[class*="room"]', '[class*="environment"]'))

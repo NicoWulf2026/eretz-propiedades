@@ -57,8 +57,12 @@ except Exception as exc:  # pragma: no cover - import guard
 
 try:
     from scraper.scraper_propiedades import normalize_location_fields as pipeline_normalize_location_fields  # type: ignore
+    from scraper.scraper_propiedades import _is_invalid_scraped_address as pipeline_is_invalid_scraped_address  # type: ignore  # Fix K
+    from scraper.scraper_propiedades import _extract_address_from_titulo as pipeline_extract_address_from_titulo  # type: ignore  # Fix K
 except Exception:
     pipeline_normalize_location_fields = None  # type: ignore
+    pipeline_is_invalid_scraped_address = None  # type: ignore  # Fix K
+    pipeline_extract_address_from_titulo = None  # type: ignore  # Fix K
 
 
 STAGING_SELECT_SQL = """
@@ -221,6 +225,21 @@ def normalize_address_for_geocoding(value: Optional[str]) -> Optional[str]:
 
 def build_geocoder_row(staging: Dict[str, Any]) -> Dict[str, Any]:
     direccion = normalize_address_for_geocoding(staging.get("direccion_normalizada"))
+    # Fix K safety net: si direccion_normalizada es invalida (fecha/contacto/overflow),
+    # intentar extraer desde titulo. Solo afecta al geocoding; no modifica staging en DB.
+    if callable(pipeline_is_invalid_scraped_address) and pipeline_is_invalid_scraped_address(direccion):
+        _recovered = None
+        if callable(pipeline_extract_address_from_titulo):
+            try:
+                _titulo_raw = clean_text(staging.get("titulo")) or ""
+                _recovered = pipeline_extract_address_from_titulo(_titulo_raw)
+            except Exception:
+                pass
+        if _recovered:
+            direccion = _recovered
+        else:
+            # No se pudo recuperar desde titulo; limpiar para que is_garbage_address la descarte.
+            direccion = ""
     ciudad = clean_text(staging.get("ciudad"))
     provincia = clean_text(staging.get("provincia"))
     if callable(pipeline_normalize_location_fields):

@@ -227,12 +227,16 @@ try:
         clean_property_images as pipeline_clean_property_images,
         _normalizar_precio_detalle as pipeline_price_from_text,
         normalizar_tipo as pipeline_normalizar_tipo,
+        _is_invalid_scraped_address as pipeline_is_invalid_scraped_address,  # Fix K
+        _extract_address_from_titulo as pipeline_extract_address_from_titulo,  # Fix K
     )
 except Exception:
     pipeline_normalize_location_fields = None  # type: ignore
     pipeline_clean_property_images = None  # type: ignore
     pipeline_price_from_text = None  # type: ignore
     pipeline_normalizar_tipo = None  # type: ignore
+    pipeline_is_invalid_scraped_address = None  # type: ignore  # Fix K
+    pipeline_extract_address_from_titulo = None  # type: ignore  # Fix K
 
 
 def load_env_file(path: Path) -> None:
@@ -496,6 +500,7 @@ GARBAGE_ADDRESS_PATTERNS = [
     "matricula",
     "cucicba",
     "cmcpsi",
+    "consultas online",  # Fix K: texto de contacto capturado como dirección
 ]
 
 
@@ -519,6 +524,13 @@ def invalid_address_reason(value: Any) -> Optional[str]:
     digits = re.findall(r"\d+", text)
     if len(text) > 90 and len(digits) > 2:
         return "address_too_long_numeric"
+    # Fix K: detectar fechas, textos de contacto y overflow de descripcion
+    if callable(pipeline_is_invalid_scraped_address):
+        try:
+            if pipeline_is_invalid_scraped_address(text):
+                return "invalid_address_content"
+        except Exception:
+            pass
     return None
 
 
@@ -791,6 +803,15 @@ def build_raw_candidate(path: Path, payload: Dict[str, Any], prop: Dict[str, Any
         issues.append(issue("source_test_mode_id_rewritten", f"{original_id} -> {inmobiliaria_id}"))
 
     direccion_raw, address_issue = normalize_address_value(prop.get("direccion"))
+    # Fix K: si la direccion es invalida, intentar recuperarla desde el titulo.
+    if address_issue and callable(pipeline_extract_address_from_titulo):
+        try:
+            _addr_from_titulo = pipeline_extract_address_from_titulo(titulo)
+            if _addr_from_titulo:
+                direccion_raw = _addr_from_titulo
+                address_issue = None
+        except Exception:
+            pass
     if address_issue:
         issues.append(issue("invalid_address", address_issue))
 

@@ -129,12 +129,16 @@ try:
         clean_property_images as pipeline_clean_property_images,
         _normalizar_precio_detalle as pipeline_price_from_text,
         normalizar_tipo as pipeline_normalizar_tipo,
+        _is_invalid_scraped_address as pipeline_is_invalid_scraped_address,  # Fix K
+        _extract_address_from_titulo as pipeline_extract_address_from_titulo,  # Fix K
     )
 except Exception:
     pipeline_normalize_location_fields = None  # type: ignore
     pipeline_clean_property_images = None  # type: ignore
     pipeline_price_from_text = None  # type: ignore
     pipeline_normalizar_tipo = None  # type: ignore
+    pipeline_is_invalid_scraped_address = None  # type: ignore  # Fix K
+    pipeline_extract_address_from_titulo = None  # type: ignore  # Fix K
     OPERACION_MAP: Dict[str, str] = {
         "venta": "venta",
         "sale": "venta",
@@ -323,6 +327,7 @@ GARBAGE_ADDRESS_PATTERNS = [
     "matricula",
     "cucicba",
     "cmcpsi",
+    "consultas online",  # Fix K: texto de contacto capturado como dirección
 ]
 
 
@@ -343,6 +348,13 @@ def invalid_address_reason(value: Any) -> Optional[str]:
         return "address_is_price"
     if len(text) > 90 and len(re.findall(r"\d+", text)) > 2:
         return "address_too_long_numeric"
+    # Fix K: detectar fechas, textos de contacto y overflow de descripcion
+    if callable(pipeline_is_invalid_scraped_address):
+        try:
+            if pipeline_is_invalid_scraped_address(text):
+                return "invalid_address_content"
+        except Exception:
+            pass
     return None
 
 
@@ -647,6 +659,15 @@ def build_validation(cur, row: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]]
         soft_issues.append(issue("price_inferred_from_text", price_inference))
 
     direccion_normalizada, address_issue = normalize_address_value(row.get("direccion_raw"))
+    # Fix K: si la direccion es invalida, intentar recuperarla desde el titulo.
+    if address_issue and callable(pipeline_extract_address_from_titulo):
+        try:
+            _addr_from_titulo = pipeline_extract_address_from_titulo(titulo)
+            if _addr_from_titulo:
+                direccion_normalizada = _addr_from_titulo
+                address_issue = None
+        except Exception:
+            pass
     if address_issue:
         validation_score -= 5
         soft_issues.append(issue("invalid_address", address_issue))
