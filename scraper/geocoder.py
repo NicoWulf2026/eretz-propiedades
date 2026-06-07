@@ -62,6 +62,15 @@ CITY_BOUNDS = {
     "capital federal": (-34.72, -34.52, -58.55, -58.32),
     "caba": (-34.72, -34.52, -58.55, -58.32),
     "ciudad autonoma de buenos aires": (-34.72, -34.52, -58.55, -58.32),
+    # Fix L — ciudades activas InmoCapital (validadas contra coordenadas reales del geocoding commit)
+    # Rawson: excluye Trelew (~lon -65.31) y Puerto Madryn (~lat -42.76)
+    "rawson": (-43.40, -43.25, -65.20, -65.00),
+    # Playa Union: barrio costero adyacente a Rawson
+    "playa union": (-43.40, -43.28, -65.12, -64.98),
+    # Pergamino, Buenos Aires
+    "pergamino": (-33.96, -33.80, -60.68, -60.50),
+    # Tandil, Buenos Aires
+    "tandil": (-37.42, -37.25, -59.22, -59.00),
 }
 URUGUAY_BOUNDS = (-35.20, -30.00, -58.80, -53.00)
 ARGENTINA_BOUNDS = (-56.00, -21.00, -74.00, -53.00)
