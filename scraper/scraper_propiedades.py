@@ -10084,13 +10084,18 @@ def _looks_like_real_property_url(url: str) -> bool:
         r"(^|/)propiedades/(?:\d{3,}|[^/]{8,})",
         r"(^|/)inmuebles/(?:\d{3,}|[^/]{8,})",
         r"(^|/)(?:properties|propiedades|inmuebles)-\d+/\d{2,}[^/?#]*",
+        # CMS custom con prefijo listing-preview/ (ej: inmobiliariamt.com.ar)
+        # Altamente especifico — listing-preview siempre es una ficha individual
+        r"(^|/)(?:listing-preview|listing-detail|listing-view)/[^/?#]{6,}$",
         # CMS argentino: /{tipo}s-en-{op}-en-{ciudad}-{direccion}-{id}.html
         # ej: /casas-en-venta-en-tandil-av-avellaneda-23613-181.html
         #     /departamentos-en-alquiler-en-pergamino-locacion-dilello-12272
-        r"(^|/)(?:casa|depto|departamento|terreno|local|oficina|lote|campo|chalet|galpon|cochera|duplex|ph|monoambiente)[a-z]*-en-(?:venta|alquiler)-(?:en-)?[^/?#]{20,}(?:\.html?)?$",
+        # Fix M: (?:-[a-z]+)* permite tipos compuestos: local-comercial, lote-terreno, etc.
+        r"(^|/)(?:casa|depto|departamento|terreno|local|oficina|lote|campo|chalet|galpon|cochera|duplex|triplex|ph|monoambiente)(?:-[a-z]+)*-en-(?:venta|alquiler)-(?:en-)?[^/?#]{20,}(?:\.html?)?$",
         # CMS argentino / WordPress custom post: /{tipo}-(venta|alquiler)-{direccion}-{ciudad}/
         # ej: /casa-alquiler-barrio-3-abril-amancay-265-rawson/
-        r"(^|/)(?:casa|depto|departamento|terreno|local|oficina|lote|campo|chalet|galpon|cochera|duplex|ph|monoambiente)[a-z]*[-_](?:venta|alquiler|alq)[-_][^/?#]{15,}(?:/|$)",
+        # Fix M: (?:-[a-z]+)* permite tipos compuestos
+        r"(^|/)(?:casa|depto|departamento|terreno|local|oficina|lote|campo|chalet|galpon|cochera|duplex|triplex|ph|monoambiente)(?:-[a-z]+)*[-_](?:venta|alquiler|alq)[-_][^/?#]{15,}(?:/|$)",
         # CMS argentino: /venta-{tipo}-{barrio/loc}-{ID} con codigo alfanumerico
         # ej: /venta-casa-barrio--parque_siquiman-V4014
         r"(^|/)(?:venta|alquiler)[-_](?:casa|depto|departamento|terreno|local|oficina|lote|campo|chalet|galpon|cochera|duplex|ph|monoambiente)[^/?#]*[-_][A-Z]?\d{3,}(?:/|$)",
@@ -10103,7 +10108,7 @@ def _looks_like_real_property_url(url: str) -> bool:
         # Slug limpio con tipo de propiedad al inicio (sin operacion explicita en URL)
         # ej: watsonpropiedades.com/casa-en-esquina-en-zona-centro (30+ chars)
         # Requiere tipo + guion + al menos 22 chars mas para evitar categorias cortas
-        r"^(?:casa|depto|departamento|terreno|local|oficina|lote|campo|chalet|galpon|cochera|duplex|ph|monoambiente)[a-z]?-[a-z0-9-]{22,}$",
+        r"^(?:casa|depto|departamento|terreno|local|oficina|lote|campo|chalet|galpon|cochera|duplex|triplex|ph|monoambiente)[a-z]?-[a-z0-9-]{22,}$",
     )
     return any(re.search(pattern, path, re.I) for pattern in detail_patterns)
 
