@@ -4243,6 +4243,23 @@ _LOCATION_ALIASES: List[Dict[str, Any]] = [
         "ciudad": "Avellaneda",
         "provincia": "Buenos Aires",
     },
+    # Fix J — ciudad desde título/URL para dominios sin token en hostname.
+    {
+        "aliases": ("pergamino",),
+        "ciudad": "Pergamino",
+        "provincia": "Buenos Aires",
+        # specific=True: evita que "San Luis 900" (calle) en la dirección/URL sea
+        # interpretado como provincia "San Luis" y bloquee la detección de Pergamino, BA.
+        "specific": True,
+        "motivo": "titulo_url_contiene_pergamino",
+    },
+    {
+        "aliases": ("playa union", "playa-union"),
+        "ciudad": "Playa Unión",
+        "provincia": "Chubut",
+        "specific": True,
+        "motivo": "titulo_url_contiene_playa_union",
+    },
 ]
 
 
@@ -4431,6 +4448,14 @@ def _detect_location_from_text(
     if not text:
         return None
 
+    # Fix J: "Rawson" como última ciudad del título → Rawson, Chubut.
+    # El token "Rawson" es ambiguo (también es nombre de calle común en Argentina),
+    # pero el patrón "…, Rawson" al final del título indica ciudad con alta confianza.
+    # Se evalúa ANTES del loop de aliases para evitar bloqueo por street-context
+    # (ej. cuando direccion_raw="Rawson 17" contamina el texto combinado).
+    if titulo and re.search(r",\s*rawson\s*$", str(titulo).strip(), re.I | re.UNICODE):
+        return {"ciudad": "Rawson", "provincia": "Chubut", "motivo": "titulo_termina_en_rawson"}
+
     if _text_contains_location_alias(text, "potrero de los funes"):
         return {
             "ciudad": "Potrero de los Funes",
@@ -4594,6 +4619,68 @@ def _infer_location_from_hostname(url: Any) -> Optional[Dict[str, str]]:
     }
 
 
+# Fix J: tokens finales de slug de URL → (ciudad, provincia).
+# Solo ciudades inambiguas como apellido de URL y cuyo nombre no es nombre de calle genérico.
+# "rawson" es ambiguo como nombre de calle → no se agrega a _LOCATION_ALIASES;
+# se detecta SOLO desde el último segmento del slug del URL (señal de muy alta confianza).
+# Clave = token normalizado con _coordinate_location_key() sin espacios (solo [a-z0-9]).
+_URL_SLUG_CITY_TOKENS: Dict[str, Tuple[str, str]] = {
+    # "rawson" excluido: ambiguo como nombre de calle; se detecta por título con patrón ",\s*rawson$".
+    "playaunion": ("Playa Unión", "Chubut"),          # redundancia con _LOCATION_ALIASES ("playa union")
+    "pergamino":  ("Pergamino",   "Buenos Aires"),    # redundancia con _LOCATION_ALIASES ("pergamino")
+}
+
+
+def _infer_city_from_url_slug_last_segment(url: Any) -> Optional[Dict[str, str]]:
+    """Fix J: infiere ciudad/provincia desde el último token no-numérico del slug del URL.
+
+    Estrategia:
+    - Extrae el último segmento de path (ej. "casa-venta-rivadavia-860-rawson" de .../rawson/).
+    - Ignora tokens puramente numéricos al final (IDs de CMS: -2, -12272, etc.).
+    - Verifica el último token y la combinación de los 2 últimos tokens vs. _URL_SLUG_CITY_TOKENS.
+    - Solo infiere si hay match exacto: señal de muy alta confianza.
+
+    Actúa como fallback de _infer_location_from_hostname() para dominios cuyo hostname
+    no contiene el nombre de la ciudad pero cuyas URLs sí lo tienen en el slug final.
+
+    Ejemplos:
+    - .../casa-venta-rivadavia-860-rawson/     → "rawson"    → Rawson, Chubut ✓
+    - .../duplex-venta-sheffield-norte-playa-union/ → "playaunion" → Playa Unión, Chubut ✓
+    - .../departamentos-en-pergamino-dilello-12272  → "dilello" → sin match ✗ (dilello usa _LOCATION_ALIASES)
+    """
+    if not url:
+        return None
+    try:
+        path = urlparse(unquote(str(url).strip())).path
+    except Exception:
+        return None
+    if not path:
+        return None
+    segments = [s for s in path.rstrip("/").split("/") if s]
+    if not segments:
+        return None
+    last_segment = segments[-1]
+    parts = [p for p in last_segment.split("-") if p]
+    if not parts:
+        return None
+    # Ignorar tokens puramente numéricos al final del slug (IDs de CMS como -2, -12272)
+    non_numeric = [p for p in parts if not p.isdigit()]
+    if not non_numeric:
+        return None
+    # Verificar último token (1-token match: ej. "rawson")
+    last_key = re.sub(r"[^a-z0-9]", "", _coordinate_location_key(non_numeric[-1]))
+    if last_key and last_key in _URL_SLUG_CITY_TOKENS:
+        ciudad, provincia = _URL_SLUG_CITY_TOKENS[last_key]
+        return {"ciudad": ciudad, "provincia": provincia, "motivo": "location_inferred_from_url"}
+    # Verificar últimos 2 tokens combinados (2-token match: ej. "playa-union" → "playaunion")
+    if len(non_numeric) >= 2:
+        two_key = re.sub(r"[^a-z0-9]", "", _coordinate_location_key(non_numeric[-2] + non_numeric[-1]))
+        if two_key and two_key in _URL_SLUG_CITY_TOKENS:
+            ciudad, provincia = _URL_SLUG_CITY_TOKENS[two_key]
+            return {"ciudad": ciudad, "provincia": provincia, "motivo": "location_inferred_from_url"}
+    return None
+
+
 def _detect_location_from_title_or_url(titulo: Any, url: Any) -> Optional[Dict[str, str]]:
     return _detect_location_from_text(titulo=titulo, url=url)
 
@@ -4656,6 +4743,11 @@ def normalize_location_fields(
         # intentar inferencia desde el hostname del URL de detalle.
         if not current_city and not current_province:
             detected = _infer_location_from_hostname(url)
+        # Fix J: si hostname tampoco dio ubicación, intentar desde el último token del slug del URL.
+        # Cubre dominios como tonyzorrilla.com.ar cuyos hostnames no contienen la ciudad
+        # pero cuyas URLs sí la tienen como último segmento del slug (ej. "-rawson/", "-playa-union/").
+        if not detected and not current_city and not current_province:
+            detected = _infer_city_from_url_slug_last_segment(url)
         if not detected:
             return result
 
