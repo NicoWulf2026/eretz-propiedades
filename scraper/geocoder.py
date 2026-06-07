@@ -71,6 +71,10 @@ CITY_BOUNDS = {
     "pergamino": (-33.96, -33.80, -60.68, -60.50),
     # Tandil, Buenos Aires
     "tandil": (-37.42, -37.25, -59.22, -59.00),
+    # Fix M — ciudades costa atlántica bonaerense (batch Pinamar inmo 4019)
+    # Pinamar ya presente arriba; Costa Esmeralda = urbano privado al norte de Pinamar
+    "costa esmeralda": (-37.10, -37.00, -56.95, -56.84),
+    # Costa Atlantica es demasiado genérico → skip geocoding (no bbox intencionalmente omitido)
 }
 URUGUAY_BOUNDS = (-35.20, -30.00, -58.80, -53.00)
 ARGENTINA_BOUNDS = (-56.00, -21.00, -74.00, -53.00)
