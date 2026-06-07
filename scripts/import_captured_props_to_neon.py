@@ -32,6 +32,14 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 DEFAULT_INPUT_DIR = REPO_ROOT / "data" / "scraping_batches" / "captured_20260530"
 REPORT_DIR = REPO_ROOT / "reports" / "scraping_autofix"
+
+# Safety net Fix I (global): URLs de imagen nunca son páginas de propiedad.
+# Evita importar thumbnails cuyo filename contiene un slug con tipo/operación/ciudad.
+_IMAGE_URL_SAFETY_RE = re.compile(
+    r"\.(jpg|jpeg|png|gif|webp|jfif|svg|bmp|tiff?|ico|avif|heic)$",
+    re.IGNORECASE,
+)
+
 RAW_COLUMNS = [
     "scraping_run_item_id",
     "inmobiliaria_id",
@@ -399,7 +407,19 @@ def is_ui_contaminated_title(title: Any) -> bool:
     if not cleaned:
         return False
     lower = cleaned.lower()
-    return any(pattern in lower for pattern in UI_TITLE_PATTERNS)
+    if any(pattern in lower for pattern in UI_TITLE_PATTERNS):
+        return True
+    # Rechazar títulos de páginas de listado/categoría — Fix I (global).
+    # Patrón: "Terrenos a la venta | Ciudad" / "Casas en venta | Zona Norte"
+    # Estas páginas son categorías de WordPress/CMS, no fichas individuales.
+    if re.search(
+        r"^(?:terrenos?|casas?|departamentos?|deptos?|lotes?|locales?|oficinas?|galpones?|"
+        r"cocheras?|ph|monoambientes?|campos?|chalets?|duplex|propiedades?)"
+        r"\s+(?:a\s+la\s+|en\s+)?(?:venta|alquiler)\s*\|",
+        cleaned, re.I,
+    ):
+        return True
+    return False
 
 
 def real_images(value: Any) -> List[str]:
@@ -682,6 +702,11 @@ def build_raw_candidate(path: Path, payload: Dict[str, Any], prop: Dict[str, Any
     url_normalizada = normalize_property_url_for_dedup(url)
     if not url or not url_normalizada:
         issues.append(issue("missing_url", f"{path.name}: url no normalizable"))
+        hard_reject = True
+
+    # Safety net Fix I — rechazar URL de imagen (nunca es una página de propiedad).
+    if url and _IMAGE_URL_SAFETY_RE.search(unquote(urlparse(url).path or "").lower()):
+        issues.append(issue("url_is_image_file", "URL apunta a un archivo de imagen, no a una página de propiedad"))
         hard_reject = True
 
     titulo = truncate(prop.get("titulo"), 300)

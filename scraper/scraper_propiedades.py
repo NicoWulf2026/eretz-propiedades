@@ -434,6 +434,14 @@ _UI_SEARCH_WIDGET_RE = re.compile(
     re.I | re.UNICODE,
 )
 
+# Regex global para detectar URLs que apuntan a archivos de imagen — Fix I (global).
+# Una URL de imagen NUNCA es una página de propiedad; rechazarla evita falsos positivos
+# del detector de links (e.g. thumbnails cuyo filename contiene un slug de propiedad).
+_IMAGE_URL_RE = re.compile(
+    r"\.(jpg|jpeg|png|gif|webp|jfif|svg|bmp|tiff?|ico|avif|heic)$",
+    re.IGNORECASE,
+)
+
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
 # Tipo de cambio (dÃƒÂ³lar blue, API gratuita argentina)
@@ -9752,6 +9760,11 @@ def _looks_like_real_property_url(url: str) -> bool:
         return False
     parsed = urlparse(str(url))
     path = unquote((parsed.path or "").lower()).strip("/")
+    # Rechazar URLs de archivos de imagen — Fix I (global).
+    # Un thumbnail o foto nunca es una página de propiedad (aunque su filename
+    # contenga un slug con tipo/operación/ciudad).
+    if _IMAGE_URL_RE.search(path):
+        return False
     query_pairs = parse_qsl(parsed.query or "", keep_blank_values=True)
     query = {str(key).lower(): str(value) for key, value in query_pairs}
     detail_query_keys = {
