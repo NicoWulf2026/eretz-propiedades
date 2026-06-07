@@ -96,7 +96,7 @@ USER_AGENTS: List[str] = [
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15",
 ]
 
-CONTROL_ITEM_TIMEOUT_SECONDS = 180
+CONTROL_ITEM_TIMEOUT_SECONDS = 240  # Fix P: 180→240 — sitios estáticos/WP con muchas páginas de detalle
 SIMPLE_ITEM_TIMEOUT_SECONDS = 90
 CUSTOM_OR_SITEMAP_ITEM_TIMEOUT_SECONDS = 240
 PLAYWRIGHT_ITEM_TIMEOUT_SECONDS = 300
@@ -107,7 +107,7 @@ STRATEGY_TIMEOUT_SECONDS: Dict[str, int] = {
     "wordpress_html": 35,
     "network_intercept": 30,
     "static_html": 35,
-    "static_html_detail": 45,
+    "static_html_detail": 200,  # Fix P: 45→200 — necesita tiempo para fetchear N páginas de detalle
     "static_html_tokko_detail": 150,
     "wordpress_sitemap_detail": 90,
     "wordpress_essential_real_estate_detail": 230,
