@@ -10041,6 +10041,11 @@ def _looks_like_real_property_url(url: str) -> bool:
             return True
         if any(v and re.search(r"\d", v) and 3 <= len(v) <= 40 for v in query.values()):
             return True
+    # Ruta singular de detalle (propiedad/inmueble) + ?id= con ID que contiene digitos.
+    # ej: pabloemilio.com.ar/propiedad/?id=venta-de-duplex-en-santa-rosa-...-81890
+    # Aplica solo a rutas SINGULARES (sin 's') para no confundir con listados.
+    if path in {"propiedad", "inmueble", "ficha", "detalle"} and re.search(r"\d", query.get("id", "")):
+        return True
     if not path:
         return False
     if path in {
