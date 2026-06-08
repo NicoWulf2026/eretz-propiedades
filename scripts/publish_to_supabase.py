@@ -159,8 +159,22 @@ def truncate_error(value: Any) -> str:
     return str(value or "")[:500]
 
 
-def fetch_queue_rows(cur, limit: int, *, commit: bool) -> List[Dict[str, Any]]:
-    cur.execute(QUEUE_CLAIM_SQL if commit else QUEUE_SELECT_DRY_RUN_SQL, [limit])
+def fetch_queue_rows(
+    cur,
+    limit: int,
+    *,
+    commit: bool,
+    staging_ids_filter: Optional[List[int]] = None,
+) -> List[Dict[str, Any]]:
+    base_sql = QUEUE_CLAIM_SQL if commit else QUEUE_SELECT_DRY_RUN_SQL
+    if staging_ids_filter:
+        filtered_sql = base_sql.replace(
+            "WHERE status = 'pending'",
+            "WHERE status = 'pending'\nAND staging_id = ANY(%s)",
+        )
+        cur.execute(filtered_sql, [staging_ids_filter, limit])
+    else:
+        cur.execute(base_sql, [limit])
     return [dict(row) for row in cur.fetchall()]
 
 
@@ -316,6 +330,10 @@ def main() -> None:
     parser.add_argument("--allow-pending-geo", action="store_true", help="Aceptar geocoding_status=pending")
     parser.add_argument("--dry-run", action="store_true", help="Leer y validar sin escribir")
     parser.add_argument("--commit", action="store_true", help="Publicar y actualizar estados")
+    parser.add_argument(
+        "--staging-ids-file", type=str, default=None,
+        help="CSV con columna 'staging_id' o 'id' — filtra la queue SOLO a esos staging IDs.",
+    )
     args = parser.parse_args()
 
     if args.limit <= 0:
@@ -333,6 +351,21 @@ def main() -> None:
 
     db_url = internal_db_config()
     claim_limit = min(args.limit, args.max_supabase_writes) if args.commit else args.limit
+
+    # Load optional staging IDs filter
+    import csv as _csv
+    staging_ids_filter: Optional[List[int]] = None
+    if args.staging_ids_file:
+        ids_path = Path(args.staging_ids_file)
+        if not ids_path.exists():
+            raise SystemExit(f"--staging-ids-file no encontrado: {ids_path}")
+        with open(ids_path, newline="", encoding="utf-8") as _f:
+            _reader = _csv.DictReader(_f)
+            _col = "staging_id" if "staging_id" in (_reader.fieldnames or []) else "id"
+            staging_ids_filter = [int(row[_col]) for row in _reader if row.get(_col, "").strip()]
+        if not staging_ids_filter:
+            raise SystemExit("--staging-ids-file esta vacio o no tiene columna staging_id/id")
+
     skipped: Counter[str] = Counter()
     rows_read = 0
     valid_props = 0
@@ -348,13 +381,15 @@ def main() -> None:
     print(f"max_supabase_writes={args.max_supabase_writes}")
     print(f"min_score={args.min_score}")
     print(f"allow_pending_geo={args.allow_pending_geo}")
+    if staging_ids_filter is not None:
+        print(f"staging_ids_filter={len(staging_ids_filter)} IDs (from {args.staging_ids_file})")
     print("-" * 72)
 
     db = create_supabase_client() if args.commit else None
 
     with connect_internal_db(db_url) as conn:
         with conn.cursor() as cur:
-            queue_rows = fetch_queue_rows(cur, claim_limit, commit=args.commit)
+            queue_rows = fetch_queue_rows(cur, claim_limit, commit=args.commit, staging_ids_filter=staging_ids_filter)
             rows_read = len(queue_rows)
             queue_ids = [int(row["id"]) for row in queue_rows]
             staging_ids = [int(row["staging_id"]) for row in queue_rows if row.get("staging_id") is not None]
