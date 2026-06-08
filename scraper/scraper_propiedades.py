@@ -10086,8 +10086,12 @@ def _looks_like_real_property_url(url: str) -> bool:
         r"(^|/)propiedad-[^/?#]*(?:venta|alquiler)[^/?#]*-\d{2,}$",
         r"(^|/)[^/?#]*(?:venta|alquiler)[^/?#]*ficha[-_][a-z0-9_-]{3,}",
         r"(^|/)[^/?#]*ficha[-_][a-z]{2,}\d{2,}",
-        r"(^|/)propiedades/(?:\d{3,}|[^/]{8,})",
-        r"(^|/)inmuebles/(?:\d{3,}|[^/]{8,})",
+        # Plural forms: Spanish (propiedades/, inmuebles/) + English (properties/).
+        # Fix R: add properties/ — WP themes (Houzez, etc.) use /properties/SLUG as default post type.
+        # ej: sauce.com.ar /properties/country-ubajay-prop79/
+        #                  /properties/bv-pellegrini-2900-prop1786/
+        # Backward-compat: propiedades/ and inmuebles/ behavior unchanged.
+        r"(^|/)(?:propiedades|properties|inmuebles)/(?:\d{3,}|[^/]{8,})",
         r"(^|/)(?:properties|propiedades|inmuebles)-\d+/\d{2,}[^/?#]*",
         # CMS custom con prefijo listing[-preview|-detail|-view]/ o listing[s]/ aislado.
         # Cubre singular (/listing/) y plural (/listings/) del WP Listings plugin.
