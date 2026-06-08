@@ -10105,11 +10105,14 @@ def _looks_like_real_property_url(url: str) -> bool:
         #       /listings/page/2/ no matchea ('page' = 4 chars < 8 y no numerico).
         r"(^|/)(?:listing-preview|listing-detail|listing-view)/[^/?#]{6,}$",
         r"(^|/)listings?/(?:\d{3,}|[^/?#]{8,})$",
-        # CMS argentino: /{tipo}s-en-{op}-en-{ciudad}-{direccion}-{id}.html
-        # ej: /casas-en-venta-en-tandil-av-avellaneda-23613-181.html
+        # CMS argentino: /{tipo}[s]-en-{op}-en-{ciudad}-{direccion}-{id}.html
+        # ej: /casas-en-venta-en-tandil-av-avellaneda-23613-181.html       <- plural
+        #     /casa-en-venta-en-cordoba-residencial-norte-23900-1.html      <- singular
         #     /departamentos-en-alquiler-en-pergamino-locacion-dilello-12272
         # Fix M: (?:-[a-z]+)* permite tipos compuestos: local-comercial, lote-terreno, etc.
-        r"(^|/)(?:casa|depto|departamento|terreno|local|oficina|lote|campo|chalet|galpon|cochera|duplex|triplex|ph|monoambiente)(?:-[a-z]+)*-en-(?:venta|alquiler)-(?:en-)?[^/?#]{20,}(?:\.html?)?$",
+        # Fix S: (e?s)? cubre plurales argentinos: casas/casas, galpones/locales (e+s),
+        #        departamentos/terrenos (s). No afecta singulares ni compuestos.
+        r"(^|/)(?:casa|depto|departamento|terreno|local|oficina|lote|campo|chalet|galpon|cochera|duplex|triplex|ph|monoambiente)(e?s)?(?:-[a-z]+)*-en-(?:venta|alquiler)-(?:en-)?[^/?#]{20,}(?:\.html?)?$",
         # CMS argentino / WordPress custom post: /{tipo}-(venta|alquiler)-{direccion}-{ciudad}/
         # ej: /casa-alquiler-barrio-3-abril-amancay-265-rawson/
         # Fix M: (?:-[a-z]+)* permite tipos compuestos
