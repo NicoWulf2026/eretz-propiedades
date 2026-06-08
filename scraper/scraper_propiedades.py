@@ -10046,6 +10046,12 @@ def _looks_like_real_property_url(url: str) -> bool:
     # Aplica solo a rutas SINGULARES (sin 's') para no confundir con listados.
     if path in {"propiedad", "inmueble", "ficha", "detalle"} and re.search(r"\d", query.get("id", "")):
         return True
+    # Fix U: ver.php?id=N — CMS propio argentino con pagina de detalle en ver.php
+    # ej: inmobiliariaangelinam.com.ar/ver.php?id=100&propiedad=Local+en+Alquiler
+    #     inmobiliariaangelinam.com.ar/ver.php?id=76&propiedad=Casa+en+Alquiler
+    # Requiere path=ver.php + id=2+digitos. No es "ficha.php" ni "detalle.php" (ya cubiertos).
+    if re.search(r"(^|/)ver\.php$", path, re.I) and re.fullmatch(r"\d{2,}", query.get("id", "")):
+        return True
     if not path:
         return False
     if path in {
@@ -10113,6 +10119,13 @@ def _looks_like_real_property_url(url: str) -> bool:
         # Fix S: (e?s)? cubre plurales argentinos: casas/casas, galpones/locales (e+s),
         #        departamentos/terrenos (s). No afecta singulares ni compuestos.
         r"(^|/)(?:casa|depto|departamento|terreno|local|oficina|lote|campo|chalet|galpon|cochera|duplex|triplex|ph|monoambiente)(e?s)?(?:-[a-z]+)*-en-(?:venta|alquiler)-(?:en-)?[^/?#]{20,}(?:\.html?)?$",
+        # Joomla SEF argentina: /en-(venta|alquiler)/[categoria/]{ID_num}-{slug}.html
+        # ej: /en-venta/85-en-venta/450-centenario-entre-san-martin-y-moreno.html
+        #     /en-venta/127-20-de-junio-700-barrio-ferroviario-oportunidad.html
+        #     /en-alquiler/45-en-alquiler/382-casa-dos-ambientes.html
+        # Fix T: cubre el patron de articulos Joomla con categoria en-venta/en-alquiler.
+        # Requiere 3+digitos de ID + 10+chars de slug + .html (evita categorias y blogs cortos).
+        r"(^|/)en-(venta|alquiler)/(?:[^/?#]+/)?\d{3,}-[^/?#]{10,}\.html?$",
         # CMS argentino / WordPress custom post: /{tipo}-(venta|alquiler)-{direccion}-{ciudad}/
         # ej: /casa-alquiler-barrio-3-abril-amancay-265-rawson/
         # Fix M: (?:-[a-z]+)* permite tipos compuestos
