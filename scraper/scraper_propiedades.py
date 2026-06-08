@@ -10089,12 +10089,18 @@ def _looks_like_real_property_url(url: str) -> bool:
         r"(^|/)propiedades/(?:\d{3,}|[^/]{8,})",
         r"(^|/)inmuebles/(?:\d{3,}|[^/]{8,})",
         r"(^|/)(?:properties|propiedades|inmuebles)-\d+/\d{2,}[^/?#]*",
-        # CMS custom con prefijo listing[-preview|-detail|-view]/ o listing/ aislado
-        # ej: inmobiliariamt.com.ar /listing-preview/SLUG
-        #     propiedadesgp.com    /listing/calle-19-esquina-0-barrio-peteco-rodriguez
-        # Nota: listing-category/ no matchea porque tiene '-category' antes del '/'
+        # CMS custom con prefijo listing[-preview|-detail|-view]/ o listing[s]/ aislado.
+        # Cubre singular (/listing/) y plural (/listings/) del WP Listings plugin.
+        # (?:\d{3,}|[^/?#]{8,}) acepta ID numerico puro (ej: /listings/1587/) y slugs largos.
+        # ej: inmobiliariamt.com.ar          /listing-preview/SLUG
+        #     propiedadesgp.com              /listing/calle-19-esquina-0-barrio-peteco-rodriguez
+        #     inmobiliariamendocasa.com.ar   /listings/venta-terreno-calle-maipu-ciudad-mendoza/
+        #     inmobiliariamendocasa.com.ar   /listings/1587/
+        # Nota: listing-category/ no matchea (tiene '-category' antes del '/').
+        #       /listings/ raiz no matchea (nada despues del '/').
+        #       /listings/page/2/ no matchea ('page' = 4 chars < 8 y no numerico).
         r"(^|/)(?:listing-preview|listing-detail|listing-view)/[^/?#]{6,}$",
-        r"(^|/)listing/[^/?#]{8,}$",
+        r"(^|/)listings?/(?:\d{3,}|[^/?#]{8,})$",
         # CMS argentino: /{tipo}s-en-{op}-en-{ciudad}-{direccion}-{id}.html
         # ej: /casas-en-venta-en-tandil-av-avellaneda-23613-181.html
         #     /departamentos-en-alquiler-en-pergamino-locacion-dilello-12272
