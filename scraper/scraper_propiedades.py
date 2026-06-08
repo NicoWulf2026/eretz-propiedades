@@ -10133,6 +10133,11 @@ def _looks_like_real_property_url(url: str) -> bool:
         # CMS argentino: /venta-{tipo}-{barrio/loc}-{ID} con codigo alfanumerico
         # ej: /venta-casa-barrio--parque_siquiman-V4014
         r"(^|/)(?:venta|alquiler)[-_](?:casa|depto|departamento|terreno|local|oficina|lote|campo|chalet|galpon|cochera|duplex|ph|monoambiente)[^/?#]*[-_][A-Z]?\d{3,}(?:/|$)",
+        # Fix V: CMS argentino PHP con operacion al inicio y slug largo, SIN ID numerico al final.
+        # ej: /alquiler_casa_1_dorm_amoblada_lisandro-de-la-torre-700_cipolletti.php
+        #     /venta_terreno_en_cipolletti_los-lapachos.php  (vivancogroup.com)
+        # Diferencia con pattern anterior: no requiere ID; requiere extension .php y slug 15+chars.
+        r"(^|/)(?:alquiler|venta)[-_](?:casa|depto|departamento|terreno|local|oficina|lote|campo|chalet|galpon|cochera|duplex|triplex|ph|monoambiente)(?:e?s)?[-_][^/?#]{15,}\.php$",
         # ASP CMS con subfolder de operacion: /alquiler/item.asp?t=...&id=N
         # ej: innoacafayate.com/alquiler/item.asp?t=Casa-Lamadrid&id=173
         r"(^|/)(?:alquiler|venta|ventas|temporario)/(?:item|ver|ampliar|ficha|detalle)\.aspx?$",

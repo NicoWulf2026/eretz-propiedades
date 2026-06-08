@@ -309,10 +309,93 @@ sea de una sucursal especifica y no el portal nacional.
 
 ---
 
+---
+
+## Fix V — PHP slug con operacion al inicio (sin ID numerico)
+
+### Sitio afectado
+
+| Campo | Valor |
+|-------|-------|
+| id | 4709 |
+| Nombre | VivancoGroup Inmobiliaria — Patagonia |
+| Dominio | vivancogroup.com |
+| URL listado | `http://www.vivancogroup.com/alquiler_casasydptos.php` |
+| CMS | PHP propio (Cipolletti, Rio Negro) |
+
+### Patron identificado
+
+```
+/alquiler_casa_1_dorm_amoblada_lisandro-de-la-torre-700_cipolletti.php
+/alquiler_casa_2_dorm_lisandro-de-la-torre-700_cipolletti-rn.php
+/venta_terreno_en_cipolletti_los-lapachos.php
+```
+
+Estructura: `/{op}_{tipo}_{slug_largo}.php` — variante con operacion al inicio y
+underscores como separadores. NO tiene ID numerico al final.
+
+Diferencia con patron existente (`{tipo}[-_]{op}[-_]{ID}`):
+- Operacion va AL INICIO, no el tipo
+- No tiene ID numerico final
+- Requiere `.php` extension
+
+### Regex Fix V
+
+```python
+# Fix V: CMS argentino PHP con operacion al inicio y slug largo, SIN ID numerico al final.
+# ej: /alquiler_casa_1_dorm_amoblada_lisandro-de-la-torre-700_cipolletti.php
+#     /venta_terreno_en_cipolletti_los-lapachos.php
+r"(^|/)(?:alquiler|venta)[-_](?:casa|depto|departamento|terreno|local|oficina|lote|campo|chalet|galpon|cochera|duplex|triplex|ph|monoambiente)(?:e?s)?[-_][^/?#]{15,}\.php$"
+```
+
+### Test post-Fix V
+
+```
+--test-url http://www.vivancogroup.com/alquiler_casasydptos.php --agency-id 4709
+```
+
+| Metrica | Valor |
+|---------|-------|
+| generic_property_links_count | 11 (era 0) |
+| Props capturadas | **10** |
+| Score | **90** |
+| Estrategia | `static_html_detail` |
+
+**Importable**: ✅ score=90.
+
+---
+
+## Tests de regresion — 28/28 PASS (Fix V + T + U + S + Q + R)
+
+Todos los tests previos mas los nuevos de Fix V pasan sin regresiones.
+
+---
+
+## Impacto acumulado del sprint (actualizado)
+
+| Fix | Commit | Sites desbloqueados | Props confirmadas |
+|-----|--------|--------------------|-----------------| 
+| Fix Q | 8c636d818 | 1 (Mendocasa 3532) | ~3 |
+| Fix R | 3b4c0d489 | 1 (Sauce 6732) | ~30 |
+| Fix S | 2376552e4 | 6 (Pagliaro 4418 + 5 cdh) | ~100+ |
+| Fix T | ead8ba52b | 1 (Alvear 5167) | 53 |
+| Fix U | ead8ba52b | 1 (Angelina 3531) | 86 |
+| Fix V | (pendiente commit) | 1 (Vivanco 4709) | 10 |
+| **Total** | | **11 sites** | **~280+ props** |
+
+Sitios PROP_FOUND adicionales confirmados (sin codigo nuevo):
+- amipropiedades.com.ar (945): score=98, 39 props ✅
+- innoacafayate.com (5282): score=92, 17 props ✅
+- zaldivarcurutchet.com.ar (4746): score=96, 35 props ✅ (Fix S)
+- svestudioinmobiliario.com.ar (6335): score=100, 10 props ✅ (Fix S)
+
+---
+
 ## FRENO
 
 No se importo, valido, ni publico nada.
-Fix T y Fix U aplicados y probados localmente (48/48 regression tests PASS).
+Fixes T, U, V aplicados y probados localmente.
 No se modifico DB.
 No se hizo git push.
-Pendiente: commit de Fix T + Fix U + este reporte.
+Fix T+U commiteados en ead8ba52b.
+Fix V pendiente de commit.
