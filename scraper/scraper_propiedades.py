@@ -10138,6 +10138,13 @@ def _looks_like_real_property_url(url: str) -> bool:
         #     /venta_terreno_en_cipolletti_los-lapachos.php  (vivancogroup.com)
         # Diferencia con pattern anterior: no requiere ID; requiere extension .php y slug 15+chars.
         r"(^|/)(?:alquiler|venta)[-_](?:casa|depto|departamento|terreno|local|oficina|lote|campo|chalet|galpon|cochera|duplex|triplex|ph|monoambiente)(?:e?s)?[-_][^/?#]{15,}\.php$",
+        # Fix W: CMS argentino con ID numerico de 4+ digitos al inicio del path raiz +
+        # slug con operacion embebida: /{ID}-{tipo}-en-(venta|alquiler)-{desc}
+        # ej: pcarbone.com/2930-local-comercial-en-venta-olazabal-esq-camacua-ocampo
+        #     pcarbone.com/2931-chalet-en-venta-cardoso-2900
+        # NOTA: path ya viene sin '/' inicial (strip "/"), por eso patron empieza con ^\d.
+        # Requiere 4+ digitos al inicio absoluto (sin subfolder) + '-en-(venta|alquiler)'.
+        r"^\d{4,}-[^/?#]*-en-(venta|alquiler)[^/?#]*$",
         # ASP CMS con subfolder de operacion: /alquiler/item.asp?t=...&id=N
         # ej: innoacafayate.com/alquiler/item.asp?t=Casa-Lamadrid&id=173
         r"(^|/)(?:alquiler|venta|ventas|temporario)/(?:item|ver|ampliar|ficha|detalle)\.aspx?$",
