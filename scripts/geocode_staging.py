@@ -212,6 +212,10 @@ def normalize_address_for_geocoding(value: Optional[str]) -> Optional[str]:
     text = clean_text(value)
     if not text:
         return None
+    # Fix: strip HTML-label prefixes scrapeados junto con la dirección
+    # ej. "Address: Maipu 235 - Ciudad Mendoza" → "Maipu 235 - Ciudad Mendoza"
+    text = re.sub(r"^address:\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"^direcci[oó]n:\s*", "", text, flags=re.IGNORECASE)
     text = PROPERTY_TYPE_PREFIX_RE.sub("", text).strip(" -,.")
     text = re.sub(
         r"^en\s+(?:venta|alquiler|alquiler\s+temporario)\s+en\s+",
