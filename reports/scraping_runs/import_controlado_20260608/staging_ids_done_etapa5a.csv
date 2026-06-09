@@ -1,0 +1,93 @@
+staging_id,raw_id,inmobiliaria_id,validation_score,geocoding_status,latitud,longitud,titulo,url_normalizada
+81645,82135,6335,100,done,-37.302082,-59.170547,Casas en Venta - ALONSO Y AZUCENA,svestudioinmobiliario.com.ar/casas-en-venta-en-tandil-alonso-y-azucena-45384-175.html
+81646,82136,6335,100,done,-37.321529,-59.154443,Casas en Venta - ARENALES AL 200,svestudioinmobiliario.com.ar/casas-en-venta-en-tandil-arenales-al-200-45394-175.html
+81647,82137,6335,100,done,-37.323423,-59.135002,Casas en Venta - ALEM AL 700,svestudioinmobiliario.com.ar/casas-en-venta-en-tandil-alem-al-700-45382-175.html
+81648,82138,6335,100,done,-37.323955,-59.094086,Casas en Venta - LOS AROMOS AL 400,svestudioinmobiliario.com.ar/casas-en-venta-en-tandil-los-aromos-al-400-48519-175.html
+81649,82139,6335,100,done,-37.327945,-59.116892,Casas en Venta - AVDA. AVELLANEDA AL 1600,svestudioinmobiliario.com.ar/casas-en-venta-en-tandil-avda.-avellaneda-al-1600-45386-175.html
+81650,82140,6335,100,done,-37.324134,-59.087927,Departamentos en Venta - Reforma Universitaria al 1800,svestudioinmobiliario.com.ar/departamentos-en-venta-en-tandil-reforma-universitaria-al-1800-46041-175.html
+81651,82141,6335,100,done,-37.346678,-59.189677,Lotes en Venta - BENTEVEO Y MONTECRISTO,svestudioinmobiliario.com.ar/lotes-en-venta-en-tandil-benteveo-y-montecristo-45478-175.html
+81652,82142,6335,100,done,-37.325021,-59.111938,Departamentos en Venta - FALUCHO AL 700,svestudioinmobiliario.com.ar/departamentos-en-venta-en-tandil-falucho-al-700-48364-175.html
+81653,82143,6335,100,done,-37.297175,-59.091486,Lotes en Venta - LOTEO JUVENTUD UNIDA- PALACIOS Y LA BLANCA,svestudioinmobiliario.com.ar/lotes-en-venta-en-tandil-loteo-juventud-unida--palacios-y-la-blanca-45477-175.html
+81654,82144,6335,100,done,-37.326256,-59.13482,Locales en Venta - GALERIA LOS PUENTES- 9 DE JULIO ENTRE PJE FOURNIER,svestudioinmobiliario.com.ar/locales-en-venta-en-tandil-galeria-los-puentes--9-de-julio-entre-pje-fournier-45473-175.html
+81700,82190,3531,75,done,-34.9883296,-67.6764594,Departamento en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=96&propiedad=departamento+en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81705,82195,3531,75,done,-34.9795432,-67.6844835,Casa en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=91&propiedad=casa+en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81706,82196,3531,75,done,-34.9802043,-67.6885147,Local en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=90&propiedad=local+en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81712,82202,3531,75,done,-34.9802043,-67.6885147,Local en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=84&propiedad=local+en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81719,82209,3531,75,done,-34.9792437,-67.6887205,Departamento en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=77&propiedad=departamento+en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81720,82210,3531,75,done,-34.9706556,-67.7024635,Casa en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=76&propiedad=casa+en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81721,82211,3531,75,done,-34.9799031,-67.6867473,Departamento en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=75&propiedad=departamento+en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81724,82214,3531,75,done,-34.9749701,-67.6825383,Casa en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=72&propiedad=casa+en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81726,82216,3531,55,done,-34.9883296,-67.6764594,Propiedad en,inmobiliariaangelinam.com.ar/ver.php?id=70&propiedad=en++ubicada+en+general+alvear%2C+mendoza
+81727,82217,3531,75,done,-34.9748041,-67.699198,Departamento en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=69&propiedad=departamento+en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81728,82218,3531,75,done,-34.9748041,-67.699198,Departamento en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=68&propiedad=departamento+en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81733,82223,3531,75,done,-34.9792437,-67.6887205,Departamento en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=63&propiedad=departamento+en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81734,82224,3531,75,done,-34.9712051,-67.7003591,Departamento en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=62&propiedad=departamento+en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81735,82225,3531,75,done,-34.979437,-67.6895598,Departamento en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=61&propiedad=departamento+en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81736,82226,3531,75,done,-34.979437,-67.6895598,Departamento en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=60&propiedad=departamento+en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81737,82227,3531,75,done,-34.979437,-67.6895598,Departamento en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=59&propiedad=departamento+en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81739,82229,3531,75,done,-34.9792437,-67.6887205,Departamento en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=57&propiedad=departamento+en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81740,82230,3531,75,done,-34.9741367,-67.6995483,Departamento en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=56&propiedad=departamento+en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81742,82232,3531,75,done,-34.9741367,-67.6995483,Departamento en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=54&propiedad=departamento+en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81743,82233,3531,75,done,-34.9741367,-67.6995483,Departamento en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=53&propiedad=departamento+en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81745,82235,3531,75,done,-34.9741367,-67.6995483,Departamento en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=51&propiedad=departamento+en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81746,82236,3531,75,done,-34.9976597,-67.650692,Casa en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=50&propiedad=casa+en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81747,82237,3531,75,done,-34.9767965,-67.6908183,Local en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=47&propiedad=local+en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81749,82239,3531,75,done,-34.978124,-67.6989412,Departamento en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=45&propiedad=departamento+en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81752,82242,3531,75,done,-34.9779297,-67.6994141,Local en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=42&propiedad=local+en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81753,82243,3531,75,done,-34.9779297,-67.6994141,Local en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=41&propiedad=local+en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81754,82244,3531,75,done,-34.9779297,-67.6994141,Local en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=40&propiedad=local+en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81755,82245,3531,75,done,-34.9779297,-67.6994141,Local en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=39&propiedad=local+en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81757,82247,3531,75,done,-34.9717092,-67.6990996,Departamento en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=37&propiedad=departamento+en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81758,82248,3531,75,done,-34.9778619,-67.6897295,Casa en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=36&propiedad=casa+en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81759,82249,3531,75,done,-34.9862574,-67.6703321,Casa en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=35&propiedad=casa+en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81760,82250,3531,75,done,-34.979716,-67.6804514,Departamento en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=34&propiedad=departamento+en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81761,82251,3531,75,done,-34.9696147,-67.6990721,Casa en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=33&propiedad=casa+en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81762,82252,3531,75,done,-34.9689951,-67.7035949,Local en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=32&propiedad=local+en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81763,82253,3531,75,done,-34.9965107,-67.5118036,Propiedad en,inmobiliariaangelinam.com.ar/ver.php?id=31&propiedad=en++ubicada+en+general+alvear%2C+mendoza
+81764,82254,3531,55,done,-34.9780511,-67.698331,Departamento en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=30&propiedad=departamento+en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81765,82255,3531,75,done,-34.9779882,-67.6893858,Departamento en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=29&propiedad=departamento+en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81766,82256,3531,55,done,-34.9804883,-67.6991261,Propiedad en,inmobiliariaangelinam.com.ar/ver.php?id=24&propiedad=en++ubicada+en+general+alvear%2C+mendoza
+81767,82257,3531,75,done,-34.9804883,-67.6991261,Casa en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=23&propiedad=casa+en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81768,82258,3531,55,done,-34.9779882,-67.6893858,Propiedad en,inmobiliariaangelinam.com.ar/ver.php?id=22&propiedad=en++ubicada+en+general+alvear%2C+mendoza
+81769,82259,3531,75,done,-34.9965468,-67.5097744,Casa en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=21&propiedad=casa+en+alquiler+ubicada+en+bowen%2C+mendoza
+81770,82260,3531,55,done,-34.9779882,-67.6893858,Propiedad en,inmobiliariaangelinam.com.ar/ver.php?id=20&propiedad=en++ubicada+en+general+alvear%2C+mendoza
+81771,82261,3531,55,done,-34.9823411,-67.6819224,Propiedad en,inmobiliariaangelinam.com.ar/ver.php?id=19&propiedad=en++ubicada+en+general+alvear%2C+mendoza
+81772,82262,3531,55,done,-34.9717092,-67.6990996,Propiedad en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=18&propiedad=en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81773,82263,3531,75,done,-34.979716,-67.6804514,Departamento en Alquiler,inmobiliariaangelinam.com.ar/ver.php?id=17&propiedad=departamento+en+alquiler+ubicada+en+general+alvear%2C+mendoza
+81774,82264,3531,75,done,-34.9884479,-67.6783015,Propiedad en,inmobiliariaangelinam.com.ar/ver.php?id=16&propiedad=en++ubicada+en+general+alvear%2C+mendoza
+81775,82265,3531,75,done,-35.0013734,-67.5031178,Propiedad en,inmobiliariaangelinam.com.ar/ver.php?id=15&propiedad=en++ubicada+en+bowen%2C+mendoza
+81776,82266,3531,75,done,-34.9709246,-67.6980487,Propiedad en,inmobiliariaangelinam.com.ar/ver.php?id=14&propiedad=en++ubicada+en+general+alvear%2C+mendoza
+81778,82268,3531,75,done,-34.972896,-67.7066283,Casa en,inmobiliariaangelinam.com.ar/ver.php?id=12&propiedad=casa+en++ubicada+en+general+alvear%2C+mendoza
+81779,82269,3531,55,done,-34.9734831,-67.7064355,Propiedad en,inmobiliariaangelinam.com.ar/ver.php?id=11&propiedad=en++ubicada+en+general+alvear%2C+mendoza
+81780,82270,3531,75,done,-34.9779706,-67.698846,Local en,inmobiliariaangelinam.com.ar/ver.php?id=10&propiedad=local+en++ubicada+en+general+alvear%2C+mendoza
+81781,82271,3532,85,done,-32.9109708,-68.8483395,Venta Deposito en calle Maipu 235 – Ciudad Mendoza,inmobiliariamendocasa.com.ar/listings/1587
+81782,82272,3532,85,done,-32.9109717,-68.8484415,Venta Terreno calle Maipu – Ciudad Mendoza,inmobiliariamendocasa.com.ar/listings/venta-terreno-calle-maipu-ciudad-mendoza
+81814,82304,4418,95,done,-37.307809,-59.125776,Casas en Venta - Av. Balbín y Machado - Se vende con RENTA,pagliaropropiedades.com.ar/casas-en-venta-en-tandil-av.-balbín-y-machado---se-vende-con-renta-44315-161.html
+81815,82305,4418,95,done,-37.328161,-59.141464,Casas en Venta - San Martín al 200,pagliaropropiedades.com.ar/casas-en-venta-en-tandil-san-martín-al-200-50591-161.html
+81816,82306,4418,95,done,-37.313545,-59.098045,Casas en Venta - Muñiz al 200,pagliaropropiedades.com.ar/casas-en-venta-en-tandil-muñiz-al-200-48930-161.html
+81817,82307,4418,95,done,-37.282931,-59.364125,Casas en Venta - Vulcano y Rivadavia,pagliaropropiedades.com.ar/casas-en-venta-en-tandil-vulcano-y-rivadavia-46254-161.html
+81818,82308,4418,100,done,-37.331914,-59.14185,Casas en Venta - Alberdi al 400,pagliaropropiedades.com.ar/casas-en-venta-en-tandil-alberdi-al-400-49211-161.html
+81819,82309,4418,95,done,-37.358799,-59.123569,Casas en Venta - Israel y Av. Don Bosco,pagliaropropiedades.com.ar/casas-en-venta-en-tandil-israel-y-av.-don-bosco-45996-161.html
+81821,82311,4418,95,done,-37.334132,-59.133739,Casas en Venta - Fte. Independencia y Av. Avellaneda,pagliaropropiedades.com.ar/casas-en-venta-en-tandil-fte.-independencia-y-av.-avellaneda-49483-161.html
+81822,82312,4418,85,done,-37.290944,-59.154507,Casas en Venta - Tucumán y Trabajadores Municipales,pagliaropropiedades.com.ar/casas-en-venta-en-tandil-tucumán-y-trabajadores-municipales-45045-161.html
+81823,82313,4418,95,done,-37.310234,-59.119481,Casas en Venta - Piñeiro al 1300,pagliaropropiedades.com.ar/casas-en-venta-en-tandil-piñeiro-al-1300-51372-161.html
+81824,82314,4418,95,done,-37.338364,-59.145176,Casas en Venta - Payró al 100,pagliaropropiedades.com.ar/casas-en-venta-en-tandil-payró-al-100-51713-161.html
+81825,82315,4418,100,done,-37.312939,-59.131894,Casas en Venta - Uriburu al 1300,pagliaropropiedades.com.ar/casas-en-venta-en-tandil-uriburu-al-1300-51064-161.html
+81826,82316,4418,100,done,-37.324168,-59.146442,Casas en Venta - Alberdi al 1000,pagliaropropiedades.com.ar/casas-en-venta-en-tandil-alberdi-al-1000-50502-161.html
+81827,82317,4418,95,done,-37.320431,-59.136722,Casas en Venta - Garibaldi y Alem,pagliaropropiedades.com.ar/casas-en-venta-en-tandil-garibaldi-y-alem-51330-161.html
+81828,82318,4418,100,done,-37.279841,-59.363036,Casas en Venta - Calle 8 y Calle 13,pagliaropropiedades.com.ar/casas-en-venta-en-tandil-calle-8-y-calle-13-46285-161.html
+81829,82319,4418,95,done,-37.317342,-59.109406,Casas en Venta - Caseros y Piedrabuena,pagliaropropiedades.com.ar/casas-en-venta-en-tandil-caseros-y-piedrabuena-51488-161.html
+81830,82320,4418,100,done,-37.352966,-59.130263,Casas en Venta - Sinka al 1500,pagliaropropiedades.com.ar/casas-en-venta-en-tandil-sinka-al-1500-51420-161.html
+81831,82321,4418,100,done,-37.295308,-59.175496,Casas en Venta - Guise al 300,pagliaropropiedades.com.ar/casas-en-venta-en-tandil-guise-al-300-49968-161.html
+81832,82322,4418,95,done,-37.339575,-59.16157,Casas en Venta - Miguel Abuelo y Moro,pagliaropropiedades.com.ar/casas-en-venta-en-tandil-miguel-abuelo-y-moro-46372-161.html
+81833,82323,4418,100,done,-37.332768,-59.129791,Casas en Venta - Sandino al 100,pagliaropropiedades.com.ar/casas-en-venta-en-tandil-sandino-al-100-48728-161.html
+81834,82324,4418,100,done,-37.321045,-59.160991,Casas en Venta - Bariffi y 12 de Octubre,pagliaropropiedades.com.ar/casas-en-venta-en-tandil-bariffi-y-12-de-octubre-46175-161.html
+81835,82325,4418,100,done,-37.32224,-59.156635,Casas en Venta - Ezeiza al 1400,pagliaropropiedades.com.ar/casas-en-venta-en-tandil-ezeiza-al-1400-51558-161.html
+81836,82326,4418,95,done,-37.339001,-59.120014,Casas en Venta - Rubén Darío al 700,pagliaropropiedades.com.ar/casas-en-venta-en-tandil-rubén-darío-al-700-45385-161.html
+81837,82327,4418,95,done,-37.327785,-59.128332,Casas en Venta - Maipú al 1000,pagliaropropiedades.com.ar/casas-en-venta-en-tandil-maipú-al-1000-50421-161.html
+81838,82328,4418,100,done,-37.321438,-59.120092,Casas en Venta - Pinto al 1700,pagliaropropiedades.com.ar/casas-en-venta-en-tandil-pinto-al-1700-50141-161.html
+81839,82329,4418,95,done,-37.323861,-59.141293,Casas en Venta - Av. España y Chacabuco,pagliaropropiedades.com.ar/casas-en-venta-en-tandil-av.-españa-y-chacabuco-50142-161.html
+81840,82330,4418,100,done,-37.329628,-59.121991,Casas en Venta - Av. Avellaneda 1200,pagliaropropiedades.com.ar/casas-en-venta-en-tandil-av.-avellaneda-1200-46141-161.html
+81841,82331,4418,100,done,-37.320653,-59.137087,Casas en Venta - Garibaldi al 700,pagliaropropiedades.com.ar/casas-en-venta-en-tandil-garibaldi-al-700-48135-161.html
+81842,82332,4418,85,done,-37.295587,-59.157812,Locales en Venta - Reynoso y La Pampa,pagliaropropiedades.com.ar/locales-en-venta-en-tandil-reynoso-y-la-pampa-45052-161.html
+81843,82333,4418,85,done,-37.295536,-59.157833,Departamentos en Venta - Reynoso y La Pampa,pagliaropropiedades.com.ar/departamentos-en-venta-en-tandil-reynoso-y-la-pampa-45053-161.html
