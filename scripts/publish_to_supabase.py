@@ -28,6 +28,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from scripts.image_quality import normalize_property_images
+
 VALID_OPERATIONS = {"venta", "alquiler", "alquiler_temporario"}
 
 QUEUE_SELECT_DRY_RUN_SQL = """
@@ -255,6 +257,7 @@ def _json_safe(value: Any) -> Any:
 
 
 def staging_to_prop(staging: Dict[str, Any]) -> Dict[str, Any]:
+    images, _discarded_images = normalize_property_images(staging.get("imagenes"))
     prop = {
         "inmobiliaria_id": staging.get("inmobiliaria_id"),
         "hash_dedup": staging.get("hash_dedup"),
@@ -273,7 +276,7 @@ def staging_to_prop(staging: Dict[str, Any]) -> Dict[str, Any]:
         "pais": staging.get("pais"),
         "latitud": staging.get("latitud"),
         "longitud": staging.get("longitud"),
-        "imagenes": staging.get("imagenes") if isinstance(staging.get("imagenes"), list) else [],
+        "imagenes": images,
         "url": staging.get("url"),
         "url_normalizada": staging.get("url_normalizada"),
     }
