@@ -13,6 +13,7 @@ Default mode is dry-run (no Nominatim calls, no writes). Pass --commit to persis
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import sys
@@ -20,6 +21,7 @@ from collections import Counter
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import unquote_plus
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -101,13 +103,22 @@ SELECT
   s.pais,
   s.validation_score,
   s.geocoding_status,
-  s.status
+  s.status,
+  r.url AS raw_url,
+  r.ciudad AS raw_ciudad,
+  r.provincia AS raw_provincia,
+  r.datos_extra AS raw_datos_extra,
+  i.ciudad AS inmobiliaria_ciudad,
+  i.provincia AS inmobiliaria_provincia,
+  i.pais AS inmobiliaria_pais
 FROM public.propiedades_staging s
+LEFT JOIN public.propiedades_raw r ON r.id = s.raw_id
+LEFT JOIN public.inmobiliarias_staging i ON i.id = s.inmobiliaria_id
 """
 
 SOURCE_FILTERS = {
     "captured_json": (
-        "JOIN public.propiedades_raw r ON r.id = s.raw_id",
+        "",
         "r.datos_extra->>'imported_by' = %s",
         "scripts/import_captured_props_to_neon.py",
     ),
@@ -227,6 +238,60 @@ def normalize_address_for_geocoding(value: Optional[str]) -> Optional[str]:
     return text or None
 
 
+def _json_dict(value: Any) -> Dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _decoded_context_text(*values: Any) -> str:
+    parts: List[str] = []
+    for value in values:
+        if value is None:
+            continue
+        text = unquote_plus(str(value))
+        text = text.replace("-", " ").replace("_", " ").replace("/", " ")
+        parts.append(text)
+    return re.sub(r"\s+", " ", " ".join(parts)).strip().lower()
+
+
+def infer_location_context_from_raw(staging: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
+    """Devuelve ciudad/provincia de contexto sin modificar staging en DB."""
+    raw_extra = _json_dict(staging.get("raw_datos_extra"))
+
+    city = clean_text(staging.get("inmobiliaria_ciudad")) or clean_text(staging.get("raw_ciudad"))
+    province = clean_text(staging.get("inmobiliaria_provincia")) or clean_text(staging.get("raw_provincia"))
+    if city or province:
+        return city, province
+
+    context_text = _decoded_context_text(
+        staging.get("url"),
+        staging.get("raw_url"),
+        raw_extra.get("source_url"),
+        raw_extra.get("captured_source_url"),
+        raw_extra.get("canonical_url_key"),
+        raw_extra.get("source_url_normalizada"),
+        raw_extra.get("source_inmobiliaria_nombre"),
+    )
+
+    if re.search(r"\bgeneral\s+alvear\b", context_text) and re.search(r"\bmendoza\b", context_text):
+        return "General Alvear", "Mendoza"
+    if re.search(r"\blas\s+heras\b", context_text) and re.search(r"\bmendoza\b", context_text):
+        return "Las Heras", "Mendoza"
+    if re.search(r"\bciudad\s+mendoza\b", context_text):
+        return "Mendoza", "Mendoza"
+    if re.search(r"\btandil\b", context_text):
+        return "Tandil", "Buenos Aires"
+
+    return None, None
+
+
 def build_geocoder_row(staging: Dict[str, Any]) -> Dict[str, Any]:
     direccion = normalize_address_for_geocoding(staging.get("direccion_normalizada"))
     # Fix K safety net: si direccion_normalizada es invalida (fecha/contacto/overflow),
@@ -246,6 +311,12 @@ def build_geocoder_row(staging: Dict[str, Any]) -> Dict[str, Any]:
             direccion = ""
     ciudad = clean_text(staging.get("ciudad"))
     provincia = clean_text(staging.get("provincia"))
+    context_city, context_province = infer_location_context_from_raw(staging)
+    context_url = (
+        clean_text(staging.get("url"))
+        or clean_text(staging.get("raw_url"))
+        or clean_text(_json_dict(staging.get("raw_datos_extra")).get("source_url"))
+    )
     if callable(pipeline_normalize_location_fields):
         try:
             normalized = pipeline_normalize_location_fields(
@@ -255,7 +326,7 @@ def build_geocoder_row(staging: Dict[str, Any]) -> Dict[str, Any]:
                 ciudad,
                 provincia,
                 staging.get("pais") or "Argentina",
-                staging.get("url"),
+                context_url,
                 None,
             )
         except Exception:
@@ -263,6 +334,8 @@ def build_geocoder_row(staging: Dict[str, Any]) -> Dict[str, Any]:
         if isinstance(normalized, dict) and normalized.get("location_normalized"):
             ciudad = clean_text(normalized.get("ciudad")) or ciudad
             provincia = clean_text(normalized.get("provincia")) or provincia
+    ciudad = ciudad or context_city
+    provincia = provincia or context_province
     pais = clean_text(staging.get("pais")) or "Argentina"
     return {
         "propiedad_id": staging.get("id"),
@@ -424,6 +497,8 @@ def is_garbage_address(direccion: Optional[str]) -> bool:
         return True
     if re.match(r"^terreno\s+\d+\b", lowered):
         return True
+    if re.match(r"^(?:sal[o\u00f3]n\s+comercial|taller)\s+\d+\b", lowered):
+        return True
     if re.match(r"^direccion\s+\d{3,5}\b", lowered):
         return True
     if re.match(r"^mts\s+\d+\b", lowered):
@@ -483,6 +558,7 @@ def fetch_source_geocoding_status(cur, source: Optional[str], limit: int = 1000)
         f"""
         SELECT s.geocoding_status
         FROM public.propiedades_staging s
+        LEFT JOIN public.propiedades_raw r ON r.id = s.raw_id
         {join_sql}
         {where_sql}
         ORDER BY s.id ASC

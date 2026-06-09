@@ -69,8 +69,13 @@ CITY_BOUNDS = {
     "playa union": (-43.40, -43.28, -65.12, -64.98),
     # Pergamino, Buenos Aires
     "pergamino": (-33.96, -33.80, -60.68, -60.50),
-    # Tandil, Buenos Aires
-    "tandil": (-37.42, -37.25, -59.22, -59.00),
+    # Tandil, Buenos Aires. Bbox ampliado para cubrir periferia rural del batch
+    # controlado y seguir excluyendo falsos positivos de costa atlantica.
+    "tandil": (-37.55, -37.10, -59.70, -58.50),
+    # General Alvear, Mendoza. Evita falsos positivos en Gran Mendoza/Godoy Cruz.
+    "general alvear": (-35.20, -34.80, -67.95, -67.30),
+    # Mendoza ciudad / area central.
+    "mendoza": (-33.10, -32.70, -69.00, -68.60),
     # Fix M — ciudades costa atlántica bonaerense (batch Pinamar inmo 4019)
     # Pinamar ya presente arriba; Costa Esmeralda = urbano privado al norte de Pinamar
     "costa esmeralda": (-37.10, -37.00, -56.95, -56.84),
