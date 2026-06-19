@@ -11,12 +11,23 @@ Uso para reanudar desde pagina 178:
 Uso con append a CSV existente:
     python scraper/scraper_zonaprop_inmobiliarias.py --start-page 178 --max-pages 20 --output data/zonaprop_total.csv --delay 12 --append
 
+NOTA: CONGELADO por política ERETZ Propiedades (2026-06-17). Ver guard abajo.
+
 Reglas:
     - Solo descubrimiento de inmobiliarias (no copia propiedades).
     - No login, no captcha bypass, no evasion de bloqueos.
     - No toca Supabase, no inserta datos en la base.
     - Si detecta bloqueo real, se detiene y guarda lo recolectado.
 """
+
+# === CONGELADO por política ERETZ Propiedades (2026-06-17) ===
+# Todo lo relacionado con Zonaprop/Argenprop (incluido discovery de inmobiliarias)
+# queda congelado hasta autorización explícita. Quitar este guard solo con esa autorización.
+import sys as _sys
+_sys.exit(
+    "CONGELADO (politica ERETZ 2026-06-17): discovery Zonaprop/Argenprop deshabilitado. "
+    "Requiere autorizacion explicita para reactivar."
+)
 
 import argparse
 import csv

@@ -15,6 +15,15 @@ Uso:
 
 from __future__ import annotations
 
+# === CONGELADO por política ERETZ Propiedades (2026-06-17) ===
+# Todo lo relacionado con Zonaprop/Argenprop (incluido discovery de agencias) queda
+# congelado hasta autorización explícita. Quitar este guard solo con esa autorización.
+import sys as _sys
+_sys.exit(
+    "CONGELADO (politica ERETZ 2026-06-17): discovery Zonaprop/Argenprop deshabilitado. "
+    "Requiere autorizacion explicita para reactivar."
+)
+
 import argparse
 import json
 import logging
