@@ -75,6 +75,10 @@ SUPABASE_KEY: str = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "") or os.enviro
 USE_INTERNAL_DB: bool = _env_flag("USE_INTERNAL_DB", default=False)
 INTERNAL_DB_URL: str = os.environ.get("INTERNAL_DB_URL", "").strip()
 INTERNAL_DB_ENABLED: bool = USE_INTERNAL_DB and bool(INTERNAL_DB_URL)
+# Schema donde viven las tablas del pipeline interno.
+#   - Neon dedicado  -> "public" (default, comportamiento histórico)
+#   - Supabase Pro   -> "internal_scraping" (migración 2026-06-16)
+INTERNAL_DB_SCHEMA: str = (os.environ.get("INTERNAL_DB_SCHEMA", "public").strip() or "public")
 
 TOKKO_API_BASE = "https://api.tokkobroker.com/api/v1/property/"
 TOKKO_LIMIT    = 100
@@ -558,13 +562,25 @@ def normalizar_tipo(raw: Any) -> str:
 
 
 def normalizar_operacion(raw: Any) -> str:
+    """Normaliza la operación de una propiedad.
+
+    FASE 1 — Sprint A: nunca devuelve "venta" como fallback silencioso.
+    - Sin input → "consultar"
+    - Señales simultáneas de venta Y alquiler → "venta_y_alquiler"
+    - No reconocido → "consultar"  (antes: "venta", que era incorrecto)
+    """
     if not raw:
-        return "venta"
+        return "consultar"
     text = str(raw).lower().strip()
+    # Detectar señal de venta Y alquiler simultáneos
+    _has_venta = any(k in text for k in ("venta", "sale", "sell", "compra", "en venta", "for sale"))
+    _has_alquiler = any(k in text for k in ("alquiler", "rent", "rental", "en alquiler", "for rent"))
+    if _has_venta and _has_alquiler:
+        return "venta_y_alquiler"
     for key, val in OPERACION_MAP.items():
         if key in text:
             return val
-    return "venta"
+    return "consultar"
 
 
 def _infer_op_from_asp_url_path(url: str) -> Optional[str]:
@@ -1226,8 +1242,11 @@ class InternalDBClient:
         ],
     }
 
-    def __init__(self, db_url: str) -> None:
+    def __init__(self, db_url: str, schema: Optional[str] = None) -> None:
         self.db_url = (db_url or "").strip()
+        # Schema calificado de las tablas/funciones internas. Validado una sola vez
+        # para poder interpolarlo de forma segura en las queries (no parametrizable).
+        self.schema = self._safe_identifier(schema or INTERNAL_DB_SCHEMA)
 
     @property
     def enabled(self) -> bool:
@@ -1320,7 +1339,7 @@ class InternalDBClient:
         if limit is not None:
             limit_sql = " LIMIT %s"
             values.append(int(limit))
-        query = f"SELECT {columns} FROM public.{table_sql}{where_sql}{order_sql}{limit_sql}"
+        query = f"SELECT {columns} FROM {self.schema}.{table_sql}{where_sql}{order_sql}{limit_sql}"
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(query, values)
@@ -1338,7 +1357,7 @@ class InternalDBClient:
             assignments.append(f"{self._safe_identifier(key)} = %s")
             values.append(self._json_value(value))
         values.append(row_id)
-        query = f"UPDATE public.{table_sql} SET {', '.join(assignments)} WHERE id = %s"
+        query = f"UPDATE {self.schema}.{table_sql} SET {', '.join(assignments)} WHERE id = %s"
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(query, values)
@@ -1354,9 +1373,13 @@ class InternalDBClient:
         if not columns:
             return 0
         placeholders = ", ".join(["%s"] * len(columns))
-        query = f"INSERT INTO public.{table_sql} ({', '.join(columns)}) VALUES ({placeholders})"
+        query = f"INSERT INTO {self.schema}.{table_sql} ({', '.join(columns)}) VALUES ({placeholders})"
         if table_sql == "propiedades_raw":
-            query += " ON CONFLICT (hash_dedup) DO NOTHING"
+            query += (
+                " ON CONFLICT (hash_dedup) DO UPDATE SET"
+                " scraping_run_item_id = EXCLUDED.scraping_run_item_id,"
+                " scraped_at = NOW()"
+            )
         inserted_count = 0
         with self._connect() as conn:
             with conn.cursor() as cur:
@@ -1376,7 +1399,7 @@ class InternalDBClient:
         arg_names = self._RPC_ARGUMENTS[function_sql]
         values = [self._json_value(payload.get(name)) for name in arg_names]
         placeholders = ", ".join(["%s"] * len(values))
-        query = f"SELECT * FROM public.{function_sql}({placeholders})"
+        query = f"SELECT * FROM {self.schema}.{function_sql}({placeholders})"
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(query, values)
@@ -1450,10 +1473,15 @@ class SupabasePropiedades:
         if not SUPABASE_URL or not SUPABASE_KEY:
             raise RuntimeError("SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY son requeridas en .env")
         self.session = self._make_session()
-        self.internal_db = InternalDBClient(INTERNAL_DB_URL) if INTERNAL_DB_ENABLED else None
+        self.internal_db = (
+            InternalDBClient(INTERNAL_DB_URL, INTERNAL_DB_SCHEMA) if INTERNAL_DB_ENABLED else None
+        )
         if not SupabasePropiedades._internal_db_state_logged:
             if INTERNAL_DB_ENABLED:
-                logger.info("[internal-db] enabled: using INTERNAL_DB_URL for queue tables")
+                logger.info(
+                    "[internal-db] enabled: using INTERNAL_DB_URL (schema=%s) for queue tables",
+                    INTERNAL_DB_SCHEMA,
+                )
             elif INTERNAL_DB_URL and not USE_INTERNAL_DB:
                 logger.info("[internal-db] disabled: USE_INTERNAL_DB is not true; using Supabase for queue")
             else:
@@ -2063,7 +2091,11 @@ class SupabasePropiedades:
             return None
         if all(value is None for value in data.values()):
             return None
-        data["scraping_run_item_id"] = data.get("id")
+        # Supabase RPC devuelve "scraping_run_item_id" como PK (no "id");
+        # Neon RPC devuelve "id". Preservar el que ya venga correcto.
+        data["scraping_run_item_id"] = data.get("id") or data.get("scraping_run_item_id")
+        # Normalizar status: Supabase usa "item_status", Neon usa "status".
+        data["status"] = data.get("status") or data.get("item_status")
         return data
 
     def load_pending_scraping_items_for_integrity(self, limit: int = 5) -> List[Dict[str, Any]]:
@@ -3178,8 +3210,8 @@ class SupabasePropiedades:
 
     def mark_inactivos(self, inmob_id: int, active_hashes: set) -> int:
         """
-        Marca como 'inactivo' las propiedades de esta agencia que ya no
-        aparecen en el listado actual. Retorna cuÃƒÂ¡ntas se marcaron.
+        Marca como 'no_detectada_en_ultimo_scraping' las propiedades de esta agencia
+        que ya no aparecen en el listado actual. Retorna cuantas se marcaron.
         """
         if not active_hashes:
             return 0
@@ -3190,7 +3222,7 @@ class SupabasePropiedades:
                 params={
                     "select": "id,hash_dedup",
                     "inmobiliaria_id": f"eq.{inmob_id}",
-                    "estado": "eq.activo",
+                    "estado": "in.(activo,activa)",
                     "limit": 2000,
                 },
                 timeout=30,
@@ -3205,12 +3237,12 @@ class SupabasePropiedades:
             r2 = self.session.patch(
                 f"{SUPABASE_URL}/rest/v1/propiedades?id=in.({ids_str})",
                 headers=self._headers_minimal,
-                json={"estado": "inactivo"},
+                json={"estado": "no_detectada_en_ultimo_scraping"},
                 timeout=20,
             )
             count = len(to_deactivate) if r2.status_code in (200, 204) else 0
             if count:
-                logger.info("  Marcadas inactivas: %d propiedades de agencia %d", count, inmob_id)
+                logger.info("  Marcadas no_detectadas: %d propiedades de agencia %d", count, inmob_id)
             return count
         except Exception as e:
             logger.debug("mark_inactivos error: %s", e)
@@ -3558,7 +3590,7 @@ TEXTO DE LA PÃƒÂGINA:
         "agente_telefono":     str(data.get("agente_telefono") or "") or None,
         "fuente_extraccion":   "ai_fallback",
         "cms_origen":          inmob.get("cms_detectado", ""),
-        "estado":              "activo",
+        "estado":              "activa",
     }
     prop["score_calidad"] = calcular_score(prop)
     logger.info("  Ã¢Å“â€œ AI extrajo: %s %s %s", prop.get("tipo_propiedad"), prop.get("operacion"), prop.get("precio"))
@@ -5892,7 +5924,7 @@ def _map_tokko_property(obj: Dict, inmob: Dict) -> Dict:
         "apto_profesional":    obj.get("professional") or None,
         "fuente_extraccion":   "tokko_api",
         "cms_origen":          "tokko",
-        "estado":              "activo",
+        "estado":              "activa",
     }
     prop["score_calidad"] = calcular_score(prop)
     return prop
@@ -6379,19 +6411,154 @@ def _parse_tokko_markers(html: str) -> Dict[str, Tuple[float, float]]:
 
 
 def _tokko_direct_price_text(card) -> str:
-    price_el = card.select_one(".prop-valor-nro, [class*='prop-valor'], [class*='precio'], [class*='price']")
-    if not price_el:
-        return ""
-    direct = " ".join(
-        text.strip()
-        for text in price_el.find_all(string=True, recursive=False)
-        if text and text.strip()
+    # Extended selector list: covers standard + alternative Tokko theme class names
+    price_el = card.select_one(
+        ".prop-valor-nro, [class*='prop-valor'], [class*='precio'], [class*='price'],"
+        " .property-price, .listing-price, .prop-price, .value-price, .monto, .importe,"
+        " [class*='valor'], [class*='currency'], [class*='monto']"
     )
-    if direct:
-        return direct
-    text = price_el.get_text(" ", strip=True)
-    match = re.search(r"(?:USD|US\$|U\$S|\$)\s*[\d.,]+", text, re.I)
-    return match.group(0) if match else text
+    if price_el:
+        direct = " ".join(
+            text.strip()
+            for text in price_el.find_all(string=True, recursive=False)
+            if text and text.strip()
+        )
+        if direct:
+            return direct
+        text = price_el.get_text(" ", strip=True)
+        match = re.search(r"(?:USD|US\$|U\$S|\$)\s*[\d.,]+", text, re.I)
+        if match:
+            return match.group(0)
+        if text:
+            return text
+
+    # Fallback: data attributes on card element and immediate children
+    for el in (card, *card.find_all(True, limit=20)):
+        for attr in ("data-precio", "data-price", "data-valor", "data-value", "data-monto"):
+            val = (el.get(attr) or "").strip()
+            if val and re.search(r"[\d.,]{3,}", val):
+                return val
+
+    return ""
+
+
+# Blacklist of boilerplate/footer strings that are never real addresses.
+# If any token appears in the captured address text, discard it entirely.
+_DIRECCION_BLACKLIST: Tuple[str, ...] = (
+    "copyright",
+    "derechos reservados",
+    "enviar mensaje",
+    "brevedad",
+    "diseño web",
+    "sitio web",
+    "todos los derechos",
+    "powered by",
+    "desarrollado por",
+    "terms of service",
+    "política de privacidad",
+    "politica de privacidad",
+    "aviso legal",
+    "lorem ipsum",
+    "seguinos en",
+    "contáctenos",
+    "contactenos",
+    "whatsapp",
+    "facebook",
+    "instagram",
+    "twitter",
+    "@",                   # email addresses
+    "http://",
+    "https://",
+)
+
+
+def _sanitize_direccion(text: str) -> str:
+    """Return empty string if text contains boilerplate/footer content, else the original text."""
+    if not text:
+        return text
+    lower = text.lower()
+    if any(token in lower for token in _DIRECCION_BLACKLIST):
+        return ""
+    return text
+
+
+def _build_jsonld_price_map(soup) -> Dict[str, str]:
+    """Extract prop_id → raw price text from JSON-LD scripts embedded in a Tokko listing page."""
+    result: Dict[str, str] = {}
+    for script in soup.find_all("script", type="application/ld+json"):
+        try:
+            data = json.loads(script.string or "")
+        except Exception:
+            continue
+        items: list = []
+        if isinstance(data, dict):
+            t = data.get("@type", "")
+            if t in ("ItemList",):
+                items = data.get("itemListElement", [])
+            elif t in ("Product", "Offer"):
+                items = [data]
+            else:
+                offers = data.get("offers")
+                if isinstance(offers, (dict, list)):
+                    items = [offers] if isinstance(offers, dict) else offers
+        elif isinstance(data, list):
+            items = data
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            url_val = str(item.get("url") or item.get("@id") or "")
+            m = re.search(r"/p/(\d+)", url_val)
+            prop_id = m.group(1) if m else ""
+            offers = item.get("offers") or item.get("priceSpecification") or item
+            if isinstance(offers, dict):
+                price_raw = offers.get("price") or offers.get("lowPrice")
+                cur = str(offers.get("priceCurrency") or "").upper()
+            else:
+                continue
+            if price_raw and prop_id:
+                price_str = str(price_raw).strip()
+                if cur in ("USD", "U$S", "US$"):
+                    result[prop_id] = f"USD {price_str}"
+                elif cur in ("ARS",):
+                    result[prop_id] = f"$ {price_str}"
+                else:
+                    result[prop_id] = price_str
+    return result
+
+
+def _extract_page_city_hint(soup) -> str:
+    """Extract a city name from OG metadata, <title>, or breadcrumbs as page-level fallback."""
+    _city_re = re.compile(
+        r"\ben\s+([A-ZÁÉÍÓÚÜÑ][a-záéíóúüñA-ZÁÉÍÓÚÜÑa-z\s]{2,30}?)(?:\s*[|\-,]|\s*$)",
+        re.I,
+    )
+    for meta_attr in ({"property": "og:title"}, {"name": "geo.placename"}, {"name": "city"}):
+        tag = soup.find("meta", attrs=meta_attr)
+        if tag:
+            content = (tag.get("content") or "").strip()
+            m = _city_re.search(content)
+            if m:
+                return m.group(1).strip()
+
+    for sel in (
+        "nav.breadcrumb a", ".breadcrumb a", "[class*='breadcrumb'] a",
+        "ol.breadcrumb li a", ".breadcrumbs a",
+    ):
+        crumbs = soup.select(sel)
+        if len(crumbs) >= 2:
+            last = crumbs[-1].get_text(strip=True)
+            if last and 2 < len(last) < 40 and not re.search(
+                r"\b(inicio|home|propiedades|venta|alquiler|buscar)\b", last, re.I
+            ):
+                return last
+
+    title_tag = soup.find("title")
+    if title_tag:
+        m = _city_re.search(title_tag.get_text(strip=True) or "")
+        if m:
+            return m.group(1).strip()
+
+    return ""
 
 
 def _parse_tokko_type_operation_location(text: str, inmob: Dict) -> Tuple[str, str, str, str]:
@@ -6400,6 +6567,7 @@ def _parse_tokko_type_operation_location(text: str, inmob: Dict) -> Tuple[str, s
     barrio = ""
     ciudad = inmob.get("ciudad", "") or ""
 
+    # Pattern 1 (strict): "Tipo en Operacion en Barrio, Ciudad"
     match = re.search(
         r"^\s*(?P<tipo>.+?)\s+en\s+(?P<op>venta|alquiler|temporario)\s+en\s+(?P<loc>.+)$",
         text or "",
@@ -6414,6 +6582,29 @@ def _parse_tokko_type_operation_location(text: str, inmob: Dict) -> Tuple[str, s
             barrio = parts[0]
         if len(parts) >= 2:
             ciudad = parts[-1]
+    else:
+        # Pattern 2 (flexible): "Tipo en Ciudad" or "Tipo en Barrio, Ciudad"
+        # Handles "Casa en Juana Koslay", "Departamento en Palermo, CABA"
+        match2 = re.search(
+            r"^\s*(?P<tipo>.+?)\s+en\s+(?P<loc>[^,]+(?:,\s*[^,]+)?)$",
+            text or "",
+            re.I,
+        )
+        if match2:
+            loc_text = re.sub(r"\s+", " ", match2.group("loc")).strip()
+            # Skip if loc_text is a bare operation keyword (e.g. "Casa en Venta")
+            if not re.fullmatch(
+                r"(venta|alquiler|alquiler\s+temporario|arriendo|renta)", loc_text, re.I
+            ):
+                tipo_candidate = normalizar_tipo(match2.group("tipo"))
+                if tipo_candidate and tipo_candidate != "otro":
+                    tipo = tipo_candidate
+                parts = [p.strip() for p in loc_text.split(",") if p.strip()]
+                if len(parts) == 1:
+                    ciudad = parts[0]
+                elif len(parts) >= 2:
+                    barrio = parts[0]
+                    ciudad = parts[-1]
 
     return tipo, operacion, barrio, ciudad
 
@@ -6422,6 +6613,8 @@ def _parse_tokko_listing_cards(html: str, source_url: str, inmob: Dict) -> List[
     soup = BeautifulSoup(html or "", "html.parser")
     image_stats = _tokko_image_stats(inmob)
     markers = _parse_tokko_markers(html)
+    jsonld_prices = _build_jsonld_price_map(soup)
+    page_city_hint = _extract_page_city_hint(soup)
     cards = (
         soup.select("#propiedades > li[prop-id]")
         or soup.select("#propiedades > [prop-id]")
@@ -6451,7 +6644,7 @@ def _parse_tokko_listing_cards(html: str, source_url: str, inmob: Dict) -> List[
             direccion = ""
             dir_el = card.select_one(".prop-desc-dir, [class*='desc-dir'], [class*='direccion']")
             if dir_el:
-                direccion = dir_el.get_text(" ", strip=True)
+                direccion = _sanitize_direccion(dir_el.get_text(" ", strip=True))
 
             img = card.select_one("img.dest-img, .prop-img img, img")
             imagenes: List[str] = []
@@ -6473,6 +6666,8 @@ def _parse_tokko_listing_cards(html: str, source_url: str, inmob: Dict) -> List[
                 title = urlparse(url_prop).path.rstrip("/").split("/")[-1].replace("-", " ").title()
 
             precio_raw = _tokko_direct_price_text(card)
+            if not precio_raw and prop_id and prop_id in jsonld_prices:
+                precio_raw = jsonld_prices[prop_id]
             precio, moneda = normalizar_precio(precio_raw)
             precio_ars, precio_usd = convertir_precio(precio, moneda)
 
@@ -6482,7 +6677,7 @@ def _parse_tokko_listing_cards(html: str, source_url: str, inmob: Dict) -> List[
             if not barrio:
                 barrio = inmob.get("ciudad", "") or ""
             if not ciudad:
-                ciudad = inmob.get("ciudad", "") or ""
+                ciudad = inmob.get("ciudad", "") or page_city_hint
 
             data_texts = [
                 el.get_text(" ", strip=True)
@@ -6528,7 +6723,7 @@ def _parse_tokko_listing_cards(html: str, source_url: str, inmob: Dict) -> List[
                 "imagenes":            imagenes or None,
                 "fuente_extraccion":   "tokko_html",
                 "cms_origen":          "tokko",
-                "estado":              "activo",
+                "estado":              "activa",
                 "raw_json":            {"source": "tokko_html_card", "prop_id": prop_id},
             }
             prop["score_calidad"] = calcular_score(prop)
@@ -6863,7 +7058,7 @@ def _generic_map_json(item: Dict, inmob: Dict) -> Dict:
         "imagenes":            None,
         "fuente_extraccion":   "network_intercept",
         "cms_origen":          inmob.get("cms_detectado", ""),
-        "estado":              "activo",
+        "estado":              "activa",
     }
     prop["score_calidad"] = calcular_score(prop)
     return prop
@@ -7259,7 +7454,7 @@ def _map_visible_api_item(item: Dict, inmob: Dict, base_url: str) -> Optional[Di
 
     id_ext = str(get("id", "codigo", "ref", "reference", "internalId") or "")
     inmob_id = inmob["id"]
-    direccion = str(get("address", "direccion", "real_address", "displayAddress") or "").strip()
+    direccion = _sanitize_direccion(str(get("address", "direccion", "real_address", "displayAddress") or "").strip())
     geo = str(get("geoLabel", "geo_label") or "")
     ciudad = str(get("city", "ciudad") or inmob.get("ciudad", "") or "")
     provincia = str(get("province", "provincia", "state") or inmob.get("provincia", "") or "")
@@ -7304,7 +7499,7 @@ def _map_visible_api_item(item: Dict, inmob: Dict, base_url: str) -> Optional[Di
         "imagenes":            imagenes or None,
         "fuente_extraccion":   "visible_api_endpoint",
         "cms_origen":          inmob.get("cms_detectado", ""),
-        "estado":              "activo",
+        "estado":              "activa",
     }
     prop["score_calidad"] = calcular_score(prop)
     return prop
@@ -7338,6 +7533,54 @@ def _find_property_list_recursive(data: Any, _depth: int = 0) -> List[Dict]:
                 if found:
                     return found
     return []
+
+
+def _fetch_detail_images(
+    list_endpoint: str,
+    item_id: str,
+    session: requests.Session,
+    media_base: str,
+    base_url: str,
+) -> List[str]:
+    """GET al endpoint de detalle de un item para recuperar imágenes faltantes.
+    Construye la URL de detalle eliminando la query string del endpoint de lista y
+    añadiendo /{item_id}. Devuelve lista vacía ante cualquier fallo."""
+    if not item_id:
+        return []
+    parsed = urlparse(list_endpoint)
+    detail_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path.rstrip('/')}/{item_id}"
+    try:
+        resp = _http_get(detail_url, session, timeout=10, headers={"Accept": "application/json, */*"})
+    except Exception:
+        return []
+    if resp.status_code != 200:
+        return []
+    try:
+        data = resp.json()
+    except Exception:
+        return []
+    item: Dict = data if isinstance(data, dict) else {}
+    if isinstance(data, dict):
+        for _wrap_key in ("data", "result", "item", "property", "listing"):
+            for dk in data:
+                if dk.lower() == _wrap_key and isinstance(data[dk], dict):
+                    item = data[dk]
+                    break
+    if not isinstance(item, dict):
+        return []
+
+    def _get(*keys):
+        for k in keys:
+            for dk in item:
+                if dk.lower() == k.lower():
+                    return item[dk]
+        return None
+
+    return _collect_full_image_urls(
+        _get("photos", "images", "imagenes", "media", "pictures", "fotos"),
+        base_url,
+        media_base,
+    )
 
 
 def _fetch_visible_api_items(endpoint: str, inmob: Dict, session: requests.Session) -> List[Dict]:
@@ -7483,6 +7726,17 @@ def strategy_visible_api_endpoint(inmob: Dict, session: requests.Session) -> Lis
                 prop = None
             if not prop:
                 continue
+            if not prop.get("imagenes"):
+                _item_id = str(it.get("id") or it.get("slug") or "")
+                if _item_id and _deadline_remaining_seconds(_strategy_deadline(inmob)) > 8:
+                    time.sleep(1.0)
+                    _detail_imgs = _fetch_detail_images(
+                        endpoint, _item_id, session,
+                        inmob.get("_visible_media_base") or "", url_listado,
+                    )
+                    if _detail_imgs:
+                        prop["imagenes"] = _detail_imgs
+                        prop["score_calidad"] = calcular_score(prop)
             h = prop.get("hash_dedup")
             if h in seen_hashes:
                 continue
@@ -7549,11 +7803,11 @@ def _parse_jsonld_item(item: Dict, inmob: Dict, source_url: str) -> Optional[Dic
 
     addr = item.get("address", {}) or {}
     if isinstance(addr, str):
-        direccion = addr
+        direccion = _sanitize_direccion(addr)
         ciudad = inmob.get("ciudad", "")
         barrio = ""
     else:
-        direccion = addr.get("streetAddress", "")
+        direccion = _sanitize_direccion(addr.get("streetAddress", ""))
         ciudad    = addr.get("addressLocality", "") or inmob.get("ciudad", "")
         barrio    = addr.get("addressRegion", "")
 
@@ -7618,7 +7872,7 @@ def _parse_jsonld_item(item: Dict, inmob: Dict, source_url: str) -> Optional[Dic
         "imagenes":            [f for f in fotos if f] or None,
         "fuente_extraccion":   "json_ld",
         "cms_origen":          inmob.get("cms_detectado", ""),
-        "estado":              "activo",
+        "estado":              "activa",
     }
     prop["score_calidad"] = calcular_score(prop)
     return prop
@@ -8534,7 +8788,7 @@ def _html_extract_detail(soup: BeautifulSoup, url: str, inmob: Dict,
         "agente_telefono":     agente_telefono,
         "fuente_extraccion":   str(inmob.get("_strategy_name") or "static_html"),
         "cms_origen":          inmob.get("cms_detectado", ""),
-        "estado":              "activo",
+        "estado":              "activa",
     }
     prop["score_calidad"] = calcular_score(prop)
     return prop
@@ -10508,7 +10762,7 @@ def _parse_custom_listing_cards(html: str, source_url: str, inmob: Dict) -> List
 
         precio, moneda = _normalizar_precio_detalle(text)
         precio_ars, precio_usd = convertir_precio(precio, moneda)
-        direccion = _extract_address_from_text(text)
+        direccion = _sanitize_direccion(_extract_address_from_text(text))
         imagenes = clean_property_images(extraer_imagenes(card, source_url), base_url=source_url)
         id_ext = ""
         match = re.search(r"/(?:ad|aviso|ficha|detalle|propiedad|inmueble)/([^/?#]+)", url_prop, re.I)
@@ -10537,7 +10791,7 @@ def _parse_custom_listing_cards(html: str, source_url: str, inmob: Dict) -> List
             "imagenes": imagenes or None,
             "fuente_extraccion": "custom_listing_detail",
             "cms_origen": inmob.get("cms_detectado") or "custom",
-            "estado": "activo",
+            "estado": "activa",
         }
         prop["score_calidad"] = calcular_score(prop)
         props.append(prop)
@@ -11442,7 +11696,7 @@ def _playwright_extract_detail(page: Page, url: str, inmob: Dict) -> Optional[Di
         desc = find_text(".description", ".descripcion", "[class*='description']", "article")
         tipo_raw = find_text("[class*='tipo']", "[class*='type']")
         op_raw   = find_text("[class*='operaci']", "[class*='operation']")
-        address  = find_text(".address", ".direccion", "[class*='address']", "[class*='location']")
+        address  = _sanitize_direccion(find_text(".address", ".direccion", "[class*='address']", "[class*='location']"))
 
         ambientes   = normalizar_int(find_text("[class*='ambiente']", "[class*='room']", "[class*='environment']"))
         dormitorios = normalizar_int(find_text("[class*='dormitor']", "[class*='bedroom']", "[class*='suite']", "[class*='habitac']"))
@@ -11531,7 +11785,7 @@ def _playwright_extract_detail(page: Page, url: str, inmob: Dict) -> Optional[Di
             "agente_telefono":     agente_telefono,
             "fuente_extraccion":   "html_scraper",
             "cms_origen":          inmob.get("cms_detectado", ""),
-            "estado":              "activo",
+            "estado":              "activa",
         }
         prop["score_calidad"] = calcular_score(prop)
         return prop
@@ -15681,16 +15935,16 @@ def _save_queue_properties(
             "pais": main_row.get("pais") or "Argentina",
         }
         prop["hash_dedup"] = hash_propiedad(main_id, prop.get("id_externo"), prop.get("url"))
-        # Detección de estado no disponible (overrides el "activo" por defecto)
+        # Detección de estado no disponible (overrides el "activa" por defecto)
         if _detectar_estado_no_disponible(prop.get("titulo"), prop.get("descripcion")):
-            prop["estado"] = "inactivo"
+            prop["estado"] = "no_detectada_en_ultimo_scraping"
             unavailable_props.append({
                 "url":    prop.get("url"),
                 "titulo": prop.get("titulo"),
             })
     if unavailable_props:
         logger.warning(
-            "  Propiedades marcadas como inactivas (vendidas/reservadas/alquiladas): %d | ejemplos=%s",
+            "  Propiedades marcadas no_detectadas (vendidas/reservadas/alquiladas): %d | ejemplos=%s",
             len(unavailable_props),
             unavailable_props[:3],
         )
@@ -18608,9 +18862,9 @@ def test_single_url(
             images = prop.get("imagenes") or []
             first_image = images[0] if images else "sin foto real"
             _estado_test = (
-                "inactivo"
+                "no_detectada_en_ultimo_scraping"
                 if _detectar_estado_no_disponible(prop.get("titulo"), prop.get("descripcion"))
-                else "activo"
+                else "activa"
             )
             logger.info(
                 " - %s | %s %s | tipo=%s | estado=%s | fotos=%d | %s | %s",

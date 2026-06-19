@@ -74,6 +74,10 @@ CITY_BOUNDS = {
     "tandil": (-37.55, -37.10, -59.70, -58.50),
     # General Alvear, Mendoza. Evita falsos positivos en Gran Mendoza/Godoy Cruz.
     "general alvear": (-35.20, -34.80, -67.95, -67.30),
+    # Sauce Viejo, Santa Fe (municipio La Capital). Zona industrial/residencial al sur del Gran Santa Fe.
+    "sauce viejo": (-31.62, -31.48, -60.92, -60.70),
+    # Santo Tomé, Santa Fe (municipio La Capital). Al este de la ciudad de Santa Fe, orilla este del río Salado.
+    "santo tome": (-31.75, -31.57, -60.88, -60.62),
     # Mendoza ciudad / area central.
     "mendoza": (-33.10, -32.70, -69.00, -68.60),
     # Fix M — ciudades costa atlántica bonaerense (batch Pinamar inmo 4019)
