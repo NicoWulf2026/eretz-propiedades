@@ -1,75 +1,63 @@
-# Índice rápido de InmoCapital
+# Indice rapido de ERETZ Propiedades
 
-Esta nota sirve para entrar rápido a las partes más importantes del proyecto.
+Ultima actualizacion: 2026-06-04
 
----
+Esta nota sirve para entrar rapido a las partes mas importantes del proyecto.
 
 ## Panel principal
 
 - [[00 - Panel principal InmoCapital]]
 
----
+## Fuente de verdad vigente
 
-## Contexto para IA
-
-Usar esta nota cuando abra un nuevo chat con ChatGPT, Codex o Claude:
-
+- [[14 - Estado vigente 2026-06-04]]
 - [[13 - Estado actual para ChatGPT o Codex]]
+- [[2026-06-04 - Registro diario]]
 
----
+## Scraping y datos
 
-## Seguimiento diario
-
-- [[2026-05-20 - Registro diario]]
-
----
-
-## Desarrollo
-
-- [[03 - Desarrollo técnico]]
-- [[04 - Supabase y base de datos]]
+- [[Scraping autofix cierre 2026-06-04]]
 - [[05 - Scraping]]
-- [[12 - Errores y soluciones]]
+- [[Neon readiness 2026-06-04]]
+- [[04 - Supabase y base de datos]]
+- [[Politicas de calidad y publicacion]]
 
----
+## Frontend
 
-## Producto y estrategia
-
-- [[01 - Visión y estrategia]]
+- [[Frontend estado 2026-06-04]]
+- [[03 - Desarrollo técnico]]
 - [[02 - Producto y funcionalidades]]
 
----
+## Estrategia y marca
 
-## Negocio
-
+- [[01 - Visión y estrategia]]
 - [[06 - Marketing y marca]]
 - [[07 - Finanzas y modelo de negocio]]
 - [[08 - Legal y riesgos]]
 
----
+## Seguimiento
 
-## Organización
-
-- [[09 - Prompts útiles]]
+- [[Roadmap actual 2026-06-04]]
 - [[10 - Decisiones importantes]]
 - [[11 - Pendientes]]
+- [[12 - Errores y soluciones]]
+- [[09 - Prompts útiles]]
 
----
+## Registros diarios
 
-## Cómo usar Obsidian para InmoCapital
+- [[2026-06-04 - Registro diario]]
+- [[2026-05-29 - Registro diario]]
+- [[2026-05-20 - Registro diario]]
 
-Cada vez que trabaje en el proyecto:
+## Como usar Obsidian para ERETZ Propiedades
 
-1. Registrar avances en el registro diario.
-2. Registrar errores importantes en errores y soluciones.
-3. Registrar decisiones importantes en decisiones importantes.
-4. Actualizar pendientes cuando aparezcan nuevas tareas.
-5. Actualizar estado actual para ChatGPT o Codex cuando cambie algo técnico importante.
-
----
+1. Revisar primero el panel principal y el estado vigente.
+2. Registrar avances importantes en el registro diario.
+3. Registrar decisiones tecnicas y de producto en decisiones importantes.
+4. Registrar errores relevantes en errores y soluciones.
+5. Actualizar pendientes cuando cambie el foco.
+6. Mantener historico util, pero marcar como historico lo que ya no aplica.
 
 ## Regla principal
 
-Obsidian no reemplaza a GitHub, Supabase ni Google Sheets.
-
-Obsidian sirve para ordenar el conocimiento, las decisiones y el contexto del proyecto.
+Obsidian no reemplaza a GitHub, Supabase, Neon ni los reportes locales. Obsidian ordena conocimiento, decisiones, contexto y proximos pasos.

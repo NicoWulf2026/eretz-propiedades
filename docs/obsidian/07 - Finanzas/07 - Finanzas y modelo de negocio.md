@@ -1,616 +1,109 @@
 # Finanzas y modelo de negocio
 
-Esta nota documenta todo lo relacionado con el modelo económico de InmoCapital, posibles fuentes de ingresos, costos, pricing, monetización y sostenibilidad del proyecto.
+Ultima actualizacion: 2026-06-04
 
----
-
-## Rol de las finanzas en InmoCapital
-
-Las finanzas sirven para entender cómo InmoCapital puede sostenerse, crecer y generar ingresos.
-
-El proyecto no debe pensarse solamente como una plataforma técnica, sino también como un negocio capaz de generar valor económico.
-
----
-
-## Objetivo financiero principal
-
-Construir un modelo de negocio sostenible, escalable y coherente con la propuesta de valor de InmoCapital.
-
-El objetivo es que la plataforma pueda generar ingresos sin perder confianza, sin manipular datos y sin afectar negativamente la experiencia del usuario.
-
----
-
-## Enfoque general del modelo de negocio
-
-El modelo principal pensado para InmoCapital es B2B.
-
-Esto significa que los ingresos principales podrían venir de empresas, inmobiliarias, desarrolladoras o actores del sector inmobiliario, más que de usuarios comunes.
-
----
+Esta nota documenta el modelo economico posible de ERETZ Propiedades y los criterios para monetizar sin perder confianza.
 
 ## Principio central
 
-La monetización no debe destruir la confianza del usuario.
+La monetizacion no debe destruir la confianza del usuario.
 
-InmoCapital puede cobrar por visibilidad, leads, reportes o herramientas, pero no debería manipular los datos para favorecer artificialmente a quien paga.
+ERETZ Propiedades puede cobrar por visibilidad, leads, reportes o herramientas, pero no debe manipular datos para favorecer artificialmente a quien paga.
 
----
+## Enfoque general
 
-## Posibles fuentes de ingreso
-
-### 1. Publicidad para inmobiliarias
-
-Las inmobiliarias podrían pagar por tener mayor visibilidad dentro de la plataforma.
-
-Ejemplos:
-
-- Posicionamiento destacado.
-- Espacios patrocinados.
-- Perfil destacado de inmobiliaria.
-- Propiedades destacadas.
-- Presencia en zonas específicas.
-- Campañas dentro de la plataforma.
-
-Condición importante:
-
-La publicidad debe ser clara, no invasiva y no debe alterar los datos objetivos.
-
----
-
-### 2. Leads calificados
-
-InmoCapital puede generar valor cuando conecta usuarios interesados con inmobiliarias.
-
-Un lead puede medirse cuando un usuario:
-
-- Hace clic en WhatsApp.
-- Hace clic en teléfono.
-- Hace clic en mail.
-- Abre la publicación original.
-- Solicita más información.
-- Guarda una propiedad.
-- Contacta a una inmobiliaria.
-
-Modelos posibles:
-
-- Cobro por lead.
-- Cobro por paquete de leads.
-- Cobro mensual con cantidad de leads incluidos.
-- Cobro por contacto efectivo.
-
----
-
-### 3. Planes para inmobiliarias
-
-Se podrían ofrecer planes mensuales a inmobiliarias.
-
-Ejemplo de estructura futura:
-
-#### Plan básico
-
-- Perfil de inmobiliaria.
-- Propiedades visibles.
-- Métricas básicas.
-- Contactos recibidos.
-
-#### Plan profesional
-
-- Mayor visibilidad.
-- Métricas avanzadas.
-- Leads destacados.
-- Reportes de interés.
-- Comparación de publicaciones.
-
-#### Plan premium
-
-- Posicionamiento destacado.
-- Reportes personalizados.
-- Dashboard completo.
-- Recomendaciones de precio.
-- Análisis de competencia.
-- Mayor presencia en búsquedas.
-
----
-
-### 4. Reportes de mercado
-
-InmoCapital podría vender reportes con información agregada del mercado.
-
-Ejemplos:
-
-- Precio promedio por zona.
-- Precio por metro cuadrado.
-- Evolución de precios.
-- Zonas con mayor oferta.
-- Zonas con mayor demanda.
-- Comparación entre barrios.
-- Tipos de propiedades más publicados.
-- Cambios de precios.
-- Análisis por ciudad.
-
-Clientes posibles:
+El modelo principal pensado es B2B:
 
 - Inmobiliarias.
 - Desarrolladoras.
-- Inversores.
-- Empresas.
-- Consultoras.
-- Medios.
-- Cámaras del sector.
+- Empresas del sector.
+- Analitica de mercado.
 
----
+Los usuarios finales deben recibir una experiencia clara, confiable y util.
 
-### 5. Analítica para inmobiliarias
+## Fuentes posibles de ingreso
 
-Se puede ofrecer información útil para inmobiliarias.
+### Visibilidad para inmobiliarias
 
-Ejemplos:
+- Perfiles destacados.
+- Espacios patrocinados claros.
+- Propiedades destacadas no invasivas.
+- Presencia por zona o ciudad.
 
-- Cuántas personas vieron sus propiedades.
-- Qué propiedades generan más interés.
-- Qué zonas son más buscadas.
-- Qué precios tienen mejor respuesta.
-- Cómo se comparan sus publicaciones con el mercado.
-- Qué propiedades están caras o baratas respecto al promedio.
-- Qué tipo de propiedad tiene más demanda.
+Condicion: la publicidad debe estar identificada y no alterar datos objetivos.
 
----
+### Leads medibles
 
-### 6. Herramientas para inmobiliarias
+Eventos posibles:
 
-A futuro, InmoCapital podría ofrecer herramientas pagas.
+- Click en WhatsApp.
+- Click en telefono.
+- Click en email.
+- Click en publicacion original.
+- Guardado o favorito.
 
-Ejemplos:
+### Reportes de mercado
 
-- Panel de propiedades.
-- Dashboard de leads.
-- Comparador de precios.
-- Recomendador de precio.
-- Alertas de mercado.
-- Análisis de competencia.
-- Reportes automáticos.
-- Integración con CRM.
-- Publicación asistida.
+- Precio promedio por zona.
+- Evolucion de precios.
+- Oferta por tipo de propiedad.
+- Zonas con mayor actividad.
+- Comparacion entre barrios.
 
----
+### Herramientas para inmobiliarias
 
-### 7. Funciones premium para usuarios
+- Panel de leads.
+- Propiedades mas vistas.
+- Comparacion con mercado.
+- Alertas de precio.
+- Recomendaciones basadas en datos.
 
-Aunque el modelo principal sea B2B, también podrían existir funciones premium para usuarios avanzados.
-
-Ejemplos:
+### Funciones premium futuras
 
 - Alertas avanzadas.
-- Comparador completo.
+- Comparador.
+- Analisis de ROI.
+- Exportacion de datos.
 - Historial de precios.
-- Análisis de inversión.
-- ROI estimado.
-- Exportación de datos.
-- Seguimiento de zonas.
-- Reportes personalizados.
-- Asesoría con IA avanzada.
 
----
+## Estado actual
 
-### 8. Datos agregados de mercado
+No se debe monetizar ni lanzar comercialmente antes de:
 
-InmoCapital podría monetizar datos agregados, siempre evitando vender información sensible o personal.
+- Mejorar calidad de datos desde el pipeline.
+- Publicar una tanda controlada de propiedades de maxima calidad.
+- Revisar frontend con datos reales.
+- Completar R6 mobile.
+- Revisar riesgos legales.
 
-Ejemplos:
+## Costos a monitorear
 
-- Tendencias por ciudad.
-- Evolución de precios.
-- Oferta por tipo de propiedad.
-- Variación por barrio.
-- Demanda estimada.
-- Indicadores de mercado.
-
-Importante:
-
-Se deben revisar aspectos legales antes de vender datos.
-
----
-
-## Costos posibles del proyecto
-
-### Costos técnicos
-
-- Dominio.
-- Hosting del frontend.
 - Supabase.
-- Servidores para scraping.
-- Almacenamiento.
-- Procesamiento.
-- APIs externas.
+- Neon.
+- Scraping y Playwright.
 - Geocoding.
-- Monitoreo.
-- Backups.
-- Seguridad.
-
----
-
-### Costos de desarrollo
-
-- Tiempo de programación.
-- Herramientas de IA.
-- Diseño UI/UX.
-- Mantenimiento.
-- Corrección de errores.
-- Testing.
-- Automatizaciones.
-
----
-
-### Costos legales
-
-- Consulta con abogado.
-- Términos y condiciones.
-- Política de privacidad.
-- Revisión del scraping.
-- Revisión de uso de datos.
-- Contratos con inmobiliarias.
-- Protección de marca.
-
----
-
-### Costos comerciales y marketing
-
-- Diseño de marca.
-- Landing page.
-- Redes sociales.
-- Publicidad.
-- Presentaciones comerciales.
-- Material para inmobiliarias.
-- Email marketing.
-- Herramientas de medición.
-- SEO.
-
----
-
-## Costos iniciales esperados
-
-Al inicio, el objetivo debería ser mantener costos bajos.
-
-Posibles costos mínimos:
-
-- Dominio.
-- Hosting económico.
-- Supabase en plan gratuito o bajo costo.
-- Herramientas gratuitas cuando sea posible.
-- Obsidian local gratuito.
-- GitHub gratuito.
-- Google Sheets gratuito.
-
----
-
-## Costos futuros esperados
-
-A medida que InmoCapital crezca, pueden aumentar los costos por:
-
-- Mayor cantidad de scraping.
-- Más almacenamiento.
-- Más consultas a la base de datos.
-- Más usuarios.
-- Más tráfico.
-- Mayor uso de mapas.
-- Mayor uso de IA.
-- Mayor uso de geocoding.
-- Necesidad de servidores.
-- Necesidad de monitoreo.
-
----
-
-## Variables económicas importantes
-
-Para evaluar el negocio hay que medir:
-
-- Cantidad de usuarios.
-- Cantidad de propiedades.
-- Cantidad de inmobiliarias.
-- Cantidad de búsquedas.
-- Cantidad de contactos.
-- Cantidad de leads.
-- Tasa de conversión de visita a contacto.
-- Costo mensual del proyecto.
-- Costo por lead generado.
-- Ingreso por inmobiliaria.
-- Ingreso por plan.
-- Ingreso por reporte.
-- Margen bruto.
-- Retención de inmobiliarias.
-
----
-
-## Métricas clave
-
-### Métricas de uso
-
-- Usuarios únicos.
-- Sesiones.
-- Páginas vistas.
-- Propiedades vistas.
-- Búsquedas realizadas.
-- Filtros usados.
-- Tiempo en plataforma.
-- Usuarios recurrentes.
-
----
-
-### Métricas de leads
-
-- Clicks en WhatsApp.
-- Clicks en teléfono.
-- Clicks en mail.
-- Clicks en publicación original.
-- Contactos iniciados.
-- Leads por inmobiliaria.
-- Leads por propiedad.
-- Leads por ciudad.
-- Leads por tipo de propiedad.
-
----
-
-### Métricas de datos
-
-- Total de propiedades.
-- Propiedades activas.
-- Propiedades con coordenadas.
-- Propiedades con imágenes.
-- Propiedades con precio.
-- Propiedades por ciudad.
-- Propiedades por inmobiliaria.
-- Propiedades duplicadas.
-- Calidad de datos promedio.
-
----
-
-### Métricas comerciales
-
-- Inmobiliarias contactadas.
-- Inmobiliarias interesadas.
-- Inmobiliarias pagas.
-- Ingreso mensual recurrente.
-- Churn de inmobiliarias.
-- Ticket promedio.
-- Costo de adquisición.
-- Valor de vida del cliente.
-
----
-
-## Pricing posible para inmobiliarias
-
-Este pricing es solo una hipótesis inicial y debe validarse.
-
-### Opción 1: Plan mensual simple
-
-- Plan básico.
-- Plan profesional.
-- Plan premium.
-
-Ventaja:
-
-Ingresos recurrentes y previsibles.
-
-Desventaja:
-
-Requiere demostrar valor de forma constante.
-
----
-
-### Opción 2: Cobro por lead
-
-La inmobiliaria paga por contactos generados.
-
-Ventaja:
-
-El valor es más fácil de justificar.
-
-Desventaja:
-
-Puede ser difícil definir qué lead es válido.
-
----
-
-### Opción 3: Publicidad destacada
-
-La inmobiliaria paga por visibilidad.
-
-Ventaja:
-
-Modelo simple y parecido a publicidad tradicional.
-
-Desventaja:
-
-Hay que evitar afectar la confianza del usuario.
-
----
-
-### Opción 4: Reportes pagos
-
-Inmobiliarias, inversores o empresas pagan por reportes de mercado.
-
-Ventaja:
-
-Puede generar ingresos sin depender solo de tráfico masivo.
-
-Desventaja:
-
-Requiere datos de alta calidad y buen análisis.
-
----
-
-### Opción 5: Modelo mixto
-
-Combinar varias fuentes:
-
-- Plan mensual.
-- Leads.
-- Publicidad.
-- Reportes.
-- Herramientas premium.
-
-Ventaja:
-
-Diversifica ingresos.
-
-Desventaja:
-
-Puede ser más complejo de administrar.
-
----
-
-## Recomendación inicial de modelo
-
-La recomendación inicial es empezar con un modelo simple:
-
-1. Plataforma gratuita para usuarios.
-2. Leads medibles para inmobiliarias.
-3. Visibilidad destacada no invasiva.
-4. Reportes de mercado a futuro.
-5. Planes B2B cuando haya datos suficientes.
-
----
-
-## Qué no cobrar al principio
-
-Al inicio no conviene cobrar por:
-
-- Acceso básico de usuarios.
-- Búsqueda simple.
-- Ver mapa.
-- Ver propiedades.
-- Contactar inmobiliarias, al menos hasta validar uso.
-
-Primero hay que generar tráfico, confianza y datos de uso.
-
----
-
-## Qué se puede cobrar primero
-
-Primeras opciones razonables:
-
-- Visibilidad destacada para inmobiliarias.
-- Reportes simples.
-- Planes piloto con inmobiliarias.
-- Métricas de leads.
-- Publicidad no invasiva.
-- Servicios personalizados de análisis.
-
----
-
-## Hipótesis de negocio
-
-Hipótesis iniciales:
-
-- Las inmobiliarias quieren más visibilidad.
-- Las inmobiliarias valoran leads medibles.
-- Los usuarios quieren ahorrar tiempo.
-- Los usuarios necesitan comparar mejor.
-- Los datos inmobiliarios ordenados tienen valor.
-- El mercado necesita más transparencia.
-- Los reportes de mercado pueden ser monetizables.
-- Una plataforma con mapa y datos puede diferenciarse.
-
----
+- Hosting frontend.
+- Almacenamiento de imagenes si se decide cachear.
+- Herramientas de monitoreo.
 
 ## Riesgos financieros
 
-Riesgos principales:
+- Costos de scraping/geocoding mayores al valor generado.
+- Publicar datos de baja calidad y perder confianza.
+- Monetizar demasiado pronto.
+- Depender de pocos clientes B2B.
+- Ofrecer reportes sin suficiente calidad estadistica.
 
-- Que los costos técnicos crezcan antes que los ingresos.
-- Que las inmobiliarias no quieran pagar.
-- Que los leads no sean suficientes.
-- Que el tráfico sea bajo.
-- Que el scraping requiera mucho mantenimiento.
-- Que haya costos legales inesperados.
-- Que el modelo de publicidad afecte la confianza.
-- Que la plataforma tarde mucho en monetizar.
-- Que el mercado no entienda la propuesta de valor.
+## Reglas
 
----
+- No vender exactitud si los datos todavia estan en auditoria.
+- No prometer rentabilidad.
+- No manipular ranking por publicidad sin transparencia.
+- No publicar masivamente solo para mostrar volumen.
 
-## Cómo reducir riesgos financieros
-
-Para reducir riesgos:
-
-- Mantener costos bajos al inicio.
-- Validar interés antes de invertir fuerte.
-- Medir leads desde el principio.
-- Contactar inmobiliarias temprano.
-- Armar pilotos comerciales.
-- Mostrar métricas claras.
-- Crear reportes simples.
-- No depender de una sola fuente de ingresos.
-- Escalar infraestructura de forma gradual.
-- Priorizar ciudades donde haya mayor densidad de datos.
-
----
-
-## Preguntas financieras pendientes
-
-- ¿Cuánto cuesta mantener la plataforma por mes?
-- ¿Cuánto costará correr scraping en escala?
-- ¿Cuánto cuesta geocodificar propiedades?
-- ¿Cuánto pagarían las inmobiliarias por leads?
-- ¿Cuánto pagarían por visibilidad?
-- ¿Cuánto pagarían por reportes?
-- ¿Cuál será el primer producto pago?
-- ¿Cuántas inmobiliarias se necesitan para cubrir costos?
-- ¿Qué ticket mensual sería razonable?
-- ¿Qué métricas hay que mostrar para justificar el cobro?
-
----
-
-## Escenario inicial de monetización
-
-Etapa inicial:
-
-- Usuarios gratis.
-- Inmobiliarias visibles sin cobro fuerte.
-- Medición de leads.
-- Contacto con inmobiliarias.
-- Validación de interés.
-- Reportes internos.
-- Preparación de propuesta comercial.
-
----
-
-## Escenario de monetización futura
-
-Etapa futura:
-
-- Planes mensuales para inmobiliarias.
-- Propiedades destacadas.
-- Reportes pagos.
-- Dashboard de leads.
-- Métricas de mercado.
-- Herramientas para inmobiliarias.
-- Funciones premium para usuarios avanzados.
-
----
-
-## Relación con otras notas
-
-Notas relacionadas:
+## Notas relacionadas
 
 - [[01 - Visión y estrategia]]
-- [[02 - Producto y funcionalidades]]
 - [[06 - Marketing y marca]]
 - [[08 - Legal y riesgos]]
-- [[10 - Decisiones importantes]]
-- [[11 - Pendientes]]
-
----
-
-## Notas generales
-
-InmoCapital tiene potencial económico si logra convertir datos inmobiliarios desordenados en información útil.
-
-La clave no es solo tener propiedades, sino generar valor medible:
-
-- Para usuarios: claridad y ahorro de tiempo.
-- Para inmobiliarias: visibilidad y leads.
-- Para inversores: análisis y oportunidades.
-- Para el mercado: datos más ordenados.
-
-El modelo de negocio debe crecer sin romper la confianza del usuario.
+- [[Politicas de calidad y publicacion]]

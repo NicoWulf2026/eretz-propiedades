@@ -14,7 +14,17 @@ ALLOWED_PROPERTY_TYPES = {
 }
 
 ALLOWED_MONEDAS = {"ARS", "USD"}
-ALLOWED_OPERACIONES = {"alquiler", "venta", "proyecto"}
+# Operaciones reconocidas por InmoCapital (FASE 1 — Sprint A).
+# - consultar: operacion desconocida o no detectada → no rechazar, publicar con consultar
+# - venta_y_alquiler: propiedad publicada simultáneamente como venta y alquiler
+ALLOWED_OPERACIONES = {
+    "venta",
+    "alquiler",
+    "alquiler_temporario",
+    "consultar",
+    "venta_y_alquiler",
+    "proyecto",  # legacy — no eliminar
+}
 
 
 @dataclass

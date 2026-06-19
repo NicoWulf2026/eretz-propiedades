@@ -2,7 +2,7 @@
 
 ## Resumen del día
 
-Hoy se comenzó a ordenar InmoCapital dentro de Obsidian, creando una estructura centralizada para documentar el proyecto.
+Hoy se comenzó a ordenar ERETZ Propiedades dentro de Obsidian, creando una estructura centralizada para documentar el proyecto.
 
 El objetivo fue empezar a usar Obsidian como centro de control del proyecto, separando información estratégica, técnica, comercial, legal, financiera y de seguimiento.
 
@@ -10,7 +10,7 @@ El objetivo fue empezar a usar Obsidian como centro de control del proyecto, sep
 
 ## Qué se hizo hoy
 
-- Se creó la bóveda de Obsidian para InmoCapital.
+- Se creó la bóveda de Obsidian para ERETZ Propiedades.
 - Se creó el panel principal del proyecto.
 - Se creó la nota de estado actual para ChatGPT, Codex o Claude.
 - Se creó la nota de decisiones importantes.
@@ -68,7 +68,7 @@ La función de cada herramienta será:
 
 ## Estado actual del proyecto
 
-InmoCapital está en desarrollo.
+ERETZ Propiedades está en desarrollo.
 
 El proyecto ya tiene:
 
@@ -101,7 +101,7 @@ El proyecto ya tiene:
 - Crear carpetas en Obsidian.
 - Mover cada nota a su carpeta correspondiente.
 - Revisar que el panel principal tenga enlaces correctos.
-- Empezar a usar el registro diario cada vez que se trabaje en InmoCapital.
+- Empezar a usar el registro diario cada vez que se trabaje en ERETZ Propiedades.
 - Retomar el desarrollo técnico del proyecto.
 - Revisar el estado actual del scraping.
 - Revisar últimas corridas y errores.
@@ -125,7 +125,7 @@ Sí hubo aprendizaje inicial sobre el uso de Obsidian:
 
 ## Observaciones
 
-La estructura inicial de Obsidian ya permite que InmoCapital tenga un centro de control claro.
+La estructura inicial de Obsidian ya permite que ERETZ Propiedades tenga un centro de control claro.
 
 A partir de ahora, cada avance importante debería registrarse en alguna de estas notas:
 
@@ -203,7 +203,7 @@ La saturación probablemente viene de:
 
 ## Etapa 1 Neon completada  
   
-Se completó la preparación de Neon como base interna para InmoCapital.  
+Se completó la preparación de Neon como base interna para ERETZ Propiedades.  
   
 Tablas existentes en Neon:  
   

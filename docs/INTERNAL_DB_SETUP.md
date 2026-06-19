@@ -1,6 +1,6 @@
 # Internal DB Setup (Neon u otro Postgres dedicado al scraper)
 
-Guía para preparar y activar la **base interna opcional** de InmoCapital.
+Guía para preparar y activar la **base interna opcional** de ERETZ Propiedades.
 La base interna aloja **solo** las tablas de cola, geocoding cache y staging
 del scraper. La base **pública (Supabase)** sigue siendo la fuente única de
 verdad para `propiedades`, `inmobiliarias_main` y las vistas que consume el

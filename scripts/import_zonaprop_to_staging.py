@@ -7,6 +7,15 @@ No escribe web ni url_listado con perfiles de Zonaprop.
 
 from __future__ import annotations
 
+# === CONGELADO por política ERETZ Propiedades (2026-06-17) ===
+# Todo lo relacionado con Zonaprop/Argenprop (incluido import de discovery) queda
+# congelado hasta autorización explícita. Quitar este guard solo con esa autorización.
+import sys as _sys
+_sys.exit(
+    "CONGELADO (politica ERETZ 2026-06-17): import Zonaprop/Argenprop deshabilitado. "
+    "Requiere autorizacion explicita para reactivar."
+)
+
 import argparse
 import csv
 import json
