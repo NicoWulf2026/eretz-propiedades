@@ -15,3 +15,13 @@ node_modules/
 # Local AI/editor state
 .claude/
 
+# Local artifacts and temp files
+reports/
+backups/
+scripts/_*
+_run_*.py
+_run_*.log
+_deep_scan_results.json
+.env.bak*
+docs/obsidian/.obsidian/
+
