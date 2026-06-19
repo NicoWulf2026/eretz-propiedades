@@ -1,6 +1,6 @@
 # Pendientes de ERETZ Propiedades
 
-Ultima actualizacion: 2026-06-18 (Mini-ciclo 183 completado — cola drenada, pending=0, done=72.890, public.propiedades=104.706)
+Ultima actualizacion: 2026-06-19 (Batch 25 controlado completado — commit 7 validado, pending=0, done=73.414, public.propiedades=105.082)
 
 Ver también: [[Auditoria completa y rebranding ERETZ 2026-06-17]]
 
@@ -264,6 +264,73 @@ en cada fila). Los datos de barrerapropiedades.com ya estaban publicados de ante
 - Cola completamente drenada.
 - No queda ningún staging de `run_id=14` sin publicar.
 - Sin push · sin frontend · sin Neon · sin scraping · sin nuevo batch.
+
+## 🟢 Batch 25 controlado — commit 7 validado (2026-06-19)
+
+**Rama:** `feat/fase-b1-publish-robustez` · **run_id=15** · **Push: no realizado.**
+
+**Objetivo:** validar en producción los cambios del commit 7 (`scraper/models.py`, `scraper/scraper_propiedades.py`, `scraper/geocoder.py`) — normalización de `operacion` y `estado`, fallback `consultar`, detección `venta_y_alquiler`, valores `activa` / `no_detectada_en_ultimo_scraping`.
+
+**Pipeline ejecutado:**
+
+| Fase | Resultado |
+|---|---|
+| FASE 0 — Preflight | supabase=ok · neon=ok |
+| FASE 1 — Create run | run_id=15 · 25 items insertados |
+| FASE 2 — Scraping | **21/25 OK · 4 error** · 4.113 props scrapeadas |
+| FASE 3 — Validate raw | 422 raw → 422 staged · **0 rechazadas** |
+| FASE 3.5 — Geocode | 3 iteraciones · done=72 / failed=68 / skipped=159 |
+| FASE 4 — Build queue | 2 iteraciones · **524 encoladas** (run_latest=15 solo) |
+| FASE 5 — Publish inicial | 5 × 100 = **500 publicadas** · failed=0 · retries=0 |
+| Cierre final (24 pending) | **24/24 publicadas** · failed=0 · retries=0 |
+
+**Métricas finales:**
+
+| Métrica | Valor |
+|---|---|
+| Inmobiliarias intentadas | 25 |
+| Inmobiliarias OK / error | 21 / 4 |
+| Props scrapeadas | 4.113 |
+| Props nuevas en staging | 421 |
+| Props publicadas total | **524** (500 + 24 cierre) |
+| failed | **0** |
+| pending final | **0** |
+| publishing | **0** |
+| publish_queue done | **73.414** |
+| public.propiedades | **105.082** (antes: 104.706, delta+376) |
+| error_log critical | **0** |
+| queries largas | **0** |
+| publishing stuck | **0** |
+| 0 Zonaprop/Argenprop | ✅ |
+| 0 backlog viejo reencolado | ✅ |
+
+**Validación commit 7 — operacion:**
+
+| operacion | staging run_id=15 | delta en public.propiedades |
+|---|---|---|
+| `venta` | 3.823 | +174 |
+| `consultar` | 267 | **+159 ✅** |
+| `alquiler` | 257 | +33 |
+| `venta_y_alquiler` | 6 | **+10 ✅** |
+
+**Validación commit 7 — estado:**
+
+| estado | antes | después | delta |
+|---|---|---|---|
+| `activa` | 103.933 | 104.317 | **+384 ✅** |
+| `no_detectada_en_ultimo_scraping` | 72 | 72 | 0 (correcto) |
+| `desconocida` | 701 | 693 | -8 (reclasificadas a activa) |
+
+**Gates verificados:**
+- `build_queue` usó solo `run_latest run_id=15` (no backlog viejo). ✅
+- Publish robusto B.1: claim atómico, retry_attempts=0, sin filas trabadas. ✅
+- Incompletas no bloqueadas: 0 rechazadas con min_score=0. ✅
+- Duplicados por inmobiliaria preservados (warnings, no errors). ✅
+- `venta_y_alquiler` detectado como issue de validación (4 props) — no como rechazo. ✅
+
+**Nota sobre error_rate 16% (4/25):** esperado para pool `lista_para_batch=false` (lower-priority agencies). Los 4 errors son HTTP/timeout en sitios de menor prioridad, no provienen del código nuevo.
+
+**Restricciones respetadas:** sin push · sin Neon · sin frontend · sin Zonaprop/Argenprop · sin backlog · sin nuevo batch autorizado.
 
 ---
 
