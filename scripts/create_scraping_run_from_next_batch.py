@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -91,6 +92,15 @@ class InternalRunDBClient:
 
     def __init__(self, db_url: str) -> None:
         self.db_url = db_url
+        self.schema = self._internal_db_schema()
+
+    @staticmethod
+    def _internal_db_schema() -> str:
+        """Schema interno. Default 'public' (Neon); 'internal_scraping' para Supabase."""
+        schema = (os.getenv("INTERNAL_DB_SCHEMA", "public").strip() or "public")
+        if not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", schema):
+            raise SystemExit(f"INTERNAL_DB_SCHEMA invalido: {schema!r}")
+        return schema
 
     def _connect(self):
         try:
@@ -101,7 +111,10 @@ class InternalRunDBClient:
                 "USE_INTERNAL_DB=true e INTERNAL_DB_URL esta configurado, "
                 "pero falta instalar psycopg/psycopg-binary."
             ) from exc
-        return psycopg.connect(self.db_url, row_factory=dict_row)
+        conn = psycopg.connect(self.db_url, row_factory=dict_row)
+        with conn.cursor() as cur:
+            cur.execute(f"SET search_path TO {self.schema}")
+        return conn
 
     @staticmethod
     def _json_value(value: Any) -> Any:
@@ -120,11 +133,11 @@ class InternalRunDBClient:
         column_sql = ", ".join(columns)
         suffix = " RETURNING id" if returning else ""
         values = [InternalRunDBClient._json_value(payload[column]) for column in columns]
-        return f"INSERT INTO public.{table} ({column_sql}) VALUES ({placeholders}){suffix}", values
+        return f"INSERT INTO {table} ({column_sql}) VALUES ({placeholders}){suffix}", values
 
     def fetch_existing_active_item_agency_ids(self) -> Set[int]:
         query = (
-            "SELECT inmobiliaria_id FROM public.scraping_run_items "
+            "SELECT inmobiliaria_id FROM scraping_run_items "
             "WHERE status IN ('pending', 'running') ORDER BY created_at ASC"
         )
         result: Set[int] = set()
@@ -163,7 +176,7 @@ class InternalRunDBClient:
                         columns = list(first.keys())
                         placeholders = ", ".join(["%s"] * len(columns))
                         column_sql = ", ".join(columns)
-                        sql = f"INSERT INTO public.scraping_run_items ({column_sql}) VALUES ({placeholders})"
+                        sql = f"INSERT INTO scraping_run_items ({column_sql}) VALUES ({placeholders})"
                         values = [
                             [self._json_value(dict(item).get(column)) for column in columns]
                             for item in batch
@@ -286,6 +299,12 @@ _CANDIDATE_ORDER = (
     "total_propiedades_normalizado.desc.nullslast,"
     "inmobiliaria_id.asc"
 )
+# Columnas a leer desde inmobiliarias_main en el fallback de --inmobiliaria-id
+_MAIN_TABLE_SELECT = (
+    "id,nombre,ciudad,provincia,pais,web,url_listado,"
+    "cms_detectado,estrategia_scraping,total_propiedades,"
+    "tipo_paginacion,tiene_antibot,activa,sitio_activo"
+)
 
 
 def _filter_and_collect(
@@ -321,7 +340,12 @@ def fetch_candidates(
     source_view: str,
     active_agency_ids: Set[int],
     include_new: bool = False,
+    provincia: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
+    provincia_filter: Dict[str, str] = (
+        {"provincia": f"eq.{provincia}"} if provincia else {}
+    )
+
     # Primera pasada: agencias lista_para_batch=true
     rows = fetch_all(
         session,
@@ -332,6 +356,7 @@ def fetch_candidates(
             "select": _CANDIDATE_SELECT,
             "lista_para_batch": "eq.true",
             "order": _CANDIDATE_ORDER,
+            **provincia_filter,
         },
         page_size=500,
         max_rows=max(desired_limit * 5, desired_limit + 100),
@@ -354,6 +379,7 @@ def fetch_candidates(
                 "tiene_web": "eq.true",
                 "tiene_antibot": "eq.false",
                 "order": _CANDIDATE_ORDER,
+                **provincia_filter,
             },
             page_size=500,
             max_rows=max(remaining * 5, remaining + 50),
@@ -361,6 +387,98 @@ def fetch_candidates(
         _filter_and_collect(new_rows, selected, seen, active_agency_ids, desired_limit)
 
     return selected
+
+
+def fetch_single_from_main_table(
+    session: requests.Session,
+    base_url: str,
+    key: str,
+    inmobiliaria_id: int,
+) -> Optional[Dict[str, Any]]:
+    """Fallback: busca una agencia directamente en inmobiliarias_main.
+    Se usa cuando la agencia no aparece en la vista (p.ej. proximo_scraping en el futuro).
+    Valida activa=True, URL presente y sin antibot antes de retornar el candidato.
+    """
+    rows = fetch_all(
+        session,
+        base_url,
+        key,
+        "inmobiliarias_main",
+        params={
+            "select": _MAIN_TABLE_SELECT,
+            "id": f"eq.{inmobiliaria_id}",
+        },
+        page_size=1,
+        max_rows=1,
+    )
+    if not rows:
+        return None
+    row = rows[0]
+    if not row.get("activa"):
+        print(f"  [fallback] inmobiliaria_id={inmobiliaria_id}: activa=False en inmobiliarias_main, omitiendo.")
+        return None
+    if row.get("tiene_antibot"):
+        print(f"  [fallback] inmobiliaria_id={inmobiliaria_id}: tiene_antibot=True, omitiendo.")
+        return None
+    url = row.get("url_listado") or row.get("web") or ""
+    if not url:
+        print(f"  [fallback] inmobiliaria_id={inmobiliaria_id}: sin URL valida en inmobiliarias_main, omitiendo.")
+        return None
+    # Construir candidato compatible con el formato de _CANDIDATE_SELECT
+    return {
+        "inmobiliaria_id": row["id"],
+        "nombre": row.get("nombre"),
+        "ciudad": row.get("ciudad"),
+        "provincia": row.get("provincia"),
+        "pais": row.get("pais"),
+        "web": row.get("web"),
+        "url_listado": row.get("url_listado"),
+        "cms_detectado": row.get("cms_detectado"),
+        "estrategia_scraping": row.get("estrategia_scraping"),
+        "total_propiedades": row.get("total_propiedades"),
+        "total_propiedades_normalizado": None,
+        "prioridad_scraping_score": None,
+        "prioridad_scraping": None,
+        "lista_para_batch": False,
+        "tipo_paginacion": row.get("tipo_paginacion"),
+        "necesidades_detectadas": None,
+        "recomendacion": None,
+        "tiene_antibot": row.get("tiene_antibot"),
+    }
+
+
+def fetch_single_candidate(
+    session: requests.Session,
+    base_url: str,
+    key: str,
+    source_view: str,
+    inmobiliaria_id: int,
+) -> Optional[Dict[str, Any]]:
+    """Busca una agencia especifica en la vista por inmobiliaria_id.
+    Si no aparece en la vista (p.ej. proximo_scraping en el futuro), hace fallback
+    a inmobiliarias_main para permitir corridas forzadas con --inmobiliaria-id.
+    """
+    rows = fetch_all(
+        session,
+        base_url,
+        key,
+        source_view,
+        params={
+            "select": _CANDIDATE_SELECT,
+            "inmobiliaria_id": f"eq.{inmobiliaria_id}",
+        },
+        page_size=1,
+        max_rows=1,
+    )
+    if rows:
+        return rows[0]
+    # Fallback: agencia no aparece en la vista (p.ej. proximo_scraping futuro).
+    # Buscar directamente en inmobiliarias_main para soportar corridas con --inmobiliaria-id.
+    print(
+        f"  [fallback] inmobiliaria_id={inmobiliaria_id} no encontrada en '{source_view}'. "
+        "Buscando en inmobiliarias_main..."
+    )
+    return fetch_single_from_main_table(session, base_url, key, inmobiliaria_id)
 
 
 def build_run_payload(limit: int, run_type: str, source_view: str, notes: str) -> Dict[str, Any]:
@@ -490,9 +608,21 @@ def main() -> None:
         "--include-new", action="store_true",
         help="Complementar con agencias nuevas (lista_para_batch=false, tienen web, sin antibot) si no hay suficientes listas",
     )
+    parser.add_argument(
+        "--provincia",
+        default=None,
+        help="Filtrar candidatos por provincia (ej: 'Santa Fe', 'Mendoza'). Sin filtro por defecto.",
+    )
+    parser.add_argument(
+        "--inmobiliaria-id",
+        type=int,
+        default=None,
+        metavar="ID",
+        help="Seleccionar exclusivamente esta inmobiliaria (ignora --limit, --include-new, --provincia).",
+    )
     args = parser.parse_args()
 
-    if args.limit <= 0:
+    if args.inmobiliaria_id is None and args.limit <= 0:
         raise SystemExit("--limit debe ser mayor a 0")
     if args.insert_batch_size <= 0:
         raise SystemExit("--insert-batch-size debe ser mayor a 0")
@@ -515,21 +645,52 @@ def main() -> None:
     else:
         print("[internal-db] disabled: creating queue in Supabase")
         active_agency_ids = fetch_existing_active_item_agency_ids(session, base_url, key)
-    candidates = fetch_candidates(
-        session,
-        base_url,
-        key,
-        desired_limit=args.limit,
-        source_view=args.source_view,
-        active_agency_ids=active_agency_ids,
-        include_new=args.include_new,
-    )
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    run_type = args.run_type or f"auto_batch_{args.limit}_{ts}"
-    notes = args.notes or (
-        f"Tanda automatica de {args.limit} inmobiliarias desde {args.source_view}; "
-        "IDs canonicos inmobiliarias_main.id."
-    )
+
+    if args.inmobiliaria_id is not None:
+        # Modo de seleccion directa: ignora prioridad, limit, include-new y provincia
+        single = fetch_single_candidate(
+            session, base_url, key, args.source_view, args.inmobiliaria_id
+        )
+        if not single:
+            raise SystemExit(
+                f"inmobiliaria_id={args.inmobiliaria_id} no encontrada en '{args.source_view}' "
+                "ni en inmobiliarias_main. Verificar que existe, activa=True, tiene URL "
+                "y no tiene antibot."
+            )
+        url = single.get("url_listado") or single.get("web") or ""
+        if not url:
+            raise SystemExit(
+                f"inmobiliaria_id={args.inmobiliaria_id} no tiene URL valida en la vista."
+            )
+        if args.inmobiliaria_id in active_agency_ids:
+            raise SystemExit(
+                f"inmobiliaria_id={args.inmobiliaria_id} ya tiene un run pending/running activo. "
+                "Esperar a que termine o cancelarlo antes de crear uno nuevo."
+            )
+        candidates = [single]
+        run_type = args.run_type or f"single_{args.inmobiliaria_id}_{ts}"
+        notes = args.notes or (
+            f"Run individual para inmobiliaria_id={args.inmobiliaria_id} "
+            f"({single.get('nombre') or ''}) desde {args.source_view}."
+        )
+    else:
+        candidates = fetch_candidates(
+            session,
+            base_url,
+            key,
+            desired_limit=args.limit,
+            source_view=args.source_view,
+            active_agency_ids=active_agency_ids,
+            include_new=args.include_new,
+            provincia=args.provincia,
+        )
+        run_type = args.run_type or f"auto_batch_{args.limit}_{ts}"
+        notes = args.notes or (
+            f"Tanda automatica de {args.limit} inmobiliarias desde {args.source_view}; "
+            "IDs canonicos inmobiliarias_main.id."
+        )
+
     run_payload = build_run_payload(len(candidates), run_type, args.source_view, notes)
 
     print("=" * 72)
@@ -537,22 +698,27 @@ def main() -> None:
     print(f"mode={'commit' if args.commit else 'dry-run'}")
     print(f"queue_target={'internal_db' if internal_client else 'supabase'}")
     print(f"source_view={args.source_view}")
-    print(f"requested_limit={args.limit}")
+    if args.inmobiliaria_id is not None:
+        print(f"inmobiliaria_id_filter={args.inmobiliaria_id}")
+    else:
+        print(f"requested_limit={args.limit}")
+        print(f"include_new={args.include_new}")
+        print(f"provincia_filter={args.provincia or 'todas'}")
     print(f"active_pending_or_running_agencies={len(active_agency_ids)}")
-    print(f"include_new={args.include_new}")
     print(f"selected_candidates={len(candidates)}")
     print(f"run_type={run_type}")
     print("-" * 72)
     for row in candidates[:20]:
+        ciudad_prov = f"{row.get('ciudad') or '-'}/{row.get('provincia') or '-'}"
         print(
             f"{row.get('inmobiliaria_id')} | {row.get('nombre')} | "
-            f"{row.get('cms_detectado') or '-'} | score={row.get('prioridad_scraping_score')} | "
+            f"{ciudad_prov} | {row.get('cms_detectado') or '-'} | "
             f"web={row.get('url_listado') or row.get('web')}"
         )
     if len(candidates) > 20:
         print(f"... {len(candidates) - 20} mas")
 
-    if len(candidates) < args.limit:
+    if args.inmobiliaria_id is None and len(candidates) < args.limit:
         print(f"WARNING: solo hay {len(candidates)} candidatos disponibles para limit={args.limit}.")
 
     if args.dry_run:

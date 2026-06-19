@@ -82,7 +82,7 @@ SELECT
   s.validation_score,
   s.geocoding_status,
   s.status
-FROM public.propiedades_staging
+FROM propiedades_staging
 WHERE s.geocoding_status = 'pending'
   AND s.status = 'staging'
 ORDER BY s.validation_score DESC, s.id ASC
@@ -111,9 +111,9 @@ SELECT
   i.ciudad AS inmobiliaria_ciudad,
   i.provincia AS inmobiliaria_provincia,
   i.pais AS inmobiliaria_pais
-FROM public.propiedades_staging s
-LEFT JOIN public.propiedades_raw r ON r.id = s.raw_id
-LEFT JOIN public.inmobiliarias_staging i ON i.id = s.inmobiliaria_id
+FROM propiedades_staging s
+LEFT JOIN propiedades_raw r ON r.id = s.raw_id
+LEFT JOIN inmobiliarias_staging i ON i.id = s.inmobiliaria_id
 """
 
 SOURCE_FILTERS = {
@@ -123,6 +123,14 @@ SOURCE_FILTERS = {
         "scripts/import_captured_props_to_neon.py",
     ),
 }
+
+# FASE 1 Sprint B — Fallback de ciudad/provincia para lotes específicos.
+# Se setea desde --fallback-city / --fallback-province en main().
+# Usado como último recurso en infer_location_context_from_raw() cuando
+# la prop y la inmobiliaria no tienen ciudad/provincia.
+# Ejemplo de uso: geocodificar Angelina (General Alvear) sin modificar el schema.
+_BATCH_FALLBACK_CITY: Optional[str] = None
+_BATCH_FALLBACK_PROVINCE: Optional[str] = None
 
 
 def load_env_file(path: Path) -> None:
@@ -161,13 +169,24 @@ def internal_db_config() -> str:
     return db_url
 
 
+def internal_db_schema() -> str:
+    """Schema de las tablas del pipeline.
+
+    Default 'public' (Neon dedicado). 'internal_scraping' para Supabase Pro.
+    """
+    schema = (os.getenv("INTERNAL_DB_SCHEMA", "public").strip() or "public")
+    if not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", schema):
+        raise SystemExit(f"INTERNAL_DB_SCHEMA invalido: {schema!r}")
+    return schema
+
+
 def connect_internal_db(db_url: str):
     try:
         import psycopg  # type: ignore
         from psycopg.rows import dict_row  # type: ignore
     except ImportError as exc:
         raise RuntimeError("Falta instalar psycopg/psycopg-binary para usar INTERNAL_DB_URL.") from exc
-    return psycopg.connect(
+    conn = psycopg.connect(
         db_url,
         row_factory=dict_row,
         keepalives=1,
@@ -176,6 +195,9 @@ def connect_internal_db(db_url: str):
         keepalives_count=5,
         connect_timeout=30,
     )
+    with conn.cursor() as cur:
+        cur.execute(f"SET search_path TO {internal_db_schema()}")
+    return conn
 
 
 def _jsonb(value: Any):
@@ -288,6 +310,13 @@ def infer_location_context_from_raw(staging: Dict[str, Any]) -> Tuple[Optional[s
         return "Mendoza", "Mendoza"
     if re.search(r"\btandil\b", context_text):
         return "Tandil", "Buenos Aires"
+    if re.search(r"\bsauce\s+viejo\b", context_text):
+        return "Sauce Viejo", "Santa Fe"
+
+    # FASE 1 Sprint B: fallback global de lote (--fallback-city / --fallback-province).
+    # Solo actúa cuando ninguna otra fuente proveyó ciudad/provincia.
+    if _BATCH_FALLBACK_CITY or _BATCH_FALLBACK_PROVINCE:
+        return _BATCH_FALLBACK_CITY, _BATCH_FALLBACK_PROVINCE
 
     return None, None
 
@@ -557,8 +586,8 @@ def fetch_source_geocoding_status(cur, source: Optional[str], limit: int = 1000)
     cur.execute(
         f"""
         SELECT s.geocoding_status
-        FROM public.propiedades_staging s
-        LEFT JOIN public.propiedades_raw r ON r.id = s.raw_id
+        FROM propiedades_staging s
+        LEFT JOIN propiedades_raw r ON r.id = s.raw_id
         {join_sql}
         {where_sql}
         ORDER BY s.id ASC
@@ -573,7 +602,7 @@ def geocoding_result_exists(cur, propiedad_id: Any, direccion_geocoding: str) ->
     cur.execute(
         """
         SELECT 1
-        FROM public.geocoding_results
+        FROM geocoding_results
         WHERE propiedad_id = %s
           AND direccion_geocoding = %s
         LIMIT 1
@@ -586,7 +615,7 @@ def geocoding_result_exists(cur, propiedad_id: Any, direccion_geocoding: str) ->
 def insert_geocoding_result(cur, payload: Dict[str, Any]) -> None:
     cur.execute(
         """
-        INSERT INTO public.geocoding_results (
+        INSERT INTO geocoding_results (
             propiedad_id,
             direccion_geocoding,
             latitud,
@@ -621,7 +650,7 @@ def update_staging_geocoding(
 ) -> None:
     cur.execute(
         """
-        UPDATE public.propiedades_staging
+        UPDATE propiedades_staging
         SET latitud = %s,
             longitud = %s,
             geocoding_status = %s
@@ -860,6 +889,22 @@ def main() -> None:
     parser.add_argument("--report", type=Path, help="Ruta de reporte markdown")
     parser.add_argument("--dry-run", action="store_true", help="Leer y mostrar acciones sin llamar Nominatim ni escribir")
     parser.add_argument("--commit", action="store_true", help="Geocodificar y persistir en Neon")
+    parser.add_argument(
+        "--fallback-city",
+        default=None,
+        help=(
+            "FASE 1 Sprint B: ciudad de contexto para props sin ciudad (ej: 'General Alvear'). "
+            "Solo se aplica cuando la prop y la inmobiliaria no tienen ciudad propia."
+        ),
+    )
+    parser.add_argument(
+        "--fallback-province",
+        default=None,
+        help=(
+            "FASE 1 Sprint B: provincia de contexto para props sin provincia (ej: 'Mendoza'). "
+            "Usar junto con --fallback-city."
+        ),
+    )
     args = parser.parse_args()
 
     if args.limit <= 0:
@@ -889,6 +934,15 @@ def main() -> None:
         if not target_ids:
             raise SystemExit(f"--ids-file no contiene staging_id validos: {ids_path}")
         print(f"ids_file={ids_path} ({len(target_ids)} IDs cargados)")
+
+    # FASE 1 Sprint B: activar fallback de ciudad/provincia si se proveyeron args.
+    global _BATCH_FALLBACK_CITY, _BATCH_FALLBACK_PROVINCE
+    if args.fallback_city:
+        _BATCH_FALLBACK_CITY = clean_text(args.fallback_city)
+        print(f"fallback_city={_BATCH_FALLBACK_CITY!r}")
+    if args.fallback_province:
+        _BATCH_FALLBACK_PROVINCE = clean_text(args.fallback_province)
+        print(f"fallback_province={_BATCH_FALLBACK_PROVINCE!r}")
 
     db_url = internal_db_config()
 

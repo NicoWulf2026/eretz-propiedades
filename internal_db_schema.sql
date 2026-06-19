@@ -463,6 +463,9 @@ CREATE TABLE IF NOT EXISTS public.propiedades_raw (
     superficie_total      NUMERIC,
     superficie_cubierta   NUMERIC,
     tipo_propiedad        TEXT,
+    -- Valores reconocidos de operacion (validados en código, no en constraint SQL):
+    -- venta | alquiler | alquiler_temporario | consultar | venta_y_alquiler
+    -- "consultar" = operacion desconocida (FASE 1: no rechazar por operacion faltante)
     operacion             TEXT,
     url                   TEXT,
     url_normalizada       TEXT,
@@ -510,6 +513,9 @@ CREATE TABLE IF NOT EXISTS public.propiedades_staging (
     superficie_total      NUMERIC,
     superficie_cubierta   NUMERIC,
     tipo_propiedad        TEXT,
+    -- Valores reconocidos de operacion (validados en código, no en constraint SQL):
+    -- venta | alquiler | alquiler_temporario | consultar | venta_y_alquiler
+    -- "consultar" = operacion desconocida (FASE 1: no rechazar por operacion faltante)
     operacion             TEXT,
     url                   TEXT,
     url_normalizada       TEXT,

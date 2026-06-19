@@ -55,7 +55,7 @@ SELECT
   longitud,
   imagenes,
   datos_extra
-FROM public.propiedades_raw
+FROM propiedades_raw
 WHERE status = 'raw'
 ORDER BY id ASC
 LIMIT %s
@@ -86,7 +86,7 @@ SELECT
   longitud,
   imagenes,
   datos_extra
-FROM public.propiedades_raw
+FROM propiedades_raw
 """
 
 SOURCE_FILTERS = {
@@ -232,13 +232,24 @@ def internal_db_config() -> str:
     return db_url
 
 
+def internal_db_schema() -> str:
+    """Schema de las tablas del pipeline.
+
+    Default 'public' (Neon dedicado). 'internal_scraping' para Supabase Pro.
+    """
+    schema = (os.getenv("INTERNAL_DB_SCHEMA", "public").strip() or "public")
+    if not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", schema):
+        raise SystemExit(f"INTERNAL_DB_SCHEMA invalido: {schema!r}")
+    return schema
+
+
 def connect_internal_db(db_url: str):
     try:
         import psycopg  # type: ignore
         from psycopg.rows import dict_row  # type: ignore
     except ImportError as exc:
         raise RuntimeError("Falta instalar psycopg/psycopg-binary para usar INTERNAL_DB_URL.") from exc
-    return psycopg.connect(
+    conn = psycopg.connect(
         db_url,
         row_factory=dict_row,
         keepalives=1,
@@ -247,6 +258,9 @@ def connect_internal_db(db_url: str):
         keepalives_count=5,
         connect_timeout=30,
     )
+    with conn.cursor() as cur:
+        cur.execute(f"SET search_path TO {internal_db_schema()}")
+    return conn
 
 
 def json_value(value: Any) -> Any:
@@ -285,15 +299,35 @@ def to_float(value: Any) -> Optional[float]:
     return float(normalized)
 
 
-def normalize_operation(value: Any) -> Optional[str]:
+_VALID_OPERATIONS = {"venta", "alquiler", "alquiler_temporario", "consultar", "venta_y_alquiler"}
+
+
+def normalize_operation(value: Any) -> str:
+    """Normaliza la operacion de una propiedad.
+
+    FASE 1 — Sprint A: nunca retorna None.
+    - Valor vacío/None → "consultar"
+    - Valor reconocido por OPERACION_MAP → mapped value
+    - Señales de venta Y alquiler simultáneos → "venta_y_alquiler"
+    - Valor no reconocido → "consultar"  (antes: hard reject — eliminado por política FASE 1)
+    """
     cleaned = clean_text(value)
     if not cleaned:
-        return None
+        return "consultar"
     key = re.sub(r"\s+", " ", cleaned.lower())
-    if key in {"venta", "alquiler", "alquiler_temporario"}:
+    # Valores canónicos directos (incluyendo los nuevos)
+    if key in _VALID_OPERATIONS:
         return key
+    # Lookup en OPERACION_MAP (importado del scraper o fallback inline)
     mapped = OPERACION_MAP.get(key)
-    return mapped if mapped in {"venta", "alquiler", "alquiler_temporario"} else None
+    if mapped in _VALID_OPERATIONS:
+        return mapped
+    # Detectar señal de venta Y alquiler simultáneos en el mismo string
+    _has_venta = any(k in key for k in ("venta", "sale", "sell", "compra", "en venta", "for sale"))
+    _has_alquiler = any(k in key for k in ("alquiler", "rent", "rental", "en alquiler", "for rent"))
+    if _has_venta and _has_alquiler:
+        return "venta_y_alquiler"
+    return "consultar"
 
 
 GARBAGE_ADDRESS_PATTERNS = [
@@ -565,7 +599,7 @@ def staging_duplicate_exists(cur, hash_dedup: str) -> bool:
     cur.execute(
         """
         SELECT id
-        FROM public.propiedades_staging
+        FROM propiedades_staging
         WHERE hash_dedup = %s
           AND status != 'rejected'
         LIMIT 1
@@ -599,8 +633,9 @@ def build_validation(cur, row: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]]
         hard_issues.append(issue("missing_url", f"raw_id={raw_id} sin url normalizable"))
 
     titulo = clean_text(row.get("titulo"))
-    if not titulo:
-        hard_issues.append(issue("missing_title", f"raw_id={raw_id} sin titulo"))
+    # missing_title ya NO es hard reject (regla de negocio: incompleto no es rechazo).
+    # El título faltante se resuelve con un fallback más abajo, una vez disponibles
+    # tipo_propiedad / ciudad / provincia. Solo se registra como soft issue.
 
     precio_raw = row.get("precio")
     precio_present = precio_raw is not None and str(precio_raw).strip() != ""
@@ -628,8 +663,20 @@ def build_validation(cur, row: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]]
         hard_issues.append(issue("invalid_currency", f"moneda={moneda}"))
 
     operacion = normalize_operation(row.get("operacion"))
-    if not operacion:
-        hard_issues.append(issue("invalid_operation", f"operacion={row.get('operacion')}"))
+    # FASE 1 — Sprint A: normalize_operation() nunca retorna None/vacío.
+    # Si la operacion original es desconocida, se normaliza a "consultar" (no se rechaza).
+    # Se registra como soft issue para auditoría.
+    _operacion_original = clean_text(row.get("operacion"))
+    if operacion == "consultar" and _operacion_original and _operacion_original.lower() != "consultar":
+        soft_issues.append(issue(
+            "operacion_normalizada_consultar",
+            f"original={_operacion_original!r} no reconocida → consultar",
+        ))
+    elif operacion == "venta_y_alquiler":
+        soft_issues.append(issue(
+            "operacion_venta_y_alquiler",
+            f"original={_operacion_original!r} → señales de venta+alquiler detectadas",
+        ))
 
     if hash_dedup and staging_duplicate_exists(cur, hash_dedup):
         duplicate = True
@@ -647,6 +694,22 @@ def build_validation(cur, row: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]]
     if not tipo_propiedad:
         validation_score -= 15
         soft_issues.append(issue("missing_type", "sin tipo_propiedad"))
+
+    # Fallback de título cuando viene vacío (no rechaza; registra soft issue).
+    # Prioridad: {tipo} en {ciudad} → {tipo} en {provincia} → Propiedad en {ciudad}
+    #            → "Propiedad sin título".
+    if not titulo:
+        _tipo_label = (tipo_propiedad or "").strip().capitalize()
+        if _tipo_label and ciudad:
+            titulo = f"{_tipo_label} en {ciudad}"
+        elif _tipo_label and provincia:
+            titulo = f"{_tipo_label} en {provincia}"
+        elif ciudad:
+            titulo = f"Propiedad en {ciudad}"
+        else:
+            titulo = "Propiedad sin título"
+        validation_score -= 5
+        soft_issues.append(issue("missing_title", f"raw_id={raw_id} sin titulo → fallback={titulo!r}"))
 
     imagenes = clean_images(row.get("imagenes"))
     if not imagenes:
@@ -728,7 +791,7 @@ def insert_staging(cur, staging_row: Dict[str, Any]) -> None:
     columns = ", ".join(STAGING_COLUMNS)
     values = [json_value(staging_row.get(column)) for column in STAGING_COLUMNS]
     cur.execute(
-        f"INSERT INTO public.propiedades_staging ({columns}) VALUES ({placeholders})",
+        f"INSERT INTO propiedades_staging ({columns}) VALUES ({placeholders})",
         values,
     )
 
@@ -737,7 +800,7 @@ def insert_issues(cur, raw_id: Any, issues: List[Dict[str, str]]) -> None:
     for item in issues:
         cur.execute(
             """
-            INSERT INTO public.data_quality_issues (raw_id, issue_type, issue_detail)
+            INSERT INTO data_quality_issues (raw_id, issue_type, issue_detail)
             VALUES (%s, %s, %s)
             """,
             [raw_id, item["issue_type"], item["issue_detail"]],
@@ -746,7 +809,7 @@ def insert_issues(cur, raw_id: Any, issues: List[Dict[str, str]]) -> None:
 
 def update_raw_status(cur, raw_id: Any, status: str) -> None:
     cur.execute(
-        "UPDATE public.propiedades_raw SET status = %s WHERE id = %s",
+        "UPDATE propiedades_raw SET status = %s WHERE id = %s",
         [status, raw_id],
     )
 
@@ -831,7 +894,10 @@ def render_report(summary: Dict[str, Any]) -> str:
         "missing_title",
         "invalid_price",
         "invalid_currency",
-        "invalid_operation",
+        # FASE 1 — Sprint A: invalid_operation ya NO es hard reject.
+        # Se muestra en critical_keys para visibilidad, pero no rechaza la prop.
+        "operacion_normalizada_consultar",
+        "operacion_venta_y_alquiler",
         "duplicate",
     }
     critical_counts = {key: value for key, value in summary["issue_counts"].items() if key in critical_keys}
@@ -841,7 +907,7 @@ def render_report(summary: Dict[str, Any]) -> str:
 Fecha: {summary['timestamp']}
 Modo: {summary['mode']}
 Origen: {summary['source'] or 'all_raw'}
-Destino: public.propiedades_staging
+Destino: propiedades_staging
 
 ## Resumen
 

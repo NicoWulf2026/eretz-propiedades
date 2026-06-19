@@ -78,13 +78,29 @@ def config() -> Tuple[str, str, str]:
     return supabase_url, supabase_key, internal_db_url
 
 
+def internal_db_schema() -> str:
+    """Schema de las tablas del pipeline.
+
+    Default 'public' (Neon dedicado). 'internal_scraping' para Supabase Pro.
+    Se valida como identificador simple para usarlo en SET search_path.
+    """
+    schema = (os.getenv("INTERNAL_DB_SCHEMA", "public").strip() or "public")
+    if not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", schema):
+        raise SystemExit(f"INTERNAL_DB_SCHEMA invalido: {schema!r}")
+    return schema
+
+
 def connect_internal_db(db_url: str):
     try:
         import psycopg  # type: ignore
         from psycopg.rows import dict_row  # type: ignore
     except ImportError as exc:
         raise RuntimeError("Falta instalar psycopg/psycopg-binary para usar INTERNAL_DB_URL.") from exc
-    return psycopg.connect(db_url, row_factory=dict_row)
+    conn = psycopg.connect(db_url, row_factory=dict_row)
+    # Las queries del pipeline usan nombres sin calificar; search_path elige schema.
+    with conn.cursor() as cur:
+        cur.execute(f"SET search_path TO {internal_db_schema()}")
+    return conn
 
 
 def truncate(text: str, limit: int = LOG_LIMIT) -> str:
@@ -122,7 +138,18 @@ def pipeline_env(internal_db_url: str) -> Dict[str, str]:
     env = os.environ.copy()
     env["USE_INTERNAL_DB"] = "true"
     env["INTERNAL_DB_URL"] = internal_db_url
+    # Propagar el schema a los subprocesos (scraper, validate, build-queue, ...)
+    env["INTERNAL_DB_SCHEMA"] = internal_db_schema()
     return env
+
+
+class StepTimeoutError(RuntimeError):
+    """Una fase (subprocess) excedió su timeout.
+
+    Hereda de RuntimeError: el manejo genérico de errores del pipeline lo trata
+    igual que antes. Solo la FASE 2 lo captura específicamente para decidir si
+    continuar (si el scraping_run ya quedó finished) o abortar.
+    """
 
 
 def run_step(
@@ -152,7 +179,7 @@ def run_step(
             print(f"[{label}] stdout:\n{stdout}")
         if stderr:
             print(f"[{label}] stderr:\n{stderr}")
-        raise RuntimeError(f"{label} timeout despues de {timeout}s") from exc
+        raise StepTimeoutError(f"{label} timeout despues de {timeout}s") from exc
     if result.stdout:
         print(f"[{label}] stdout:\n{truncate(result.stdout)}")
     if result.stderr:
@@ -229,14 +256,14 @@ def preflight_neon(cur) -> None:
 
 
 def fetch_stuck(cur, table: str, status: str) -> List[int]:
-    cur.execute(f"SELECT id FROM public.{table} WHERE status = %s LIMIT 5", [status])
+    cur.execute(f"SELECT id FROM {table} WHERE status = %s LIMIT 5", [status])
     return [int(row["id"]) for row in cur.fetchall()]
 
 
 def reclaim_stale(cur) -> Tuple[int, int]:
     cur.execute(
         """
-        UPDATE public.scraping_run_items
+        UPDATE scraping_run_items
         SET status = 'pending',
             updated_at = now()
         WHERE status = 'running'
@@ -247,7 +274,7 @@ def reclaim_stale(cur) -> Tuple[int, int]:
     scraping_reset = len(cur.fetchall())
     cur.execute(
         """
-        UPDATE public.publish_queue
+        UPDATE publish_queue
         SET status = 'pending',
             error_message = NULL
         WHERE status = 'publishing'
@@ -305,7 +332,7 @@ def load_scraping_run_summary(cur, run_id: int) -> Dict[str, Any]:
           total_propiedades_nuevas,
           total_propiedades_actualizadas,
           duration_seconds
-        FROM public.scraping_runs
+        FROM scraping_runs
         WHERE id = %s
         LIMIT 1
         """,
@@ -343,7 +370,7 @@ def upsert_daily_summary(
     updates = ", ".join(f"{column} = EXCLUDED.{column}" for column in columns if column != "run_date")
     cur.execute(
         f"""
-        INSERT INTO public.daily_update_summary ({', '.join(columns)})
+        INSERT INTO daily_update_summary ({', '.join(columns)})
         VALUES ({placeholders})
         ON CONFLICT (run_date) DO UPDATE SET {updates}
         """,
@@ -428,6 +455,7 @@ def print_dry_run_plan(args: argparse.Namespace, run_day: date) -> None:
     print(f"validate_limit={args.validate_limit}")
     print(f"geocode_limit={args.geocode_limit}")
     print(f"max_geocode_requests={args.max_geocode_requests}")
+    print(f"geocode_timeout={args.geocode_timeout}")
     print(f"queue_limit={args.queue_limit}")
     print(f"publish_limit={args.publish_limit}")
     print(f"max_validate_iterations={args.max_validate_iterations}")
@@ -446,6 +474,13 @@ def print_dry_run_plan(args: argparse.Namespace, run_day: date) -> None:
     print("-" * 72)
     print_command("FASE 1 create-queue", create_cmd)
     print_command("FASE 2 scraper", scrape_cmd)
+    if args.with_deactivations:
+        print_command(
+            "FASE 2.5 enqueue-deactivations",
+            [sys.executable, "scripts/enqueue_deactivations.py", "--all-from-run", "{RUN_ID}", "--commit"],
+        )
+    else:
+        print("FASE 2.5 - DESACTIVACIONES: deshabilitado (usar --with-deactivations para activar)")
     print_command("FASE 3 validate-raw", validate_cmd)
     print("FASE 3.5 - GEOCODING STAGING")
     print_command("FASE 3.5 geocode-staging", geocode_cmd)
@@ -468,20 +503,27 @@ def main() -> None:
     parser.add_argument("--max-validate-iterations", type=int, default=5)
     parser.add_argument("--max-queue-iterations", type=int, default=5)
     parser.add_argument("--max-publish-iterations", type=int, default=5)
-    parser.add_argument("--min-score", type=int, default=60)
+    parser.add_argument("--min-score", type=int, default=0, help="Score minimo para encolar/publicar (0 = publicar todas las props validas)")
     parser.add_argument("--publish-sleep", type=float, default=1.5)
     parser.add_argument("--phase-sleep", type=float, default=5)
     parser.add_argument("--step-timeout", type=int, default=600)
+    parser.add_argument("--geocode-timeout", type=int, default=1800, help="Timeout en segundos para FASE 3.5 geocoding (default 1800)")
     parser.add_argument("--scraper-timeout", type=int, default=7200)
     parser.add_argument("--max-error-rate", type=float, default=0.40)
     parser.add_argument("--max-publish-fail-rate", type=float, default=0.20)
-    parser.add_argument("--allow-pending-geo", action="store_true")
+    parser.add_argument("--allow-pending-geo", dest="allow_pending_geo", action="store_true", default=True, help="Aceptar geocoding_status=pending (activo por defecto)")
+    parser.add_argument("--no-allow-pending-geo", dest="allow_pending_geo", action="store_false", help="Requerir geocoding_status=done o skipped")
     parser.add_argument(
         "--allow-playwright",
         action="store_true",
         help="Pasar --allow-playwright al scraper para sitios que requieren render JS",
     )
     parser.add_argument("--reclaim-stale", action="store_true")
+    parser.add_argument(
+        "--with-deactivations",
+        action="store_true",
+        help="Agregar FASE 2.5: encolar desactivaciones de props desaparecidas post-scraping",
+    )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--commit", action="store_true")
     args = parser.parse_args()
@@ -595,7 +637,29 @@ def main() -> None:
             print_command("scraper dry-run", scrape_cmd)
             print("DRY-RUN: no se ejecuta scraping real.")
         else:
-            run_step("scraper", scrape_cmd, env=env, timeout=args.scraper_timeout)
+            try:
+                run_step("scraper", scrape_cmd, env=env, timeout=args.scraper_timeout)
+            except StepTimeoutError:
+                # El scraper excedió el timeout del subprocess. Si la run ya quedó
+                # finished (todos los items procesados), el trabajo está hecho:
+                # continuar fases 3-5 en vez de abortar y forzar un recovery manual.
+                run_finished = False
+                if run_id is not None:
+                    with connect_internal_db(internal_db_url) as conn:
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                "SELECT status FROM scraping_runs WHERE id = %s", [run_id]
+                            )
+                            row = cur.fetchone()
+                            run_finished = bool(row and row.get("status") == "finished")
+                        conn.rollback()
+                if not run_finished:
+                    raise
+                print(
+                    "WARNING scraper_subprocess_timeout_but_run_finished "
+                    f"run_id={run_id}: el scraper excedió scraper_timeout pero la run "
+                    "quedó finished; se continúan las fases 3-5."
+                )
             if run_id is not None:
                 with connect_internal_db(internal_db_url) as conn:
                     with conn.cursor() as cur:
@@ -614,6 +678,21 @@ def main() -> None:
                         f"error_rate {error_rate:.2f} supera max_error_rate {args.max_error_rate:.2f}"
                     )
         sleep_phase(args)
+
+        if args.with_deactivations and run_id is not None:
+            print("=" * 72)
+            print("FASE 2.5 - ENCOLAR DESACTIVACIONES")
+            deact_cmd = [
+                sys.executable,
+                "scripts/enqueue_deactivations.py",
+                "--all-from-run",
+                str(run_id),
+                "--commit",
+            ]
+            run_step("enqueue-deactivations", deact_cmd, env=env, timeout=args.step_timeout)
+            sleep_phase(args)
+        elif args.with_deactivations and run_id is None:
+            print("FASE 2.5 - ENCOLAR DESACTIVACIONES: omitida (run_id no disponible)")
 
         print("=" * 72)
         print("FASE 3 - VALIDAR RAW")
@@ -657,7 +736,7 @@ def main() -> None:
         else:
             for idx in range(args.max_geocode_iterations):
                 geocode_iterations_used = idx + 1
-                result = run_step("geocode-staging", geocode_cmd_base + ["--commit"], env=env, timeout=args.step_timeout)
+                result = run_step("geocode-staging", geocode_cmd_base + ["--commit"], env=env, timeout=args.geocode_timeout)
                 values = parse_key_values(result.stdout)
                 read_count = parse_int(values, "filas_leidas")
                 done = parse_int(values, "done")

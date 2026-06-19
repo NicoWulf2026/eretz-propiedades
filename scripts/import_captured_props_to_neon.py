@@ -284,6 +284,27 @@ def connect_internal_db(db_url: str):
     return psycopg.connect(db_url, row_factory=dict_row)
 
 
+def load_inmob_location_lookup(db_url: str) -> Dict[int, Tuple[str, str]]:
+    """Load {inmobiliaria_id: (ciudad, provincia)} from inmobiliarias_staging in Neon."""
+    lookup: Dict[int, Tuple[str, str]] = {}
+    try:
+        with connect_internal_db(db_url) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, ciudad, provincia FROM inmobiliarias_staging "
+                    "WHERE ciudad IS NOT NULL AND ciudad != ''"
+                )
+                for row in cur.fetchall():
+                    inmob_id = int(row["id"])
+                    lookup[inmob_id] = (
+                        (row["ciudad"] or "").strip(),
+                        (row["provincia"] or "").strip(),
+                    )
+    except Exception:
+        pass
+    return lookup
+
+
 def json_value(value: Any) -> Any:
     if isinstance(value, (dict, list)):
         try:
@@ -774,7 +795,15 @@ def build_raw_candidate(path: Path, payload: Dict[str, Any], prop: Dict[str, Any
 
     ciudad, provincia, barrio, location_inference = infer_location_from_signals(prop, source_row)
     if not ciudad and not provincia:
-        issues.append(issue("missing_location", "sin ciudad ni provincia"))
+        _inmob_ciudad = (source_row.get("_inmob_ciudad") or "").strip()
+        _inmob_provincia = (source_row.get("_inmob_provincia") or "").strip()
+        if _inmob_ciudad:
+            ciudad = _inmob_ciudad
+            if not provincia:
+                provincia = _inmob_provincia
+            issues.append(issue("ciudad_fallback_inmob", f"ciudad desde inmobiliaria: {ciudad}"))
+        else:
+            issues.append(issue("missing_location", "sin ciudad ni provincia"))
     elif location_inference:
         issues.append(issue("location_inferred_from_text", location_inference))
 
@@ -1212,6 +1241,7 @@ def main() -> None:
         raise SystemExit("No encontre batch_*.csv para resolver inmobiliaria_id real.")
 
     db_url = internal_db_config()
+    inmob_location = load_inmob_location_lookup(db_url)
     batch_rows = load_batch_rows(batch_csv)
     exact_index, host_index = build_source_indexes(batch_rows)
     captured = load_captured_files(args.input_dir)
@@ -1237,6 +1267,12 @@ def main() -> None:
             rejected += len(props)
             properties_detected += len(props)
             continue
+        # Enrich source_row with inmob ciudad/provincia from Neon for fallback
+        _imm_id = int(source_row.get("inmobiliaria_id") or 0)
+        if _imm_id and _imm_id in inmob_location:
+            _ic, _ip = inmob_location[_imm_id]
+            source_row.setdefault("_inmob_ciudad", _ic)
+            source_row.setdefault("_inmob_provincia", _ip)
         for prop in props:
             if properties_detected < args.offset:
                 properties_detected += 1
