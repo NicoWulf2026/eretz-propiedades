@@ -2,7 +2,7 @@
 
 ## Resumen del día
 
-Día de mucho avance en la **arquitectura dual Supabase + Neon** y en el **pipeline diario** de InmoCapital.
+Día de mucho avance en la **arquitectura dual Supabase + Neon** y en el **pipeline diario** de ERETZ Propiedades.
 
 Se consolidó el flujo completo desde el scraping hasta la publicación en Supabase, se sumó una etapa nueva de geocoding interno, se integró todo en el orquestador diario, se agregó soporte controlado de Playwright y se hizo un diagnóstico de errores de scraping agrupado por familias.
 
