@@ -70,6 +70,48 @@ def _env_flag(name: str, default: bool = False) -> bool:
     return str(raw).strip().lower() in {"1", "true", "t", "yes", "y", "on"}
 
 
+def _env_float(name: str, default: float, lo: float, hi: float) -> float:
+    """Lee un float desde env con fallback seguro y clamp a [lo, hi].
+
+    No imprime el valor de envs sensibles: solo nombre y default en el warning.
+    """
+    raw = os.environ.get(name)
+    if raw is None or str(raw).strip() == "":
+        return default
+    try:
+        val = float(str(raw).strip())
+    except (TypeError, ValueError):
+        logger.warning("env %s invalida (no numerica); usando default %s", name, default)
+        return default
+    if not (lo <= val <= hi):
+        logger.warning("env %s fuera de rango [%s, %s]; usando default %s", name, lo, hi, default)
+        return default
+    return val
+
+
+SCRAPER_TIMEOUT_MULTIPLIER_DEFAULT = 1.0
+SCRAPER_TIMEOUT_MULTIPLIER_MIN = 0.5
+SCRAPER_TIMEOUT_MULTIPLIER_MAX = 5.0
+
+
+def resolve_timeout_multiplier() -> float:
+    """Multiplicador global de timeouts via SCRAPER_TIMEOUT_MULTIPLIER (default 1.0).
+
+    Sin env definida -> 1.0 -> comportamiento identico al historico.
+    """
+    return _env_float(
+        "SCRAPER_TIMEOUT_MULTIPLIER",
+        SCRAPER_TIMEOUT_MULTIPLIER_DEFAULT,
+        SCRAPER_TIMEOUT_MULTIPLIER_MIN,
+        SCRAPER_TIMEOUT_MULTIPLIER_MAX,
+    )
+
+
+def _scale_timeout(value: int, multiplier: float) -> int:
+    """Escala un timeout (segundos) por el multiplicador; minimo 1s."""
+    return max(1, int(round(value * multiplier)))
+
+
 SUPABASE_URL: str = os.environ.get("SUPABASE_URL", "").rstrip("/")
 SUPABASE_KEY: str = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "") or os.environ.get("SUPABASE_KEY", "")
 USE_INTERNAL_DB: bool = _env_flag("USE_INTERNAL_DB", default=False)
@@ -100,12 +142,16 @@ USER_AGENTS: List[str] = [
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15",
 ]
 
-CONTROL_ITEM_TIMEOUT_SECONDS = 240  # Fix P: 180→240 — sitios estáticos/WP con muchas páginas de detalle
-SIMPLE_ITEM_TIMEOUT_SECONDS = 90
-CUSTOM_OR_SITEMAP_ITEM_TIMEOUT_SECONDS = 240
-PLAYWRIGHT_ITEM_TIMEOUT_SECONDS = 300
-GEOCODING_MAX_SECONDS_PER_ITEM = 35
-STRATEGY_TIMEOUT_SECONDS: Dict[str, int] = {
+# Multiplicador global opcional (SCRAPER_TIMEOUT_MULTIPLIER, default 1.0 => sin cambios).
+# Los valores _BASE preservan el comportamiento historico; con multiplier=1.0 quedan idénticos.
+_SCRAPER_TIMEOUT_MULTIPLIER = resolve_timeout_multiplier()
+
+CONTROL_ITEM_TIMEOUT_SECONDS = _scale_timeout(240, _SCRAPER_TIMEOUT_MULTIPLIER)  # Fix P: 180→240 — sitios estáticos/WP con muchas páginas de detalle
+SIMPLE_ITEM_TIMEOUT_SECONDS = _scale_timeout(90, _SCRAPER_TIMEOUT_MULTIPLIER)
+CUSTOM_OR_SITEMAP_ITEM_TIMEOUT_SECONDS = _scale_timeout(240, _SCRAPER_TIMEOUT_MULTIPLIER)
+PLAYWRIGHT_ITEM_TIMEOUT_SECONDS = _scale_timeout(300, _SCRAPER_TIMEOUT_MULTIPLIER)
+GEOCODING_MAX_SECONDS_PER_ITEM = 35  # NO escalado: presupuesto de geocoding, no timeout de scraping
+_STRATEGY_TIMEOUT_SECONDS_BASE: Dict[str, int] = {
     "tokko_api": 45,
     "tokko_html": 150,
     "wordpress_html": 35,
@@ -123,6 +169,10 @@ STRATEGY_TIMEOUT_SECONDS: Dict[str, int] = {
     "sitemap": 200,
     "html_scraper": 45,
     "playwright_html": 45,
+}
+STRATEGY_TIMEOUT_SECONDS: Dict[str, int] = {
+    _name: _scale_timeout(_value, _SCRAPER_TIMEOUT_MULTIPLIER)
+    for _name, _value in _STRATEGY_TIMEOUT_SECONDS_BASE.items()
 }
 PLAYWRIGHT_LAUNCH_TIMEOUT_MS = 15000
 PLAYWRIGHT_NAV_TIMEOUT_MS = 12000
