@@ -291,7 +291,7 @@ export function mapSupabasePropertyToProperty(item: SupabaseProperty): Property 
     agencyName:
       getSourceAgencyName(item) ||
       cleanText(item.inmobiliaria_nombre) ||
-      "InmoCapital",
+      "ERETZ Propiedades",
     agencyWeb: item.inmobiliaria_web ?? null,
     agencyPhone: item.inmobiliaria_telefono ?? null,
     agencyEmail: item.inmobiliaria_email ?? null,

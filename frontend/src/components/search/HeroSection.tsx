@@ -24,7 +24,7 @@ export function HeroSection({
       <div className="relative mx-auto w-full max-w-[1480px] px-4 py-6 sm:px-5 sm:py-8 lg:px-6 lg:py-10">
         <div className="mb-5 sm:mb-6">
           <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.22em] text-gold-400/90 sm:mb-3">
-            InmoCapital
+            ERETZ Propiedades
           </p>
 
           <h1 className="max-w-2xl text-2xl font-bold leading-tight tracking-tight sm:text-3xl lg:text-[2.75rem] lg:leading-[1.15]">

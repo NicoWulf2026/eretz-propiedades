@@ -9,7 +9,7 @@ const navItems = [
 ];
 
 /**
- * Logo de InmoCapital.
+ * Logo de ERETZ Propiedades.
  *
  * INSTRUCCIONES PARA REEMPLAZAR CON EL LOGO REAL:
  * 1. Colocar los archivos en: frontend/public/brand/
@@ -21,7 +21,7 @@ const navItems = [
  * 2. Reemplazar el bloque <WordmarkFallback /> de abajo por:
  *    <img
  *      src="/brand/logo-horizontal-white.svg"
- *      alt="InmoCapital"
+ *      alt="ERETZ Propiedades"
  *      className="h-8 w-auto"
  *    />
  */
@@ -32,9 +32,9 @@ function WordmarkFallback() {
         className="grid size-8 place-items-center rounded bg-white/95 text-[11px] font-black leading-none text-ink-950"
         aria-hidden="true"
       >
-        IC
+        EP
       </span>
-      <span className="text-[15px] font-semibold tracking-tight text-white">InmoCapital</span>
+      <span className="text-[15px] font-semibold tracking-tight text-white">ERETZ Propiedades</span>
     </span>
   );
 }
@@ -45,7 +45,7 @@ export function Navbar() {
   return (
     <header className="sticky top-0 z-40 border-b border-white/10 bg-ink-950/96 text-white backdrop-blur-xl">
       <nav className="mx-auto flex h-16 w-full max-w-[1480px] items-center justify-between px-4 sm:px-6 lg:px-8">
-        <Link href="/" aria-label="InmoCapital inicio" className="shrink-0">
+        <Link href="/" aria-label="ERETZ Propiedades inicio" className="shrink-0">
           <WordmarkFallback />
         </Link>
 

@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "InmoCapital | Búsqueda inmobiliaria premium",
+  title: "ERETZ Propiedades | Búsqueda inmobiliaria en Argentina",
   description:
     "Mapa, filtros y listado de propiedades para comprar, alquilar o invertir en Argentina.",
 };

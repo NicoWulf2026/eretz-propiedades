@@ -49,7 +49,17 @@ const TYPE_LABEL: Record<PropertyType, string> = {
   otro: "Propiedad",
 };
 
-const PLATFORM_FALLBACKS = new Set(["InmoCapital", "inmocapital", "INMOCAPITAL"]);
+// Nombres de la plataforma (legacy "InmoCapital" + actual "ERETZ Propiedades"): nunca
+// se muestran como nombre de inmobiliaria; se reemplazan por "Inmobiliaria no especificada".
+const PLATFORM_FALLBACKS = new Set([
+  "InmoCapital",
+  "inmocapital",
+  "INMOCAPITAL",
+  "ERETZ Propiedades",
+  "ERETZ",
+  "Eretz",
+  "eretz",
+]);
 const numFmt = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 });
 
 function fmtNum(currency: Property["currency"], value: number): string | null {
@@ -169,7 +179,7 @@ function AgencyAvatar({ name }: { name: string }) {
       .split(/\s+/)
       .slice(0, 2)
       .map((w) => w[0]?.toUpperCase() ?? "")
-      .join("") || "IC";
+      .join("") || "EP";
 
   return (
     <span
@@ -324,7 +334,7 @@ export const PropertyCard = memo(function PropertyCard({
         ) : (
           <div className="flex h-full w-full select-none items-center justify-center bg-[radial-gradient(circle_at_30%_20%,rgba(200,164,93,0.16),transparent_34%),linear-gradient(135deg,#061528,#102b4d)]">
             <div className="text-center">
-              <p className="text-sm font-semibold tracking-[0.16em] text-white">InmoCapital</p>
+              <p className="text-sm font-semibold tracking-[0.16em] text-white">ERETZ Propiedades</p>
               <div className="mx-auto mt-3 h-px w-16 bg-gold-400/60" />
               <p className="mt-3 text-[11px] font-medium uppercase tracking-[0.18em] text-white/46">
                 {TYPE_LABEL[property.propertyType]}
