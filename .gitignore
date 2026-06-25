@@ -1,6 +1,5 @@
 .env
 .venv/
-frontend/
 data/
 Viejo/
 __pycache__/
@@ -18,6 +17,7 @@ node_modules/
 # Local artifacts and temp files
 reports/
 backups/
+_scratch/
 scripts/_*
 _run_*.py
 _run_*.log
