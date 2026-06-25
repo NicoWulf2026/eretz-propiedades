@@ -61,6 +61,19 @@ const PLATFORM_FALLBACKS = new Set([
   "eretz",
 ]);
 const numFmt = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 });
+const dateFmt = new Intl.DateTimeFormat("es-AR", {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+});
+
+// Devuelve "DD/MM/AAAA" solo si la fecha existe y es válida; si no, null (no inventar fecha).
+function formatUpdatedAt(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const t = new Date(value).getTime();
+  if (!Number.isFinite(t)) return null;
+  return dateFmt.format(new Date(t));
+}
 
 function fmtNum(currency: Property["currency"], value: number): string | null {
   if (!Number.isFinite(value) || value <= 0) return null;
@@ -307,6 +320,7 @@ export const PropertyCard = memo(function PropertyCard({
 
   const specs = getSpecs(property);
   const location = getLocation(property);
+  const updatedLabel = formatUpdatedAt(property.updatedAt);
   const rawTitle = property.title?.trim() || "";
   const title = rawTitle && rawTitle !== "Propiedad sin título" ? rawTitle : null;
 
@@ -411,6 +425,10 @@ export const PropertyCard = memo(function PropertyCard({
               </span>
             )}
           </div>
+        )}
+
+        {updatedLabel && (
+          <p className="mt-2 text-[11px] text-ink-950/40">Actualizado: {updatedLabel}</p>
         )}
 
         <AgencyFooter property={property} />

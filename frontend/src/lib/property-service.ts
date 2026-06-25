@@ -2,7 +2,7 @@ import { mockProperties } from "@/lib/property-data";
 import { getPropertiesFromSupabase } from "@/lib/property-supabase-service";
 import type { Property, PropertyOperation } from "@/types/property";
 
-export type PropertyDataSource = "supabase" | "mock";
+export type PropertyDataSource = "supabase" | "mock" | "error";
 
 type PropertyResult = {
   properties: Property[];
@@ -18,29 +18,39 @@ type GetPropertiesWithSourceOptions = {
 };
 
 async function resolveProperties(): Promise<PropertyResult> {
+  const isDev = process.env.NODE_ENV === "development";
+
   try {
     // Sprint F: limit reducido a 50 para evitar timeout en unidad de red.
-    // Con limit=300 → 600 IDs → 6 chunks paralelos → ~19s (excede timeout de 12s anterior).
-    // Con limit=50 → 150 IDs → 2 chunks → ~10s (dentro del nuevo timeout de 25s).
     // TODO: aumentar cuando se mueva a local o se mejore la infraestructura.
-    const supabaseProperties = await getPropertiesFromSupabase({ limit: 50 });
+    // throwOnError distingue una FALLA real (lanza -> estado de error) de una
+    // carga exitosa con 0 resultados (devuelve [] -> empty state normal).
+    const supabaseProperties = await getPropertiesFromSupabase({
+      limit: 50,
+      throwOnError: true,
+    });
 
-    if (supabaseProperties.length > 0) {
+    // Carga exitosa (incluso con 0 propiedades): fuente real, sin mock.
+    return {
+      properties: supabaseProperties,
+      source: "supabase",
+    };
+  } catch (error) {
+    if (isDev) {
+      console.error("[Supabase] error real cargando propiedades; usando mock en dev:", error);
+      // Solo en desarrollo: mock para poder trabajar local.
       return {
-        properties: supabaseProperties,
-        source: "supabase",
+        properties: mockProperties,
+        source: "mock",
       };
     }
-  } catch (error) {
-    if (process.env.NODE_ENV === "development") {
-      console.error("[Supabase] Falling back to mock properties after error:", error);
-    }
-  }
 
-  return {
-    properties: mockProperties,
-    source: "mock",
-  };
+    // Producción/beta: NUNCA mostrar datos demo. Estado de error confiable.
+    return {
+      properties: [],
+      source: "error",
+    };
+  }
 }
 
 export async function getProperties(): Promise<Property[]>;

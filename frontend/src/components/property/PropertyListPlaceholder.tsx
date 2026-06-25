@@ -37,7 +37,8 @@ type PropertyListPlaceholderProps = {
   isWideMode?: boolean;
 };
 
-const sourceLabels: Record<PropertyDataSource, string> = {
+// "error" no tiene badge: se muestra un estado de error dedicado, no un rótulo.
+const sourceLabels: Partial<Record<PropertyDataSource, string>> = {
   supabase: "Datos reales",
   mock: "Datos demo",
 };
@@ -93,10 +94,16 @@ export function PropertyListPlaceholder({
                 Filtrado
               </span>
             )}
-            <span className="rounded-md border border-ink-950/10 bg-ink-950/[0.02] px-2 py-1 text-xs font-semibold text-ink-950/58">
-              {sourceLabels[dataSource]}
-            </span>
+            {sourceLabels[dataSource] && (
+              <span className="rounded-md border border-ink-950/10 bg-ink-950/[0.02] px-2 py-1 text-xs font-semibold text-ink-950/58">
+                {sourceLabels[dataSource]}
+              </span>
+            )}
           </div>
+          <p className="mt-1.5 text-[11px] leading-4 text-ink-950/45">
+            Los precios y la disponibilidad pueden variar. Confirmá siempre la información con la
+            inmobiliaria correspondiente.
+          </p>
         </div>
 
         <select
@@ -129,6 +136,15 @@ export function PropertyListPlaceholder({
               onSelect={onSelectProperty}
             />
           ))}
+        </div>
+      ) : dataSource === "error" ? (
+        <div className="rounded-lg border border-dashed border-red-300 bg-red-50/60 px-5 py-10 text-center">
+          <p className="text-base font-semibold text-ink-950">
+            Estamos teniendo problemas para cargar las propiedades.
+          </p>
+          <p className="mx-auto mt-2 max-w-xs text-sm leading-6 text-ink-950/58">
+            Intentá nuevamente en unos minutos.
+          </p>
         </div>
       ) : (
         <div className="rounded-lg border border-dashed border-ink-950/14 bg-ink-950/[0.02] px-5 py-10 text-center">

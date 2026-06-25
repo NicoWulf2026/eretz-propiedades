@@ -13,10 +13,25 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const SITE_TITLE = "ERETZ Propiedades | Búsqueda inmobiliaria en Argentina";
+const SITE_DESCRIPTION =
+  "Mapa, filtros y listado de propiedades para comprar, alquilar o invertir en Argentina.";
+
+// Beta: por defecto NO indexar (noindex, nofollow). Solo se indexa si
+// NEXT_PUBLIC_SITE_INDEXING === "true" (producción pública). Cualquier otro valor o ausencia -> noindex.
+const allowIndexing = process.env.NEXT_PUBLIC_SITE_INDEXING === "true";
+
 export const metadata: Metadata = {
-  title: "ERETZ Propiedades | Búsqueda inmobiliaria en Argentina",
-  description:
-    "Mapa, filtros y listado de propiedades para comprar, alquilar o invertir en Argentina.",
+  title: SITE_TITLE,
+  description: SITE_DESCRIPTION,
+  robots: allowIndexing ? undefined : { index: false, follow: false },
+  openGraph: {
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    siteName: "ERETZ Propiedades",
+    locale: "es_AR",
+    type: "website",
+  },
 };
 
 export default function RootLayout({
