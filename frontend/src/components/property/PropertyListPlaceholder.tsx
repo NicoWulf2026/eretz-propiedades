@@ -100,6 +100,10 @@ export function PropertyListPlaceholder({
               </span>
             )}
           </div>
+          <p className="mt-1.5 text-[11px] leading-4 text-ink-950/45">
+            Los precios y la disponibilidad pueden variar. Confirmá siempre la información con la
+            inmobiliaria correspondiente.
+          </p>
         </div>
 
         <select

@@ -1,4 +1,5 @@
 import { FloatingAssistantButton } from "@/components/chat/FloatingAssistantButton";
+import { Footer } from "@/components/layout/Footer";
 import { Navbar } from "@/components/layout/Navbar";
 import { PropertyExplorer } from "@/components/property/PropertyExplorer";
 import { getProperties } from "@/lib/property-service";
@@ -10,6 +11,7 @@ export async function MainLayout() {
     <div className="min-h-screen bg-[#f6f8fb]">
       <Navbar />
       <PropertyExplorer dataSource={source} properties={properties} />
+      <Footer />
       <FloatingAssistantButton />
     </div>
   );
