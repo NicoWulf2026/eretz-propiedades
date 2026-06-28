@@ -37,6 +37,214 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+_DETAIL_QUERY_KEYS = {
+    "id", "idprop", "id_prop", "prop", "propiedad", "inmueble", "codigo",
+    "cod", "ficha", "ref", "referencia", "aviso", "ad",
+}
+
+_DETAIL_PATH_SEGMENTS = [
+    "/p/",
+    "/propiedad/",
+    "/propiedades/",
+    "/ad/",
+    "/inmueble/",
+    "/inmuebles/",
+    "/property/",
+    "/properties/",
+    "/listing/",
+    "/listings/",
+    "/detalle/",
+    "/detalles/",
+    "/aviso/",
+    "/emprendimiento/",
+    "/portfolio/",
+    "/Ficha/",
+    "/ficha/",
+    "/ficha-",
+]
+
+_DETAIL_CATEGORY_WORDS = {
+    "venta", "ventas", "alquiler", "alquileres", "page", "buscar", "busqueda",
+    "search", "results", "resultados", "categoria", "category", "tipo",
+    "type", "comprar", "rentas", "emprendimientos", "desarrollos",
+}
+
+_DETAIL_BAD_PATH_WORDS = {
+    "contact", "contacto", "nosotros", "quienes", "quienes-somos", "about",
+    "servicios", "tasacion", "tasaciones", "blog", "noticia", "noticias",
+    "news", "staff", "equipo", "login", "admin", "wp-admin",
+}
+
+_DETAIL_PROHIBITED_DOMAINS = ("zonaprop", "argenprop", "properati")
+_DETAIL_STATIC_EXTENSIONS = (
+    ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".pdf", ".doc",
+    ".docx", ".xls", ".xlsx", ".zip", ".rar", ".css", ".js", ".ico",
+)
+
+_DETAIL_ONCLICK_RE = re.compile(
+    r"(?:location(?:\.href)?|window\.location(?:\.href)?|window\.open|openProperty|goTo|verDetalle|detalle|ficha)"
+    r"\s*\(?\s*['\"]([^'\"]+)['\"]",
+    re.IGNORECASE,
+)
+
+
+def _netloc(url: str) -> str:
+    return urlparse(url).netloc.lower().lstrip("www.")
+
+
+def _same_site_or_subdomain(candidate: str, base_url: str) -> bool:
+    cand_host = _netloc(candidate)
+    base_host = _netloc(base_url)
+    if not cand_host or not base_host:
+        return True
+    return (
+        cand_host == base_host
+        or cand_host.endswith("." + base_host)
+        or base_host.endswith("." + cand_host)
+    )
+
+
+def _has_strong_card_signal(card) -> bool:
+    """True when an element looks like a property card, not plain navigation."""
+    text = card.get_text(" ", strip=True)
+    cls = " ".join(card.get("class", []))
+    blob = f"{text} {cls}".lower()
+    score = 0
+    if re.search(r"(u\$s|us\$|usd|ars|\$\s*\d|consultar|precio)", blob, re.IGNORECASE):
+        score += 2
+    if re.search(r"\b(venta|alquiler|comprar|renta|en venta|en alquiler)\b", blob, re.IGNORECASE):
+        score += 1
+    if re.search(r"\b(casa|departamento|depto|terreno|lote|local|oficina|ph|duplex|galpon|inmueble|propiedad)\b", blob, re.IGNORECASE):
+        score += 1
+    if re.search(r"(\d+)\s*(m2|m²|mts|amb|ambientes|dorm|habit|baños|banos)", blob, re.IGNORECASE):
+        score += 1
+    if card.select_one("img[src], img[data-src], img[data-lazy-src], img[data-original]"):
+        score += 1
+    if re.search(r"(property|propiedad|inmueble|listing|aviso|card|result)", cls, re.IGNORECASE):
+        score += 1
+    return score >= 2
+
+
+def _is_blocked_detail_url(url: str, base_url: str) -> bool:
+    parsed = urlparse(url)
+    scheme = parsed.scheme.lower()
+    if scheme and scheme not in {"http", "https"}:
+        return True
+    lowered = url.lower()
+    if any(domain in lowered for domain in _DETAIL_PROHIBITED_DOMAINS):
+        return True
+    if not _same_site_or_subdomain(url, base_url):
+        return True
+    path = parsed.path.lower()
+    if any(path.endswith(ext) for ext in _DETAIL_STATIC_EXTENSIONS):
+        return True
+    path_parts = {p for p in path.strip("/").split("/") if p}
+    if path in {"", "/"} and not parsed.query:
+        return True
+    if any(bad in path_parts or bad in path for bad in _DETAIL_BAD_PATH_WORDS):
+        return True
+    if re.search(r"(/page/|[?&]page=|[?&]pagina=|#)", lowered):
+        return True
+    return False
+
+
+def _looks_like_detail_url(url: str, base_url: str) -> bool:
+    """Safe detail URL detector used by parse_cards and unit tests."""
+    if _is_blocked_detail_url(url, base_url):
+        return False
+
+    parsed = urlparse(url)
+    path = parsed.path
+    path_lower = path.lower()
+    query_pairs = [(k.lower(), v) for k, v in [part.split("=", 1) if "=" in part else (part, "") for part in parsed.query.split("&") if part]]
+    if any(k in _DETAIL_QUERY_KEYS and len(v.strip()) >= 1 for k, v in query_pairs):
+        return True
+
+    for seg in _DETAIL_PATH_SEGMENTS:
+        seg_lower = seg.lower()
+        if seg_lower not in path_lower:
+            continue
+        after = path_lower.split(seg_lower, 1)[-1].strip("/")
+        if not after:
+            return False
+        first = after.split("/")[0].split("-")[0].split("_")[0]
+        if first in _DETAIL_CATEGORY_WORDS:
+            return False
+        if len(after) >= 2:
+            return True
+
+    # Conservative slug-only fallback: must have at least two path parts and a
+    # real-estate token plus a numeric/reference-like component.
+    parts = [p for p in path_lower.strip("/").split("/") if p]
+    if len(parts) >= 2:
+        joined = " ".join(parts)
+        if (
+            re.search(r"(venta|alquiler|casa|departamento|depto|terreno|lote|local|ph|inmueble|propiedad)", joined)
+            and re.search(r"(\d{2,}|ref-|cod)", joined)
+            and not all(p in _DETAIL_CATEGORY_WORDS for p in parts)
+        ):
+            return True
+    return False
+
+
+def _candidate_url_from_value(raw: str, base_url: str) -> Optional[str]:
+    raw = (raw or "").strip()
+    if not raw or raw.startswith(("#", "mailto:", "tel:", "whatsapp:", "javascript:")):
+        return None
+    if raw.startswith("//"):
+        raw = "https:" + raw
+    return urljoin(base_url, raw)
+
+
+def _onclick_urls(value: str) -> List[str]:
+    urls = [m.group(1) for m in _DETAIL_ONCLICK_RE.finditer(value or "")]
+    urls.extend(
+        re.findall(
+            r"['\"]((?:https?://|/)[^'\"]{2,160}(?:propiedad|propiedades|inmueble|detalle|ficha|ad|ref-|codigo|cod|idprop)[^'\"]*)['\"]",
+            value or "",
+            flags=re.IGNORECASE,
+        )
+    )
+    return urls
+
+
+def extract_candidate_detail_urls_from_card(card, base_url: str) -> List[str]:
+    """
+    Extract safe property-detail candidates from a listing card.
+
+    It accepts anchors, relative URLs, safe detail query params, data-* attrs and
+    onclick URLs only when the card itself has strong real-estate signals.
+    """
+    if not _has_strong_card_signal(card):
+        return []
+
+    raw_values: List[str] = []
+    for a in card.select("a[href]"):
+        raw_values.append(a.get("href", ""))
+
+    data_keys = {"data-href", "data-url", "data-link", "data-slug", "data-target", "data-path"}
+    for el in [card, *card.find_all(True)]:
+        for key, value in el.attrs.items():
+            if key in data_keys or (key.startswith("data-") and any(tok in key for tok in ("href", "url", "link", "slug", "path"))):
+                if isinstance(value, list):
+                    raw_values.extend(str(v) for v in value)
+                else:
+                    raw_values.append(str(value))
+        onclick = el.get("onclick")
+        if onclick:
+            raw_values.extend(_onclick_urls(onclick))
+
+    out: List[str] = []
+    seen: Set[str] = set()
+    for raw in raw_values:
+        candidate = _candidate_url_from_value(raw, base_url)
+        if not candidate or candidate in seen:
+            continue
+        if _looks_like_detail_url(candidate, base_url):
+            seen.add(candidate)
+            out.append(candidate)
+    return out
+
 FUENTES = [
     # ── Inmobiliarias Santa Fe (Tokko Broker) ─────────────────────────────────
     {"key": "loquet_venta",    "url": "https://www.loquet.com.ar/Venta",                  "operacion": "venta",    "ciudad": "Santa Fe"},
@@ -466,6 +674,7 @@ def parse_cards(html: str, operacion: str, fuente_key: str, base_url: str,
         "/p/",              # Tokko Broker  e.g. /p/7654321-Casa-en-Venta-...
         "/propiedad/",      # repetto, vaccaro, varios CMS propios
         "/propiedades/",    # WP Real Estate, Houzez, Inmogestor
+        "/ad/",             # algunos CMS usan /ad/ID-slug
         "/inmueble/",       # iMeSH / Sitioinmuebles
         "/inmuebles/",      # civeira, WordPress custom
         # ── English CMS (usados en Argentina con nombres en inglés) ────────
@@ -494,6 +703,9 @@ def parse_cards(html: str, operacion: str, fuente_key: str, base_url: str,
 
     def _is_detail_url(path: str) -> bool:
         """True si el path parece una ficha individual (no una categoría o paginación)."""
+        candidate = path if path.startswith(("http://", "https://")) else urljoin(base_url, path)
+        if _looks_like_detail_url(candidate, base_url):
+            return True
         for seg in PROP_SEGMENTS:
             if seg in path:
                 after = path.split(seg, 1)[-1].strip("/")
@@ -675,9 +887,14 @@ def parse_cards(html: str, operacion: str, fuente_key: str, base_url: str,
                     ):
                         link = candidate
                         break
-            if not link:
-                continue
-            href = link.get("href", "")
+            if link:
+                href = link.get("href", "")
+            else:
+                candidate_urls = extract_candidate_detail_urls_from_card(card, base_url)
+                if candidate_urls:
+                    href = candidate_urls[0]
+                else:
+                    continue
 
             # ── Rechazar links que apuntan a dominios externos (portales, redes, etc.) ──
             # Ocurre cuando un card tiene un botón "Ver en Argenprop/ZonaProp" etc.
@@ -863,11 +1080,25 @@ def parse_cards(html: str, operacion: str, fuente_key: str, base_url: str,
         # CAUSA 5: Evaluar PROP_SEGMENTS solo en el PATH de la URL.
         # Previene: WhatsApp share links donde /propiedad/ aparece en ?text=
         try:
-            _href_path = urlparse(href).path if href.startswith("http") else href.split("?")[0]
+            _href_path = href if href.startswith("http") else href
         except Exception:
-            _href_path = href.split("?")[0]
+            _href_path = href
 
         # Usar _is_detail_url que valida el segmento Y filtra categorías
+        if not _is_detail_url(_href_path):
+            candidate_urls = []
+            ctx = a
+            for _ in range(5):
+                candidate_urls = extract_candidate_detail_urls_from_card(ctx, base_url)
+                if candidate_urls:
+                    break
+                ctx = getattr(ctx, "parent", None)
+                if ctx is None:
+                    break
+            if candidate_urls:
+                href = candidate_urls[0]
+                _href_path = href
+
         if not _is_detail_url(_href_path):
             continue
 
