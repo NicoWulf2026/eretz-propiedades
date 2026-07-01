@@ -1061,3 +1061,110 @@ def test_dedup_payload_preserves_required_fields_after_filter():
     assert payload["inmobiliaria_id"] == 42
     assert "hash_dedup" in payload
     assert len(payload["hash_dedup"]) == 32
+
+
+# ===========================================================================
+# Tests Manifest B — Fix 409 hash_dedup fallback (PR-BE-PROD-ManifestB)
+# ===========================================================================
+
+def test_batch_409_fallback_saves_new_skips_duplicate():
+    """Batch con 1 hash_dedup duplicado y 2 nuevas: guarda las 2 nuevas, salta la duplicada."""
+    import sys
+    sys.path.insert(0, str(REPO_ROOT / "scraper"))
+    from clients import SupabaseClient
+
+    # Call 1: batch POST → 409
+    # Call 2: individual insert prop A → 201 (nueva)
+    # Call 3: individual insert prop B → 409 (hash_dedup dup)
+    # Call 4: individual insert prop C → 201 (nueva)
+    batch_409 = MagicMock(status_code=409, text='{"code":"23505"}')
+    ok1 = MagicMock(status_code=201, text="")
+    dup = MagicMock(status_code=409, text='{"code":"23505"}')
+    ok2 = MagicMock(status_code=201, text="")
+
+    mock_session = MagicMock()
+    mock_session.post.side_effect = [batch_409, ok1, dup, ok2]
+
+    client = SupabaseClient(mock_session, "https://fake.supabase.co", "fakekey", "propiedades")
+    payloads = [
+        {"url": "https://x.com/1", "titulo": "Nueva A", "hash_dedup": "aaa", "estado": "activa", "inmobiliaria_id": 1},
+        {"url": "https://x.com/2", "titulo": "Duplicada", "hash_dedup": "bbb", "estado": "activa", "inmobiliaria_id": 1},
+        {"url": "https://x.com/3", "titulo": "Nueva C", "hash_dedup": "ccc", "estado": "activa", "inmobiliaria_id": 1},
+    ]
+    result = client.batch_save_only_new(payloads)
+
+    assert result == 2, f"Esperado 2 guardadas, got {result}"
+    assert mock_session.post.call_count == 4  # 1 batch + 3 individuales
+
+
+def test_batch_409_does_not_crash_source():
+    """Un 409 en batch con único payload no lanza excepción — la fuente continúa."""
+    import sys
+    sys.path.insert(0, str(REPO_ROOT / "scraper"))
+    from clients import SupabaseClient
+
+    batch_409 = MagicMock(status_code=409, text='{"code":"23505"}')
+    ind_409 = MagicMock(status_code=409, text='{"code":"23505"}')
+
+    mock_session = MagicMock()
+    mock_session.post.side_effect = [batch_409, ind_409]
+
+    client = SupabaseClient(mock_session, "https://fake.supabase.co", "fakekey", "propiedades")
+    try:
+        result = client.batch_save_only_new([
+            {"url": "https://x.com/1", "titulo": "T", "hash_dedup": "aaa", "estado": "activa", "inmobiliaria_id": 1}
+        ])
+    except Exception as exc:
+        raise AssertionError(f"batch_save_only_new no debe lanzar excepción con 409: {exc}") from exc
+
+    assert result == 0  # la única prop era duplicada
+
+
+def test_batch_409_fix_no_on_conflict_in_any_call():
+    """batch_save_only_new() no usa on_conflict=url ni en batch normal ni en fallback individual."""
+    import sys
+    sys.path.insert(0, str(REPO_ROOT / "scraper"))
+    from clients import SupabaseClient
+
+    batch_409 = MagicMock(status_code=409, text='{"code":"23505"}')
+    ok = MagicMock(status_code=201, text="")
+    mock_session = MagicMock()
+    mock_session.post.side_effect = [batch_409, ok]
+
+    client = SupabaseClient(mock_session, "https://fake.supabase.co", "fakekey", "propiedades")
+    client.batch_save_only_new([
+        {"url": "https://x.com/1", "titulo": "T", "hash_dedup": "abc", "estado": "activa", "inmobiliaria_id": 1}
+    ])
+
+    for call in mock_session.post.call_args_list:
+        call_url = call[0][0]
+        assert "on_conflict" not in call_url, f"on_conflict encontrado en URL: {call_url}"
+
+
+def test_batch_409_fallback_preserves_estado_hash_dedup_inmobiliaria_id():
+    """En fallback individual, los payloads mantienen estado='activa', hash_dedup e inmobiliaria_id."""
+    import sys
+    sys.path.insert(0, str(REPO_ROOT / "scraper"))
+    from clients import SupabaseClient
+
+    batch_409 = MagicMock(status_code=409, text='{"code":"23505"}')
+    ok = MagicMock(status_code=201, text="")
+    mock_session = MagicMock()
+    mock_session.post.side_effect = [batch_409, ok]
+
+    client = SupabaseClient(mock_session, "https://fake.supabase.co", "fakekey", "propiedades")
+    payload = {
+        "url": "https://x.com/1", "titulo": "T",
+        "hash_dedup": "abcdef1234567890abcdef1234567890",
+        "estado": "activa",
+        "inmobiliaria_id": 42,
+    }
+    client.batch_save_only_new([payload])
+
+    # La segunda llamada (fallback individual) debe contener el payload original intacto
+    assert mock_session.post.call_count == 2
+    individual_kwargs = mock_session.post.call_args_list[1][1]
+    sent = individual_kwargs["json"][0]
+    assert sent["estado"] == "activa"
+    assert sent["hash_dedup"] == "abcdef1234567890abcdef1234567890"
+    assert sent["inmobiliaria_id"] == 42

@@ -1,6 +1,6 @@
 # Pendientes de ERETZ Propiedades
 
-Ultima actualizacion: 2026-07-01 (Cierre backend técnico en curso — PR-BE-PROD-09e auditado como parcial. Fix anti-MemoryError implementado (context recycling cada 50 fuentes). Tests 64/64 verdes. PR técnico preparado. Próximo paso: autorizar PR técnico → corrida pendientes 29 fuentes → frontend.)
+Ultima actualizacion: 2026-07-01 (Pilot 50 completado. 3 bugs resueltos: 409 hash_dedup, 54 URLs con ancla, chunking desbalanceado. Tests 68/68 verdes. Manifest B balanceado listo en manifest_b_with_fk_balanced.csv. Próximo paso: autorizar corrida Manifest B completa.)
 
 Ver también: [[Auditoria completa y rebranding ERETZ 2026-06-17]]
 
@@ -51,9 +51,7 @@ Pipeline nuevo: `run_manifest.py` + `propiedades` directa, sin raw/staging/publi
 
 ---
 
-## 🟠 PR-BE-PROD-09e — Corrida completa 892 fuentes (PARCIALMENTE COMPLETADA — 2026-07-01)
-
-**Decisión operativa (2026-07-01):** 09e aceptada como corrida parcial acumulada. No se lanzará rerun_04 por ahora. Las 29 fuentes pendientes quedan para la próxima corrida autorizada. Pasar a auditoría backend y frontend.
+## 🟢 PR-BE-PROD-09e — Corrida completa 892 fuentes (COMPLETADA — 2026-07-01)
 
 ### Resumen acumulado 09e
 
@@ -63,41 +61,91 @@ Pipeline nuevo: `run_manifest.py` + `propiedades` directa, sin raw/staging/publi
 | rerun_01 | 123/615 (20%) | +841 | Sesión desconectada |
 | rerun_02 | 586/615 (95%) | +12.610 | MemoryError Playwright (>3GB RAM, 2 workers, 20h+) |
 | rerun_03 | 250/615 (41%) | +2.752 | Apagado accidental del equipo |
-| **Total 09e** | **~586 fuentes completas** | **+19.285** | — |
+| **validación 29 pendientes** | **29/29 (100%)** | **+160** | Completado OK |
+| **Total 09e** | **615/615 con FK** | **+19.445** | — |
 
 - **propiedades antes de 09e:** 115.559
-- **propiedades actuales:** 134.844
-- **Delta total 09e: +19.285**
-- FK match: 615/891 (69%) · Sin FK omitidas: 276/891 (31%)
-- D'Aragona (id=4855): rechazado por validación (error http_error) — no en manifest_excluded
+- **propiedades actuales: 135.004**
+- **Delta total 09e + validación: +19.445**
+- FK match: 615/892 (69%) · Sin FK omitidas: 277/892 (31%)
+- Integridad 6/6 PASS · 0 pendientes restantes · Manifest A agotado
 
-### Integridad confirmada
-- hash_dedup NULL: 0 ✅ · inmobiliaria_id NULL: 0 ✅ · url NULL: 0 ✅ · precio <0: 0 ✅
-- 3 errores 409 hash_dedup (no críticos — secondary safety net) · Sin constraint violations críticos
-- No se tocó: publish_queue · raw/staging · schema · frontend · inmobiliarias_main (solo SELECT)
-
-### Fix de dedup implementado (2026-06-28, PR-BE-PROD-09e-DEDUP-FIX)
-- `_load_existing_urls_by_inmobiliaria()` en `scripts/run_manifest.py` — una query por `inmobiliaria_id`
-- `MAX_EXECUTE_LIMIT` = 892 · `_ProgressTracker` (progress_live.md cada 250 fuentes o 15 min)
+### Fixes implementados (mergeados en PR #7)
+- `CONTEXT_RECYCLE_EVERY = 50` en `scraper/run.py` — anti-MemoryError
+- `_load_existing_urls_by_inmobiliaria()` en `scripts/run_manifest.py` — dedup por inmobiliaria
 - 64/64 tests verdes
 
-### Fix anti-MemoryError implementado (2026-07-01)
-- `CONTEXT_RECYCLE_EVERY = 50` en `scraper/run.py` — recicla el BrowserContext cada 50 fuentes
-- Libera memoria acumulada de Chromium sin reiniciar el browser process
-- Compatible con workers=1 y workers=2
-- Tests 64/64 sigue verde después del cambio
-- Próxima corrida (29 pendientes): riesgo de MemoryError reducido significativamente
-
-### Pendientes para próxima corrida
-- 29 fuentes nunca procesadas → `_scratch/run_manifest_09e_audit/manifest_pendientes_09e.csv`
-- Manifest a usar: mismo `manifest_success_only.csv` con `--limit 892`
-- El dedup protege las 134.844 URLs ya en DB
-- Producción neta esperada: propiedades de las 29 fuentes (~500–3.000 props)
-
 ### Outputs
-- `_scratch/run_manifest_09e/` · `_scratch/run_manifest_09e_rerun_01/` · `_scratch/run_manifest_09e_rerun_02/` · `_scratch/run_manifest_09e_rerun_03/`
-- `_scratch/run_manifest_09e_audit/auditoria_09e.md` — reporte consolidado
-- `_scratch/run_manifest_09e_audit/manifest_pendientes_09e.csv` — 29 fuentes pendientes
+- `_scratch/run_manifest_09e/` · `_scratch/run_manifest_09e_rerun_01-03/` · `_scratch/run_manifest_09e_audit/`
+- `_scratch/run_manifest_09e_pending_validation/` — validación 29 pendientes
+
+---
+
+## 🟡 Manifest B — Preflight + Pilot listo, NO ejecutado (2026-07-01)
+
+Universo completo: 7.004 fuentes en full_source_diagnostic_7004.
+
+### Candidatas nuevas para Manifest B
+
+| Métrica | Valor |
+|---|---|
+| Candidatas totales | **1.391** |
+| Con FK en inmobiliarias_main | **894** (64.3%) |
+| Sin FK (descartadas) | **497** |
+| Fuentes ejecutables en próxima corrida | **894** |
+
+### Distribución geográfica (candidatas)
+Buenos Aires: 655 · Santa Fe: 166 · Córdoba: 160 · Neuquén: 65 · Entre Ríos: 49 · Mendoza: 45
+
+### Pilot 50 — resultados reales (2026-07-01)
+
+Corrida de prueba con 25 livianas + 25 pesadas (workers=2, PID 5580).
+
+| Métrica | Valor |
+|---|---|
+| Fuentes completadas | 50/50 |
+| Propiedades insertadas | **2.262** |
+| W0 (25 livianas) | 464 props · 1h 14m · **20,3 f/h** |
+| W1 (25 pesadas) | 1.798 props · 3h 11m · **7,9 f/h** |
+| Throughput blended (reloj) | **15,6 f/h** |
+| MemoryError / crashes worker | 0 / 0 |
+
+**Bugs detectados y resueltos post-Pilot:**
+
+| Bug | Impacto | Fix |
+|---|---|---|
+| 409 hash_dedup crash | Toda la fuente se perdía si 1 prop era dup en DB | Fallback fila-a-fila en `batch_save_only_new` + `_insert_individually` |
+| 54 URLs con ancla `#fragment` | Scraper llegaba a URL incorrecta (ej: `site.com/#section`) | Strip de fragmento al construir balanced manifest |
+| Chunking estático desbalanceado | W0 ocioso 2h; W1 cuello de botella | Zigzag interleave por realistic_yield |
+
+Tests post-fix: **68/68 verdes** (4 tests nuevos para 409).
+
+### Duración estimada (basada en Pilot real)
+
+Distribución Manifest B: 754 fuentes normales (ry ≤ 100) + 140 pesadas (ry > 100).
+
+| Escenario | Archivo | Clock |
+|---|---|---|
+| workers=2 corrida única balanceada | `manifest_b_with_fk_balanced.csv` | **~30-34h** |
+| 2 tandas (normal + heavy) | `manifest_b_normal_sources.csv` + heavy | **~30h** (2 sesiones) |
+| 3 tandas iguales | balanced dividido en thirds | **~36h** (3 sesiones ~12h c/u) |
+| Sin balance (referencia) | naive light-first | ~57h (W0 ocioso 35h) |
+
+### Archivos preflight + outputs post-Pilot
+- `_scratch/preflight_manifest_b/manifest_b_candidates.csv` — 1.391 fuentes
+- `_scratch/preflight_manifest_b/manifest_b_with_fk.csv` — 894 con FK (input original, 54 URLs con #)
+- `_scratch/preflight_manifest_b/manifest_b_with_fk_balanced.csv` — **894 filas, zigzag interleave, URLs limpias** ← usar esto
+- `_scratch/preflight_manifest_b/manifest_b_normal_sources.csv` — 754 fuentes (ry ≤ 100)
+- `_scratch/preflight_manifest_b/manifest_b_heavy_sources.csv` — 140 fuentes (ry > 100)
+- `_scratch/preflight_manifest_b/manifest_b_without_fk.csv` — 497 sin FK
+- `_scratch/preflight_manifest_b/manifest_b_preflight_summary.md`
+- `_scratch/preflight_manifest_b/manifest_b_risk_assessment.md`
+- `_scratch/run_manifest_b_pilot/` — logs y outputs del Pilot 50
+
+### Estado
+**NO ejecutado. Pendiente autorización explícita.**
+Usar `manifest_b_with_fk_balanced.csv` para la corrida final (URLs limpias, zigzag balanceado).
+No se tocó: schema · frontend · publish_queue · raw/staging · push/merge/deploy.
 
 ---
 

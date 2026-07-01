@@ -102,12 +102,50 @@ class SupabaseClient:
                 json=chunk,
                 timeout=30,
             )
-            if response.status_code not in {200, 201}:
+            if response.status_code in {200, 201}:
+                total += len(chunk)
+            elif response.status_code == 409:
+                # hash_dedup collision in batch — fall back to row-by-row inserts
+                saved, skipped = self._insert_individually(chunk, insert_headers)
+                total += saved
+                if skipped:
+                    logger.info(
+                        f"[dedup] {skipped} propiedad(es) omitida(s) por hash_dedup duplicado, "
+                        f"{saved} guardada(s) en fallback individual"
+                    )
+            else:
                 raise RuntimeError(
                     f"Supabase batch insert error {response.status_code}: {response.text[:300]}"
                 )
-            total += len(chunk)
         return total
+
+    def _insert_individually(
+        self,
+        payloads: List[Dict[str, Any]],
+        headers: Dict[str, str],
+    ) -> tuple[int, int]:
+        """Inserta una fila a la vez; retorna (guardadas, omitidas_por_hash_dedup)."""
+        saved = 0
+        skipped = 0
+        for payload in payloads:
+            r = self.session.post(
+                f"{self.url}/rest/v1/{self.table}",
+                headers=headers,
+                json=[payload],
+                timeout=30,
+            )
+            if r.status_code in {200, 201}:
+                saved += 1
+            elif r.status_code == 409:
+                logger.debug(
+                    f"[dedup] hash_dedup duplicate skipped: {payload.get('url', '?')}"
+                )
+                skipped += 1
+            else:
+                raise RuntimeError(
+                    f"Supabase batch insert error {r.status_code}: {r.text[:300]}"
+                )
+        return saved, skipped
 
     def batch_save_only_changed(self, changed_payloads: List[Dict[str, Any]]) -> int:
         if not changed_payloads:
