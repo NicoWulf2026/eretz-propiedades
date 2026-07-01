@@ -41,11 +41,26 @@ Cada corrida de scraping debe registrar:
 
 ---
 
-## Estado actual
+## Estado actual (2026-07-01)
 
-Por implementar. El sistema de batches diarios automaticos no esta activo todavia.
+Pipeline manual activo: `scripts/run_manifest.py` con manifest CSV.
 
-Pendiente: definir cola de scraping, scheduler y sistema de logs.
+- **PR-BE-PROD-09d completado** — 50 fuentes, 1.039 propiedades nuevas directamente en `propiedades`.
+- **PR-BE-PROD-09e parcialmente completado** — 4 intentos acumulados (2026-06-28 al 2026-07-01):
+  - Intento 1: 99/615 fuentes, +3.082 props (cortado por desconexión sesión)
+  - rerun_01: 123/615 fuentes, +841 props (ídem)
+  - rerun_02: 586/615 fuentes (95%), +12.610 props (cortado por MemoryError en Playwright)
+  - rerun_03: 250/615 fuentes (41%), +2.752 props (cortado por apagado accidental del equipo)
+  - **Delta total 09e: +19.285 propiedades**
+- propiedades actuales: **134.844**.
+- 29 fuentes pendientes de 09e (nunca procesadas) — ver `_scratch/run_manifest_09e_audit/manifest_pendientes_09e.csv`.
+- 276 fuentes sin FK omitidas (sin match en inmobiliarias_main).
+- Decisión: no lanzar rerun_04 ahora. Pasar a auditoría backend y frontend.
+- Próxima corrida: mismo manifest `manifest_success_only.csv`, dedup protege las 134.844 URLs existentes.
+
+El sistema de batches diarios automáticos sigue sin estar activo. El scheduler y la cola de scraping siguen pendientes de definición.
+
+Ver: [[11 - Pendientes]], [[07 - Deduplicacion]]
 
 ---
 

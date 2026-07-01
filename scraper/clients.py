@@ -84,15 +84,21 @@ class SupabaseClient:
     def batch_save_only_new(self, new_payloads: List[Dict[str, Any]]) -> int:
         if not new_payloads:
             return 0
-        # Enviar en lotes de 20 para evitar timeouts de Supabase con batches grandes.
-        # Un upsert de 36 props en una sola request causaba ReadTimeout (30s) en producción.
+        # Plain INSERT — dedup is handled upstream via existing_urls before this call.
+        # propiedades.url has no unique constraint, so no on_conflict clause.
         _CHUNK = 20
         total = 0
+        insert_headers = {
+            "apikey":          self.key,
+            "Authorization":   f"Bearer {self.key}",
+            "Content-Type":    "application/json",
+            "Prefer":          "return=minimal",
+        }
         for i in range(0, len(new_payloads), _CHUNK):
             chunk = new_payloads[i : i + _CHUNK]
             response = self.session.post(
-                f"{self.url}/rest/v1/{self.table}?on_conflict=url",
-                headers=self._headers,
+                f"{self.url}/rest/v1/{self.table}",
+                headers=insert_headers,
                 json=chunk,
                 timeout=30,
             )
