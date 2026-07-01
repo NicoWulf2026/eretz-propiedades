@@ -76,6 +76,12 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_WORKERS = 4
 
+# Chromium accumulates memory across pages in a long-running BrowserContext.
+# Recycling the context every N sources releases that memory without restarting
+# the browser process. At ~300 sources per worker in a 615-source run, this
+# prevents the >3 GB RAM spike that caused MemoryError in rerun_02.
+CONTEXT_RECYCLE_EVERY = 50
+
 BROWSER_ARGS = [
     "--disable-blink-features=AutomationControlled",
     "--no-sandbox",
@@ -245,6 +251,7 @@ def _scrape_batch(
     lock: threading.Lock,
     dry_run: bool,
     worker_id: int,
+    on_source_done=None,
 ) -> int:
     """
     Lanza un browser propio, procesa cada fuente del lote en serie y cierra.
@@ -253,12 +260,23 @@ def _scrape_batch(
     total = 0
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True, args=BROWSER_ARGS)
-        context = browser.new_context(
-            user_agent=BROWSER_UA,
-            viewport={"width": 1366, "height": 768},
-            locale="es-AR",
-        )
-        for fuente in fuentes_batch:
+
+        def _new_context():
+            return browser.new_context(
+                user_agent=BROWSER_UA,
+                viewport={"width": 1366, "height": 768},
+                locale="es-AR",
+            )
+
+        context = _new_context()
+        for source_idx, fuente in enumerate(fuentes_batch):
+            if source_idx > 0 and source_idx % CONTEXT_RECYCLE_EVERY == 0:
+                try:
+                    context.close()
+                except Exception:
+                    pass
+                context = _new_context()
+                logger.info(f"[W{worker_id}] Context reciclado tras {source_idx} fuentes")
             key = fuente.get("key") or fuente.get("nombre", "?")
             url = fuente.get("web", "")
             ciudad = fuente.get("ciudad", "") or ""
@@ -267,6 +285,7 @@ def _scrape_batch(
             if not url:
                 continue
 
+            _source_props_saved = 0
             page = context.new_page()
             try:
                 logger.info(f"[W{worker_id}][{key}] → {url}")
@@ -333,6 +352,7 @@ def _scrape_batch(
                 # ═══════════════════════════════════════════════════════════
                 # FASE 2 — Visitar cada ficha individual para datos completos
                 # ═══════════════════════════════════════════════════════════
+                inmo_id = fuente.get("inmobiliaria_id")
                 propiedades_completas: List[Propiedad] = []
                 for i, prop_url in enumerate(nuevas_urls, 1):
                     prop = Propiedad(
@@ -342,6 +362,7 @@ def _scrape_batch(
                         ciudad=ciudad or None,
                         operacion=operacion,
                         barrio=ciudad or "Argentina",
+                        inmobiliaria_id=inmo_id,
                     )
                     ok = scrape_detail_page(page, prop, key)
                     if ok:
@@ -372,6 +393,7 @@ def _scrape_batch(
                         )
                         existing_urls.update(p.url for p in nuevas_final)
                         total += saved
+                        _source_props_saved = saved
                         logger.info(f"[W{worker_id}][{key}] Guardadas: {saved}")
                     elif nuevas_final and dry_run:
                         for p in nuevas_final[:3]:
@@ -387,6 +409,8 @@ def _scrape_batch(
                     page.close()
                 except Exception:
                     pass
+                if on_source_done:
+                    on_source_done(key, _source_props_saved)
 
         try:
             context.close()
