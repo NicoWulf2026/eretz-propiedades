@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import re
 import sys
 import threading
@@ -54,9 +55,11 @@ PROHIBITED_DOMAINS = {
 
 BLOCKED_COMBINED_STATUSES = {"still_failed", "http_error", "error"}
 BLOCKED_ERRORS             = {"http_error", "connection_error", "domain_down", "missing_url"}
+PW_HARD_BLOCKED            = {"antibot", "captcha"}  # Playwright no resuelve bloqueo activo
 
 MAX_EXECUTE_LIMIT   = 892  # máximo autorizado en PR-BE-PROD-09e (manifest auditado: 892 fuentes)
-MAX_EXECUTE_WORKERS = 2    # máximo autorizado en PR-BE-PROD-09e
+MAX_HTTP_WORKERS    = int(os.environ.get("MAX_HTTP_WORKERS", "4"))
+MAX_PW_WORKERS      = int(os.environ.get("MAX_PW_WORKERS",  "1"))
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -91,8 +94,17 @@ def _is_prohibited(url: str) -> bool:
 def validate_manifest(
     rows: List[ManifestRow],
     excluded_ids: Optional[Set[str]] = None,
-) -> Tuple[List[ManifestRow], List[ValidationError]]:
-    valid: List[ManifestRow] = []
+) -> Tuple[List[ManifestRow], List[ManifestRow], List[ManifestRow], List[ValidationError]]:
+    """
+    Returns (valid_http, valid_pw, blocked_pw, errors).
+    valid_http  — fuentes HTTP normales (needs_playwright=False)
+    valid_pw    — fuentes Playwright legítimas (needs_playwright=True, final_status != antibot/captcha)
+    blocked_pw  — fuentes con bloqueo activo: Playwright no las resuelve
+    errors      — filas rechazadas por validación estructural
+    """
+    valid_http:  List[ManifestRow] = []
+    valid_pw:    List[ManifestRow] = []
+    blocked_pw:  List[ManifestRow] = []
     errors: List[ValidationError] = []
     seen_ids: Dict[str, int] = {}
 
@@ -103,6 +115,7 @@ def validate_manifest(
         cs       = (row.get("combined_status") or "").strip()
         err      = (row.get("error") or "").strip().lower()
         needs_pw = (row.get("needs_playwright") or "false").strip().lower() == "true"
+        fs       = (row.get("final_status") or "").strip().lower()
 
         if not sid:
             errors.append(("", name, "missing source_id")); continue
@@ -114,17 +127,22 @@ def validate_manifest(
             errors.append((sid, name, f"blocked combined_status={cs}")); continue
         if err in BLOCKED_ERRORS:
             errors.append((sid, name, f"blocked error_type={err}")); continue
-        if needs_pw:
-            errors.append((sid, name, "needs_playwright=True — excluded")); continue
         if excluded_ids and sid in excluded_ids:
             errors.append((sid, name, "source_id found in manifest_excluded")); continue
         if sid in seen_ids:
             errors.append((sid, name, f"duplicate source_id (first row {seen_ids[sid]})")); continue
 
-        seen_ids[sid] = len(valid) + 1
-        valid.append(row)
+        seen_ids[sid] = len(valid_http) + len(valid_pw) + 1
 
-    return valid, errors
+        if needs_pw:
+            if fs in PW_HARD_BLOCKED:
+                blocked_pw.append(row)
+            else:
+                valid_pw.append(row)
+        else:
+            valid_http.append(row)
+
+    return valid_http, valid_pw, blocked_pw, errors
 
 
 def build_fuentes(rows: List[ManifestRow]) -> List[Dict[str, Any]]:
@@ -554,19 +572,24 @@ def _query_propiedades_since(supabase_url: str, key: str, ts_since: str) -> List
 
 
 def run_execute(
-    fuentes: List[Dict],
+    fuentes_http: List[Dict],
+    fuentes_pw: List[Dict],
     limit: int,
-    workers: int,
+    http_workers: int,
+    pw_workers: int,
     out_dir: Path,
     ts_start: str,
     manifest_path: Path,
 ) -> Optional[Dict]:
     """
-    Corrida real controlada. Escribe en propiedades (INSERT plain, sin on_conflict).
-    Solo autorizado con --execute + --limit <= 50 + --workers <= 2.
-    Requiere inmobiliaria_id resuelto via FK preflight (inmobiliarias_main read-only).
+    Corrida real con dos colas independientes.
+    Cola HTTP  (fuentes_http): http_workers threads — I/O-bound puro, escala bien.
+    Cola PW    (fuentes_pw):   pw_workers threads  — RAM-bound, conservador.
+    Los workers antibot/captcha fueron filtrados antes de llegar aquí.
+    Escribe en propiedades. No toca inmobiliarias_main (solo SELECT para FK preflight).
     """
-    subset = fuentes[:limit]
+    subset_http = fuentes_http[:limit] if limit else fuentes_http
+    subset_pw   = fuentes_pw            # PW queue sin límite adicional (ya es pequeña)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"\n[EXECUTE] Cargando módulos del scraper...")
@@ -578,16 +601,17 @@ def run_execute(
               file=sys.stderr)
         return None
 
-    # ── FK preflight (read-only SELECT en inmobiliarias_main) ────────────────
-    print(f"\n[EXECUTE] FK preflight: buscando inmobiliaria_id para {len(subset)} fuentes...")
-    source_ids = [f["source_id"] for f in subset if f.get("source_id")]
+    # ── FK preflight combinado (HTTP + PW) ─────────────────────────────────
+    all_subset = subset_http + subset_pw
+    print(f"\n[EXECUTE] FK preflight: {len(subset_http)} HTTP + {len(subset_pw)} PW = {len(all_subset)} fuentes...")
+    source_ids = [f["source_id"] for f in all_subset if f.get("source_id")]
     fk_mapping = _lookup_inmobiliaria_ids(
         cfg.SUPABASE_URL, cfg.SUPABASE_SERVICE_ROLE_KEY, source_ids
     )
 
     fuentes_con_fk    = []
     fuentes_sin_fk    = []
-    for f in subset:
+    for f in all_subset:
         sid = f.get("source_id", "")
         mid = fk_mapping.get(str(sid))
         if mid is not None:
@@ -595,8 +619,8 @@ def run_execute(
         else:
             fuentes_sin_fk.append(f)
 
-    pct = round(100 * len(fuentes_con_fk) / len(subset)) if subset else 0
-    print(f"[EXECUTE] FK match:    {len(fuentes_con_fk)}/{len(subset)} ({pct}%)")
+    pct = round(100 * len(fuentes_con_fk) / len(all_subset)) if all_subset else 0
+    print(f"[EXECUTE] FK match:    {len(fuentes_con_fk)}/{len(all_subset)} ({pct}%)")
     print(f"[EXECUTE] Sin FK:      {len(fuentes_sin_fk)} fuentes omitidas")
     if fuentes_sin_fk:
         for f in fuentes_sin_fk[:5]:
@@ -608,8 +632,10 @@ def run_execute(
         print("[EXECUTE] ERROR: ninguna fuente tiene FK válido. Abortando.", file=sys.stderr)
         return None
 
-    # Reemplazar subset con solo fuentes con FK válido
-    subset = fuentes_con_fk
+    # Separar FK-resueltos en sus colas
+    http_ids = {f["source_id"] for f in subset_http}
+    cola_http = [f for f in fuentes_con_fk if f["source_id"] in http_ids]
+    cola_pw   = [f for f in fuentes_con_fk if f["source_id"] not in http_ids]
 
     # Conectar (no imprime credentials)
     print("\n[EXECUTE] Conectando a Supabase (read-only para snapshot)...")
@@ -629,55 +655,70 @@ def run_execute(
     count_before = len(existing_urls)
     print(f"[EXECUTE] existing_urls (per-source, {len(inmobiliaria_ids_fk)} fuentes): {count_before:,}")
 
-    # Snapshot pre-execute (incluye fuentes_sin_fk)
+    # Snapshot pre-execute
     cmd = (
         f"python scripts/run_manifest.py "
         f"--manifest {manifest_path.name} "
-        f"--execute --limit {limit} --workers {workers}"
+        f"--execute --limit {limit} --workers {http_workers}"
     )
-    snap = _pre_execute_snapshot(subset, count_before, ts_start, out_dir, cmd, workers)
+    snap = _pre_execute_snapshot(fuentes_con_fk, count_before, ts_start, out_dir, cmd, http_workers)
     snap["fk_preflight"] = {
         "fuentes_con_fk":  len(fuentes_con_fk),
         "fuentes_sin_fk":  len(fuentes_sin_fk),
         "pct_match":       pct,
         "omitidas":        [f["source_id"] for f in fuentes_sin_fk],
     }
+    snap["colas"] = {"http": len(cola_http), "playwright": len(cola_pw)}
     (out_dir / "pre_execute_snapshot.json").write_text(
         json.dumps(snap, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     print("[EXECUTE] pre_execute_snapshot.json generado (con FK preflight)")
 
-    print(f"\n[EXECUTE] Iniciando scraping: {len(subset)} fuentes elegibles | {workers} workers")
+    print(f"\n[EXECUTE] Iniciando scraping dos colas:")
+    print(f"  Cola HTTP:       {len(cola_http)} fuentes | {http_workers} workers")
+    print(f"  Cola Playwright: {len(cola_pw)} fuentes | {pw_workers} workers")
     print("[EXECUTE] Escribe SOLO en: propiedades")
     print("[EXECUTE] Lee SOLO de:    inmobiliarias_main (FK lookup ya completado)")
     print("[EXECUTE] NO toca:        publish_queue, url_listado, raw, staging")
     print()
 
     lock    = threading.Lock()
-    batches = _split_batches(subset, workers)
+    batches_http = _split_batches(cola_http, http_workers) if cola_http else []
+    batches_pw   = _split_batches(cola_pw,   pw_workers)   if cola_pw   else []
 
     total_saved    = 0
     worker_results = {}
 
     tracker = _ProgressTracker(
-        total_fuentes=len(subset),
+        total_fuentes=len(fuentes_con_fk),
         n_sin_fk=len(fuentes_sin_fk),
         out_dir=out_dir,
-        workers=workers,
+        workers=http_workers + pw_workers,
     )
 
     from concurrent.futures import ThreadPoolExecutor, as_completed  # noqa: PLC0415
 
-    with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = {
-            executor.submit(
-                _scrape_batch, batch, supabase, existing_urls, lock, False, wid,
+    with ThreadPoolExecutor(max_workers=http_workers) as http_ex, \
+         ThreadPoolExecutor(max_workers=pw_workers)   as pw_ex:
+
+        http_futures = {
+            http_ex.submit(
+                _scrape_batch, batch, supabase, existing_urls, lock, False, f"h{wid}",
                 tracker.on_source_done,
-            ): wid
-            for wid, batch in enumerate(batches)
+            ): f"h{wid}"
+            for wid, batch in enumerate(batches_http)
         }
-        for fut in as_completed(futures):
-            wid = futures[fut]
+        pw_futures = {
+            pw_ex.submit(
+                _scrape_batch, batch, supabase, existing_urls, lock, False, f"pw{wid}",
+                tracker.on_source_done,
+            ): f"pw{wid}"
+            for wid, batch in enumerate(batches_pw)
+        }
+
+        all_futures = {**http_futures, **pw_futures}
+        for fut in as_completed(all_futures):
+            wid = all_futures[fut]
             try:
                 saved = fut.result()
                 total_saved += saved
@@ -705,7 +746,7 @@ def run_execute(
     print(f"[EXECUTE] {len(new_props)} propiedades con created_at > ts_start")
 
     return {
-        "subset":           subset,
+        "subset":           fuentes_con_fk,
         "fuentes_sin_fk":   fuentes_sin_fk,
         "fk_mapping":       fk_mapping,
         "count_before":     count_before,
@@ -714,9 +755,9 @@ def run_execute(
         "net_new":          net_new,
         "new_props":        new_props,
         "worker_results":   worker_results,
-        "workers":          workers,
+        "workers":          http_workers + pw_workers,
         "limit":            limit,
-        "batches":          len(batches),
+        "batches":          len(batches_http) + len(batches_pw),
     }
 
 
@@ -1093,9 +1134,9 @@ def main(argv=None) -> int:
                   "Raise the constant with explicit authorization for a larger run.",
                   file=sys.stderr)
             return 1
-        if args.workers > MAX_EXECUTE_WORKERS:
-            print(f"ERROR: --execute --workers {args.workers} exceeds MAX_EXECUTE_WORKERS "
-                  f"({MAX_EXECUTE_WORKERS}) authorized in PR-BE-PROD-09e.",
+        if args.workers > MAX_HTTP_WORKERS:
+            print(f"ERROR: --execute --workers {args.workers} exceeds MAX_HTTP_WORKERS "
+                  f"({MAX_HTTP_WORKERS}). Medir RAM real antes de subir el límite.",
                   file=sys.stderr)
             return 1
         if args.dry_run:
@@ -1139,7 +1180,8 @@ def main(argv=None) -> int:
         excluded_ids = {r.get("source_id", "").strip() for r in excl_rows if r.get("source_id")}
         print(f"[MANIFEST] Excluidas cargadas: {len(excluded_ids)} source_ids")
 
-    valid_rows, errors = validate_manifest(all_rows, excluded_ids=excluded_ids)
+    valid_http, valid_pw, blocked_pw, errors = validate_manifest(all_rows, excluded_ids=excluded_ids)
+    valid_rows = valid_http  # alias para dry-run y write_outputs
 
     if errors:
         print(f"\n[MANIFEST] {len(errors)} filas con errores de validación:")
@@ -1149,10 +1191,14 @@ def main(argv=None) -> int:
             print(f"  ... y {len(errors) - 10} más")
         print()
 
-    print(f"[MANIFEST] Fuentes válidas: {len(valid_rows)}")
-    print(f"[MANIFEST] Errores: {len(errors)}")
+    print(f"[MANIFEST] Cola HTTP:            {len(valid_http)} fuentes")
+    print(f"[MANIFEST] Cola Playwright:      {len(valid_pw)} fuentes")
+    print(f"[MANIFEST] Playwright bloqueadas:{len(blocked_pw)} fuentes (antibot/captcha — sin scraping)")
+    print(f"[MANIFEST] Errores validación:   {len(errors)}")
 
-    fuentes = build_fuentes(valid_rows)
+    fuentes_http = build_fuentes(valid_http)
+    fuentes_pw   = build_fuentes(valid_pw)
+    fuentes      = fuentes_http  # alias para canary/dry-run (HTTP-only paths)
     out_dir = (
         Path(args.out).resolve() if args.out else
         REPO_ROOT / "_scratch" / (
@@ -1165,7 +1211,11 @@ def main(argv=None) -> int:
     # ── Ejecutar ─────────────────────────────────────────────────────────────
 
     if args.execute:
-        result = run_execute(fuentes, args.limit, args.workers, out_dir, ts, manifest_path)
+        result = run_execute(
+            fuentes_http, fuentes_pw,
+            args.limit, args.workers, MAX_PW_WORKERS,
+            out_dir, ts, manifest_path,
+        )
         if result is None:
             return 1
         write_execute_outputs(result, out_dir, ts, manifest_path)
@@ -1189,7 +1239,7 @@ def main(argv=None) -> int:
         all_rows=all_rows, valid_rows=valid_rows, errors=errors,
         fuentes=fuentes, dry_stats=dry_stats, excluded_rows=[], limit=args.limit,
     )
-    print(f"\n[MANIFEST] Dry-run: {len(valid_rows)} fuentes validadas. 0 DB writes.")
+    print(f"\n[MANIFEST] Dry-run: {len(valid_http)} HTTP + {len(valid_pw)} PW fuentes validadas. 0 DB writes.")
     print(f"[MANIFEST] Outputs -> {out_dir}")
     return 0
 
