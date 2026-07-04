@@ -539,7 +539,7 @@ def _pre_execute_snapshot(
             "limit":              len(subset),
             "max_limit_09d":      MAX_EXECUTE_LIMIT,
             "workers":            workers,
-            "max_workers_09d":    MAX_EXECUTE_WORKERS,
+            "max_workers_09d":    MAX_HTTP_WORKERS,
         },
     }
     out_dir.mkdir(parents=True, exist_ok=True)
