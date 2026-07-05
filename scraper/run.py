@@ -76,12 +76,6 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_WORKERS = 4
 
-# Chromium accumulates memory across pages in a long-running BrowserContext.
-# Recycling the context every N sources releases that memory without restarting
-# the browser process. At ~300 sources per worker in a 615-source run, this
-# prevents the >3 GB RAM spike that caused MemoryError in rerun_02.
-CONTEXT_RECYCLE_EVERY = 50
-
 BROWSER_ARGS = [
     "--disable-blink-features=AutomationControlled",
     "--no-sandbox",
@@ -268,15 +262,7 @@ def _scrape_batch(
                 locale="es-AR",
             )
 
-        context = _new_context()
-        for source_idx, fuente in enumerate(fuentes_batch):
-            if source_idx > 0 and source_idx % CONTEXT_RECYCLE_EVERY == 0:
-                try:
-                    context.close()
-                except Exception:
-                    pass
-                context = _new_context()
-                logger.info(f"[W{worker_id}] Context reciclado tras {source_idx} fuentes")
+        for fuente in fuentes_batch:
             key = fuente.get("key") or fuente.get("nombre", "?")
             url = fuente.get("web", "")
             ciudad = fuente.get("ciudad", "") or ""
@@ -285,9 +271,11 @@ def _scrape_batch(
             if not url:
                 continue
 
+            context = _new_context()
             _source_props_saved = 0
-            page = context.new_page()
+            page = None
             try:
+                page = context.new_page()
                 logger.info(f"[W{worker_id}][{key}] → {url}")
 
                 # ═══════════════════════════════════════════════════════════
@@ -405,15 +393,19 @@ def _scrape_batch(
             except Exception as exc:
                 logger.error(f"[W{worker_id}][{key}] Error: {exc}", exc_info=True)
             finally:
+                if page is not None:
+                    try:
+                        page.close()
+                    except Exception:
+                        pass
                 try:
-                    page.close()
+                    context.close()
                 except Exception:
                     pass
                 if on_source_done:
                     on_source_done(key, _source_props_saved)
 
         try:
-            context.close()
             browser.close()
         except Exception:
             pass
