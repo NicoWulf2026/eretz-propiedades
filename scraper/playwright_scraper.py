@@ -665,459 +665,462 @@ def parse_cards(html: str, operacion: str, fuente_key: str, base_url: str,
     hace fallback directo por links (resuelve repetto, vaccaro, oilher, etc).
     """
     soup = BeautifulSoup(html, "html.parser")
+    try:
 
-    # ── Segmentos de URL que identifican páginas de propiedades individuales ──
-    # CAUSA 1 de 0-resultados: segmentos faltantes hacen que el fallback ignore
-    # sitios que usan CMS diferentes a Tokko Broker.
-    PROP_SEGMENTS = [
-        # ── Tokko Broker / iMeSH / custom PHP ──────────────────────────────
-        "/p/",              # Tokko Broker  e.g. /p/7654321-Casa-en-Venta-...
-        "/propiedad/",      # repetto, vaccaro, varios CMS propios
-        "/propiedades/",    # WP Real Estate, Houzez, Inmogestor
-        "/ad/",             # algunos CMS usan /ad/ID-slug
-        "/inmueble/",       # iMeSH / Sitioinmuebles
-        "/inmuebles/",      # civeira, WordPress custom
-        # ── English CMS (usados en Argentina con nombres en inglés) ────────
-        "/property/",       # WP themes: Houzez, Estate Engine
-        "/properties/",     # plural de la mayoría de themes en inglés
-        "/listing/",        # EasyBroker, ListingPro
-        "/listings/",       # plural
-        # ── PHP genérico / sistemas nacionales ─────────────────────────────
-        "/detalle/",        # PHP custom: /detalle/123-titulo
-        "/detalles/",       # variante plural
-        "/aviso/",          # algunas plataformas de avisos
-        "/emprendimiento/", # desarrolladoras: /emprendimiento/slug
-        # ── WP / Keysoft / Tizado ──────────────────────────────────────────
-        "/Ficha/",          # Tizado.com, Keysoft
-        "/ficha/",
-        "/ficha-",          # variante sin barra (ficha-123)
-    ]
+        # ── Segmentos de URL que identifican páginas de propiedades individuales ──
+        # CAUSA 1 de 0-resultados: segmentos faltantes hacen que el fallback ignore
+        # sitios que usan CMS diferentes a Tokko Broker.
+        PROP_SEGMENTS = [
+            # ── Tokko Broker / iMeSH / custom PHP ──────────────────────────────
+            "/p/",              # Tokko Broker  e.g. /p/7654321-Casa-en-Venta-...
+            "/propiedad/",      # repetto, vaccaro, varios CMS propios
+            "/propiedades/",    # WP Real Estate, Houzez, Inmogestor
+            "/ad/",             # algunos CMS usan /ad/ID-slug
+            "/inmueble/",       # iMeSH / Sitioinmuebles
+            "/inmuebles/",      # civeira, WordPress custom
+            # ── English CMS (usados en Argentina con nombres en inglés) ────────
+            "/property/",       # WP themes: Houzez, Estate Engine
+            "/properties/",     # plural de la mayoría de themes en inglés
+            "/listing/",        # EasyBroker, ListingPro
+            "/listings/",       # plural
+            # ── PHP genérico / sistemas nacionales ─────────────────────────────
+            "/detalle/",        # PHP custom: /detalle/123-titulo
+            "/detalles/",       # variante plural
+            "/aviso/",          # algunas plataformas de avisos
+            "/emprendimiento/", # desarrolladoras: /emprendimiento/slug
+            # ── WP / Keysoft / Tizado ──────────────────────────────────────────
+            "/Ficha/",          # Tizado.com, Keysoft
+            "/ficha/",
+            "/ficha-",          # variante sin barra (ficha-123)
+        ]
 
-    # Segmentos que sirven como categorías/paginación (no son fichas individuales)
-    # Usados para filtrar falsos positivos cuando un segmento como /propiedades/
-    # aparece seguido de una categoría.
-    _CATEGORY_SUFFIXES = {
-        "venta", "alquiler", "page", "buscar", "search", "results",
-        "resultados", "categoria", "category", "tipo", "type",
-    }
+        # Segmentos que sirven como categorías/paginación (no son fichas individuales)
+        # Usados para filtrar falsos positivos cuando un segmento como /propiedades/
+        # aparece seguido de una categoría.
+        _CATEGORY_SUFFIXES = {
+            "venta", "alquiler", "page", "buscar", "search", "results",
+            "resultados", "categoria", "category", "tipo", "type",
+        }
 
-    def _is_detail_url(path: str) -> bool:
-        """True si el path parece una ficha individual (no una categoría o paginación)."""
-        candidate = path if path.startswith(("http://", "https://")) else urljoin(base_url, path)
-        if _looks_like_detail_url(candidate, base_url):
-            return True
-        for seg in PROP_SEGMENTS:
-            if seg in path:
-                after = path.split(seg, 1)[-1].strip("/")
-                if not after:
-                    return False
-                # Rechazar si lo que sigue es una categoría conocida
-                first_part = after.split("/")[0].split("-")[0].lower()
-                if first_part in _CATEGORY_SUFFIXES:
-                    return False
-                # Debe tener al menos 3 caracteres útiles
-                return len(after) >= 3
-        return False
+        def _is_detail_url(path: str) -> bool:
+            """True si el path parece una ficha individual (no una categoría o paginación)."""
+            candidate = path if path.startswith(("http://", "https://")) else urljoin(base_url, path)
+            if _looks_like_detail_url(candidate, base_url):
+                return True
+            for seg in PROP_SEGMENTS:
+                if seg in path:
+                    after = path.split(seg, 1)[-1].strip("/")
+                    if not after:
+                        return False
+                    # Rechazar si lo que sigue es una categoría conocida
+                    first_part = after.split("/")[0].split("-")[0].lower()
+                    if first_part in _CATEGORY_SUFFIXES:
+                        return False
+                    # Debe tener al menos 3 caracteres útiles
+                    return len(after) >= 3
+            return False
 
-    # ── Detectar tipo de card container — orden de prioridad ─────────────────
-    # CAUSA 2 de 0-resultados: selectores de card demasiado específicos.
-    # Sólo cubrían Bootstrap 3 y 2-3 clases más. Ahora cubre la mayoría de
-    # los CMS inmobiliarios argentinos y themes de WordPress.
-    cards = (
-        # ── Clases semánticas de propiedad (más confiables) ────────────────
-        soup.select("[class*='property-card'], [class*='property-item']")
-        or soup.select("[class*='prop-card'], [class*='prop-item']")
-        or soup.select("[class*='listing-item'], [class*='listing-card']")
-        or soup.select("[class*='inmueble-item'], [class*='item-inmueble']")
-        or soup.select("[class*='aviso-'], [class*='-aviso']")
-        or soup.select("[class*='real-estate-item'], [class*='estate-item']")
-        or soup.select("[class*='card-inmueble'], [class*='inmueble-card']")
-        or soup.select("[class*='result-item'], [class*='search-result']")
-        # ── Elementos article con contexto de listado ──────────────────────
-        or soup.select("article.property-row")
-        or soup.select("article[class*='prop'], article[class*='listing']")
-        or soup.select("article[class*='inmueble'], article[class*='aviso']")
-        # ── Temas WP específicos (Real Homes, EstateEngine) ────────────────
-        or soup.select(".rh_list_card, .rh-ultra-property-card-two, .rh_prop_card")
-        or soup.select(".figure-block, .hotels-layout")
-        # ── Bootstrap 3 grid (herencia) ────────────────────────────────────
-        or soup.select("div.col-md-6.col-lg-6")
-        or soup.select("div.col-sm-6.col-xs-12")
-        or soup.select("div.col-md-4.col-sm-6")
-        # ── Listas ordenadas de propiedades ───────────────────────────────
-        or soup.select("ul.resultados-list li")
-        or soup.select("li.prop-card, li[class*='prop-item'], li[class*='listing-item']")
-        # NOTA: li[data-id] fue removido — matcheaba filtros del sidebar
-    )
-
-    propiedades = []
-    seen = set()
-
-    def _make_prop_from_url(href: str, card_text: str = "") -> Optional[Propiedad]:
-        """
-        Crea un Propiedad mínimo desde un href de Tokko Broker o CMS propio.
-        Extrae título/barrio desde texto del card o slug de la URL.
-        """
-        url = href if href.startswith("http") else urljoin(base_url, href)
-        if url in seen:
-            return None
-        seen.add(url)
-
-        # Obtener slug de la URL (parte descriptiva del path)
-        path = url.split("?")[0]  # quitar query string
-        slug = path.rstrip("/").split("/")[-1]  # último segmento
-
-        # Título desde texto del card o desde el slug
-        if card_text and len(card_text) > 8:
-            # Limpiar texto del card: remover precios y textos técnicos
-            titulo = card_text[:150]
-        else:
-            slug_sin_id = "-".join(p for p in slug.split("-") if not p.isdigit())
-            titulo = (
-                slug_sin_id.replace("-", " ").title()[:100]
-                if slug_sin_id
-                else slug.replace("-", " ").title()[:100]
-            )
-
-        # Extraer dirección/barrio del slug
-        slug_parts = slug.split("-")
-
-        # Saltar el ID numérico inicial (Tokko usa ID-palabra-palabra-barrio)
-        first_non_id = 0
-        for i, p in enumerate(slug_parts):
-            if not p.isdigit():
-                first_non_id = i
-                break
-
-        meaningful_parts = slug_parts[first_non_id:]
-        # Filtrar palabras que no son ubicaciones (operacion, tipo de propiedad, preposiciones)
-        palabras = [p for p in meaningful_parts
-                    if not p.isdigit() and len(p) > 2 and p.lower() not in _SLUG_SKIP_WORDS]
-        nums = [p for p in meaningful_parts if p.isdigit() and 2 <= len(p) <= 5]
-
-        direccion = None
-        barrio = None
-
-        if palabras:
-            barrio = " ".join(palabras[-2:]).title() if len(palabras) >= 2 else palabras[-1].title()
-            if nums:
-                calle = " ".join(palabras[:3]).title()
-                direccion = f"{calle} {nums[0]}"
-            else:
-                direccion = " ".join(palabras[:4]).title()
-
-        # Fallback: usar ciudad como barrio si no se pudo extraer nada
-        if not barrio and not direccion:
-            barrio = ciudad or "Argentina"
-
-        # Tipo: la URL de Tokko incluye el tipo en el slug (/p/1234-Casa-en-Venta-...)
-        tipo = DataCleaner.detect_property_type(slug.replace("-", " ") + " " + (titulo or ""))
-
-        # Operación: detectar desde el slug/path antes de usar el parámetro global.
-        # Se chequean variantes con guion ("en-venta", "-venta-", slug termina en "-venta")
-        # y también el path completo ("/Venta", "/Alquiler") para cubrir todos los CMS.
-        slug_lower = slug.lower()
-        path_lower = path.lower()
-        if ("en-venta" in slug_lower or slug_lower.endswith("-venta")
-                or "-venta-" in slug_lower or "/venta" in path_lower):
-            detected_operacion = "venta"
-        elif ("en-alquiler" in slug_lower or slug_lower.endswith("-alquiler")
-              or "-alquiler-" in slug_lower or "/alquiler" in path_lower):
-            detected_operacion = "alquiler"
-        else:
-            detected_operacion = operacion  # fallback (puede ser None)
-
-        return Propiedad(
-            url=url,
-            titulo=titulo or slug.replace("-", " ").title() or "Sin título",
-            precio=None,
-            moneda=None,
-            barrio=barrio,
-            barrio_normalizado=DataCleaner.normalize_neighborhood(barrio) if barrio else None,
-            tipo_propiedad=tipo,
-            ciudad=ciudad,
-            operacion=detected_operacion,
-            fuente=fuente_key,
-            direccion=direccion,
+        # ── Detectar tipo de card container — orden de prioridad ─────────────────
+        # CAUSA 2 de 0-resultados: selectores de card demasiado específicos.
+        # Sólo cubrían Bootstrap 3 y 2-3 clases más. Ahora cubre la mayoría de
+        # los CMS inmobiliarios argentinos y themes de WordPress.
+        cards = (
+            # ── Clases semánticas de propiedad (más confiables) ────────────────
+            soup.select("[class*='property-card'], [class*='property-item']")
+            or soup.select("[class*='prop-card'], [class*='prop-item']")
+            or soup.select("[class*='listing-item'], [class*='listing-card']")
+            or soup.select("[class*='inmueble-item'], [class*='item-inmueble']")
+            or soup.select("[class*='aviso-'], [class*='-aviso']")
+            or soup.select("[class*='real-estate-item'], [class*='estate-item']")
+            or soup.select("[class*='card-inmueble'], [class*='inmueble-card']")
+            or soup.select("[class*='result-item'], [class*='search-result']")
+            # ── Elementos article con contexto de listado ──────────────────────
+            or soup.select("article.property-row")
+            or soup.select("article[class*='prop'], article[class*='listing']")
+            or soup.select("article[class*='inmueble'], article[class*='aviso']")
+            # ── Temas WP específicos (Real Homes, EstateEngine) ────────────────
+            or soup.select(".rh_list_card, .rh-ultra-property-card-two, .rh_prop_card")
+            or soup.select(".figure-block, .hotels-layout")
+            # ── Bootstrap 3 grid (herencia) ────────────────────────────────────
+            or soup.select("div.col-md-6.col-lg-6")
+            or soup.select("div.col-sm-6.col-xs-12")
+            or soup.select("div.col-md-4.col-sm-6")
+            # ── Listas ordenadas de propiedades ───────────────────────────────
+            or soup.select("ul.resultados-list li")
+            or soup.select("li.prop-card, li[class*='prop-item'], li[class*='listing-item']")
+            # NOTA: li[data-id] fue removido — matcheaba filtros del sidebar
         )
 
-    # ── Modo card: parsear containers ─────────────────────────────────────────
-    _IMG_SKIP = {"logo", "icon", "placeholder", "blank", "spinner", "loading", "avatar"}
+        propiedades = []
+        seen = set()
 
-    if cards:
-        for card in cards:
-            # CAUSA 3: el selector de link sólo cubría 7 segmentos originales.
-            # Ahora cubre todos los PROP_SEGMENTS + un último recurso genérico.
-            link = card.select_one(
-                'a[href*="/p/"],'
-                'a[href*="/propiedad/"],'
-                'a[href*="/propiedades/"],'
-                'a[href*="/inmueble/"],'
-                'a[href*="/inmuebles/"],'
-                'a[href*="/property/"],'
-                'a[href*="/properties/"],'
-                'a[href*="/listing/"],'
-                'a[href*="/listings/"],'
-                'a[href*="/detalle/"],'
-                'a[href*="/detalles/"],'
-                'a[href*="/aviso/"],'
-                'a[href*="/emprendimiento/"],'
-                'a[href*="/Ficha/"],'
-                'a[href*="/ficha/"],'
-                'a[href*="ficha-"]'
-            )
-            # CAUSA 4: si ningún segmento conocido matchea, usar el primer link
-            # del card que apunte a la misma base_url (evita quedar con 0 si el
-            # CMS usa URLs sin segmento reconocible como /123-slug o /slug).
-            if not link:
-                for candidate in card.select("a[href]"):
-                    ch = candidate.get("href", "")
-                    if not ch or ch.startswith(("#", "javascript:", "mailto:", "tel:")):
-                        continue
-                    # Aceptar si el path tiene al menos 2 segmentos y no es nav/paginación
-                    try:
-                        _cp = urlparse(ch).path if ch.startswith("http") else ch.split("?")[0]
-                    except Exception:
-                        _cp = ch.split("?")[0]
-                    _parts = [x for x in _cp.strip("/").split("/") if x]
-                    if len(_parts) >= 2 and not any(
-                        bad in ch for bad in ["/page/", "?page=", "#", "javascript:",
-                                              "/buscar", "/search", "/contact", "/about",
-                                              "/nosotros", "/quienes", "/servicios"]
-                    ):
-                        link = candidate
-                        break
-            if link:
-                href = link.get("href", "")
-            else:
-                candidate_urls = extract_candidate_detail_urls_from_card(card, base_url)
-                if candidate_urls:
-                    href = candidate_urls[0]
-                else:
-                    continue
-
-            # ── Rechazar links que apuntan a dominios externos (portales, redes, etc.) ──
-            # Ocurre cuando un card tiene un botón "Ver en Argenprop/ZonaProp" etc.
-            # que coincide con el selector (ej: /inmuebles/ en argenprop.com).
-            if href.startswith("http"):
-                try:
-                    _href_netloc = urlparse(href).netloc.lower().lstrip("www.")
-                    _base_netloc = urlparse(base_url).netloc.lower().lstrip("www.")
-                    if (_href_netloc and _base_netloc
-                            and _href_netloc != _base_netloc
-                            and not _href_netloc.endswith("." + _base_netloc)
-                            and not _base_netloc.endswith("." + _href_netloc)):
-                        continue
-                except Exception:
-                    pass
-
-            textos = [el.get_text(strip=True) for el in card.find_all(True)
-                      if el.get_text(strip=True) and not el.find(True)]
-
-            # ── PRECIO: buscar en selectores específicos primero, luego texto libre ──
-            precio_raw = None
-            for price_sel in ["[class*='price']", "[class*='precio']", ".aviso-precio",
-                               ".property-price", "[class*='Price']", "strong", "b"]:
-                el = card.select_one(price_sel)
-                if el:
-                    txt = el.get_text(strip=True)
-                    if ("$" in txt or "USD" in txt or "U$S" in txt or
-                            "US$" in txt or "usd" in txt.lower()):
-                        precio_raw = txt
-                        break
-            if not precio_raw:
-                precio_raw = next((t for t in textos if
-                                   "$" in t or "USD" in t or "U$S" in t or "US$" in t), None)
-            precio, moneda = DataCleaner.clean_price(precio_raw)
-
-            # ── TÍTULO ─────────────────────────────────────────────────────────────
-            titulo = None
-            for title_sel in ["h2", "h3", "h1", "[class*='title']", "[class*='titulo']",
-                               ".aviso-title", ".property-title"]:
-                el = card.select_one(title_sel)
-                if el:
-                    txt = el.get_text(strip=True)
-                    if len(txt) > 8 and "$" not in txt and "USD" not in txt:
-                        titulo = txt[:150]
-                        break
-            if not titulo:
-                titulo = next((t for t in textos if len(t) > 10 and "$" not in t
-                               and "USD" not in t and "m²" not in t
-                               and "Dormitorio" not in t and "Área" not in t
-                               and "U$S" not in t), None)
-
-            # ── TIPO: URL del href > texto del card > título ───────────────────────
-            # Tokko Broker codifica el tipo en la URL: /p/1234567-Casa-en-Venta-...
-            href_texto = href.replace("-", " ").replace("/", " ")
-            tipo = DataCleaner.detect_property_type(href_texto)
-            if tipo == "otro":
-                tipo_raw = next((t for t in textos if t.lower() in
-                                 ["casa", "departamento", "terreno", "local", "oficina",
-                                  "cochera", "galpon", "galpón", "duplex", "dúplex", "ph"]), None)
-                tipo = DataCleaner.normalize_property_type_token(tipo_raw or "")
-            if tipo == "otro" and titulo:
-                tipo = DataCleaner.detect_property_type(titulo)
-
-            # ── OPERACIÓN: detectar por card (href > texto > parámetro global) ────
-            # Tokko Broker codifica "en-venta"/"en-alquiler" en el slug de cada URL.
-            # También se chequea "-venta-" y terminación "-venta" para variantes de CMS.
-            href_lower = href.lower()
-            card_texto_lower = " ".join(textos).lower()
-            if ("en-venta" in href_lower or "/venta" in href_lower
-                    or "-venta-" in href_lower or href_lower.endswith("-venta")):
-                card_operacion = "venta"
-            elif ("en-alquiler" in href_lower or "/alquiler" in href_lower
-                  or "-alquiler-" in href_lower or href_lower.endswith("-alquiler")):
-                card_operacion = "alquiler"
-            elif "venta" in card_texto_lower and "alquiler" not in card_texto_lower:
-                card_operacion = "venta"
-            elif "alquiler" in card_texto_lower:
-                card_operacion = "alquiler"
-            else:
-                card_operacion = operacion  # fallback al parámetro global (puede ser None)
-
-            # ── DIRECCIÓN: extraer del slug del href filtrando palabras no-ubicación ──
-            # Antes: "partes" incluía "Venta", "Alquiler", "Casa", etc. como parte del barrio.
-            # Fix: se filtran por _SLUG_SKIP_WORDS para obtener solo palabras geográficas.
-            href_path = href.split("?")[0]  # quitar query string
-            partes = re.split(r"[-/]", href_path)
-            nums = [p for p in partes if p.isdigit()]
-            palabras = [p for p in partes
-                        if not p.isdigit() and len(p) > 2 and p.lower() not in _SLUG_SKIP_WORDS]
-            direccion = None
-            if palabras and nums:
-                calle = " ".join(palabras[-3:]) if len(palabras) >= 3 else " ".join(palabras[-2:])
-                direccion = f"{calle} {nums[-1]}".title()
-            # Fallback: usar ciudad como barrio para pasar is_valid()
-            barrio = (ciudad or "Argentina") if not direccion else None
-
-            # ── MÉTRICAS: metros, ambientes, dormitorios, baños ────────────────────
-            # Muchos cards Tokko muestran "3 ambientes", "2 dorm.", "85 m²" en el texto.
-            metros = None
-            ambientes = None
-            dormitorios = None
-            banos = None
-            texto_completo = " ".join(textos)
-            m = re.search(r"(\d+)\s*(?:m²|m2|mts?\.?\s*(?:cuad)?)", texto_completo, re.IGNORECASE)
-            if m:
-                try:
-                    v = int(m.group(1))
-                    metros = v if 10 <= v <= 10000 else None
-                except Exception:
-                    pass
-            texto_completo_lower = " ".join(textos).lower()
-            def _card_num(text: str, kw: str) -> Optional[int]:
-                m = (re.search(rf"(\d+)\s*(?:{kw})", text, re.IGNORECASE)
-                     or re.search(rf"(?:{kw})[^0-9]{{0,15}}(\d+)", text, re.IGNORECASE))
-                if m:
-                    try:
-                        return int(m.group(1))
-                    except Exception:
-                        pass
-                return None
-            if ambientes is None:
-                ambientes = _card_num(texto_completo_lower, r"amb")
-            if dormitorios is None:
-                dormitorios = _card_num(texto_completo_lower, r"dorm|habit")
-            if banos is None:
-                banos = _card_num(texto_completo_lower, r"ba[ñn]")
-
-            # ── IMAGEN: primer thumbnail del card que no sea logo/icon ────────────
-            imagenes = []
-            for img in card.select("img"):
-                src = (img.get("src") or img.get("data-src") or
-                       img.get("data-lazy-src") or img.get("data-original") or "").strip()
-                if not src or src.startswith("data:"):
-                    continue
-                if not src.startswith("http"):
-                    src = urljoin(base_url, src)
-                lower = src.lower()
-                if any(skip in lower for skip in _IMG_SKIP) or lower.endswith(".svg"):
-                    continue
-                imagenes = [src]
-                break
-
+        def _make_prop_from_url(href: str, card_text: str = "") -> Optional[Propiedad]:
+            """
+            Crea un Propiedad mínimo desde un href de Tokko Broker o CMS propio.
+            Extrae título/barrio desde texto del card o slug de la URL.
+            """
             url = href if href.startswith("http") else urljoin(base_url, href)
             if url in seen:
-                continue
+                return None
             seen.add(url)
 
-            prop = Propiedad(
+            # Obtener slug de la URL (parte descriptiva del path)
+            path = url.split("?")[0]  # quitar query string
+            slug = path.rstrip("/").split("/")[-1]  # último segmento
+
+            # Título desde texto del card o desde el slug
+            if card_text and len(card_text) > 8:
+                # Limpiar texto del card: remover precios y textos técnicos
+                titulo = card_text[:150]
+            else:
+                slug_sin_id = "-".join(p for p in slug.split("-") if not p.isdigit())
+                titulo = (
+                    slug_sin_id.replace("-", " ").title()[:100]
+                    if slug_sin_id
+                    else slug.replace("-", " ").title()[:100]
+                )
+
+            # Extraer dirección/barrio del slug
+            slug_parts = slug.split("-")
+
+            # Saltar el ID numérico inicial (Tokko usa ID-palabra-palabra-barrio)
+            first_non_id = 0
+            for i, p in enumerate(slug_parts):
+                if not p.isdigit():
+                    first_non_id = i
+                    break
+
+            meaningful_parts = slug_parts[first_non_id:]
+            # Filtrar palabras que no son ubicaciones (operacion, tipo de propiedad, preposiciones)
+            palabras = [p for p in meaningful_parts
+                        if not p.isdigit() and len(p) > 2 and p.lower() not in _SLUG_SKIP_WORDS]
+            nums = [p for p in meaningful_parts if p.isdigit() and 2 <= len(p) <= 5]
+
+            direccion = None
+            barrio = None
+
+            if palabras:
+                barrio = " ".join(palabras[-2:]).title() if len(palabras) >= 2 else palabras[-1].title()
+                if nums:
+                    calle = " ".join(palabras[:3]).title()
+                    direccion = f"{calle} {nums[0]}"
+                else:
+                    direccion = " ".join(palabras[:4]).title()
+
+            # Fallback: usar ciudad como barrio si no se pudo extraer nada
+            if not barrio and not direccion:
+                barrio = ciudad or "Argentina"
+
+            # Tipo: la URL de Tokko incluye el tipo en el slug (/p/1234-Casa-en-Venta-...)
+            tipo = DataCleaner.detect_property_type(slug.replace("-", " ") + " " + (titulo or ""))
+
+            # Operación: detectar desde el slug/path antes de usar el parámetro global.
+            # Se chequean variantes con guion ("en-venta", "-venta-", slug termina en "-venta")
+            # y también el path completo ("/Venta", "/Alquiler") para cubrir todos los CMS.
+            slug_lower = slug.lower()
+            path_lower = path.lower()
+            if ("en-venta" in slug_lower or slug_lower.endswith("-venta")
+                    or "-venta-" in slug_lower or "/venta" in path_lower):
+                detected_operacion = "venta"
+            elif ("en-alquiler" in slug_lower or slug_lower.endswith("-alquiler")
+                  or "-alquiler-" in slug_lower or "/alquiler" in path_lower):
+                detected_operacion = "alquiler"
+            else:
+                detected_operacion = operacion  # fallback (puede ser None)
+
+            return Propiedad(
                 url=url,
-                titulo=titulo or direccion or "Sin título",
-                precio=precio,
-                moneda=moneda,
+                titulo=titulo or slug.replace("-", " ").title() or "Sin título",
+                precio=None,
+                moneda=None,
                 barrio=barrio,
                 barrio_normalizado=DataCleaner.normalize_neighborhood(barrio) if barrio else None,
                 tipo_propiedad=tipo,
                 ciudad=ciudad,
-                operacion=card_operacion,
+                operacion=detected_operacion,
                 fuente=fuente_key,
                 direccion=direccion,
-                imagenes=imagenes,
-                metros=metros,
-                ambientes=ambientes,
-                dormitorios=dormitorios,
-                banos=banos,
             )
-            if prop.is_valid():
-                propiedades.append(prop)
 
-        # ── Si el card mode encontró propiedades, devolver ─────────────────
-        if propiedades:
-            return propiedades
-        # Si no encontró nada (ej: filtros del sidebar matchearon como cards),
-        # caer al fallback de links directos ↓
+        # ── Modo card: parsear containers ─────────────────────────────────────────
+        _IMG_SKIP = {"logo", "icon", "placeholder", "blank", "spinner", "loading", "avatar"}
 
-    # ── Fallback: cosechar links directamente desde el HTML ───────────────────
-    # Resuelve: repetto (Template4 CMS), vaccaro, tizado, y otros sitios donde
-    # el card mode no funciona o los cards no tienen selectores reconocibles.
-    for a in soup.find_all("a", href=True):
-        href = a.get("href", "")
-        if not href or href.startswith(("#", "javascript:", "mailto:", "tel:")):
-            continue
+        if cards:
+            for card in cards:
+                # CAUSA 3: el selector de link sólo cubría 7 segmentos originales.
+                # Ahora cubre todos los PROP_SEGMENTS + un último recurso genérico.
+                link = card.select_one(
+                    'a[href*="/p/"],'
+                    'a[href*="/propiedad/"],'
+                    'a[href*="/propiedades/"],'
+                    'a[href*="/inmueble/"],'
+                    'a[href*="/inmuebles/"],'
+                    'a[href*="/property/"],'
+                    'a[href*="/properties/"],'
+                    'a[href*="/listing/"],'
+                    'a[href*="/listings/"],'
+                    'a[href*="/detalle/"],'
+                    'a[href*="/detalles/"],'
+                    'a[href*="/aviso/"],'
+                    'a[href*="/emprendimiento/"],'
+                    'a[href*="/Ficha/"],'
+                    'a[href*="/ficha/"],'
+                    'a[href*="ficha-"]'
+                )
+                # CAUSA 4: si ningún segmento conocido matchea, usar el primer link
+                # del card que apunte a la misma base_url (evita quedar con 0 si el
+                # CMS usa URLs sin segmento reconocible como /123-slug o /slug).
+                if not link:
+                    for candidate in card.select("a[href]"):
+                        ch = candidate.get("href", "")
+                        if not ch or ch.startswith(("#", "javascript:", "mailto:", "tel:")):
+                            continue
+                        # Aceptar si el path tiene al menos 2 segmentos y no es nav/paginación
+                        try:
+                            _cp = urlparse(ch).path if ch.startswith("http") else ch.split("?")[0]
+                        except Exception:
+                            _cp = ch.split("?")[0]
+                        _parts = [x for x in _cp.strip("/").split("/") if x]
+                        if len(_parts) >= 2 and not any(
+                            bad in ch for bad in ["/page/", "?page=", "#", "javascript:",
+                                                  "/buscar", "/search", "/contact", "/about",
+                                                  "/nosotros", "/quienes", "/servicios"]
+                        ):
+                            link = candidate
+                            break
+                if link:
+                    href = link.get("href", "")
+                else:
+                    candidate_urls = extract_candidate_detail_urls_from_card(card, base_url)
+                    if candidate_urls:
+                        href = candidate_urls[0]
+                    else:
+                        continue
 
-        # CAUSA 5: Evaluar PROP_SEGMENTS solo en el PATH de la URL.
-        # Previene: WhatsApp share links donde /propiedad/ aparece en ?text=
-        try:
-            _href_path = href if href.startswith("http") else href
-        except Exception:
-            _href_path = href
+                # ── Rechazar links que apuntan a dominios externos (portales, redes, etc.) ──
+                # Ocurre cuando un card tiene un botón "Ver en Argenprop/ZonaProp" etc.
+                # que coincide con el selector (ej: /inmuebles/ en argenprop.com).
+                if href.startswith("http"):
+                    try:
+                        _href_netloc = urlparse(href).netloc.lower().lstrip("www.")
+                        _base_netloc = urlparse(base_url).netloc.lower().lstrip("www.")
+                        if (_href_netloc and _base_netloc
+                                and _href_netloc != _base_netloc
+                                and not _href_netloc.endswith("." + _base_netloc)
+                                and not _base_netloc.endswith("." + _href_netloc)):
+                            continue
+                    except Exception:
+                        pass
 
-        # Usar _is_detail_url que valida el segmento Y filtra categorías
-        if not _is_detail_url(_href_path):
-            candidate_urls = []
-            ctx = a
-            for _ in range(5):
-                candidate_urls = extract_candidate_detail_urls_from_card(ctx, base_url)
-                if candidate_urls:
+                textos = [el.get_text(strip=True) for el in card.find_all(True)
+                          if el.get_text(strip=True) and not el.find(True)]
+
+                # ── PRECIO: buscar en selectores específicos primero, luego texto libre ──
+                precio_raw = None
+                for price_sel in ["[class*='price']", "[class*='precio']", ".aviso-precio",
+                                   ".property-price", "[class*='Price']", "strong", "b"]:
+                    el = card.select_one(price_sel)
+                    if el:
+                        txt = el.get_text(strip=True)
+                        if ("$" in txt or "USD" in txt or "U$S" in txt or
+                                "US$" in txt or "usd" in txt.lower()):
+                            precio_raw = txt
+                            break
+                if not precio_raw:
+                    precio_raw = next((t for t in textos if
+                                       "$" in t or "USD" in t or "U$S" in t or "US$" in t), None)
+                precio, moneda = DataCleaner.clean_price(precio_raw)
+
+                # ── TÍTULO ─────────────────────────────────────────────────────────────
+                titulo = None
+                for title_sel in ["h2", "h3", "h1", "[class*='title']", "[class*='titulo']",
+                                   ".aviso-title", ".property-title"]:
+                    el = card.select_one(title_sel)
+                    if el:
+                        txt = el.get_text(strip=True)
+                        if len(txt) > 8 and "$" not in txt and "USD" not in txt:
+                            titulo = txt[:150]
+                            break
+                if not titulo:
+                    titulo = next((t for t in textos if len(t) > 10 and "$" not in t
+                                   and "USD" not in t and "m²" not in t
+                                   and "Dormitorio" not in t and "Área" not in t
+                                   and "U$S" not in t), None)
+
+                # ── TIPO: URL del href > texto del card > título ───────────────────────
+                # Tokko Broker codifica el tipo en la URL: /p/1234567-Casa-en-Venta-...
+                href_texto = href.replace("-", " ").replace("/", " ")
+                tipo = DataCleaner.detect_property_type(href_texto)
+                if tipo == "otro":
+                    tipo_raw = next((t for t in textos if t.lower() in
+                                     ["casa", "departamento", "terreno", "local", "oficina",
+                                      "cochera", "galpon", "galpón", "duplex", "dúplex", "ph"]), None)
+                    tipo = DataCleaner.normalize_property_type_token(tipo_raw or "")
+                if tipo == "otro" and titulo:
+                    tipo = DataCleaner.detect_property_type(titulo)
+
+                # ── OPERACIÓN: detectar por card (href > texto > parámetro global) ────
+                # Tokko Broker codifica "en-venta"/"en-alquiler" en el slug de cada URL.
+                # También se chequea "-venta-" y terminación "-venta" para variantes de CMS.
+                href_lower = href.lower()
+                card_texto_lower = " ".join(textos).lower()
+                if ("en-venta" in href_lower or "/venta" in href_lower
+                        or "-venta-" in href_lower or href_lower.endswith("-venta")):
+                    card_operacion = "venta"
+                elif ("en-alquiler" in href_lower or "/alquiler" in href_lower
+                      or "-alquiler-" in href_lower or href_lower.endswith("-alquiler")):
+                    card_operacion = "alquiler"
+                elif "venta" in card_texto_lower and "alquiler" not in card_texto_lower:
+                    card_operacion = "venta"
+                elif "alquiler" in card_texto_lower:
+                    card_operacion = "alquiler"
+                else:
+                    card_operacion = operacion  # fallback al parámetro global (puede ser None)
+
+                # ── DIRECCIÓN: extraer del slug del href filtrando palabras no-ubicación ──
+                # Antes: "partes" incluía "Venta", "Alquiler", "Casa", etc. como parte del barrio.
+                # Fix: se filtran por _SLUG_SKIP_WORDS para obtener solo palabras geográficas.
+                href_path = href.split("?")[0]  # quitar query string
+                partes = re.split(r"[-/]", href_path)
+                nums = [p for p in partes if p.isdigit()]
+                palabras = [p for p in partes
+                            if not p.isdigit() and len(p) > 2 and p.lower() not in _SLUG_SKIP_WORDS]
+                direccion = None
+                if palabras and nums:
+                    calle = " ".join(palabras[-3:]) if len(palabras) >= 3 else " ".join(palabras[-2:])
+                    direccion = f"{calle} {nums[-1]}".title()
+                # Fallback: usar ciudad como barrio para pasar is_valid()
+                barrio = (ciudad or "Argentina") if not direccion else None
+
+                # ── MÉTRICAS: metros, ambientes, dormitorios, baños ────────────────────
+                # Muchos cards Tokko muestran "3 ambientes", "2 dorm.", "85 m²" en el texto.
+                metros = None
+                ambientes = None
+                dormitorios = None
+                banos = None
+                texto_completo = " ".join(textos)
+                m = re.search(r"(\d+)\s*(?:m²|m2|mts?\.?\s*(?:cuad)?)", texto_completo, re.IGNORECASE)
+                if m:
+                    try:
+                        v = int(m.group(1))
+                        metros = v if 10 <= v <= 10000 else None
+                    except Exception:
+                        pass
+                texto_completo_lower = " ".join(textos).lower()
+                def _card_num(text: str, kw: str) -> Optional[int]:
+                    m = (re.search(rf"(\d+)\s*(?:{kw})", text, re.IGNORECASE)
+                         or re.search(rf"(?:{kw})[^0-9]{{0,15}}(\d+)", text, re.IGNORECASE))
+                    if m:
+                        try:
+                            return int(m.group(1))
+                        except Exception:
+                            pass
+                    return None
+                if ambientes is None:
+                    ambientes = _card_num(texto_completo_lower, r"amb")
+                if dormitorios is None:
+                    dormitorios = _card_num(texto_completo_lower, r"dorm|habit")
+                if banos is None:
+                    banos = _card_num(texto_completo_lower, r"ba[ñn]")
+
+                # ── IMAGEN: primer thumbnail del card que no sea logo/icon ────────────
+                imagenes = []
+                for img in card.select("img"):
+                    src = (img.get("src") or img.get("data-src") or
+                           img.get("data-lazy-src") or img.get("data-original") or "").strip()
+                    if not src or src.startswith("data:"):
+                        continue
+                    if not src.startswith("http"):
+                        src = urljoin(base_url, src)
+                    lower = src.lower()
+                    if any(skip in lower for skip in _IMG_SKIP) or lower.endswith(".svg"):
+                        continue
+                    imagenes = [src]
                     break
-                ctx = getattr(ctx, "parent", None)
-                if ctx is None:
-                    break
-            if candidate_urls:
-                href = candidate_urls[0]
+
+                url = href if href.startswith("http") else urljoin(base_url, href)
+                if url in seen:
+                    continue
+                seen.add(url)
+
+                prop = Propiedad(
+                    url=url,
+                    titulo=titulo or direccion or "Sin título",
+                    precio=precio,
+                    moneda=moneda,
+                    barrio=barrio,
+                    barrio_normalizado=DataCleaner.normalize_neighborhood(barrio) if barrio else None,
+                    tipo_propiedad=tipo,
+                    ciudad=ciudad,
+                    operacion=card_operacion,
+                    fuente=fuente_key,
+                    direccion=direccion,
+                    imagenes=imagenes,
+                    metros=metros,
+                    ambientes=ambientes,
+                    dormitorios=dormitorios,
+                    banos=banos,
+                )
+                if prop.is_valid():
+                    propiedades.append(prop)
+
+            # ── Si el card mode encontró propiedades, devolver ─────────────────
+            if propiedades:
+                return propiedades
+            # Si no encontró nada (ej: filtros del sidebar matchearon como cards),
+            # caer al fallback de links directos ↓
+
+        # ── Fallback: cosechar links directamente desde el HTML ───────────────────
+        # Resuelve: repetto (Template4 CMS), vaccaro, tizado, y otros sitios donde
+        # el card mode no funciona o los cards no tienen selectores reconocibles.
+        for a in soup.find_all("a", href=True):
+            href = a.get("href", "")
+            if not href or href.startswith(("#", "javascript:", "mailto:", "tel:")):
+                continue
+
+            # CAUSA 5: Evaluar PROP_SEGMENTS solo en el PATH de la URL.
+            # Previene: WhatsApp share links donde /propiedad/ aparece en ?text=
+            try:
+                _href_path = href if href.startswith("http") else href
+            except Exception:
                 _href_path = href
 
-        if not _is_detail_url(_href_path):
-            continue
+            # Usar _is_detail_url que valida el segmento Y filtra categorías
+            if not _is_detail_url(_href_path):
+                candidate_urls = []
+                ctx = a
+                for _ in range(5):
+                    candidate_urls = extract_candidate_detail_urls_from_card(ctx, base_url)
+                    if candidate_urls:
+                        break
+                    ctx = getattr(ctx, "parent", None)
+                    if ctx is None:
+                        break
+                if candidate_urls:
+                    href = candidate_urls[0]
+                    _href_path = href
 
-        # Evitar paginación, anchors, búsquedas generales
-        if any(bad in href for bad in ["/page/", "?page=", "/busqueda/",
-                                        "/buscar/", "/search/"]):
-            continue
+            if not _is_detail_url(_href_path):
+                continue
 
-        card_text = a.get_text(strip=True)
-        if not card_text:
-            parent = a.parent
-            if parent:
-                card_text = parent.get_text(strip=True)[:150]
+            # Evitar paginación, anchors, búsquedas generales
+            if any(bad in href for bad in ["/page/", "?page=", "/busqueda/",
+                                            "/buscar/", "/search/"]):
+                continue
 
-        prop = _make_prop_from_url(href, card_text)
-        if prop and prop.is_valid():
-            propiedades.append(prop)
+            card_text = a.get_text(strip=True)
+            if not card_text:
+                parent = a.parent
+                if parent:
+                    card_text = parent.get_text(strip=True)[:150]
 
-    return propiedades
+            prop = _make_prop_from_url(href, card_text)
+            if prop and prop.is_valid():
+                propiedades.append(prop)
+
+        return propiedades
+    finally:
+        soup.decompose()
 
 
 def enrich_detail(
@@ -1326,6 +1329,7 @@ def scrape_detail_page(page, prop: "Propiedad", fuente_key: str,
       - Tokko Broker (todos los themes — dl.horizontal, feature lists, spans)
       - CMS propios comunes (tablas key-value, listas, texto libre)
     """
+    _soup = None
     try:
         ok = _goto_safe(page, prop.url, timeout)
         if not ok:
@@ -1340,7 +1344,7 @@ def scrape_detail_page(page, prop: "Propiedad", fuente_key: str,
             pass
 
         html = page.content()
-        soup = BeautifulSoup(html, "html.parser")
+        soup = _soup = BeautifulSoup(html, "html.parser")
         full_text = soup.get_text(" ", strip=True)
 
         # ── PRECIO ──────────────────────────────────────────────────────────
@@ -1543,6 +1547,9 @@ def scrape_detail_page(page, prop: "Propiedad", fuente_key: str,
     except Exception as exc:
         logger.debug(f"[{fuente_key}] Error scrapeando ficha {prop.url}: {exc}")
         return False
+    finally:
+        if _soup is not None:
+            _soup.decompose()
 
 
 def _get_next_page_url(html: str, current_url: str) -> Optional[str]:
@@ -1551,34 +1558,39 @@ def _get_next_page_url(html: str, current_url: str) -> Optional[str]:
     Retorna la URL absoluta de la siguiente página, o None si no hay.
     No aplica para Tokko Broker (usa infinite scroll, ya cubierto por scroll_to_bottom).
     """
-    soup = BeautifulSoup(html, "html.parser")
+    soup = None
+    try:
+        soup = BeautifulSoup(html, "html.parser")
 
-    # 1. rel="next" — el estándar más confiable
-    el = soup.select_one('a[rel="next"]')
-    if el:
-        href = el.get("href", "").strip()
-        if href and href not in ("#", "javascript:void(0)", current_url):
-            return href if href.startswith("http") else urljoin(current_url, href)
-
-    # 2. Link con texto de "siguiente"
-    for a in soup.find_all("a", href=True):
-        txt = a.get_text(strip=True).lower()
-        href = a.get("href", "").strip()
-        if not href or href in ("#", "javascript:void(0)", current_url):
-            continue
-        if txt in ("siguiente", "next", ">", "›", "»", "→"):
-            return href if href.startswith("http") else urljoin(current_url, href)
-
-    # 3. Elemento con class *next* que tenga href
-    for sel in ('[class*="next"] a[href]', 'a[class*="next"][href]',
-                '.pagination .active + li a[href]', 'li.next a[href]'):
-        el = soup.select_one(sel)
+        # 1. rel="next" — el estándar más confiable
+        el = soup.select_one('a[rel="next"]')
         if el:
             href = el.get("href", "").strip()
             if href and href not in ("#", "javascript:void(0)", current_url):
                 return href if href.startswith("http") else urljoin(current_url, href)
 
-    return None
+        # 2. Link con texto de "siguiente"
+        for a in soup.find_all("a", href=True):
+            txt = a.get_text(strip=True).lower()
+            href = a.get("href", "").strip()
+            if not href or href in ("#", "javascript:void(0)", current_url):
+                continue
+            if txt in ("siguiente", "next", ">", "›", "»", "→"):
+                return href if href.startswith("http") else urljoin(current_url, href)
+
+        # 3. Elemento con class *next* que tenga href
+        for sel in ('[class*="next"] a[href]', 'a[class*="next"][href]',
+                    '.pagination .active + li a[href]', 'li.next a[href]'):
+            el = soup.select_one(sel)
+            if el:
+                href = el.get("href", "").strip()
+                if href and href not in ("#", "javascript:void(0)", current_url):
+                    return href if href.startswith("http") else urljoin(current_url, href)
+
+        return None
+    finally:
+        if soup is not None:
+            soup.decompose()
 
 
 def parse_apl_cards(html: str) -> List[Propiedad]:
