@@ -949,7 +949,8 @@ def write_execute_outputs(
                    "precio", "moneda", "created_at"]
     _write_csv(out_dir / "inserted_properties.csv", new_props, PROP_FIELDS)
 
-    # updated_properties.csv — vacío (upserts son todos "nuevos" por filtro existing_urls)
+    # updated_properties.csv — siempre vacío: pipeline es INSERT plain, nunca UPDATE.
+    # La dedup es upstream (existing_urls); URLs conocidas nunca llegan al INSERT.
     _write_csv(out_dir / "updated_properties.csv", [], PROP_FIELDS)
 
     # skipped_duplicates.csv — no tenemos lista individual, pero podemos estimar
@@ -979,6 +980,11 @@ def write_execute_outputs(
         f"| delta en existing_urls | {net_new} |\n"
         f"| propiedades created_at > ts_start | **{len(new_props)}** |\n"
         f"| workers con error | {len(failed)} |\n\n"
+        "## Fuentes de verdad\n\n"
+        "| Métrica | Confiabilidad | Notas |\n|---|---|---|\n"
+        "| propiedades guardadas (sum workers) | Alta | Cuenta directa de INSERTs confirmados por Supabase (HTTP 200/201) |\n"
+        "| delta en existing_urls | Alta | Refleja exactamente las URLs agregadas al Set en memoria |\n"
+        f"| created_at > ts_start | Posible falso negativo | `_query_propiedades_since` solo acepta HTTP 200; lag de Supabase puede devolver 0 aunque los {total_saved} INSERTs sean reales. Ver `inserted_properties.csv`. |\n\n"
         "## Validaciones de exclusividad\n\n"
         "| Validación | Estado |\n|---|---|\n"
         "| Solo fuentes del manifest (50) | OK — wrapper no llama load_fuentes_from_db |\n"
@@ -999,7 +1005,13 @@ def write_execute_outputs(
         f"# DB write audit — PR-BE-PROD-09d\n\nGenerado: {ts}\n\n"
         "## Escrituras autorizadas\n\n"
         f"| Tabla | Operación | Filas | Estado |\n|---|---|---|---|\n"
-        f"| propiedades | UPSERT on_conflict=url | {total_saved} | OK |\n\n"
+        f"| propiedades | INSERT plain (sin on_conflict) | {total_saved} | OK |\n\n"
+        "## Mecanismo de deduplicación\n\n"
+        "La unicidad **no** se garantiza con `on_conflict`. Se garantiza upstream:\n"
+        "1. `existing_urls` (Set[str]) se carga por `inmobiliaria_id` antes del scraping.\n"
+        "2. Cada URL scrapeada se filtra contra `existing_urls` en memoria.\n"
+        "3. Solo URLs ausentes llegan a `batch_save_only_new()` (INSERT plain).\n"
+        "4. `updated_properties.csv` es siempre vacío: no hay UPDATEs en este pipeline.\n\n"
         "## Escrituras bloqueadas (confirmadas en 0)\n\n"
         "| Tabla | Estado |\n|---|---|\n"
         "| inmobiliarias_main | 0 |\n"
@@ -1024,7 +1036,7 @@ def write_execute_outputs(
         f"| Tablas no autorizadas escritas | 0 |\n"
         f"| Workers con error | {len(failed)} |\n"
         f"| Propiedades guardadas | {total_saved} |\n"
-        f"| Regresión (propiedades borradas) | 0 — upsert solo agrega |\n"
+        f"| Regresión (propiedades borradas) | 0 — INSERT plain; nunca borra ni sobreescribe |\n"
         f"\n## Criterio de corte (no activado)\n\n"
         f"Corte activado si: >10 workers fallidos, error DB, UPSERT fuera de propiedades.\n"
         f"Estado actual: {len(failed)} workers fallidos — "
@@ -1075,7 +1087,7 @@ def write_execute_outputs(
         f"| Workers con error | {len(failed)} |\n\n"
         f"## Guardrails\n\n"
         "| Tabla | Escrita |\n|---|---|\n"
-        "| propiedades | SI (upsert autorizado) |\n"
+        "| propiedades | SI (INSERT plain — dedup upstream via existing_urls) |\n"
         "| inmobiliarias_main | **NO** |\n"
         "| publish_queue | **NO** |\n"
         "| raw / staging | **NO** |\n"
