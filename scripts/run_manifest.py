@@ -302,15 +302,27 @@ def _lookup_inmobiliaria_ids(
     source_ids: List[str],
 ) -> Dict[str, int]:
     """
-    SELECT id, scraping_id_origen FROM inmobiliarias_main
-    WHERE scraping_id_origen IN (source_ids).
+    Resuelve source_id -> inmobiliaria_id con dos rutas en cascada:
 
-    Retorna {source_id: inmobiliaria_main_id}. Solo lectura — nunca escribe.
+    1. PRIMARY:  WHERE scraping_id_origen IN (source_ids)
+       El campo scraping_id_origen mapea el ID del sistema de scraping al ID
+       canónico de inmobiliarias_main. Es el path original y tiene prioridad.
+
+    2. FALLBACK: WHERE id IN (unresolved_ids)
+       Solo para source_ids que no encontraron match en el path primario.
+       Cubre fuentes cuyo id en inmobiliarias_main coincide directamente con
+       el source_id del manifest pero no tienen scraping_id_origen configurado
+       con ese valor. El guard (sid not in mapping) garantiza que un resultado
+       primario nunca es sobreescrito por el fallback.
+
+    Solo lectura — nunca escribe.
     """
     try:
         import requests  # noqa: PLC0415
         mapping: Dict[str, int] = {}
         CHUNK = 50
+
+        # ── Path primario: scraping_id_origen = source_id (comportamiento original) ──
         for i in range(0, len(source_ids), CHUNK):
             chunk = source_ids[i : i + CHUNK]
             ids_csv = ",".join(chunk)
@@ -332,6 +344,46 @@ def _lookup_inmobiliaria_ids(
                         mapping[sid] = mid
             else:
                 print(f"  [FK-LOOKUP] WARN: status={resp.status_code}", file=sys.stderr)
+
+        # ── Path fallback: id = source_id (solo para los no resueltos) ──────────────
+        unresolved = [sid for sid in source_ids if sid not in mapping]
+        if unresolved:
+            print(
+                f"  [FK-LOOKUP] {len(unresolved)} sin match por scraping_id_origen. "
+                f"Intentando fallback por id...",
+                file=sys.stderr,
+            )
+            for i in range(0, len(unresolved), CHUNK):
+                chunk = unresolved[i : i + CHUNK]
+                ids_csv = ",".join(chunk)
+                resp2 = requests.get(
+                    f"{supabase_url.rstrip('/')}/rest/v1/inmobiliarias_main",
+                    headers={"apikey": key, "Authorization": f"Bearer {key}"},
+                    params={
+                        "select": "id,nombre",
+                        "id":     f"in.({ids_csv})",
+                        "limit":  str(CHUNK),
+                    },
+                    timeout=30,
+                )
+                if resp2.status_code == 200:
+                    for row in resp2.json():
+                        sid = str(row.get("id", ""))
+                        mid = row.get("id")
+                        if sid and mid is not None and sid not in mapping:
+                            mapping[sid] = mid
+                            print(
+                                f"  [FK-LOOKUP] fallback id match: "
+                                f"source_id={sid} -> inmobiliaria_id={mid} "
+                                f"({row.get('nombre', '?')[:40]})",
+                                file=sys.stderr,
+                            )
+                else:
+                    print(
+                        f"  [FK-LOOKUP] WARN fallback: status={resp2.status_code}",
+                        file=sys.stderr,
+                    )
+
         return mapping
     except Exception as exc:
         print(f"  [FK-LOOKUP] ERROR: {exc}", file=sys.stderr)
