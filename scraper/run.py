@@ -17,6 +17,7 @@ Uso:
 from __future__ import annotations
 
 import argparse
+from collections import deque
 import gc
 import logging
 import math
@@ -92,7 +93,58 @@ BROWSER_UA = (
 
 # Fix-S: límite de browsers activos simultáneamente entre todos los workers.
 # Configurable por env MAX_ACTIVE_BROWSERS (default=3). min=1 por seguridad.
-_ACTIVE_BROWSER_SEM = threading.Semaphore(
+# FairSemaphore reemplaza threading.Semaphore para garantizar orden FIFO estricto
+# y eliminar el starvation observado en V10 (W2 esperó 168 min sin slot).
+
+
+class FairSemaphore:
+    """Semáforo FIFO sobre threading.Condition + deque.
+
+    threading.Semaphore no garantiza orden entre threads en espera: el thread
+    que acaba de liberar puede re-adquirir antes que los que llevan más tiempo
+    esperando (starvation). FairSemaphore corrige esto: cada thread coloca un
+    token propio en la cola y solo avanza cuando ese token está primero en la
+    cola Y hay capacidad disponible.
+
+    Interfaz idéntica a threading.Semaphore: soporta 'with', acquire(), release().
+    Thread-safe. Compatible con Windows. Sin dependencias externas.
+    """
+
+    def __init__(self, value: int = 1) -> None:
+        if value < 1:
+            raise ValueError("FairSemaphore value must be >= 1")
+        self._capacity = value
+        self._cond = threading.Condition(threading.Lock())
+        self._queue: deque = deque()
+
+    def acquire(self) -> None:
+        token = object()
+        with self._cond:
+            self._queue.append(token)
+            # Esperar hasta ser el primero en la cola Y haber capacidad disponible.
+            # FIFO garantizado: cada thread solo avanza cuando su propio token
+            # está en la posición 0. notify_all() en release() despierta a todos
+            # para que re-evalúen la condición; solo el primero procede.
+            while self._queue[0] is not token or self._capacity == 0:
+                self._cond.wait()
+            self._queue.popleft()
+            self._capacity -= 1
+
+    def release(self) -> None:
+        with self._cond:
+            self._capacity += 1
+            self._cond.notify_all()
+
+    def __enter__(self) -> "FairSemaphore":
+        self.acquire()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        # Siempre libera, incluso si el bloque with lanzó una excepción.
+        self.release()
+
+
+_ACTIVE_BROWSER_SEM = FairSemaphore(
     max(1, int(os.environ.get("MAX_ACTIVE_BROWSERS", "3")))
 )
 
