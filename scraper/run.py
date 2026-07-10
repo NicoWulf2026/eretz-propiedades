@@ -449,6 +449,7 @@ def _scrape_batch(
     dry_run: bool,
     worker_id: int,
     on_source_done=None,
+    metrics_log=None,
 ) -> int:
     """
     Lanza un browser propio por fuente (Fix-E), procesa cada fuente en serie y cierra.
@@ -473,6 +474,11 @@ def _scrape_batch(
         if not url:
             continue
 
+        t_source_start = time.time()
+        t_sem_acquired = t_source_start   # pre-init; overwritten inside semaphore
+        _n_listado = _n_nuevas = _n_validas = 0
+        _had_timeout = _had_error = False
+
         # -- S1: snapshot baseline de esta fuente (antes del semáforo) -------
         if _TRACE_MEMORY:
             import tracemalloc
@@ -484,6 +490,7 @@ def _scrape_batch(
             _rss_s1      = _psutil_proc.memory_info().rss / 1e6
             _gc_cnt_pre  = gc.get_count()
         with _ACTIVE_BROWSER_SEM:                           # Fix-S: slot adquirido antes del launch
+            t_sem_acquired = time.time()
             browser = None
             context = None
             page = None
@@ -559,10 +566,12 @@ def _scrape_batch(
                             f"[W{worker_id}][{key}] {len(all_prop_urls)} URLs en "
                             f"{len(visited_listing)} página(s) de listado"
                         )
+                        _n_listado = len(all_prop_urls)
 
                         # ── Filtrar solo las que no están en DB ──────────────────────
                         with lock:
                             nuevas_urls = [u for u in all_prop_urls if u not in existing_urls]
+                        _n_nuevas = len(nuevas_urls)
 
                         if not nuevas_urls:
                             logger.debug(f"[W{worker_id}][{key}] Sin propiedades nuevas")
@@ -604,6 +613,7 @@ def _scrape_batch(
                                 p for p in propiedades_completas
                                 if p.url not in existing_urls
                             ]
+                            _n_validas = len(nuevas_final)
                             logger.info(
                                 f"[W{worker_id}][{key}] {len(nuevas_final)} válidas "
                                 f"/ {len(nuevas_urls)} nuevas"
@@ -622,8 +632,10 @@ def _scrape_batch(
                                 total += len(nuevas_final)
 
                     except PwTimeout:
+                        _had_timeout = True
                         logger.warning(f"[W{worker_id}][{key}] Timeout en {url}")
                     except Exception as exc:
+                        _had_error = True
                         logger.error(f"[W{worker_id}][{key}] Error: {exc}", exc_info=True)
                     finally:
                         if page is not None:
@@ -691,6 +703,23 @@ def _scrape_batch(
                     gc.collect()                                       # Fix-A (sin TRACE_MEMORY)
                 if on_source_done:
                     on_source_done(key, _source_props_saved)
+                if metrics_log is not None:
+                    _source_time_s = round(time.time() - t_source_start, 1)
+                    _sem_wait_s    = round(t_sem_acquired - t_source_start, 1)
+                    metrics_log.append({
+                        "ts_utc":         time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        "worker_id":      worker_id,
+                        "key":            key,
+                        "source_time_s":  _source_time_s,
+                        "sem_wait_s":     _sem_wait_s,
+                        "browser_time_s": round(_source_time_s - _sem_wait_s, 1),
+                        "n_listado":      _n_listado,
+                        "n_nuevas":       _n_nuevas,
+                        "n_validas":      _n_validas,
+                        "props_saved":    _source_props_saved,
+                        "had_timeout":    _had_timeout,
+                        "had_error":      _had_error,
+                    })
         # ← _ACTIVE_BROWSER_SEM liberado (Fix-S): slot disponible para el próximo source
 
     return total

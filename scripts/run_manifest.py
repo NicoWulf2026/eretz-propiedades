@@ -682,7 +682,8 @@ def run_execute(
     print("[EXECUTE] NO toca:        publish_queue, url_listado, raw, staging")
     print()
 
-    lock    = threading.Lock()
+    lock         = threading.Lock()
+    metrics_log: list = []
     batches_http = _split_batches(cola_http, http_workers) if cola_http else []
     batches_pw   = _split_batches(cola_pw,   pw_workers)   if cola_pw   else []
 
@@ -705,6 +706,7 @@ def run_execute(
             http_ex.submit(
                 _scrape_batch, batch, supabase, existing_urls, lock, False, f"h{wid}",
                 tracker.on_source_done,
+                metrics_log,
             ): f"h{wid}"
             for wid, batch in enumerate(batches_http)
         }
@@ -712,6 +714,7 @@ def run_execute(
             pw_ex.submit(
                 _scrape_batch, batch, supabase, existing_urls, lock, False, f"pw{wid}",
                 tracker.on_source_done,
+                metrics_log,
             ): f"pw{wid}"
             for wid, batch in enumerate(batches_pw)
         }
@@ -729,6 +732,17 @@ def run_execute(
                 print(f"[EXECUTE] Worker {wid}: ERROR — {exc}", file=sys.stderr)
 
     tracker.write_final()
+
+    if metrics_log:
+        _METRICS_FIELDS = [
+            "ts_utc", "worker_id", "key",
+            "source_time_s", "sem_wait_s", "browser_time_s",
+            "n_listado", "n_nuevas", "n_validas",
+            "props_saved", "had_timeout", "had_error",
+        ]
+        metrics_path = out_dir / "source_metrics.csv"
+        _write_csv(metrics_path, metrics_log, _METRICS_FIELDS)
+        print(f"[EXECUTE] source_metrics.csv → {metrics_path} ({len(metrics_log)} fuentes)")
 
     count_after = len(existing_urls)   # existing_urls se actualiza in-place en _scrape_batch
     net_new     = count_after - count_before
