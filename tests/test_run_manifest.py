@@ -774,6 +774,110 @@ def test_lookup_inmobiliaria_ids_returns_mapping():
     assert "9999" not in mapping
 
 
+def _fk_response(rows):
+    response = MagicMock()
+    response.status_code = 200
+    response.json.return_value = rows
+    return response
+
+
+def test_safe_fk_collision_uses_only_compatible_canonical_id():
+    import run_manifest as rm
+
+    source = {
+        "source_id": "84",
+        "_manifest_name": "Yacoub Alquileres",
+        "web": "https://yacoub.com.ar/propiedades",
+    }
+    primary = [{
+        "id": 4566,
+        "nombre": "Raizen Servicios Inmobiliarios",
+        "web": "http://raizeninmobiliaria.com.ar",
+        "url_listado": "http://raizeninmobiliaria.com.ar/adm-propiedades.php",
+        "scraping_id_origen": 84,
+    }]
+    fallback = [{
+        "id": 84,
+        "nombre": "Yacoub Alquileres",
+        "web": "https://yacoub.com.ar",
+        "url_listado": "https://yacoub.com.ar/propiedades",
+        "scraping_id_origen": 735,
+    }]
+
+    with patch("requests.get", side_effect=[_fk_response(primary), _fk_response(fallback)]):
+        mapping, errors = rm._lookup_inmobiliaria_ids_safe("https://fake.co", "fake", [source])
+
+    assert mapping == {"84": 84}
+    assert errors == []
+
+
+def test_safe_fk_keeps_compatible_primary_when_fallback_mismatches():
+    import run_manifest as rm
+
+    source = {"source_id": "10", "_manifest_name": "Primary Inmo", "web": "https://primary.test"}
+    primary = [{
+        "id": 500,
+        "nombre": "Primary Inmo",
+        "web": "https://primary.test",
+        "url_listado": None,
+        "scraping_id_origen": 10,
+    }]
+    fallback = [{
+        "id": 10,
+        "nombre": "Other Inmo",
+        "web": "https://other.test",
+        "url_listado": None,
+        "scraping_id_origen": 77,
+    }]
+
+    with patch("requests.get", side_effect=[_fk_response(primary), _fk_response(fallback)]):
+        mapping, errors = rm._lookup_inmobiliaria_ids_safe("https://fake.co", "fake", [source])
+
+    assert mapping == {"10": 500}
+    assert errors == []
+
+
+def test_safe_fk_ambiguous_collision_is_rejected():
+    import run_manifest as rm
+
+    source = {"source_id": "10", "_manifest_name": "Same", "web": "https://same.test"}
+    primary = [{"id": 500, "nombre": "Same", "web": "https://same.test", "url_listado": None, "scraping_id_origen": 10}]
+    fallback = [{"id": 10, "nombre": "Same", "web": "https://same.test", "url_listado": None, "scraping_id_origen": 77}]
+
+    with patch("requests.get", side_effect=[_fk_response(primary), _fk_response(fallback)]):
+        mapping, errors = rm._lookup_inmobiliaria_ids_safe("https://fake.co", "fake", [source])
+
+    assert mapping == {}
+    assert any("unresolved FK collision" in error[2] for error in errors)
+
+
+def test_safe_fk_multiple_primary_matches_are_rejected():
+    import run_manifest as rm
+
+    source = {"source_id": "10", "_manifest_name": "Inmo", "web": "https://inmo.test"}
+    primary = [
+        {"id": 500, "nombre": "Inmo", "web": "https://inmo.test", "url_listado": None, "scraping_id_origen": 10},
+        {"id": 501, "nombre": "Inmo 2", "web": "https://inmo2.test", "url_listado": None, "scraping_id_origen": 10},
+    ]
+
+    with patch("requests.get", side_effect=[_fk_response(primary), _fk_response([])]):
+        mapping, errors = rm._lookup_inmobiliaria_ids_safe("https://fake.co", "fake", [source])
+
+    assert mapping == {}
+    assert any("ambiguous scraping_id_origen" in error[2] for error in errors)
+
+
+def test_safe_fk_missing_source_is_classified():
+    import run_manifest as rm
+
+    source = {"source_id": "9999", "_manifest_name": "Missing", "web": "https://missing.test"}
+    with patch("requests.get", side_effect=[_fk_response([]), _fk_response([])]):
+        mapping, errors = rm._lookup_inmobiliaria_ids_safe("https://fake.co", "fake", [source])
+
+    assert mapping == {}
+    assert errors == [("9999", "Missing", "missing FK candidate")]
+
+
 def test_fk_missing_source_excluded_from_execute():
     """La lógica de FK filtering de run_execute separa fuentes con/sin match."""
     # Simular el algoritmo de filtering que vive en run_execute:
@@ -914,11 +1018,11 @@ def test_payload_safe_int_still_works_with_estado():
 # 09e-DEDUP: dedup robusto por inmobiliaria (fix límite PostgREST 1.000)
 # ---------------------------------------------------------------------------
 
-def test_max_execute_limit_is_892():
-    """MAX_EXECUTE_LIMIT debe ser 892 para autorizar la corrida 09e completa."""
+def test_max_execute_limit_matches_audited_universe():
+    """El techo debe coincidir exactamente con el universo auditado."""
     from run_manifest import MAX_EXECUTE_LIMIT
-    assert MAX_EXECUTE_LIMIT == 892, (
-        f"MAX_EXECUTE_LIMIT={MAX_EXECUTE_LIMIT}, se esperaba 892 (PR-BE-PROD-09e)"
+    assert MAX_EXECUTE_LIMIT == 1391, (
+        f"MAX_EXECUTE_LIMIT={MAX_EXECUTE_LIMIT}, se esperaba 1391"
     )
 
 

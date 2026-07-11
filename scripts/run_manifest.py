@@ -31,6 +31,7 @@ import re
 import sys
 import threading
 import time
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -57,7 +58,7 @@ BLOCKED_COMBINED_STATUSES = {"still_failed", "http_error", "error"}
 BLOCKED_ERRORS             = {"http_error", "connection_error", "domain_down", "missing_url"}
 PW_HARD_BLOCKED            = {"antibot", "captcha"}  # Playwright no resuelve bloqueo activo
 
-MAX_EXECUTE_LIMIT   = 892  # máximo autorizado en PR-BE-PROD-09e (manifest auditado: 892 fuentes)
+MAX_EXECUTE_LIMIT   = 1391  # universo completo auditado para esta ejecucion autonoma
 MAX_HTTP_WORKERS    = int(os.environ.get("MAX_HTTP_WORKERS", "4"))
 MAX_PW_WORKERS      = int(os.environ.get("MAX_PW_WORKERS",  "1"))
 
@@ -69,6 +70,21 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 ManifestRow      = Dict[str, Any]
 ValidationError  = Tuple[str, str, str]   # (source_id, source_name, reason)
+
+
+class _InsertOnlySupabaseProxy:
+    """Expose only the one authorized write used by Pipeline A."""
+
+    def __init__(self, client: Any) -> None:
+        if str(getattr(client, "table", "")) != "propiedades":
+            raise RuntimeError("Pipeline A write target must be public.propiedades")
+        self._client = client
+
+    def batch_save_only_new(self, payloads: List[Dict[str, Any]]) -> int:
+        return self._client.batch_save_only_new(payloads)
+
+    def __getattr__(self, name: str) -> Any:
+        raise RuntimeError(f"Unauthorized Supabase operation in Pipeline A: {name}")
 
 
 def load_manifest(path: Path) -> List[ManifestRow]:
@@ -390,6 +406,135 @@ def _lookup_inmobiliaria_ids(
         return {}
 
 
+def _lookup_inmobiliaria_ids_safe(
+    supabase_url: str,
+    key: str,
+    sources: List[Dict[str, Any]],
+) -> Tuple[Dict[str, int], List[ValidationError]]:
+    """Resolve manifest IDs without silently crossing source ID spaces.
+
+    Both scraping_id_origen and canonical id are read. A primary match keeps
+    priority only when it is compatible with the manifest name/domain. When
+    both spaces collide, the only compatible candidate wins; ambiguous or
+    mismatched rows remain unresolved with an explicit validation error.
+    """
+    import requests  # noqa: PLC0415
+
+    source_by_id = {str(row.get("source_id", "")): row for row in sources}
+    source_ids = [sid for sid in source_by_id if sid]
+    primary_by_sid: Dict[str, List[Dict[str, Any]]] = {}
+    fallback_by_sid: Dict[str, Dict[str, Any]] = {}
+    errors: List[ValidationError] = []
+    headers = {"apikey": key, "Authorization": f"Bearer {key}"}
+    chunk_size = 50
+
+    def normalized(value: Any) -> str:
+        text = unicodedata.normalize("NFKD", str(value or ""))
+        ascii_text = text.encode("ascii", "ignore").decode().lower()
+        return re.sub(r"[^a-z0-9]+", " ", ascii_text).strip()
+
+    def domain(value: Any) -> str:
+        try:
+            return urlparse(str(value or "")).netloc.lower().lstrip("www.")
+        except Exception:
+            return ""
+
+    def compatible(source: Dict[str, Any], candidate: Dict[str, Any]) -> bool:
+        source_name = normalized(source.get("_manifest_name") or source.get("source_name"))
+        candidate_name = normalized(candidate.get("nombre"))
+        name_ok = bool(
+            source_name and candidate_name
+            and (
+                source_name == candidate_name
+                or source_name in candidate_name
+                or candidate_name in source_name
+            )
+        )
+        source_domain = domain(source.get("web") or source.get("new_url_listado"))
+        candidate_domain = domain(candidate.get("url_listado") or candidate.get("web"))
+        domain_ok = bool(
+            source_domain and candidate_domain
+            and (
+                source_domain == candidate_domain
+                or source_domain.endswith("." + candidate_domain)
+                or candidate_domain.endswith("." + source_domain)
+            )
+        )
+        return name_ok or domain_ok
+
+    select = "id,nombre,web,url_listado,scraping_id_origen"
+    for offset in range(0, len(source_ids), chunk_size):
+        chunk = source_ids[offset : offset + chunk_size]
+        ids_csv = ",".join(chunk)
+        primary_response = requests.get(
+            f"{supabase_url.rstrip('/')}/rest/v1/inmobiliarias_main",
+            headers=headers,
+            params={
+                "select": select,
+                "scraping_id_origen": f"in.({ids_csv})",
+                "limit": str(chunk_size * 2),
+            },
+            timeout=30,
+        )
+        fallback_response = requests.get(
+            f"{supabase_url.rstrip('/')}/rest/v1/inmobiliarias_main",
+            headers=headers,
+            params={"select": select, "id": f"in.({ids_csv})", "limit": str(chunk_size)},
+            timeout=30,
+        )
+        if primary_response.status_code != 200 or fallback_response.status_code != 200:
+            raise RuntimeError(
+                "FK lookup HTTP failure "
+                f"primary={primary_response.status_code} fallback={fallback_response.status_code}"
+            )
+        for row in primary_response.json():
+            sid = str(row.get("scraping_id_origen", ""))
+            if sid:
+                primary_by_sid.setdefault(sid, []).append(row)
+        for row in fallback_response.json():
+            sid = str(row.get("id", ""))
+            if sid:
+                fallback_by_sid[sid] = row
+
+    mapping: Dict[str, int] = {}
+    for sid, source in source_by_id.items():
+        name = str(source.get("_manifest_name") or source.get("source_name") or "")
+        primary_matches = primary_by_sid.get(sid, [])
+        fallback = fallback_by_sid.get(sid)
+        if len(primary_matches) > 1:
+            errors.append((sid, name, "ambiguous scraping_id_origen"))
+            continue
+        primary = primary_matches[0] if primary_matches else None
+
+        if primary and fallback and primary.get("id") != fallback.get("id"):
+            primary_ok = compatible(source, primary)
+            fallback_ok = compatible(source, fallback)
+            if primary_ok and not fallback_ok:
+                mapping[sid] = int(primary["id"])
+            elif fallback_ok and not primary_ok:
+                mapping[sid] = int(fallback["id"])
+            else:
+                errors.append(
+                    (
+                        sid,
+                        name,
+                        "unresolved FK collision "
+                        f"primary_id={primary.get('id')} fallback_id={fallback.get('id')}",
+                    )
+                )
+            continue
+
+        candidate = primary or fallback
+        if candidate is None:
+            errors.append((sid, name, "missing FK candidate"))
+        elif not compatible(source, candidate):
+            errors.append((sid, name, f"strong FK identity mismatch candidate_id={candidate.get('id')}"))
+        else:
+            mapping[sid] = int(candidate["id"])
+
+    return mapping, errors
+
+
 def _load_existing_urls_by_inmobiliaria(
     supabase_url: str,
     key: str,
@@ -609,7 +754,7 @@ def _query_propiedades_since(supabase_url: str, key: str, ts_since: str) -> List
             f"{supabase_url.rstrip('/')}/rest/v1/propiedades",
             headers={"apikey": key, "Authorization": f"Bearer {key}"},
             params={
-                "select":     "url,titulo,fuente_extraccion,operacion,tipo_propiedad,precio,moneda,created_at",
+                "select":     "id,url,url_normalizada,hash_dedup,inmobiliaria_id,titulo,fuente_extraccion,operacion,tipo_propiedad,precio,moneda,created_at",
                 "created_at": f"gt.{ts_since}",
                 "order":      "created_at.desc",
                 "limit":      "10000",
@@ -656,10 +801,13 @@ def run_execute(
     # ── FK preflight combinado (HTTP + PW) ─────────────────────────────────
     all_subset = subset_http + subset_pw
     print(f"\n[EXECUTE] FK preflight: {len(subset_http)} HTTP + {len(subset_pw)} PW = {len(all_subset)} fuentes...")
-    source_ids = [f["source_id"] for f in all_subset if f.get("source_id")]
-    fk_mapping = _lookup_inmobiliaria_ids(
-        cfg.SUPABASE_URL, cfg.SUPABASE_SERVICE_ROLE_KEY, source_ids
+    fk_mapping, fk_errors = _lookup_inmobiliaria_ids_safe(
+        cfg.SUPABASE_URL, cfg.SUPABASE_SERVICE_ROLE_KEY, all_subset
     )
+    if fk_errors:
+        print(f"[EXECUTE] FK errors: {len(fk_errors)}", file=sys.stderr)
+        for sid, name, reason in fk_errors[:20]:
+            print(f"  [FK-ERROR] source_id={sid} {name[:40]}: {reason}", file=sys.stderr)
 
     fuentes_con_fk    = []
     fuentes_sin_fk    = []
@@ -692,12 +840,13 @@ def run_execute(
     # Conectar (no imprime credentials)
     print("\n[EXECUTE] Conectando a Supabase (read-only para snapshot)...")
     session  = SessionFactory.make()
-    supabase = SupabaseClient(
+    raw_supabase = SupabaseClient(
         session,
         cfg.SUPABASE_URL,
         cfg.SUPABASE_SERVICE_ROLE_KEY,
         cfg.SUPABASE_TABLE,
     )
+    supabase = _InsertOnlySupabaseProxy(raw_supabase)
 
     # Cargar URLs existentes por inmobiliaria_id — fix dedup (evita límite PostgREST 1.000)
     inmobiliaria_ids_fk = [f["inmobiliaria_id"] for f in fuentes_con_fk]
@@ -719,6 +868,10 @@ def run_execute(
         "fuentes_sin_fk":  len(fuentes_sin_fk),
         "pct_match":       pct,
         "omitidas":        [f["source_id"] for f in fuentes_sin_fk],
+        "errors": [
+            {"source_id": sid, "source_name": name, "reason": reason}
+            for sid, name, reason in fk_errors
+        ],
     }
     snap["colas"] = {"http": len(cola_http), "playwright": len(cola_pw)}
     (out_dir / "pre_execute_snapshot.json").write_text(
@@ -787,10 +940,13 @@ def run_execute(
 
     if metrics_log:
         _METRICS_FIELDS = [
-            "ts_utc", "worker_id", "key",
+            "ts_utc", "worker_id", "key", "source_id", "inmobiliaria_id", "nombre",
+            "started_at", "finished_at", "status", "classification", "pages",
             "source_time_s", "sem_wait_s", "browser_time_s",
             "n_listado", "n_nuevas", "n_validas",
-            "props_saved", "had_timeout", "had_error",
+            "props_saved", "duplicates_skipped", "had_timeout", "had_error",
+            "http_status", "error_type", "error_sanitized", "retryable",
+            "retry_count", "memory_peak_mb", "navigation_failures",
         ]
         metrics_path = out_dir / "source_metrics.csv"
         _write_csv(metrics_path, metrics_log, _METRICS_FIELDS)
@@ -815,12 +971,14 @@ def run_execute(
         "subset":           fuentes_con_fk,
         "fuentes_sin_fk":   fuentes_sin_fk,
         "fk_mapping":       fk_mapping,
+        "fk_errors":        fk_errors,
         "count_before":     count_before,
         "count_after":      count_after,
         "total_saved":      total_saved,
         "net_new":          net_new,
         "new_props":        new_props,
         "worker_results":   worker_results,
+        "source_metrics":   metrics_log,
         "workers":          http_workers + pw_workers,
         "limit":            limit,
         "batches":          len(batches_http) + len(batches_pw),
@@ -974,6 +1132,58 @@ def write_execute_outputs(
     net_new     = result["net_new"]
     new_props   = result["new_props"]
     wkr_results = result["worker_results"]
+    source_metrics = result.get("source_metrics", [])
+
+    source_result_fields = [
+        "run_id", "source_id", "inmobiliaria_id", "nombre", "started_at",
+        "finished_at", "duration_s", "status", "classification", "pages",
+        "listings_seen", "details_requested", "valid_properties",
+        "new_properties", "duplicates_skipped", "db_writes", "timeout",
+        "http_status", "error_type", "error_sanitized", "retryable",
+        "retry_count", "memory_peak_mb",
+    ]
+    source_rows = []
+    for metric in source_metrics:
+        source_rows.append({
+            "run_id": out_dir.name,
+            "source_id": metric.get("source_id", ""),
+            "inmobiliaria_id": metric.get("inmobiliaria_id", ""),
+            "nombre": metric.get("nombre", metric.get("key", "")),
+            "started_at": metric.get("started_at", ""),
+            "finished_at": metric.get("finished_at", metric.get("ts_utc", "")),
+            "duration_s": metric.get("source_time_s", ""),
+            "status": metric.get("status", "INTERNAL_ERROR"),
+            "classification": metric.get("classification", "INTERNAL_RETRYABLE"),
+            "pages": metric.get("pages", 0),
+            "listings_seen": metric.get("n_listado", 0),
+            "details_requested": metric.get("n_nuevas", 0),
+            "valid_properties": metric.get("n_validas", 0),
+            "new_properties": metric.get("props_saved", 0),
+            "duplicates_skipped": metric.get("duplicates_skipped", 0),
+            "db_writes": metric.get("props_saved", 0),
+            "timeout": metric.get("had_timeout", False),
+            "http_status": metric.get("http_status", ""),
+            "error_type": metric.get("error_type", ""),
+            "error_sanitized": metric.get("error_sanitized", ""),
+            "retryable": metric.get("retryable", False),
+            "retry_count": metric.get("retry_count", 0),
+            "memory_peak_mb": metric.get("memory_peak_mb", ""),
+        })
+    for f in fuentes_sin_fk:
+        source_rows.append({
+            "run_id": out_dir.name,
+            "source_id": f.get("source_id", ""),
+            "inmobiliaria_id": "",
+            "nombre": f.get("_manifest_name", ""),
+            "status": "FK_ERROR",
+            "classification": "INTERNAL_CORRECTABLE",
+            "error_type": "fk_unresolved",
+            "error_sanitized": "FK unresolved during preflight",
+            "retryable": True,
+            "retry_count": 0,
+        })
+    source_rows.sort(key=lambda row: str(row.get("source_id", "")))
+    _write_csv(out_dir / "source_results.csv", source_rows, source_result_fields)
 
     # executed_sources.csv — fuentes con FK válido que fueron scrapeadas
     exec_rows = [
@@ -997,7 +1207,8 @@ def write_execute_outputs(
                ["source_id", "source_name", "url_listado", "reason"])
 
     # inserted_properties.csv — propiedades con created_at > ts_start
-    PROP_FIELDS = ["url", "titulo", "fuente_extraccion", "operacion", "tipo_propiedad",
+    PROP_FIELDS = ["id", "url", "url_normalizada", "hash_dedup", "inmobiliaria_id",
+                   "titulo", "fuente_extraccion", "operacion", "tipo_propiedad",
                    "precio", "moneda", "created_at"]
     _write_csv(out_dir / "inserted_properties.csv", new_props, PROP_FIELDS)
 

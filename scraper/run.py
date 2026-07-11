@@ -23,6 +23,7 @@ import logging
 import math
 import os
 from pathlib import Path
+import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -92,7 +93,7 @@ BROWSER_UA = (
 )
 
 # Fix-S: límite de browsers activos simultáneamente entre todos los workers.
-# Configurable por env MAX_ACTIVE_BROWSERS (default=3). min=1 por seguridad.
+# Configurable por env MAX_ACTIVE_BROWSERS, con techo absoluto de 2.
 # FairSemaphore reemplaza threading.Semaphore para garantizar orden FIFO estricto
 # y eliminar el starvation observado en V10 (W2 esperó 168 min sin slot).
 
@@ -145,8 +146,55 @@ class FairSemaphore:
 
 
 _ACTIVE_BROWSER_SEM = FairSemaphore(
-    max(1, int(os.environ.get("MAX_ACTIVE_BROWSERS", "3")))
+    min(2, max(1, int(os.environ.get("MAX_ACTIVE_BROWSERS", "2"))))
 )
+
+
+def _sanitize_source_error(value: Any) -> str:
+    """Keep structured outputs useful without leaking credentials."""
+    text = str(value or "")
+    text = re.sub(
+        r"([?&](?:key|apikey|api_key|token|access_token)=)[^&\s]+",
+        r"\1<redacted>",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"(Bearer\s+)[A-Za-z0-9._~+/=-]+",
+        r"\1<redacted>",
+        text,
+        flags=re.IGNORECASE,
+    )
+    return text[:500]
+
+
+def classify_source_metrics(
+    *,
+    pages: int,
+    listings_seen: int,
+    details_requested: int,
+    valid_properties: int,
+    db_writes: int,
+    had_timeout: bool,
+    had_error: bool,
+    dry_run: bool,
+) -> tuple[str, str, str, bool]:
+    """Return status, classification, error_type and retryability."""
+    if had_timeout:
+        return "TIMEOUT", "INTERNAL_RETRYABLE", "playwright_timeout", True
+    if had_error:
+        return "INTERNAL_ERROR", "INTERNAL_RETRYABLE", "unhandled_exception", True
+    if pages == 0:
+        return "REMOTE_HTTP_ERROR", "EXTERNAL_RETRYABLE", "navigation_failed", True
+    if listings_seen == 0:
+        return "PARSER_ERROR", "INTERNAL_CORRECTABLE", "no_property_links", True
+    if details_requested == 0:
+        return "SUCCESS_NO_NEW", "SUCCESS", "", False
+    if valid_properties == 0:
+        return "DATA_QUALITY_ERROR", "INTERNAL_CORRECTABLE", "no_valid_properties", True
+    if dry_run or db_writes == valid_properties:
+        return "SUCCESS_NEW", "SUCCESS", "", False
+    return "DB_ERROR", "INTERNAL_RETRYABLE", "partial_or_failed_insert", True
 
 # ---------------------------------------------------------------------------
 # Diagnostico de memoria — TRACE_MEMORY=1 (default: apagado / OFF)
@@ -475,9 +523,12 @@ def _scrape_batch(
             continue
 
         t_source_start = time.time()
+        _started_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         t_sem_acquired = t_source_start   # pre-init; overwritten inside semaphore
         _n_listado = _n_nuevas = _n_validas = 0
+        _pages_loaded = _navigation_failures = 0
         _had_timeout = _had_error = False
+        _error_sanitized = ""
 
         # -- S1: snapshot baseline de esta fuente (antes del semáforo) -------
         if _TRACE_MEMORY:
@@ -535,8 +586,11 @@ def _scrape_batch(
 
                             ok = _goto_safe(page, listing_url, 40_000)
                             if not ok:
+                                _navigation_failures += 1
                                 logger.warning(f"[W{worker_id}][{key}] No se pudo cargar: {listing_url}")
                                 continue
+
+                            _pages_loaded += 1
 
                             page.wait_for_timeout(3000)
                             scroll_to_bottom(page)
@@ -633,10 +687,12 @@ def _scrape_batch(
 
                     except PwTimeout:
                         _had_timeout = True
+                        _error_sanitized = "Playwright timeout"
                         logger.warning(f"[W{worker_id}][{key}] Timeout en {url}")
                     except Exception as exc:
                         _had_error = True
-                        logger.error(f"[W{worker_id}][{key}] Error: {exc}", exc_info=True)
+                        _error_sanitized = _sanitize_source_error(exc)
+                        logger.error(f"[W{worker_id}][{key}] Error: {_error_sanitized}")
                     finally:
                         if page is not None:
                             try:
@@ -706,20 +762,54 @@ def _scrape_batch(
                 if metrics_log is not None:
                     _source_time_s = round(time.time() - t_source_start, 1)
                     _sem_wait_s    = round(t_sem_acquired - t_source_start, 1)
-                    metrics_log.append({
-                        "ts_utc":         time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    _finished_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                    _status, _classification, _error_type, _retryable = classify_source_metrics(
+                        pages=_pages_loaded,
+                        listings_seen=_n_listado,
+                        details_requested=_n_nuevas,
+                        valid_properties=_n_validas,
+                        db_writes=_source_props_saved,
+                        had_timeout=_had_timeout,
+                        had_error=_had_error,
+                        dry_run=dry_run,
+                    )
+                    try:
+                        import psutil as _metrics_psutil
+                        _memory_mb = round(_metrics_psutil.Process().memory_info().rss / 1_048_576, 1)
+                    except Exception:
+                        _memory_mb = ""
+                    metric = {
+                        "ts_utc":         _finished_at,
                         "worker_id":      worker_id,
                         "key":            key,
+                        "source_id":      fuente.get("source_id", ""),
+                        "inmobiliaria_id": fuente.get("inmobiliaria_id", ""),
+                        "nombre":         fuente.get("_manifest_name") or fuente.get("nombre") or key,
+                        "started_at":     _started_at,
+                        "finished_at":    _finished_at,
                         "source_time_s":  _source_time_s,
                         "sem_wait_s":     _sem_wait_s,
                         "browser_time_s": round(_source_time_s - _sem_wait_s, 1),
+                        "status":          _status,
+                        "classification":  _classification,
+                        "pages":           _pages_loaded,
                         "n_listado":      _n_listado,
                         "n_nuevas":       _n_nuevas,
                         "n_validas":      _n_validas,
                         "props_saved":    _source_props_saved,
+                        "duplicates_skipped": max(0, _n_listado - _n_nuevas),
                         "had_timeout":    _had_timeout,
                         "had_error":      _had_error,
-                    })
+                        "http_status":     "" if _pages_loaded else "navigation_failed",
+                        "error_type":      _error_type,
+                        "error_sanitized": _error_sanitized,
+                        "retryable":       _retryable,
+                        "retry_count":     0,
+                        "memory_peak_mb":  _memory_mb,
+                        "navigation_failures": _navigation_failures,
+                    }
+                    with lock:
+                        metrics_log.append(metric)
         # ← _ACTIVE_BROWSER_SEM liberado (Fix-S): slot disponible para el próximo source
 
     return total
