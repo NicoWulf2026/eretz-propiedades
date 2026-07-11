@@ -55,7 +55,7 @@ from run_manifest import (  # noqa: E402
     build_fuentes,
     main,
     MAX_EXECUTE_LIMIT,
-    MAX_EXECUTE_WORKERS,
+    MAX_HTTP_WORKERS,
 )
 
 
@@ -105,7 +105,7 @@ def _make_manifest(rows: List[Dict]) -> io.StringIO:
 
 def test_valid_manifest_loads_all_rows():
     rows = [_row(source_id=str(i), source_name=f"Inmo {i}") for i in range(5)]
-    valid, errors = validate_manifest(rows)
+    valid, _pw, _blocked, errors = validate_manifest(rows)
     assert len(valid) == 5
     assert len(errors) == 0
 
@@ -120,7 +120,7 @@ def test_duplicate_source_id_rejected():
         _row(source_id="200", source_name="Inmo A (dup)"),
         _row(source_id="201", source_name="Inmo B"),
     ]
-    valid, errors = validate_manifest(rows)
+    valid, _pw, _blocked, errors = validate_manifest(rows)
     assert len(valid) == 2  # 200 (primera), 201
     assert any("duplicate" in e[2] for e in errors)
 
@@ -134,7 +134,7 @@ def test_empty_url_rejected():
         _row(source_id="300", new_url_listado="", old_url_listado=""),
         _row(source_id="301", new_url_listado="https://ok.com.ar/venta"),
     ]
-    valid, errors = validate_manifest(rows)
+    valid, _pw, _blocked, errors = validate_manifest(rows)
     assert len(valid) == 1
     assert valid[0]["source_id"] == "301"
     assert any("missing url" in e[2] for e in errors)
@@ -149,7 +149,7 @@ def test_still_failed_status_rejected():
         _row(source_id="400", combined_status="still_failed"),
         _row(source_id="401", combined_status="success_url_only"),
     ]
-    valid, errors = validate_manifest(rows)
+    valid, _pw, _blocked, errors = validate_manifest(rows)
     assert len(valid) == 1
     assert valid[0]["source_id"] == "401"
     assert any("still_failed" in e[2] for e in errors)
@@ -237,7 +237,7 @@ def test_new_url_listado_takes_priority():
         new_url_listado="https://correct.com.ar/venta",
         old_url_listado="https://wrong.com.ar/old",
     )]
-    valid, errors = validate_manifest(rows)
+    valid, _pw, _blocked, errors = validate_manifest(rows)
     assert len(valid) == 1
     fuentes = build_fuentes(valid)
     assert fuentes[0]["web"] == "https://correct.com.ar/venta"
@@ -250,7 +250,7 @@ def test_old_url_listado_used_as_fallback_when_new_empty():
         new_url_listado="",
         old_url_listado="https://fallback.com.ar/venta",
     )]
-    valid, errors = validate_manifest(rows)
+    valid, _pw, _blocked, errors = validate_manifest(rows)
     assert len(valid) == 1
     fuentes = build_fuentes(valid)
     assert fuentes[0]["web"] == "https://fallback.com.ar/venta"
@@ -266,7 +266,7 @@ def test_prohibited_domain_rejected():
         _row(source_id="601", new_url_listado="https://argenprop.com/casas"),
         _row(source_id="602", new_url_listado="https://legitima.com.ar/venta"),
     ]
-    valid, errors = validate_manifest(rows)
+    valid, _pw, _blocked, errors = validate_manifest(rows)
     assert len(valid) == 1
     assert valid[0]["source_id"] == "602"
     assert all("prohibited" in e[2] for e in errors)
@@ -281,10 +281,12 @@ def test_needs_playwright_rejected():
         _row(source_id="700", needs_playwright="True"),
         _row(source_id="701", needs_playwright="False"),
     ]
-    valid, errors = validate_manifest(rows)
+    valid, pw, _blocked, errors = validate_manifest(rows)
     assert len(valid) == 1
     assert valid[0]["source_id"] == "701"
-    assert any("needs_playwright" in e[2] for e in errors)
+    # Diseño dos colas: needs_playwright se rutea a la cola PW (valid_pw),
+    # ya no se rechaza como error.
+    assert any(f["source_id"] == "700" for f in pw)
 
 
 # ---------------------------------------------------------------------------
@@ -298,7 +300,7 @@ def test_excluded_ids_rejected():
         _row(source_id="802"),
     ]
     excluded = {"801"}
-    valid, errors = validate_manifest(rows, excluded_ids=excluded)
+    valid, _pw, _blocked, errors = validate_manifest(rows, excluded_ids=excluded)
     assert len(valid) == 2
     valid_ids = {r["source_id"] for r in valid}
     assert "801" not in valid_ids
@@ -311,7 +313,7 @@ def test_excluded_ids_rejected():
 
 def test_build_fuentes_key_slug():
     rows = [_row(source_id="900", source_name="Pérez & Cía Inmobiliaria CABA")]
-    valid, _ = validate_manifest(rows)
+    valid, _pw, _blocked, _err = validate_manifest(rows)
     fuentes = build_fuentes(valid)
     assert len(fuentes) == 1
     key = fuentes[0]["key"]
@@ -330,7 +332,7 @@ def test_missing_source_id_rejected():
          "needs_playwright": "False", "error": ""},
         _row(source_id="999"),
     ]
-    valid, errors = validate_manifest(rows)
+    valid, _pw, _blocked, errors = validate_manifest(rows)
     assert len(valid) == 1
     assert valid[0]["source_id"] == "999"
     assert any("missing source_id" in e[2] for e in errors)
@@ -499,16 +501,16 @@ def test_execute_limit_over_max_blocked(tmp_path, capsys):
 
 
 def test_execute_workers_over_max_blocked(tmp_path, capsys):
-    """--execute --workers > 2 bloqueado."""
+    """--execute --workers > MAX_HTTP_WORKERS bloqueado."""
     manifest_file = tmp_path / "m.csv"
     _write_manifest(manifest_file, [_row()])
 
-    over = MAX_EXECUTE_WORKERS + 1
+    over = MAX_HTTP_WORKERS + 1
     ret = main(["--manifest", str(manifest_file), "--execute",
                 "--limit", "1", f"--workers={over}"])
     assert ret != 0
     captured = capsys.readouterr()
-    assert "MAX_EXECUTE_WORKERS" in captured.err or str(MAX_EXECUTE_WORKERS) in captured.err
+    assert "MAX_HTTP_WORKERS" in captured.err or str(MAX_HTTP_WORKERS) in captured.err
 
 
 def test_execute_and_dryrun_mutually_exclusive(tmp_path, capsys):
@@ -554,7 +556,8 @@ def test_execute_calls_run_execute_when_authorized(tmp_path, capsys):
     import run_manifest as rm
     original = rm.run_execute
 
-    def mock_run_execute(fuentes, limit, workers, out_dir_arg, ts_start, manifest_path):
+    def mock_run_execute(fuentes_http, fuentes_pw, limit, http_workers, pw_workers,
+                         out_dir_arg, ts_start, manifest_path):
         return mock_result
 
     rm.run_execute = mock_run_execute

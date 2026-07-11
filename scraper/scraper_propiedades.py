@@ -3303,6 +3303,22 @@ class SupabasePropiedades:
 # HTTP helper
 # ---------------------------------------------------------------------------
 
+_SECRET_QS_RE = re.compile(
+    r"(?i)([?&](?:key|apikey|api_key|token|access_token|password|secret)=)[^&\s#]+"
+)
+
+
+def _redact_secrets(text: Any) -> str:
+    """Redacta secretos en querystrings (key=, apikey=, token=...) antes de loguear.
+
+    Se usa en cualquier punto que pueda registrar una URL con la Tokko API key
+    (`?key=...`) para que la credencial nunca llegue a stdout/stderr/logs/tracebacks.
+    """
+    if text is None:
+        return ""
+    return _SECRET_QS_RE.sub(r"\1<redacted>", str(text))
+
+
 def _http_get(url: str, session: requests.Session, timeout: int = 20,
               use_scraper_on_block: bool = True, **kwargs) -> requests.Response:
     headers = {
@@ -3321,7 +3337,7 @@ def _http_get(url: str, session: requests.Session, timeout: int = 20,
     r = session.get(url, headers=headers, timeout=timeout_value, verify=False, **kwargs)
     # Si bloqueado y tenemos ScraperAPI, reintentar
     if use_scraper_on_block and r.status_code in (403, 429, 503) and SCRAPERAPI_KEY:
-        logger.debug("Bloqueado (%s) Ã¢â€ â€™ reintentando con ScraperAPI: %s", r.status_code, url)
+        logger.debug("Bloqueado (%s) Ã¢â€ â€™ reintentando con ScraperAPI: %s", r.status_code, _redact_secrets(url))
         r = _scraperapi_get(url, session, timeout)
     return r
 
@@ -6017,7 +6033,10 @@ def strategy_tokko_api(inmob: Dict, session: requests.Session) -> List[Dict]:
             r.raise_for_status()
             data = r.json()
         except Exception as e:
-            raise RuntimeError(f"Tokko API error: {e}") from e
+            # Seguridad: no exponer la URL con ?key=... en el mensaje ni en el
+            # traceback encadenado (run.py loguea con exc_info=True). from None
+            # corta la cadena que contendria la URL cruda de requests.
+            raise RuntimeError(f"Tokko API error: {_redact_secrets(e)}") from None
 
         objects = data.get("objects", [])
         if total_count is None:
