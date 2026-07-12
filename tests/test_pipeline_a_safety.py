@@ -15,6 +15,7 @@ for path in (REPO_ROOT / "scripts", REPO_ROOT / "scraper"):
 
 from run_manifest import _InsertOnlySupabaseProxy, write_execute_outputs  # noqa: E402
 from audit_pipeline_a_writes import _audit_rows  # noqa: E402
+from monitor_autonomous_run import parse_progress  # noqa: E402
 from run_autonomous_manifest_dry_run import (  # noqa: E402
     _check,
     _parse_isolated,
@@ -128,6 +129,15 @@ def test_write_audit_resolves_duplicate_slugs_by_canonical_fk():
     rows = _audit_rows(inserted, manifest, "test")
     assert rows[0]["source_id_expected"] == "20"
     assert rows[0]["fk_match"] is True
+
+
+def test_autonomous_monitor_parses_progress_checkpoint():
+    metrics = parse_progress(
+        "| Con FK (elegibles) | 1252 |\n"
+        "| Procesadas | 64 |\n"
+        "| Insertadas | **1330** |\n"
+    )
+    assert metrics == {"processed": 64, "total": 1252, "inserted": 1330}
 
 
 def test_diagnostic_dry_run_has_no_db_write_calls():
