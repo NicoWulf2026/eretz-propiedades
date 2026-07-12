@@ -126,13 +126,11 @@ def _write_csv(path: Path, rows: list[dict[str, Any]], fields: tuple[str, ...]) 
         writer.writerows(rows)
 
 
-def _manifest_map(manifest: list[dict[str, str]]) -> dict[str, dict[str, str]]:
-    result: dict[str, dict[str, str]] = {}
+def _manifest_map(manifest: list[dict[str, str]]) -> dict[str, list[dict[str, str]]]:
+    result: dict[str, list[dict[str, str]]] = {}
     for row in manifest:
         slug = row.get("manifest_slug") or _slug(row.get("source_name"), row.get("source_id"))
-        if slug in result:
-            raise RuntimeError(f"Duplicate manifest slug: {slug}")
-        result[slug] = row
+        result.setdefault(slug, []).append(row)
     return result
 
 
@@ -170,9 +168,17 @@ def _audit_rows(inserted: list[dict[str, Any]], manifest: list[dict[str, str]], 
     by_slug = _manifest_map(manifest)
     rows = []
     for prop in inserted:
-        source = by_slug.get(str(prop.get("fuente_extraccion") or ""))
-        expected = str(source.get("inmobiliaria_id") or source.get("source_id")) if source else ""
+        candidates = by_slug.get(str(prop.get("fuente_extraccion") or ""), [])
         actual = str(prop.get("inmobiliaria_id") or "")
+        matching = [
+            source for source in candidates
+            if str(source.get("inmobiliaria_id") or source.get("source_id")) == actual
+        ]
+        expected = (
+            str(matching[0].get("source_id"))
+            if len(matching) == 1
+            else ";".join(sorted(str(source.get("source_id")) for source in candidates))
+        )
         duplicate_flags = [
             name
             for name, active in (
@@ -187,7 +193,7 @@ def _audit_rows(inserted: list[dict[str, Any]], manifest: list[dict[str, str]], 
             "property_id": prop.get("id"),
             "source_id_expected": expected,
             "inmobiliaria_id_written": actual,
-            "fk_match": bool(source and expected == actual),
+            "fk_match": len(matching) == 1,
             "url": prop.get("url") or "",
             "normalized_url": prop.get("url_normalizada") or "",
             "duplicate_status": ";".join(duplicate_flags) if duplicate_flags else "unique",

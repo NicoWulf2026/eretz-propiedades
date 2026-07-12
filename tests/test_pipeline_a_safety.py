@@ -14,6 +14,7 @@ for path in (REPO_ROOT / "scripts", REPO_ROOT / "scraper"):
         sys.path.insert(0, str(path))
 
 from run_manifest import _InsertOnlySupabaseProxy, write_execute_outputs  # noqa: E402
+from audit_pipeline_a_writes import _audit_rows  # noqa: E402
 from run_autonomous_manifest_dry_run import (  # noqa: E402
     _check,
     _parse_isolated,
@@ -106,6 +107,27 @@ def test_source_error_redacts_query_keys_and_bearer_tokens():
     assert "fake-secret" not in sanitized
     assert "fake.token" not in sanitized
     assert sanitized.count("<redacted>") == 2
+
+
+def test_write_audit_resolves_duplicate_slugs_by_canonical_fk():
+    manifest = [
+        {"source_id": "10", "inmobiliaria_id": "10", "manifest_slug": "same_slug"},
+        {"source_id": "20", "inmobiliaria_id": "20", "manifest_slug": "same_slug"},
+    ]
+    inserted = [{
+        "id": 1,
+        "inmobiliaria_id": 20,
+        "fuente_extraccion": "same_slug",
+        "url": "https://example.test/p/1",
+        "url_normalizada": "https://example.test/p/1",
+        "created_at": "2026-07-12T00:00:00Z",
+        "duplicate_exact": False,
+        "duplicate_normalized": False,
+        "duplicate_hash": False,
+    }]
+    rows = _audit_rows(inserted, manifest, "test")
+    assert rows[0]["source_id_expected"] == "20"
+    assert rows[0]["fk_match"] is True
 
 
 def test_diagnostic_dry_run_has_no_db_write_calls():
