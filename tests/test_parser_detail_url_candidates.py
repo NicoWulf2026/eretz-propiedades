@@ -12,7 +12,11 @@ for path in (REPO_ROOT, SCRAPER_DIR):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-from playwright_scraper import extract_candidate_detail_urls_from_card  # noqa: E402
+from playwright_scraper import (  # noqa: E402
+    extract_candidate_detail_urls_from_card,
+    extract_candidate_detail_urls_from_document,
+    parse_cards,
+)
 
 
 BASE = "https://demo-inmobiliaria.com"
@@ -77,6 +81,12 @@ def test_query_param_ficha():
     ]
 
 
+def test_query_param_pid():
+    assert _urls('<a href="/venta/?pid=123&wplview=property_show">Ver</a>') == [
+        f"{BASE}/venta/?pid=123&wplview=property_show"
+    ]
+
+
 def test_data_href():
     assert _urls('<div data-href="/propiedad/departamento-en-venta-123">Ver</div>') == [
         f"{BASE}/propiedad/departamento-en-venta-123"
@@ -119,3 +129,115 @@ def test_reject_internal_link_without_card_signals():
     html = '<nav><a href="/propiedad/casa-en-venta-123">Casa</a></nav>'
     node = BeautifulSoup(html, "html.parser").select_one("nav")
     assert extract_candidate_detail_urls_from_card(node, BASE) == []
+
+
+def _document_urls(inner: str):
+    soup = BeautifulSoup(inner, "html.parser")
+    return [url for url, _text in extract_candidate_detail_urls_from_document(soup, BASE)]
+
+
+def test_document_accepts_public_admin_property_path():
+    assert _document_urls('<a href="/admin/web/propiedades/123">Ficha</a>') == [
+        f"{BASE}/admin/web/propiedades/123"
+    ]
+
+
+def test_document_accepts_ficha_slug_and_inmueble_underscore():
+    assert _document_urls(
+        '<a href="/casa-en-venta-ficha-ABC123">Casa</a>'
+        '<a href="/inmueble_5971">Inmueble</a>'
+    ) == [
+        f"{BASE}/casa-en-venta-ficha-ABC123",
+        f"{BASE}/inmueble_5971",
+    ]
+
+
+def test_document_accepts_product_and_portfolio_property_paths():
+    assert _document_urls(
+        '<a href="/producto/casa-en-venta-centro">Casa</a>'
+        '<a href="/portfolio_page/departamento-en-venta">Depto</a>'
+    ) == [
+        f"{BASE}/producto/casa-en-venta-centro",
+        f"{BASE}/portfolio_page/departamento-en-venta",
+    ]
+
+
+def test_document_accepts_listing_slug_and_short_d_route():
+    assert _document_urls(
+        '<a href="/es/listing-palermo-casa-123">Casa</a>'
+        '<a href="/d/456-casas-en-pilara">Casa</a>'
+    ) == [
+        f"{BASE}/es/listing-palermo-casa-123",
+        f"{BASE}/d/456-casas-en-pilara",
+    ]
+
+
+def test_document_accepts_contextual_venta_slug_but_rejects_plain_navigation():
+    html = """
+    <nav><a href="/venta/casas">Casas</a></nav>
+    <article class="property-card">
+      <strong>USD 100000</strong><span>Casa en venta, 3 ambientes</span>
+      <a href="/venta/calle-wilde">Ver ficha</a>
+    </article>
+    """
+    assert _document_urls(html) == [f"{BASE}/venta/calle-wilde"]
+
+
+def test_document_extracts_data_link_and_embedded_script_url():
+    html = """
+    <article class="property-card" data-link="/propiedad/casa-123">
+      Casa en venta USD 100000
+    </article>
+    <script>window.__STATE__ = {"url":"/producto/departamento-centro"};</script>
+    """
+    assert _document_urls(html) == [
+        f"{BASE}/propiedad/casa-123",
+        f"{BASE}/producto/departamento-centro",
+    ]
+
+
+def test_parse_cards_fast_path_deduplicates_detail_links():
+    html = """
+    <article class="property-card">
+      <strong>USD 100000</strong><span>Casa en venta, 3 ambientes</span>
+      <a href="/propiedad/casa-123">Casa</a>
+      <a href="/propiedad/casa-123">Ver</a>
+    </article>
+    """
+    properties = parse_cards(html, "venta", "fixture", BASE, "Cordoba")
+    assert [prop.url for prop in properties] == [f"{BASE}/propiedad/casa-123"]
+
+
+def test_parse_cards_keeps_numeric_detail_slug_with_safe_title_fallback():
+    html = '<a href="/admin/web/propiedades/12"><img src="/casa.jpg" alt="Casa" /></a>'
+    properties = parse_cards(html, "venta", "fixture", BASE, "Cordoba")
+    assert [prop.url for prop in properties] == [f"{BASE}/admin/web/propiedades/12"]
+    assert properties[0].titulo == "Propiedad 12"
+
+
+def test_document_rejects_institutional_and_prohibited_urls():
+    html = """
+    <article class="property-card">Casa en venta USD 100000
+      <a href="/contacto">Contacto</a>
+      <a href="/tasacion/casa-123">Tasacion</a>
+      <a href="https://www.zonaprop.com.ar/propiedad/casa-123">Portal</a>
+    </article>
+    """
+    assert _document_urls(html) == []
+
+
+def test_document_accepts_repeated_operation_slug_without_broad_navigation_match():
+    html = """
+    <div><a href="/venta/calle-wilde">Ficha A</a></div>
+    <div><a href="/venta/calle-wilde">Ficha A duplicada</a></div>
+    <nav><a href="/venta/casas">Casas</a><a href="/venta/casas">Casas</a></nav>
+    """
+    assert _document_urls(html) == [f"{BASE}/venta/calle-wilde"]
+
+
+def test_document_accepts_repeated_numeric_realestate_slug():
+    html = """
+    <div><a href="/238-lotes-country-del-norte">Lote</a></div>
+    <div><a href="/238-lotes-country-del-norte">Ver lote</a></div>
+    """
+    assert _document_urls(html) == [f"{BASE}/238-lotes-country-del-norte"]

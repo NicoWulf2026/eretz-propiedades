@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import requests
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -13,7 +14,11 @@ for path in (REPO_ROOT / "scripts", REPO_ROOT / "scraper"):
         sys.path.insert(0, str(path))
 
 from run_manifest import _InsertOnlySupabaseProxy, write_execute_outputs  # noqa: E402
-from run_autonomous_manifest_dry_run import _sanitize as sanitize_dry_run_error  # noqa: E402
+from run_autonomous_manifest_dry_run import (  # noqa: E402
+    _check,
+    _parse_isolated,
+    _sanitize as sanitize_dry_run_error,
+)
 from run import (  # noqa: E402
     _ACTIVE_BROWSER_SEM,
     _sanitize_source_error,
@@ -108,6 +113,66 @@ def test_diagnostic_dry_run_has_no_db_write_calls():
     assert ".patch(" not in source
     assert ".delete(" not in source
     assert sanitize_dry_run_error("https://x.test/?token=fake-secret") == "https://x.test/?token=<redacted>"
+
+
+def test_diagnostic_dry_run_caps_html_before_parsing():
+    source = (REPO_ROOT / "scripts" / "run_autonomous_manifest_dry_run.py").read_text(encoding="utf-8")
+    assert "MAX_HTML_BYTES = 500_000" in source
+    assert "raw_body[:MAX_HTML_BYTES]" in source
+    assert "PARSE_TIMEOUT_S = 45" in source
+    assert "subprocess.run(" in source
+    assert '"--parse-file"' in source
+    assert "session.max_redirects = 5" in source
+
+
+def test_isolated_parser_accepts_utf8_html_on_windows():
+    html = '<a href="/propiedad/casa-123">Casa en venta - ❝ única</a>'
+    cards, links = _parse_isolated(html, "https://example.test", "1")
+    assert cards == 1
+    assert links == 1
+
+
+def test_dry_run_classifies_dns_failure_without_raising(monkeypatch):
+    class FailingSession:
+        def get(self, *_args, **_kwargs):
+            raise requests.exceptions.ConnectionError("dns failed")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr("run_autonomous_manifest_dry_run._session", lambda: FailingSession())
+    row = {
+        "source_id": "7",
+        "inmobiliaria_id": "7",
+        "source_name": "Offline",
+        "new_url_listado": "https://offline.invalid/list",
+    }
+    result = _check(row, 1, "test")
+    assert result["status"] == "NETWORK_TRANSIENT"
+    assert result["error_type"] == "ConnectionError"
+    assert result["db_writes"] == 0
+
+
+def test_playwright_listing_dry_run_is_read_only_and_caps_workers():
+    source = (REPO_ROOT / "scripts" / "run_playwright_listing_dry_run.py").read_text(encoding="utf-8")
+    assert "batch_save" not in source
+    assert ".post(" not in source
+    assert ".patch(" not in source
+    assert "args.workers <= 2" in source
+    assert '"db_writes": 0' in source
+
+
+@pytest.mark.parametrize(
+    "script_name",
+    ["analyze_rendered_parser_gaps.py", "build_final_autonomous_manifest.py"],
+)
+def test_autonomous_audit_helpers_do_not_write_db(script_name):
+    source = (REPO_ROOT / "scripts" / script_name).read_text(encoding="utf-8")
+    assert ".post(" not in source
+    assert ".patch(" not in source
+    assert ".delete(" not in source
+    assert "UPDATE " not in source
+    assert "DELETE FROM" not in source
 
 
 def test_write_execute_outputs_emits_structured_source_results(tmp_path):

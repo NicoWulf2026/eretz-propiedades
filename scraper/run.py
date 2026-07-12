@@ -607,6 +607,29 @@ def _scrape_batch(
 
                             html = page.content()
                             props_basicos = parse_cards(html, operacion, key, base_url, ciudad)
+                            for frame in page.frames[1:6]:
+                                frame_url = frame.url or ""
+                                frame_host = urlparse(frame_url).netloc.lower()
+                                if (
+                                    not frame_url.startswith(("http://", "https://"))
+                                    or any(blocked in frame_host for blocked in (
+                                        "google.", "googletagmanager.", "facebook.",
+                                        "recaptcha.", "addtoany.", "abrachat.",
+                                        "zonaprop.", "argenprop.", "properati.",
+                                    ))
+                                ):
+                                    continue
+                                try:
+                                    frame_html = frame.content()
+                                    frame_base = f"{urlparse(frame_url).scheme}://{frame_host}"
+                                    props_basicos.extend(
+                                        parse_cards(frame_html, operacion, key, frame_base, ciudad)
+                                    )
+                                except Exception as exc:
+                                    logger.debug(
+                                        f"[W{worker_id}][{key}] iframe omitido: "
+                                        f"{_sanitize_source_error(exc)}"
+                                    )
                             for p in props_basicos:
                                 if p.url not in all_prop_urls:
                                     all_prop_urls.append(p.url)

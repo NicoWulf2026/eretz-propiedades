@@ -2,7 +2,7 @@ import logging
 import re
 import time
 import requests
-from typing import List, Dict, Any, Optional, Set
+from typing import List, Dict, Any, Optional, Set, Tuple
 from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 
 _DETAIL_QUERY_KEYS = {
     "id", "idprop", "id_prop", "prop", "propiedad", "inmueble", "codigo",
-    "cod", "ficha", "ref", "referencia", "aviso", "ad",
+    "cod", "ficha", "ref", "referencia", "aviso", "ad", "pid",
 }
 
 _DETAIL_PATH_SEGMENTS = [
@@ -53,11 +53,15 @@ _DETAIL_PATH_SEGMENTS = [
     "/properties/",
     "/listing/",
     "/listings/",
+    "/listing-",
     "/detalle/",
     "/detalles/",
     "/aviso/",
     "/emprendimiento/",
     "/portfolio/",
+    "/portfolio_page/",
+    "/producto/",
+    "/prop/",
     "/Ficha/",
     "/ficha/",
     "/ficha-",
@@ -72,7 +76,7 @@ _DETAIL_CATEGORY_WORDS = {
 _DETAIL_BAD_PATH_WORDS = {
     "contact", "contacto", "nosotros", "quienes", "quienes-somos", "about",
     "servicios", "tasacion", "tasaciones", "blog", "noticia", "noticias",
-    "news", "staff", "equipo", "login", "admin", "wp-admin",
+    "news", "staff", "equipo", "login", "wp-admin",
 }
 
 _DETAIL_PROHIBITED_DOMAINS = ("zonaprop", "argenprop", "properati")
@@ -173,6 +177,13 @@ def _looks_like_detail_url(url: str, base_url: str) -> bool:
         if len(after) >= 2:
             return True
 
+    if re.search(r"/(?:propiedad|inmueble|aviso)[-_][^/?#]*\d", path_lower):
+        return True
+    if re.search(r"/d/\d+(?:-|/|$)", path_lower):
+        return True
+    if re.search(r"-ficha-[a-z0-9_-]*\d", path_lower):
+        return True
+
     # Conservative slug-only fallback: must have at least two path parts and a
     # real-estate token plus a numeric/reference-like component.
     parts = [p for p in path_lower.strip("/").split("/") if p]
@@ -206,6 +217,110 @@ def _onclick_urls(value: str) -> List[str]:
         )
     )
     return urls
+
+
+def extract_candidate_detail_urls_from_document(soup, base_url: str) -> List[Tuple[str, str]]:
+    """Fast, conservative document-level pre-pass before card parsing."""
+    found: List[Tuple[str, str]] = []
+    seen: Set[str] = set()
+
+    def add(raw: str, context, label: str = "", force: bool = False) -> None:
+        candidate = _candidate_url_from_value(raw, base_url)
+        if not candidate or candidate in seen or _is_blocked_detail_url(candidate, base_url):
+            return
+        accepted = force or _looks_like_detail_url(candidate, base_url)
+        if not accepted and context is not None and _has_strong_card_signal(context):
+            path = urlparse(candidate).path.lower()
+            accepted = bool(
+                re.search(r"/(?:venta|alquiler|producto|prop|portfolio_page)/[^/]{5,}/?$", path)
+                or re.search(r"/(?:venta|alquiler)-[^/]{5,}/?$", path)
+            )
+        if not accepted:
+            return
+        seen.add(candidate)
+        context_text = context.get_text(" ", strip=True)[:150] if context is not None else ""
+        text = label if len(label.strip()) > 8 else context_text
+        found.append((candidate, text))
+
+    anchors = list(soup.select("a[href]"))
+    repeated_patterns: Dict[str, int] = {}
+    for anchor in anchors:
+        candidate = _candidate_url_from_value(anchor.get("href", ""), base_url)
+        if not candidate or _is_blocked_detail_url(candidate, base_url):
+            continue
+        path_pattern = re.sub(r"\d+", "{id}", urlparse(candidate).path.lower()).rstrip("/")
+        repeated_patterns[path_pattern] = repeated_patterns.get(path_pattern, 0) + 1
+
+    generic_categories = {
+        "casa", "casas", "departamento", "departamentos", "terreno", "terrenos",
+        "lote", "lotes", "local", "locales", "oficina", "oficinas", "ph",
+        "duplex", "galpon", "galpones", "campo", "campos",
+    }
+    for anchor in anchors:
+        raw_href = anchor.get("href", "")
+        direct_candidate = _candidate_url_from_value(raw_href, base_url)
+        if direct_candidate and _looks_like_detail_url(direct_candidate, base_url):
+            add(raw_href, None, anchor.get_text(" ", strip=True)[:150])
+            continue
+        context = anchor
+        for _ in range(4):
+            if getattr(context, "name", "") in {"nav", "header", "footer", "body", "html"}:
+                context = None
+                break
+            if context is None or _has_strong_card_signal(context):
+                break
+            context = getattr(context, "parent", None)
+        force = False
+        if direct_candidate and not _is_blocked_detail_url(direct_candidate, base_url):
+            path = urlparse(direct_candidate).path.lower().rstrip("/")
+            pattern = re.sub(r"\d+", "{id}", path)
+            final = path.rsplit("/", 1)[-1]
+            repeated = repeated_patterns.get(pattern, 0) >= 2
+            operation_slug = bool(
+                repeated
+                and re.search(r"/(?:venta|alquiler)/[^/]{5,}$", path)
+                and final not in generic_categories
+            )
+            numeric_realestate_slug = bool(
+                repeated
+                and re.search(r"\d", path)
+                and re.search(r"(venta|alquiler|casa|depto|departamento|terreno|lote|local|inmueble)", path)
+            )
+            short_id_route = bool(
+                repeated
+                and re.fullmatch(r"/(?:d/)?\d+(?:-[^/]{4,})?", path)
+                and context is not None
+                and _has_strong_card_signal(context)
+            )
+            force = operation_slug or numeric_realestate_slug or short_id_route
+        add(raw_href, context, anchor.get_text(" ", strip=True)[:150], force=force)
+
+    data_selector = ",".join(
+        f"[{key}]" for key in ("data-href", "data-url", "data-link", "data-slug", "data-path")
+    )
+    for element in soup.select(data_selector):
+        context = element
+        for _ in range(4):
+            if getattr(context, "name", "") in {"nav", "header", "footer", "body", "html"}:
+                context = None
+                break
+            if context is None or _has_strong_card_signal(context):
+                break
+            context = getattr(context, "parent", None)
+        for key in ("data-href", "data-url", "data-link", "data-slug", "data-path"):
+            if element.get(key):
+                add(str(element.get(key)), context)
+        if element.get("onclick"):
+            for raw in _onclick_urls(str(element.get("onclick"))):
+                add(raw, context)
+
+    for script in soup.find_all("script"):
+        text = script.get_text(" ", strip=True)
+        if not text or len(text) > 2_000_000:
+            continue
+        for raw in re.findall(r"[\"']((?:https?://|/)[^\"']{2,240})[\"']", text):
+            add(raw.replace("\\/", "/"), None)
+    return found
 
 
 def extract_candidate_detail_urls_from_card(card, base_url: str) -> List[str]:
@@ -779,6 +894,8 @@ def parse_cards(html: str, operacion: str, fuente_key: str, base_url: str,
                     if slug_sin_id
                     else slug.replace("-", " ").title()[:100]
                 )
+                if len(titulo.strip()) < 3 or titulo.strip().isdigit():
+                    titulo = f"Propiedad {slug}"[:100]
 
             # Extraer dirección/barrio del slug
             slug_parts = slug.split("-")
@@ -843,6 +960,15 @@ def parse_cards(html: str, operacion: str, fuente_key: str, base_url: str,
             )
 
         # ── Modo card: parsear containers ─────────────────────────────────────────
+        # Resolve safe URLs before the expensive card parser. Detail pages are
+        # enriched later, so a minimal Propiedad is sufficient at this stage.
+        for candidate_url, candidate_text in extract_candidate_detail_urls_from_document(soup, base_url):
+            prop = _make_prop_from_url(candidate_url, candidate_text)
+            if prop and prop.is_valid():
+                propiedades.append(prop)
+        if propiedades:
+            return propiedades
+
         _IMG_SKIP = {"logo", "icon", "placeholder", "blank", "spinner", "loading", "avatar"}
 
         if cards:
