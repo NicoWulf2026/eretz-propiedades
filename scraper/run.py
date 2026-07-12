@@ -194,7 +194,12 @@ def classify_source_metrics(
         return "DATA_QUALITY_ERROR", "INTERNAL_CORRECTABLE", "no_valid_properties", True
     if dry_run or db_writes == valid_properties:
         return "SUCCESS_NEW", "SUCCESS", "", False
-    return "DB_ERROR", "INTERNAL_RETRYABLE", "partial_or_failed_insert", True
+    # batch_save_only_new only returns fewer rows when the DB unique hash guard
+    # rejects duplicates during its row-by-row 409 fallback. Any real HTTP/DB
+    # failure raises and sets had_error above; a clean partial result is dedup.
+    if 0 <= db_writes < valid_properties:
+        return "SUCCESS_WITH_DEDUP", "SUCCESS", "", False
+    return "DB_ERROR", "INTERNAL_RETRYABLE", "invalid_insert_count", True
 
 # ---------------------------------------------------------------------------
 # Diagnostico de memoria — TRACE_MEMORY=1 (default: apagado / OFF)
@@ -820,7 +825,10 @@ def _scrape_batch(
                         "n_nuevas":       _n_nuevas,
                         "n_validas":      _n_validas,
                         "props_saved":    _source_props_saved,
-                        "duplicates_skipped": max(0, _n_listado - _n_nuevas),
+                        "duplicates_skipped": (
+                            max(0, _n_listado - _n_nuevas)
+                            + max(0, _n_validas - _source_props_saved)
+                        ),
                         "had_timeout":    _had_timeout,
                         "had_error":      _had_error,
                         "http_status":     "" if _pages_loaded else "navigation_failed",

@@ -75,6 +75,8 @@ def test_insert_only_proxy_rejects_wrong_table():
         ({"pages": 1, "listings_seen": 0, "details_requested": 0, "valid_properties": 0, "db_writes": 0}, "PARSER_ERROR"),
         ({"pages": 0, "listings_seen": 0, "details_requested": 0, "valid_properties": 0, "db_writes": 0}, "REMOTE_HTTP_ERROR"),
         ({"pages": 1, "listings_seen": 2, "details_requested": 2, "valid_properties": 2, "db_writes": 2}, "SUCCESS_NEW"),
+        ({"pages": 1, "listings_seen": 2, "details_requested": 2, "valid_properties": 2, "db_writes": 1}, "SUCCESS_WITH_DEDUP"),
+        ({"pages": 1, "listings_seen": 2, "details_requested": 2, "valid_properties": 2, "db_writes": 0}, "SUCCESS_WITH_DEDUP"),
         ({"pages": 1, "listings_seen": 2, "details_requested": 2, "valid_properties": 0, "db_writes": 0}, "DATA_QUALITY_ERROR"),
     ],
 )
