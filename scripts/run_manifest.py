@@ -169,7 +169,7 @@ def build_fuentes(rows: List[ManifestRow]) -> List[Dict[str, Any]]:
         name = (row.get("source_name") or "").strip()
         sid  = (row.get("source_id") or "").strip()
         slug = re.sub(r"[^a-z0-9_]", "_", name.lower())[:40].strip("_") or f"src_{sid}"
-        fuentes.append({
+        fuente = {
             "key":            slug,
             "source_id":      sid,
             "web":            url,               # new_url_listado — NO inmobiliarias_scraping.web
@@ -178,7 +178,19 @@ def build_fuentes(rows: List[ManifestRow]) -> List[Dict[str, Any]]:
             "tipo_cms":       "tokko",
             "_manifest_name": name,
             "_url_source":    "new_url_listado",
-        })
+        }
+        for field in (
+            "listing_timeout_ms",
+            "detail_timeout_ms",
+            "detail_retries",
+            "retry_backoff_s",
+            "source_no_progress_s",
+            "source_hard_cap_s",
+        ):
+            value = str(row.get(field) or "").strip()
+            if value:
+                fuente[field] = value
+        fuentes.append(fuente)
     return fuentes
 
 
@@ -947,6 +959,10 @@ def run_execute(
             "props_saved", "duplicates_skipped", "had_timeout", "had_error",
             "http_status", "error_type", "error_sanitized", "retryable",
             "retry_count", "memory_peak_mb", "navigation_failures",
+            "listing_timeout_count", "detail_timeout_count", "detail_error_count",
+            "details_succeeded", "detail_retry_attempts", "source_abort_reason",
+            "listing_timeout_ms", "detail_timeout_ms", "detail_retries",
+            "source_no_progress_s", "source_hard_cap_s",
         ]
         metrics_path = out_dir / "source_metrics.csv"
         _write_csv(metrics_path, metrics_log, _METRICS_FIELDS)
@@ -1141,6 +1157,10 @@ def write_execute_outputs(
         "new_properties", "duplicates_skipped", "db_writes", "timeout",
         "http_status", "error_type", "error_sanitized", "retryable",
         "retry_count", "memory_peak_mb",
+        "listing_timeout_count", "detail_timeout_count", "detail_error_count",
+        "details_succeeded", "detail_retry_attempts", "source_abort_reason",
+        "listing_timeout_ms", "detail_timeout_ms", "detail_retries",
+        "source_no_progress_s", "source_hard_cap_s",
     ]
     source_rows = []
     for metric in source_metrics:
@@ -1168,6 +1188,17 @@ def write_execute_outputs(
             "retryable": metric.get("retryable", False),
             "retry_count": metric.get("retry_count", 0),
             "memory_peak_mb": metric.get("memory_peak_mb", ""),
+            "listing_timeout_count": metric.get("listing_timeout_count", 0),
+            "detail_timeout_count": metric.get("detail_timeout_count", 0),
+            "detail_error_count": metric.get("detail_error_count", 0),
+            "details_succeeded": metric.get("details_succeeded", 0),
+            "detail_retry_attempts": metric.get("detail_retry_attempts", 0),
+            "source_abort_reason": metric.get("source_abort_reason", ""),
+            "listing_timeout_ms": metric.get("listing_timeout_ms", ""),
+            "detail_timeout_ms": metric.get("detail_timeout_ms", ""),
+            "detail_retries": metric.get("detail_retries", ""),
+            "source_no_progress_s": metric.get("source_no_progress_s", ""),
+            "source_hard_cap_s": metric.get("source_hard_cap_s", ""),
         })
     for f in fuentes_sin_fk:
         source_rows.append({

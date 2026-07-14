@@ -46,6 +46,15 @@ def _read(path: Path) -> List[Dict[str, str]]:
         return list(csv.DictReader(handle))
 
 
+def _normalize_input_row(row: Dict[str, str]) -> Dict[str, str]:
+    normalized = dict(row)
+    normalized["inmobiliaria_id"] = row.get("inmobiliaria_id") or row.get("source_id", "")
+    normalized["nombre"] = row.get("nombre") or row.get("source_name", "")
+    normalized["url"] = row.get("url") or row.get("new_url_listado") or row.get("old_url_listado", "")
+    normalized["status"] = row.get("status") or "PENDING_CONFIRMATION"
+    return normalized
+
+
 def _write(path: Path, rows: List[Dict[str, Any]]) -> None:
     temp = path.with_suffix(path.suffix + ".tmp")
     with temp.open("w", encoding="utf-8", newline="") as handle:
@@ -216,7 +225,7 @@ def main(argv: List[str] | None = None) -> int:
         parser.error("--workers must be 1 or 2; MAX_ACTIVE_BROWSERS is 2")
     args.out.mkdir(parents=True, exist_ok=True)
     output = args.out / "playwright_dry_run_sources.csv"
-    all_rows = _read(args.input)
+    all_rows = [_normalize_input_row(row) for row in _read(args.input)]
     candidates = [row for row in all_rows if row["status"] != "SUCCESS_NO_NEW"]
     if args.source_ids:
         requested = {value.strip() for value in args.source_ids.split(",") if value.strip()}

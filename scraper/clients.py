@@ -10,6 +10,12 @@ from config import SUPABASE_TABLE
 
 logger = logging.getLogger(__name__)
 
+HTTP_CONNECT_TIMEOUT_S = 5
+HTTP_READ_TIMEOUT_S = 30
+HTTP_FAST_READ_TIMEOUT_S = 15
+HTTP_TIMEOUT = (HTTP_CONNECT_TIMEOUT_S, HTTP_READ_TIMEOUT_S)
+HTTP_FAST_TIMEOUT = (HTTP_CONNECT_TIMEOUT_S, HTTP_FAST_READ_TIMEOUT_S)
+
 
 class SessionFactory:
     """Crea una requests.Session con reintentos automáticos para HTTP y Supabase."""
@@ -22,8 +28,12 @@ class SessionFactory:
     def make() -> requests.Session:
         session = requests.Session()
         retry = Retry(
-            total=3,
-            backoff_factor=0.4,
+            total=2,
+            connect=2,
+            read=1,
+            status=2,
+            other=1,
+            backoff_factor=0.25,
             status_forcelist=[429, 500, 502, 503, 504],
             allowed_methods=["GET", "POST", "PATCH"],
         )
@@ -71,7 +81,7 @@ class SupabaseClient:
             f"{self.url}/rest/v1/{self.table}?on_conflict=url",
             headers=self._headers,
             json=payload,
-            timeout=15,
+            timeout=HTTP_FAST_TIMEOUT,
         )
         if response.status_code == 201:
             return True, "created"
@@ -100,7 +110,7 @@ class SupabaseClient:
                 f"{self.url}/rest/v1/{self.table}",
                 headers=insert_headers,
                 json=chunk,
-                timeout=30,
+                timeout=HTTP_TIMEOUT,
             )
             if response.status_code in {200, 201}:
                 total += len(chunk)
@@ -132,7 +142,7 @@ class SupabaseClient:
                 f"{self.url}/rest/v1/{self.table}",
                 headers=headers,
                 json=[payload],
-                timeout=30,
+                timeout=HTTP_TIMEOUT,
             )
             if r.status_code in {200, 201}:
                 saved += 1
@@ -161,7 +171,7 @@ class SupabaseClient:
                 headers=self._headers_minimal,
                 params={"url": f"eq.{url}"},
                 json=safe_payload,
-                timeout=15,
+                timeout=HTTP_FAST_TIMEOUT,
             )
             if response.status_code not in {200, 204}:
                 logger.warning(f"Error actualizando {url}: {response.status_code}")
@@ -175,7 +185,7 @@ class SupabaseClient:
             headers=self._headers_minimal,
             params={"url": f"eq.{url}"},
             json={"latitud": latitud, "longitud": longitud},
-            timeout=15,
+            timeout=HTTP_FAST_TIMEOUT,
         )
         if response.status_code not in {200, 204}:
             raise RuntimeError(
@@ -187,7 +197,7 @@ class SupabaseClient:
             f"{self.url}/rest/v1/{self.table}",
             headers=self._headers,
             params={"select": "url", "limit": 100_000},
-            timeout=30,
+            timeout=HTTP_TIMEOUT,
         )
         response.raise_for_status()
         return {item["url"] for item in response.json() if "url" in item}
@@ -217,7 +227,7 @@ class SupabaseClient:
                     "url": f"in.({encoded})",
                     "limit": batch_size,
                 },
-                timeout=15,
+                timeout=HTTP_FAST_TIMEOUT,
             )
             response.raise_for_status()
             for item in response.json():
@@ -235,7 +245,7 @@ class SupabaseClient:
                 f"{self.url}/rest/v1/rpc/get_properties_by_urls",
                 headers=self._headers,
                 json={"urls": batch},
-                timeout=15,
+                timeout=HTTP_FAST_TIMEOUT,
             )
             response.raise_for_status()
             for item in response.json():
@@ -252,7 +262,7 @@ class SupabaseClient:
                 "or": "(latitud.is.null,longitud.is.null)",
                 "limit": limit,
             },
-            timeout=30,
+            timeout=HTTP_TIMEOUT,
         )
         response.raise_for_status()
         return [item for item in response.json() if "url" in item]
@@ -268,7 +278,7 @@ class SupabaseClient:
                 "activo": "eq.true",
                 "limit": 100_000,
             },
-            timeout=30,
+            timeout=HTTP_TIMEOUT,
         )
         response.raise_for_status()
         return [item["url"] for item in response.json() if "url" in item]
@@ -286,7 +296,7 @@ class SupabaseClient:
                 headers=self._headers_minimal,
                 params={"url": f"eq.{url}"},
                 json={"activo": False, "fecha_baja": now},
-                timeout=15,
+                timeout=HTTP_FAST_TIMEOUT,
             )
             if response.status_code in {200, 204}:
                 updated += 1
@@ -303,7 +313,7 @@ class SupabaseClient:
                 "valor_anterior": str(valor_anterior) if valor_anterior is not None else None,
                 "valor_nuevo": str(valor_nuevo) if valor_nuevo is not None else None,
             },
-            timeout=15,
+            timeout=HTTP_FAST_TIMEOUT,
         )
         if response.status_code not in {200, 201, 204}:
             logger.warning(f"Error guardando historial para {url}: {response.status_code}")

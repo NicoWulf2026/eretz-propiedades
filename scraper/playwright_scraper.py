@@ -706,20 +706,47 @@ FUENTES_NUEVAS = [
 ]
 
 
-def _goto_safe(page, url: str, timeout: int = 40000) -> bool:
+def _goto_safe(
+    page,
+    url: str,
+    timeout: int = 40000,
+    *,
+    navigation_callback=None,
+    stage: str = "navigation",
+    attempt: int = 1,
+) -> bool:
     """Navega a una URL con manejo de errores. Retorna True si exitoso."""
+    started = time.monotonic()
+
+    def emit(status: str, error_type: str = "") -> None:
+        if navigation_callback is not None:
+            navigation_callback({
+                "stage": stage,
+                "url": url,
+                "status": status,
+                "error_type": error_type,
+                "attempt": attempt,
+                "timeout_ms": timeout,
+                "elapsed_s": round(time.monotonic() - started, 3),
+            })
+
     try:
         page.goto(url, timeout=timeout, wait_until="domcontentloaded")
+        emit("success")
         return True
     except Exception as exc:
         err = str(exc)
         if "Timeout" in err:
+            emit("timeout", "navigation_timeout")
             logger.warning(f"Timeout navegando a {url}")
         elif "ERR_CERT" in err or "SSL" in err:
+            emit("error", "ssl_error")
             logger.warning(f"Error SSL en {url}")
         elif "ERR_NAME_NOT_RESOLVED" in err or "ERR_CONNECTION" in err:
+            emit("error", "connection_error")
             logger.warning(f"Sitio no disponible: {url}")
         else:
+            emit("error", type(exc).__name__)
             logger.warning(f"Error navegando a {url}: {type(exc).__name__}")
         return False
 
@@ -1445,8 +1472,15 @@ def _apply_feature_text(prop: "Propiedad", text: str) -> None:
             prop.metros = num
 
 
-def scrape_detail_page(page, prop: "Propiedad", fuente_key: str,
-                       timeout: int = 20000) -> bool:
+def scrape_detail_page(
+    page,
+    prop: "Propiedad",
+    fuente_key: str,
+    timeout: int = 20000,
+    *,
+    navigation_callback=None,
+    attempt: int = 1,
+) -> bool:
     """
     Visita la ficha individual de una propiedad y completa TODOS sus campos.
     Modifica `prop` in-place. Retorna True si la página cargó correctamente.
@@ -1457,7 +1491,14 @@ def scrape_detail_page(page, prop: "Propiedad", fuente_key: str,
     """
     _soup = None
     try:
-        ok = _goto_safe(page, prop.url, timeout)
+        ok = _goto_safe(
+            page,
+            prop.url,
+            timeout,
+            navigation_callback=navigation_callback,
+            stage="detail",
+            attempt=attempt,
+        )
         if not ok:
             return False
 

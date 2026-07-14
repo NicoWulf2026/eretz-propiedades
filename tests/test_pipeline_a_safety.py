@@ -13,9 +13,10 @@ for path in (REPO_ROOT / "scripts", REPO_ROOT / "scraper"):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-from run_manifest import _InsertOnlySupabaseProxy, write_execute_outputs  # noqa: E402
+from run_manifest import _InsertOnlySupabaseProxy, build_fuentes, write_execute_outputs  # noqa: E402
 from audit_pipeline_a_writes import _audit_rows  # noqa: E402
 from monitor_autonomous_run import parse_progress  # noqa: E402
+from run_playwright_listing_dry_run import _normalize_input_row  # noqa: E402
 from run_autonomous_manifest_dry_run import (  # noqa: E402
     _check,
     _parse_isolated,
@@ -24,8 +25,11 @@ from run_autonomous_manifest_dry_run import (  # noqa: E402
 from run import (  # noqa: E402
     _ACTIVE_BROWSER_SEM,
     _sanitize_source_error,
+    calculate_source_hard_cap,
     classify_source_metrics,
 )
+from playwright_scraper import _goto_safe  # noqa: E402
+from clients import SessionFactory  # noqa: E402
 
 
 class _FakeClient:
@@ -138,6 +142,68 @@ def test_autonomous_monitor_parses_progress_checkpoint():
         "| Insertadas | **1330** |\n"
     )
     assert metrics == {"processed": 64, "total": 1252, "inserted": 1330}
+
+
+def test_manifest_timeout_overrides_are_explicitly_propagated():
+    source = build_fuentes([{
+        "source_id": "10",
+        "source_name": "Example",
+        "new_url_listado": "https://example.test/list",
+        "detail_timeout_ms": "30000",
+        "detail_retries": "1",
+        "source_no_progress_s": "180",
+    }])[0]
+    assert source["detail_timeout_ms"] == "30000"
+    assert source["detail_retries"] == "1"
+    assert source["source_no_progress_s"] == "180"
+    assert "listing_timeout_ms" not in source
+
+
+def test_source_budget_scales_with_work_and_has_absolute_cap():
+    assert calculate_source_hard_cap({}, 10) == 1800
+    assert calculate_source_hard_cap({}, 250) == 2800
+    assert calculate_source_hard_cap({}, 1000) == 5400
+    assert calculate_source_hard_cap({"source_hard_cap_s": "3600"}, 1) == 3600
+
+
+def test_navigation_callback_records_stage_timeout_and_attempt():
+    class TimeoutPage:
+        def goto(self, *_args, **_kwargs):
+            raise RuntimeError("Timeout 20000ms exceeded")
+
+    events = []
+    assert not _goto_safe(
+        TimeoutPage(),
+        "https://example.test/p/1",
+        20_000,
+        navigation_callback=events.append,
+        stage="detail",
+        attempt=2,
+    )
+    assert events[0]["status"] == "timeout"
+    assert events[0]["stage"] == "detail"
+    assert events[0]["attempt"] == 2
+    assert events[0]["timeout_ms"] == 20_000
+
+
+def test_http_retry_policy_is_bounded_and_uses_short_backoff():
+    retry = SessionFactory.make().get_adapter("https://").max_retries
+    assert retry.total == 2
+    assert retry.connect == 2
+    assert retry.read == 1
+    assert retry.backoff_factor <= 0.25
+
+
+def test_playwright_diagnostic_accepts_manifest_schema():
+    row = _normalize_input_row({
+        "source_id": "10",
+        "source_name": "Example",
+        "new_url_listado": "https://example.test/list",
+    })
+    assert row["inmobiliaria_id"] == "10"
+    assert row["nombre"] == "Example"
+    assert row["url"] == "https://example.test/list"
+    assert row["status"] == "PENDING_CONFIRMATION"
 
 
 def test_diagnostic_dry_run_has_no_db_write_calls():

@@ -92,6 +92,37 @@ BROWSER_UA = (
     "Chrome/124.0.0.0 Safari/537.36"
 )
 
+BASE_LISTING_TIMEOUT_MS = 40_000
+BASE_DETAIL_TIMEOUT_MS = 20_000
+BASE_DETAIL_RETRIES = 0
+BASE_RETRY_BACKOFF_S = 0.5
+BASE_SOURCE_NO_PROGRESS_S = 120
+BASE_SOURCE_HARD_CAP_S = 1_800
+ABSOLUTE_SOURCE_HARD_CAP_S = 5_400
+
+
+def _source_int(source: Dict[str, Any], key: str, default: int, minimum: int, maximum: int) -> int:
+    try:
+        value = int(float(source.get(key, default)))
+    except (TypeError, ValueError):
+        value = default
+    return max(minimum, min(maximum, value))
+
+
+def calculate_source_hard_cap(source: Dict[str, Any], detail_count: int) -> int:
+    """Budget grows with demonstrated work but always has an absolute ceiling."""
+    configured = str(source.get("source_hard_cap_s") or "").strip()
+    if configured:
+        return _source_int(
+            source,
+            "source_hard_cap_s",
+            BASE_SOURCE_HARD_CAP_S,
+            300,
+            ABSOLUTE_SOURCE_HARD_CAP_S,
+        )
+    dynamic = max(BASE_SOURCE_HARD_CAP_S, 300 + max(0, detail_count) * 10)
+    return min(ABSOLUTE_SOURCE_HARD_CAP_S, dynamic)
+
 # Fix-S: límite de browsers activos simultáneamente entre todos los workers.
 # Configurable por env MAX_ACTIVE_BROWSERS, con techo absoluto de 2.
 # FairSemaphore reemplaza threading.Semaphore para garantizar orden FIFO estricto
@@ -534,6 +565,43 @@ def _scrape_batch(
         _pages_loaded = _navigation_failures = 0
         _had_timeout = _had_error = False
         _error_sanitized = ""
+        _navigation_events: List[Dict[str, Any]] = []
+        _listing_timeout_count = _detail_timeout_count = _detail_error_count = 0
+        _details_succeeded = _detail_retry_attempts = 0
+        _source_abort_reason = ""
+        _last_progress_at = time.monotonic()
+        _listing_timeout_ms = _source_int(
+            fuente, "listing_timeout_ms", BASE_LISTING_TIMEOUT_MS, 5_000, 60_000
+        )
+        _detail_timeout_ms = _source_int(
+            fuente, "detail_timeout_ms", BASE_DETAIL_TIMEOUT_MS, 5_000, 45_000
+        )
+        _detail_retries = _source_int(
+            fuente, "detail_retries", BASE_DETAIL_RETRIES, 0, 2
+        )
+        _retry_backoff_s = max(
+            0.1,
+            min(2.0, float(fuente.get("retry_backoff_s") or BASE_RETRY_BACKOFF_S)),
+        )
+        _source_no_progress_s = _source_int(
+            fuente,
+            "source_no_progress_s",
+            BASE_SOURCE_NO_PROGRESS_S,
+            60,
+            600,
+        )
+        _source_hard_cap_s = calculate_source_hard_cap(fuente, 0)
+
+        def _record_navigation(event: Dict[str, Any]) -> None:
+            nonlocal _listing_timeout_count, _detail_timeout_count, _detail_error_count
+            _navigation_events.append(event)
+            if event.get("status") == "timeout":
+                if event.get("stage") == "listing":
+                    _listing_timeout_count += 1
+                elif event.get("stage") == "detail":
+                    _detail_timeout_count += 1
+            elif event.get("status") == "error" and event.get("stage") == "detail":
+                _detail_error_count += 1
 
         # -- S1: snapshot baseline de esta fuente (antes del semáforo) -------
         if _TRACE_MEMORY:
@@ -547,6 +615,8 @@ def _scrape_batch(
             _gc_cnt_pre  = gc.get_count()
         with _ACTIVE_BROWSER_SEM:                           # Fix-S: slot adquirido antes del launch
             t_sem_acquired = time.time()
+            _source_browser_started = time.monotonic()
+            _last_progress_at = _source_browser_started
             browser = None
             context = None
             page = None
@@ -584,18 +654,33 @@ def _scrape_batch(
                         MAX_LISTING_PAGES = 15  # límite de seguridad contra loops
 
                         while pending_pages and len(visited_listing) < MAX_LISTING_PAGES:
+                            if time.monotonic() - _source_browser_started > _source_hard_cap_s:
+                                _source_abort_reason = "source_hard_cap"
+                                _had_timeout = True
+                                break
                             listing_url = pending_pages.pop(0)
                             if listing_url in visited_listing:
                                 continue
                             visited_listing.add(listing_url)
 
-                            ok = _goto_safe(page, listing_url, 40_000)
+                            ok = _goto_safe(
+                                page,
+                                listing_url,
+                                _listing_timeout_ms,
+                                navigation_callback=_record_navigation,
+                                stage="listing",
+                            )
                             if not ok:
                                 _navigation_failures += 1
                                 logger.warning(f"[W{worker_id}][{key}] No se pudo cargar: {listing_url}")
+                                if time.monotonic() - _last_progress_at > _source_no_progress_s:
+                                    _source_abort_reason = "source_no_progress"
+                                    _had_timeout = True
+                                    break
                                 continue
 
                             _pages_loaded += 1
+                            _last_progress_at = time.monotonic()
 
                             page.wait_for_timeout(3000)
                             scroll_to_bottom(page)
@@ -654,6 +739,7 @@ def _scrape_batch(
                         with lock:
                             nuevas_urls = [u for u in all_prop_urls if u not in existing_urls]
                         _n_nuevas = len(nuevas_urls)
+                        _source_hard_cap_s = calculate_source_hard_cap(fuente, _n_nuevas)
 
                         if not nuevas_urls:
                             logger.debug(f"[W{worker_id}][{key}] Sin propiedades nuevas")
@@ -667,6 +753,15 @@ def _scrape_batch(
                         inmo_id = fuente.get("inmobiliaria_id")
                         propiedades_completas = []
                         for i, prop_url in enumerate(nuevas_urls, 1):
+                            now_mono = time.monotonic()
+                            if now_mono - _source_browser_started > _source_hard_cap_s:
+                                _source_abort_reason = "source_hard_cap"
+                                _had_timeout = True
+                                break
+                            if now_mono - _last_progress_at > _source_no_progress_s:
+                                _source_abort_reason = "source_no_progress"
+                                _had_timeout = True
+                                break
                             prop = Propiedad(
                                 url=prop_url,
                                 titulo="Sin título",
@@ -676,17 +771,54 @@ def _scrape_batch(
                                 barrio=ciudad or "Argentina",
                                 inmobiliaria_id=inmo_id,
                             )
-                            ok = scrape_detail_page(page, prop, key)
+                            ok = False
+                            for attempt in range(1, _detail_retries + 2):
+                                event_start = len(_navigation_events)
+                                ok = scrape_detail_page(
+                                    page,
+                                    prop,
+                                    key,
+                                    timeout=_detail_timeout_ms,
+                                    navigation_callback=_record_navigation,
+                                    attempt=attempt,
+                                )
+                                if ok:
+                                    _details_succeeded += 1
+                                    _last_progress_at = time.monotonic()
+                                    break
+                                latest = (
+                                    _navigation_events[-1]
+                                    if len(_navigation_events) > event_start
+                                    else {}
+                                )
+                                if latest.get("status") != "timeout" or attempt > _detail_retries:
+                                    break
+                                _detail_retry_attempts += 1
+                                time.sleep(_retry_backoff_s * attempt)
+                                if time.monotonic() - _last_progress_at > _source_no_progress_s:
+                                    _source_abort_reason = "source_no_progress"
+                                    _had_timeout = True
+                                    break
                             if ok:
                                 # Garantizar barrio mínimo
                                 if not prop.barrio:
                                     prop.barrio = ciudad or "Argentina"
                                 if prop.is_valid():
                                     propiedades_completas.append(prop)
+                            if _source_abort_reason:
+                                break
                             if i % 10 == 0:
                                 logger.debug(
                                     f"[W{worker_id}][{key}] Fichas: {i}/{len(nuevas_urls)}"
                                 )
+
+                        if _source_abort_reason:
+                            _error_sanitized = _source_abort_reason
+                            logger.warning(
+                                f"[W{worker_id}][{key}] Fuente interrumpida: "
+                                f"{_source_abort_reason} | completadas={_details_succeeded}/"
+                                f"{len(nuevas_urls)}"
+                            )
 
                         # ── Guardar ──────────────────────────────────────────────────
                         with lock:
@@ -838,6 +970,17 @@ def _scrape_batch(
                         "retry_count":     0,
                         "memory_peak_mb":  _memory_mb,
                         "navigation_failures": _navigation_failures,
+                        "listing_timeout_count": _listing_timeout_count,
+                        "detail_timeout_count": _detail_timeout_count,
+                        "detail_error_count": _detail_error_count,
+                        "details_succeeded": _details_succeeded,
+                        "detail_retry_attempts": _detail_retry_attempts,
+                        "source_abort_reason": _source_abort_reason,
+                        "listing_timeout_ms": _listing_timeout_ms,
+                        "detail_timeout_ms": _detail_timeout_ms,
+                        "detail_retries": _detail_retries,
+                        "source_no_progress_s": _source_no_progress_s,
+                        "source_hard_cap_s": _source_hard_cap_s,
                     }
                     with lock:
                         metrics_log.append(metric)
