@@ -70,7 +70,7 @@ _DETAIL_PATH_SEGMENTS = [
 _DETAIL_CATEGORY_WORDS = {
     "venta", "ventas", "alquiler", "alquileres", "page", "buscar", "busqueda",
     "search", "results", "resultados", "categoria", "category", "tipo",
-    "type", "comprar", "rentas", "emprendimientos", "desarrollos",
+    "type", "cat", "comprar", "rentas", "emprendimientos", "desarrollos",
 }
 
 _DETAIL_BAD_PATH_WORDS = {
@@ -751,6 +751,17 @@ def _goto_safe(
         return False
 
 
+SAFE_LOAD_MORE_SELECTORS = (
+    'button:has-text("Ver más")',
+    'button:has-text("Cargar más")',
+    'a[href="#"]:has-text("Ver más")',
+    'a[href="#"]:has-text("Cargar más")',
+    'a[href^="javascript:"]:has-text("Ver más")',
+    'a[href^="javascript:"]:has-text("Cargar más")',
+    'button[class*="load-more"]',
+)
+
+
 def scroll_to_bottom(page, max_scrolls=12):
     """
     Hace scroll hasta el fondo para disparar la carga lazy de propiedades.
@@ -781,8 +792,7 @@ def scroll_to_bottom(page, max_scrolls=12):
             if count == prev:
                 # Intentar botón "Ver más" antes de rendirse
                 clicked = False
-                for sel in ['button:has-text("Ver más")', 'a:has-text("Ver más")',
-                            'button:has-text("Cargar más")', '[class*="load-more"]']:
+                for sel in SAFE_LOAD_MORE_SELECTORS:
                     try:
                         btn = page.query_selector(sel)
                         if btn and btn.is_visible():
@@ -841,7 +851,7 @@ def parse_cards(html: str, operacion: str, fuente_key: str, base_url: str,
         # aparece seguido de una categoría.
         _CATEGORY_SUFFIXES = {
             "venta", "alquiler", "page", "buscar", "search", "results",
-            "resultados", "categoria", "category", "tipo", "type",
+            "resultados", "categoria", "category", "tipo", "type", "cat",
         }
 
         def _is_detail_url(path: str) -> bool:

@@ -66,6 +66,7 @@ def main() -> int:
     parser.add_argument("--log", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--url-corrections", type=Path)
+    parser.add_argument("--exclusions", type=Path)
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
 
@@ -78,6 +79,11 @@ def main() -> int:
             if row["source_id"] in corrections:
                 row["new_url_listado"] = corrections[row["source_id"]]
     manifest_by_id = {row["source_id"]: row for row in manifest}
+    exclusion_ids = (
+        {row["source_id"] for row in _read(args.exclusions)}
+        if args.exclusions and args.exclusions.exists()
+        else set()
+    )
     metrics_by_id = {row["source_id"]: row for row in metrics}
     domains: dict[str, list[dict[str, str]]] = defaultdict(list)
     for row in manifest:
@@ -158,15 +164,15 @@ def main() -> int:
         return result
 
     output_fields = list(manifest[0].keys()) + [field for field in OVERRIDE_FIELDS if field not in manifest[0]]
-    run_b_rows = [enriched(row) for row in manifest]
+    run_b_rows = [enriched(row) for row in manifest if row["source_id"] not in exclusion_ids]
     _write(args.out / "run_b_manifest.csv", run_b_rows, output_fields)
 
     internal_ids = {
         row["source_id"] for row in results
         if row.get("classification", "").startswith("INTERNAL")
-    }
+    } - exclusion_ids
     internal_rows = [enriched(manifest_by_id[sid]) for sid in sorted(internal_ids, key=int)]
-    timeout_only_ids = set(source_events) - internal_ids
+    timeout_only_ids = set(source_events) - internal_ids - exclusion_ids
     timeout_rows = [enriched(manifest_by_id[sid]) for sid in sorted(timeout_only_ids, key=int)]
     _write(args.out / "run_a_internal_retry_manifest.csv", internal_rows, output_fields)
     _write(args.out / "run_a_timeout_retry_manifest.csv", timeout_rows, output_fields)
@@ -201,6 +207,7 @@ def main() -> int:
         f"- Ambiguous or unmapped timeout events: {ambiguous}",
         f"- Internal retry sources: {len(internal_rows)}",
         f"- Timeout-only retry sources (excluding internal overlap): {len(timeout_rows)}",
+        f"- Explicit external exclusions from Run B: {len(exclusion_ids)}",
         "",
         "## Policy for retries and Run B",
         "",

@@ -28,7 +28,7 @@ from run import (  # noqa: E402
     calculate_source_hard_cap,
     classify_source_metrics,
 )
-from playwright_scraper import _goto_safe  # noqa: E402
+from playwright_scraper import SAFE_LOAD_MORE_SELECTORS, _goto_safe  # noqa: E402
 from clients import SessionFactory  # noqa: E402
 
 
@@ -204,6 +204,17 @@ def test_playwright_diagnostic_accepts_manifest_schema():
     assert row["nombre"] == "Example"
     assert row["url"] == "https://example.test/list"
     assert row["status"] == "PENDING_CONFIRMATION"
+
+
+def test_scroll_load_more_never_clicks_navigable_text_links():
+    joined = " ".join(SAFE_LOAD_MORE_SELECTORS)
+    assert 'a:has-text("Ver más")' not in joined
+    assert 'a:has-text("Cargar más")' not in joined
+    assert all(
+        'href="#"' in selector or 'href^="javascript:"' in selector
+        for selector in SAFE_LOAD_MORE_SELECTORS
+        if selector.startswith("a[")
+    )
 
 
 def test_diagnostic_dry_run_has_no_db_write_calls():

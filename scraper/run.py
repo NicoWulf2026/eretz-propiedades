@@ -629,6 +629,7 @@ def _scrape_batch(
             visited_listing       = None
             pending_pages         = None
             html                  = None
+            initial_html          = None
             nuevas_urls           = None
             nuevas_final          = None
             propiedades_completas = None
@@ -683,6 +684,16 @@ def _scrape_batch(
                             _last_progress_at = time.monotonic()
 
                             page.wait_for_timeout(3000)
+                            try:
+                                page.wait_for_selector(
+                                    'a[href*="/propiedad/"], a[href*="/inmueble/"], '
+                                    'a[href*="/home-details/"], a[href*="/p/"]',
+                                    state="attached",
+                                    timeout=4000,
+                                )
+                            except Exception:
+                                pass
+                            initial_html = page.content()
                             scroll_to_bottom(page)
 
                             # Esperar renderizado JS de precios/cards
@@ -696,7 +707,12 @@ def _scrape_batch(
                                 pass
 
                             html = page.content()
-                            props_basicos = parse_cards(html, operacion, key, base_url, ciudad)
+                            props_basicos = []
+                            for snapshot_html in dict.fromkeys((initial_html, html)):
+                                if snapshot_html:
+                                    props_basicos.extend(
+                                        parse_cards(snapshot_html, operacion, key, base_url, ciudad)
+                                    )
                             for frame in page.frames[1:6]:
                                 frame_url = frame.url or ""
                                 frame_host = urlparse(frame_url).netloc.lower()
@@ -878,6 +894,7 @@ def _scrape_batch(
                 visited_listing       = None
                 pending_pages         = None
                 html                  = None
+                initial_html          = None
                 nuevas_urls           = None
                 nuevas_final          = None
                 propiedades_completas = None

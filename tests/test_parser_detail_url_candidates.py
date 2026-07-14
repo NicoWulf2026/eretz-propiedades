@@ -121,6 +121,10 @@ def test_reject_listado_puro():
     assert _urls('<a href="/propiedades/venta">Venta</a>') == []
 
 
+def test_reject_short_category_route():
+    assert _urls('<a href="/inmuebles/cat/">Categoria</a>') == []
+
+
 def test_reject_prohibited_portal():
     assert _urls('<a href="https://www.zonaprop.com.ar/propiedades/casa-123.html">Ver</a>') == []
 
