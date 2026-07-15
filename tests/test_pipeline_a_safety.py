@@ -106,6 +106,37 @@ def test_source_status_prioritizes_timeout_and_internal_error():
     assert classify_source_metrics(**common, had_timeout=False, had_error=True)[0] == "INTERNAL_ERROR"
 
 
+def test_source_status_classifies_only_residual_invalid_cards_as_external():
+    status = classify_source_metrics(
+        pages=1,
+        listings_seen=9,
+        details_requested=1,
+        valid_properties=0,
+        db_writes=0,
+        had_timeout=False,
+        had_error=False,
+        dry_run=False,
+    )
+    assert status == (
+        "DATA_QUALITY_EXTERNAL",
+        "EXTERNAL_FINAL",
+        "residual_incomplete_properties",
+        False,
+    )
+
+    parser_gap = classify_source_metrics(
+        pages=1,
+        listings_seen=9,
+        details_requested=9,
+        valid_properties=0,
+        db_writes=0,
+        had_timeout=False,
+        had_error=False,
+        dry_run=False,
+    )
+    assert parser_gap[1] == "INTERNAL_CORRECTABLE"
+
+
 def test_source_error_redacts_query_keys_and_bearer_tokens():
     raw = "https://api.test/p?key=fake-secret&x=1 Authorization: Bearer fake.token"
     sanitized = _sanitize_source_error(raw)

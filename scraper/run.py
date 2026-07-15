@@ -34,7 +34,7 @@ import requests
 from playwright.sync_api import TimeoutError as PwTimeout
 from playwright.sync_api import sync_playwright
 
-from clients import SessionFactory, SupabaseClient
+from clients import PartialBatchInsertError, SessionFactory, SupabaseClient
 from config import (
     SOURCE_CONFIGS,
     SUPABASE_SERVICE_ROLE_KEY,
@@ -222,6 +222,13 @@ def classify_source_metrics(
     if details_requested == 0:
         return "SUCCESS_NO_NEW", "SUCCESS", "", False
     if valid_properties == 0:
+        if details_requested <= 2 and listings_seen > details_requested:
+            return (
+                "DATA_QUALITY_EXTERNAL",
+                "EXTERNAL_FINAL",
+                "residual_incomplete_properties",
+                False,
+            )
         return "DATA_QUALITY_ERROR", "INTERNAL_CORRECTABLE", "no_valid_properties", True
     if dry_run or db_writes == valid_properties:
         return "SUCCESS_NEW", "SUCCESS", "", False
@@ -849,9 +856,22 @@ def _scrape_batch(
                                 f"/ {len(nuevas_urls)} nuevas"
                             )
                             if nuevas_final and not dry_run:
-                                saved = supabase.batch_save_only_new(
-                                    [p.to_payload() for p in nuevas_final]
-                                )
+                                payloads = [p.to_payload() for p in nuevas_final]
+                                try:
+                                    saved = supabase.batch_save_only_new(payloads)
+                                except PartialBatchInsertError as exc:
+                                    _source_props_saved = exc.saved_count
+                                    total += exc.saved_count
+                                    existing_urls.update(
+                                        str(payload.get("url"))
+                                        for payload in exc.saved_payloads
+                                        if payload.get("url")
+                                    )
+                                    logger.warning(
+                                        f"[W{worker_id}][{key}] INSERT parcial confirmado: "
+                                        f"{exc.saved_count}"
+                                    )
+                                    raise
                                 existing_urls.update(p.url for p in nuevas_final)
                                 total += saved
                                 _source_props_saved = saved

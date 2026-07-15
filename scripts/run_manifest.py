@@ -89,7 +89,7 @@ class _InsertOnlySupabaseProxy:
 
 def load_manifest(path: Path) -> List[ManifestRow]:
     rows: List[ManifestRow] = []
-    with open(path, encoding="utf-8", newline="") as fh:
+    with open(path, encoding="utf-8-sig", newline="") as fh:
         for row in csv.DictReader(fh):
             rows.append(dict(row))
     return rows

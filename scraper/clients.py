@@ -17,6 +17,15 @@ HTTP_TIMEOUT = (HTTP_CONNECT_TIMEOUT_S, HTTP_READ_TIMEOUT_S)
 HTTP_FAST_TIMEOUT = (HTTP_CONNECT_TIMEOUT_S, HTTP_FAST_READ_TIMEOUT_S)
 
 
+class PartialBatchInsertError(RuntimeError):
+    """An insert failed after one or more payloads were already confirmed."""
+
+    def __init__(self, message: str, saved_payloads: List[Dict[str, Any]]) -> None:
+        super().__init__(message)
+        self.saved_payloads = list(saved_payloads)
+        self.saved_count = len(self.saved_payloads)
+
+
 class SessionFactory:
     """Crea una requests.Session con reintentos automáticos para HTTP y Supabase."""
 
@@ -98,6 +107,7 @@ class SupabaseClient:
         # propiedades.url has no unique constraint, so no on_conflict clause.
         _CHUNK = 20
         total = 0
+        saved_payloads: List[Dict[str, Any]] = []
         insert_headers = {
             "apikey":          self.key,
             "Authorization":   f"Bearer {self.key}",
@@ -106,26 +116,42 @@ class SupabaseClient:
         }
         for i in range(0, len(new_payloads), _CHUNK):
             chunk = new_payloads[i : i + _CHUNK]
-            response = self.session.post(
-                f"{self.url}/rest/v1/{self.table}",
-                headers=insert_headers,
-                json=chunk,
-                timeout=HTTP_TIMEOUT,
-            )
+            try:
+                response = self.session.post(
+                    f"{self.url}/rest/v1/{self.table}",
+                    headers=insert_headers,
+                    json=chunk,
+                    timeout=HTTP_TIMEOUT,
+                )
+            except Exception as exc:
+                raise PartialBatchInsertError(
+                    f"Supabase insert interrupted after {total} confirmed row(s): {exc}",
+                    saved_payloads,
+                ) from exc
             if response.status_code in {200, 201}:
                 total += len(chunk)
+                saved_payloads.extend(chunk)
             elif response.status_code == 409:
                 # hash_dedup collision in batch — fall back to row-by-row inserts
-                saved, skipped = self._insert_individually(chunk, insert_headers)
+                try:
+                    saved, skipped, individual_payloads = self._insert_individually(
+                        chunk, insert_headers
+                    )
+                except PartialBatchInsertError as exc:
+                    raise PartialBatchInsertError(
+                        str(exc), saved_payloads + exc.saved_payloads
+                    ) from exc
                 total += saved
+                saved_payloads.extend(individual_payloads)
                 if skipped:
                     logger.info(
                         f"[dedup] {skipped} propiedad(es) omitida(s) por hash_dedup duplicado, "
                         f"{saved} guardada(s) en fallback individual"
                     )
             else:
-                raise RuntimeError(
-                    f"Supabase batch insert error {response.status_code}: {response.text[:300]}"
+                raise PartialBatchInsertError(
+                    f"Supabase batch insert error {response.status_code}: {response.text[:300]}",
+                    saved_payloads,
                 )
         return total
 
@@ -133,29 +159,38 @@ class SupabaseClient:
         self,
         payloads: List[Dict[str, Any]],
         headers: Dict[str, str],
-    ) -> tuple[int, int]:
-        """Inserta una fila a la vez; retorna (guardadas, omitidas_por_hash_dedup)."""
+    ) -> tuple[int, int, List[Dict[str, Any]]]:
+        """Insert rows individually and retain the exact confirmed payloads."""
         saved = 0
         skipped = 0
+        saved_payloads: List[Dict[str, Any]] = []
         for payload in payloads:
-            r = self.session.post(
-                f"{self.url}/rest/v1/{self.table}",
-                headers=headers,
-                json=[payload],
-                timeout=HTTP_TIMEOUT,
-            )
+            try:
+                r = self.session.post(
+                    f"{self.url}/rest/v1/{self.table}",
+                    headers=headers,
+                    json=[payload],
+                    timeout=HTTP_TIMEOUT,
+                )
+            except Exception as exc:
+                raise PartialBatchInsertError(
+                    f"Supabase individual insert interrupted after {saved} confirmed row(s): {exc}",
+                    saved_payloads,
+                ) from exc
             if r.status_code in {200, 201}:
                 saved += 1
+                saved_payloads.append(payload)
             elif r.status_code == 409:
                 logger.debug(
                     f"[dedup] hash_dedup duplicate skipped: {payload.get('url', '?')}"
                 )
                 skipped += 1
             else:
-                raise RuntimeError(
-                    f"Supabase batch insert error {r.status_code}: {r.text[:300]}"
+                raise PartialBatchInsertError(
+                    f"Supabase batch insert error {r.status_code}: {r.text[:300]}",
+                    saved_payloads,
                 )
-        return saved, skipped
+        return saved, skipped, saved_payloads
 
     def batch_save_only_changed(self, changed_payloads: List[Dict[str, Any]]) -> int:
         if not changed_payloads:

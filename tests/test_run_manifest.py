@@ -44,6 +44,9 @@ from pathlib import Path
 from typing import List, Dict
 from unittest.mock import patch, MagicMock
 
+import pytest
+import requests
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS_DIR = REPO_ROOT / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
@@ -108,6 +111,20 @@ def test_valid_manifest_loads_all_rows():
     valid, _pw, _blocked, errors = validate_manifest(rows)
     assert len(valid) == 5
     assert len(errors) == 0
+
+
+def test_load_manifest_accepts_utf8_bom(tmp_path):
+    manifest = tmp_path / "manifest_bom.csv"
+    manifest.write_text(
+        "source_id,source_name,new_url_listado\n"
+        "100,Inmobiliaria Nunez,https://example.com/propiedades\n",
+        encoding="utf-8-sig",
+    )
+
+    rows = load_manifest(manifest)
+
+    assert rows[0]["source_id"] == "100"
+    assert rows[0]["source_name"] == "Inmobiliaria Nunez"
 
 
 # ---------------------------------------------------------------------------
@@ -1275,3 +1292,56 @@ def test_batch_409_fallback_preserves_estado_hash_dedup_inmobiliaria_id():
     assert sent["estado"] == "activa"
     assert sent["hash_dedup"] == "abcdef1234567890abcdef1234567890"
     assert sent["inmobiliaria_id"] == 42
+
+
+def test_batch_save_reports_confirmed_rows_before_later_chunk_failure():
+    import sys
+    sys.path.insert(0, str(REPO_ROOT / "scraper"))
+    from clients import PartialBatchInsertError, SupabaseClient
+
+    mock_session = MagicMock()
+    mock_session.post.side_effect = [
+        MagicMock(status_code=201, text=""),
+        requests.ConnectionError("temporary DNS failure"),
+    ]
+    client = SupabaseClient(
+        mock_session, "https://fake.supabase.co", "fakekey", "propiedades"
+    )
+    payloads = [
+        {"url": f"https://x.com/{i}", "titulo": "T", "inmobiliaria_id": 1}
+        for i in range(21)
+    ]
+
+    with pytest.raises(PartialBatchInsertError) as caught:
+        client.batch_save_only_new(payloads)
+
+    assert caught.value.saved_count == 20
+    assert [p["url"] for p in caught.value.saved_payloads] == [
+        f"https://x.com/{i}" for i in range(20)
+    ]
+
+
+def test_batch_save_reports_confirmed_individual_rows_before_failure():
+    import sys
+    sys.path.insert(0, str(REPO_ROOT / "scraper"))
+    from clients import PartialBatchInsertError, SupabaseClient
+
+    mock_session = MagicMock()
+    mock_session.post.side_effect = [
+        MagicMock(status_code=409, text='{"code":"23505"}'),
+        MagicMock(status_code=201, text=""),
+        requests.ConnectionError("connection reset"),
+    ]
+    client = SupabaseClient(
+        mock_session, "https://fake.supabase.co", "fakekey", "propiedades"
+    )
+    payloads = [
+        {"url": "https://x.com/1", "titulo": "T", "inmobiliaria_id": 1},
+        {"url": "https://x.com/2", "titulo": "T", "inmobiliaria_id": 1},
+    ]
+
+    with pytest.raises(PartialBatchInsertError) as caught:
+        client.batch_save_only_new(payloads)
+
+    assert caught.value.saved_count == 1
+    assert caught.value.saved_payloads[0]["url"] == "https://x.com/1"
