@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import sys
 from pathlib import Path
 
@@ -15,7 +16,7 @@ for path in (REPO_ROOT / "scripts", REPO_ROOT / "scraper"):
 
 from run_manifest import _InsertOnlySupabaseProxy, build_fuentes, write_execute_outputs  # noqa: E402
 from audit_pipeline_a_writes import _audit_rows  # noqa: E402
-from monitor_autonomous_run import parse_progress  # noqa: E402
+from monitor_autonomous_run import append_event, parse_progress  # noqa: E402
 from run_playwright_listing_dry_run import _normalize_input_row  # noqa: E402
 from run_autonomous_manifest_dry_run import (  # noqa: E402
     _check,
@@ -173,6 +174,22 @@ def test_autonomous_monitor_parses_progress_checkpoint():
         "| Insertadas | **1330** |\n"
     )
     assert metrics == {"processed": 64, "total": 1252, "inserted": 1330}
+
+
+def test_autonomous_monitor_labels_run_b_events(tmp_path):
+    path = tmp_path / "events.jsonl"
+    append_event(
+        path,
+        "general_run_B_test",
+        123,
+        {"processed": 2, "total": 10, "inserted": 4},
+        "running",
+        phase="Fase 16",
+        event_prefix="run_b",
+    )
+    event = json.loads(path.read_text(encoding="utf-8"))
+    assert event["phase"] == "Fase 16"
+    assert event["event"] == "run_b_progress"
 
 
 def test_manifest_timeout_overrides_are_explicitly_propagated():

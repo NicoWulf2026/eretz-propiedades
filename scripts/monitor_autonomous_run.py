@@ -52,11 +52,20 @@ def update_status(path: Path, pid: int, run_id: str, metrics: dict[str, int], st
     path.write_text(text, encoding="utf-8")
 
 
-def append_event(path: Path, run_id: str, pid: int, metrics: dict[str, int], status: str) -> None:
+def append_event(
+    path: Path,
+    run_id: str,
+    pid: int,
+    metrics: dict[str, int],
+    status: str,
+    *,
+    phase: str = "Fase 13",
+    event_prefix: str = "run_a",
+) -> None:
     event = {
         "ts": datetime.now(LOCAL_TZ).isoformat(timespec="seconds"),
-        "phase": "Fase 13",
-        "event": "run_a_progress" if status == "running" else "run_a_process_finished",
+        "phase": phase,
+        "event": f"{event_prefix}_progress" if status == "running" else f"{event_prefix}_process_finished",
         "status": status,
         "details": {"run_id": run_id, "pid": pid, **metrics},
     }
@@ -72,6 +81,8 @@ def main() -> int:
     parser.add_argument("--status", type=Path, required=True)
     parser.add_argument("--events", type=Path, required=True)
     parser.add_argument("--interval", type=int, default=900)
+    parser.add_argument("--phase", default="Fase 13")
+    parser.add_argument("--event-prefix", default="run_a")
     args = parser.parse_args()
 
     while True:
@@ -80,7 +91,15 @@ def main() -> int:
         metrics = parse_progress(progress)
         state = "IN_PROGRESS" if running else "AWAITING_AUDIT"
         update_status(args.status, args.pid, args.run_id, metrics, state)
-        append_event(args.events, args.run_id, args.pid, metrics, "running" if running else "finished")
+        append_event(
+            args.events,
+            args.run_id,
+            args.pid,
+            metrics,
+            "running" if running else "finished",
+            phase=args.phase,
+            event_prefix=args.event_prefix,
+        )
         if not running:
             return 0
         time.sleep(max(60, args.interval))
