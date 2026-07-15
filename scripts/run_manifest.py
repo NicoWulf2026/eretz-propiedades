@@ -551,6 +551,9 @@ def _load_existing_urls_by_inmobiliaria(
     supabase_url: str,
     key: str,
     inmobiliaria_ids: List[int],
+    *,
+    session: Any = None,
+    metrics: Optional[Dict[str, Any]] = None,
 ) -> Set[str]:
     """
     Carga URLs existentes en propiedades filtrando por inmobiliaria_id.
@@ -566,30 +569,67 @@ def _load_existing_urls_by_inmobiliaria(
         return set()
 
     existing: Set[str] = set()
-    H = {"apikey": key, "Authorization": f"Bearer {key}"}
+    headers = {"apikey": key, "Authorization": f"Bearer {key}"}
+    unique_ids = list(dict.fromkeys(int(value) for value in inmobiliaria_ids))
+    batch_size = 50
+    page_size = 1000
+    query_count = 0
+    started_at = time.monotonic()
+    request_get = session.get if session is not None else requests.get
 
-    print(f"[DEDUP] Cargando URLs existentes para {len(inmobiliaria_ids)} inmobiliarias...")
-    for inmo_id in inmobiliaria_ids:
-        try:
-            r = requests.get(
-                f"{supabase_url.rstrip('/')}/rest/v1/propiedades",
-                headers=H,
-                params={
-                    "select":           "url",
-                    "inmobiliaria_id":  f"eq.{inmo_id}",
-                    "limit":            "10000",
-                },
-                timeout=30,
+    print(f"[DEDUP] Cargando URLs existentes para {len(unique_ids)} inmobiliarias...")
+    for start in range(0, len(unique_ids), batch_size):
+        batch = unique_ids[start : start + batch_size]
+        offset = 0
+        while True:
+            try:
+                response = request_get(
+                    f"{supabase_url.rstrip('/')}/rest/v1/propiedades",
+                    headers=headers,
+                    params={
+                        "select": "url",
+                        "inmobiliaria_id": f"in.({','.join(map(str, batch))})",
+                        "limit": str(page_size),
+                        "offset": str(offset),
+                    },
+                    timeout=(5, 30),
+                )
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Dedup preflight request failed for batch starting at {start}: {exc}"
+                ) from exc
+            query_count += 1
+            if response.status_code != 200:
+                raise RuntimeError(
+                    f"Dedup preflight HTTP {response.status_code} for batch starting at {start}"
+                )
+            rows = response.json()
+            if not isinstance(rows, list):
+                raise RuntimeError("Dedup preflight returned a non-list payload")
+            existing.update(
+                str(item["url"])
+                for item in rows
+                if isinstance(item, dict) and item.get("url")
             )
-            if r.status_code == 200:
-                existing.update(item["url"] for item in r.json() if "url" in item)
-        except Exception as exc:
-            print(
-                f"  [DEDUP] WARN: error cargando URLs para inmobiliaria_id={inmo_id}: {exc}",
-                file=sys.stderr,
-            )
+            if len(rows) < page_size:
+                break
+            offset += page_size
 
-    print(f"[DEDUP] existing_urls cargadas (per-source): {len(existing):,}")
+    elapsed_s = round(time.monotonic() - started_at, 2)
+    if metrics is not None:
+        metrics.update({
+            "mode": "batched_paginated",
+            "inmobiliaria_count": len(unique_ids),
+            "batch_size": batch_size,
+            "page_size": page_size,
+            "query_count": query_count,
+            "elapsed_s": elapsed_s,
+            "url_count": len(existing),
+        })
+    print(
+        f"[DEDUP] existing_urls cargadas: {len(existing):,} | "
+        f"queries={query_count} | elapsed={elapsed_s:.2f}s"
+    )
     return existing
 
 
@@ -862,8 +902,13 @@ def run_execute(
 
     # Cargar URLs existentes por inmobiliaria_id — fix dedup (evita límite PostgREST 1.000)
     inmobiliaria_ids_fk = [f["inmobiliaria_id"] for f in fuentes_con_fk]
+    dedup_preflight_metrics: Dict[str, Any] = {}
     existing_urls = _load_existing_urls_by_inmobiliaria(
-        cfg.SUPABASE_URL, cfg.SUPABASE_SERVICE_ROLE_KEY, inmobiliaria_ids_fk
+        cfg.SUPABASE_URL,
+        cfg.SUPABASE_SERVICE_ROLE_KEY,
+        inmobiliaria_ids_fk,
+        session=session,
+        metrics=dedup_preflight_metrics,
     )
     count_before = len(existing_urls)
     print(f"[EXECUTE] existing_urls (per-source, {len(inmobiliaria_ids_fk)} fuentes): {count_before:,}")
@@ -885,6 +930,7 @@ def run_execute(
             for sid, name, reason in fk_errors
         ],
     }
+    snap["dedup_preflight"] = dedup_preflight_metrics
     snap["colas"] = {"http": len(cola_http), "playwright": len(cola_pw)}
     (out_dir / "pre_execute_snapshot.json").write_text(
         json.dumps(snap, ensure_ascii=False, indent=2), encoding="utf-8"

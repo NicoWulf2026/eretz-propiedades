@@ -1089,16 +1089,15 @@ def test_load_existing_urls_by_inmobiliaria_multiple_ids():
     from unittest.mock import MagicMock, patch
     from run_manifest import _load_existing_urls_by_inmobiliaria
 
-    results_by_id = {
-        "eq.1": [{"url": "https://a.com/1"}],
-        "eq.2": [{"url": "https://b.com/1"}],
-    }
-
     def fake_get(*args, **kwargs):
         inmo_filter = kwargs.get("params", {}).get("inmobiliaria_id", "")
         r = MagicMock()
         r.status_code = 200
-        r.json.return_value = results_by_id.get(inmo_filter, [])
+        assert inmo_filter == "in.(1,2)"
+        r.json.return_value = [
+            {"url": "https://a.com/1"},
+            {"url": "https://b.com/1"},
+        ]
         return r
 
     with patch("requests.get", side_effect=fake_get):
@@ -1109,7 +1108,7 @@ def test_load_existing_urls_by_inmobiliaria_multiple_ids():
     assert len(result) == 2
 
 
-def test_load_existing_urls_tolerates_http_error():
+def test_load_existing_urls_fails_closed_on_http_error():
     """_load_existing_urls_by_inmobiliaria() no lanza si PostgREST retorna error."""
     import sys
     sys.path.insert(0, str(REPO_ROOT / "scripts"))
@@ -1121,9 +1120,35 @@ def test_load_existing_urls_tolerates_http_error():
     mock_resp.json.return_value = []
 
     with patch("requests.get", return_value=mock_resp):
-        result = _load_existing_urls_by_inmobiliaria("https://fake.co", "fakekey", [42])
+        with pytest.raises(RuntimeError, match="Dedup preflight HTTP 500"):
+            _load_existing_urls_by_inmobiliaria("https://fake.co", "fakekey", [42])
+        result = set()
 
     assert isinstance(result, set)  # no lanza, retorna set (posiblemente vacío)
+
+
+def test_load_existing_urls_paginates_and_reports_metrics():
+    from unittest.mock import MagicMock, patch
+    from run_manifest import _load_existing_urls_by_inmobiliaria
+
+    first = MagicMock(status_code=200)
+    first.json.return_value = [
+        {"url": f"https://a.com/{index}"} for index in range(1000)
+    ]
+    second = MagicMock(status_code=200)
+    second.json.return_value = [{"url": "https://a.com/1000"}]
+    metrics = {}
+
+    with patch("requests.get", side_effect=[first, second]) as mocked_get:
+        result = _load_existing_urls_by_inmobiliaria(
+            "https://fake.co", "fakekey", [1, 1, 2], metrics=metrics
+        )
+
+    assert len(result) == 1001
+    assert mocked_get.call_count == 2
+    assert mocked_get.call_args_list[1].kwargs["params"]["offset"] == "1000"
+    assert metrics["inmobiliaria_count"] == 2
+    assert metrics["query_count"] == 2
 
 
 def test_dedup_prevents_existing_url_reinsertion():
