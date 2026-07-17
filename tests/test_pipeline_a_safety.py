@@ -43,6 +43,9 @@ class _FakeClient:
         self.inserted.extend(payloads)
         return len(payloads)
 
+    def filter_new_exact_urls(self, payloads):
+        return payloads, 0
+
     def batch_save_only_changed(self, payloads):  # pragma: no cover - must stay unreachable
         raise AssertionError("PATCH must not be reachable")
 
@@ -240,6 +243,7 @@ def test_http_retry_policy_is_bounded_and_uses_short_backoff():
     assert retry.connect == 2
     assert retry.read == 1
     assert retry.backoff_factor <= 0.25
+    assert "POST" not in retry.allowed_methods
 
 
 def test_playwright_diagnostic_accepts_manifest_schema():

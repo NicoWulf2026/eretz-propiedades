@@ -1147,8 +1147,56 @@ def test_load_existing_urls_paginates_and_reports_metrics():
     assert len(result) == 1001
     assert mocked_get.call_count == 2
     assert mocked_get.call_args_list[1].kwargs["params"]["offset"] == "1000"
+    assert mocked_get.call_args_list[1].kwargs["params"]["order"] == "inmobiliaria_id.asc,id.asc"
     assert metrics["inmobiliaria_count"] == 2
     assert metrics["query_count"] == 2
+
+
+def test_insert_only_proxy_filters_historical_exact_url_before_insert():
+    from run_manifest import _InsertOnlySupabaseProxy
+
+    client = MagicMock()
+    client.table = "propiedades"
+    existing = {"url": "https://x.com/old", "inmobiliaria_id": 7}
+    fresh = {"url": "https://x.com/new", "inmobiliaria_id": 7}
+    client.filter_new_exact_urls.return_value = ([fresh], 1)
+    client.batch_save_only_new.return_value = 1
+
+    proxy = _InsertOnlySupabaseProxy(client)
+    assert proxy.batch_save_only_new([existing, fresh]) == 1
+    client.batch_save_only_new.assert_called_once_with([fresh])
+
+
+def test_exact_url_guard_is_scoped_by_inmobiliaria_id_and_fails_closed():
+    import sys
+    sys.path.insert(0, str(REPO_ROOT / "scraper"))
+    from clients import SupabaseClient
+
+    response = MagicMock(status_code=200, text="")
+    response.json.return_value = [{
+        "inmobiliaria_id": 7,
+        "url": "https://x.com/shared",
+    }]
+    session = MagicMock()
+    session.get.return_value = response
+    client = SupabaseClient(session, "https://fake.supabase.co", "fakekey", "propiedades")
+
+    payloads = [
+        {"url": "https://x.com/shared", "inmobiliaria_id": 7},
+        {"url": "https://x.com/new", "inmobiliaria_id": 7},
+        {"url": "https://x.com/shared", "inmobiliaria_id": 8},
+    ]
+    filtered, skipped = client.filter_new_exact_urls(payloads)
+
+    assert skipped == 1
+    assert payloads[0] not in filtered
+    assert payloads[1:] == filtered
+    assert "%" not in session.get.call_args_list[0].kwargs["params"]["url"]
+    assert '"https://x.com/shared"' in session.get.call_args_list[0].kwargs["params"]["url"]
+
+    session.get.side_effect = requests.ConnectionError("offline")
+    with pytest.raises(RuntimeError, match="Exact URL guard request failed"):
+        client.filter_new_exact_urls(payloads)
 
 
 def test_dedup_prevents_existing_url_reinsertion():

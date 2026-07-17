@@ -44,7 +44,9 @@ class SessionFactory:
             other=1,
             backoff_factor=0.25,
             status_forcelist=[429, 500, 502, 503, 504],
-            allowed_methods=["GET", "POST", "PATCH"],
+            # Retrying a plain INSERT after a read timeout can duplicate a row
+            # when PostgreSQL committed but the response never reached us.
+            allowed_methods=["GET", "PATCH"],
         )
         adapter = HTTPAdapter(max_retries=retry)
         session.mount("https://", adapter)
@@ -154,6 +156,69 @@ class SupabaseClient:
                     saved_payloads,
                 )
         return total
+
+    def filter_new_exact_urls(
+        self, payloads: List[Dict[str, Any]]
+    ) -> tuple[List[Dict[str, Any]], int]:
+        """Fail-closed exact URL guard scoped by canonical inmobiliaria_id."""
+        if not payloads:
+            return [], 0
+
+        grouped: Dict[str, List[Dict[str, Any]]] = {}
+        for payload in payloads:
+            agency_id = payload.get("inmobiliaria_id")
+            url = str(payload.get("url") or "")
+            if agency_id is None or not url:
+                raise RuntimeError("Exact URL guard requires inmobiliaria_id and url")
+            grouped.setdefault(str(agency_id), []).append(payload)
+
+        existing_keys: Set[tuple[str, str]] = set()
+        for agency_id, agency_payloads in grouped.items():
+            urls = list(dict.fromkeys(str(payload["url"]) for payload in agency_payloads))
+            for start in range(0, len(urls), 20):
+                batch = urls[start : start + 20]
+                # PostgREST accepts quoted values inside in(...). Pre-quoting
+                # with percent escapes is incorrect because requests escapes
+                # the percent signs again and the query silently matches zero.
+                encoded = ",".join(
+                    f'"{url.replace(chr(92), chr(92) * 2).replace(chr(34), chr(92) + chr(34))}"'
+                    for url in batch
+                )
+                try:
+                    response = self.session.get(
+                        f"{self.url}/rest/v1/{self.table}",
+                        headers=self._headers_minimal,
+                        params={
+                            "select": "inmobiliaria_id,url",
+                            "inmobiliaria_id": f"eq.{agency_id}",
+                            "url": f"in.({encoded})",
+                            "limit": str(len(batch)),
+                        },
+                        timeout=HTTP_FAST_TIMEOUT,
+                    )
+                except Exception as exc:
+                    raise RuntimeError(f"Exact URL guard request failed: {exc}") from exc
+                if response.status_code != 200:
+                    raise RuntimeError(
+                        f"Exact URL guard HTTP {response.status_code}: {response.text[:300]}"
+                    )
+                rows = response.json()
+                if not isinstance(rows, list):
+                    raise RuntimeError("Exact URL guard returned a non-list payload")
+                existing_keys.update(
+                    (str(row.get("inmobiliaria_id")), str(row.get("url")))
+                    for row in rows
+                    if isinstance(row, dict)
+                    and row.get("inmobiliaria_id") is not None
+                    and row.get("url")
+                )
+
+        filtered = [
+            payload
+            for payload in payloads
+            if (str(payload["inmobiliaria_id"]), str(payload["url"])) not in existing_keys
+        ]
+        return filtered, len(payloads) - len(filtered)
 
     def _insert_individually(
         self,

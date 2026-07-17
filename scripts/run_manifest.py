@@ -81,7 +81,10 @@ class _InsertOnlySupabaseProxy:
         self._client = client
 
     def batch_save_only_new(self, payloads: List[Dict[str, Any]]) -> int:
-        return self._client.batch_save_only_new(payloads)
+        filtered, skipped = self._client.filter_new_exact_urls(payloads)
+        if skipped:
+            print(f"  [DEDUP] exact agency+URL guard skipped {skipped} row(s)")
+        return self._client.batch_save_only_new(filtered)
 
     def __getattr__(self, name: str) -> Any:
         raise RuntimeError(f"Unauthorized Supabase operation in Pipeline A: {name}")
@@ -591,6 +594,7 @@ def _load_existing_urls_by_inmobiliaria(
                         "inmobiliaria_id": f"in.({','.join(map(str, batch))})",
                         "limit": str(page_size),
                         "offset": str(offset),
+                        "order": "inmobiliaria_id.asc,id.asc",
                     },
                     timeout=(5, 30),
                 )
