@@ -1038,8 +1038,8 @@ def test_payload_safe_int_still_works_with_estado():
 def test_max_execute_limit_matches_audited_universe():
     """El techo debe coincidir exactamente con el universo auditado."""
     from run_manifest import MAX_EXECUTE_LIMIT
-    assert MAX_EXECUTE_LIMIT == 1391, (
-        f"MAX_EXECUTE_LIMIT={MAX_EXECUTE_LIMIT}, se esperaba 1391"
+    assert MAX_EXECUTE_LIMIT == 7004, (
+        f"MAX_EXECUTE_LIMIT={MAX_EXECUTE_LIMIT}, se esperaba 7004"
     )
 
 

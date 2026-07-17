@@ -8,7 +8,7 @@ SEGURIDAD POR DEFECTO:
   - Con --dry-run:                 Valida manifest, genera reporte. 0 DB writes.
   - Con --dry-run --playwright:    Canary HTTP sobre --limit fuentes. 0 DB writes.
   - Con --execute:                 Corrida real. Solo escribe en `propiedades`.
-                                   Requiere --limit <= 50 y --workers <= 2 (09d).
+                                   Requiere --limit <= 7004 y workers acotados.
   - --commit:                      BLOQUEADO siempre.
   - --playwright sin --dry-run:    BLOQUEADO.
   - --playwright sin --limit:      BLOQUEADO (seguridad).
@@ -58,7 +58,7 @@ BLOCKED_COMBINED_STATUSES = {"still_failed", "http_error", "error"}
 BLOCKED_ERRORS             = {"http_error", "connection_error", "domain_down", "missing_url"}
 PW_HARD_BLOCKED            = {"antibot", "captcha"}  # Playwright no resuelve bloqueo activo
 
-MAX_EXECUTE_LIMIT   = 1391  # universo completo auditado para esta ejecucion autonoma
+MAX_EXECUTE_LIMIT   = 7004  # universo DB completo autorizado para Run C / Run D
 MAX_HTTP_WORKERS    = int(os.environ.get("MAX_HTTP_WORKERS", "4"))
 MAX_PW_WORKERS      = int(os.environ.get("MAX_PW_WORKERS",  "1"))
 
@@ -1518,7 +1518,7 @@ def main(argv=None) -> int:
     if not args.dry_run and not args.execute:
         print("ERROR: Refusing to run without --dry-run. "
               "Real DB writes are not authorized. "
-              "Add --dry-run or --execute (with --limit <= 50).",
+              "Add --dry-run or --execute (with an explicit audited --limit).",
               file=sys.stderr)
         return 1
 

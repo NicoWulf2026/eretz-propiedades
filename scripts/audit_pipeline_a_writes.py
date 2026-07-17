@@ -44,7 +44,7 @@ WRITE_AUDIT_FIELDS = (
 
 def _load_db_url() -> str:
     load_dotenv(REPO_ROOT / ".env", override=False)
-    value = os.getenv("INTERNAL_DB_URL", "")
+    value = os.getenv("SUPABASE_DATABASE_URL", "") or os.getenv("INTERNAL_DB_URL", "")
     if not value:
         raise RuntimeError("INTERNAL_DB_URL is not configured")
     return value
