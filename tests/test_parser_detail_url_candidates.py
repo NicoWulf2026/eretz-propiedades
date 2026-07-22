@@ -75,6 +75,18 @@ def test_query_param_codigo():
     ]
 
 
+def test_query_param_code_legacy_ficha_php():
+    assert _urls('<a href="/motor/ficha.php?code=117-4315">Ver</a>') == [
+        f"{BASE}/motor/ficha.php?code=117-4315"
+    ]
+
+
+def test_query_param_idficha_legacy_alias():
+    assert _urls('<a href="/detalle.php?idFicha=4315">Ver</a>') == [
+        f"{BASE}/detalle.php?idFicha=4315"
+    ]
+
+
 def test_query_param_ficha():
     assert _urls('<a href="/detalle?ficha=123">Ver</a>') == [
         f"{BASE}/detalle?ficha=123"
@@ -117,12 +129,28 @@ def test_reject_blog():
     assert _urls('<a href="/blog/casa-en-venta-123">Blog</a>') == []
 
 
+def test_reject_editorial_market_article():
+    assert _urls(
+        '<a href="/mercado-inmobiliario/con-mas-de-100-000-propiedades-en-venta/">'
+        "Informe de mercado"
+        "</a>"
+    ) == []
+
+
 def test_reject_listado_puro():
     assert _urls('<a href="/propiedades/venta">Venta</a>') == []
 
 
+def test_reject_empty_code_query():
+    assert _urls('<a href="/motor/ficha.php?code=">Ver</a>') == []
+
+
 def test_reject_short_category_route():
     assert _urls('<a href="/inmuebles/cat/">Categoria</a>') == []
+
+
+def test_reject_wordpress_property_category_route():
+    assert _urls('<a href="/property-category/la-falda/">Categoria</a>') == []
 
 
 def test_reject_prohibited_portal():
@@ -219,6 +247,35 @@ def test_parse_cards_keeps_numeric_detail_slug_with_safe_title_fallback():
     assert properties[0].titulo == "Propiedad 12"
 
 
+def test_parse_cards_rejects_prohibited_absolute_url_in_segment_fallback():
+    html = """
+    <a href="https://www.argenprop.com/inmobiliarias/acme/inmuebles/venta?anunciante=123">
+      Ver propiedades
+    </a>
+    """
+    properties = parse_cards(html, "venta", "fixture", BASE, "Cordoba")
+    assert properties == []
+
+
+def test_parse_cards_accepts_detail_links_after_canonical_domain_redirect():
+    html = """
+    <article class="property-card">
+      <strong>USD 100000</strong><span>Casa en venta, 3 ambientes</span>
+      <a href="https://labatepropiedadesmunro.com.ar/ad/casa-en-venta-en-villa-adelina">
+        Casa en venta en Villa Adelina
+      </a>
+    </article>
+    """
+    old_base = "http://www.labatepropiedades.com.ar"
+    final_base = "https://labatepropiedadesmunro.com.ar"
+
+    assert parse_cards(html, "venta", "fixture", old_base, "Cordoba") == []
+    properties = parse_cards(html, "venta", "fixture", final_base, "Cordoba")
+    assert [prop.url for prop in properties] == [
+        "https://labatepropiedadesmunro.com.ar/ad/casa-en-venta-en-villa-adelina"
+    ]
+
+
 def test_document_rejects_institutional_and_prohibited_urls():
     html = """
     <article class="property-card">Casa en venta USD 100000
@@ -245,3 +302,8 @@ def test_document_accepts_repeated_numeric_realestate_slug():
     <div><a href="/238-lotes-country-del-norte">Ver lote</a></div>
     """
     assert _document_urls(html) == [f"{BASE}/238-lotes-country-del-norte"]
+
+
+def test_document_accepts_legacy_fichashtml_detail_page():
+    html = '<a href="/fichashtml/florida1y2.html">Casa en venta Florida USD 100000</a>'
+    assert _document_urls(html) == [f"{BASE}/fichashtml/florida1y2.html"]

@@ -39,7 +39,8 @@ logger = logging.getLogger(__name__)
 
 _DETAIL_QUERY_KEYS = {
     "id", "idprop", "id_prop", "prop", "propiedad", "inmueble", "codigo",
-    "cod", "ficha", "ref", "referencia", "aviso", "ad", "pid",
+    "cod", "code", "ficha", "idficha", "id_ficha", "ref", "referencia",
+    "aviso", "ad", "pid",
 }
 
 _DETAIL_PATH_SEGMENTS = [
@@ -65,6 +66,8 @@ _DETAIL_PATH_SEGMENTS = [
     "/Ficha/",
     "/ficha/",
     "/ficha-",
+    "/fichashtml/",
+    "/motor/ficha.php",
 ]
 
 _DETAIL_CATEGORY_WORDS = {
@@ -76,7 +79,8 @@ _DETAIL_CATEGORY_WORDS = {
 _DETAIL_BAD_PATH_WORDS = {
     "contact", "contacto", "nosotros", "quienes", "quienes-somos", "about",
     "servicios", "tasacion", "tasaciones", "blog", "noticia", "noticias",
-    "news", "staff", "equipo", "login", "wp-admin",
+    "news", "staff", "equipo", "login", "wp-admin", "property-category",
+    "categoria", "category", "mercado-inmobiliario", "prensa",
 }
 
 _DETAIL_PROHIBITED_DOMAINS = ("zonaprop", "argenprop", "properati")
@@ -857,6 +861,10 @@ def parse_cards(html: str, operacion: str, fuente_key: str, base_url: str,
         def _is_detail_url(path: str) -> bool:
             """True si el path parece una ficha individual (no una categoría o paginación)."""
             candidate = path if path.startswith(("http://", "https://")) else urljoin(base_url, path)
+            # Never let blocked or external URLs fall through to the broad
+            # PROP_SEGMENTS compatibility path below.
+            if _is_blocked_detail_url(candidate, base_url):
+                return False
             if _looks_like_detail_url(candidate, base_url):
                 return True
             for seg in PROP_SEGMENTS:
