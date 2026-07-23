@@ -74,13 +74,15 @@ _DETAIL_CATEGORY_WORDS = {
     "venta", "ventas", "alquiler", "alquileres", "page", "buscar", "busqueda",
     "search", "results", "resultados", "categoria", "category", "tipo",
     "type", "cat", "comprar", "rentas", "emprendimientos", "desarrollos",
+    "operation", "operations", "forsale", "forrent", "fortemporaryrent",
 }
 
 _DETAIL_BAD_PATH_WORDS = {
     "contact", "contacto", "nosotros", "quienes", "quienes-somos", "about",
     "servicios", "tasacion", "tasaciones", "blog", "noticia", "noticias",
     "news", "staff", "equipo", "login", "wp-admin", "property-category",
-    "categoria", "category", "mercado-inmobiliario", "prensa",
+    "categoria", "category", "mercado-inmobiliario", "prensa", "operation",
+    "operations",
 }
 
 _DETAIL_PROHIBITED_DOMAINS = ("zonaprop", "argenprop", "properati")

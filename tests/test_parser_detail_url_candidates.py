@@ -153,6 +153,12 @@ def test_reject_wordpress_property_category_route():
     assert _urls('<a href="/property-category/la-falda/">Categoria</a>') == []
 
 
+def test_reject_operation_category_routes():
+    assert _urls('<a href="/properties/operation/forSale">Venta</a>') == []
+    assert _urls('<a href="/properties/operation/forRent">Alquiler</a>') == []
+    assert _urls('<a href="/properties/operation/forTemporaryRent">Temporario</a>') == []
+
+
 def test_reject_prohibited_portal():
     assert _urls('<a href="https://www.zonaprop.com.ar/propiedades/casa-123.html">Ver</a>') == []
 
