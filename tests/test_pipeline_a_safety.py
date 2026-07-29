@@ -15,6 +15,7 @@ for path in (REPO_ROOT / "scripts", REPO_ROOT / "scraper"):
         sys.path.insert(0, str(path))
 
 from run_manifest import _InsertOnlySupabaseProxy, build_fuentes, write_execute_outputs  # noqa: E402
+import audit_pipeline_a_writes as audit_writes  # noqa: E402
 from audit_pipeline_a_writes import _audit_rows  # noqa: E402
 from monitor_autonomous_run import append_event, parse_progress  # noqa: E402
 from run_playwright_listing_dry_run import _normalize_input_row  # noqa: E402
@@ -25,12 +26,19 @@ from run_autonomous_manifest_dry_run import (  # noqa: E402
 )
 from run import (  # noqa: E402
     _ACTIVE_BROWSER_SEM,
+    _is_listing_shell_detail_url,
+    _is_prohibited_detail_url,
+    _listing_seed_score,
+    _property_from_listing_seed,
+    _property_from_listing_shell_seed,
     _sanitize_source_error,
+    _uses_listing_shell_detail,
     calculate_source_hard_cap,
     classify_source_metrics,
 )
 from playwright_scraper import SAFE_LOAD_MORE_SELECTORS, _goto_safe  # noqa: E402
 from clients import SessionFactory  # noqa: E402
+from models import Propiedad  # noqa: E402
 
 
 class _FakeClient:
@@ -52,6 +60,36 @@ class _FakeClient:
 
 def test_active_browser_limit_never_exceeds_two():
     assert _ACTIVE_BROWSER_SEM._capacity <= 2
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://www.argenprop.com/inmobiliarias/acme/inmuebles/venta",
+        "https://argenprop.com.ar/casa-123",
+        "https://www.zonaprop.com.ar/propiedades/casa-123.html",
+        "https://properati.com.ar/detalle/123",
+    ],
+)
+def test_pipeline_a_blocks_prohibited_detail_portals(url):
+    assert _is_prohibited_detail_url(url)
+
+
+def test_pipeline_a_allows_agency_detail_url():
+    assert not _is_prohibited_detail_url("https://agencia.example/propiedad/casa-123")
+
+
+def test_lissa_query_detail_is_classified_as_listing_shell():
+    listing = "https://lissapropiedades.com.ar/propiedades"
+    detail = "https://lissapropiedades.com.ar/propiedades/?id=7806570"
+
+    assert _is_listing_shell_detail_url(detail, listing)
+    assert _uses_listing_shell_detail("lissa_propiedades", detail, listing)
+    assert not _uses_listing_shell_detail("another_agency", detail, listing)
+    assert not _is_listing_shell_detail_url(
+        "https://lissapropiedades.com.ar/propiedad/7806570",
+        listing,
+    )
 
 
 def test_insert_only_proxy_allows_plain_insert():
@@ -170,6 +208,19 @@ def test_write_audit_resolves_duplicate_slugs_by_canonical_fk():
     assert rows[0]["fk_match"] is True
 
 
+def test_write_audit_accepts_runtime_slug_alias_when_manifest_slug_differs():
+    manifest = [{
+        "source_id": "153",
+        "source_name": "C. P. ROYO Inmobiliaria",
+        "manifest_slug": "c_p_royo_inmobiliaria",
+    }]
+
+    by_slug = audit_writes._manifest_map(manifest)
+
+    assert by_slug["c_p_royo_inmobiliaria"] == manifest
+    assert by_slug["c__p__royo_inmobiliaria"] == manifest
+
+
 def test_autonomous_monitor_parses_progress_checkpoint():
     metrics = parse_progress(
         "| Con FK (elegibles) | 1252 |\n"
@@ -215,6 +266,115 @@ def test_source_budget_scales_with_work_and_has_absolute_cap():
     assert calculate_source_hard_cap({}, 250) == 2800
     assert calculate_source_hard_cap({}, 1000) == 5400
     assert calculate_source_hard_cap({"source_hard_cap_s": "3600"}, 1) == 3600
+
+
+def test_detail_property_preserves_rich_listing_card_seed():
+    seed = Propiedad(
+        url="https://agency.test/propiedad.php?id=7",
+        titulo="Casa con parque",
+        precio=125000,
+        moneda="USD",
+        barrio="Pilar",
+        tipo_propiedad="casa",
+        dormitorios=3,
+        imagenes=["https://agency.test/images/7.jpg"],
+    )
+
+    prop = _property_from_listing_seed(
+        seed,
+        url=seed.url,
+        fuente="agency",
+        ciudad="Pilar",
+        operacion="venta",
+        inmobiliaria_id=42,
+    )
+
+    assert prop is not seed
+    assert prop.titulo == "Casa con parque"
+    assert prop.precio == 125000
+    assert prop.tipo_propiedad == "casa"
+    assert prop.imagenes == seed.imagenes
+    assert prop.imagenes is not seed.imagenes
+    assert prop.fuente == "agency"
+    assert prop.inmobiliaria_id == 42
+    assert prop.is_valid()
+
+
+def test_detail_property_without_seed_keeps_previous_safe_defaults():
+    prop = _property_from_listing_seed(
+        None,
+        url="https://agency.test/p/7",
+        fuente="agency",
+        ciudad=None,
+        operacion=None,
+        inmobiliaria_id=42,
+    )
+
+    assert prop.titulo == "Sin título"
+    assert prop.barrio == "Argentina"
+    assert not prop.is_valid()
+
+
+def test_listing_seed_score_prefers_meaningful_card_fields():
+    sparse = Propiedad(url="https://agency.test/p/7", titulo="Casa")
+    rich = Propiedad(
+        url=sparse.url,
+        titulo="Casa",
+        precio=100000,
+        moneda="USD",
+        barrio="Centro",
+        imagenes=["https://agency.test/7.jpg"],
+    )
+
+    assert _listing_seed_score(rich) > _listing_seed_score(sparse)
+
+
+def test_listing_shell_preserves_card_and_ignores_generic_detail_values():
+    seed = Propiedad(
+        url="https://lissapropiedades.com.ar/propiedades/?id=7806570",
+        titulo="Cochera en alquiler - Tolosa",
+        precio=55000,
+        moneda="ARS",
+        barrio="Tolosa",
+        tipo_propiedad="cochera",
+        ambientes=1,
+        imagenes=["https://static.tokkobroker.com/card-7806570.jpg"],
+    )
+
+    prop = _property_from_listing_shell_seed(
+        seed,
+        url=seed.url,
+        fuente="lissa_propiedades",
+        ciudad="La Plata",
+        operacion="alquiler",
+        inmobiliaria_id=1098,
+    )
+
+    assert prop is not None
+    assert prop.titulo == "Cochera en alquiler - Tolosa"
+    assert prop.titulo != "Propiedades"
+    assert prop.precio == 55000
+    assert prop.imagenes == ["https://static.tokkobroker.com/card-7806570.jpg"]
+    assert prop.ambientes == 1
+    assert not prop.descripcion
+
+
+def test_listing_shell_rejects_insufficient_card_identity():
+    insufficient = Propiedad(
+        url="https://lissapropiedades.com.ar/propiedades/?id=7",
+        titulo="Propiedades",
+        barrio="La Plata",
+        tipo_propiedad="otro",
+    )
+
+    assert _property_from_listing_shell_seed(
+        insufficient,
+        url=insufficient.url,
+        fuente="lissa_propiedades",
+        ciudad="La Plata",
+        operacion=None,
+        inmobiliaria_id=1098,
+    ) is None
 
 
 def test_navigation_callback_records_stage_timeout_and_attempt():

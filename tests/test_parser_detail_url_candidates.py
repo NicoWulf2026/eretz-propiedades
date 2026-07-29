@@ -313,3 +313,114 @@ def test_document_accepts_repeated_numeric_realestate_slug():
 def test_document_accepts_legacy_fichashtml_detail_page():
     html = '<a href="/fichashtml/florida1y2.html">Casa en venta Florida USD 100000</a>'
     assert _document_urls(html) == [f"{BASE}/fichashtml/florida1y2.html"]
+
+
+def test_document_accepts_descriptive_slug_inside_strong_property_card():
+    html = """
+    <article class="property-card">
+      <a href="/gral-paz-2326-zona-centro-casa-p-h-en-venta/">Ver</a>
+      <div>Casa en venta</div>
+      <div>USD 120.000</div>
+      <img src="/uploads/casa.jpg">
+    </article>
+    """
+
+    assert _document_urls(html) == [
+        f"{BASE}/gral-paz-2326-zona-centro-casa-p-h-en-venta/"
+    ]
+
+
+def test_document_rejects_descriptive_navigation_slug_without_card_signal():
+    html = """
+    <nav>
+      <a href="/guia-para-comprar-casa-en-venta/">Blog</a>
+    </nav>
+    """
+
+    assert _document_urls(html) == []
+
+
+def test_parse_cards_uses_strong_card_text_when_first_detail_anchor_is_an_image():
+    html = """
+    <article class="property-card">
+      <a href="/propiedad?id=7936107"><img src="/uploads/casa.jpg"></a>
+      <h2>Casa 6 ambientes con jardin en Florida</h2>
+      <div>Venta USD 350.000</div>
+      <a href="/propiedad?id=7936107">Mas detalles</a>
+    </article>
+    """
+
+    properties = parse_cards(
+        html,
+        "venta",
+        "frumento_fixture",
+        BASE,
+        "Buenos Aires",
+    )
+
+    assert len(properties) == 1
+    assert properties[0].url == f"{BASE}/propiedad?id=7936107"
+    assert "Casa 6 ambientes" in properties[0].titulo
+
+
+def test_document_duplicate_url_keeps_stronger_context():
+    html = """
+    <div><a href="/propiedad?id=7936107"><img src="/empty.jpg"></a></div>
+    <article class="property-card">
+      <h2>Casa 6 ambientes con jardin en Florida</h2>
+      <div>Venta USD 350.000</div>
+      <a href="/propiedad?id=7936107">Mas detalles</a>
+    </article>
+    """
+    soup = BeautifulSoup(html, "html.parser")
+
+    rows = extract_candidate_detail_urls_from_document(soup, BASE)
+
+    assert rows == [
+        (
+            f"{BASE}/propiedad?id=7936107",
+            "Casa 6 ambientes con jardin en Florida",
+        )
+    ]
+
+
+def test_parse_lissa_card_keeps_isolated_card_fields():
+    html = """
+    <h1>Propiedades</h1>
+    <div class="lissa-grid">
+      <a href="/propiedades/?id=7806570" class="lissa-card"
+         data-tipo="Cochera" data-op="Alquiler">
+        <img class="lissa-card-img"
+             src="https://static.tokkobroker.com/card-7806570.jpg"
+             alt="Cochera en alquiler - tolosa">
+        <div class="lissa-card-title">Cochera en alquiler - tolosa</div>
+        <div class="lissa-card-addr">4 e 523 y 524</div>
+        <div class="lissa-card-spec"><strong>1 Amb.</strong></div>
+        <span class="lissa-card-precio">ARS 55.000</span>
+      </a>
+      <a href="/propiedades/?id=8471096" class="lissa-card"
+         data-tipo="Casa" data-op="Venta">
+        <img src="https://static.tokkobroker.com/card-8471096.jpg"
+             alt="Casa en venta calle 518">
+        <div class="lissa-card-title">Casa en venta calle 518</div>
+        <span class="lissa-card-precio">ARS 145.000</span>
+      </a>
+    </div>
+    """
+
+    properties = parse_cards(
+        html,
+        None,
+        "lissa_propiedades",
+        "https://lissapropiedades.com.ar",
+        "La Plata",
+    )
+    by_url = {prop.url: prop for prop in properties}
+    first = by_url["https://lissapropiedades.com.ar/propiedades/?id=7806570"]
+
+    assert len(properties) == 2
+    assert first.titulo == "Cochera en alquiler - tolosa"
+    assert first.precio == 55000
+    assert first.moneda == "ARS"
+    assert first.imagenes == ["https://static.tokkobroker.com/card-7806570.jpg"]
+    assert "Casa en venta calle 518" not in first.titulo

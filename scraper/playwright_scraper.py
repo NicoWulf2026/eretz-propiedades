@@ -228,11 +228,12 @@ def _onclick_urls(value: str) -> List[str]:
 def extract_candidate_detail_urls_from_document(soup, base_url: str) -> List[Tuple[str, str]]:
     """Fast, conservative document-level pre-pass before card parsing."""
     found: List[Tuple[str, str]] = []
-    seen: Set[str] = set()
+    found_index: Dict[str, int] = {}
+    found_strength: Dict[str, int] = {}
 
     def add(raw: str, context, label: str = "", force: bool = False) -> None:
         candidate = _candidate_url_from_value(raw, base_url)
-        if not candidate or candidate in seen or _is_blocked_detail_url(candidate, base_url):
+        if not candidate or _is_blocked_detail_url(candidate, base_url):
             return
         accepted = force or _looks_like_detail_url(candidate, base_url)
         if not accepted and context is not None and _has_strong_card_signal(context):
@@ -240,13 +241,55 @@ def extract_candidate_detail_urls_from_document(soup, base_url: str) -> List[Tup
             accepted = bool(
                 re.search(r"/(?:venta|alquiler|producto|prop|portfolio_page)/[^/]{5,}/?$", path)
                 or re.search(r"/(?:venta|alquiler)-[^/]{5,}/?$", path)
+                or (
+                    len(path.strip("/")) >= 12
+                    and re.search(
+                        r"(venta|alquiler|casa|departamento|depto|terreno|lote|"
+                        r"local|oficina|ph|duplex|galpon|deposito|cochera)",
+                        path,
+                    )
+                    and path.strip("/") not in _DETAIL_CATEGORY_WORDS
+                )
             )
         if not accepted:
             return
-        seen.add(candidate)
-        context_text = context.get_text(" ", strip=True)[:150] if context is not None else ""
-        text = label if len(label.strip()) > 8 else context_text
-        found.append((candidate, text))
+
+        text = ""
+        strength = 0
+        if context is not None:
+            title_node = context.select_one(
+                "h1, h2, h3, [class*='title'], [class*='titulo'], "
+                "[class*='address'], [class*='direccion']"
+            )
+            if title_node is not None:
+                text = title_node.get_text(" ", strip=True)[:150]
+                strength = 4
+            if not text:
+                image = context.select_one("img[alt]")
+                image_alt = image.get("alt", "").strip() if image is not None else ""
+                if len(image_alt) > 8:
+                    text = image_alt[:150]
+                    strength = 3
+        clean_label = re.sub(r"\s+", " ", label or "").strip()
+        if (
+            len(clean_label) > 8
+            and clean_label.lower() not in {"ver propiedad", "más detalles", "mas detalles"}
+            and strength < 2
+        ):
+            text = clean_label[:150]
+            strength = 2
+        if context is not None and _has_strong_card_signal(context):
+            strength += 1
+
+        previous_strength = found_strength.get(candidate, -1)
+        if previous_strength >= strength:
+            return
+        found_strength[candidate] = strength
+        if candidate in found_index:
+            found[found_index[candidate]] = (candidate, text)
+        else:
+            found_index[candidate] = len(found)
+            found.append((candidate, text))
 
     anchors = list(soup.select("a[href]"))
     repeated_patterns: Dict[str, int] = {}
@@ -265,9 +308,6 @@ def extract_candidate_detail_urls_from_document(soup, base_url: str) -> List[Tup
     for anchor in anchors:
         raw_href = anchor.get("href", "")
         direct_candidate = _candidate_url_from_value(raw_href, base_url)
-        if direct_candidate and _looks_like_detail_url(direct_candidate, base_url):
-            add(raw_href, None, anchor.get_text(" ", strip=True)[:150])
-            continue
         context = anchor
         for _ in range(4):
             if getattr(context, "name", "") in {"nav", "header", "footer", "body", "html"}:
@@ -276,6 +316,9 @@ def extract_candidate_detail_urls_from_document(soup, base_url: str) -> List[Tup
             if context is None or _has_strong_card_signal(context):
                 break
             context = getattr(context, "parent", None)
+        if direct_candidate and _looks_like_detail_url(direct_candidate, base_url):
+            add(raw_href, context, anchor.get_text(" ", strip=True)[:150])
+            continue
         force = False
         if direct_candidate and not _is_blocked_detail_url(direct_candidate, base_url):
             path = urlparse(direct_candidate).path.lower().rstrip("/")
@@ -903,6 +946,7 @@ def parse_cards(html: str, operacion: str, fuente_key: str, base_url: str,
             # ── Temas WP específicos (Real Homes, EstateEngine) ────────────────
             or soup.select(".rh_list_card, .rh-ultra-property-card-two, .rh_prop_card")
             or soup.select(".figure-block, .hotels-layout")
+            or soup.select("a.lissa-card")
             # ── Bootstrap 3 grid (herencia) ────────────────────────────────────
             or soup.select("div.col-md-6.col-lg-6")
             or soup.select("div.col-sm-6.col-xs-12")
@@ -915,6 +959,36 @@ def parse_cards(html: str, operacion: str, fuente_key: str, base_url: str,
 
         propiedades = []
         seen = set()
+
+        def _prop_context_score(prop: Propiedad) -> int:
+            return sum(
+                (
+                    bool(prop.titulo and not DataCleaner.is_generic_title(prop.titulo)),
+                    prop.precio is not None,
+                    bool(prop.moneda),
+                    bool(prop.direccion),
+                    bool(prop.barrio),
+                    prop.tipo_propiedad not in (None, "", "otro"),
+                    bool(prop.imagenes),
+                    prop.dormitorios is not None,
+                    prop.banos is not None,
+                    prop.ambientes is not None,
+                    prop.metros is not None,
+                )
+            )
+
+        def _merge_context_properties(*groups: List[Propiedad]) -> List[Propiedad]:
+            merged: Dict[str, Propiedad] = {}
+            order: List[str] = []
+            for group in groups:
+                for prop in group:
+                    current = merged.get(prop.url)
+                    if current is None:
+                        merged[prop.url] = prop
+                        order.append(prop.url)
+                    elif _prop_context_score(prop) > _prop_context_score(current):
+                        merged[prop.url] = prop
+            return [merged[url] for url in order]
 
         def _make_prop_from_url(href: str, card_text: str = "") -> Optional[Propiedad]:
             """
@@ -994,7 +1068,7 @@ def parse_cards(html: str, operacion: str, fuente_key: str, base_url: str,
 
             return Propiedad(
                 url=url,
-                titulo=titulo or slug.replace("-", " ").title() or "Sin título",
+                titulo=DataCleaner.clean_title(titulo, url) or f"Propiedad {slug}"[:100],
                 precio=None,
                 moneda=None,
                 barrio=barrio,
@@ -1009,12 +1083,14 @@ def parse_cards(html: str, operacion: str, fuente_key: str, base_url: str,
         # ── Modo card: parsear containers ─────────────────────────────────────────
         # Resolve safe URLs before the expensive card parser. Detail pages are
         # enriched later, so a minimal Propiedad is sufficient at this stage.
+        prepass_properties: List[Propiedad] = []
         for candidate_url, candidate_text in extract_candidate_detail_urls_from_document(soup, base_url):
             prop = _make_prop_from_url(candidate_url, candidate_text)
             if prop and prop.is_valid():
-                propiedades.append(prop)
-        if propiedades:
-            return propiedades
+                prepass_properties.append(prop)
+        if prepass_properties and not cards:
+            return prepass_properties
+        seen = set()
 
         _IMG_SKIP = {"logo", "icon", "placeholder", "blank", "spinner", "loading", "avatar"}
 
@@ -1022,23 +1098,27 @@ def parse_cards(html: str, operacion: str, fuente_key: str, base_url: str,
             for card in cards:
                 # CAUSA 3: el selector de link sólo cubría 7 segmentos originales.
                 # Ahora cubre todos los PROP_SEGMENTS + un último recurso genérico.
-                link = card.select_one(
-                    'a[href*="/p/"],'
-                    'a[href*="/propiedad/"],'
-                    'a[href*="/propiedades/"],'
-                    'a[href*="/inmueble/"],'
-                    'a[href*="/inmuebles/"],'
-                    'a[href*="/property/"],'
-                    'a[href*="/properties/"],'
-                    'a[href*="/listing/"],'
-                    'a[href*="/listings/"],'
-                    'a[href*="/detalle/"],'
-                    'a[href*="/detalles/"],'
-                    'a[href*="/aviso/"],'
-                    'a[href*="/emprendimiento/"],'
-                    'a[href*="/Ficha/"],'
-                    'a[href*="/ficha/"],'
-                    'a[href*="ficha-"]'
+                link = (
+                    card
+                    if getattr(card, "name", "") == "a" and card.get("href")
+                    else card.select_one(
+                        'a[href*="/p/"],'
+                        'a[href*="/propiedad/"],'
+                        'a[href*="/propiedades/"],'
+                        'a[href*="/inmueble/"],'
+                        'a[href*="/inmuebles/"],'
+                        'a[href*="/property/"],'
+                        'a[href*="/properties/"],'
+                        'a[href*="/listing/"],'
+                        'a[href*="/listings/"],'
+                        'a[href*="/detalle/"],'
+                        'a[href*="/detalles/"],'
+                        'a[href*="/aviso/"],'
+                        'a[href*="/emprendimiento/"],'
+                        'a[href*="/Ficha/"],'
+                        'a[href*="/ficha/"],'
+                        'a[href*="ficha-"]'
+                    )
                 )
                 # CAUSA 4: si ningún segmento conocido matchea, usar el primer link
                 # del card que apunte a la misma base_url (evita quedar con 0 si el
@@ -1095,7 +1175,7 @@ def parse_cards(html: str, operacion: str, fuente_key: str, base_url: str,
                     el = card.select_one(price_sel)
                     if el:
                         txt = el.get_text(strip=True)
-                        if ("$" in txt or "USD" in txt or "U$S" in txt or
+                        if ("$" in txt or "USD" in txt or "ARS" in txt or "U$S" in txt or
                                 "US$" in txt or "usd" in txt.lower()):
                             precio_raw = txt
                             break
@@ -1110,20 +1190,26 @@ def parse_cards(html: str, operacion: str, fuente_key: str, base_url: str,
                                    ".aviso-title", ".property-title"]:
                     el = card.select_one(title_sel)
                     if el:
-                        txt = el.get_text(strip=True)
-                        if len(txt) > 8 and "$" not in txt and "USD" not in txt:
+                        txt = DataCleaner.clean_title(el.get_text(" ", strip=True), href)
+                        if txt and len(txt) > 8 and "$" not in txt and "USD" not in txt:
                             titulo = txt[:150]
                             break
                 if not titulo:
-                    titulo = next((t for t in textos if len(t) > 10 and "$" not in t
-                                   and "USD" not in t and "m²" not in t
-                                   and "Dormitorio" not in t and "Área" not in t
-                                   and "U$S" not in t), None)
+                    titulo = DataCleaner.clean_title(
+                        next((t for t in textos if len(t) > 10 and "$" not in t
+                              and "USD" not in t and "m²" not in t
+                              and "Dormitorio" not in t and "Área" not in t
+                              and "ambiente" not in t.lower()
+                              and "U$S" not in t), None),
+                        href,
+                    )
 
                 # ── TIPO: URL del href > texto del card > título ───────────────────────
                 # Tokko Broker codifica el tipo en la URL: /p/1234567-Casa-en-Venta-...
                 href_texto = href.replace("-", " ").replace("/", " ")
                 tipo = DataCleaner.detect_property_type(href_texto)
+                if tipo == "otro" and card.get("data-tipo"):
+                    tipo = DataCleaner.normalize_property_type_token(card.get("data-tipo"))
                 if tipo == "otro":
                     tipo_raw = next((t for t in textos if t.lower() in
                                      ["casa", "departamento", "terreno", "local", "oficina",
@@ -1149,6 +1235,8 @@ def parse_cards(html: str, operacion: str, fuente_key: str, base_url: str,
                     card_operacion = "alquiler"
                 else:
                     card_operacion = operacion  # fallback al parámetro global (puede ser None)
+                if card.get("data-op"):
+                    card_operacion = DataCleaner.detect_operation_from_text(card.get("data-op"))
 
                 # ── DIRECCIÓN: extraer del slug del href filtrando palabras no-ubicación ──
                 # Antes: "partes" incluía "Venta", "Alquiler", "Casa", etc. como parte del barrio.
@@ -1159,6 +1247,13 @@ def parse_cards(html: str, operacion: str, fuente_key: str, base_url: str,
                 palabras = [p for p in partes
                             if not p.isdigit() and len(p) > 2 and p.lower() not in _SLUG_SKIP_WORDS]
                 direccion = None
+                address_el = card.select_one(
+                    "[class*='addr'], [class*='address'], [class*='direccion']"
+                )
+                if address_el is not None:
+                    direccion = DataCleaner.clean_address(
+                        address_el.get_text(" ", strip=True)
+                    )
                 if palabras and nums:
                     calle = " ".join(palabras[-3:]) if len(palabras) >= 3 else " ".join(palabras[-2:])
                     direccion = f"{calle} {nums[-1]}".title()
@@ -1218,7 +1313,7 @@ def parse_cards(html: str, operacion: str, fuente_key: str, base_url: str,
 
                 prop = Propiedad(
                     url=url,
-                    titulo=titulo or direccion or "Sin título",
+                    titulo=DataCleaner.clean_title(titulo or direccion, url) or f"Propiedad {len(seen)}",
                     precio=precio,
                     moneda=moneda,
                     barrio=barrio,
@@ -1239,7 +1334,7 @@ def parse_cards(html: str, operacion: str, fuente_key: str, base_url: str,
 
             # ── Si el card mode encontró propiedades, devolver ─────────────────
             if propiedades:
-                return propiedades
+                return _merge_context_properties(prepass_properties, propiedades)
             # Si no encontró nada (ej: filtros del sidebar matchearon como cards),
             # caer al fallback de links directos ↓
 
@@ -1291,7 +1386,7 @@ def parse_cards(html: str, operacion: str, fuente_key: str, base_url: str,
             if prop and prop.is_valid():
                 propiedades.append(prop)
 
-        return propiedades
+        return _merge_context_properties(prepass_properties, propiedades)
     finally:
         soup.decompose()
 
@@ -1559,10 +1654,14 @@ def scrape_detail_page(
         ]:
             el = soup.select_one(sel)
             if el:
-                txt = el.get_text(strip=True)
+                txt = DataCleaner.clean_title(el.get_text(" ", strip=True), prop.url)
                 if txt and len(txt) > 4 and "$" not in txt and "USD" not in txt:
                     prop.titulo = txt[:200]
                     break
+        if DataCleaner.is_generic_title(prop.titulo):
+            fallback_title = DataCleaner.clean_title(None, prop.url)
+            if fallback_title:
+                prop.titulo = fallback_title
 
         # ── DIRECCIÓN ───────────────────────────────────────────────────────
         if not prop.direccion:
@@ -1681,9 +1780,9 @@ def scrape_detail_page(
             ]:
                 el = soup.select_one(sel)
                 if el:
-                    txt = el.get_text(" ", strip=True)
-                    if len(txt) > 50:
-                        prop.descripcion = txt[:3000]
+                    txt = DataCleaner.clean_description(el.get_text(" ", strip=True))
+                    if txt:
+                        prop.descripcion = txt
                         break
 
         # ── IMÁGENES ────────────────────────────────────────────────────────
@@ -1851,7 +1950,7 @@ def parse_apl_cards(html: str) -> List[Propiedad]:
         # (el usuario puede filtrar por ciudad en Supabase)
 
         if not titulo:
-            titulo = barrio or "Sin título"
+            titulo = DataCleaner.clean_title(barrio, url)
 
         # Fallback de barrio: si el card no tenía badge de barrio, usar la ciudad
         barrio = barrio or ciudad
@@ -2227,7 +2326,7 @@ def scrape_lenarduzzi(supabase: SupabaseClient, existing_urls: set, session: req
 
                     prop = Propiedad(
                         url=prop_url,
-                        titulo=titulo or "Sin título",
+                        titulo=DataCleaner.clean_title(titulo or direccion, prop_url) or f"Propiedad {len(nuevas) + 1}",
                         precio=precio,
                         moneda=moneda,
                         tipo_propiedad=tipo,
@@ -2504,8 +2603,11 @@ def scrape_raes(supabase: SupabaseClient, existing_urls: set, context) -> None:
         if not url.startswith("http"):
             url = BASE + url
 
-        titulo = (item.get("title") or item.get("titulo") or item.get("name")
-                  or item.get("address") or item.get("direccion") or "Sin título")
+        titulo = DataCleaner.clean_title(
+            item.get("title") or item.get("titulo") or item.get("name")
+            or item.get("address") or item.get("direccion"),
+            url,
+        )
 
         precio_raw = (item.get("price") or item.get("precio")
                       or item.get("sale_price") or item.get("rent_price"))
@@ -2669,7 +2771,7 @@ def scrape_raes(supabase: SupabaseClient, existing_urls: set, context) -> None:
                     tipo = DataCleaner.detect_property_type(titulo or "")
                     if not titulo:
                         titulo = url.split("/")[-1].replace("-", " ").strip("/").title()
-                    prop = Propiedad(url=url, titulo=titulo or "Sin título",
+                    prop = Propiedad(url=url, titulo=DataCleaner.clean_title(titulo, url) or f"Propiedad {len(nuevas) + 1}",
                                     precio=precio, moneda=moneda, tipo_propiedad=tipo,
                                     ciudad="Santa Fe", operacion=operacion, fuente=fuente_key)
                     if prop.titulo and len(prop.titulo) >= 3:
@@ -3462,7 +3564,7 @@ def _guardar_urls_desde_pagina(
 
             prop = Propiedad(
                 url=prop_url,
-                titulo=titulo or prop_url.rstrip("/").split("/")[-1].replace("-", " ").title() or "Sin título",
+                titulo=DataCleaner.clean_title(titulo, prop_url) or f"Propiedad {len(nuevas_props) + 1}",
                 precio=precio,
                 moneda=moneda,
                 barrio=barrio,

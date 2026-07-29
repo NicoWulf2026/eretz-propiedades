@@ -28,7 +28,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional, Set
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlparse
 
 import requests
 from playwright.sync_api import TimeoutError as PwTimeout
@@ -99,6 +99,59 @@ BASE_RETRY_BACKOFF_S = 0.5
 BASE_SOURCE_NO_PROGRESS_S = 120
 BASE_SOURCE_HARD_CAP_S = 1_800
 ABSOLUTE_SOURCE_HARD_CAP_S = 5_400
+PROHIBITED_DETAIL_DOMAINS = {
+    "argenprop.com",
+    "argenprop.com.ar",
+    "properati.com",
+    "properati.com.ar",
+    "zonaprop.com",
+    "zonaprop.com.ar",
+}
+LISTING_SHELL_DETAIL_SOURCES = {"lissa_propiedades"}
+LISTING_SHELL_DETAIL_QUERY_KEYS = {"id", "idprop", "property_id", "propiedad_id"}
+
+
+def _is_prohibited_detail_url(value: str) -> bool:
+    """Fail closed for third-party property portals before navigation."""
+    try:
+        host = (urlparse(value).hostname or "").lower().rstrip(".")
+    except (TypeError, ValueError):
+        return True
+    return any(
+        host == blocked or host.endswith("." + blocked)
+        for blocked in PROHIBITED_DETAIL_DOMAINS
+    )
+
+
+def _is_listing_shell_detail_url(detail_url: str, listing_url: str) -> bool:
+    """Detect query-driven details that reuse the listing route."""
+    try:
+        detail = urlparse(detail_url)
+        listing = urlparse(listing_url)
+    except (TypeError, ValueError):
+        return False
+    if (
+        detail.scheme.lower() not in {"http", "https"}
+        or detail.hostname != listing.hostname
+        or detail.path.rstrip("/").lower() != listing.path.rstrip("/").lower()
+    ):
+        return False
+    detail_query = {
+        key.lower(): value.strip()
+        for key, value in parse_qsl(detail.query, keep_blank_values=True)
+    }
+    return any(detail_query.get(key) for key in LISTING_SHELL_DETAIL_QUERY_KEYS)
+
+
+def _uses_listing_shell_detail(
+    source_key: str,
+    detail_url: str,
+    listing_url: str,
+) -> bool:
+    return (
+        source_key in LISTING_SHELL_DETAIL_SOURCES
+        and _is_listing_shell_detail_url(detail_url, listing_url)
+    )
 
 
 def _source_int(source: Dict[str, Any], key: str, default: int, minimum: int, maximum: int) -> int:
@@ -122,6 +175,93 @@ def calculate_source_hard_cap(source: Dict[str, Any], detail_count: int) -> int:
         )
     dynamic = max(BASE_SOURCE_HARD_CAP_S, 300 + max(0, detail_count) * 10)
     return min(ABSOLUTE_SOURCE_HARD_CAP_S, dynamic)
+
+
+def _listing_seed_score(prop: Propiedad) -> int:
+    """Prefer the richest duplicate card when snapshots expose the same URL."""
+    return sum(
+        (
+            bool(prop.titulo and prop.titulo.strip()),
+            prop.precio is not None,
+            bool(prop.moneda),
+            bool(prop.direccion),
+            bool(prop.barrio),
+            prop.tipo_propiedad not in (None, "", "otro"),
+            bool(prop.descripcion),
+            bool(prop.imagenes),
+            prop.dormitorios is not None,
+            prop.banos is not None,
+            prop.ambientes is not None,
+            prop.metros is not None,
+        )
+    )
+
+
+def _property_from_listing_seed(
+    seed: Optional[Propiedad],
+    *,
+    url: str,
+    fuente: str,
+    ciudad: Optional[str],
+    operacion: Optional[str],
+    inmobiliaria_id: Optional[int],
+) -> Propiedad:
+    """Keep trustworthy card data while the detail page enriches it in place."""
+    if seed is None:
+        return Propiedad(
+            url=url,
+            titulo="Sin título",
+            fuente=fuente,
+            ciudad=ciudad or None,
+            operacion=operacion,
+            barrio=ciudad or "Argentina",
+            inmobiliaria_id=inmobiliaria_id,
+        )
+    return Propiedad(
+        url=url,
+        titulo=seed.titulo or "Sin título",
+        precio=seed.precio,
+        moneda=seed.moneda,
+        direccion=seed.direccion,
+        barrio=seed.barrio or ciudad or "Argentina",
+        barrio_normalizado=seed.barrio_normalizado,
+        tipo_propiedad=seed.tipo_propiedad or "otro",
+        descripcion=seed.descripcion or "",
+        dormitorios=seed.dormitorios,
+        banos=seed.banos,
+        ambientes=seed.ambientes,
+        metros=seed.metros,
+        imagenes=list(seed.imagenes or []),
+        ciudad=seed.ciudad or ciudad or None,
+        operacion=seed.operacion or operacion,
+        latitud=seed.latitud,
+        longitud=seed.longitud,
+        fuente=fuente,
+        inmobiliaria_id=inmobiliaria_id,
+    )
+
+
+def _property_from_listing_shell_seed(
+    seed: Optional[Propiedad],
+    *,
+    url: str,
+    fuente: str,
+    ciudad: Optional[str],
+    operacion: Optional[str],
+    inmobiliaria_id: Optional[int],
+) -> Optional[Propiedad]:
+    """Build a card-only property, rejecting shells without a valid card identity."""
+    if seed is None:
+        return None
+    prop = _property_from_listing_seed(
+        seed,
+        url=url,
+        fuente=fuente,
+        ciudad=ciudad,
+        operacion=operacion,
+        inmobiliaria_id=inmobiliaria_id,
+    )
+    return prop if prop.is_valid() else None
 
 # Fix-S: límite de browsers activos simultáneamente entre todos los workers.
 # Configurable por env MAX_ACTIVE_BROWSERS, con techo absoluto de 2.
@@ -632,6 +772,7 @@ def _scrape_batch(
             # fuera del try, para que el finally externo pueda anularlas de forma
             # segura sin riesgo de UnboundLocalError si el try falla antes de asignarlas.
             all_prop_urls         = None
+            listing_props_by_url  = None
             props_basicos         = None
             visited_listing       = None
             pending_pages         = None
@@ -657,6 +798,7 @@ def _scrape_batch(
                         # ═══════════════════════════════════════════════════════════
                         base_url = "/".join(url.split("/")[:3])
                         all_prop_urls = []
+                        listing_props_by_url = {}
                         visited_listing = set()
                         pending_pages = [url]
                         MAX_LISTING_PAGES = 15  # límite de seguridad contra loops
@@ -700,6 +842,11 @@ def _scrape_batch(
                                 )
                             except Exception:
                                 pass
+                            current_listing_base_url = (
+                                "/".join(page.url.split("/")[:3])
+                                if page.url.startswith(("http://", "https://"))
+                                else base_url
+                            )
                             initial_html = page.content()
                             scroll_to_bottom(page)
 
@@ -718,7 +865,13 @@ def _scrape_batch(
                             for snapshot_html in dict.fromkeys((initial_html, html)):
                                 if snapshot_html:
                                     props_basicos.extend(
-                                        parse_cards(snapshot_html, operacion, key, base_url, ciudad)
+                                        parse_cards(
+                                            snapshot_html,
+                                            operacion,
+                                            key,
+                                            current_listing_base_url,
+                                            ciudad,
+                                        )
                                     )
                             for frame in page.frames[1:6]:
                                 frame_url = frame.url or ""
@@ -746,11 +899,31 @@ def _scrape_batch(
                             for p in props_basicos:
                                 if p.url not in all_prop_urls:
                                     all_prop_urls.append(p.url)
+                                current_seed = listing_props_by_url.get(p.url)
+                                if (
+                                    current_seed is None
+                                    or _listing_seed_score(p) > _listing_seed_score(current_seed)
+                                ):
+                                    listing_props_by_url[p.url] = p
 
                             # Detectar paginación numerada (no aplica a Tokko scroll infinito)
                             next_url = _get_next_page_url(html, listing_url)
                             if next_url and next_url not in visited_listing:
                                 pending_pages.append(next_url)
+
+                        blocked_detail_count = sum(
+                            1 for prop_url in all_prop_urls
+                            if _is_prohibited_detail_url(prop_url)
+                        )
+                        if blocked_detail_count:
+                            logger.warning(
+                                f"[W{worker_id}][{key}] Portales de terceros bloqueados: "
+                                f"{blocked_detail_count}"
+                            )
+                            all_prop_urls = [
+                                prop_url for prop_url in all_prop_urls
+                                if not _is_prohibited_detail_url(prop_url)
+                            ]
 
                         logger.info(
                             f"[W{worker_id}][{key}] {len(all_prop_urls)} URLs en "
@@ -776,6 +949,12 @@ def _scrape_batch(
                         inmo_id = fuente.get("inmobiliaria_id")
                         propiedades_completas = []
                         for i, prop_url in enumerate(nuevas_urls, 1):
+                            if _is_prohibited_detail_url(prop_url):
+                                logger.warning(
+                                    f"[W{worker_id}][{key}] Portal de terceros bloqueado "
+                                    "antes de navegar ficha"
+                                )
+                                continue
                             now_mono = time.monotonic()
                             if now_mono - _source_browser_started > _source_hard_cap_s:
                                 _source_abort_reason = "source_hard_cap"
@@ -785,17 +964,40 @@ def _scrape_batch(
                                 _source_abort_reason = "source_no_progress"
                                 _had_timeout = True
                                 break
-                            prop = Propiedad(
+                            listing_seed = listing_props_by_url.get(prop_url)
+                            prop = _property_from_listing_seed(
+                                listing_seed,
                                 url=prop_url,
-                                titulo="Sin título",
                                 fuente=key,
                                 ciudad=ciudad or None,
                                 operacion=operacion,
-                                barrio=ciudad or "Argentina",
                                 inmobiliaria_id=inmo_id,
                             )
                             ok = False
-                            for attempt in range(1, _detail_retries + 2):
+                            if _uses_listing_shell_detail(key, prop_url, url):
+                                # This route is still the listing shell. Its global
+                                # h1, prices, images and specs can belong to another
+                                # card, so only the isolated card seed is trusted.
+                                shell_prop = _property_from_listing_shell_seed(
+                                    listing_seed,
+                                    url=prop_url,
+                                    fuente=key,
+                                    ciudad=ciudad or None,
+                                    operacion=operacion,
+                                    inmobiliaria_id=inmo_id,
+                                )
+                                ok = shell_prop is not None
+                                if ok:
+                                    prop = shell_prop
+                                    _details_succeeded += 1
+                                    _last_progress_at = time.monotonic()
+                                logger.info(
+                                    f"[W{worker_id}][{key}] LISTING_SHELL_DETAIL "
+                                    f"card_only={bool(ok)}"
+                                )
+                            for attempt in (
+                                range(1, _detail_retries + 2) if not ok else ()
+                            ):
                                 event_start = len(_navigation_events)
                                 ok = scrape_detail_page(
                                     page,
@@ -910,6 +1112,7 @@ def _scrape_batch(
                 # Fix-C: anular referencias grandes DESPUÉS de pw.__exit__.
                 # Pre-inicializadas a None dentro del sem → nunca UnboundLocalError.
                 all_prop_urls         = None
+                listing_props_by_url  = None
                 props_basicos         = None
                 visited_listing       = None
                 pending_pages         = None

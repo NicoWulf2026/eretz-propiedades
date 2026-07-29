@@ -1,5 +1,6 @@
 import hashlib
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -70,6 +71,25 @@ def _safe_int(value: Any) -> Optional[int]:
     except (TypeError, ValueError):
         return None
     return iv if _INT_MIN <= iv <= _INT_MAX else None
+
+
+def _is_generic_title(value: Any) -> bool:
+    if not value:
+        return True
+    text = str(value).strip().lower()
+    normalized = unicodedata.normalize("NFKD", text)
+    normalized = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    normalized = re.sub(r"[^a-z0-9]+", " ", normalized).strip()
+    return normalized in {
+        "propiedad",
+        "propiedades",
+        "inmueble",
+        "inmuebles",
+        "sin titulo",
+        "propiedad sin titulo",
+        "detalle",
+        "descripcion",
+    }
 
 
 ALLOWED_PROPERTY_TYPES = {
@@ -173,6 +193,8 @@ class Propiedad:
         if not self.url or not self.url.startswith("http"):
             return False
         if not self.titulo or len(self.titulo.strip()) < 3:
+            return False
+        if _is_generic_title(self.titulo):
             return False
         if not self.direccion and not self.barrio:
             return False

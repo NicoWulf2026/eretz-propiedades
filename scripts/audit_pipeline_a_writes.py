@@ -59,6 +59,10 @@ def _slug(name: Any, source_id: Any) -> str:
     return re.sub(r"[^a-z0-9_]", "_", str(name or "").lower())[:40].strip("_") or f"src_{source_id}"
 
 
+def _run_manifest_slug(name: Any, source_id: Any) -> str:
+    return re.sub(r"[^a-z0-9_]", "_", str(name or "").lower())[:40].strip("_") or f"src_{source_id}"
+
+
 def _json_value(value: Any) -> Any:
     if isinstance(value, datetime):
         return value.isoformat()
@@ -129,8 +133,15 @@ def _write_csv(path: Path, rows: list[dict[str, Any]], fields: tuple[str, ...]) 
 def _manifest_map(manifest: list[dict[str, str]]) -> dict[str, list[dict[str, str]]]:
     result: dict[str, list[dict[str, str]]] = {}
     for row in manifest:
-        slug = row.get("manifest_slug") or _slug(row.get("source_name"), row.get("source_id"))
-        result.setdefault(slug, []).append(row)
+        aliases = {
+            row.get("manifest_slug") or "",
+            _slug(row.get("source_name"), row.get("source_id")),
+            _run_manifest_slug(row.get("source_name"), row.get("source_id")),
+        } - {""}
+        for slug in aliases:
+            bucket = result.setdefault(slug, [])
+            if row not in bucket:
+                bucket.append(row)
     return result
 
 
