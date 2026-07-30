@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import requests
 from dotenv import load_dotenv
 from requests.adapters import HTTPAdapter
+from scraper.network_security import secure_get
 from urllib3.util.retry import Retry
 
 load_dotenv()
@@ -286,7 +287,8 @@ class NominatimProvider:
 
     def geocode(self, query: str) -> GeocodingResult:
         try:
-            response = self.session.get(
+            response = secure_get(
+                self.session,
                 NOMINATIM_URL,
                 params={
                     "q": query,
@@ -295,7 +297,9 @@ class NominatimProvider:
                     "countrycodes": "ar",
                     "addressdetails": 1,
                 },
-                timeout=15,
+                timeout=(8, 15),
+                max_response_bytes=512 * 1024,
+                accepted_content_types=("application/json",),
             )
             if response.status_code == 429:
                 return GeocodingResult(

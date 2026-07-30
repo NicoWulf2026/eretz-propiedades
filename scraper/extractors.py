@@ -7,6 +7,7 @@ from typing import Optional, List, Dict, Any
 from urllib.parse import unquote, urljoin, urlparse
 
 from bs4 import BeautifulSoup
+from scraper.network_security import secure_get
 
 logger = logging.getLogger(__name__)
 
@@ -309,7 +310,7 @@ class DetailExtractor:
 
     def fetch_detail(self, url: str) -> Dict[str, Any]:
         try:
-            response = self.session.get(url, timeout=15)
+            response = secure_get(self.session, url, timeout=(8, 15))
             response.raise_for_status()
         except requests.RequestException as exc:
             logger.warning(f"Error HTTP obteniendo detalle {url}: {exc}")

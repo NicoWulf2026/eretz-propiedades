@@ -2,6 +2,10 @@ import logging
 import re
 import time
 import requests
+try:
+    from scraper.network_security import secure_get
+except ModuleNotFoundError:  # Direct execution compatibility during package migration.
+    from network_security import secure_get
 from typing import List, Dict, Any, Optional, Set, Tuple
 from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
@@ -2119,7 +2123,7 @@ def scrape_9010(supabase: SupabaseClient, existing_urls: set, session: requests.
 
     def parse_detalle(url: str, operacion_fallback: str) -> Optional[dict]:
         try:
-            r = session.get(url, headers=HEADERS, timeout=15)
+            r = secure_get(session, url, headers=HEADERS, timeout=(8, 15))
             if r.status_code != 200:
                 return None
             soup = BeautifulSoup(r.text, "html.parser")
@@ -2193,7 +2197,7 @@ def scrape_9010(supabase: SupabaseClient, existing_urls: set, session: requests.
     for listing_url, operacion_forzada in FUENTES_9010:
         logger.info(f"[9010] Scrapeando {listing_url}")
         try:
-            r = session.get(listing_url, headers=HEADERS, timeout=15)
+            r = secure_get(session, listing_url, headers=HEADERS, timeout=(8, 15))
             if r.status_code != 200:
                 logger.warning(f"[9010] HTTP {r.status_code} en {listing_url}")
                 continue
@@ -2273,7 +2277,7 @@ def scrape_lenarduzzi(supabase: SupabaseClient, existing_urls: set, session: req
         while empty_pages < 2:
             url = base_url.format(page_num)
             try:
-                resp = session.get(url, headers=headers, timeout=20)
+                resp = secure_get(session, url, headers=headers, timeout=(8, 20))
                 if resp.status_code == 403:
                     logger.warning(f"[lenarduzzi] Cookie expirada — renovar LENARDUZZI_COOKIE en .env")
                     return
@@ -2478,7 +2482,7 @@ def scrape_cisfe(supabase: SupabaseClient, existing_urls: set, session: requests
     while empty_pages < 2:
         url = f"{BASE}/results-page/?search_location=12712&offset={offset}"
         try:
-            resp = session.get(url, headers=HEADERS, timeout=20)
+            resp = secure_get(session, url, headers=HEADERS, timeout=(8, 20))
             if resp.status_code != 200:
                 empty_pages += 1
                 offset += 20
@@ -2807,7 +2811,7 @@ def scrape_cam(supabase: SupabaseClient, existing_urls: set, session: requests.S
     logger.info("[cam] Iniciando")
 
     try:
-        resp = session.get(LISTING_URL, headers=HEADERS, timeout=20)
+        resp = secure_get(session, LISTING_URL, headers=HEADERS, timeout=(8, 20))
         if resp.status_code != 200:
             logger.error(f"[cam] Error cargando listing: {resp.status_code}")
             return
@@ -2837,7 +2841,7 @@ def scrape_cam(supabase: SupabaseClient, existing_urls: set, session: requests.S
             continue
 
         try:
-            r = session.get(prop_url, headers=HEADERS, timeout=15)
+            r = secure_get(session, prop_url, headers=HEADERS, timeout=(8, 15))
             if r.status_code != 200:
                 continue
             det = BeautifulSoup(r.text, "html.parser")
@@ -2916,7 +2920,7 @@ def scrape_sofia(supabase: SupabaseClient, existing_urls: set, session: requests
     logger.info("[sofia] Iniciando")
 
     try:
-        resp = session.get(PROYECTOS_URL, headers=HEADERS, timeout=20)
+        resp = secure_get(session, PROYECTOS_URL, headers=HEADERS, timeout=(8, 20))
         if resp.status_code != 200:
             logger.error(f"[sofia] Error cargando listing: {resp.status_code}")
             return
@@ -2953,7 +2957,7 @@ def scrape_sofia(supabase: SupabaseClient, existing_urls: set, session: requests
             continue
 
         try:
-            r = session.get(prop_url, headers=HEADERS, timeout=15)
+            r = secure_get(session, prop_url, headers=HEADERS, timeout=(8, 15))
             if r.status_code != 200:
                 continue
             det = BeautifulSoup(r.text, "html.parser")
@@ -3054,7 +3058,7 @@ def scrape_casablanca(supabase: SupabaseClient, existing_urls: set, session: req
     for path, operacion, tipo_default in CATEGORIAS:
         url = BASE + path
         try:
-            resp = session.get(url, headers=HEADERS, timeout=15)
+            resp = secure_get(session, url, headers=HEADERS, timeout=(8, 15))
             if resp.status_code != 200:
                 continue
             soup = BeautifulSoup(resp.text, "html.parser")
@@ -3146,7 +3150,7 @@ def _scrape_desarrolladora(
             logger.debug(f"[{fuente_key}] Ya existe: {prop_url}")
             continue
         try:
-            r = session.get(prop_url, headers=HEADERS, timeout=15)
+            r = secure_get(session, prop_url, headers=HEADERS, timeout=(8, 15))
             if r.status_code != 200:
                 logger.warning(f"[{fuente_key}] {r.status_code} → {prop_url}")
                 continue
@@ -3231,7 +3235,7 @@ def scrape_sur(supabase: SupabaseClient, existing_urls: set, session: requests.S
     urls_proyectos = []
     for listing in ["/estado-proyecto/nuevo/", "/estado-proyecto/en-ejecucion/"]:
         try:
-            r = session.get(BASE + listing, headers=HEADERS, timeout=15)
+            r = secure_get(session, BASE + listing, headers=HEADERS, timeout=(8, 15))
             if r.status_code != 200:
                 continue
             soup = BeautifulSoup(r.text, "html.parser")
@@ -3289,7 +3293,7 @@ def scrape_gen(supabase: SupabaseClient, existing_urls: set, session: requests.S
     urls_proyectos = []
     for listing in ["/", "/propiedades-en-venta/"]:
         try:
-            r = session.get(BASE + listing, headers=HEADERS, timeout=15)
+            r = secure_get(session, BASE + listing, headers=HEADERS, timeout=(8, 15))
             if r.status_code != 200:
                 continue
             soup = BeautifulSoup(r.text, "html.parser")

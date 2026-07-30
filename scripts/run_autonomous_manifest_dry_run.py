@@ -11,7 +11,6 @@ import subprocess
 import sys
 import tempfile
 import threading
-import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
@@ -20,14 +19,20 @@ from typing import Any, Dict, List
 from urllib.parse import urlparse
 
 import requests
-import urllib3
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 SCRAPER_DIR = REPO_ROOT / "scraper"
 if str(SCRAPER_DIR) not in sys.path:
     sys.path.insert(0, str(SCRAPER_DIR))
 
+from scraper.network_security import (  # noqa: E402
+    OutboundResolutionError,
+    OutboundResponseError,
+    secure_get,
+)
 from playwright_scraper import parse_cards  # noqa: E402
 
 
@@ -132,7 +137,12 @@ def _check(row: Dict[str, str], timeout: float, run_id: str) -> Dict[str, Any]:
     }
     session = _session()
     try:
-        response = session.get(result["url"], timeout=timeout, allow_redirects=True, verify=False)
+        response = secure_get(
+            session,
+            result["url"],
+            timeout=(8, timeout),
+            max_response_bytes=MAX_HTML_BYTES,
+        )
         result["http_status"] = response.status_code
         result["final_url"] = response.url
         raw_body = response.content
@@ -177,6 +187,39 @@ def _check(row: Dict[str, str], timeout: float, run_id: str) -> Dict[str, Any]:
                         error_type="no_property_links",
                         requires_playwright=has_signals,
                     )
+    except OutboundResolutionError as exc:
+        result.update(
+            status="NETWORK_TRANSIENT",
+            classification="EXTERNAL_RETRYABLE",
+            error_type="ConnectionError",
+            error_sanitized=_sanitize(exc),
+        )
+    except OutboundResponseError as exc:
+        cause = exc.__cause__
+        if isinstance(cause, requests.exceptions.Timeout):
+            result.update(status="TIMEOUT", classification="EXTERNAL_RETRYABLE", error_type="http_timeout")
+        elif isinstance(cause, requests.exceptions.SSLError):
+            result.update(
+                status="SSL_ERROR",
+                classification="EXTERNAL",
+                error_type="ssl_error",
+                error_sanitized=_sanitize(exc),
+                retryable=False,
+            )
+        elif isinstance(cause, requests.exceptions.RequestException):
+            result.update(
+                status="NETWORK_TRANSIENT",
+                classification="EXTERNAL_RETRYABLE",
+                error_type=type(cause).__name__,
+                error_sanitized=_sanitize(exc),
+            )
+        else:
+            result.update(
+                status="INTERNAL_ERROR",
+                classification="INTERNAL_RETRYABLE",
+                error_type=type(exc).__name__,
+                error_sanitized=_sanitize(exc),
+            )
     except requests.exceptions.Timeout:
         result.update(status="TIMEOUT", classification="EXTERNAL_RETRYABLE", error_type="http_timeout")
     except requests.exceptions.SSLError as exc:
@@ -242,7 +285,6 @@ def main(argv: List[str] | None = None) -> int:
     if args.limit is not None:
         pending = pending[: max(0, args.limit)]
     lock = threading.Lock()
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     print(f"run_id={run_id} total={len(rows)} pending={len(pending)} workers={args.workers} db_writes=0")
     with ThreadPoolExecutor(max_workers=args.workers) as executor:
         futures = {executor.submit(_check, row, args.timeout, run_id): row for row in pending}
