@@ -4,6 +4,7 @@ import {
   mapSupabasePropertyToProperty,
   normalizeCurrency,
   normalizeOperation,
+  normalizePropertyType,
 } from "@/lib/property-mapper";
 
 describe("property mapper", () => {
@@ -42,5 +43,16 @@ describe("property mapper", () => {
     expect(normalizeOperation("alquiler_temporario")).toBe("temporario");
     expect(normalizeOperation("venta_y_alquiler")).toBe("venta_y_alquiler");
   });
-});
 
+  it("does not misclassify a commercial building as parking", () => {
+    expect(normalizePropertyType("Edificio comercial")).toBe("otro");
+    expect(normalizePropertyType("Local comercial con cocheras")).toBe("local");
+    expect(
+      mapSupabasePropertyToProperty({
+        ...completeRow,
+        titulo: "Edificio Comercial amoblado en Venta",
+        tipo_propiedad: "Cochera",
+      }).propertyType,
+    ).toBe("otro");
+  });
+});

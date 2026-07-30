@@ -25,7 +25,7 @@ export default async function Home() {
             <PublicSearchForm />
           </div>
           <div className="mt-5 flex flex-wrap gap-4 text-sm text-white/70">
-            {inventory.count > 0 && <span><strong className="text-white">{inventory.count.toLocaleString("es-AR")}</strong> avisos activos verificados</span>}
+            {inventory.count > 0 && <span><strong className="text-white">{inventory.count.toLocaleString("es-AR")}</strong> avisos activos disponibles</span>}
             <span>Sin registro</span><span>Contacto directo</span>
           </div>
         </div>
@@ -33,7 +33,7 @@ export default async function Home() {
 
       <section className="container py-16">
         <div className="flex items-end justify-between gap-4">
-          <div><p className="eyebrow">Recién publicadas</p><h2 className="section-title">Nuevas oportunidades</h2></div>
+          <div><p className="eyebrow">Inventario activo</p><h2 className="section-title">Propiedades destacadas</h2></div>
           <Link href="/propiedades" className="text-sm font-bold text-[#2166a5]">Ver todas →</Link>
         </div>
         {inventory.error ? (

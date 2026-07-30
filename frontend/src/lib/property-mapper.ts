@@ -102,6 +102,12 @@ export function mapSupabasePropertyToProperty(item: SupabaseProperty): Property 
   const images = Array.from(new Set((item.imagenes ?? []).filter(validImage)));
   const quality = qualitySignals(item, images);
   const rawType = cleanText(item.tipo_propiedad) || null;
+  const normalizedTitle = cleanText(item.titulo).toLowerCase();
+  const propertyType =
+    normalizePropertyType(item.tipo_propiedad) === "cochera" &&
+    normalizedTitle.includes("edificio comercial")
+      ? "otro"
+      : normalizePropertyType(item.tipo_propiedad);
 
   return {
     id: String(item.id),
@@ -115,7 +121,7 @@ export function mapSupabasePropertyToProperty(item: SupabaseProperty): Property 
     priceArs: positiveNumber(item.precio_ars),
     expenses: positiveNumber(item.expensas),
     expensesCurrency: normalizeCurrency(item.expensas_moneda),
-    propertyType: normalizePropertyType(item.tipo_propiedad),
+    propertyType,
     rawPropertyType: rawType,
     operation: normalizeOperation(item.operacion),
     rooms: positiveNumber(item.ambientes),
@@ -149,4 +155,3 @@ export function mapSupabasePropertyToProperty(item: SupabaseProperty): Property 
     quality,
   };
 }
-

@@ -14,7 +14,7 @@ export function PropertyMap({ properties, label = "Mapa de resultados" }: { prop
   const [open, setOpen] = useState(false);
   const geolocated = properties.filter((property) => property.latitude !== null && property.longitude !== null);
   if (!geolocated.length) {
-    return <div className="empty-panel"><p className="font-bold">Sin ubicaciones verificadas</p><p className="mt-1 text-sm">Estas propiedades no incluyen coordenadas públicas válidas.</p></div>;
+    return <div className="empty-panel"><p className="font-bold">Sin coordenadas disponibles</p><p className="mt-1 text-sm">Estas propiedades no incluyen coordenadas públicas válidas.</p></div>;
   }
   return (
     <section aria-label={label}>
@@ -30,4 +30,3 @@ export function PropertyMap({ properties, label = "Mapa de resultados" }: { prop
     </section>
   );
 }
-

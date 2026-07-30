@@ -3,6 +3,7 @@ import type { NextConfig } from "next";
 const supabaseOrigin = (() => {
   try { return new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").origin; } catch { return ""; }
 })();
+const productionDeployment = process.env.VERCEL_ENV === "production";
 
 const csp = [
   "default-src 'self'",
@@ -10,7 +11,7 @@ const csp = [
   "object-src 'none'",
   "frame-ancestors 'none'",
   "form-action 'self'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+  `script-src 'self' 'unsafe-inline'${productionDeployment ? "" : " 'unsafe-eval'"}`,
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self' data:",
   "img-src 'self' data: blob: https:",
@@ -36,4 +37,3 @@ const nextConfig: NextConfig = {
 };
 
 export default nextConfig;
-

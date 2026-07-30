@@ -1,16 +1,40 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PropertyImage } from "@/components/property/PropertyImage";
 
 export function PropertyGallery({ images, title }: { images: string[]; title: string }) {
   const [selected, setSelected] = useState(0);
   const [modal, setModal] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!modal) return;
-    const close = (event: KeyboardEvent) => event.key === "Escape" && setModal(false);
-    document.addEventListener("keydown", close);
-    return () => document.removeEventListener("keydown", close);
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
+      "button, [href], [tabindex]:not([tabindex='-1'])",
+    );
+    focusable?.[0]?.focus();
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setModal(false);
+        return;
+      }
+      if (event.key !== "Tab" || !focusable?.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("keydown", handleKey);
+      previous?.focus();
+    };
   }, [modal]);
   const image = images[selected] ?? null;
   return (
@@ -30,7 +54,7 @@ export function PropertyGallery({ images, title }: { images: string[]; title: st
         )}
       </div>
       {modal && image && (
-        <div role="dialog" aria-modal="true" aria-label="Galería ampliada" className="fixed inset-0 z-[2000] grid place-items-center bg-black/90 p-4" onClick={() => setModal(false)}>
+        <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Galería ampliada" className="fixed inset-0 z-[2000] grid place-items-center bg-black/90 p-4" onClick={() => setModal(false)}>
           <button type="button" className="absolute right-4 top-4 grid size-12 place-items-center rounded-full bg-white text-2xl text-black" onClick={() => setModal(false)} aria-label="Cerrar galería">×</button>
           <div className="h-[82vh] w-full max-w-6xl" onClick={(event) => event.stopPropagation()}>
             <PropertyImage src={image} alt={`${title}, imagen ampliada`} />
@@ -46,4 +70,3 @@ export function PropertyGallery({ images, title }: { images: string[]; title: st
     </>
   );
 }
-

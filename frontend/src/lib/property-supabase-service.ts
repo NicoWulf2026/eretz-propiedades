@@ -169,7 +169,14 @@ export async function getHomeInventory() {
   try {
     const [countResult, recentResult] = await Promise.all([
       timed(supabase.from("propiedades").select("id", { count: "exact", head: true }).eq("estado", "activa")),
-      timed(supabase.from("propiedades").select(columns).eq("estado", "activa").order("id", { ascending: false }).limit(6)),
+      timed(
+        supabase
+          .from("propiedades")
+          .select(columns)
+          .eq("estado", "activa")
+          .order("id", { ascending: false })
+          .limit(6),
+      ),
     ]);
     if (countResult.error || recentResult.error) throw new Error("public query failed");
     return {
