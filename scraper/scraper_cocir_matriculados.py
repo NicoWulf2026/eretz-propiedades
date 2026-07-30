@@ -186,7 +186,11 @@ def parsear_fila_cocir(fila_el) -> Optional[Dict[str, Any]]:
         # Dirección (col 4) — primera línea = calle, segunda = ciudad
         direccion = ""
         if len(celdas) > 4:
-            lineas = [l.strip() for l in celdas[4].inner_text().splitlines() if l.strip()]
+            lineas = [
+                line.strip()
+                for line in celdas[4].inner_text().splitlines()
+                if line.strip()
+            ]
             # Tomar la primera línea que no sea solo código postal
             for linea in lineas:
                 if not re.match(r"^\(\d+\)", linea):

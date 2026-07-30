@@ -2279,7 +2279,9 @@ def scrape_lenarduzzi(supabase: SupabaseClient, existing_urls: set, session: req
             try:
                 resp = secure_get(session, url, headers=headers, timeout=(8, 20))
                 if resp.status_code == 403:
-                    logger.warning(f"[lenarduzzi] Cookie expirada — renovar LENARDUZZI_COOKIE en .env")
+                    logger.warning(
+                        "[lenarduzzi] Cookie expirada — renovar LENARDUZZI_COOKIE en .env"
+                    )
                     return
                 if resp.status_code != 200:
                     empty_pages += 1
@@ -2474,7 +2476,6 @@ def scrape_cisfe(supabase: SupabaseClient, existing_urls: set, session: requests
     }
     BASE = "https://cisfe.ar"
     # Santa Fe capital = 12712
-    BASE_URL = f"{BASE}/results-page/?search_location=12712&offset={{}}"
     total_nuevas = 0
     offset = 0
     empty_pages = 0
@@ -2653,7 +2654,8 @@ def scrape_raes(supabase: SupabaseClient, existing_urls: set, context) -> None:
             v = item.get(k)
             if v:
                 try:
-                    dormitorios = int(v); break
+                    dormitorios = int(v)
+                    break
                 except (ValueError, TypeError):
                     pass
 
@@ -2662,7 +2664,8 @@ def scrape_raes(supabase: SupabaseClient, existing_urls: set, context) -> None:
             v = item.get(k)
             if v:
                 try:
-                    banos = int(v); break
+                    banos = int(v)
+                    break
                 except (ValueError, TypeError):
                     pass
 
@@ -2949,7 +2952,10 @@ def scrape_sofia(supabase: SupabaseClient, existing_urls: set, session: requests
                 seen.add(href)
                 links.append(href)
 
-    logger.info(f"[sofia] {len(links)} proyectos encontrados: {[l for l in links]}")
+    logger.info(
+        f"[sofia] {len(links)} proyectos encontrados: "
+        f"{[project_link for project_link in links]}"
+    )
 
     nuevas = []
     for prop_url in links:
@@ -3651,8 +3657,6 @@ def scrape_tizado(supabase: SupabaseClient, existing_urls: set, context) -> None
         "https://www.tizado.com/busqueda/-/venta/",
         "https://www.tizado.com/busqueda/-/alquiler/",
     ]
-    operacion_map = {"venta": "venta", "alquiler": "alquiler"}
-
     page = context.new_page()
     total_guardadas = 0
     try:

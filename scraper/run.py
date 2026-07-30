@@ -36,7 +36,6 @@ from playwright.sync_api import sync_playwright
 
 from clients import PartialBatchInsertError, SessionFactory, SupabaseClient
 from config import (
-    SOURCE_CONFIGS,
     SUPABASE_SERVICE_ROLE_KEY,
     SUPABASE_TABLE,
     SUPABASE_URL,
@@ -429,7 +428,6 @@ def _tm_log_source(
     tree_rss: float,
 ) -> None:
     """Escribe reporte tracemalloc de una fuente en tm_diag/. Solo con TRACE_MEMORY=1."""
-    import tracemalloc
     out_dir = Path(os.environ.get("_TM_RESOLVED_DIR", "_scratch/tm_diag"))
     ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
@@ -462,7 +460,7 @@ def _tm_log_source(
         "[TM] TOP 20 diff S3-S1 (net leak por fuente — candidatos a leak si > 0):",
     ]
     report_lines += (
-        [f"     {l}" for l in top20_net]
+        [f"     {line}" for line in top20_net]
         if top20_net
         else ["     (sin diferencias — heap estable post gc.collect)"]
     )
@@ -471,7 +469,7 @@ def _tm_log_source(
         "[TM] TOP 10 diff S3-S2 (lo que gc.collect limpio mas alla de browser.close):",
     ]
     report_lines += (
-        [f"     {l}" for l in top10_gc]
+        [f"     {line}" for line in top10_gc]
         if top10_gc
         else ["     (sin diferencias — browser.close ya limpio todo)"]
     )
@@ -480,7 +478,7 @@ def _tm_log_source(
         "[TM] TOP 10 global S3-S0 (acumulado desde inicio del proceso, por modulo):",
     ]
     report_lines += (
-        [f"     {l}" for l in top10_glob]
+        [f"     {line}" for line in top10_glob]
         if top10_glob
         else ["     (S0 no disponible o sin diferencias)"]
     )
