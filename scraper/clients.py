@@ -332,6 +332,7 @@ class SupabaseClient:
         source_id: Any,
         run_id: str,
         dry_run: bool = False,
+        identity_agency_id: Any = None,
     ) -> Dict[str, int]:
         """Insert or improve properties through the audited, atomic RPCs only."""
         stats = {
@@ -351,10 +352,16 @@ class SupabaseClient:
             return stats
         if not str(source_id or "").strip() or not str(run_id or "").strip():
             raise RuntimeError("Safe merge requires source_id and run_id")
+        rpc_source_id = source_id if identity_agency_id is None else identity_agency_id
 
         candidates = self._fetch_merge_candidates(payloads)
         for payload in payloads:
-            plan = build_merge_plan(payload, candidates, source_id=source_id)
+            plan = build_merge_plan(
+                payload,
+                candidates,
+                source_id=source_id,
+                identity_agency_id=identity_agency_id,
+            )
             audits = plan.get("audit") or []
             stats["fields_improved"] += sum(
                 1
@@ -380,7 +387,7 @@ class SupabaseClient:
                         "record_property_merge_audit",
                         {
                             "p_property_id": None,
-                            "p_source_id": str(source_id),
+                            "p_source_id": str(rpc_source_id),
                             "p_run_id": str(run_id),
                             "p_audit": audits,
                         },
@@ -396,7 +403,7 @@ class SupabaseClient:
                     "insert_property_safe",
                     {
                         "p_payload": plan["payload"],
-                        "p_source_id": str(source_id),
+                        "p_source_id": str(rpc_source_id),
                         "p_run_id": str(run_id),
                         "p_audit": audits,
                     },
@@ -427,7 +434,7 @@ class SupabaseClient:
                     "p_expected_hash_dedup": existing.get("hash_dedup"),
                     "p_expected_fuente_extraccion": existing.get("fuente_extraccion"),
                     "p_patch": patch,
-                    "p_source_id": str(source_id),
+                    "p_source_id": str(rpc_source_id),
                     "p_run_id": str(run_id),
                     "p_audit": audits,
                 },

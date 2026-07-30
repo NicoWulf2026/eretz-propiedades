@@ -87,6 +87,10 @@ _GENERIC_TEXT = {
     "inmuebles",
     "sin titulo",
     "propiedad sin titulo",
+    "venta",
+    "alquiler",
+    "alquiler temporario",
+    "emprendimiento",
     "detalle",
     "descripcion",
     "argentina",
@@ -112,7 +116,7 @@ _FILE_OR_SHELL_LABEL_RE = re.compile(
 )
 _IMAGE_REJECT_RE = re.compile(
     r"(?:placeholder|no[-_ ]?image|sin[-_ ]?imagen|logo|favicon|sprite|"
-    r"avatar|icon(?:o)?|loading|spinner|map(?:a)?[-_]|google[-_]?maps|"
+    r"avatar|icon(?:o)?|loading|spinner|map(?:a)?[-_]|google.*maps?|maps?\.google|"
     r"blank\.(?:gif|png)|transparent\.(?:gif|png))",
     re.IGNORECASE,
 )
@@ -277,6 +281,7 @@ def resolve_identity(
     candidates: Sequence[Mapping[str, Any]],
     *,
     source_id: Any,
+    identity_agency_id: Any = None,
 ) -> Dict[str, Any]:
     """Resolve an incoming payload to exactly one compatible database row.
 
@@ -290,10 +295,11 @@ def resolve_identity(
     incoming_hash = str(incoming.get("hash_dedup") or "")
     expected_hash = _compute_hash_dedup(agency, incoming.get("url"))
     incoming_source = _source_key(incoming.get("fuente_extraccion"))
+    trusted_agency = source_id if identity_agency_id is None else identity_agency_id
 
     if (
         agency is None
-        or str(source_id or "").strip() != str(agency)
+        or str(trusted_agency or "").strip() != str(agency)
         or not url_key
         or not incoming_hash
         or incoming_hash != expected_hash
@@ -563,13 +569,19 @@ def build_merge_plan(
     candidates: Sequence[Mapping[str, Any]],
     *,
     source_id: Any,
+    identity_agency_id: Any = None,
 ) -> Dict[str, Any]:
     """Return a deterministic insert/update/reject plan and per-field audit."""
     normalized_incoming = dict(incoming)
     normalized_incoming["url_normalizada"] = (
         incoming.get("url_normalizada") or _normalize_url_for_hash(incoming.get("url"))
     )
-    identity = resolve_identity(normalized_incoming, candidates, source_id=source_id)
+    identity = resolve_identity(
+        normalized_incoming,
+        candidates,
+        source_id=source_id,
+        identity_agency_id=identity_agency_id,
+    )
     if identity["status"] == "rejected":
         return {**identity, "patch": {}}
 
@@ -624,7 +636,7 @@ def prepare_insert_payload(incoming: Mapping[str, Any]) -> Dict[str, Any]:
     if payload.get("precio") is not None and not _positive_number(payload.get("precio")):
         payload["precio"] = None
     operation = _plain(payload.get("operacion")).replace(" ", "_")
-    payload["operacion"] = operation if operation in _VALID_OPERATIONS else None
+    payload["operacion"] = operation if operation in _VALID_OPERATIONS else "consultar"
     property_type = _plain(payload.get("tipo_propiedad")).replace(" ", "_")
     payload["tipo_propiedad"] = property_type if property_type in _VALID_TYPES else "otro"
     if not _valid_coordinate_pair(payload.get("latitud"), payload.get("longitud")):

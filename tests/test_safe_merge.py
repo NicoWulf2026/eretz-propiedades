@@ -83,6 +83,20 @@ def test_new_property_gets_sanitized_insert_and_field_audit():
     assert all(item["decision"] == ACCEPTED_INSERT for item in plan["audit"])
 
 
+def test_new_property_uses_explicit_unknown_operation_state():
+    plan = build_merge_plan(incoming(operacion=None), [], source_id="10")
+
+    assert plan["status"] == "insert"
+    assert plan["payload"]["operacion"] == "consultar"
+
+
+def test_new_property_does_not_persist_operation_as_title():
+    plan = build_merge_plan(incoming(titulo="Venta"), [], source_id="10")
+
+    assert plan["status"] == "insert"
+    assert plan["payload"]["titulo"] is None
+
+
 def test_unambiguous_existing_property_is_matched():
     plan = build_merge_plan(incoming(), [existing()], source_id="10")
     assert plan["status"] == "matched"
@@ -126,6 +140,29 @@ def test_fk_incompatible_candidate_rejects_cross_property_write():
 
 def test_source_id_must_match_canonical_agency_id():
     plan = build_merge_plan(incoming(), [], source_id="77")
+    assert plan["status"] == "rejected"
+    assert decision(plan, "__identity__")["decision"] == REJECTED_AMBIGUOUS_IDENTITY
+
+
+def test_preflight_verified_source_id_space_can_map_to_canonical_agency():
+    plan = build_merge_plan(
+        incoming(),
+        [],
+        source_id="1976",
+        identity_agency_id="10",
+    )
+
+    assert plan["status"] == "insert"
+
+
+def test_preflight_verified_agency_still_rejects_wrong_payload_fk():
+    plan = build_merge_plan(
+        incoming(inmobiliaria_id=99),
+        [],
+        source_id="1976",
+        identity_agency_id="10",
+    )
+
     assert plan["status"] == "rejected"
     assert decision(plan, "__identity__")["decision"] == REJECTED_AMBIGUOUS_IDENTITY
 
@@ -281,6 +318,26 @@ def test_client_safe_merge_uses_only_authorized_rpcs():
     assert stats["db_updates"] == 0
     assert "/rest/v1/rpc/insert_property_safe" in session.post.call_args.args[0]
     session.patch.assert_not_called()
+
+
+def test_client_uses_verified_canonical_agency_for_rpc_identity():
+    session = Mock()
+    lookup = Mock(status_code=200)
+    lookup.json.return_value = []
+    session.get.return_value = lookup
+    rpc = Mock(status_code=200)
+    rpc.json.return_value = {"status": "inserted", "property_id": 99, "audit_rows": 10}
+    session.post.return_value = rpc
+    client = SupabaseClient(session, "https://db.test", "secret", "propiedades")
+
+    client.batch_save_safe_merge(
+        [incoming()],
+        source_id="1976",
+        identity_agency_id="10",
+        run_id="run-mapped-source",
+    )
+
+    assert session.post.call_args.kwargs["json"]["p_source_id"] == "10"
 
 
 def test_rollback_is_non_destructive_and_revokes_safe_merge():

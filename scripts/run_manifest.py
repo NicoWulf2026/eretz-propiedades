@@ -94,11 +94,19 @@ class _InsertOnlySupabaseProxy:
         run_id: str,
         dry_run: bool = False,
     ) -> Dict[str, int]:
+        agency_ids = {
+            str(payload.get("inmobiliaria_id"))
+            for payload in payloads
+            if payload.get("inmobiliaria_id") is not None
+        }
+        if len(agency_ids) != 1:
+            raise RuntimeError("Safe merge batch must resolve to exactly one canonical agency")
         return self._client.batch_save_safe_merge(
             payloads,
             source_id=source_id,
             run_id=run_id,
             dry_run=dry_run,
+            identity_agency_id=next(iter(agency_ids)),
         )
 
     def __getattr__(self, name: str) -> Any:
@@ -754,8 +762,9 @@ class _ProgressTracker:
 def _load_scraper_modules():
     """Importa módulos del scraper con path correcto. No imprime credentials."""
     scraper_dir = REPO_ROOT / "scraper"
-    if str(scraper_dir) not in sys.path:
-        sys.path.insert(0, str(scraper_dir))
+    for import_path in (REPO_ROOT, scraper_dir):
+        if str(import_path) not in sys.path:
+            sys.path.insert(0, str(import_path))
 
     # Cargar .env sin imprimir su contenido
     try:
