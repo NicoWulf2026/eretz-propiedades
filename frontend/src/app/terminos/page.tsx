@@ -1,62 +1,15 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { Footer } from "@/components/layout/Footer";
+import { LegalPage } from "@/components/layout/LegalPage";
 
-const CONTACT_EMAIL = "eretzpropiedades@gmail.com";
+export const metadata: Metadata = { title: "Términos y condiciones", robots: { index: false, follow: true } };
 
-export const metadata: Metadata = {
-  title: "Términos y condiciones | ERETZ Propiedades",
-  description: "Términos y condiciones de uso de ERETZ Propiedades.",
-  robots: { index: false, follow: false },
-};
-
-export default function TerminosPage() {
-  return (
-    <div className="min-h-screen bg-[#f6f8fb]">
-      <main className="mx-auto w-full max-w-3xl px-4 py-10 sm:px-6">
-        <Link
-          href="/"
-          className="text-sm font-semibold text-ink-950/60 transition hover:text-ink-950"
-        >
-          ← Volver a ERETZ Propiedades
-        </Link>
-
-        <h1 className="mt-4 text-2xl font-bold text-ink-950">Términos y condiciones</h1>
-        <p className="mt-2 text-sm text-ink-950/55">
-          Versión mínima para beta. No constituye asesoramiento legal.
-        </p>
-
-        <div className="mt-6 space-y-4 text-sm leading-6 text-ink-950/75">
-          <p>
-            ERETZ Propiedades es una plataforma que recopila y muestra información de propiedades
-            publicada por inmobiliarias y terceros.
-          </p>
-          <p>
-            Los precios, disponibilidad, características, imágenes y condiciones de las publicaciones
-            pueden cambiar sin previo aviso.
-          </p>
-          <p>
-            La información debe ser confirmada siempre con la inmobiliaria o anunciante
-            correspondiente antes de tomar cualquier decisión.
-          </p>
-          <p>
-            ERETZ Propiedades no garantiza la disponibilidad, exactitud absoluta ni vigencia
-            permanente de cada publicación.
-          </p>
-          <p>
-            Si una inmobiliaria, propietario o usuario desea corregir, actualizar o solicitar la
-            baja de una publicación, puede escribir a{" "}
-            <a
-              href={`mailto:${CONTACT_EMAIL}`}
-              className="font-semibold text-ink-950 hover:underline"
-            >
-              {CONTACT_EMAIL}
-            </a>
-            .
-          </p>
-        </div>
-      </main>
-      <Footer />
-    </div>
-  );
+export default function Page() {
+  return <LegalPage title="Términos y condiciones" updated="Borrador para revisión legal · julio de 2026">
+    <h2>Naturaleza del servicio</h2><p>ERETZ Propiedades recopila, organiza y enlaza información inmobiliaria publicada por terceros. No es parte de las operaciones, no reserva inmuebles, no cobra pagos y no representa a quienes publican salvo indicación expresa.</p>
+    <h2>Información de los avisos</h2><p>Precios, moneda, disponibilidad, medidas, ubicación, imágenes y características provienen de la publicación original y pueden estar incompletos o cambiar sin aviso. Deben confirmarse con la inmobiliaria, desarrolladora o responsable.</p>
+    <h2>Contacto y contratación</h2><p>Las consultas se realizan directamente por los canales públicos del aviso. Toda negociación, visita, reserva o contrato ocurre fuera de ERETZ y es responsabilidad de sus participantes.</p>
+    <h2>Disponibilidad</h2><p>Procuramos una experiencia confiable, pero no garantizamos continuidad ininterrumpida ni exactitud absoluta. Los enlaces externos pueden dejar de funcionar.</p>
+    <h2>Correcciones y bajas</h2><p>Podés solicitar una revisión desde <a href="/baja-o-correccion">baja o corrección</a> o escribir a <a href="mailto:eretzpropiedades@gmail.com">eretzpropiedades@gmail.com</a>.</p>
+  </LegalPage>;
 }
+

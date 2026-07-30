@@ -1,57 +1,40 @@
 import Link from "next/link";
+import { Brand } from "@/components/layout/Brand";
 
-const CONTACT_EMAIL = "eretzpropiedades@gmail.com";
+const email = "eretzpropiedades@gmail.com";
 
 export function Footer() {
-  const year = new Date().getFullYear();
-
   return (
-    <footer className="border-t border-ink-950/10 bg-white">
-      <div className="mx-auto w-full max-w-[1480px] px-4 py-8 sm:px-6 lg:px-8">
-        <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
-          <div className="max-w-xl">
-            <p className="text-sm font-semibold text-ink-950">ERETZ Propiedades</p>
-            <p className="mt-2 text-xs leading-5 text-ink-950/55">
-              ERETZ Propiedades recopila y muestra información publicada por inmobiliarias y
-              terceros. Los precios, disponibilidad, características e imágenes pueden cambiar sin
-              previo aviso. Confirmá siempre la información con la inmobiliaria o anunciante
-              correspondiente.
-            </p>
-            <p className="mt-2 text-xs leading-5 text-ink-950/55">
-              ¿Sos inmobiliaria, propietario o usuario y querés corregir, actualizar o solicitar la
-              baja de una publicación? Escribinos a{" "}
-              <a
-                href={`mailto:${CONTACT_EMAIL}`}
-                className="font-semibold text-ink-950 underline-offset-2 hover:underline"
-              >
-                {CONTACT_EMAIL}
-              </a>
-              .
-            </p>
-          </div>
-
-          <nav className="flex flex-col gap-2 text-sm" aria-label="Enlaces legales">
-            <Link href="/terminos" className="text-ink-950/70 transition hover:text-ink-950">
-              Términos y condiciones
-            </Link>
-            <Link href="/privacidad" className="text-ink-950/70 transition hover:text-ink-950">
-              Política de privacidad
-            </Link>
-            <a
-              href={`mailto:${CONTACT_EMAIL}`}
-              className="text-ink-950/70 transition hover:text-ink-950"
-            >
-              Contacto
-            </a>
-          </nav>
-        </div>
-
-        <div className="mt-6 border-t border-ink-950/8 pt-4">
-          <p className="text-[11px] text-ink-950/45">
-            © {year} ERETZ Propiedades · Beta. Información de terceros sujeta a cambios.
+    <footer className="mt-auto border-t border-slate-200 bg-white">
+      <div className="container grid gap-10 py-12 md:grid-cols-[1.4fr_1fr_1fr]">
+        <div>
+          <Brand />
+          <p className="mt-5 max-w-md text-sm leading-6 text-slate-600">
+            Buscamos y ordenamos avisos inmobiliarios de toda Argentina. El contacto y la operación
+            se realizan directamente con quien publicó cada propiedad.
           </p>
+        </div>
+        <nav aria-label="Explorar" className="flex flex-col gap-2 text-sm">
+          <p className="mb-2 font-bold text-[#0b2748]">Explorar</p>
+          <Link href="/propiedades">Todas las propiedades</Link>
+          <Link href="/propiedades?operacion=venta">Propiedades en venta</Link>
+          <Link href="/propiedades?operacion=alquiler">Propiedades en alquiler</Link>
+          <Link href="/contacto">Contacto</Link>
+        </nav>
+        <nav aria-label="Información legal" className="flex flex-col gap-2 text-sm">
+          <p className="mb-2 font-bold text-[#0b2748]">Información</p>
+          <Link href="/terminos">Términos y condiciones</Link>
+          <Link href="/privacidad">Privacidad</Link>
+          <Link href="/baja-o-correccion">Baja o corrección</Link>
+          <a href={`mailto:${email}`}>{email}</a>
+        </nav>
+      </div>
+      <div className="border-t border-slate-100">
+        <div className="container py-5 text-xs leading-5 text-slate-500">
+          © {new Date().getFullYear()} ERETZ Propiedades · Beta. Información de terceros sujeta a cambios.
         </div>
       </div>
     </footer>
   );
 }
+

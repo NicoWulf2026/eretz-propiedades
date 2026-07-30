@@ -1,50 +1,35 @@
-﻿import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+import { Geist } from "next/font/google";
 import "leaflet/dist/leaflet.css";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
-const SITE_TITLE = "ERETZ Propiedades | Búsqueda inmobiliaria en Argentina";
-const SITE_DESCRIPTION =
-  "Mapa, filtros y listado de propiedades para comprar, alquilar o invertir en Argentina.";
-
-// Beta: por defecto NO indexar (noindex, nofollow). Solo se indexa si
-// NEXT_PUBLIC_SITE_INDEXING === "true" (producción pública). Cualquier otro valor o ausencia -> noindex.
+const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 const allowIndexing = process.env.NEXT_PUBLIC_SITE_INDEXING === "true";
 
+export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#071d35" };
+
 export const metadata: Metadata = {
-  title: SITE_TITLE,
-  description: SITE_DESCRIPTION,
-  robots: allowIndexing ? undefined : { index: false, follow: false },
+  metadataBase: new URL(siteUrl),
+  title: { default: "ERETZ Propiedades | Inmuebles en Argentina", template: "%s | ERETZ Propiedades" },
+  description: "Buscá propiedades de toda Argentina y contactá directamente a la inmobiliaria o responsable del aviso.",
+  applicationName: "ERETZ Propiedades",
+  alternates: { canonical: "/" },
+  icons: { icon: "/favicon.ico" },
+  robots: allowIndexing ? { index: true, follow: true } : { index: false, follow: false, nocache: true },
   openGraph: {
-    title: SITE_TITLE,
-    description: SITE_DESCRIPTION,
+    title: "ERETZ Propiedades",
+    description: "Encontrá propiedades en Argentina con búsqueda real y contacto directo.",
+    url: "/",
     siteName: "ERETZ Propiedades",
     locale: "es_AR",
     type: "website",
+    images: [{ url: "/og.png", width: 1200, height: 630, alt: "ERETZ Propiedades" }],
   },
+  twitter: { card: "summary_large_image", title: "ERETZ Propiedades", description: "Propiedades en toda Argentina.", images: ["/og.png"] },
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
-  return (
-    <html
-      lang="es-AR"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full">{children}</body>
-    </html>
-  );
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  return <html lang="es-AR" className={geist.variable}><body>{children}</body></html>;
 }
+

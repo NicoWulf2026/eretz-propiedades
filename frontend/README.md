@@ -1,36 +1,43 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ERETZ Propiedades — frontend público
 
-## Getting Started
+Beta local del buscador inmobiliario de ERETZ Propiedades. Usa Next.js App Router, TypeScript,
+Tailwind CSS, Supabase público y Leaflet.
 
-First, run the development server:
+## Desarrollo
+
+1. Copiar `.env.local.example` a `.env.local`.
+2. Completar `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+3. Mantener `NEXT_PUBLIC_SITE_INDEXING=false` durante la beta.
+4. Ejecutar:
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Rutas principales:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- `/`: home y buscador principal.
+- `/propiedades`: búsqueda, filtros, orden y paginación por cursor.
+- `/propiedad/[id]`: detalle, galería, mapa y contacto directo.
+- `/contacto`, `/baja-o-correccion`, `/privacidad`, `/terminos`.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Gates
 
-## Learn More
+```bash
+npm run lint
+npm run typecheck
+npm run test
+npm run build
+npm audit
+```
 
-To learn more about Next.js, take a look at the following resources:
+El navegador utiliza exclusivamente el contrato anon autorizado de `public.propiedades`; no hay
+`service_role`, RPC privadas, autenticación, pagos ni captura propia de leads.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Preparación de despliegue
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Configurar `NEXT_PUBLIC_SITE_URL` con el dominio canónico antes del build. Habilitar
+`NEXT_PUBLIC_SITE_INDEXING=true` solamente tras aprobar dominio, contenido legal y lanzamiento.
+La configuración incluye headers de seguridad, robots, sitemap y metadata OpenGraph.
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
