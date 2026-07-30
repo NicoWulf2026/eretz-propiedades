@@ -88,6 +88,10 @@ class DataCleaner:
             "propiedad sin titulo",
             "detalle",
             "descripcion",
+            "venta",
+            "alquiler",
+            "alquiler temporario",
+            "emprendimiento",
         }
 
     @staticmethod

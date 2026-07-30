@@ -142,7 +142,7 @@ def is_valid_web(url: str) -> bool:
             if domain.endswith("." + d) or domain == d:
                 return False
         return len(domain) > 3 and "." in domain
-    except:
+    except ValueError:
         return False
 
 def extract_phone(text: str) -> Optional[str]:
@@ -237,7 +237,8 @@ def enrich_google_maps(pw_page, nombre: str, ciudad: str, provincia: str) -> Dic
             name_el = pw_page.locator("h1").first
             if name_el.count() > 0:
                 res["google_maps_name"] = name_el.inner_text().strip()
-        except: pass
+        except Exception:
+            pass
         
         # Check similarity
         if res.get("google_maps_name"):
@@ -255,7 +256,8 @@ def enrich_google_maps(pw_page, nombre: str, ciudad: str, provincia: str) -> Dic
                     if href and is_valid_web(href):
                         res["website_candidate"] = href
                         break
-            except: pass
+            except Exception:
+                pass
             
         # Extract Phone
         for sel in ["button[data-item-id^='phone']", "button[aria-label*='Teléfono']"]:
@@ -267,7 +269,8 @@ def enrich_google_maps(pw_page, nombre: str, ciudad: str, provincia: str) -> Dic
                     if len(phone) >= 7:
                         res["phone_candidate"] = phone
                         break
-            except: pass
+            except Exception:
+                pass
             
         # Extract Address
         try:
@@ -277,7 +280,8 @@ def enrich_google_maps(pw_page, nombre: str, ciudad: str, provincia: str) -> Dic
                 addr = addr.replace("Dirección:", "").strip()
                 if addr:
                     res["address_candidate"] = addr
-        except: pass
+        except Exception:
+            pass
 
         res["google_maps_url"] = pw_page.url
         
