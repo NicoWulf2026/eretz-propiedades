@@ -13,9 +13,13 @@ for path in (REPO_ROOT, SCRAPER_DIR):
 from extractors import DataCleaner  # noqa: E402
 from models import Propiedad  # noqa: E402
 from playwright_scraper import parse_cards  # noqa: E402
-from scripts.validate_raw_properties import title_from_property_url
-from scripts.backend_final_data_quality import RULES
-from scripts.repair_deterministic_property_quality import repair_mojibake, stable_json, transform
+from scripts.validate_raw_properties import title_from_property_url  # noqa: E402
+from scripts.backend_final_data_quality import RULES  # noqa: E402
+from scripts.repair_deterministic_property_quality import (  # noqa: E402
+    repair_mojibake,
+    stable_json,
+    transform,
+)
 
 
 def test_clean_title_strips_residual_html_and_property_id_markup():

@@ -12,7 +12,6 @@ import random
 import re
 import time
 import unicodedata
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
@@ -131,7 +130,8 @@ def similitud(a: str, b: str) -> float:
     return SequenceMatcher(None, normalizar_nombre_clave(a), normalizar_nombre_clave(b)).ratio()
 
 def is_valid_web(url: str) -> bool:
-    if not url: return False
+    if not url:
+        return False
     try:
         p = urlparse(url if url.startswith("http") else f"https://{url}")
         domain = p.netloc.lower().replace("www.", "")
@@ -206,7 +206,8 @@ def enrich_web(url: str) -> Dict[str, Any]:
             text = soup.get_text(" ")
             
             p = extract_phone(text)
-            if p: res["phone_candidate"] = p
+            if p:
+                res["phone_candidate"] = p
             
             # Emails
             emails = _RE_EMAIL.findall(text)
@@ -466,7 +467,8 @@ def main() -> int:
     
     log.info(f"Modo: {'DRY-RUN' if args.dry_run else 'COMMIT'}")
     log.info(f"Target: {TABLA} (limit {args.limit})")
-    if args.source: log.info(f"Fuente: {args.source}")
+    if args.source:
+        log.info(f"Fuente: {args.source}")
     
     records = fetch_pending(session, base_url, key, args.source, args.limit)
     log.info(f"Recuperados {len(records)} pendientes de enriquecimiento.")
@@ -526,8 +528,10 @@ def main() -> int:
                 time.sleep(random.uniform(1, 3))
                 
     finally:
-        if browser: browser.close()
-        if pw: pw.stop()
+        if browser:
+            browser.close()
+        if pw:
+            pw.stop()
 
     print("\n" + "="*50)
     print("REPORTE FINAL")

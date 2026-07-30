@@ -40,8 +40,8 @@ for import_path in (ROOT, ROOT / "scraper"):
     if str(import_path) not in sys.path:
         sys.path.insert(0, str(import_path))
 
-from scraper.extractors import DataCleaner
-from scraper.safe_merge import clean_images
+from scraper.extractors import DataCleaner  # noqa: E402
+from scraper.safe_merge import clean_images  # noqa: E402
 
 
 DEFAULT_OUT = ROOT / "_scratch" / "eretz_final_closure" / "DATA_REPAIRS"

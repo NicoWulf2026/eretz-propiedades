@@ -7,7 +7,6 @@ import argparse
 import csv
 import json
 import os
-from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -97,7 +96,10 @@ def fetch(cursor: Any, query: str) -> list[dict[str, Any]]:
 
 def anomaly_query(rule: tuple[str, ...]) -> str:
     field, name, category, root, severity, predicate, detail = rule
-    escaped = lambda value: value.replace("'", "''")
+
+    def escaped(value: str) -> str:
+        return value.replace("'", "''")
+
     return f"""
         SELECT p.id AS property_id, p.inmobiliaria_id, p.fuente_extraccion,
                p.url, '{escaped(field)}' AS field,
