@@ -681,6 +681,8 @@ def _scrape_batch(
     worker_id: int,
     on_source_done=None,
     metrics_log=None,
+    safe_merge_existing: bool = False,
+    run_id: Optional[str] = None,
 ) -> int:
     """
     Lanza un browser propio por fuente (Fix-E), procesa cada fuente en serie y cierra.
@@ -768,6 +770,8 @@ def _scrape_batch(
             context = None
             page = None
             _source_props_saved = 0
+            _source_db_writes = 0
+            _source_merge_stats: Dict[str, int] = {}
             # Fix-C: pre-inicializar referencias grandes a None dentro del semáforo,
             # fuera del try, para que el finally externo pueda anularlas de forma
             # segura sin riesgo de UnboundLocalError si el try falla antes de asignarlas.
@@ -933,7 +937,11 @@ def _scrape_batch(
 
                         # ── Filtrar solo las que no están en DB ──────────────────────
                         with lock:
-                            nuevas_urls = [u for u in all_prop_urls if u not in existing_urls]
+                            nuevas_urls = (
+                                list(all_prop_urls)
+                                if safe_merge_existing
+                                else [u for u in all_prop_urls if u not in existing_urls]
+                            )
                         _n_nuevas = len(nuevas_urls)
                         _source_hard_cap_s = calculate_source_hard_cap(fuente, _n_nuevas)
 
@@ -1048,21 +1056,51 @@ def _scrape_batch(
                         # ── Guardar ──────────────────────────────────────────────────
                         with lock:
                             # Re-filtrar por si otro worker guardó algunas en paralelo
-                            nuevas_final = [
-                                p for p in propiedades_completas
-                                if p.url not in existing_urls
-                            ]
+                            nuevas_final = (
+                                list(propiedades_completas)
+                                if safe_merge_existing
+                                else [
+                                    p for p in propiedades_completas
+                                    if p.url not in existing_urls
+                                ]
+                            )
                             _n_validas = len(nuevas_final)
                             logger.info(
                                 f"[W{worker_id}][{key}] {len(nuevas_final)} válidas "
                                 f"/ {len(nuevas_urls)} nuevas"
                             )
-                            if nuevas_final and not dry_run:
+                            if nuevas_final and safe_merge_existing:
+                                if not run_id:
+                                    raise RuntimeError("Safe merge mode requires an audited run_id")
+                                payloads = [p.to_payload() for p in nuevas_final]
+                                _source_merge_stats = supabase.batch_save_safe_merge(
+                                    payloads,
+                                    source_id=fuente.get("source_id"),
+                                    run_id=run_id,
+                                    dry_run=dry_run,
+                                )
+                                _source_props_saved = int(
+                                    _source_merge_stats.get("db_inserts", 0)
+                                )
+                                _source_db_writes = (
+                                    _source_props_saved
+                                    + int(_source_merge_stats.get("db_updates", 0))
+                                )
+                                existing_urls.update(p.url for p in nuevas_final)
+                                total += _source_props_saved
+                                logger.info(
+                                    f"[W{worker_id}][{key}] Safe merge: "
+                                    f"inserts={_source_props_saved} "
+                                    f"updates={_source_merge_stats.get('db_updates', 0)} "
+                                    f"matched={_source_merge_stats.get('existing_matched', 0)}"
+                                )
+                            elif nuevas_final and not dry_run:
                                 payloads = [p.to_payload() for p in nuevas_final]
                                 try:
                                     saved = supabase.batch_save_only_new(payloads)
                                 except PartialBatchInsertError as exc:
                                     _source_props_saved = exc.saved_count
+                                    _source_db_writes = exc.saved_count
                                     total += exc.saved_count
                                     existing_urls.update(
                                         str(payload.get("url"))
@@ -1077,6 +1115,7 @@ def _scrape_batch(
                                 existing_urls.update(p.url for p in nuevas_final)
                                 total += saved
                                 _source_props_saved = saved
+                                _source_db_writes = saved
                                 logger.info(f"[W{worker_id}][{key}] Guardadas: {saved}")
                             elif nuevas_final and dry_run:
                                 for p in nuevas_final[:3]:
@@ -1168,7 +1207,7 @@ def _scrape_batch(
                         listings_seen=_n_listado,
                         details_requested=_n_nuevas,
                         valid_properties=_n_validas,
-                        db_writes=_source_props_saved,
+                        db_writes=_source_db_writes,
                         had_timeout=_had_timeout,
                         had_error=_had_error,
                         dry_run=dry_run,
@@ -1197,9 +1236,37 @@ def _scrape_batch(
                         "n_nuevas":       _n_nuevas,
                         "n_validas":      _n_validas,
                         "props_saved":    _source_props_saved,
+                        "existing_properties_matched": int(
+                            _source_merge_stats.get("existing_matched", 0)
+                        ),
+                        "existing_properties_improved": int(
+                            _source_merge_stats.get("existing_improved", 0)
+                        ),
+                        "fields_improved": int(
+                            _source_merge_stats.get("fields_improved", 0)
+                        ),
+                        "fields_rejected": int(
+                            _source_merge_stats.get("fields_rejected", 0)
+                        ),
+                        "db_inserts": int(
+                            _source_merge_stats.get("db_inserts", _source_props_saved)
+                        ),
+                        "db_updates": int(
+                            _source_merge_stats.get("db_updates", 0)
+                        ),
+                        "ambiguous_identity": int(
+                            _source_merge_stats.get("ambiguous_identity", 0)
+                        ),
+                        "merge_audit_rows": int(
+                            _source_merge_stats.get("audit_rows", 0)
+                        ),
                         "duplicates_skipped": (
-                            max(0, _n_listado - _n_nuevas)
-                            + max(0, _n_validas - _source_props_saved)
+                            int(_source_merge_stats.get("ambiguous_identity", 0))
+                            if safe_merge_existing
+                            else (
+                                max(0, _n_listado - _n_nuevas)
+                                + max(0, _n_validas - _source_props_saved)
+                            )
                         ),
                         "had_timeout":    _had_timeout,
                         "had_error":      _had_error,

@@ -73,7 +73,7 @@ ValidationError  = Tuple[str, str, str]   # (source_id, source_name, reason)
 
 
 class _InsertOnlySupabaseProxy:
-    """Expose only the one authorized write used by Pipeline A."""
+    """Expose only the two explicitly authorized Pipeline A write paths."""
 
     def __init__(self, client: Any) -> None:
         if str(getattr(client, "table", "")) != "propiedades":
@@ -85,6 +85,21 @@ class _InsertOnlySupabaseProxy:
         if skipped:
             print(f"  [DEDUP] exact agency+URL guard skipped {skipped} row(s)")
         return self._client.batch_save_only_new(filtered)
+
+    def batch_save_safe_merge(
+        self,
+        payloads: List[Dict[str, Any]],
+        *,
+        source_id: Any,
+        run_id: str,
+        dry_run: bool = False,
+    ) -> Dict[str, int]:
+        return self._client.batch_save_safe_merge(
+            payloads,
+            source_id=source_id,
+            run_id=run_id,
+            dry_run=dry_run,
+        )
 
     def __getattr__(self, name: str) -> Any:
         raise RuntimeError(f"Unauthorized Supabase operation in Pipeline A: {name}")
@@ -833,6 +848,7 @@ def run_execute(
     out_dir: Path,
     ts_start: str,
     manifest_path: Path,
+    safe_merge_existing: bool = False,
 ) -> Optional[Dict]:
     """
     Corrida real con dos colas independientes.
@@ -922,6 +938,7 @@ def run_execute(
         f"python scripts/run_manifest.py "
         f"--manifest {manifest_path.name} "
         f"--execute --limit {limit} --workers {http_workers}"
+        f"{' --safe-merge-existing' if safe_merge_existing else ''}"
     )
     snap = _pre_execute_snapshot(fuentes_con_fk, count_before, ts_start, out_dir, cmd, http_workers)
     snap["fk_preflight"] = {
@@ -974,6 +991,8 @@ def run_execute(
                 _scrape_batch, batch, supabase, existing_urls, lock, False, f"h{wid}",
                 tracker.on_source_done,
                 metrics_log,
+                safe_merge_existing=safe_merge_existing,
+                run_id=ts_start,
             ): f"h{wid}"
             for wid, batch in enumerate(batches_http)
         }
@@ -982,6 +1001,8 @@ def run_execute(
                 _scrape_batch, batch, supabase, existing_urls, lock, False, f"pw{wid}",
                 tracker.on_source_done,
                 metrics_log,
+                safe_merge_existing=safe_merge_existing,
+                run_id=ts_start,
             ): f"pw{wid}"
             for wid, batch in enumerate(batches_pw)
         }
@@ -1007,6 +1028,9 @@ def run_execute(
             "source_time_s", "sem_wait_s", "browser_time_s",
             "n_listado", "n_nuevas", "n_validas",
             "props_saved", "duplicates_skipped", "had_timeout", "had_error",
+            "existing_properties_matched", "existing_properties_improved",
+            "fields_improved", "fields_rejected", "db_inserts", "db_updates",
+            "ambiguous_identity", "merge_audit_rows",
             "http_status", "error_type", "error_sanitized", "retryable",
             "retry_count", "memory_peak_mb", "navigation_failures",
             "listing_timeout_count", "detail_timeout_count", "detail_error_count",
@@ -1018,12 +1042,25 @@ def run_execute(
         _write_csv(metrics_path, metrics_log, _METRICS_FIELDS)
         print(f"[EXECUTE] source_metrics.csv → {metrics_path} ({len(metrics_log)} fuentes)")
 
-    count_after = len(existing_urls)   # existing_urls se actualiza in-place en _scrape_batch
+    if safe_merge_existing:
+        post_dedup_metrics: Dict[str, Any] = {}
+        existing_urls = _load_existing_urls_by_inmobiliaria(
+            cfg.SUPABASE_URL,
+            cfg.SUPABASE_SERVICE_ROLE_KEY,
+            inmobiliaria_ids_fk,
+            session=session,
+            metrics=post_dedup_metrics,
+        )
+    else:
+        post_dedup_metrics = {}
+    count_after = len(existing_urls)
     net_new     = count_after - count_before
+    total_updates = sum(int(metric.get("db_updates", 0)) for metric in metrics_log)
 
     print(f"\n[EXECUTE] === Resultado ===")
     print(f"  propiedades antes:   {count_before:,}")
     print(f"  guardadas (sum):     {total_saved}")
+    print(f"  actualizadas (sum):  {total_updates}")
     print(f"  en existing_urls delta: {net_new}")
 
     # Query post-run para obtener propiedades nuevas por created_at
@@ -1041,6 +1078,7 @@ def run_execute(
         "count_before":     count_before,
         "count_after":      count_after,
         "total_saved":      total_saved,
+        "total_updates":    total_updates,
         "net_new":          net_new,
         "new_props":        new_props,
         "worker_results":   worker_results,
@@ -1048,6 +1086,8 @@ def run_execute(
         "workers":          http_workers + pw_workers,
         "limit":            limit,
         "batches":          len(batches_http) + len(batches_pw),
+        "safe_merge_existing": safe_merge_existing,
+        "post_dedup":       post_dedup_metrics,
     }
 
 
@@ -1195,16 +1235,21 @@ def write_execute_outputs(
     count_bef   = result["count_before"]
     count_aft   = result["count_after"]
     total_saved = result["total_saved"]
+    total_updates = result.get("total_updates", 0)
     net_new     = result["net_new"]
     new_props   = result["new_props"]
     wkr_results = result["worker_results"]
     source_metrics = result.get("source_metrics", [])
+    safe_merge_existing = bool(result.get("safe_merge_existing"))
 
     source_result_fields = [
         "run_id", "source_id", "inmobiliaria_id", "nombre", "started_at",
         "finished_at", "duration_s", "status", "classification", "pages",
         "listings_seen", "details_requested", "valid_properties",
         "new_properties", "duplicates_skipped", "db_writes", "timeout",
+        "existing_properties_matched", "existing_properties_improved",
+        "fields_improved", "fields_rejected", "db_inserts", "db_updates",
+        "ambiguous_identity", "merge_audit_rows",
         "http_status", "error_type", "error_sanitized", "retryable",
         "retry_count", "memory_peak_mb",
         "listing_timeout_count", "detail_timeout_count", "detail_error_count",
@@ -1230,7 +1275,18 @@ def write_execute_outputs(
             "valid_properties": metric.get("n_validas", 0),
             "new_properties": metric.get("props_saved", 0),
             "duplicates_skipped": metric.get("duplicates_skipped", 0),
-            "db_writes": metric.get("props_saved", 0),
+            "db_writes": (
+                int(metric.get("db_inserts", metric.get("props_saved", 0)))
+                + int(metric.get("db_updates", 0))
+            ),
+            "existing_properties_matched": metric.get("existing_properties_matched", 0),
+            "existing_properties_improved": metric.get("existing_properties_improved", 0),
+            "fields_improved": metric.get("fields_improved", 0),
+            "fields_rejected": metric.get("fields_rejected", 0),
+            "db_inserts": metric.get("db_inserts", metric.get("props_saved", 0)),
+            "db_updates": metric.get("db_updates", 0),
+            "ambiguous_identity": metric.get("ambiguous_identity", 0),
+            "merge_audit_rows": metric.get("merge_audit_rows", 0),
             "timeout": metric.get("had_timeout", False),
             "http_status": metric.get("http_status", ""),
             "error_type": metric.get("error_type", ""),
@@ -1293,14 +1349,46 @@ def write_execute_outputs(
                    "precio", "moneda", "created_at"]
     _write_csv(out_dir / "inserted_properties.csv", new_props, PROP_FIELDS)
 
-    # updated_properties.csv — siempre vacío: pipeline es INSERT plain, nunca UPDATE.
-    # La dedup es upstream (existing_urls); URLs conocidas nunca llegan al INSERT.
-    _write_csv(out_dir / "updated_properties.csv", [], PROP_FIELDS)
+    if safe_merge_existing:
+        update_rows = [
+            {
+                "source_id": metric.get("source_id", ""),
+                "inmobiliaria_id": metric.get("inmobiliaria_id", ""),
+                "existing_properties_matched": metric.get("existing_properties_matched", 0),
+                "existing_properties_improved": metric.get("existing_properties_improved", 0),
+                "fields_improved": metric.get("fields_improved", 0),
+                "fields_rejected": metric.get("fields_rejected", 0),
+                "db_updates": metric.get("db_updates", 0),
+                "merge_audit_rows": metric.get("merge_audit_rows", 0),
+            }
+            for metric in source_metrics
+            if int(metric.get("existing_properties_matched", 0))
+            or int(metric.get("ambiguous_identity", 0))
+        ]
+        _write_csv(
+            out_dir / "updated_properties.csv",
+            update_rows,
+            [
+                "source_id", "inmobiliaria_id", "existing_properties_matched",
+                "existing_properties_improved", "fields_improved",
+                "fields_rejected", "db_updates", "merge_audit_rows",
+            ],
+        )
+    else:
+        _write_csv(out_dir / "updated_properties.csv", [], PROP_FIELDS)
 
     # skipped_duplicates.csv — no tenemos lista individual, pero podemos estimar
     skipped_note = [{
-        "note": "Duplicados omitidos internamente por _scrape_batch via existing_urls.",
-        "estimado": "existing_urls tenía {count_bef} URLs antes; el scraper filtra automáticamente.",
+        "note": (
+            "Identidades ambiguas rechazadas por el merge seguro."
+            if safe_merge_existing
+            else "Duplicados omitidos internamente por _scrape_batch via existing_urls."
+        ),
+        "estimado": (
+            str(sum(int(metric.get("ambiguous_identity", 0)) for metric in source_metrics))
+            if safe_merge_existing
+            else f"existing_urls tenía {count_bef} URLs antes."
+        ),
     }]
     _write_csv(out_dir / "skipped_duplicates.csv", skipped_note, ["note", "estimado"])
 
@@ -1321,6 +1409,7 @@ def write_execute_outputs(
         f"| Métrica | Valor |\n|---|---|\n"
         f"| propiedades antes | {count_bef:,} |\n"
         f"| propiedades guardadas (sum workers) | {total_saved} |\n"
+        f"| propiedades actualizadas (sum workers) | {total_updates} |\n"
         f"| delta en existing_urls | {net_new} |\n"
         f"| propiedades created_at > ts_start | **{len(new_props)}** |\n"
         f"| workers con error | {len(failed)} |\n\n"
@@ -1349,7 +1438,10 @@ def write_execute_outputs(
         f"# DB write audit — PR-BE-PROD-09d\n\nGenerado: {ts}\n\n"
         "## Escrituras autorizadas\n\n"
         f"| Tabla | Operación | Filas | Estado |\n|---|---|---|---|\n"
-        f"| propiedades | INSERT plain (sin on_conflict) | {total_saved} | OK |\n\n"
+        f"| propiedades | {'RPC merge seguro' if safe_merge_existing else 'INSERT plain (sin on_conflict)'} | "
+        f"{total_saved + total_updates} | OK |\n"
+        f"| property_merge_audit | {'Auditoría por campo' if safe_merge_existing else 'Sin uso'} | "
+        f"{sum(int(metric.get('merge_audit_rows', 0)) for metric in source_metrics)} | OK |\n\n"
         "## Mecanismo de deduplicación\n\n"
         "La unicidad **no** se garantiza con `on_conflict`. Se garantiza upstream:\n"
         "1. `existing_urls` (Set[str]) se carga por `inmobiliaria_id` antes del scraping.\n"
@@ -1380,6 +1472,7 @@ def write_execute_outputs(
         f"| Tablas no autorizadas escritas | 0 |\n"
         f"| Workers con error | {len(failed)} |\n"
         f"| Propiedades guardadas | {total_saved} |\n"
+        f"| Propiedades actualizadas | {total_updates} |\n"
         f"| Regresión (propiedades borradas) | 0 — INSERT plain; nunca borra ni sobreescribe |\n"
         f"\n## Criterio de corte (no activado)\n\n"
         f"Corte activado si: >10 workers fallidos, error DB, UPSERT fuera de propiedades.\n"
@@ -1395,6 +1488,7 @@ def write_execute_outputs(
         f"## Resultado del lote de {len(subset)} fuentes\n\n"
         f"| Métrica | Valor |\n|---|---|\n"
         f"| propiedades guardadas | {total_saved} |\n"
+        f"| propiedades actualizadas | {total_updates} |\n"
         f"| propiedades nuevas en DB | {len(new_props)} |\n"
         f"| workers exitosos | {len([v for v in wkr_results.values() if v['status']=='ok'])}/{len(wkr_results)} |\n\n"
         f"## Recomendación: {'escalar a 09e' if ok_to_scale else 'revisar antes de escalar'}\n\n"
@@ -1426,12 +1520,14 @@ def write_execute_outputs(
         f"| Métrica | Valor |\n|---|---|\n"
         f"| propiedades antes | {count_bef:,} |\n"
         f"| propiedades guardadas (workers) | **{total_saved}** |\n"
+        f"| propiedades actualizadas (workers) | **{total_updates}** |\n"
         f"| delta existing_urls | {net_new} |\n"
         f"| propiedades created_at > ts | **{len(new_props)}** |\n"
         f"| Workers con error | {len(failed)} |\n\n"
         f"## Guardrails\n\n"
         "| Tabla | Escrita |\n|---|---|\n"
-        "| propiedades | SI (INSERT plain — dedup upstream via existing_urls) |\n"
+        f"| propiedades | SI ({'RPC merge seguro' if safe_merge_existing else 'INSERT plain'}) |\n"
+        f"| property_merge_audit | {'SI (auditoría por campo)' if safe_merge_existing else 'NO'} |\n"
         "| inmobiliarias_main | **NO** |\n"
         "| publish_queue | **NO** |\n"
         "| raw / staging | **NO** |\n"
@@ -1461,6 +1557,12 @@ def _parse_args(argv=None):
     p.add_argument("--exclude",         default=None)
     p.add_argument("--commit",          action="store_true")
     p.add_argument("--include-backlog", action="store_true", dest="include_backlog")
+    p.add_argument(
+        "--safe-merge-existing",
+        action="store_true",
+        dest="safe_merge_existing",
+        help="Enable deterministic audited merge for existing Pipeline A properties.",
+    )
     return p.parse_args(argv)
 
 
@@ -1512,6 +1614,9 @@ def main(argv=None) -> int:
         if args.dry_run:
             print("ERROR: --execute and --dry-run are mutually exclusive.", file=sys.stderr)
             return 1
+    elif args.safe_merge_existing:
+        print("ERROR: --safe-merge-existing requires --execute.", file=sys.stderr)
+        return 1
 
     # ── Modo no autorizado ───────────────────────────────────────────────────
 
@@ -1581,10 +1686,20 @@ def main(argv=None) -> int:
     # ── Ejecutar ─────────────────────────────────────────────────────────────
 
     if args.execute:
-        result = run_execute(
-            fuentes_http, fuentes_pw,
-            args.limit, args.workers, MAX_PW_WORKERS,
-            out_dir, ts, manifest_path,
+        execute_args = (
+            fuentes_http,
+            fuentes_pw,
+            args.limit,
+            args.workers,
+            MAX_PW_WORKERS,
+            out_dir,
+            ts,
+            manifest_path,
+        )
+        result = (
+            run_execute(*execute_args, safe_merge_existing=True)
+            if args.safe_merge_existing
+            else run_execute(*execute_args)
         )
         if result is None:
             return 1
