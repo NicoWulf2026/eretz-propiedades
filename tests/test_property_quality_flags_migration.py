@@ -25,6 +25,15 @@ def test_quality_flags_are_transparent_not_an_opaque_score():
     assert "placeholder_images" in sql
 
 
+def test_quality_flag_validation_accepts_an_empty_clean_replay():
+    sql = (
+        REPO_ROOT / "migrations" / "property_active_state_and_quality_flags.sql"
+    ).read_text(encoding="utf-8")
+    assert "IF quality_rows <> active_rows THEN" in sql
+    assert "IF active_rows = 0 OR" not in sql
+    assert "IF active_rows > 0" in sql
+
+
 def test_quality_flags_and_rollback_are_non_destructive():
     for name in (
         "property_active_state_and_quality_flags.sql",

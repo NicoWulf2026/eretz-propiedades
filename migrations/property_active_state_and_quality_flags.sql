@@ -209,10 +209,14 @@ BEGIN
     FROM public.propiedades WHERE estado = 'activa';
     SELECT count(*) INTO quality_rows
     FROM public.v_property_quality_flags_v2;
-    IF active_rows = 0 OR quality_rows <> active_rows THEN
+    -- A clean migration replay legitimately has zero property rows. The
+    -- invariant is equality between the canonical active set and the view,
+    -- not that production data must already exist.
+    IF quality_rows <> active_rows THEN
         RAISE EXCEPTION 'quality flag view active-state mismatch';
     END IF;
-    IF to_regclass('public.v_property_data_quality') IS NOT NULL
+    IF active_rows > 0
+       AND to_regclass('public.v_property_data_quality') IS NOT NULL
        AND NOT EXISTS (SELECT 1 FROM public.v_property_data_quality LIMIT 1)
     THEN
         RAISE EXCEPTION 'legacy property quality view still empty';
