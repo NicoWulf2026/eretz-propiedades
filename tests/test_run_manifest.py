@@ -261,6 +261,61 @@ def test_new_url_listado_takes_priority():
     assert fuentes[0]["_url_source"] == "new_url_listado"
 
 
+def test_manifest_rejects_query_only_listing_collision_across_agencies():
+    rows = [
+        _row(
+            source_id="4176",
+            source_name="Centro Administraciones",
+            inmobiliaria_id="4176",
+            new_url_listado=(
+                "http://www.migoneinmobiliaria.com.ar/propiedades"
+                "?p=0&ope=V&tipo=C"
+            ),
+        ),
+        _row(
+            source_id="5650",
+            source_name="Migone Inmobiliaria",
+            inmobiliaria_id="5650",
+            new_url_listado=(
+                "https://migoneinmobiliaria.com.ar/propiedades"
+                "?p=0&ope=V&tipo=All"
+            ),
+        ),
+    ]
+
+    valid_http, valid_pw, blocked_pw, errors = validate_manifest(rows)
+
+    assert valid_http == []
+    assert valid_pw == []
+    assert blocked_pw == []
+    assert len(errors) == 2
+    assert all("duplicate semantic listing URL" in error[2] for error in errors)
+
+
+def test_manifest_allows_query_partitions_for_same_agency():
+    rows = [
+        _row(
+            source_id="10-sale",
+            source_name="Same Agency",
+            inmobiliaria_id="10",
+            new_url_listado="https://same.test/propiedades?operacion=venta",
+        ),
+        _row(
+            source_id="10-rent",
+            source_name="Same Agency",
+            inmobiliaria_id="10",
+            new_url_listado="https://same.test/propiedades?operacion=alquiler",
+        ),
+    ]
+
+    valid_http, valid_pw, blocked_pw, errors = validate_manifest(rows)
+
+    assert len(valid_http) == 2
+    assert valid_pw == []
+    assert blocked_pw == []
+    assert errors == []
+
+
 def test_old_url_listado_used_as_fallback_when_new_empty():
     rows = [_row(
         source_id="501",

@@ -128,6 +128,17 @@ def _normalize_domain(url: str) -> str:
         return url.lower()
 
 
+def _manifest_listing_identity(url: str) -> str:
+    """Return a conservative query-insensitive identity for a listing endpoint."""
+    try:
+        parsed = urlparse(url)
+        host = parsed.netloc.lower().split("@")[-1].lstrip("www.")
+        path = re.sub(r"/+", "/", parsed.path or "/").rstrip("/") or "/"
+        return f"{host}{path.lower()}"
+    except Exception:
+        return url.lower().split("?", 1)[0].split("#", 1)[0].rstrip("/")
+
+
 def _is_prohibited(url: str) -> bool:
     d = _normalize_domain(url)
     return any(d == p or d.endswith("." + p) for p in PROHIBITED_DOMAINS)
@@ -149,6 +160,20 @@ def validate_manifest(
     blocked_pw:  List[ManifestRow] = []
     errors: List[ValidationError] = []
     seen_ids: Dict[str, int] = {}
+    listing_identities: Dict[str, Set[str]] = {}
+    for candidate in rows:
+        candidate_url = (
+            candidate.get("new_url_listado")
+            or candidate.get("old_url_listado")
+            or ""
+        ).strip()
+        if not candidate_url:
+            continue
+        identity = _manifest_listing_identity(candidate_url)
+        agency_identity = str(candidate.get("inmobiliaria_id") or "").strip()
+        if not agency_identity:
+            continue
+        listing_identities.setdefault(identity, set()).add(agency_identity)
 
     for row in rows:
         sid      = (row.get("source_id") or "").strip()
@@ -171,6 +196,17 @@ def validate_manifest(
             errors.append((sid, name, f"blocked error_type={err}")); continue
         if excluded_ids and sid in excluded_ids:
             errors.append((sid, name, "source_id found in manifest_excluded")); continue
+        identity = _manifest_listing_identity(url)
+        if len(listing_identities.get(identity, set())) > 1:
+            errors.append(
+                (
+                    sid,
+                    name,
+                    "duplicate semantic listing URL across agency identities: "
+                    f"{identity}",
+                )
+            )
+            continue
         if sid in seen_ids:
             errors.append((sid, name, f"duplicate source_id (first row {seen_ids[sid]})")); continue
 
