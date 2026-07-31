@@ -25,6 +25,7 @@ from psycopg.rows import dict_row
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUT = ROOT / "_scratch/backend_final_closure/HISTORICAL_DEBT"
+APPLY_CONFIRMATION = "HUMAN_APPROVED_BACKUP_PREFLIGHT_DELETE"
 URL_PREDICATE = (
     "lower(regexp_replace(coalesce(url, ''), '[?#].*$', '')) "
     "~ '/properties/operation/(forsale|forrent)/?$'"
@@ -150,6 +151,15 @@ def render_explicit_delete(ids: list[int]) -> str:
         f"DELETE FROM public.propiedades WHERE id IN ({values});\n"
         "COMMIT;\n"
     )
+
+
+def validate_apply_authorization(mode: str, confirmation: str | None) -> None:
+    """Require a deliberate second factor before the destructive apply path."""
+    if mode == "apply" and confirmation != APPLY_CONFIRMATION:
+        raise RuntimeError(
+            "Destructive apply refused: specific human approval, backup and "
+            f"preflight are required; pass --confirm-apply {APPLY_CONFIRMATION}"
+        )
 
 
 def preflight(out: Path) -> dict[str, Any]:
@@ -330,7 +340,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     parser.add_argument("--mode", choices=("preflight", "apply"), default="preflight")
+    parser.add_argument("--confirm-apply")
     args = parser.parse_args()
+    validate_apply_authorization(args.mode, args.confirm_apply)
     result = preflight(args.out) if args.mode == "preflight" else apply(args.out)
     print(json.dumps(result, ensure_ascii=False))
     return 0
