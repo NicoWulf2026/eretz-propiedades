@@ -7,6 +7,7 @@ import argparse
 import csv
 import json
 import os
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -113,21 +114,163 @@ def anomaly_query(rule: tuple[str, ...]) -> str:
     """
 
 
+def stream_anomalies(
+    conn: psycopg.Connection,
+    out: Path,
+) -> tuple[dict[tuple[str, str, str, str], dict[str, Any]], Counter[str], int]:
+    """Stream anomaly evidence to disk instead of retaining the universe in RAM."""
+    row_path = out / "row_level_anomalies.csv"
+    cross_path = out / "cross_field_anomalies.csv"
+    progress_path = out / "progress.json"
+    grouped: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+    categories: Counter[str] = Counter()
+    total = 0
+    with (
+        row_path.open("w", encoding="utf-8", newline="") as row_handle,
+        cross_path.open("w", encoding="utf-8", newline="") as cross_handle,
+    ):
+        row_writer = csv.DictWriter(row_handle, fieldnames=ANOMALY_FIELDS)
+        cross_writer = csv.DictWriter(cross_handle, fieldnames=ANOMALY_FIELDS)
+        row_writer.writeheader()
+        cross_writer.writeheader()
+        for index, rule in enumerate(RULES, 1):
+            rule_rows = 0
+            with conn.cursor(name=f"quality_rule_{index}") as cur:
+                cur.itersize = 2_000
+                cur.execute(anomaly_query(rule))
+                while batch := cur.fetchmany(2_000):
+                    records = [dict(row) for row in batch]
+                    row_writer.writerows(records)
+                    cross_writer.writerows(
+                        row
+                        for row in records
+                        if "," in row["field"]
+                        or row["field"]
+                        in {
+                            "ubicacion",
+                            "superficies",
+                            "caracteristicas",
+                            "contacto",
+                        }
+                    )
+                    for row in records:
+                        key = (
+                            row["anomaly_type"],
+                            row["category"],
+                            row["root_cause"],
+                            row["severity"],
+                        )
+                        item = grouped.setdefault(
+                            key,
+                            {
+                                "anomaly_type": row["anomaly_type"],
+                                "category": row["category"],
+                                "root_cause": row["root_cause"],
+                                "severity": row["severity"],
+                                "affected_rows": 0,
+                                "affected_sources": set(),
+                            },
+                        )
+                        item["affected_rows"] += 1
+                        if row.get("fuente_extraccion"):
+                            item["affected_sources"].add(row["fuente_extraccion"])
+                        categories[row["category"]] += 1
+                    rule_rows += len(records)
+                    total += len(records)
+            row_handle.flush()
+            cross_handle.flush()
+            progress_path.write_text(
+                json.dumps(
+                    {
+                        "status": "running",
+                        "rules_completed": index,
+                        "rules_total": len(RULES),
+                        "last_rule": rule[1],
+                        "last_rule_rows": rule_rows,
+                        "anomalies_written": total,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+    progress_path.write_text(
+        json.dumps(
+            {
+                "status": "anomaly_stream_complete",
+                "rules_completed": len(RULES),
+                "rules_total": len(RULES),
+                "anomalies_written": total,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return grouped, categories, total
+
+
+def load_streamed_anomalies(
+    out: Path,
+) -> tuple[dict[tuple[str, str, str, str], dict[str, Any]], Counter[str], int]:
+    """Rebuild aggregates from a completed local stream without querying rules again."""
+    progress = json.loads((out / "progress.json").read_text(encoding="utf-8"))
+    if progress.get("status") != "anomaly_stream_complete":
+        raise RuntimeError("anomaly stream is not complete and cannot be reused")
+    grouped: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+    categories: Counter[str] = Counter()
+    total = 0
+    with (out / "row_level_anomalies.csv").open(
+        encoding="utf-8-sig", newline=""
+    ) as handle:
+        for row in csv.DictReader(handle):
+            key = (
+                row["anomaly_type"],
+                row["category"],
+                row["root_cause"],
+                row["severity"],
+            )
+            item = grouped.setdefault(
+                key,
+                {
+                    "anomaly_type": row["anomaly_type"],
+                    "category": row["category"],
+                    "root_cause": row["root_cause"],
+                    "severity": row["severity"],
+                    "affected_rows": 0,
+                    "affected_sources": set(),
+                },
+            )
+            item["affected_rows"] += 1
+            if row.get("fuente_extraccion"):
+                item["affected_sources"].add(row["fuente_extraccion"])
+            categories[row["category"]] += 1
+            total += 1
+    if total != int(progress.get("anomalies_written") or -1):
+        raise RuntimeError("stream row count does not match its completion checkpoint")
+    return grouped, categories, total
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    parser.add_argument(
+        "--reuse-anomaly-stream",
+        action="store_true",
+        help="reuse a completed row_level_anomalies.csv and rerun only summaries",
+    )
     args = parser.parse_args()
     out = args.out
     out.mkdir(parents=True, exist_ok=True)
     generated = datetime.now(timezone.utc).isoformat()
-    anomalies: list[dict[str, Any]] = []
-
     with psycopg.connect(db_url(), row_factory=dict_row, connect_timeout=60) as conn:
         conn.execute("SET TRANSACTION READ ONLY")
         conn.execute("SET statement_timeout = '15min'")
+        if args.reuse_anomaly_stream:
+            grouped, category_counts, anomaly_count = load_streamed_anomalies(out)
+        else:
+            grouped, category_counts, anomaly_count = stream_anomalies(conn, out)
         with conn.cursor() as cur:
-            for rule in RULES:
-                anomalies.extend(fetch(cur, anomaly_query(rule)))
             duplicates = {}
             for key, expression, predicate, group_expression in [
                 ("url", "url", "url IS NOT NULL AND btrim(url)<>''", "inmobiliaria_id, url"),
@@ -209,8 +352,12 @@ def main() -> int:
                 """
                 SELECT 'public.propiedades' AS table_name, count(*)::bigint AS total_rows,
                        count(DISTINCT inmobiliaria_id)::bigint AS distinct_agencies,
-                       count(*) FILTER (WHERE estado='activo')::bigint AS active_rows,
-                       count(*) FILTER (WHERE estado IS DISTINCT FROM 'activo')::bigint AS non_active_rows,
+                       count(*) FILTER (
+                         WHERE lower(coalesce(estado,'')) IN ('activo','activa')
+                       )::bigint AS active_rows,
+                       count(*) FILTER (
+                         WHERE lower(coalesce(estado,'')) NOT IN ('activo','activa')
+                       )::bigint AS non_active_rows,
                        min(created_at) AS min_created_at, max(created_at) AS max_created_at,
                        min(updated_at) AS min_updated_at, max(updated_at) AS max_updated_at
                 FROM public.propiedades
@@ -235,12 +382,6 @@ def main() -> int:
                 """,
             )
 
-    write_csv(out / "row_level_anomalies.csv", anomalies, ANOMALY_FIELDS)
-    write_csv(
-        out / "cross_field_anomalies.csv",
-        [r for r in anomalies if "," in r["field"] or r["field"] in {"ubicacion", "superficies", "caracteristicas", "contacto"}],
-        ANOMALY_FIELDS,
-    )
     write_csv(out / "table_quality_summary.csv", table_summary, list(table_summary[0]))
     source_fields = list(source_quality[0]) if source_quality else ["status"]
     write_csv(out / "source_quality_summary.csv", source_quality, source_fields)
@@ -258,23 +399,6 @@ def main() -> int:
         list(agency_anomalies[0]) if agency_anomalies else ["status"],
     )
 
-    grouped: dict[tuple[str, str, str, str], dict[str, Any]] = {}
-    for row in anomalies:
-        key = (row["anomaly_type"], row["category"], row["root_cause"], row["severity"])
-        item = grouped.setdefault(
-            key,
-            {
-                "anomaly_type": row["anomaly_type"],
-                "category": row["category"],
-                "root_cause": row["root_cause"],
-                "severity": row["severity"],
-                "affected_rows": 0,
-                "affected_sources": set(),
-            },
-        )
-        item["affected_rows"] += 1
-        if row.get("fuente_extraccion"):
-            item["affected_sources"].add(row["fuente_extraccion"])
     matrix = []
     for item in grouped.values():
         affected = item["affected_rows"]
@@ -317,12 +441,12 @@ def main() -> int:
     summary = {
         "generated_utc": generated,
         "properties": int(table_summary[0]["total_rows"]),
-        "anomalies": len(anomalies),
+        "anomalies": anomaly_count,
         "anomaly_families": len(matrix),
-        "internal_correctable_rows": sum(1 for row in anomalies if row["category"] == "INTERNAL_CORRECTABLE"),
-        "historical_debt_rows": sum(1 for row in anomalies if row["category"] == "HISTORICAL_DEBT"),
-        "ambiguous_rows": sum(1 for row in anomalies if row["category"] == "AMBIGUOUS"),
-        "external_quality_rows": sum(1 for row in anomalies if row["category"] == "EXTERNAL_SOURCE_MISSING_DATA"),
+        "internal_correctable_rows": category_counts["INTERNAL_CORRECTABLE"],
+        "historical_debt_rows": category_counts["HISTORICAL_DEBT"],
+        "ambiguous_rows": category_counts["AMBIGUOUS"],
+        "external_quality_rows": category_counts["EXTERNAL_SOURCE_MISSING_DATA"],
         "duplicate_groups": {key: len(rows) for key, rows in duplicates.items()},
         "sources": len(source_quality),
     }

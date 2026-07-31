@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import csv
+import json
 import sys
 from pathlib import Path
+
+import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -14,7 +18,11 @@ from extractors import DataCleaner  # noqa: E402
 from models import Propiedad  # noqa: E402
 from playwright_scraper import parse_cards  # noqa: E402
 from scripts.validate_raw_properties import title_from_property_url  # noqa: E402
-from scripts.backend_final_data_quality import RULES  # noqa: E402
+from scripts.backend_final_data_quality import (  # noqa: E402
+    ANOMALY_FIELDS,
+    RULES,
+    load_streamed_anomalies,
+)
 from scripts.repair_deterministic_property_quality import (  # noqa: E402
     repair_mojibake,
     stable_json,
@@ -83,6 +91,64 @@ def test_quality_rules_do_not_label_absent_source_evidence_as_internal():
     assert categories["MISSING_NORMALIZED_URL"] == "AMBIGUOUS"
     assert categories["HOME_OR_NON_DETAIL_URL"] == "AMBIGUOUS"
     assert categories["INVALID_CURRENCY"] == "INTERNAL_CORRECTABLE"
+
+
+def test_completed_quality_stream_can_rebuild_bounded_aggregates(tmp_path: Path):
+    rows = [
+        {
+            "property_id": "1",
+            "inmobiliaria_id": "10",
+            "fuente_extraccion": "source-a",
+            "url": "https://example.test/1",
+            "field": "titulo",
+            "anomaly_type": "MISSING_TITLE",
+            "category": "EXTERNAL_SOURCE_MISSING_DATA",
+            "root_cause": "DETAIL_PARSER",
+            "severity": "high",
+            "detail": "blank title",
+        },
+        {
+            "property_id": "2",
+            "inmobiliaria_id": "10",
+            "fuente_extraccion": "source-a",
+            "url": "https://example.test/2",
+            "field": "url",
+            "anomaly_type": "MISSING_NORMALIZED_URL",
+            "category": "AMBIGUOUS",
+            "root_cause": "DEDUPLICATION",
+            "severity": "medium",
+            "detail": "identity collision",
+        },
+    ]
+    with (tmp_path / "row_level_anomalies.csv").open(
+        "w", encoding="utf-8", newline=""
+    ) as handle:
+        writer = csv.DictWriter(handle, fieldnames=ANOMALY_FIELDS)
+        writer.writeheader()
+        writer.writerows(rows)
+    (tmp_path / "progress.json").write_text(
+        json.dumps({"status": "anomaly_stream_complete", "anomalies_written": 2}),
+        encoding="utf-8",
+    )
+
+    grouped, categories, total = load_streamed_anomalies(tmp_path)
+
+    assert total == 2
+    assert categories == {"EXTERNAL_SOURCE_MISSING_DATA": 1, "AMBIGUOUS": 1}
+    assert sum(item["affected_rows"] for item in grouped.values()) == 2
+    assert {source for item in grouped.values() for source in item["affected_sources"]} == {
+        "source-a"
+    }
+
+
+def test_incomplete_quality_stream_is_not_reused(tmp_path: Path):
+    (tmp_path / "progress.json").write_text(
+        json.dumps({"status": "running", "anomalies_written": 2}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="not complete"):
+        load_streamed_anomalies(tmp_path)
 
 
 def test_deterministic_repair_removes_false_values_without_touching_ambiguity():
