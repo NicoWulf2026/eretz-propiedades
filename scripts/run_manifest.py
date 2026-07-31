@@ -1116,6 +1116,7 @@ def run_execute(
     print(f"[EXECUTE] {len(new_props)} propiedades con created_at > ts_start")
 
     return {
+        "run_id":            ts_start,
         "subset":           fuentes_con_fk,
         "fuentes_sin_fk":   fuentes_sin_fk,
         "fk_mapping":       fk_mapping,
@@ -1286,6 +1287,7 @@ def write_execute_outputs(
     wkr_results = result["worker_results"]
     source_metrics = result.get("source_metrics", [])
     safe_merge_existing = bool(result.get("safe_merge_existing"))
+    execution_run_id = str(result.get("run_id") or out_dir.name)
 
     source_result_fields = [
         "run_id", "source_id", "inmobiliaria_id", "nombre", "started_at",
@@ -1305,7 +1307,7 @@ def write_execute_outputs(
     source_rows = []
     for metric in source_metrics:
         source_rows.append({
-            "run_id": out_dir.name,
+            "run_id": execution_run_id,
             "source_id": metric.get("source_id", ""),
             "inmobiliaria_id": metric.get("inmobiliaria_id", ""),
             "nombre": metric.get("nombre", metric.get("key", "")),
@@ -1353,7 +1355,7 @@ def write_execute_outputs(
         })
     for f in fuentes_sin_fk:
         source_rows.append({
-            "run_id": out_dir.name,
+            "run_id": execution_run_id,
             "source_id": f.get("source_id", ""),
             "inmobiliaria_id": "",
             "nombre": f.get("_manifest_name", ""),

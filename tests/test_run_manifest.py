@@ -57,6 +57,7 @@ from run_manifest import (  # noqa: E402
     validate_manifest,
     build_fuentes,
     main,
+    write_execute_outputs,
     MAX_EXECUTE_LIMIT,
     MAX_HTTP_WORKERS,
 )
@@ -1473,3 +1474,45 @@ def test_batch_save_reports_confirmed_individual_rows_before_failure():
 
     assert caught.value.saved_count == 1
     assert caught.value.saved_payloads[0]["url"] == "https://x.com/1"
+
+
+def test_execute_outputs_preserve_database_merge_run_id(tmp_path):
+    run_id = "2026-07-31T02:15:05.698630+00:00"
+    result = {
+        "run_id": run_id,
+        "subset": [{
+            "source_id": "100",
+            "inmobiliaria_id": 100,
+            "_manifest_name": "Test Inmobiliaria",
+            "web": "https://testinmo.com.ar/venta",
+            "_url_source": "new_url_listado",
+        }],
+        "fuentes_sin_fk": [],
+        "count_before": 0,
+        "count_after": 0,
+        "total_saved": 0,
+        "total_updates": 0,
+        "net_new": 0,
+        "new_props": [],
+        "worker_results": {"h0": {"saved": 0, "status": "ok"}},
+        "workers": 1,
+        "limit": 1,
+        "batches": 1,
+        "source_metrics": [{
+            "source_id": "100",
+            "inmobiliaria_id": 100,
+            "nombre": "Test Inmobiliaria",
+            "status": "SUCCESS_NO_NEW",
+        }],
+        "safe_merge_existing": True,
+    }
+
+    write_execute_outputs(
+        result,
+        tmp_path,
+        "2026-07-31T03:00:00+00:00",
+        tmp_path / "manifest.csv",
+    )
+
+    rows = load_manifest(tmp_path / "source_results.csv")
+    assert rows[0]["run_id"] == run_id
