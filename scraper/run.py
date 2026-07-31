@@ -348,6 +348,7 @@ def classify_source_metrics(
     had_timeout: bool,
     had_error: bool,
     dry_run: bool,
+    ambiguous_identity: int = 0,
 ) -> tuple[str, str, str, bool]:
     """Return status, classification, error_type and retryability."""
     if had_timeout:
@@ -369,6 +370,13 @@ def classify_source_metrics(
                 False,
             )
         return "DATA_QUALITY_ERROR", "INTERNAL_CORRECTABLE", "no_valid_properties", True
+    if ambiguous_identity > 0:
+        return (
+            "IDENTITY_CONFLICT",
+            "INTERNAL_CORRECTABLE",
+            "ambiguous_identity",
+            False,
+        )
     if dry_run or db_writes == valid_properties:
         return "SUCCESS_NEW", "SUCCESS", "", False
     # batch_save_only_new only returns fewer rows when the DB unique hash guard
@@ -1209,6 +1217,9 @@ def _scrape_batch(
                         had_timeout=_had_timeout,
                         had_error=_had_error,
                         dry_run=dry_run,
+                        ambiguous_identity=int(
+                            _source_merge_stats.get("ambiguous_identity", 0)
+                        ),
                     )
                     try:
                         import psutil as _metrics_psutil
@@ -1259,7 +1270,7 @@ def _scrape_batch(
                             _source_merge_stats.get("audit_rows", 0)
                         ),
                         "duplicates_skipped": (
-                            int(_source_merge_stats.get("ambiguous_identity", 0))
+                            0
                             if safe_merge_existing
                             else (
                                 max(0, _n_listado - _n_nuevas)

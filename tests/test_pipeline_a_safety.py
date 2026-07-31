@@ -179,6 +179,40 @@ def test_source_status_classifies_only_residual_invalid_cards_as_external():
     assert parser_gap[1] == "INTERNAL_CORRECTABLE"
 
 
+def test_source_status_never_labels_ambiguous_identity_as_dedup_success():
+    status = classify_source_metrics(
+        pages=15,
+        listings_seen=90,
+        details_requested=90,
+        valid_properties=90,
+        db_writes=0,
+        had_timeout=False,
+        had_error=False,
+        dry_run=False,
+        ambiguous_identity=90,
+    )
+    assert status == (
+        "IDENTITY_CONFLICT",
+        "INTERNAL_CORRECTABLE",
+        "ambiguous_identity",
+        False,
+    )
+
+
+def test_source_status_flags_even_partial_ambiguous_identity():
+    assert classify_source_metrics(
+        pages=1,
+        listings_seen=3,
+        details_requested=3,
+        valid_properties=3,
+        db_writes=2,
+        had_timeout=False,
+        had_error=False,
+        dry_run=False,
+        ambiguous_identity=1,
+    )[0] == "IDENTITY_CONFLICT"
+
+
 def test_source_error_redacts_query_keys_and_bearer_tokens():
     raw = "https://api.test/p?key=fake-secret&x=1 Authorization: Bearer fake.token"
     sanitized = _sanitize_source_error(raw)
