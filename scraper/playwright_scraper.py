@@ -2,12 +2,13 @@ import logging
 import re
 import time
 import requests
+import unicodedata
 try:
     from scraper.network_security import secure_get
 except ModuleNotFoundError:  # Direct execution compatibility during package migration.
     from network_security import secure_get
 from typing import List, Dict, Any, Optional, Set, Tuple
-from urllib.parse import urljoin, urlparse
+from urllib.parse import parse_qsl, urljoin, urlparse
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 
@@ -97,7 +98,7 @@ _DETAIL_STATIC_EXTENSIONS = (
 
 _DETAIL_ONCLICK_RE = re.compile(
     r"(?:location(?:\.href)?|window\.location(?:\.href)?|window\.open|openProperty|goTo|verDetalle|detalle|ficha)"
-    r"\s*\(?\s*['\"]([^'\"]+)['\"]",
+    r"\s*(?:=\s*|\(\s*)?['\"]([^'\"]+)['\"]",
     re.IGNORECASE,
 )
 
@@ -345,7 +346,18 @@ def extract_candidate_detail_urls_from_document(soup, base_url: str) -> List[Tup
                 and context is not None
                 and _has_strong_card_signal(context)
             )
-            force = operation_slug or numeric_realestate_slug or short_id_route
+            branded_reference_slug = bool(
+                repeated
+                and re.fullmatch(r"/[a-z][a-z0-9_-]{2,}-\d{2,}", path)
+                and context is not None
+                and _has_strong_card_signal(context)
+            )
+            force = (
+                operation_slug
+                or numeric_realestate_slug
+                or short_id_route
+                or branded_reference_slug
+            )
         add(raw_href, context, anchor.get_text(" ", strip=True)[:150], force=force)
 
     data_selector = ",".join(
@@ -374,6 +386,63 @@ def extract_candidate_detail_urls_from_document(soup, base_url: str) -> List[Tup
         for raw in re.findall(r"[\"']((?:https?://|/)[^\"']{2,240})[\"']", text):
             add(raw.replace("\\/", "/"), None)
     return found
+
+
+def discover_listing_page_urls(
+    html: str,
+    current_url: str,
+    *,
+    limit: int = 4,
+) -> List[str]:
+    """Return conservative same-site listing alternatives from site navigation."""
+    soup = BeautifulSoup(html, "html.parser")
+    try:
+        current = current_url.rstrip("/")
+        candidates: List[str] = []
+        seen: Set[str] = set()
+        exact_labels = {
+            "propiedades",
+            "inmuebles",
+            "ventas",
+            "venta",
+            "alquileres",
+            "alquiler",
+            "comprar",
+            "alquilar",
+        }
+        route_re = re.compile(
+            r"^/(?:propiedades(?:\.html)?|inmuebles(?:-\d+)?|ventas?|alquileres?)/?$",
+            re.IGNORECASE,
+        )
+        for anchor in soup.select("a[href]"):
+            raw = str(anchor.get("href") or "").strip()
+            candidate = _candidate_url_from_value(raw, current_url)
+            if not candidate or not _same_site_or_subdomain(candidate, current_url):
+                continue
+            parsed = urlparse(candidate)
+            label = re.sub(r"\s+", " ", anchor.get_text(" ", strip=True)).casefold()
+            query = {
+                key.casefold(): value.casefold()
+                for key, value in parse_qsl(parsed.query)
+            }
+            listing_query = any(
+                key in {"operacion", "operation", "purpose"}
+                and value in {"venta", "alquiler", "sale", "rent", "1", "2"}
+                for key, value in query.items()
+            )
+            route_match = bool(route_re.fullmatch(parsed.path))
+            if label not in exact_labels and not route_match and not listing_query:
+                continue
+            normalized = candidate.rstrip("/")
+            if normalized == current or normalized in seen:
+                continue
+            seen.add(normalized)
+            candidates.append(candidate)
+            if len(candidates) >= max(1, limit):
+                break
+        return candidates
+    finally:
+        soup.decompose()
 
 
 def extract_candidate_detail_urls_from_card(card, base_url: str) -> List[str]:
@@ -943,6 +1012,7 @@ def parse_cards(html: str, operacion: str, fuente_key: str, base_url: str,
             or soup.select("[class*='real-estate-item'], [class*='estate-item']")
             or soup.select("[class*='card-inmueble'], [class*='inmueble-card']")
             or soup.select("[class*='result-item'], [class*='search-result']")
+            or soup.select(".pcard")
             # ── Elementos article con contexto de listado ──────────────────────
             or soup.select("article.property-row")
             or soup.select("article[class*='prop'], article[class*='listing']")
@@ -1138,7 +1208,15 @@ def parse_cards(html: str, operacion: str, fuente_key: str, base_url: str,
                         except Exception:
                             _cp = ch.split("?")[0]
                         _parts = [x for x in _cp.strip("/").split("/") if x]
-                        if len(_parts) >= 2 and not any(
+                        _single_reference = bool(
+                            len(_parts) == 1
+                            and re.fullmatch(
+                                r"[a-z][a-z0-9_-]{2,}-\d{2,}",
+                                _parts[0],
+                                flags=re.IGNORECASE,
+                            )
+                        )
+                        if (len(_parts) >= 2 or _single_reference) and not any(
                             bad in ch for bad in ["/page/", "?page=", "#", "javascript:",
                                                   "/buscar", "/search", "/contact", "/about",
                                                   "/nosotros", "/quienes", "/servicios"]
@@ -1152,7 +1230,30 @@ def parse_cards(html: str, operacion: str, fuente_key: str, base_url: str,
                     if candidate_urls:
                         href = candidate_urls[0]
                     else:
-                        continue
+                        # Some Nuxt/InManager cards are click-only. Their immutable
+                        # property id is still present in the first-party image URL.
+                        image = card.select_one("img[src*='/property/image/']")
+                        image_src = str(image.get("src") or "") if image else ""
+                        property_id = re.search(r"/property/image/(\d+)(?:/|$)", image_src)
+                        if not property_id:
+                            continue
+                        title_node = card.select_one(
+                            "[class*='card__title'], h2, h3, [class*='title']"
+                        )
+                        location_node = card.select_one(
+                            "[class*='card__loc'], [class*='location'], "
+                            "[class*='direccion']"
+                        )
+                        route_text = " ".join(
+                            node.get_text(" ", strip=True)
+                            for node in (title_node, location_node)
+                            if node is not None
+                        )
+                        ascii_text = unicodedata.normalize("NFKD", route_text).encode(
+                            "ascii", "ignore"
+                        ).decode("ascii")
+                        route_slug = re.sub(r"[^a-z0-9]+", "-", ascii_text.casefold()).strip("-")
+                        href = f"/propiedad/{property_id.group(1)}-{route_slug or 'detalle'}"
 
                 # ── Rechazar links que apuntan a dominios externos (portales, redes, etc.) ──
                 # Ocurre cuando un card tiene un botón "Ver en Argenprop/ZonaProp" etc.

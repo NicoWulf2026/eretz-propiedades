@@ -47,6 +47,7 @@ from playwright_scraper import (
     FUENTES_NUEVAS,
     _get_next_page_url,
     _goto_safe,
+    discover_listing_page_urls,
     parse_cards,
     scrape_9010,
     scrape_apl,
@@ -351,6 +352,13 @@ def classify_source_metrics(
     ambiguous_identity: int = 0,
 ) -> tuple[str, str, str, bool]:
     """Return status, classification, error_type and retryability."""
+    if had_timeout and valid_properties > 0:
+        return (
+            "PARTIAL_SUCCESS_TIMEOUT",
+            "FALSE_POSITIVE",
+            "source_budget_exhausted_after_partial_success",
+            True,
+        )
     if had_timeout:
         return "TIMEOUT", "INTERNAL_RETRYABLE", "playwright_timeout", True
     if had_error:
@@ -373,8 +381,8 @@ def classify_source_metrics(
     if ambiguous_identity > 0:
         return (
             "IDENTITY_CONFLICT",
-            "INTERNAL_CORRECTABLE",
-            "ambiguous_identity",
+            "FALSE_POSITIVE",
+            "identity_guardrail_rejection",
             False,
         )
     if dry_run or db_writes == valid_properties:
@@ -846,9 +854,10 @@ def _scrape_batch(
                             try:
                                 page.wait_for_selector(
                                     'a[href*="/propiedad/"], a[href*="/inmueble/"], '
-                                    'a[href*="/home-details/"], a[href*="/p/"]',
+                                    'a[href*="/home-details/"], a[href*="/p/"], '
+                                    '[class*="property-card"], .pcard',
                                     state="attached",
-                                    timeout=4000,
+                                    timeout=8000,
                                 )
                             except Exception:
                                 pass
@@ -906,6 +915,24 @@ def _scrape_batch(
                                         f"[W{worker_id}][{key}] iframe omitido: "
                                         f"{_sanitize_source_error(exc)}"
                                     )
+                            if not props_basicos:
+                                alternatives = discover_listing_page_urls(
+                                    html or initial_html or "",
+                                    listing_url,
+                                )
+                                if base_url.rstrip("/") != listing_url.rstrip("/"):
+                                    alternatives.append(base_url)
+                                for alternative in alternatives:
+                                    if (
+                                        alternative not in visited_listing
+                                        and alternative not in pending_pages
+                                    ):
+                                        pending_pages.append(alternative)
+                            else:
+                                # Parsing a rendered listing is meaningful progress.
+                                # Without this refresh, large JS pages can exceed the
+                                # no-progress window before the first detail starts.
+                                _last_progress_at = time.monotonic()
                             for p in props_basicos:
                                 if p.url not in all_prop_urls:
                                     all_prop_urls.append(p.url)

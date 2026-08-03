@@ -135,7 +135,7 @@ def test_source_status_classification(kwargs, expected):
     assert status == expected
 
 
-def test_source_status_prioritizes_timeout_and_internal_error():
+def test_source_status_reclassifies_timeout_after_partial_success():
     common = dict(
         pages=1,
         listings_seen=2,
@@ -144,8 +144,26 @@ def test_source_status_prioritizes_timeout_and_internal_error():
         db_writes=2,
         dry_run=False,
     )
-    assert classify_source_metrics(**common, had_timeout=True, had_error=False)[0] == "TIMEOUT"
+    assert classify_source_metrics(**common, had_timeout=True, had_error=False) == (
+        "PARTIAL_SUCCESS_TIMEOUT",
+        "FALSE_POSITIVE",
+        "source_budget_exhausted_after_partial_success",
+        True,
+    )
     assert classify_source_metrics(**common, had_timeout=False, had_error=True)[0] == "INTERNAL_ERROR"
+
+
+def test_source_status_keeps_zero_result_timeout_internal_retryable():
+    assert classify_source_metrics(
+        pages=1,
+        listings_seen=2,
+        details_requested=2,
+        valid_properties=0,
+        db_writes=0,
+        dry_run=True,
+        had_timeout=True,
+        had_error=False,
+    ) == ("TIMEOUT", "INTERNAL_RETRYABLE", "playwright_timeout", True)
 
 
 def test_source_status_classifies_only_residual_invalid_cards_as_external():
@@ -193,8 +211,8 @@ def test_source_status_never_labels_ambiguous_identity_as_dedup_success():
     )
     assert status == (
         "IDENTITY_CONFLICT",
-        "INTERNAL_CORRECTABLE",
-        "ambiguous_identity",
+        "FALSE_POSITIVE",
+        "identity_guardrail_rejection",
         False,
     )
 

@@ -13,6 +13,7 @@ for path in (REPO_ROOT, SCRAPER_DIR):
         sys.path.insert(0, str(path))
 
 from playwright_scraper import (  # noqa: E402
+    discover_listing_page_urls,
     extract_candidate_detail_urls_from_card,
     extract_candidate_detail_urls_from_document,
     parse_cards,
@@ -20,6 +21,7 @@ from playwright_scraper import (  # noqa: E402
 
 
 BASE = "https://demo-inmobiliaria.com"
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 
 def _card(inner: str):
@@ -308,6 +310,52 @@ def test_document_accepts_repeated_numeric_realestate_slug():
     <div><a href="/238-lotes-country-del-norte">Ver lote</a></div>
     """
     assert _document_urls(html) == [f"{BASE}/238-lotes-country-del-norte"]
+
+
+def test_document_accepts_repeated_branded_reference_slug_from_fixture():
+    html = (FIXTURES / "next_branded_reference_cards.html").read_text(
+        encoding="utf-8"
+    )
+
+    assert _document_urls(html) == [f"{BASE}/tringali-1489"]
+
+
+def test_parse_cards_builds_deterministic_nuxt_click_only_route_from_fixture():
+    html = (FIXTURES / "nuxt_click_only_property_card.html").read_text(
+        encoding="utf-8"
+    )
+
+    properties = parse_cards(html, "venta", "fixture", BASE, "Cordoba")
+
+    assert [prop.url for prop in properties] == [
+        f"{BASE}/propiedad/1499-departamento-calle-ledesma-123"
+    ]
+
+
+def test_parse_cards_accepts_relative_ficha_in_location_href_fixture():
+    html = (FIXTURES / "onclick_relative_ficha_card.html").read_text(
+        encoding="utf-8"
+    )
+
+    properties = parse_cards(html, "venta", "fixture", BASE, "Buenos Aires")
+
+    assert [prop.url for prop in properties] == [f"{BASE}/ficha.php?ficha=LOK46"]
+
+
+def test_listing_discovery_accepts_navigation_and_operation_queries_only():
+    html = """
+    <nav>
+      <a href="/contacto">Contacto</a>
+      <a href="/propiedades/casa-123">Detalle</a>
+      <a href="/ventas">Ventas</a>
+      <a href="/?operacion=Alquiler">Alquileres</a>
+    </nav>
+    """
+
+    assert discover_listing_page_urls(html, f"{BASE}/propiedades") == [
+        f"{BASE}/ventas",
+        f"{BASE}/?operacion=Alquiler",
+    ]
 
 
 def test_document_accepts_legacy_fichashtml_detail_page():
