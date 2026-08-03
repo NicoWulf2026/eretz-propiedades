@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { preload } from "react-dom";
+import Image from "next/image";
 import { SiteShell } from "@/components/layout/SiteShell";
 import { PropertyCard } from "@/components/property/PropertyCard";
 import { PublicSearchForm } from "@/components/search/PublicSearchForm";
@@ -8,11 +8,20 @@ import { getHomeInventory } from "@/lib/property-service";
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  preload("/og.png", { as: "image", fetchPriority: "high" });
   const inventory = await getHomeInventory();
   return (
     <SiteShell>
       <section className="hero">
+        <Image
+          src="/og.png"
+          alt=""
+          fill
+          priority
+          quality={78}
+          sizes="100vw"
+          className="hero-image object-cover"
+        />
+        <div className="hero-overlay" aria-hidden="true" />
         <div className="container relative py-16 sm:py-20 lg:py-28">
           <div className="max-w-3xl">
             <p className="eyebrow text-[#f0dba9]">Propiedades en toda Argentina</p>

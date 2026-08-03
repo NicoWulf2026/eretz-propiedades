@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
 import { siteUrl } from "@/lib/site-url";
-import "leaflet/dist/leaflet.css";
 import "./globals.css";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });

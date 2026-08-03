@@ -2,6 +2,7 @@
 
 import L from "leaflet";
 import { MapContainer, Marker, Popup, TileLayer } from "react-leaflet";
+import "leaflet/dist/leaflet.css";
 import { propertyLocation, propertyPrice } from "@/lib/property-presenter";
 import type { Property } from "@/types/property";
 
@@ -37,4 +38,3 @@ export function PropertyLeafletMap({ properties }: { properties: Property[] }) {
     </MapContainer>
   );
 }
-

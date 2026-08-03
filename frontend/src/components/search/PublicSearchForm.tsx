@@ -1,13 +1,8 @@
-"use client";
-
-import { track } from "@/lib/analytics";
-
 export function PublicSearchForm({ compact = false }: { compact?: boolean }) {
   return (
     <form
       action="/propiedades"
       className={`grid gap-3 ${compact ? "md:grid-cols-[1fr_170px_170px_auto]" : "md:grid-cols-[1fr_190px_190px_auto]"}`}
-      onSubmit={() => track("search_submitted")}
     >
       <label className="field">
         <span>Título o palabra clave</span>

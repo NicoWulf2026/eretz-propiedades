@@ -1,8 +1,5 @@
-"use client";
-
 import Link from "next/link";
 import { PropertyImage } from "@/components/property/PropertyImage";
-import { track } from "@/lib/analytics";
 import {
   operationLabels,
   propertyLocation,
@@ -19,7 +16,6 @@ export function PropertyCard({ property, priority = false }: { property: Propert
       <Link
         href={`/propiedad/${property.id}`}
         className="focus-ring block"
-        onClick={() => track("property_opened", { property_id: property.id })}
       >
         <div className="relative aspect-[4/3] overflow-hidden bg-slate-100">
           <PropertyImage src={property.images[0] ?? null} alt={property.title} priority={priority} />
@@ -43,4 +39,3 @@ export function PropertyCard({ property, priority = false }: { property: Propert
     </article>
   );
 }
-
