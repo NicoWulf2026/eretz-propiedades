@@ -29,7 +29,7 @@ button, a, summary { -webkit-tap-highlight-color: transparent; }
   overflow: hidden;
   background:
     linear-gradient(90deg, rgba(7, 29, 53, .98), rgba(11, 39, 72, .88) 52%, rgba(11, 39, 72, .54)),
-    url("https://images.unsplash.com/photo-1600607687920-4e2a09cf159d?auto=format&fit=crop&w=1800&q=82") center/cover;
+    url("/og.png") center/cover;
 }
 .hero::after {
   content: "";
@@ -80,7 +80,7 @@ button, a, summary { -webkit-tap-highlight-color: transparent; }
 
 .property-card { overflow: hidden; border: 1px solid #e2e8f0; border-radius: 1rem; background: white; box-shadow: 0 8px 24px rgba(11, 39, 72, .06); transition: transform .2s ease, box-shadow .2s ease; }
 .property-card:hover { transform: translateY(-3px); box-shadow: 0 16px 38px rgba(11, 39, 72, .12); }
-.property-fallback { display: grid; height: 100%; width: 100%; place-content: center; gap: .5rem; background: #e8f0f7; color: #60758b; text-align: center; }
+.property-fallback { display: grid; height: 100%; width: 100%; place-content: center; gap: .5rem; background: #e8f0f7; color: #526276; text-align: center; }
 .property-fallback span { font-size: 2.5rem; line-height: 1; color: var(--blue); }
 .property-fallback p { font-size: .75rem; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
 .empty-panel { border: 1px dashed #b6c5d4; border-radius: 1rem; background: white; padding: 2rem; color: #526276; text-align: center; }

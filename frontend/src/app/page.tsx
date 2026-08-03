@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { preload } from "react-dom";
 import { SiteShell } from "@/components/layout/SiteShell";
 import { PropertyCard } from "@/components/property/PropertyCard";
 import { PublicSearchForm } from "@/components/search/PublicSearchForm";
@@ -7,6 +8,7 @@ import { getHomeInventory } from "@/lib/property-service";
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
+  preload("/og.png", { as: "image", fetchPriority: "high" });
   const inventory = await getHomeInventory();
   return (
     <SiteShell>
