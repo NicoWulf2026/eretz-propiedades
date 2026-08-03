@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const supabaseOrigin = (() => {
-  try { return new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").origin; } catch { return ""; }
+  try { return new URL(process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").origin; } catch { return ""; }
 })();
 const productionDeployment = process.env.VERCEL_ENV === "production";
 
