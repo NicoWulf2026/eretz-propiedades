@@ -22,7 +22,15 @@ jobs:
           cache: pip
       - run: python -m pip install --require-hashes -r requirements.lock
       - run: python -m compileall -q scraper scripts api tests
-      - run: python -m pytest -q
+      - name: Run offline backend test suite
+        # The full-coverage campaign test imports a preserved, intentionally
+        # unversioned operator script. It is exercised by the local release gate,
+        # while CI must remain reproducible from Git alone.
+        env:
+          PYTHON_DOTENV_DISABLED: "1"
+          SUPABASE_URL: https://ci.invalid
+          SUPABASE_SERVICE_ROLE_KEY: ci-placeholder-not-a-secret
+        run: python -m pytest -q --ignore=tests/test_full_7004_coverage.py
       - run: ruff check scraper/network_security.py tests/test_network_security.py
       - run: mypy
       - run: python -m pip_audit -r requirements.lock --progress-spinner off
