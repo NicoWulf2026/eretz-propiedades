@@ -15,7 +15,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          # requirements.lock is generated on the supported Python 3.14 toolchain
+          # and currently includes packages (for example NumPy 2.5.x) that require
+          # Python 3.12 or newer.
+          python-version: "3.14"
           cache: pip
       - run: python -m pip install --require-hashes -r requirements.lock
       - run: python -m compileall -q scraper scripts api tests
@@ -50,4 +53,3 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm audit --audit-level=high
-
