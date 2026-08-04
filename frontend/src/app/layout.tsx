@@ -4,7 +4,6 @@ import { siteUrl } from "@/lib/site-url";
 import "./globals.css";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
-const allowIndexing = process.env.NEXT_PUBLIC_SITE_INDEXING === "true";
 
 export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#071d35" };
 
@@ -15,7 +14,7 @@ export const metadata: Metadata = {
   applicationName: "ERETZ Propiedades",
   alternates: { canonical: "/" },
   icons: { icon: "/favicon.ico" },
-  robots: allowIndexing ? { index: true, follow: true } : { index: false, follow: false, nocache: true },
+  robots: { index: false, follow: false, nocache: true, noarchive: true, nosnippet: true },
   openGraph: {
     title: "ERETZ Propiedades",
     description: "Encontrá propiedades en Argentina con búsqueda real y contacto directo.",
@@ -23,9 +22,9 @@ export const metadata: Metadata = {
     siteName: "ERETZ Propiedades",
     locale: "es_AR",
     type: "website",
-    images: [{ url: "/og.png", width: 1200, height: 630, alt: "ERETZ Propiedades" }],
+    images: [{ url: "/opengraph-image", width: 1200, height: 630, alt: "ERETZ Propiedades" }],
   },
-  twitter: { card: "summary_large_image", title: "ERETZ Propiedades", description: "Propiedades en toda Argentina.", images: ["/og.png"] },
+  twitter: { card: "summary_large_image", title: "ERETZ Propiedades", description: "Propiedades en toda Argentina.", images: ["/opengraph-image"] },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

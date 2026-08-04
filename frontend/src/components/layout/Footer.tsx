@@ -10,8 +10,8 @@ export function Footer() {
         <div>
           <Brand />
           <p className="mt-5 max-w-md text-sm leading-6 text-slate-600">
-            Buscamos y ordenamos avisos inmobiliarios de toda Argentina. El contacto y la operación
-            se realizan directamente con quien publicó cada propiedad.
+            Exploramos y ordenamos avisos inmobiliarios de toda Argentina. ERETZ no cobra por alterar
+            el orden orgánico: el contacto y la operación se realizan con quien publicó cada propiedad.
           </p>
         </div>
         <nav aria-label="Explorar" className="flex flex-col gap-2 text-sm">
@@ -31,10 +31,9 @@ export function Footer() {
       </div>
       <div className="border-t border-slate-100">
         <div className="container py-5 text-xs leading-5 text-slate-500">
-          © {new Date().getFullYear()} ERETZ Propiedades · Beta. Información de terceros sujeta a cambios.
+          © {new Date().getFullYear()} ERETZ Propiedades · Preview privado. Información de terceros sujeta a cambios. Sin aprobación legal declarada.
         </div>
       </div>
     </footer>
   );
 }
-

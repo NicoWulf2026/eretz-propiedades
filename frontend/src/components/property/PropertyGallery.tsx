@@ -19,6 +19,16 @@ export function PropertyGallery({ images, title }: { images: string[]; title: st
         setModal(false);
         return;
       }
+      if (event.key === "ArrowLeft" && images.length > 1) {
+        event.preventDefault();
+        setSelected((current) => (current - 1 + images.length) % images.length);
+        return;
+      }
+      if (event.key === "ArrowRight" && images.length > 1) {
+        event.preventDefault();
+        setSelected((current) => (current + 1) % images.length);
+        return;
+      }
       if (event.key !== "Tab" || !focusable?.length) return;
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
@@ -35,7 +45,7 @@ export function PropertyGallery({ images, title }: { images: string[]; title: st
       document.removeEventListener("keydown", handleKey);
       previous?.focus();
     };
-  }, [modal]);
+  }, [images.length, modal]);
   const image = images[selected] ?? null;
   return (
     <>
@@ -61,8 +71,8 @@ export function PropertyGallery({ images, title }: { images: string[]; title: st
           </div>
           {images.length > 1 && (
             <div className="absolute inset-x-4 bottom-4 flex justify-center gap-3">
-              <button className="secondary-button" type="button" onClick={() => setSelected((selected - 1 + images.length) % images.length)}>← Anterior</button>
-              <button className="secondary-button" type="button" onClick={() => setSelected((selected + 1) % images.length)}>Siguiente →</button>
+              <button className="secondary-button" type="button" onClick={() => setSelected((selected - 1 + images.length) % images.length)} aria-label="Ver imagen anterior">← Anterior</button>
+              <button className="secondary-button" type="button" onClick={() => setSelected((selected + 1) % images.length)} aria-label="Ver imagen siguiente">Siguiente →</button>
             </div>
           )}
         </div>
