@@ -84,6 +84,11 @@ function validImage(value: unknown): value is string {
   return !blockedImages.some((pattern) => normalized.includes(pattern));
 }
 
+function safeEmail(value: unknown): string | null {
+  const email = cleanText(value).toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 254 ? email : null;
+}
+
 function qualitySignals(item: SupabaseProperty, images: string[]): QualitySignals {
   const title = cleanText(item.titulo);
   return {
@@ -112,6 +117,25 @@ export function mapSupabasePropertyToProperty(item: SupabaseProperty): Property 
   return {
     id: String(item.id),
     agencyId: item.inmobiliaria_id == null ? null : String(item.inmobiliaria_id),
+    publisher: cleanText(item.publisher_name)
+      ? {
+          id: item.inmobiliaria_id == null ? null : String(item.inmobiliaria_id),
+          name: cleanText(item.publisher_name),
+          phone: cleanText(item.publisher_phone) || cleanText(item.agente_telefono) || null,
+          email: safeEmail(item.publisher_email),
+          website: safeExternalUrl(item.publisher_website),
+          verified: typeof item.publisher_verified === "boolean" ? item.publisher_verified : null,
+        }
+      : cleanText(item.agente_nombre)
+        ? {
+            id: null,
+            name: cleanText(item.agente_nombre),
+            phone: cleanText(item.agente_telefono) || null,
+            email: null,
+            website: null,
+            verified: null,
+          }
+        : null,
     sourceUrl: safeExternalUrl(item.url),
     title: quality.hasValidTitle ? cleanText(item.titulo) : "Propiedad sin título",
     description: quality.hasDescription ? cleanText(item.descripcion) : null,

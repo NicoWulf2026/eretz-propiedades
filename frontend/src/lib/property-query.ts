@@ -28,7 +28,10 @@ const propertyTypes = new Set<PropertyType>([
   "otro",
 ]);
 const currencies = new Set<PropertyCurrency>(["USD", "ARS", "EUR", "UYU"]);
-const sorts = new Set<PropertySort>(["recent", "price_asc", "price_desc", "area_desc"]);
+const sorts = new Set<PropertySort>([
+  "recent", "price_asc", "price_desc", "area_desc", "rooms_desc", "price_m2_asc",
+]);
+const modes = new Set(["map", "balanced", "results", "map_only", "results_only"] as const);
 
 function one(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
@@ -43,6 +46,22 @@ function positive(value: string | string[] | undefined) {
   return Number.isFinite(number) && number > 0 ? number : null;
 }
 
+function bounded(value: string | string[] | undefined, min: number, max: number) {
+  const number = Number(one(value));
+  return Number.isFinite(number) && number >= min && number <= max ? number : null;
+}
+
+function parseViewport(params: SearchParams) {
+  const north = bounded(params.norte, -90, 90);
+  const east = bounded(params.este, -180, 180);
+  const south = bounded(params.sur, -90, 90);
+  const west = bounded(params.oeste, -180, 180);
+  const zoom = bounded(params.zoom, 3, 19);
+  if (north === null || east === null || south === null || west === null || zoom === null) return null;
+  if (north <= south || east <= west) return null;
+  return { north, east, south, west, zoom };
+}
+
 export function parsePropertyFilters(params: SearchParams): PropertyFilters {
   const operation = one(params.operacion) as PropertyOperation;
   const propertyType = one(params.tipo) as PropertyType;
@@ -54,9 +73,10 @@ export function parsePropertyFilters(params: SearchParams): PropertyFilters {
     sort = "recent";
   }
 
-  const cursorCandidate = one(params.cursor);
-  const cursor = /^\d+(?:\.\d+)?:\d+$/.test(cursorCandidate) ? cursorCandidate : "";
+  const cursorCandidate = one(params.cursor).slice(0, 420);
+  const cursor = /^[A-Za-z0-9_-]+$/.test(cursorCandidate) ? cursorCandidate : "";
   const requestedPage = Math.min(Math.max(1, Math.floor(positive(params.pagina) ?? 1)), 10_000);
+  const modeCandidate = one(params.modo) as PropertyFilters["mode"];
   return {
     q: text(params.q),
     operation: operations.has(operation) ? operation : "",
@@ -72,12 +92,26 @@ export function parsePropertyFilters(params: SearchParams): PropertyFilters {
     minBathrooms: positive(params.banos),
     minGarages: positive(params.cocheras),
     minArea: positive(params.superficie),
+    maxArea: positive(params.superficie_max),
+    minCoveredArea: positive(params.superficie_cubierta),
+    minLandArea: positive(params.terreno),
+    maxExpenses: positive(params.expensas_max),
+    maxAge: positive(params.antiguedad_max),
+    publisher: text(params.publicador),
+    recentDays: bounded(params.reciente, 1, 365),
     hasImages: one(params.imagenes) === "1",
     hasPrice: one(params.precio) === "1",
+    hasLocation: one(params.ubicacion) === "1",
+    hasVideo: one(params.video) === "1",
+    hasFloorPlan: one(params.plano) === "1",
+    mortgageEligible: one(params.credito) === "1",
     sort,
     page: cursor ? requestedPage : 1,
     cursor,
     direction: cursor && one(params.direccion) === "prev" ? "prev" : "next",
+    mode: modes.has(modeCandidate as never) ? modeCandidate : "balanced",
+    viewport: parseViewport(params),
+    selectedId: /^\d+$/.test(one(params.seleccion)) ? one(params.seleccion) : "",
   };
 }
 
@@ -98,12 +132,30 @@ export function filtersToSearchParams(filters: PropertyFilters) {
     ["banos", filters.minBathrooms],
     ["cocheras", filters.minGarages],
     ["superficie", filters.minArea],
+    ["superficie_max", filters.maxArea],
+    ["superficie_cubierta", filters.minCoveredArea],
+    ["terreno", filters.minLandArea],
+    ["expensas_max", filters.maxExpenses],
+    ["antiguedad_max", filters.maxAge],
+    ["publicador", filters.publisher],
+    ["reciente", filters.recentDays],
     ["imagenes", filters.hasImages ? "1" : ""],
     ["precio", filters.hasPrice ? "1" : ""],
+    ["ubicacion", filters.hasLocation ? "1" : ""],
+    ["video", filters.hasVideo ? "1" : ""],
+    ["plano", filters.hasFloorPlan ? "1" : ""],
+    ["credito", filters.mortgageEligible ? "1" : ""],
     ["orden", filters.sort === "recent" ? "" : filters.sort],
     ["pagina", filters.page > 1 ? filters.page : ""],
     ["cursor", filters.cursor],
     ["direccion", filters.cursor && filters.direction === "prev" ? "prev" : ""],
+    ["modo", filters.mode === "balanced" ? "" : filters.mode],
+    ["norte", filters.viewport?.north ?? null],
+    ["este", filters.viewport?.east ?? null],
+    ["sur", filters.viewport?.south ?? null],
+    ["oeste", filters.viewport?.west ?? null],
+    ["zoom", filters.viewport?.zoom ?? null],
+    ["seleccion", filters.selectedId],
   ];
   values.forEach(([key, value]) => {
     if (value !== "" && value !== null && value !== false) params.set(key, String(value));

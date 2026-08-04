@@ -19,7 +19,68 @@ export type PropertyType =
 
 export type PropertyStatus = "activa";
 export type PropertyCurrency = "USD" | "ARS" | "EUR" | "UYU";
-export type PropertySort = "recent" | "price_asc" | "price_desc" | "area_desc";
+export type PropertySort =
+  | "relevance"
+  | "recent"
+  | "price_asc"
+  | "price_desc"
+  | "area_desc"
+  | "rooms_desc"
+  | "price_m2_asc";
+
+export type ExplorerMode = "map" | "balanced" | "results" | "map_only" | "results_only";
+
+export type PropertyPublisher = {
+  id: string | null;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  website: string | null;
+  verified: boolean | null;
+};
+
+export type ContactData = Pick<PropertyPublisher, "name" | "phone" | "email" | "website">;
+
+export type MapViewport = {
+  north: number;
+  east: number;
+  south: number;
+  west: number;
+  zoom: number;
+};
+
+export type MapMarker = {
+  kind: "property";
+  id: string;
+  latitude: number;
+  longitude: number;
+  price: number | null;
+  currency: PropertyCurrency | null;
+  title: string;
+  location: string;
+};
+
+export type MapCluster = {
+  kind: "cluster";
+  id: string;
+  latitude: number;
+  longitude: number;
+  count: number;
+};
+
+export type MapSearchResponse = {
+  points: Array<MapMarker | MapCluster>;
+  visibleCount: number;
+  scannedCount: number;
+  truncated: boolean;
+};
+
+export type SearchSuggestion = {
+  id: string;
+  label: string;
+  category: "provincia" | "ciudad" | "barrio" | "dirección" | "inmobiliaria" | "tipo";
+  query: string;
+};
 
 export type QualitySignals = {
   hasValidTitle: boolean;
@@ -75,11 +136,17 @@ export type SupabaseProperty = {
   created_at: string | null;
   updated_at: string | null;
   apto_credito: boolean | null;
+  publisher_name?: string | null;
+  publisher_phone?: string | null;
+  publisher_email?: string | null;
+  publisher_website?: string | null;
+  publisher_verified?: boolean | null;
 };
 
 export type Property = {
   id: string;
   agencyId: string | null;
+  publisher: PropertyPublisher | null;
   sourceUrl: string | null;
   title: string;
   description: string | null;
@@ -138,16 +205,30 @@ export type PropertyFilters = {
   minBathrooms: number | null;
   minGarages: number | null;
   minArea: number | null;
+  maxArea: number | null;
+  minCoveredArea: number | null;
+  minLandArea: number | null;
+  maxExpenses: number | null;
+  maxAge: number | null;
+  publisher: string;
+  recentDays: number | null;
   hasImages: boolean;
   hasPrice: boolean;
+  hasLocation: boolean;
+  hasVideo: boolean;
+  hasFloorPlan: boolean;
+  mortgageEligible: boolean;
   sort: PropertySort;
   page: number;
   cursor: string;
   direction: "next" | "prev";
+  mode: ExplorerMode;
+  viewport: MapViewport | null;
+  selectedId: string;
 };
 
 export type PropertySearchResult = {
-  properties: Property[];
+  properties: PropertySummary[];
   count: number | null;
   page: number;
   pageSize: number;
@@ -155,6 +236,25 @@ export type PropertySearchResult = {
   hasPrevious: boolean;
   nextCursor: string | null;
   previousCursor: string | null;
-  source: "supabase" | "unconfigured" | "error";
+  source: "database" | "fixture" | "unconfigured" | "error";
   error: boolean;
+  invalidCursor: boolean;
 };
+
+export type PropertySummary = Pick<
+  Property,
+  | "id" | "agencyId" | "publisher" | "title" | "price" | "currency"
+  | "propertyType" | "rawPropertyType" | "operation" | "rooms" | "bedrooms"
+  | "bathrooms" | "garages" | "totalArea" | "coveredArea" | "address"
+  | "neighborhood" | "city" | "province" | "country" | "latitude" | "longitude"
+  | "images" | "publishedAt" | "updatedAt" | "status" | "mortgageEligible"
+>;
+export type PropertyDetail = Property;
+export type RelatedProperty = PropertySummary;
+export type SearchFilters = PropertyFilters;
+export type SearchCursor = string;
+export type SearchResponse = PropertySearchResult;
+export type PropertyLocation = Pick<
+  Property,
+  "address" | "neighborhood" | "city" | "province" | "country" | "latitude" | "longitude"
+>;
