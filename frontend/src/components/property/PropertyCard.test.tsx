@@ -7,9 +7,10 @@ import { completeRow } from "@/test/fixtures";
 describe("PropertyCard", () => {
   it("renders complete public fields and an accessible detail link", () => {
     render(<PropertyCard property={mapSupabasePropertyToProperty(completeRow)} />);
-    expect(screen.getByRole("link")).toHaveAttribute("href", "/propiedad/123");
+    expect(screen.getByRole("link")).toHaveAttribute("href", "/propiedad/123?volver=%2F");
     expect(screen.getByText("USD 180.000")).toBeInTheDocument();
     expect(screen.getByText(/Centro, Córdoba/)).toBeInTheDocument();
+    expect(screen.getByText("María")).toBeInTheDocument();
   });
 
   it("renders dignified missing-data fallbacks", () => {
@@ -28,4 +29,3 @@ describe("PropertyCard", () => {
     expect(screen.getByRole("img", { name: "Imagen no disponible" })).toBeInTheDocument();
   });
 });
-
