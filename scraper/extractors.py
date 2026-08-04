@@ -1,10 +1,13 @@
 import logging
 import re
 import requests
+import unicodedata
+from html import unescape
 from typing import Optional, List, Dict, Any
-from urllib.parse import urljoin
+from urllib.parse import unquote, urljoin, urlparse
 
 from bs4 import BeautifulSoup
+from scraper.network_security import secure_get
 
 logger = logging.getLogger(__name__)
 
@@ -53,9 +56,87 @@ class DataCleaner:
             precio = int(raw_value)
         except ValueError:
             return None, moneda
-        if precio <= 0:
+        if precio <= 0 or precio > 100_000_000_000:
             return None, moneda
         return precio, moneda
+
+    @staticmethod
+    def clean_visible_text(texto: Optional[str]) -> Optional[str]:
+        """Return human-visible text, stripping residual HTML and compacting whitespace."""
+        if not texto or not isinstance(texto, str):
+            return None
+        value = unescape(texto)
+        if "<" in value and ">" in value:
+            value = BeautifulSoup(value, "html.parser").get_text(" ", strip=True)
+        value = re.sub(r"\s+", " ", value).strip()
+        return value or None
+
+    @staticmethod
+    def is_generic_title(texto: Optional[str]) -> bool:
+        value = DataCleaner.clean_visible_text(texto)
+        if not value:
+            return True
+        normalized = unicodedata.normalize("NFKD", value.lower())
+        normalized = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+        normalized = re.sub(r"[^a-z0-9]+", " ", normalized).strip()
+        return normalized in {
+            "propiedad",
+            "propiedades",
+            "inmueble",
+            "inmuebles",
+            "sin titulo",
+            "propiedad sin titulo",
+            "detalle",
+            "descripcion",
+            "venta",
+            "alquiler",
+            "alquiler temporario",
+            "emprendimiento",
+        }
+
+    @staticmethod
+    def title_from_url(url: Optional[str]) -> Optional[str]:
+        if not url or not isinstance(url, str):
+            return None
+        try:
+            path = unquote(urlparse(url).path or "")
+        except Exception:
+            path = str(url)
+        slug = path.rstrip("/").rsplit("/", 1)[-1]
+        if not slug:
+            return None
+        if re.fullmatch(r"\d{2,}", slug):
+            return f"Propiedad {slug}"[:150]
+        slug = re.sub(r"\.(?:html?|php|aspx?)$", "", slug, flags=re.I)
+        parts = [p for p in re.split(r"[-_+\s]+", slug) if p and not p.isdigit()]
+        title = " ".join(parts).strip()
+        if len(title) < 3:
+            return None
+        return DataCleaner.standardize_capitalization(title)[:150]
+
+    @staticmethod
+    def clean_title(texto: Optional[str], url: Optional[str] = None) -> Optional[str]:
+        value = DataCleaner.clean_visible_text(texto)
+        if value:
+            value = re.sub(
+                r"\b(?:id|c[oó]digo|codigo)\s+(?:del\s+)?(?:inmueble|propiedad)\s*[:#-]?\s*[a-z0-9-]+",
+                " ",
+                value,
+                flags=re.I,
+            )
+            value = re.sub(r"\b(?:USD|US\$|U\$S|ARS)\b\s*[\d.,]+", " ", value, flags=re.I)
+            value = re.sub(r"\$+\s*[\d.,]+", " ", value)
+            value = re.sub(r"\s+", " ", value).strip(" -|")
+        if not value or len(value) < 3 or DataCleaner.is_generic_title(value):
+            value = DataCleaner.title_from_url(url)
+        return value[:200] if value else None
+
+    @staticmethod
+    def clean_description(texto: Optional[str], max_length: int = 3000) -> Optional[str]:
+        value = DataCleaner.clean_visible_text(texto)
+        if not value or len(value) < 20:
+            return None
+        return value[:max_length]
 
     @staticmethod
     def clean_address(texto: Optional[str]) -> Optional[str]:
@@ -233,7 +314,7 @@ class DetailExtractor:
 
     def fetch_detail(self, url: str) -> Dict[str, Any]:
         try:
-            response = self.session.get(url, timeout=15)
+            response = secure_get(self.session, url, timeout=(8, 15))
             response.raise_for_status()
         except requests.RequestException as exc:
             logger.warning(f"Error HTTP obteniendo detalle {url}: {exc}")

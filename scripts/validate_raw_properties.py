@@ -121,6 +121,40 @@ STAGING_COLUMNS = [
 ]
 
 
+def title_from_property_url(url: Any) -> Optional[str]:
+    """Derive a conservative title from a detail URL, never from a list/category route."""
+    value = clean_text(url)
+    if not value:
+        return None
+    try:
+        path = unquote(urlparse(value).path or "")
+    except ValueError:
+        return None
+    segments = [segment for segment in path.split("/") if segment]
+    slug = segments[-1] if segments else ""
+    slug = re.sub(r"\.(?:html?|php|aspx?)$", "", slug, flags=re.IGNORECASE)
+    parent = segments[-2].casefold() if len(segments) >= 2 else ""
+    if parent in {"page", "pagina"}:
+        return None
+    if not slug or slug.casefold() in {
+        "propiedad",
+        "propiedades",
+        "inmueble",
+        "inmuebles",
+        "venta",
+        "alquiler",
+        "emprendimiento",
+        "page",
+        "pagina",
+    }:
+        return None
+    if slug.isdigit():
+        return f"Propiedad {slug}"[:200]
+    words = [word for word in re.split(r"[-_+\s]+", slug) if word and not word.isdigit()]
+    title = " ".join(words).strip()
+    return title[:200].title() if len(title) >= 3 else None
+
+
 try:
     from scraper.scraper_propiedades import (
         normalize_property_url_for_dedup,
@@ -695,21 +729,17 @@ def build_validation(cur, row: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]]
         validation_score -= 15
         soft_issues.append(issue("missing_type", "sin tipo_propiedad"))
 
-    # Fallback de título cuando viene vacío (no rechaza; registra soft issue).
-    # Prioridad: {tipo} en {ciudad} → {tipo} en {provincia} → Propiedad en {ciudad}
-    #            → "Propiedad sin título".
+    # Derivar solo desde una URL de ficha. No persistir placeholders genéricos:
+    # si la fuente no aporta título ni slug semántico, el dato queda ausente.
     if not titulo:
-        _tipo_label = (tipo_propiedad or "").strip().capitalize()
-        if _tipo_label and ciudad:
-            titulo = f"{_tipo_label} en {ciudad}"
-        elif _tipo_label and provincia:
-            titulo = f"{_tipo_label} en {provincia}"
-        elif ciudad:
-            titulo = f"Propiedad en {ciudad}"
-        else:
-            titulo = "Propiedad sin título"
+        titulo = title_from_property_url(url)
         validation_score -= 5
-        soft_issues.append(issue("missing_title", f"raw_id={raw_id} sin titulo → fallback={titulo!r}"))
+        detail = (
+            f"raw_id={raw_id} sin titulo; derivado de URL={titulo!r}"
+            if titulo
+            else f"raw_id={raw_id} sin titulo; fuente sin evidencia recuperable"
+        )
+        soft_issues.append(issue("missing_title", detail))
 
     imagenes = clean_images(row.get("imagenes"))
     if not imagenes:

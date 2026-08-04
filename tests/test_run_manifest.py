@@ -44,6 +44,9 @@ from pathlib import Path
 from typing import List, Dict
 from unittest.mock import patch, MagicMock
 
+import pytest
+import requests
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS_DIR = REPO_ROOT / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
@@ -54,8 +57,9 @@ from run_manifest import (  # noqa: E402
     validate_manifest,
     build_fuentes,
     main,
+    write_execute_outputs,
     MAX_EXECUTE_LIMIT,
-    MAX_EXECUTE_WORKERS,
+    MAX_HTTP_WORKERS,
 )
 
 
@@ -105,9 +109,23 @@ def _make_manifest(rows: List[Dict]) -> io.StringIO:
 
 def test_valid_manifest_loads_all_rows():
     rows = [_row(source_id=str(i), source_name=f"Inmo {i}") for i in range(5)]
-    valid, errors = validate_manifest(rows)
+    valid, _pw, _blocked, errors = validate_manifest(rows)
     assert len(valid) == 5
     assert len(errors) == 0
+
+
+def test_load_manifest_accepts_utf8_bom(tmp_path):
+    manifest = tmp_path / "manifest_bom.csv"
+    manifest.write_text(
+        "source_id,source_name,new_url_listado\n"
+        "100,Inmobiliaria Nunez,https://example.com/propiedades\n",
+        encoding="utf-8-sig",
+    )
+
+    rows = load_manifest(manifest)
+
+    assert rows[0]["source_id"] == "100"
+    assert rows[0]["source_name"] == "Inmobiliaria Nunez"
 
 
 # ---------------------------------------------------------------------------
@@ -120,7 +138,7 @@ def test_duplicate_source_id_rejected():
         _row(source_id="200", source_name="Inmo A (dup)"),
         _row(source_id="201", source_name="Inmo B"),
     ]
-    valid, errors = validate_manifest(rows)
+    valid, _pw, _blocked, errors = validate_manifest(rows)
     assert len(valid) == 2  # 200 (primera), 201
     assert any("duplicate" in e[2] for e in errors)
 
@@ -134,7 +152,7 @@ def test_empty_url_rejected():
         _row(source_id="300", new_url_listado="", old_url_listado=""),
         _row(source_id="301", new_url_listado="https://ok.com.ar/venta"),
     ]
-    valid, errors = validate_manifest(rows)
+    valid, _pw, _blocked, errors = validate_manifest(rows)
     assert len(valid) == 1
     assert valid[0]["source_id"] == "301"
     assert any("missing url" in e[2] for e in errors)
@@ -149,7 +167,7 @@ def test_still_failed_status_rejected():
         _row(source_id="400", combined_status="still_failed"),
         _row(source_id="401", combined_status="success_url_only"),
     ]
-    valid, errors = validate_manifest(rows)
+    valid, _pw, _blocked, errors = validate_manifest(rows)
     assert len(valid) == 1
     assert valid[0]["source_id"] == "401"
     assert any("still_failed" in e[2] for e in errors)
@@ -237,11 +255,66 @@ def test_new_url_listado_takes_priority():
         new_url_listado="https://correct.com.ar/venta",
         old_url_listado="https://wrong.com.ar/old",
     )]
-    valid, errors = validate_manifest(rows)
+    valid, _pw, _blocked, errors = validate_manifest(rows)
     assert len(valid) == 1
     fuentes = build_fuentes(valid)
     assert fuentes[0]["web"] == "https://correct.com.ar/venta"
     assert fuentes[0]["_url_source"] == "new_url_listado"
+
+
+def test_manifest_rejects_query_only_listing_collision_across_agencies():
+    rows = [
+        _row(
+            source_id="4176",
+            source_name="Centro Administraciones",
+            inmobiliaria_id="4176",
+            new_url_listado=(
+                "http://www.migoneinmobiliaria.com.ar/propiedades"
+                "?p=0&ope=V&tipo=C"
+            ),
+        ),
+        _row(
+            source_id="5650",
+            source_name="Migone Inmobiliaria",
+            inmobiliaria_id="5650",
+            new_url_listado=(
+                "https://migoneinmobiliaria.com.ar/propiedades"
+                "?p=0&ope=V&tipo=All"
+            ),
+        ),
+    ]
+
+    valid_http, valid_pw, blocked_pw, errors = validate_manifest(rows)
+
+    assert valid_http == []
+    assert valid_pw == []
+    assert blocked_pw == []
+    assert len(errors) == 2
+    assert all("duplicate semantic listing URL" in error[2] for error in errors)
+
+
+def test_manifest_allows_query_partitions_for_same_agency():
+    rows = [
+        _row(
+            source_id="10-sale",
+            source_name="Same Agency",
+            inmobiliaria_id="10",
+            new_url_listado="https://same.test/propiedades?operacion=venta",
+        ),
+        _row(
+            source_id="10-rent",
+            source_name="Same Agency",
+            inmobiliaria_id="10",
+            new_url_listado="https://same.test/propiedades?operacion=alquiler",
+        ),
+    ]
+
+    valid_http, valid_pw, blocked_pw, errors = validate_manifest(rows)
+
+    assert len(valid_http) == 2
+    assert valid_pw == []
+    assert blocked_pw == []
+    assert errors == []
 
 
 def test_old_url_listado_used_as_fallback_when_new_empty():
@@ -250,7 +323,7 @@ def test_old_url_listado_used_as_fallback_when_new_empty():
         new_url_listado="",
         old_url_listado="https://fallback.com.ar/venta",
     )]
-    valid, errors = validate_manifest(rows)
+    valid, _pw, _blocked, errors = validate_manifest(rows)
     assert len(valid) == 1
     fuentes = build_fuentes(valid)
     assert fuentes[0]["web"] == "https://fallback.com.ar/venta"
@@ -266,7 +339,7 @@ def test_prohibited_domain_rejected():
         _row(source_id="601", new_url_listado="https://argenprop.com/casas"),
         _row(source_id="602", new_url_listado="https://legitima.com.ar/venta"),
     ]
-    valid, errors = validate_manifest(rows)
+    valid, _pw, _blocked, errors = validate_manifest(rows)
     assert len(valid) == 1
     assert valid[0]["source_id"] == "602"
     assert all("prohibited" in e[2] for e in errors)
@@ -281,10 +354,12 @@ def test_needs_playwright_rejected():
         _row(source_id="700", needs_playwright="True"),
         _row(source_id="701", needs_playwright="False"),
     ]
-    valid, errors = validate_manifest(rows)
+    valid, pw, _blocked, errors = validate_manifest(rows)
     assert len(valid) == 1
     assert valid[0]["source_id"] == "701"
-    assert any("needs_playwright" in e[2] for e in errors)
+    # Diseño dos colas: needs_playwright se rutea a la cola PW (valid_pw),
+    # ya no se rechaza como error.
+    assert any(f["source_id"] == "700" for f in pw)
 
 
 # ---------------------------------------------------------------------------
@@ -298,7 +373,7 @@ def test_excluded_ids_rejected():
         _row(source_id="802"),
     ]
     excluded = {"801"}
-    valid, errors = validate_manifest(rows, excluded_ids=excluded)
+    valid, _pw, _blocked, errors = validate_manifest(rows, excluded_ids=excluded)
     assert len(valid) == 2
     valid_ids = {r["source_id"] for r in valid}
     assert "801" not in valid_ids
@@ -311,7 +386,7 @@ def test_excluded_ids_rejected():
 
 def test_build_fuentes_key_slug():
     rows = [_row(source_id="900", source_name="Pérez & Cía Inmobiliaria CABA")]
-    valid, _ = validate_manifest(rows)
+    valid, _pw, _blocked, _err = validate_manifest(rows)
     fuentes = build_fuentes(valid)
     assert len(fuentes) == 1
     key = fuentes[0]["key"]
@@ -330,7 +405,7 @@ def test_missing_source_id_rejected():
          "needs_playwright": "False", "error": ""},
         _row(source_id="999"),
     ]
-    valid, errors = validate_manifest(rows)
+    valid, _pw, _blocked, errors = validate_manifest(rows)
     assert len(valid) == 1
     assert valid[0]["source_id"] == "999"
     assert any("missing source_id" in e[2] for e in errors)
@@ -499,16 +574,16 @@ def test_execute_limit_over_max_blocked(tmp_path, capsys):
 
 
 def test_execute_workers_over_max_blocked(tmp_path, capsys):
-    """--execute --workers > 2 bloqueado."""
+    """--execute --workers > MAX_HTTP_WORKERS bloqueado."""
     manifest_file = tmp_path / "m.csv"
     _write_manifest(manifest_file, [_row()])
 
-    over = MAX_EXECUTE_WORKERS + 1
+    over = MAX_HTTP_WORKERS + 1
     ret = main(["--manifest", str(manifest_file), "--execute",
                 "--limit", "1", f"--workers={over}"])
     assert ret != 0
     captured = capsys.readouterr()
-    assert "MAX_EXECUTE_WORKERS" in captured.err or str(MAX_EXECUTE_WORKERS) in captured.err
+    assert "MAX_HTTP_WORKERS" in captured.err or str(MAX_HTTP_WORKERS) in captured.err
 
 
 def test_execute_and_dryrun_mutually_exclusive(tmp_path, capsys):
@@ -554,7 +629,8 @@ def test_execute_calls_run_execute_when_authorized(tmp_path, capsys):
     import run_manifest as rm
     original = rm.run_execute
 
-    def mock_run_execute(fuentes, limit, workers, out_dir_arg, ts_start, manifest_path):
+    def mock_run_execute(fuentes_http, fuentes_pw, limit, http_workers, pw_workers,
+                         out_dir_arg, ts_start, manifest_path):
         return mock_result
 
     rm.run_execute = mock_run_execute
@@ -771,6 +847,110 @@ def test_lookup_inmobiliaria_ids_returns_mapping():
     assert "9999" not in mapping
 
 
+def _fk_response(rows):
+    response = MagicMock()
+    response.status_code = 200
+    response.json.return_value = rows
+    return response
+
+
+def test_safe_fk_collision_uses_only_compatible_canonical_id():
+    import run_manifest as rm
+
+    source = {
+        "source_id": "84",
+        "_manifest_name": "Yacoub Alquileres",
+        "web": "https://yacoub.com.ar/propiedades",
+    }
+    primary = [{
+        "id": 4566,
+        "nombre": "Raizen Servicios Inmobiliarios",
+        "web": "http://raizeninmobiliaria.com.ar",
+        "url_listado": "http://raizeninmobiliaria.com.ar/adm-propiedades.php",
+        "scraping_id_origen": 84,
+    }]
+    fallback = [{
+        "id": 84,
+        "nombre": "Yacoub Alquileres",
+        "web": "https://yacoub.com.ar",
+        "url_listado": "https://yacoub.com.ar/propiedades",
+        "scraping_id_origen": 735,
+    }]
+
+    with patch("requests.get", side_effect=[_fk_response(primary), _fk_response(fallback)]):
+        mapping, errors = rm._lookup_inmobiliaria_ids_safe("https://fake.co", "fake", [source])
+
+    assert mapping == {"84": 84}
+    assert errors == []
+
+
+def test_safe_fk_keeps_compatible_primary_when_fallback_mismatches():
+    import run_manifest as rm
+
+    source = {"source_id": "10", "_manifest_name": "Primary Inmo", "web": "https://primary.test"}
+    primary = [{
+        "id": 500,
+        "nombre": "Primary Inmo",
+        "web": "https://primary.test",
+        "url_listado": None,
+        "scraping_id_origen": 10,
+    }]
+    fallback = [{
+        "id": 10,
+        "nombre": "Other Inmo",
+        "web": "https://other.test",
+        "url_listado": None,
+        "scraping_id_origen": 77,
+    }]
+
+    with patch("requests.get", side_effect=[_fk_response(primary), _fk_response(fallback)]):
+        mapping, errors = rm._lookup_inmobiliaria_ids_safe("https://fake.co", "fake", [source])
+
+    assert mapping == {"10": 500}
+    assert errors == []
+
+
+def test_safe_fk_ambiguous_collision_is_rejected():
+    import run_manifest as rm
+
+    source = {"source_id": "10", "_manifest_name": "Same", "web": "https://same.test"}
+    primary = [{"id": 500, "nombre": "Same", "web": "https://same.test", "url_listado": None, "scraping_id_origen": 10}]
+    fallback = [{"id": 10, "nombre": "Same", "web": "https://same.test", "url_listado": None, "scraping_id_origen": 77}]
+
+    with patch("requests.get", side_effect=[_fk_response(primary), _fk_response(fallback)]):
+        mapping, errors = rm._lookup_inmobiliaria_ids_safe("https://fake.co", "fake", [source])
+
+    assert mapping == {}
+    assert any("unresolved FK collision" in error[2] for error in errors)
+
+
+def test_safe_fk_multiple_primary_matches_are_rejected():
+    import run_manifest as rm
+
+    source = {"source_id": "10", "_manifest_name": "Inmo", "web": "https://inmo.test"}
+    primary = [
+        {"id": 500, "nombre": "Inmo", "web": "https://inmo.test", "url_listado": None, "scraping_id_origen": 10},
+        {"id": 501, "nombre": "Inmo 2", "web": "https://inmo2.test", "url_listado": None, "scraping_id_origen": 10},
+    ]
+
+    with patch("requests.get", side_effect=[_fk_response(primary), _fk_response([])]):
+        mapping, errors = rm._lookup_inmobiliaria_ids_safe("https://fake.co", "fake", [source])
+
+    assert mapping == {}
+    assert any("ambiguous scraping_id_origen" in error[2] for error in errors)
+
+
+def test_safe_fk_missing_source_is_classified():
+    import run_manifest as rm
+
+    source = {"source_id": "9999", "_manifest_name": "Missing", "web": "https://missing.test"}
+    with patch("requests.get", side_effect=[_fk_response([]), _fk_response([])]):
+        mapping, errors = rm._lookup_inmobiliaria_ids_safe("https://fake.co", "fake", [source])
+
+    assert mapping == {}
+    assert errors == [("9999", "Missing", "missing FK candidate")]
+
+
 def test_fk_missing_source_excluded_from_execute():
     """La lógica de FK filtering de run_execute separa fuentes con/sin match."""
     # Simular el algoritmo de filtering que vive en run_execute:
@@ -911,11 +1091,11 @@ def test_payload_safe_int_still_works_with_estado():
 # 09e-DEDUP: dedup robusto por inmobiliaria (fix límite PostgREST 1.000)
 # ---------------------------------------------------------------------------
 
-def test_max_execute_limit_is_892():
-    """MAX_EXECUTE_LIMIT debe ser 892 para autorizar la corrida 09e completa."""
+def test_max_execute_limit_matches_audited_universe():
+    """El techo debe coincidir exactamente con el universo auditado."""
     from run_manifest import MAX_EXECUTE_LIMIT
-    assert MAX_EXECUTE_LIMIT == 892, (
-        f"MAX_EXECUTE_LIMIT={MAX_EXECUTE_LIMIT}, se esperaba 892 (PR-BE-PROD-09e)"
+    assert MAX_EXECUTE_LIMIT == 7004, (
+        f"MAX_EXECUTE_LIMIT={MAX_EXECUTE_LIMIT}, se esperaba 7004"
     )
 
 
@@ -965,16 +1145,15 @@ def test_load_existing_urls_by_inmobiliaria_multiple_ids():
     from unittest.mock import MagicMock, patch
     from run_manifest import _load_existing_urls_by_inmobiliaria
 
-    results_by_id = {
-        "eq.1": [{"url": "https://a.com/1"}],
-        "eq.2": [{"url": "https://b.com/1"}],
-    }
-
     def fake_get(*args, **kwargs):
         inmo_filter = kwargs.get("params", {}).get("inmobiliaria_id", "")
         r = MagicMock()
         r.status_code = 200
-        r.json.return_value = results_by_id.get(inmo_filter, [])
+        assert inmo_filter == "in.(1,2)"
+        r.json.return_value = [
+            {"url": "https://a.com/1"},
+            {"url": "https://b.com/1"},
+        ]
         return r
 
     with patch("requests.get", side_effect=fake_get):
@@ -985,7 +1164,7 @@ def test_load_existing_urls_by_inmobiliaria_multiple_ids():
     assert len(result) == 2
 
 
-def test_load_existing_urls_tolerates_http_error():
+def test_load_existing_urls_fails_closed_on_http_error():
     """_load_existing_urls_by_inmobiliaria() no lanza si PostgREST retorna error."""
     import sys
     sys.path.insert(0, str(REPO_ROOT / "scripts"))
@@ -997,9 +1176,83 @@ def test_load_existing_urls_tolerates_http_error():
     mock_resp.json.return_value = []
 
     with patch("requests.get", return_value=mock_resp):
-        result = _load_existing_urls_by_inmobiliaria("https://fake.co", "fakekey", [42])
+        with pytest.raises(RuntimeError, match="Dedup preflight HTTP 500"):
+            _load_existing_urls_by_inmobiliaria("https://fake.co", "fakekey", [42])
+        result = set()
 
     assert isinstance(result, set)  # no lanza, retorna set (posiblemente vacío)
+
+
+def test_load_existing_urls_paginates_and_reports_metrics():
+    from unittest.mock import MagicMock, patch
+    from run_manifest import _load_existing_urls_by_inmobiliaria
+
+    first = MagicMock(status_code=200)
+    first.json.return_value = [
+        {"url": f"https://a.com/{index}"} for index in range(1000)
+    ]
+    second = MagicMock(status_code=200)
+    second.json.return_value = [{"url": "https://a.com/1000"}]
+    metrics = {}
+
+    with patch("requests.get", side_effect=[first, second]) as mocked_get:
+        result = _load_existing_urls_by_inmobiliaria(
+            "https://fake.co", "fakekey", [1, 1, 2], metrics=metrics
+        )
+
+    assert len(result) == 1001
+    assert mocked_get.call_count == 2
+    assert mocked_get.call_args_list[1].kwargs["params"]["offset"] == "1000"
+    assert mocked_get.call_args_list[1].kwargs["params"]["order"] == "inmobiliaria_id.asc,id.asc"
+    assert metrics["inmobiliaria_count"] == 2
+    assert metrics["query_count"] == 2
+
+
+def test_insert_only_proxy_filters_historical_exact_url_before_insert():
+    from run_manifest import _InsertOnlySupabaseProxy
+
+    client = MagicMock()
+    client.table = "propiedades"
+    existing = {"url": "https://x.com/old", "inmobiliaria_id": 7}
+    fresh = {"url": "https://x.com/new", "inmobiliaria_id": 7}
+    client.filter_new_exact_urls.return_value = ([fresh], 1)
+    client.batch_save_only_new.return_value = 1
+
+    proxy = _InsertOnlySupabaseProxy(client)
+    assert proxy.batch_save_only_new([existing, fresh]) == 1
+    client.batch_save_only_new.assert_called_once_with([fresh])
+
+
+def test_exact_url_guard_is_scoped_by_inmobiliaria_id_and_fails_closed():
+    import sys
+    sys.path.insert(0, str(REPO_ROOT / "scraper"))
+    from clients import SupabaseClient
+
+    response = MagicMock(status_code=200, text="")
+    response.json.return_value = [{
+        "inmobiliaria_id": 7,
+        "url": "https://x.com/shared",
+    }]
+    session = MagicMock()
+    session.get.return_value = response
+    client = SupabaseClient(session, "https://fake.supabase.co", "fakekey", "propiedades")
+
+    payloads = [
+        {"url": "https://x.com/shared", "inmobiliaria_id": 7},
+        {"url": "https://x.com/new", "inmobiliaria_id": 7},
+        {"url": "https://x.com/shared", "inmobiliaria_id": 8},
+    ]
+    filtered, skipped = client.filter_new_exact_urls(payloads)
+
+    assert skipped == 1
+    assert payloads[0] not in filtered
+    assert payloads[1:] == filtered
+    assert "%" not in session.get.call_args_list[0].kwargs["params"]["url"]
+    assert '"https://x.com/shared"' in session.get.call_args_list[0].kwargs["params"]["url"]
+
+    session.get.side_effect = requests.ConnectionError("offline")
+    with pytest.raises(RuntimeError, match="Exact URL guard request failed"):
+        client.filter_new_exact_urls(payloads)
 
 
 def test_dedup_prevents_existing_url_reinsertion():
@@ -1168,3 +1421,98 @@ def test_batch_409_fallback_preserves_estado_hash_dedup_inmobiliaria_id():
     assert sent["estado"] == "activa"
     assert sent["hash_dedup"] == "abcdef1234567890abcdef1234567890"
     assert sent["inmobiliaria_id"] == 42
+
+
+def test_batch_save_reports_confirmed_rows_before_later_chunk_failure():
+    import sys
+    sys.path.insert(0, str(REPO_ROOT / "scraper"))
+    from clients import PartialBatchInsertError, SupabaseClient
+
+    mock_session = MagicMock()
+    mock_session.post.side_effect = [
+        MagicMock(status_code=201, text=""),
+        requests.ConnectionError("temporary DNS failure"),
+    ]
+    client = SupabaseClient(
+        mock_session, "https://fake.supabase.co", "fakekey", "propiedades"
+    )
+    payloads = [
+        {"url": f"https://x.com/{i}", "titulo": "T", "inmobiliaria_id": 1}
+        for i in range(21)
+    ]
+
+    with pytest.raises(PartialBatchInsertError) as caught:
+        client.batch_save_only_new(payloads)
+
+    assert caught.value.saved_count == 20
+    assert [p["url"] for p in caught.value.saved_payloads] == [
+        f"https://x.com/{i}" for i in range(20)
+    ]
+
+
+def test_batch_save_reports_confirmed_individual_rows_before_failure():
+    import sys
+    sys.path.insert(0, str(REPO_ROOT / "scraper"))
+    from clients import PartialBatchInsertError, SupabaseClient
+
+    mock_session = MagicMock()
+    mock_session.post.side_effect = [
+        MagicMock(status_code=409, text='{"code":"23505"}'),
+        MagicMock(status_code=201, text=""),
+        requests.ConnectionError("connection reset"),
+    ]
+    client = SupabaseClient(
+        mock_session, "https://fake.supabase.co", "fakekey", "propiedades"
+    )
+    payloads = [
+        {"url": "https://x.com/1", "titulo": "T", "inmobiliaria_id": 1},
+        {"url": "https://x.com/2", "titulo": "T", "inmobiliaria_id": 1},
+    ]
+
+    with pytest.raises(PartialBatchInsertError) as caught:
+        client.batch_save_only_new(payloads)
+
+    assert caught.value.saved_count == 1
+    assert caught.value.saved_payloads[0]["url"] == "https://x.com/1"
+
+
+def test_execute_outputs_preserve_database_merge_run_id(tmp_path):
+    run_id = "2026-07-31T02:15:05.698630+00:00"
+    result = {
+        "run_id": run_id,
+        "subset": [{
+            "source_id": "100",
+            "inmobiliaria_id": 100,
+            "_manifest_name": "Test Inmobiliaria",
+            "web": "https://testinmo.com.ar/venta",
+            "_url_source": "new_url_listado",
+        }],
+        "fuentes_sin_fk": [],
+        "count_before": 0,
+        "count_after": 0,
+        "total_saved": 0,
+        "total_updates": 0,
+        "net_new": 0,
+        "new_props": [],
+        "worker_results": {"h0": {"saved": 0, "status": "ok"}},
+        "workers": 1,
+        "limit": 1,
+        "batches": 1,
+        "source_metrics": [{
+            "source_id": "100",
+            "inmobiliaria_id": 100,
+            "nombre": "Test Inmobiliaria",
+            "status": "SUCCESS_NO_NEW",
+        }],
+        "safe_merge_existing": True,
+    }
+
+    write_execute_outputs(
+        result,
+        tmp_path,
+        "2026-07-31T03:00:00+00:00",
+        tmp_path / "manifest.csv",
+    )
+
+    rows = load_manifest(tmp_path / "source_results.csv")
+    assert rows[0]["run_id"] == run_id

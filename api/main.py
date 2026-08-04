@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-app = FastAPI(title="Inmolink API", version="1.0.0")
+app = FastAPI(title="ERETZ Propiedades API", version="1.0.0")
 
 # CORS — permite que el frontend pueda llamar a la API
 app.add_middleware(
@@ -39,9 +39,27 @@ def supabase_get(params: dict) -> list:
     return response.json()
 
 
+def supabase_count(filters: Optional[dict] = None) -> int:
+    """Return an exact PostgREST count without downloading the full relation."""
+    params = {"select": "id", "limit": 1, **(filters or {})}
+    headers = {**HEADERS, "Prefer": "count=exact", "Range": "0-0"}
+    response = requests.get(
+        f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}",
+        headers=headers,
+        params=params,
+        timeout=10,
+    )
+    response.raise_for_status()
+    content_range = response.headers.get("Content-Range", "")
+    _, separator, total = content_range.rpartition("/")
+    if not separator or not total.isdigit():
+        raise RuntimeError("Supabase exact count missing from Content-Range")
+    return int(total)
+
+
 @app.get("/")
 def root():
-    return {"status": "ok", "proyecto": "Inmolink API"}
+    return {"status": "ok", "proyecto": "ERETZ Propiedades API"}
 
 
 @app.get("/propiedades")
@@ -62,7 +80,7 @@ def listar_propiedades(
         "select": "*",
         "limit": limit,
         "offset": offset,
-        "order": "calidad_score.desc",
+        "order": "updated_at.desc.nullslast,id.desc",
     }
 
     if operacion:
@@ -72,7 +90,7 @@ def listar_propiedades(
     if ciudad:
         params["ciudad"] = f"ilike.*{ciudad}*"
     if barrio:
-        params["barrio_normalizado"] = f"ilike.*{barrio}*"
+        params["barrio"] = f"ilike.*{barrio}*"
     if moneda:
         params["moneda"] = f"eq.{moneda.upper()}"
     if ambientes:
@@ -101,7 +119,7 @@ def propiedades_mapa(
 ):
     """Retorna solo los campos necesarios para mostrar en el mapa."""
     params = {
-        "select": "id,titulo,precio,moneda,latitud,longitud,tipo_propiedad,operacion,barrio_normalizado",
+        "select": "id,titulo,precio,moneda,latitud,longitud,tipo_propiedad,operacion,barrio",
         "latitud": "not.is.null",
         "longitud": "not.is.null",
         "limit": 1000,
@@ -142,8 +160,8 @@ def detalle_propiedad(propiedad_id: int):
 def listar_barrios(ciudad: Optional[str] = Query(None)):
     """Lista todos los barrios disponibles para los filtros."""
     params = {
-        "select": "barrio_normalizado",
-        "barrio_normalizado": "not.is.null",
+        "select": "barrio",
+        "barrio": "not.is.null",
         "limit": 1000,
     }
     if ciudad:
@@ -151,9 +169,9 @@ def listar_barrios(ciudad: Optional[str] = Query(None)):
 
     data = supabase_get(params)
     barrios = sorted(set(
-        item["barrio_normalizado"]
+        item["barrio"]
         for item in data
-        if item.get("barrio_normalizado")
+        if item.get("barrio")
     ))
     return {"total": len(barrios), "data": barrios}
 
@@ -161,18 +179,11 @@ def listar_barrios(ciudad: Optional[str] = Query(None)):
 @app.get("/stats")
 def estadisticas():
     """Estadísticas generales de la base de datos."""
-    total = supabase_get({"select": "id", "limit": 10000})
-    alquileres = supabase_get({"select": "id", "operacion": "eq.alquiler", "limit": 10000})
-    ventas = supabase_get({"select": "id", "operacion": "eq.venta", "limit": 10000})
-    con_coords = supabase_get({
-        "select": "id",
-        "latitud": "not.is.null",
-        "limit": 10000,
-    })
-
     return {
-        "total_propiedades": len(total),
-        "alquileres": len(alquileres),
-        "ventas": len(ventas),
-        "con_coordenadas": len(con_coords),
+        "total_propiedades": supabase_count(),
+        "alquileres": supabase_count({"operacion": "eq.alquiler"}),
+        "ventas": supabase_count({"operacion": "eq.venta"}),
+        "con_coordenadas": supabase_count(
+            {"latitud": "not.is.null", "longitud": "not.is.null"}
+        ),
     }

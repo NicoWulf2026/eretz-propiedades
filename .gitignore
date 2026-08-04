@@ -25,3 +25,5 @@ _deep_scan_results.json
 .env.bak*
 docs/obsidian/.obsidian/
 
+# Runtime scraper checkpoints are local operational state, never source code.
+scraper/checkpoint*.txt

@@ -25,10 +25,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import requests
-import urllib3
-
-
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+from scraper.network_security import secure_get
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 SCRAPER_DIR = REPO_ROOT / "scraper"
@@ -187,7 +184,7 @@ def validate_one(row: dict[str, str], old_parser, session: requests.Session, tim
     error = ""
     started = time.perf_counter()
     try:
-        resp = session.get(row["url_listado"], timeout=timeout, allow_redirects=True, verify=False)
+        resp = secure_get(session, row["url_listado"], timeout=(8, timeout))
         status = resp.status_code
         final_url = resp.url
         ctype = resp.headers.get("content-type", "")

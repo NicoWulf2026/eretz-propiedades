@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 import sys
-import datetime
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -63,7 +62,6 @@ def test_log_error_db_none_creates_jsonl():
     rec = json.loads(content.strip().splitlines()[-1])
     assert FAKE_PASS not in content, "password FALSO presente en JSONL"
     assert rec["fase"] == "publish"
-    return p  # para el grep posterior
 
 
 def test_log_error_broken_db_no_raise():
@@ -91,9 +89,9 @@ if __name__ == "__main__":
     jsonl_for_grep = None
     for t in tests:
         try:
-            r = t()
+            t()
             if t.__name__ == "test_log_error_db_none_creates_jsonl":
-                jsonl_for_grep = r
+                jsonl_for_grep = _jsonl_path(999999)
             print(f"  PASS  {t.__name__}")
         except AssertionError as e:
             failed += 1
