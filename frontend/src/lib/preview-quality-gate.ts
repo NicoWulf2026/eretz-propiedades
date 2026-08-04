@@ -7,6 +7,7 @@ import {
   parsePreviewGateRuntimeCsv,
   type PreviewGateEntry,
 } from "@/lib/preview-gate-policy";
+import { applyPublicQualityGateOverrides } from "@/lib/public-quality-gate-overrides";
 
 type PreviewQualityGate = {
   enabled: boolean;
@@ -42,7 +43,9 @@ export function getPreviewQualityGate(): PreviewQualityGate {
   if (relativeToPublic === "" || (!relativeToPublic.startsWith("..") && !isAbsolute(relativeToPublic))) {
     throw new Error("Preview gate manifest must not be stored under public/");
   }
-  const entries = parsePreviewGateRuntimeCsv(readFileSync(manifestPath, "utf-8"));
+  const entries = applyPublicQualityGateOverrides(
+    parsePreviewGateRuntimeCsv(readFileSync(manifestPath, "utf-8")),
+  );
   const counts = countPreviewEntries(entries);
   if (counts.total === 0) throw new Error("Preview gate manifest is empty");
   cached = {
