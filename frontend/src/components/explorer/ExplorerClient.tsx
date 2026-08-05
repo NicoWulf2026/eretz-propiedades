@@ -11,11 +11,12 @@ import { filtersToSearchParams } from "@/lib/property-query";
 import type { ExplorerMode, PropertyFilters, PropertySearchResult } from "@/types/property";
 
 const modeLabels: Array<[ExplorerMode, string]> = [
-  ["map", "Mapa protagonista"],
-  ["balanced", "Equilibrado"],
+  ["balanced", "Exploración"],
+  ["analysis", "Análisis"],
   ["results", "Resultados amplios"],
-  ["map_only", "Solo mapa"],
+  ["map", "Mapa protagonista"],
   ["results_only", "Solo resultados"],
+  ["map_only", "Solo mapa"],
 ];
 
 function unavailableResult(filters: PropertyFilters): PropertySearchResult {
@@ -118,7 +119,7 @@ function removeViewport() {
               {modeLabels.map(([value, label]) => <button key={value} type="button" className={mode === value ? "is-active" : ""} aria-pressed={mode === value} title={label} onClick={() => chooseMode(value)}><span className="desktop-mode-label">{label}</span><span className="mobile-mode-label">{value.includes("map") ? "Mapa" : "Resultados"}</span></button>)}
             </div>
           </div>
-          <FilterForm filters={currentFilters} action={basePath} />
+          <FilterForm filters={currentFilters} action={basePath} onPin={() => chooseMode("analysis")} />
           <ActiveChips filters={currentFilters} basePath={basePath} onRemoveViewport={removeViewport} />
         </div>
       </header>
@@ -126,6 +127,11 @@ function removeViewport() {
       {result?.invalidCursor ? <div className="container py-4"><div className="alert alert-warning" role="alert"><strong>Este enlace de paginación venció o no es válido.</strong><span> Podés volver al inicio de estos resultados sin perder tus filtros.</span><a href={`${basePath}?${resetCursor}`}>Volver a la primera página</a></div></div> : null}
 
       <main className={`explorer-workspace mode-${mode}`}>
+        {mode === "analysis" ? (
+          <aside className="explorer-filters-pane" aria-label="Filtros fijados">
+            <FilterForm filters={currentFilters} action={basePath} pinned onUnpin={() => chooseMode("balanced")} />
+          </aside>
+        ) : null}
         <section className="explorer-map-pane" aria-label="Explorar en el mapa">
           <PropertyMap properties={result?.properties ?? []} filters={currentFilters} selectedId={selectedId} onSelect={selectProperty} returnTo={returnTo} />
         </section>

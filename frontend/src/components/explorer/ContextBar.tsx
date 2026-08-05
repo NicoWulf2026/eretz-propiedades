@@ -26,11 +26,12 @@ const sortLabels: Record<PropertySort, string> = {
 };
 
 const modeLabels: Record<ExplorerMode, string> = {
-  map: "Exploración",
-  balanced: "Análisis",
+  balanced: "Exploración",
+  analysis: "Análisis",
   results: "Resultados amplios",
-  map_only: "Solo mapa",
+  map: "Mapa protagonista",
   results_only: "Solo resultados",
+  map_only: "Solo mapa",
 };
 
 function formatRange(page: number, pageSize: number, total: number): string {

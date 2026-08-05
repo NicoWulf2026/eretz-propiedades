@@ -31,7 +31,7 @@ const currencies = new Set<PropertyCurrency>(["USD", "ARS", "EUR", "UYU"]);
 const sorts = new Set<PropertySort>([
   "recent", "price_asc", "price_desc", "area_desc", "rooms_desc", "price_m2_asc",
 ]);
-const modes = new Set(["map", "balanced", "results", "map_only", "results_only"] as const);
+const modes = new Set(["map", "balanced", "results", "map_only", "results_only", "analysis"] as const);
 
 function one(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";

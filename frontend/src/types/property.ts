@@ -28,7 +28,7 @@ export type PropertySort =
   | "rooms_desc"
   | "price_m2_asc";
 
-export type ExplorerMode = "map" | "balanced" | "results" | "map_only" | "results_only";
+export type ExplorerMode = "map" | "balanced" | "results" | "map_only" | "results_only" | "analysis";
 
 export type PropertyPublisher = {
   id: string | null;
