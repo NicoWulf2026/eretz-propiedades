@@ -16,16 +16,16 @@ export function Footer() {
         </div>
         <nav aria-label="Explorar" className="flex flex-col gap-2 text-sm">
           <p className="mb-2 font-bold text-[#0b2748]">Explorar</p>
-          <Link href="/propiedades">Todas las propiedades</Link>
-          <Link href="/propiedades?operacion=venta">Propiedades en venta</Link>
-          <Link href="/propiedades?operacion=alquiler">Propiedades en alquiler</Link>
-          <Link href="/contacto">Contacto</Link>
+          <Link href="/propiedades" prefetch={false}>Todas las propiedades</Link>
+          <Link href="/propiedades?operacion=venta" prefetch={false}>Propiedades en venta</Link>
+          <Link href="/propiedades?operacion=alquiler" prefetch={false}>Propiedades en alquiler</Link>
+          <Link href="/contacto" prefetch={false}>Contacto</Link>
         </nav>
         <nav aria-label="Información legal" className="flex flex-col gap-2 text-sm">
           <p className="mb-2 font-bold text-[#0b2748]">Información</p>
-          <Link href="/terminos">Términos y condiciones</Link>
-          <Link href="/privacidad">Privacidad</Link>
-          <Link href="/baja-o-correccion">Baja o corrección</Link>
+          <Link href="/terminos" prefetch={false}>Términos y condiciones</Link>
+          <Link href="/privacidad" prefetch={false}>Privacidad</Link>
+          <Link href="/baja-o-correccion" prefetch={false}>Baja o corrección</Link>
           <a href={`mailto:${email}`}>{email}</a>
         </nav>
       </div>

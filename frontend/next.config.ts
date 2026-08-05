@@ -20,7 +20,6 @@ const csp = [
 ].join("; ");
 
 const nextConfig: NextConfig = {
-  reactCompiler: true,
   poweredByHeader: false,
   // Resolve metadata before streaming for every user agent. Besides producing
   // deterministic share tags, this preserves the real 404 status for gated or

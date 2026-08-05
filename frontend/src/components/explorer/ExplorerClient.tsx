@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FilterForm } from "@/components/search/FilterForm";
 import { Pagination } from "@/components/search/Pagination";
 import { PropertyMap } from "@/components/map/PropertyMap";
@@ -16,11 +16,22 @@ const modeLabels: Array<[ExplorerMode, string]> = [
   ["results_only", "Solo resultados"],
 ];
 
-export function ExplorerClient({ filters, result, basePath }: { filters: PropertyFilters; result: PropertySearchResult; basePath: string }) {
-  const initialReturnTo = `${basePath}${filtersToSearchParams(filters).toString() ? `?${filtersToSearchParams(filters)}` : ""}`;
+function unavailableResult(filters: PropertyFilters): PropertySearchResult {
+  return {
+    properties: [], count: null, page: filters.page, pageSize: 24,
+    hasNext: false, hasPrevious: filters.page > 1, nextCursor: null, previousCursor: null,
+    source: "error", error: true, invalidCursor: false,
+  };
+}
+
+export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters; basePath: string }) {
+  const initialSearch = filtersToSearchParams(filters);
+  const initialReturnTo = `${basePath}${initialSearch.toString() ? `?${initialSearch}` : ""}`;
   const [mode, setMode] = useState<ExplorerMode>(filters.mode);
   const [selectedId, setSelectedId] = useState(filters.selectedId);
   const [returnTo, setReturnTo] = useState(initialReturnTo);
+  const [result, setResult] = useState<PropertySearchResult | null>(null);
+  const resultAbortRef = useRef<AbortController | null>(null);
   const currentFilters = useMemo(() => ({ ...filters, mode, selectedId }), [filters, mode, selectedId]);
 
   useEffect(() => {
@@ -39,6 +50,25 @@ export function ExplorerClient({ filters, result, basePath }: { filters: Propert
     window.addEventListener("eretz:explorer-url-change", onUrl);
     return () => window.removeEventListener("eretz:explorer-url-change", onUrl);
   }, [filters.mode, initialReturnTo]);
+
+  useEffect(() => {
+    const desktop = window.matchMedia("(min-width: 768px)").matches;
+    const resultsVisible = desktop ? mode !== "map_only" : mode === "results_only";
+    if (!resultsVisible || result) return;
+    const controller = new AbortController();
+    resultAbortRef.current?.abort();
+    resultAbortRef.current = controller;
+    void fetch(`/api/properties/search?${filtersToSearchParams(filters)}`, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("property request failed");
+        return response.json() as Promise<PropertySearchResult>;
+      })
+      .then((nextResult) => setResult(nextResult))
+      .catch((error: unknown) => {
+        if ((error as Error).name !== "AbortError") setResult(unavailableResult(filters));
+      });
+    return () => controller.abort();
+  }, [filters, mode, result]);
 
   function chooseMode(next: ExplorerMode) {
     setMode(next);
@@ -75,27 +105,29 @@ export function ExplorerClient({ filters, result, basePath }: { filters: Propert
         </div>
       </header>
 
-      {result.invalidCursor ? <div className="container py-4"><div className="alert alert-warning" role="alert"><strong>Este enlace de paginación venció o no es válido.</strong><span> Podés volver al inicio de estos resultados sin perder tus filtros.</span><a href={`${basePath}?${resetCursor}`}>Volver a la primera página</a></div></div> : null}
+      {result?.invalidCursor ? <div className="container py-4"><div className="alert alert-warning" role="alert"><strong>Este enlace de paginación venció o no es válido.</strong><span> Podés volver al inicio de estos resultados sin perder tus filtros.</span><a href={`${basePath}?${resetCursor}`}>Volver a la primera página</a></div></div> : null}
 
       <main className={`explorer-workspace mode-${mode}`}>
         <section className="explorer-map-pane" aria-label="Explorar en el mapa">
-          <PropertyMap properties={result.properties} filters={currentFilters} selectedId={selectedId} onSelect={selectProperty} returnTo={returnTo} />
+          <PropertyMap properties={result?.properties ?? []} filters={currentFilters} selectedId={selectedId} onSelect={selectProperty} returnTo={returnTo} />
         </section>
         <section className="explorer-results-pane" aria-label="Resultados de propiedades">
           <div className="results-summary">
-            <p>{result.count !== null ? <><strong>{result.count.toLocaleString("es-AR")}</strong> propiedades permitidas</> : <><strong>Resultados filtrados</strong> · página {result.page.toLocaleString("es-AR")}</>}</p>
+            <p>{result?.count !== null && result?.count !== undefined ? <><strong>{result.count.toLocaleString("es-AR")}</strong> propiedades permitidas</> : <><strong>{result ? "Resultados filtrados" : "Preparando resultados"}</strong>{result ? <> · página {result.page.toLocaleString("es-AR")}</> : null}</>}</p>
             <span>24 por página · orden neutral</span>
           </div>
-          {result.error ? (
+          {!result ? (
+            <div className="state-panel" role="status"><span aria-hidden="true">⌛</span><h2>Preparando resultados</h2><p>El mapa ya está disponible. Las propiedades se cargan sólo cuando este listado es visible.</p></div>
+          ) : result.error ? (
             <div className="state-panel" role="alert"><span aria-hidden="true">↻</span><h2>No pudimos cargar las propiedades</h2><p>El servicio puede estar temporalmente ocupado. Tus filtros siguen guardados en la URL.</p><a className="primary-button" href={returnTo}>Reintentar</a></div>
           ) : result.properties.length === 0 ? (
             <div className="state-panel"><span aria-hidden="true">⌕</span><h2>No encontramos propiedades</h2><p>Probá ampliar la ubicación, quitar un rango o restablecer los filtros.</p><a className="primary-button" href={basePath}>Restablecer filtros</a></div>
           ) : (
             <div className="explorer-card-list" id="property-results">
-              {result.properties.map((property, index) => <PropertyCard key={property.id} property={property} priority={index < 2} returnTo={returnTo} selected={selectedId === property.id} onSelect={selectProperty} />)}
+              {result.properties.map((property) => <PropertyCard key={property.id} property={property} returnTo={returnTo} selected={selectedId === property.id} onSelect={selectProperty} />)}
             </div>
           )}
-          <Pagination filters={currentFilters} hasNext={result.hasNext} hasPrevious={result.hasPrevious} nextCursor={result.nextCursor} previousCursor={result.previousCursor} basePath={basePath} />
+          {result ? <Pagination filters={currentFilters} hasNext={result.hasNext} hasPrevious={result.hasPrevious} nextCursor={result.nextCursor} previousCursor={result.previousCursor} basePath={basePath} /> : null}
         </section>
       </main>
     </div>

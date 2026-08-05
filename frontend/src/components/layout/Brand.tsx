@@ -2,7 +2,7 @@ import Link from "next/link";
 
 export function Brand({ dark = false }: { dark?: boolean }) {
   return (
-    <Link href="/" className="group inline-flex items-center gap-3">
+    <Link href="/" prefetch={false} className="group inline-flex items-center gap-3">
       <span
         aria-hidden="true"
         className={`relative grid size-10 place-items-center rounded-xl border text-sm font-black tracking-tight ${

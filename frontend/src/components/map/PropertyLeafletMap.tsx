@@ -2,12 +2,55 @@
 
 import L, { type LatLngBounds } from "leaflet";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from "react-leaflet";
+import { MapContainer, Marker, Popup, useMap, useMapEvents } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import { propertyLocation } from "@/lib/property-presenter";
 import type { MapSearchResponse, MapViewport, PropertySummary } from "@/types/property";
 
 type MapPoint = MapSearchResponse["points"][number];
+
+class OpenStreetMapCanvasLayer extends L.GridLayer {
+  constructor() {
+    super({
+      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      tileSize: 256,
+      updateWhenIdle: true,
+      keepBuffer: 1,
+    });
+  }
+
+  override createTile(coords: L.Coords, done: L.DoneCallback) {
+    const canvas = document.createElement("canvas");
+    const density = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = 256 * density;
+    canvas.height = 256 * density;
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.referrerPolicy = "no-referrer";
+    image.decoding = "async";
+    image.onload = () => {
+      const context = canvas.getContext("2d");
+      if (context) context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      done(undefined, canvas);
+    };
+    image.onerror = () => done(new Error("Map tile could not be loaded"), canvas);
+    const subdomain = ["a", "b", "c"][Math.abs(coords.x + coords.y) % 3];
+    image.src = `https://${subdomain}.tile.openstreetmap.org/${coords.z}/${coords.x}/${coords.y}.png`;
+    return canvas;
+  }
+}
+
+function CanvasTileLayer() {
+  const map = useMap();
+  useEffect(() => {
+    const layer = new OpenStreetMapCanvasLayer();
+    layer.addTo(map);
+    return () => {
+      layer.removeFrom(map);
+    };
+  }, [map]);
+  return null;
+}
 
 function markerIcon(point: MapPoint, selected: boolean) {
   if (point.kind === "cluster") {
@@ -37,17 +80,33 @@ function viewportFromBounds(bounds: LatLngBounds, zoom: number): MapViewport {
   };
 }
 
-function MapEvents({ onViewport, locateRequest, onLocationError }: { onViewport: (viewport: MapViewport) => void; locateRequest: number; onLocationError: () => void }) {
+function MapEvents({ onViewport, locateRequest, onLocationError }: { onViewport: (viewport: MapViewport, persist: boolean) => void; locateRequest: number; onLocationError: () => void }) {
   const initialViewportReported = useRef(false);
+  const userInteraction = useRef(false);
   const map = useMapEvents({
-    moveend() { onViewport(viewportFromBounds(map.getBounds(), map.getZoom())); },
+    moveend() {
+      onViewport(viewportFromBounds(map.getBounds(), map.getZoom()), userInteraction.current);
+      userInteraction.current = false;
+    },
     locationfound(event) { map.setView(event.latlng, Math.max(map.getZoom(), 14)); },
     locationerror() { onLocationError(); },
   });
   useEffect(() => {
+    const container = map.getContainer();
+    const markInteraction = () => { userInteraction.current = true; };
+    container.addEventListener("pointerdown", markInteraction, { passive: true });
+    container.addEventListener("wheel", markInteraction, { passive: true });
+    container.addEventListener("keydown", markInteraction);
+    return () => {
+      container.removeEventListener("pointerdown", markInteraction);
+      container.removeEventListener("wheel", markInteraction);
+      container.removeEventListener("keydown", markInteraction);
+    };
+  }, [map]);
+  useEffect(() => {
     if (initialViewportReported.current) return;
     initialViewportReported.current = true;
-    onViewport(viewportFromBounds(map.getBounds(), map.getZoom()));
+    onViewport(viewportFromBounds(map.getBounds(), map.getZoom()), false);
   }, [map, onViewport]);
   useEffect(() => {
     if (locateRequest > 0) map.locate({ enableHighAccuracy: false, timeout: 8_000, maximumAge: 120_000 });
@@ -108,8 +167,15 @@ export function PropertyLeafletMap({
     return () => cancelAnimationFrame(frame);
   }, [initialPoints]);
 
-  function handleViewport(next: MapViewport) {
+  function handleViewport(next: MapViewport, persist: boolean) {
     setViewport(next);
+    if (!initialMapRequestRef.current) {
+      initialMapRequestRef.current = true;
+      setPending(true);
+      void searchViewport(next);
+      return;
+    }
+    if (!persist) return;
     setPending(true);
     const url = new URL(window.location.href);
     url.searchParams.set("norte", String(next.north));
@@ -119,10 +185,6 @@ export function PropertyLeafletMap({
     url.searchParams.set("zoom", String(next.zoom));
     window.history.replaceState(window.history.state, "", `${url.pathname}?${url.searchParams.toString()}`);
     window.dispatchEvent(new CustomEvent("eretz:explorer-url-change", { detail: `${url.pathname}?${url.searchParams.toString()}` }));
-    if (!initialMapRequestRef.current) {
-      initialMapRequestRef.current = true;
-      void searchViewport(next);
-    }
   }
 
   async function searchViewport(target: MapViewport) {
@@ -162,7 +224,7 @@ export function PropertyLeafletMap({
   return (
     <div className={`interactive-map ${fullScreen ? "is-fullscreen" : ""}`} aria-describedby="map-alternative">
       <MapContainer center={center} zoom={initialViewport?.zoom ?? (initialPoints.length ? 6 : 4)} className="h-full w-full" scrollWheelZoom>
-        <TileLayer attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+        <CanvasTileLayer />
         <MapEvents onViewport={handleViewport} locateRequest={locateRequest} onLocationError={() => setError("No pudimos acceder a tu ubicación. Podés permitirla desde el navegador o seguir explorando el mapa.")} />
         <InitialView points={initialPoints} viewport={initialViewport} resetRequest={resetRequest} />
         {points.map((point) => (

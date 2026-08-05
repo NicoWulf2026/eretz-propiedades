@@ -86,8 +86,9 @@ export function FilterForm({ filters, action = "/" }: { filters: PropertyFilters
         </button>
         <button className="primary-button explorer-search-button" type="submit">Buscar</button>
       </div>
-      {open ? <button className="filter-backdrop" type="button" aria-label="Cerrar filtros" onClick={closePanel} /> : null}
-      <div id="advanced-filters" ref={panelRef} className={`filter-panel ${open ? "is-open" : ""}`} role="dialog" aria-modal={open || undefined} aria-label="Filtros de propiedades">
+      {open ? <>
+      <button className="filter-backdrop" type="button" aria-label="Cerrar filtros" onClick={closePanel} />
+      <div id="advanced-filters" ref={panelRef} className="filter-panel is-open" role="dialog" aria-modal="true" aria-label="Filtros de propiedades">
         <div className="filter-panel-header">
           <div><p className="eyebrow">Afinar búsqueda</p><h2>Filtros</h2></div>
           <button className="icon-button" type="button" aria-label="Cerrar filtros" onClick={closePanel}>×</button>
@@ -127,6 +128,7 @@ export function FilterForm({ filters, action = "/" }: { filters: PropertyFilters
           <button className="primary-button" type="submit">Ver resultados</button>
         </div>
       </div>
+      </> : null}
     </form>
   );
 }
