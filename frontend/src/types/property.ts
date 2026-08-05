@@ -230,6 +230,8 @@ export type PropertyFilters = {
 export type PropertySearchResult = {
   properties: PropertySummary[];
   count: number | null;
+  totalCount: number | null;
+  mapCount: number | null;
   page: number;
   pageSize: number;
   hasNext: boolean;

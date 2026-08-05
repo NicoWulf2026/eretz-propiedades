@@ -19,7 +19,7 @@ import type {
 
 export const PROPERTY_PAGE_SIZE = 24;
 const SCAN_BATCH_SIZE = 96;
-const MAX_LIST_SCAN_BATCHES = 60;
+const MAX_LIST_SCAN_BATCHES = 3000; // Increased to allow skipping large blocks of excluded properties without truncating pagination
 const QUERY_CACHE_TTL_MS = 300_000;
 const DETAIL_CACHE_TTL_MS = 300_000;
 const MAX_QUERY_CACHE_ENTRIES = 160;
@@ -45,6 +45,7 @@ const searchCache = new Map<string, TimedPromise<PropertySearchResult>>();
 const detailCache = new Map<string, TimedPromise<Property | null>>();
 const mapCache = new Map<string, TimedPromise<MapSearchResponse>>();
 const suggestionCache = new Map<string, TimedPromise<SearchSuggestion[]>>();
+const countsCache = new Map<string, TimedPromise<{ count: number; mapCount: number }>>();
 
 function cachedQuery<T>(
   store: Map<string, TimedPromise<T>>,
@@ -244,6 +245,48 @@ function buildWhere(filters: PropertyFilters, extra?: MapViewport) {
   return { where: conditions.join(" AND "), params };
 }
 
+async function getSearchCountsUncached(filters: PropertyFilters): Promise<{ count: number; mapCount: number }> {
+  const gate = await getPreviewQualityGate();
+  if (!databaseUrl() || !gate.enabled) return { count: 0, mapCount: 0 };
+  
+  // Do not apply viewport to counts because we want the total for the search query!
+  const { where, params } = buildWhere(filters, undefined);
+  
+  try {
+    const publisherJoin = filters.q || filters.publisher ? "LEFT JOIN public.inmobiliarias_main i ON i.id = p.inmobiliaria_id" : "";
+    const statement = `SELECT p.id, p.latitud, p.longitud FROM public.propiedades p ${publisherJoin} WHERE ${where}`;
+    
+    // We only need id, latitud, longitud. It should be fast even for many rows.
+    const rows = await readOnly(async (sql) => sql.unsafe<{id: string | number, latitud: number | null, longitud: number | null}[]>(statement, params as never[]));
+    
+    let matching = 0;
+    let map = 0;
+    for (const row of rows) {
+      if (gate.isVisible(String(row.id))) {
+        matching++;
+        if (row.latitud !== null && row.longitud !== null) {
+          map++;
+        }
+      }
+    }
+    return { count: matching, mapCount: map };
+  } catch (error) {
+    console.error("ERETZ public property counts failed", error instanceof Error ? error.message : "unknown error");
+    return { count: 0, mapCount: 0 };
+  }
+}
+
+function getSearchCounts(filters: PropertyFilters): Promise<{ count: number; mapCount: number }> {
+  // Discard pagination and viewport from cache key for counts
+  const countFilters = { ...filters, cursor: "", page: 1, direction: "next" as const, viewport: null };
+  return cachedQuery(
+    countsCache,
+    JSON.stringify(countFilters),
+    QUERY_CACHE_TTL_MS,
+    () => getSearchCountsUncached(countFilters)
+  );
+}
+
 function sortSpec(sort: PropertySort) {
   switch (sort) {
     case "price_asc": return { expression: "COALESCE(p.precio, 1e30)", ascending: true };
@@ -324,21 +367,10 @@ async function queryMapBatch(filters: PropertyFilters, limit: number, cursor: Cu
 
 function emptyResult(filters: PropertyFilters, source: PropertySearchResult["source"], error: boolean, invalidCursor = false): PropertySearchResult {
   return {
-    properties: [], count: null, page: filters.page, pageSize: PROPERTY_PAGE_SIZE,
+    properties: [], count: null, totalCount: null, mapCount: null, page: filters.page, pageSize: PROPERTY_PAGE_SIZE,
     hasNext: false, hasPrevious: filters.page > 1, nextCursor: null, previousCursor: null,
     source, error, invalidCursor,
   };
-}
-
-function hasFilters(filters: PropertyFilters) {
-  return Boolean(
-    filters.q || filters.operation || filters.propertyType || filters.province || filters.city ||
-    filters.neighborhood || filters.publisher || filters.currency || filters.minPrice || filters.maxPrice ||
-    filters.minRooms || filters.minBedrooms || filters.minBathrooms || filters.minGarages || filters.minArea ||
-    filters.maxArea || filters.minCoveredArea || filters.minLandArea || filters.maxExpenses || filters.maxAge ||
-    filters.recentDays || filters.hasImages || filters.hasPrice || filters.hasLocation || filters.hasVideo ||
-    filters.hasFloorPlan || filters.mortgageEligible
-  );
 }
 
 async function searchPropertiesUncached(filters: PropertyFilters): Promise<PropertySearchResult> {
@@ -366,9 +398,13 @@ async function searchPropertiesUncached(filters: PropertyFilters): Promise<Prope
     if (filters.direction === "prev") pageItems = pageItems.reverse();
     const first = pageItems[0];
     const last = pageItems.at(-1);
+    const counts = await getSearchCounts(filters);
+    
     return {
       properties: pageItems.map((item) => item.property),
-      count: hasFilters(filters) ? null : gate.visibleCount,
+      count: counts.count,
+      totalCount: gate.visibleCount,
+      mapCount: counts.mapCount,
       page: filters.page,
       pageSize: PROPERTY_PAGE_SIZE,
       hasNext: filters.direction === "prev" ? filters.page > 1 : hasExtra,
