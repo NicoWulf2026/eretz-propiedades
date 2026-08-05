@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { FilterForm } from "@/components/search/FilterForm";
 import { ContextBar } from "@/components/explorer/ContextBar";
 import { ActiveChips } from "@/components/explorer/ActiveChips";
+import { NoResults } from "@/components/explorer/NoResults";
 import { Pagination } from "@/components/search/Pagination";
 import { PropertyMap } from "@/components/map/PropertyMap";
 import { PropertyCard } from "@/components/property/PropertyCard";
@@ -163,7 +164,7 @@ function removeViewport() {
           ) : result.error ? (
             <div className="state-panel" role="alert"><span aria-hidden="true">↻</span><h2>No pudimos cargar las propiedades</h2><p>El servicio puede estar temporalmente ocupado. Tus filtros siguen guardados en la URL.</p><a className="primary-button" href={returnTo}>Reintentar</a></div>
           ) : result.properties.length === 0 ? (
-            <div className="state-panel"><span aria-hidden="true">⌕</span><h2>No encontramos propiedades</h2><p>Probá ampliar la ubicación, quitar un rango o restablecer los filtros.</p><a className="primary-button" href={basePath}>Restablecer filtros</a></div>
+            <NoResults filters={currentFilters} basePath={basePath} />
           ) : (
             <div className={`explorer-card-list density-${density}`} id="property-results">
               {result.properties.map((property) => <PropertyCard key={property.id} property={property} variant={density} returnTo={returnTo} selected={selectedId === property.id} onSelect={selectProperty} />)}

@@ -208,6 +208,7 @@ button, a, summary { -webkit-tap-highlight-color: transparent; }
 .property-card .card-actions { display: flex; flex-wrap: wrap; gap: .5rem; border-top: 1px solid #eef2f7; padding: .75rem 1rem; }
 .property-card .card-actions .secondary-button, .property-card .card-actions .primary-button { flex: 1 1 auto; text-align: center; min-height: 38px; display: inline-flex; align-items: center; justify-content: center; }
 .state-panel { display: grid; min-height: 330px; place-content: center; justify-items: center; border: 1px dashed #abc0d1; border-radius: 1rem; background: white; padding: 2rem; text-align: center; }
+.state-panel .state-actions { display: flex; flex-wrap: wrap; gap: .5rem; justify-content: center; margin-top: 1.1rem; }
 .state-panel > span { color: var(--blue); font-size: 2.5rem; }
 .state-panel h2 { margin-top: .65rem; color: var(--navy); font-size: 1.25rem; font-weight: 900; }
 .state-panel p { max-width: 34rem; margin-top: .4rem; color: var(--muted); font-size: .875rem; line-height: 1.55; }
