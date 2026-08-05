@@ -20,7 +20,6 @@ import type {
 export const PROPERTY_PAGE_SIZE = 24;
 const SCAN_BATCH_SIZE = 96;
 const MAX_LIST_SCAN_BATCHES = 60;
-const STATEMENT_TIMEOUT_MS = 30_000;
 const QUERY_CACHE_TTL_MS = 300_000;
 const DETAIL_CACHE_TTL_MS = 300_000;
 const MAX_QUERY_CACHE_ENTRIES = 160;
@@ -90,13 +89,11 @@ function db() {
       max_lifetime: 300,
       prepare: false,
       ssl: "require",
-      // Each statement still runs in its own implicit PostgreSQL transaction,
-      // but these startup parameters make every transaction read-only and avoid
-      // four regional round trips (BEGIN / SET / SET LOCAL / COMMIT) per query.
+      // Keep session startup pooler-safe. Read-only and timeout defaults live on
+      // the dedicated role; every application operation also opens an explicit
+      // READ ONLY transaction below.
       connection: {
         application_name: "eretz-preview-readonly",
-        default_transaction_read_only: true,
-        statement_timeout: STATEMENT_TIMEOUT_MS,
       },
       onnotice: () => undefined,
     });
@@ -116,7 +113,7 @@ async function readOnly<T>(work: (sql: Sql) => Promise<T>) {
     const sql = db();
     if (!sql) throw new Error("ERETZ database is not configured");
     try {
-      return await work(sql);
+      return await sql.begin("read only", async (transaction) => work(transaction as unknown as Sql));
     } catch (error) {
       if (attempt > 0 || !isRetryableConnectionError(error)) throw error;
       if (client === sql) client = null;
