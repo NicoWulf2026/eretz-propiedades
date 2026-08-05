@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FilterForm } from "@/components/search/FilterForm";
+import { ContextBar } from "@/components/explorer/ContextBar";
 import { Pagination } from "@/components/search/Pagination";
 import { PropertyMap } from "@/components/map/PropertyMap";
 import { PropertyCard } from "@/components/property/PropertyCard";
@@ -18,7 +19,8 @@ const modeLabels: Array<[ExplorerMode, string]> = [
 
 function unavailableResult(filters: PropertyFilters): PropertySearchResult {
   return {
-    properties: [], count: null, page: filters.page, pageSize: 24,
+    properties: [], count: null, totalCount: null, mapCount: null,
+    page: filters.page, pageSize: 24,
     hasNext: false, hasPrevious: filters.page > 1, nextCursor: null, previousCursor: null,
     source: "error", error: true, invalidCursor: false,
   };
@@ -75,14 +77,24 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
   }, [filters, mode, requestKey, result]);
 
   function chooseMode(next: ExplorerMode) {
-    setMode(next);
-    localStorage.setItem("eretz:explorer-mode", next);
-    const url = new URL(window.location.href);
-    if (next === "balanced") url.searchParams.delete("modo"); else url.searchParams.set("modo", next);
-    const nextUrl = `${url.pathname}${url.search ? url.search : ""}`;
-    window.history.replaceState(window.history.state, "", nextUrl);
-    setReturnTo(nextUrl);
-  }
+  setMode(next);
+  localStorage.setItem("eretz:explorer-mode", next);
+  const url = new URL(window.location.href);
+  if (next === "balanced") url.searchParams.delete("modo"); else url.searchParams.set("modo", next);
+  const nextUrl = `${url.pathname}${url.search ? url.search : ""}`;
+  window.history.replaceState(window.history.state, "", nextUrl);
+  setReturnTo(nextUrl);
+}
+
+function removeViewport() {
+  // Clear viewport filter and update URL
+  const newFilters = { ...filters, viewport: null };
+  const search = filtersToSearchParams(newFilters);
+  const newUrl = `${basePath}${search.toString() ? `?${search}` : ""}`;
+  window.history.replaceState(window.history.state, "", newUrl);
+  setReturnTo(newUrl);
+}
+
 
   function selectProperty(id: string) {
     setSelectedId(id);
@@ -116,10 +128,15 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
           <PropertyMap properties={result?.properties ?? []} filters={currentFilters} selectedId={selectedId} onSelect={selectProperty} returnTo={returnTo} />
         </section>
         <section className="explorer-results-pane" aria-label="Resultados de propiedades">
-          <div className="results-summary">
-            <p>{result?.count !== null && result?.count !== undefined ? <><strong>{result.count.toLocaleString("es-AR")}</strong> propiedades permitidas</> : <><strong>{result ? "Resultados filtrados" : "Preparando resultados"}</strong>{result ? <> · página {result.page.toLocaleString("es-AR")}</> : null}</>}</p>
-            <span>24 por página · orden neutral</span>
-          </div>
+          <ContextBar
+            totalCount={result?.totalCount ?? null}
+            count={result?.count ?? null}
+            mapCount={result?.mapCount ?? null}
+            sort={filters.sort}
+            mode={mode}
+            viewportApplied={!!filters.viewport}
+            onRemoveViewport={removeViewport}
+          />
           {!result ? (
             <div className="state-panel" role="status"><span aria-hidden="true">⌛</span><h2>Preparando resultados</h2><p>El mapa ya está disponible. Las propiedades se cargan sólo cuando este listado es visible.</p></div>
           ) : result.error ? (

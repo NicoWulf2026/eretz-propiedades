@@ -6,9 +6,7 @@ import { Brand } from "@/components/layout/Brand";
 
 const items = [
   { label: "Explorar", href: "/" },
-  { label: "Comprar", href: "/?operacion=venta" },
-  { label: "Alquilar", href: "/?operacion=alquiler" },
-  { label: "Contacto", href: "/contacto" },
+  { label: "Publicar", href: "/#", isInformative: true }, // "únicamente como enlace informativo real si todavía no funciona"
 ];
 
 export function Navbar() {
