@@ -32,6 +32,7 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
   const initialSearch = filtersToSearchParams(filters);
   const initialReturnTo = `${basePath}${initialSearch.toString() ? `?${initialSearch}` : ""}`;
   const [mode, setMode] = useState<ExplorerMode>(filters.mode);
+  const [density, setDensity] = useState<"compact" | "full">("compact");
   const [selectedId, setSelectedId] = useState(filters.selectedId);
   const [returnTo, setReturnTo] = useState(initialReturnTo);
   const requestKey = filtersToSearchParams(filters).toString();
@@ -45,6 +46,8 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
       const saved = localStorage.getItem("eretz:explorer-mode") as ExplorerMode | null;
       if (saved && modeLabels.some(([value]) => value === saved)) requestAnimationFrame(() => setMode(saved));
     }
+    const savedDensity = localStorage.getItem("eretz:card-density");
+    if (savedDensity === "full" || savedDensity === "compact") requestAnimationFrame(() => setDensity(savedDensity));
     try {
       const state = JSON.parse(sessionStorage.getItem(`eretz:return:${initialReturnTo}`) ?? "null") as { scrollY?: number; selectedId?: string } | null;
       if (state?.selectedId) requestAnimationFrame(() => setSelectedId(state.selectedId ?? ""));
@@ -98,6 +101,11 @@ function removeViewport() {
 }
 
 
+  function chooseDensity(next: "compact" | "full") {
+    setDensity(next);
+    try { localStorage.setItem("eretz:card-density", next); } catch { /* opcional */ }
+  }
+
   function selectProperty(id: string) {
     setSelectedId(id);
     const url = new URL(window.location.href);
@@ -145,6 +153,11 @@ function removeViewport() {
             viewportApplied={!!filters.viewport}
             onRemoveViewport={removeViewport}
           />
+          <div className="density-toggle" role="group" aria-label="Densidad de tarjetas">
+            <span className="density-label">Tarjetas</span>
+            <button type="button" className={density === "compact" ? "is-active" : ""} aria-pressed={density === "compact"} onClick={() => chooseDensity("compact")}>Compactas</button>
+            <button type="button" className={density === "full" ? "is-active" : ""} aria-pressed={density === "full"} onClick={() => chooseDensity("full")}>Completas</button>
+          </div>
           {!result ? (
             <div className="state-panel" role="status"><span aria-hidden="true">⌛</span><h2>Preparando resultados</h2><p>El mapa ya está disponible. Las propiedades se cargan sólo cuando este listado es visible.</p></div>
           ) : result.error ? (
@@ -152,8 +165,8 @@ function removeViewport() {
           ) : result.properties.length === 0 ? (
             <div className="state-panel"><span aria-hidden="true">⌕</span><h2>No encontramos propiedades</h2><p>Probá ampliar la ubicación, quitar un rango o restablecer los filtros.</p><a className="primary-button" href={basePath}>Restablecer filtros</a></div>
           ) : (
-            <div className="explorer-card-list" id="property-results">
-              {result.properties.map((property) => <PropertyCard key={property.id} property={property} returnTo={returnTo} selected={selectedId === property.id} onSelect={selectProperty} />)}
+            <div className={`explorer-card-list density-${density}`} id="property-results">
+              {result.properties.map((property) => <PropertyCard key={property.id} property={property} variant={density} returnTo={returnTo} selected={selectedId === property.id} onSelect={selectProperty} />)}
             </div>
           )}
           {result ? <Pagination filters={currentFilters} hasNext={result.hasNext} hasPrevious={result.hasPrevious} nextCursor={result.nextCursor} previousCursor={result.previousCursor} basePath={basePath} /> : null}

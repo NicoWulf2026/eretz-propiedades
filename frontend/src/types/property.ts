@@ -250,6 +250,7 @@ export type PropertySummary = Pick<
   | "bathrooms" | "garages" | "totalArea" | "coveredArea" | "address"
   | "neighborhood" | "city" | "province" | "country" | "latitude" | "longitude"
   | "images" | "publishedAt" | "updatedAt" | "status" | "mortgageEligible"
+  | "description" | "amenities"
 >;
 export type PropertyDetail = Property;
 export type RelatedProperty = PropertySummary;

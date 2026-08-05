@@ -198,6 +198,15 @@ button, a, summary { -webkit-tap-highlight-color: transparent; }
 .explorer-card-list { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: .9rem; }
 .mode-map .explorer-card-list { grid-template-columns: 1fr; }
 .mode-results .explorer-card-list, .mode-results_only .explorer-card-list { grid-template-columns: repeat(3,minmax(0,1fr)); }
+/* Densidad: tarjetas completas usan una columna menos para dar aire al contenido extra. */
+.explorer-card-list.density-full { grid-template-columns: 1fr; }
+.mode-results .explorer-card-list.density-full, .mode-results_only .explorer-card-list.density-full { grid-template-columns: repeat(2,minmax(0,1fr)); }
+.density-toggle { display: flex; align-items: center; gap: .35rem; margin-bottom: .75rem; font-size: .72rem; }
+.density-toggle .density-label { font-weight: 800; color: #526276; margin-right: .15rem; }
+.density-toggle button { min-height: 32px; border: 1px solid var(--border); border-radius: .55rem; background: #f1f5f9; padding: .25rem .6rem; font-weight: 800; color: #526276; }
+.density-toggle button.is-active { background: white; color: var(--navy); box-shadow: 0 2px 8px rgba(6,25,47,.1); }
+.property-card .card-actions { display: flex; flex-wrap: wrap; gap: .5rem; border-top: 1px solid #eef2f7; padding: .75rem 1rem; }
+.property-card .card-actions .secondary-button, .property-card .card-actions .primary-button { flex: 1 1 auto; text-align: center; min-height: 38px; display: inline-flex; align-items: center; justify-content: center; }
 .state-panel { display: grid; min-height: 330px; place-content: center; justify-items: center; border: 1px dashed #abc0d1; border-radius: 1rem; background: white; padding: 2rem; text-align: center; }
 .state-panel > span { color: var(--blue); font-size: 2.5rem; }
 .state-panel h2 { margin-top: .65rem; color: var(--navy); font-size: 1.25rem; font-weight: 900; }

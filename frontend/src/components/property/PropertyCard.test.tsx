@@ -5,6 +5,18 @@ import { mapSupabasePropertyToProperty } from "@/lib/property-mapper";
 import { completeRow } from "@/test/fixtures";
 
 describe("PropertyCard", () => {
+  it("variant full muestra las acciones Ver/Compartir/Contactar", () => {
+    render(<PropertyCard property={mapSupabasePropertyToProperty(completeRow)} variant="full" />);
+    expect(screen.getByRole("link", { name: "Ver propiedad" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Compartir" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Contactar" })).toBeInTheDocument();
+  });
+
+  it("variant compact no muestra las acciones extra", () => {
+    render(<PropertyCard property={mapSupabasePropertyToProperty(completeRow)} variant="compact" />);
+    expect(screen.queryByRole("button", { name: "Compartir" })).toBeNull();
+  });
+
   it("renders complete public fields and an accessible detail link", () => {
     render(<PropertyCard property={mapSupabasePropertyToProperty(completeRow)} />);
     expect(screen.getByRole("link")).toHaveAttribute("href", "/propiedad/123?volver=%2F");

@@ -185,6 +185,9 @@ function toSummary(property: Property): PropertySummary {
     updatedAt: property.updatedAt,
     status: property.status,
     mortgageEligible: property.mortgageEligible,
+    // Recorte para la variante "completa" de la tarjeta; datos reales condicionales.
+    description: property.description ? property.description.slice(0, 220) : null,
+    amenities: property.amenities.slice(0, 6),
   };
 }
 
