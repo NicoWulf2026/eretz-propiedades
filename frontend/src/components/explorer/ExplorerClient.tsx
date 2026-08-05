@@ -93,11 +93,11 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
 
 function removeViewport() {
   // Clear viewport filter and update URL
-  const newFilters = { ...filters, viewport: null };
+  // Quitar filtro del mapa: elimina sólo el viewport, reinicia el cursor y
+  // navega para re-consultar listado, conteos y mapa. Conserva el resto.
+  const newFilters = { ...filters, viewport: null, cursor: "", page: 1, direction: "next" as const };
   const search = filtersToSearchParams(newFilters);
-  const newUrl = `${basePath}${search.toString() ? `?${search}` : ""}`;
-  window.history.replaceState(window.history.state, "", newUrl);
-  setReturnTo(newUrl);
+  window.location.assign(`${basePath}${search.toString() ? `?${search}` : ""}`);
 }
 
 

@@ -175,16 +175,9 @@ export function PropertyLeafletMap({
       void searchViewport(next);
       return;
     }
-    if (!persist) return;
-    setPending(true);
-    const url = new URL(window.location.href);
-    url.searchParams.set("norte", String(next.north));
-    url.searchParams.set("este", String(next.east));
-    url.searchParams.set("sur", String(next.south));
-    url.searchParams.set("oeste", String(next.west));
-    url.searchParams.set("zoom", String(next.zoom));
-    window.history.replaceState(window.history.state, "", `${url.pathname}?${url.searchParams.toString()}`);
-    window.dispatchEvent(new CustomEvent("eretz:explorer-url-change", { detail: `${url.pathname}?${url.searchParams.toString()}` }));
+    // Mover el mapa sólo propone una zona pendiente: no cambia URL, listado ni
+    // conteos ni reinicia el cursor. La aplicación ocurre en "Buscar en esta zona".
+    if (persist) setPending(true);
   }
 
   async function searchViewport(target: MapViewport) {
@@ -213,8 +206,18 @@ export function PropertyLeafletMap({
     }
   }
 
-  async function searchArea() {
-    if (viewport) await searchViewport(viewport);
+  // "Buscar en esta zona": promueve la zona pendiente a viewport aplicado sobre
+  // TODO el explorador -> navega con la zona + reinicio de cursor, de modo que el
+  // servidor re-consulta listado, conteos y mapa. Conserva el resto de los filtros.
+  function searchArea() {
+    if (!viewport) return;
+    const params = new URLSearchParams(baseSearch);
+    params.set("norte", String(viewport.north));
+    params.set("este", String(viewport.east));
+    params.set("sur", String(viewport.south));
+    params.set("oeste", String(viewport.west));
+    params.set("zoom", String(viewport.zoom));
+    window.location.assign(`${window.location.pathname}?${params.toString()}`);
   }
 
   const center: [number, number] = initialViewport
