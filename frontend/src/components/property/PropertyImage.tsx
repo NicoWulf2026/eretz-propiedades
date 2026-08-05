@@ -22,7 +22,6 @@ export function PropertyImage({ src, alt, priority = false }: { src: string | nu
       loading={priority ? "eager" : "lazy"}
       fetchPriority={priority ? "high" : "auto"}
       decoding="async"
-      crossOrigin="anonymous"
       referrerPolicy="no-referrer"
       onError={() => setFailed(true)}
     />
