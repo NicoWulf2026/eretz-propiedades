@@ -68,6 +68,7 @@ export function FilterForm({ filters, action = "/" }: { filters: PropertyFilters
           <option value="alquiler">Alquilar</option>
           <option value="temporario">Temporario</option>
           <option value="venta_y_alquiler">Venta y alquiler</option>
+          <option value="consultar">Consultar</option>
         </select>
         <select aria-label="Tipo de propiedad" name="tipo" defaultValue={filters.propertyType}>
           <option value="">Todos los tipos</option>
@@ -80,6 +81,7 @@ export function FilterForm({ filters, action = "/" }: { filters: PropertyFilters
           <option value="cochera">Cochera</option>
           <option value="galpon">Galpón</option>
           <option value="campo">Campo</option>
+          <option value="otro">Otro</option>
         </select>
         <button ref={toggleRef} className="filter-toggle" type="button" aria-expanded={open} aria-controls="advanced-filters" onClick={() => setOpen(true)}>
           Filtros <span aria-hidden="true">＋</span>
@@ -104,13 +106,8 @@ export function FilterForm({ filters, action = "/" }: { filters: PropertyFilters
           <Field label="Ambientes mín."><input name="ambientes" type="number" min="1" max="30" defaultValue={filters.minRooms ?? ""} /></Field>
           <Field label="Dormitorios mín."><input name="dormitorios" type="number" min="1" max="30" defaultValue={filters.minBedrooms ?? ""} /></Field>
           <Field label="Baños mín."><input name="banos" type="number" min="1" max="20" defaultValue={filters.minBathrooms ?? ""} /></Field>
-          <Field label="Cocheras mín."><input name="cocheras" type="number" min="1" max="50" defaultValue={filters.minGarages ?? ""} /></Field>
           <Field label="Superficie total mín."><input name="superficie" type="number" min="1" defaultValue={filters.minArea ?? ""} /></Field>
           <Field label="Superficie total máx."><input name="superficie_max" type="number" min="1" defaultValue={filters.maxArea ?? ""} /></Field>
-          <Field label="Superficie cubierta mín."><input name="superficie_cubierta" type="number" min="1" defaultValue={filters.minCoveredArea ?? ""} /></Field>
-          <Field label="Terreno mín."><input name="terreno" type="number" min="1" defaultValue={filters.minLandArea ?? ""} /></Field>
-          <Field label="Expensas máximas"><input name="expensas_max" type="number" min="0" defaultValue={filters.maxExpenses ?? ""} /></Field>
-          <Field label="Antigüedad máxima"><input name="antiguedad_max" type="number" min="0" max="300" defaultValue={filters.maxAge ?? ""} /></Field>
           <Field label="Publicado"><select name="reciente" defaultValue={filters.recentDays ?? ""}><option value="">Cualquier fecha</option><option value="1">Últimas 24 horas</option><option value="7">Últimos 7 días</option><option value="30">Últimos 30 días</option><option value="90">Últimos 90 días</option></select></Field>
           <Field label="Orden"><select name="orden" defaultValue={filters.sort}><option value="recent">Incorporadas recientemente</option><option value="price_asc" disabled={!filters.currency}>Menor precio</option><option value="price_desc" disabled={!filters.currency}>Mayor precio</option><option value="area_desc">Mayor superficie</option><option value="rooms_desc">Más ambientes</option><option value="price_m2_asc" disabled={!filters.currency}>Menor precio por m²</option></select></Field>
         </div>
@@ -118,9 +115,6 @@ export function FilterForm({ filters, action = "/" }: { filters: PropertyFilters
           <label className="check"><input name="ubicacion" value="1" type="checkbox" defaultChecked={filters.hasLocation} /> Con ubicación en mapa</label>
           <label className="check"><input name="imagenes" value="1" type="checkbox" defaultChecked={filters.hasImages} /> Con imágenes</label>
           <label className="check"><input name="precio" value="1" type="checkbox" defaultChecked={filters.hasPrice} /> Con precio</label>
-          <label className="check"><input name="video" value="1" type="checkbox" defaultChecked={filters.hasVideo} /> Con video</label>
-          <label className="check"><input name="plano" value="1" type="checkbox" defaultChecked={filters.hasFloorPlan} /> Con plano</label>
-          <label className="check"><input name="credito" value="1" type="checkbox" defaultChecked={filters.mortgageEligible} /> Apto crédito confirmado</label>
         </div>
         {!filters.currency && (filters.sort === "price_asc" || filters.sort === "price_desc" || filters.sort === "price_m2_asc") ? <p className="filter-warning">Elegí una moneda para comparar precios sin mezclar unidades.</p> : null}
         <div className="filter-panel-actions">
