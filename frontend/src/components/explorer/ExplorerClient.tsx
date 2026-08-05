@@ -30,7 +30,9 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
   const [mode, setMode] = useState<ExplorerMode>(filters.mode);
   const [selectedId, setSelectedId] = useState(filters.selectedId);
   const [returnTo, setReturnTo] = useState(initialReturnTo);
-  const [result, setResult] = useState<PropertySearchResult | null>(null);
+  const requestKey = filtersToSearchParams(filters).toString();
+  const [resultState, setResultState] = useState<{ key: string; result: PropertySearchResult } | null>(null);
+  const result = resultState?.key === requestKey ? resultState.result : null;
   const resultAbortRef = useRef<AbortController | null>(null);
   const currentFilters = useMemo(() => ({ ...filters, mode, selectedId }), [filters, mode, selectedId]);
 
@@ -63,12 +65,14 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
         if (!response.ok) throw new Error("property request failed");
         return response.json() as Promise<PropertySearchResult>;
       })
-      .then((nextResult) => setResult(nextResult))
+      .then((nextResult) => setResultState({ key: requestKey, result: nextResult }))
       .catch((error: unknown) => {
-        if ((error as Error).name !== "AbortError") setResult(unavailableResult(filters));
+        if ((error as Error).name !== "AbortError") {
+          setResultState({ key: requestKey, result: unavailableResult(filters) });
+        }
       });
     return () => controller.abort();
-  }, [filters, mode, result]);
+  }, [filters, mode, requestKey, result]);
 
   function chooseMode(next: ExplorerMode) {
     setMode(next);
