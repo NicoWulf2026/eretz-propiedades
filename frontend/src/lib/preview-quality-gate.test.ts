@@ -6,6 +6,8 @@ afterEach(() => {
   delete process.env.ERETZ_PREVIEW_QUALITY_GATE;
   delete process.env.ERETZ_PREVIEW_GATE_ASSIGNMENTS_PATH;
   delete process.env.ERETZ_PREVIEW_GATE_BLOB_PATHNAME;
+  delete process.env.ERETZ_PREVIEW_GATE_SHA256;
+  delete process.env.ERETZ_PREVIEW_GATE_FINGERPRINT;
   vi.resetModules();
 });
 
@@ -21,5 +23,12 @@ describe("preview quality gate runtime", () => {
     process.env.ERETZ_PREVIEW_QUALITY_GATE = "true";
     const { getPreviewQualityGate } = await import("@/lib/preview-quality-gate");
     await expect(getPreviewQualityGate()).rejects.toThrow(/exactly one private manifest source/);
+  });
+
+  it("requires an expected fingerprint for a private Blob source", async () => {
+    process.env.ERETZ_PREVIEW_QUALITY_GATE = "true";
+    process.env.ERETZ_PREVIEW_GATE_BLOB_PATHNAME = "quality-gate/version/preview-gate.csv.gz";
+    const { getPreviewQualityGate } = await import("@/lib/preview-quality-gate");
+    await expect(getPreviewQualityGate()).rejects.toThrow(/expected fingerprint/);
   });
 });

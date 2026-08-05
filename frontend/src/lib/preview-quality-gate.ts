@@ -14,6 +14,8 @@ import { applyPublicQualityGateOverrides } from "@/lib/public-quality-gate-overr
 
 const MAX_COMPRESSED_BYTES = 2_000_000;
 const MAX_MANIFEST_BYTES = 16_000_000;
+const SHA256_PATTERN = /^[a-f0-9]{64}$/;
+const FINGERPRINT_PATTERN = /^[a-f0-9]{16}$/;
 
 export type PreviewQualityGate = {
   enabled: boolean;
@@ -62,6 +64,10 @@ async function loadPrivateBlobManifest(pathname: string) {
   if (!pathname.endsWith(".csv.gz")) {
     throw new Error("Private preview gate blob must be a gzip-compressed CSV");
   }
+  const expectedChecksum = process.env.ERETZ_PREVIEW_GATE_SHA256?.trim().toLowerCase() ?? "";
+  if (!SHA256_PATTERN.test(expectedChecksum)) {
+    throw new Error("Private preview gate requires an expected SHA-256 checksum");
+  }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10_000);
   try {
@@ -73,19 +79,26 @@ async function loadPrivateBlobManifest(pathname: string) {
       throw new Error("Private preview gate blob exceeds the allowed size");
     }
     const payload = Buffer.from(await new Response(result.stream).arrayBuffer());
+    const checksum = createHash("sha256").update(payload).digest("hex");
+    if (checksum !== expectedChecksum) {
+      throw new Error("Private preview gate checksum mismatch");
+    }
     return decodeManifest(payload, true);
   } finally {
     clearTimeout(timeout);
   }
 }
 
-function buildGate(content: string): PreviewQualityGate {
+function buildGate(content: string, expectedFingerprint = ""): PreviewQualityGate {
   const entries: ReadonlyMap<string, PreviewGateEntry> = applyPublicQualityGateOverrides(
     parsePreviewGateRuntimeCsv(content),
   );
   const counts = countPreviewEntries(entries);
   if (counts.total === 0) throw new Error("Preview gate manifest is empty");
   const version = createHash("sha256").update(content).digest("hex").slice(0, 16);
+  if (expectedFingerprint && version !== expectedFingerprint) {
+    throw new Error("Preview gate fingerprint mismatch");
+  }
   return {
     enabled: true,
     version,
@@ -102,9 +115,12 @@ async function loadGate(): Promise<PreviewQualityGate> {
   if (Boolean(filePath) === Boolean(blobPathname)) {
     throw new Error("Preview gate requires exactly one private manifest source");
   }
-  return buildGate(filePath
-    ? await loadFileManifest(filePath)
-    : await loadPrivateBlobManifest(blobPathname));
+  if (filePath) return buildGate(await loadFileManifest(filePath));
+  const expectedFingerprint = process.env.ERETZ_PREVIEW_GATE_FINGERPRINT?.trim().toLowerCase() ?? "";
+  if (!FINGERPRINT_PATTERN.test(expectedFingerprint)) {
+    throw new Error("Private preview gate requires an expected fingerprint");
+  }
+  return buildGate(await loadPrivateBlobManifest(blobPathname), expectedFingerprint);
 }
 
 export function getPreviewQualityGate(): Promise<PreviewQualityGate> {
