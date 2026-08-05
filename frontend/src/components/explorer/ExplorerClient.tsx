@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FilterForm } from "@/components/search/FilterForm";
 import { ContextBar } from "@/components/explorer/ContextBar";
+import { ActiveChips } from "@/components/explorer/ActiveChips";
 import { Pagination } from "@/components/search/Pagination";
 import { PropertyMap } from "@/components/map/PropertyMap";
 import { PropertyCard } from "@/components/property/PropertyCard";
@@ -118,6 +119,7 @@ function removeViewport() {
             </div>
           </div>
           <FilterForm filters={currentFilters} action={basePath} />
+          <ActiveChips filters={currentFilters} basePath={basePath} onRemoveViewport={removeViewport} />
         </div>
       </header>
 
