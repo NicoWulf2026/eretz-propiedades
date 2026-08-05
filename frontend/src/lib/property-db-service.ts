@@ -82,25 +82,48 @@ function db() {
   if (!url) return null;
   if (!client) {
     client = postgres(url, {
-      max: 4,
+      // Vercel can create several function instances. Keep the per-instance pool
+      // deliberately small and use Supabase's transaction pooler in Preview.
+      max: 2,
       idle_timeout: 20,
       connect_timeout: 10,
+      max_lifetime: 300,
       prepare: false,
       ssl: "require",
+      // Each statement still runs in its own implicit PostgreSQL transaction,
+      // but these startup parameters make every transaction read-only and avoid
+      // four regional round trips (BEGIN / SET / SET LOCAL / COMMIT) per query.
+      connection: {
+        application_name: "eretz-preview-readonly",
+        default_transaction_read_only: true,
+        statement_timeout: STATEMENT_TIMEOUT_MS,
+      },
       onnotice: () => undefined,
     });
   }
   return client;
 }
 
+function isRetryableConnectionError(error: unknown) {
+  const code = typeof error === "object" && error !== null && "code" in error
+    ? String((error as { code?: unknown }).code ?? "")
+    : "";
+  return ["CONNECTION_CLOSED", "CONNECT_TIMEOUT", "ECONNRESET", "ETIMEDOUT", "57P01", "57P02", "57P03"].includes(code);
+}
+
 async function readOnly<T>(work: (sql: Sql) => Promise<T>) {
-  const sql = db();
-  if (!sql) throw new Error("ERETZ database is not configured");
-  return sql.begin(async (transaction) => {
-    await transaction.unsafe("SET TRANSACTION READ ONLY");
-    await transaction.unsafe(`SET LOCAL statement_timeout = '${STATEMENT_TIMEOUT_MS}ms'`);
-    return work(transaction as unknown as Sql);
-  }) as Promise<T>;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const sql = db();
+    if (!sql) throw new Error("ERETZ database is not configured");
+    try {
+      return await work(sql);
+    } catch (error) {
+      if (attempt > 0 || !isRetryableConnectionError(error)) throw error;
+      if (client === sql) client = null;
+      await sql.end({ timeout: 0 }).catch(() => undefined);
+    }
+  }
+  throw new Error("ERETZ database connection could not be recovered");
 }
 
 const projection = `
@@ -289,10 +312,13 @@ async function queryMapBatch(filters: PropertyFilters, limit: number, cursor: Cu
   const sort = sortSpec("recent");
   const cursorClause = buildCursorClause(params, cursor, sort.expression, false, "next");
   const limitParam = addParam(params, limit);
+  const publisherJoin = filters.q || filters.publisher
+    ? "LEFT JOIN public.inmobiliarias_main i ON i.id = p.inmobiliaria_id"
+    : "";
   const statement = `SELECT p.id, p.titulo, p.precio, p.moneda, p.latitud, p.longitud,
       p.barrio, p.ciudad, p.provincia, ${sort.expression} AS __sort_value
     FROM public.propiedades p
-    LEFT JOIN public.inmobiliarias_main i ON i.id = p.inmobiliaria_id
+    ${publisherJoin}
     WHERE ${where}${cursorClause}
     ORDER BY ${sort.expression} DESC, p.id DESC
     LIMIT ${limitParam}`;
@@ -320,7 +346,7 @@ function hasFilters(filters: PropertyFilters) {
 
 async function searchPropertiesUncached(filters: PropertyFilters): Promise<PropertySearchResult> {
   if (!databaseUrl()) return emptyResult(filters, "unconfigured", true);
-  const gate = getPreviewQualityGate();
+  const gate = await getPreviewQualityGate();
   if (!gate.enabled) return emptyResult(filters, "unconfigured", true);
   const decoded = decodeCursor(filters.cursor, filters.sort);
   if (filters.cursor && !decoded) return emptyResult(filters, "database", false, true);
@@ -374,7 +400,7 @@ export function searchProperties(filters: PropertyFilters): Promise<PropertySear
 
 async function getPropertyByIdUncached(id: string): Promise<Property | null> {
   if (!databaseUrl() || !/^\d+$/.test(id)) return null;
-  const gate = getPreviewQualityGate();
+  const gate = await getPreviewQualityGate();
   if (!gate.enabled || !gate.isVisible(id)) return null;
   try {
     const rows = await readOnly((sql) => sql.unsafe<DbPropertyRow[]>(`SELECT ${projection}, p.id AS __sort_value
@@ -443,11 +469,13 @@ function clusterMapProperties(valid: MapCandidate[], zoom: number): MapSearchRes
 }
 
 async function searchMapUncached(filters: PropertyFilters, viewport: MapViewport): Promise<MapSearchResponse> {
-  const gate = getPreviewQualityGate();
+  const gate = await getPreviewQualityGate();
   if (!databaseUrl() || !gate.enabled) return { points: [], visibleCount: 0, scannedCount: 0, truncated: false };
   const mapFilters = { ...filters, direction: "next" as const, cursor: "", sort: "recent" as const };
-  const target = viewport.zoom >= 12 ? 800 : viewport.zoom >= 9 ? 1_600 : 2_000;
-  const scanBatchSize = Math.ceil(target / 0.68);
+  // National views need representative coarse clusters, not thousands of rows
+  // that collapse into a handful of markers. Increase density only as users zoom.
+  const target = viewport.zoom >= 12 ? 700 : viewport.zoom >= 9 ? 1_400 : viewport.zoom >= 7 ? 1_000 : 600;
+  const scanBatchSize = Math.ceil(target / 0.75);
   const accepted: MapCandidate[] = [];
   let scanCursor: CursorPayload | null = null;
   let scannedCount = 0;
@@ -484,7 +512,7 @@ async function searchSuggestionsUncached(query: string): Promise<SearchSuggestio
   const q = query.trim().slice(0, 60);
   if (q.length < 2) return [];
   const filters = parsePropertyFilters({ q });
-  const gate = getPreviewQualityGate();
+  const gate = await getPreviewQualityGate();
   if (!databaseUrl() || !gate.enabled) return [];
   const rows = await queryBatch(filters, 300, null);
   const suggestions = new Map<string, SearchSuggestion>();

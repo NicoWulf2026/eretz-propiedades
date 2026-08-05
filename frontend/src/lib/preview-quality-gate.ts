@@ -1,6 +1,9 @@
 import "server-only";
 
-import { readFileSync } from "node:fs";
+import { get } from "@vercel/blob";
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { gunzipSync } from "node:zlib";
 import { isAbsolute, relative, resolve } from "node:path";
 import {
   countPreviewEntries,
@@ -9,30 +12,39 @@ import {
 } from "@/lib/preview-gate-policy";
 import { applyPublicQualityGateOverrides } from "@/lib/public-quality-gate-overrides";
 
-type PreviewQualityGate = {
+const MAX_COMPRESSED_BYTES = 2_000_000;
+const MAX_MANIFEST_BYTES = 16_000_000;
+
+export type PreviewQualityGate = {
   enabled: boolean;
-  entries: ReadonlyMap<string, PreviewGateEntry>;
+  version: string;
   visibleCount: number | null;
   totalCount: number | null;
   isVisible: (id: string | number) => boolean;
 };
 
-let cached: PreviewQualityGate | null = null;
+let cached: Promise<PreviewQualityGate> | null = null;
 
-export function getPreviewQualityGate(): PreviewQualityGate {
-  if (cached) return cached;
-  if (process.env.ERETZ_PREVIEW_QUALITY_GATE !== "true") {
-    cached = {
-      enabled: false,
-      entries: new Map(),
-      visibleCount: null,
-      totalCount: null,
-      isVisible: () => true,
-    };
-    return cached;
+function disabledGate(): PreviewQualityGate {
+  return {
+    enabled: false,
+    version: "disabled",
+    visibleCount: null,
+    totalCount: null,
+    isVisible: () => false,
+  };
+}
+
+function decodeManifest(payload: Buffer, compressed: boolean) {
+  if (payload.byteLength > (compressed ? MAX_COMPRESSED_BYTES : MAX_MANIFEST_BYTES)) {
+    throw new Error("Preview gate manifest exceeds the allowed size");
   }
-  const configuredPath = process.env.ERETZ_PREVIEW_GATE_ASSIGNMENTS_PATH?.trim();
-  if (!configuredPath) throw new Error("Preview gate enabled without ERETZ_PREVIEW_GATE_ASSIGNMENTS_PATH");
+  const decoded = compressed ? gunzipSync(payload, { maxOutputLength: MAX_MANIFEST_BYTES }) : payload;
+  if (decoded.byteLength > MAX_MANIFEST_BYTES) throw new Error("Preview gate manifest exceeds the allowed size");
+  return decoded.toString("utf8");
+}
+
+async function loadFileManifest(configuredPath: string) {
   const manifestPath = isAbsolute(configuredPath)
     ? configuredPath
     : resolve(/* turbopackIgnore: true */ process.cwd(), configuredPath);
@@ -43,17 +55,59 @@ export function getPreviewQualityGate(): PreviewQualityGate {
   if (relativeToPublic === "" || (!relativeToPublic.startsWith("..") && !isAbsolute(relativeToPublic))) {
     throw new Error("Preview gate manifest must not be stored under public/");
   }
-  const entries = applyPublicQualityGateOverrides(
-    parsePreviewGateRuntimeCsv(readFileSync(manifestPath, "utf-8")),
+  return decodeManifest(await readFile(manifestPath), manifestPath.endsWith(".gz"));
+}
+
+async function loadPrivateBlobManifest(pathname: string) {
+  if (!pathname.endsWith(".csv.gz")) {
+    throw new Error("Private preview gate blob must be a gzip-compressed CSV");
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const result = await get(pathname, { access: "private", abortSignal: controller.signal });
+    if (!result || result.statusCode !== 200 || !result.stream) {
+      throw new Error("Private preview gate blob is unavailable");
+    }
+    if (result.blob.size && result.blob.size > MAX_COMPRESSED_BYTES) {
+      throw new Error("Private preview gate blob exceeds the allowed size");
+    }
+    const payload = Buffer.from(await new Response(result.stream).arrayBuffer());
+    return decodeManifest(payload, true);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function buildGate(content: string): PreviewQualityGate {
+  const entries: ReadonlyMap<string, PreviewGateEntry> = applyPublicQualityGateOverrides(
+    parsePreviewGateRuntimeCsv(content),
   );
   const counts = countPreviewEntries(entries);
   if (counts.total === 0) throw new Error("Preview gate manifest is empty");
-  cached = {
+  const version = createHash("sha256").update(content).digest("hex").slice(0, 16);
+  return {
     enabled: true,
-    entries,
+    version,
     visibleCount: counts.visible,
     totalCount: counts.total,
     isVisible: (id) => entries.get(String(id))?.visible === true,
   };
+}
+
+async function loadGate(): Promise<PreviewQualityGate> {
+  if (process.env.ERETZ_PREVIEW_QUALITY_GATE !== "true") return disabledGate();
+  const filePath = process.env.ERETZ_PREVIEW_GATE_ASSIGNMENTS_PATH?.trim() ?? "";
+  const blobPathname = process.env.ERETZ_PREVIEW_GATE_BLOB_PATHNAME?.trim() ?? "";
+  if (Boolean(filePath) === Boolean(blobPathname)) {
+    throw new Error("Preview gate requires exactly one private manifest source");
+  }
+  return buildGate(filePath
+    ? await loadFileManifest(filePath)
+    : await loadPrivateBlobManifest(blobPathname));
+}
+
+export function getPreviewQualityGate(): Promise<PreviewQualityGate> {
+  if (!cached) cached = loadGate();
   return cached;
 }

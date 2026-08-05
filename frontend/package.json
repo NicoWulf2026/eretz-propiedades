@@ -11,9 +11,11 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "python -m pytest e2e -q",
-    "test:a11y": "python -m pytest e2e/test_phase_a.py -q -k accessibility"
+    "test:a11y": "python -m pytest e2e/test_phase_a.py -q -k accessibility",
+    "preview:gate:prepare": "node scripts/prepare-preview-gate.mjs"
   },
   "dependencies": {
+    "@vercel/blob": "^2.6.1",
     "leaflet": "^1.9.4",
     "next": "^16.2.12",
     "postgres": "^3.4.7",
@@ -29,7 +31,6 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "babel-plugin-react-compiler": "1.0.0",
     "eslint": "^9",
     "eslint-config-next": "^16.2.12",
     "jsdom": "^30.0.1",
