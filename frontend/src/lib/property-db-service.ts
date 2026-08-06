@@ -5,7 +5,7 @@ import { cleanText, mapSupabasePropertyToProperty, normalizeCurrency } from "@/l
 import { propertyLocation } from "@/lib/property-presenter";
 import { getPreviewQualityGate } from "@/lib/preview-quality-gate";
 import { parsePropertyFilters } from "@/lib/property-query";
-import { addParam, buildWhere, normalizeSearch, sortSpec } from "@/lib/property-sql";
+import { addParam, buildCursorClause, buildWhere, normalizeSearch, sortSpec, type CursorPayload } from "@/lib/property-sql";
 import type {
   MapSearchResponse,
   MapViewport,
@@ -38,7 +38,6 @@ type MapCandidate = {
   provincia: string | null;
   __sort_value: string | number;
 };
-type CursorPayload = { version: 1; sort: PropertySort; value: string | number; id: string };
 type TimedPromise<T> = { expiresAt: number; value: Promise<T> };
 
 let client: Sql | null = null;
@@ -248,21 +247,6 @@ function decodeCursor(cursor: string, sort: PropertySort): CursorPayload | null 
 
 function encodeCursor(row: DbPropertyRow, sort: PropertySort) {
   return Buffer.from(JSON.stringify({ version: 1, sort, value: row.__sort_value, id: String(row.id) } satisfies CursorPayload)).toString("base64url");
-}
-
-function buildCursorClause(
-  params: unknown[],
-  cursor: CursorPayload | null,
-  expression: string,
-  ascending: boolean,
-  direction: "next" | "prev",
-) {
-  if (!cursor) return "";
-  const reverse = direction === "prev";
-  const operator = ascending !== reverse ? ">" : "<";
-  const valueParam = addParam(params, cursor.value);
-  const idParam = addParam(params, Number(cursor.id));
-  return ` AND (${expression} ${operator} ${valueParam} OR (${expression} = ${valueParam} AND p.id ${operator} ${idParam}))`;
 }
 
 async function queryBatch(filters: PropertyFilters, limit: number, cursor: CursorPayload | null, viewport?: MapViewport) {

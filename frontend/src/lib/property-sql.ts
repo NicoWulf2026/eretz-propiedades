@@ -64,6 +64,26 @@ export function buildWhere(filters: PropertyFilters, extra?: MapViewport) {
   return { where: conditions.join(" AND "), params };
 }
 
+export type CursorPayload = { version: 1; sort: PropertySort; value: string | number; id: string };
+
+// Keyset de orden TOTAL y estable: (expresión de orden, id) con desempate único por
+// id. El mismo operador se aplica a la expresión y al id, de modo que la frontera del
+// cursor nunca repite ni omite filas. `direction: "prev"` invierte el operador.
+export function buildCursorClause(
+  params: unknown[],
+  cursor: CursorPayload | null,
+  expression: string,
+  ascending: boolean,
+  direction: "next" | "prev",
+) {
+  if (!cursor) return "";
+  const reverse = direction === "prev";
+  const operator = ascending !== reverse ? ">" : "<";
+  const valueParam = addParam(params, cursor.value);
+  const idParam = addParam(params, Number(cursor.id));
+  return ` AND (${expression} ${operator} ${valueParam} OR (${expression} = ${valueParam} AND p.id ${operator} ${idParam}))`;
+}
+
 export function sortSpec(sort: PropertySort) {
   switch (sort) {
     case "price_asc": return { expression: "COALESCE(p.precio, 1e30)", ascending: true };
