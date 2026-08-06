@@ -44,6 +44,20 @@ describe("property mapper", () => {
     expect(normalizeOperation("venta_y_alquiler")).toBe("venta_y_alquiler");
   });
 
+  it("preserva el estado real y no inventa disponibilidad", () => {
+    // activa = disponibilidad confirmada
+    expect(mapSupabasePropertyToProperty(completeRow).status).toBe("activa");
+    // no_detectada_en_ultimo_scraping: se conserva, no se presenta como activa
+    expect(
+      mapSupabasePropertyToProperty({ ...completeRow, estado: "no_detectada_en_ultimo_scraping" }).status,
+    ).toBe("no_detectada_en_ultimo_scraping");
+    // desconocida: se conserva
+    expect(mapSupabasePropertyToProperty({ ...completeRow, estado: "desconocida" }).status).toBe("desconocida");
+    // cualquier otro estado / nulo se trata como no confirmado (desconocida), sin inventar
+    expect(mapSupabasePropertyToProperty({ ...completeRow, estado: null }).status).toBe("desconocida");
+    expect(mapSupabasePropertyToProperty({ ...completeRow, estado: "pausada" }).status).toBe("desconocida");
+  });
+
   it("does not misclassify a commercial building as parking", () => {
     expect(normalizePropertyType("Edificio comercial")).toBe("otro");
     expect(normalizePropertyType("Local comercial con cocheras")).toBe("local");

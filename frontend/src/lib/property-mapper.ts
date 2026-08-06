@@ -2,11 +2,21 @@ import type {
   Property,
   PropertyCurrency,
   PropertyOperation,
+  PropertyStatus,
   PropertyType,
   QualitySignals,
   SupabaseProperty,
 } from "@/types/property";
 import { safeExternalUrl } from "@/lib/safe-url";
+
+// Preserva el estado real de scraping. No inventa disponibilidad: cualquier estado
+// distinto de "activa" que el Quality Gate autorice se conserva como no confirmado.
+export function normalizeStatus(estado: string | null | undefined): PropertyStatus {
+  const value = (estado ?? "").trim().toLowerCase();
+  if (value === "activa") return "activa";
+  if (value === "no_detectada_en_ultimo_scraping") return "no_detectada_en_ultimo_scraping";
+  return "desconocida";
+}
 
 const blockedImages = [
   "static.tokkobroker.com/tfw/img/prop-icons",
@@ -174,7 +184,7 @@ export function mapSupabasePropertyToProperty(item: SupabaseProperty): Property 
     publishedAt: item.fecha_publicacion,
     createdAt: item.created_at,
     updatedAt: item.updated_at,
-    status: "activa",
+    status: normalizeStatus(item.estado),
     mortgageEligible: item.apto_credito === true,
     quality,
   };

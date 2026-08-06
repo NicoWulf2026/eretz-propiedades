@@ -25,6 +25,17 @@ describe("PropertyCard", () => {
     expect(screen.getByText("María")).toBeInTheDocument();
   });
 
+  it("una propiedad activa no muestra la indicación de disponibilidad", () => {
+    render(<PropertyCard property={mapSupabasePropertyToProperty(completeRow)} />);
+    expect(screen.queryByText("Disponibilidad no confirmada")).toBeNull();
+  });
+
+  it("una propiedad no confirmada muestra la indicación neutral", () => {
+    const property = mapSupabasePropertyToProperty({ ...completeRow, estado: "no_detectada_en_ultimo_scraping" });
+    render(<PropertyCard property={property} />);
+    expect(screen.getByText("Disponibilidad no confirmada")).toBeInTheDocument();
+  });
+
   it("renders dignified missing-data fallbacks", () => {
     const property = mapSupabasePropertyToProperty({
       ...completeRow,

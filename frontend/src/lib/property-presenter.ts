@@ -1,4 +1,14 @@
-import type { Property, PropertyOperation, PropertyType } from "@/types/property";
+import type { Property, PropertyOperation, PropertyStatus, PropertyType } from "@/types/property";
+
+// Sólo "activa" es disponibilidad confirmada. El resto (autorizado por el Quality
+// Gate) se muestra con una indicación neutral, sin afirmar vigencia.
+export function isAvailabilityConfirmed(status: PropertyStatus) {
+  return status === "activa";
+}
+
+export function availabilityLabel(status: PropertyStatus): string | null {
+  return isAvailabilityConfirmed(status) ? null : "Disponibilidad no confirmada";
+}
 
 export const operationLabels: Record<PropertyOperation, string> = {
   venta: "Venta",

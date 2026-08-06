@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { PropertyImage } from "@/components/property/PropertyImage";
 import {
+  availabilityLabel,
   formatDate,
   operationLabels,
   propertyLocation,
@@ -43,6 +44,7 @@ export function PropertyCard({
   const full = variant === "full";
   const detailHref = `/propiedad/${property.id}?volver=${encodeURIComponent(returnTo)}`;
   const amenities = full ? (property.amenities ?? []).filter(Boolean).slice(0, 4) : [];
+  const availability = availabilityLabel(property.status);
   return (
     <article className={`property-card ${full ? "is-full" : "is-compact"} ${selected ? "is-selected" : ""}`} data-property-id={property.id} onMouseEnter={() => onSelect?.(property.id)} onFocus={() => onSelect?.(property.id)}>
       <Link
@@ -66,6 +68,11 @@ export function PropertyCard({
           <p className="mt-2 text-xl font-black tracking-tight text-[#0b2748]">{propertyPrice(property)}</p>
           <h2 className="mt-2 line-clamp-2 min-h-12 text-base font-bold leading-6 text-slate-800">{property.title}</h2>
           <p className="mt-2 truncate text-sm text-slate-600">{propertyLocation(property)}</p>
+          {availability ? (
+            <p className="mt-2 inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600" title="La disponibilidad de esta publicación no está confirmada en el último relevamiento.">
+              <span aria-hidden="true">•</span>{availability}
+            </p>
+          ) : null}
           {property.publisher ? <p className="mt-2 truncate text-xs font-semibold text-slate-500">{property.publisher.name}{property.publisher.verified ? " · Verificada" : ""}</p> : null}
           <div className="mt-4 flex min-h-6 flex-wrap gap-x-3 gap-y-1 border-t border-slate-100 pt-3 text-xs font-semibold text-slate-600">
             {specs.length ? (full ? specs : specs.slice(0, 4)).map((spec) => <span key={spec}>{spec}</span>) : <span>Características no informadas</span>}

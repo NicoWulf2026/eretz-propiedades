@@ -17,7 +17,10 @@ export type PropertyType =
   | "campo"
   | "otro";
 
-export type PropertyStatus = "activa";
+// El Quality Gate es la autoridad de visibilidad; `estado` refleja el estado real
+// de scraping y se preserva. Sólo "activa" es disponibilidad confirmada; el resto
+// se muestra como "Disponibilidad no confirmada" y ordena por debajo de las activas.
+export type PropertyStatus = "activa" | "no_detectada_en_ultimo_scraping" | "desconocida";
 export type PropertyCurrency = "USD" | "ARS" | "EUR" | "UYU";
 export type PropertySort =
   | "relevance"

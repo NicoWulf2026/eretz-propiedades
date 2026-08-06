@@ -7,7 +7,7 @@ import { PropertyMap } from "@/components/map/PropertyMap";
 import { ContactActions } from "@/components/property/ContactActions";
 import { PropertyCard } from "@/components/property/PropertyCard";
 import { PropertyGallery } from "@/components/property/PropertyGallery";
-import { formatDate, operationLabels, propertyLocation, propertyPrice, propertySpecs, typeLabels } from "@/lib/property-presenter";
+import { availabilityLabel, formatDate, operationLabels, propertyLocation, propertyPrice, propertySpecs, typeLabels } from "@/lib/property-presenter";
 import { getPropertyById, getRelatedProperties } from "@/lib/property-service";
 import { parsePropertyFilters, type SearchParams } from "@/lib/property-query";
 
@@ -55,7 +55,7 @@ export default async function PropertyPage({ params, searchParams }: { params: P
       <div className="container py-8">
         <nav aria-label="Migas de pan" className="flex flex-wrap items-center gap-2 text-sm text-slate-500"><Link href={returnTo} className="font-bold text-[#2166a5]">← Volver a resultados</Link><span aria-hidden="true">/</span><span aria-current="page">{typeLabels[property.propertyType]}</span></nav>
         <header id="resumen" className="mt-6 scroll-mt-24">
-          <div className="flex flex-wrap gap-2"><span className="pill">{operationLabels[property.operation]}</span><span className="pill pill-light">{typeLabels[property.propertyType]}</span>{property.mortgageEligible && <span className="pill pill-gold">Apto crédito</span>}</div>
+          <div className="flex flex-wrap gap-2"><span className="pill">{operationLabels[property.operation]}</span><span className="pill pill-light">{typeLabels[property.propertyType]}</span>{property.mortgageEligible && <span className="pill pill-gold">Apto crédito</span>}{availabilityLabel(property.status) ? <span className="pill pill-light" title="La disponibilidad de esta publicación no está confirmada en el último relevamiento.">{availabilityLabel(property.status)}</span> : null}</div>
           <h1 className="mt-5 max-w-4xl text-3xl font-black leading-tight tracking-[-0.03em] text-[#0b2748] sm:text-5xl">{property.title}</h1>
           <div className="mt-4 flex flex-wrap items-end justify-between gap-3"><div><p className="text-3xl font-black text-[#2166a5]">{propertyPrice(property)}</p><p className="mt-2 text-sm text-slate-600">{propertyLocation(property)}</p>{property.publisher ? <p className="mt-2 text-sm font-bold text-[#0b2748]">Publicado por {property.publisher.name}</p> : null}</div><div className="text-right">{updated && <p className="text-xs text-slate-500">Actualizado el {updated}</p>}<p className="mt-1 text-xs text-slate-500">ID ERETZ {property.id}</p></div></div>
         </header>
