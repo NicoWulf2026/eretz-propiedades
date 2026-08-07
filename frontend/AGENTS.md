@@ -1,7 +1,7 @@
-# Inmocapital Frontend Rules
+# ERETZ Propiedades Frontend Rules
 
 ## Project Overview
-Inmocapital is a premium real estate platform focused on:
+ERETZ Propiedades is a premium real estate platform focused on:
 - property search
 - interactive maps
 - analytics

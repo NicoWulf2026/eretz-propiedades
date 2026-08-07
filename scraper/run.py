@@ -1,5 +1,5 @@
 """
-run.py — Entry point principal del sistema de scraping InmoCapital.
+run.py — Entry point principal del sistema de scraping ERETZ Propiedades.
 
 Usa sync_playwright + ThreadPoolExecutor para concurrencia real.
 Cada worker lanza su propio proceso de browser y procesa un lote de fuentes
@@ -1510,7 +1510,7 @@ def run(
 
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="InmoCapital — Scraper de propiedades",
+        description="ERETZ Propiedades — Scraper de propiedades",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Ejemplos:

@@ -976,7 +976,7 @@ def run_pipeline(
     _init_log()
 
     log("=" * 65)
-    log(f"  PIPELINE SUPABASE — InmoLink ({modo_label})")
+    log(f"  PIPELINE SUPABASE — ERETZ Propiedades ({modo_label})")
     log(f"  Tabla   : {SUPABASE_TABLE}")
     log(f"  URL     : {SUPABASE_URL or '⚠ SUPABASE_URL no configurada'}")
     log(f"  Batch   : {BATCH_SIZE} | Retries: {MAX_RETRIES}")
@@ -1066,7 +1066,7 @@ def run_pipeline(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Pipeline Supabase robusto para InmoLink",
+        description="Pipeline Supabase robusto para ERETZ Propiedades",
         formatter_class=argparse.RawTextHelpFormatter,
     )
     parser.add_argument(

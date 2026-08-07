@@ -104,7 +104,7 @@ ALLOWED_PROPERTY_TYPES = {
 }
 
 ALLOWED_MONEDAS = {"ARS", "USD"}
-# Operaciones reconocidas por InmoCapital (FASE 1 — Sprint A).
+# Operaciones reconocidas por ERETZ Propiedades (FASE 1 — Sprint A).
 # - consultar: operacion desconocida o no detectada → no rechazar, publicar con consultar
 # - venta_y_alquiler: propiedad publicada simultáneamente como venta y alquiler
 ALLOWED_OPERACIONES = {
