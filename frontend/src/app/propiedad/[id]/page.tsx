@@ -53,11 +53,11 @@ export default async function PropertyPage({ params, searchParams }: { params: P
     <SiteShell>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />
       <div className="container py-8">
-        <nav aria-label="Migas de pan" className="flex flex-wrap items-center gap-2 text-sm text-slate-500"><Link href={returnTo} className="font-bold text-[#2166a5]">← Volver a resultados</Link><span aria-hidden="true">/</span><span aria-current="page">{typeLabels[property.propertyType]}</span></nav>
+        <nav aria-label="Migas de pan" className="flex flex-wrap items-center gap-2 text-sm text-slate-600"><Link href={returnTo} className="font-bold text-[#2166a5]">← Volver a resultados</Link><span aria-hidden="true">/</span><span aria-current="page">{typeLabels[property.propertyType]}</span></nav>
         <header id="resumen" className="mt-6 scroll-mt-24">
           <div className="flex flex-wrap gap-2"><span className="pill">{operationLabels[property.operation]}</span><span className="pill pill-light">{typeLabels[property.propertyType]}</span>{property.mortgageEligible && <span className="pill pill-gold">Apto crédito</span>}{availabilityLabel(property.status) ? <span className="pill pill-light" title="La disponibilidad de esta publicación no está confirmada en el último relevamiento.">{availabilityLabel(property.status)}</span> : null}</div>
           <h1 className="mt-5 max-w-4xl text-3xl font-black leading-tight tracking-[-0.03em] text-[#0b2748] sm:text-5xl">{property.title}</h1>
-          <div className="mt-4 flex flex-wrap items-end justify-between gap-3"><div><p className="text-3xl font-black text-[#2166a5]">{propertyPrice(property)}</p><p className="mt-2 text-sm text-slate-600">{propertyLocation(property)}</p>{property.publisher ? <p className="mt-2 text-sm font-bold text-[#0b2748]">Publicado por {property.publisher.name}</p> : null}</div><div className="text-right">{updated && <p className="text-xs text-slate-500">Actualizado el {updated}</p>}<p className="mt-1 text-xs text-slate-500">ID ERETZ {property.id}</p></div></div>
+          <div className="mt-4 flex flex-wrap items-end justify-between gap-3"><div><p className="text-3xl font-black text-[#2166a5]">{propertyPrice(property)}</p><p className="mt-2 text-sm text-slate-600">{propertyLocation(property)}</p>{property.publisher ? <p className="mt-2 text-sm font-bold text-[#0b2748]">Publicado por {property.publisher.name}</p> : null}</div><div className="text-right">{updated && <p className="text-xs text-slate-600">Actualizado el {updated}</p>}<p className="mt-1 text-xs text-slate-600">ID ERETZ {property.id}</p></div></div>
         </header>
         <nav aria-label="Secciones de la propiedad" className="ficha-section-nav">
           <a href="#resumen">Resumen</a>
@@ -80,7 +80,7 @@ export default async function PropertyPage({ params, searchParams }: { params: P
           </div>
           <div id="contacto" className="min-w-0 scroll-mt-24 lg:sticky lg:top-24 lg:self-start"><ContactActions property={property} canonical={canonical} /><div className="mt-4 rounded-2xl bg-amber-50 p-5 text-xs leading-5 text-amber-950"><strong>Información de terceros.</strong> El precio, la disponibilidad y las características pueden cambiar. Confirmá los datos con el responsable de la publicación. ERETZ no responde por errores del aviso original.</div></div>
         </div>
-        {related.length > 0 && <section className="mt-16"><p className="eyebrow">También puede interesarte</p><h2 className="section-title">Propiedades relacionadas</h2><p className="mt-2 text-sm text-slate-500">Selección por ubicación, tipo y operación; no es una recomendación de IA.</p><div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">{related.map((item) => <PropertyCard key={item.id} property={item} returnTo={returnTo} />)}</div></section>}
+        {related.length > 0 && <section className="mt-16"><p className="eyebrow">También puede interesarte</p><h2 className="section-title">Propiedades relacionadas</h2><p className="mt-2 text-sm text-slate-600">Selección por ubicación, tipo y operación; no es una recomendación de IA.</p><div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">{related.map((item) => <PropertyCard key={item.id} property={item} returnTo={returnTo} />)}</div></section>}
       </div>
     </SiteShell>
   );
