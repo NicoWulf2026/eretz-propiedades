@@ -367,6 +367,31 @@ export function getPropertyById(id: string): Promise<Property | null> {
   return cachedQuery(detailCache, id, DETAIL_CACHE_TTL_MS, () => getPropertyByIdUncached(id));
 }
 
+// Resumen de un conjunto de ids (favoritos, comparar, recientes). Server-only,
+// capado, gate-filtrado y en el orden solicitado. Nunca filtra por estado: el
+// Quality Gate es la autoridad de visibilidad.
+export async function getPropertiesByIds(ids: string[]): Promise<PropertySummary[]> {
+  if (!databaseUrl()) return [];
+  const clean = Array.from(new Set(ids.map(String).filter((x) => /^\d+$/.test(x)))).slice(0, 60);
+  if (clean.length === 0) return [];
+  const gate = await getPreviewQualityGate();
+  if (!gate.enabled) return [];
+  try {
+    const rows = await readOnly((sql) => sql.unsafe<DbPropertyRow[]>(
+      `SELECT ${summaryProjection}, p.id AS __sort_value
+       FROM public.propiedades p LEFT JOIN public.inmobiliarias_main i ON i.id = p.inmobiliaria_id
+       WHERE p.id = ANY($1)`, [clean.map(Number) as never]));
+    const byId = new Map<string, PropertySummary>();
+    for (const row of rows) {
+      if (gate.isVisible(row.id)) byId.set(String(row.id), toSummary(mapSupabasePropertyToProperty(row)));
+    }
+    return clean.map((id) => byId.get(id)).filter((x): x is PropertySummary => Boolean(x));
+  } catch (error) {
+    console.error("ERETZ getPropertiesByIds failed", error instanceof Error ? error.message : "unknown error");
+    return [];
+  }
+}
+
 export async function getRelatedProperties(property: Property): Promise<PropertySummary[]> {
   const filters = parsePropertyFilters({
     operacion: property.operation,

@@ -2,6 +2,9 @@
 
 import Link from "next/link";
 import { PropertyImage } from "@/components/property/PropertyImage";
+import { PropertyCardActions } from "@/components/property/PropertyCardActions";
+import { hideProperty, isHidden, unhideProperty } from "@/lib/local-store";
+import { useLocalValue } from "@/lib/use-local-store";
 import {
   availabilityLabel,
   formatDate,
@@ -45,8 +48,23 @@ export function PropertyCard({
   const detailHref = `/propiedad/${property.id}?volver=${encodeURIComponent(returnTo)}`;
   const amenities = full ? (property.amenities ?? []).filter(Boolean).slice(0, 4) : [];
   const availability = availabilityLabel(property.status);
+  const hidden = useLocalValue(() => isHidden(property.id), false);
+  if (hidden) {
+    return (
+      <article className="property-card is-hidden" data-property-id={property.id}>
+        <div className="property-card-hidden-body">
+          <p className="text-sm font-semibold text-slate-700">Ocultaste esta propiedad.</p>
+          <p className="mt-1 truncate text-xs text-slate-600">{property.title}</p>
+          <button type="button" className="secondary-button mt-3" onClick={() => unhideProperty(property.id)}>
+            Mostrar de nuevo
+          </button>
+        </div>
+      </article>
+    );
+  }
   return (
     <article className={`property-card ${full ? "is-full" : "is-compact"} ${selected ? "is-selected" : ""}`} data-property-id={property.id} onMouseEnter={() => onSelect?.(property.id)} onFocus={() => onSelect?.(property.id)}>
+      <PropertyCardActions id={property.id} onHide={() => hideProperty(property.id)} />
       <Link
         href={detailHref}
         className="focus-ring block"

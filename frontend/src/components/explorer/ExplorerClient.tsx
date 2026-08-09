@@ -9,6 +9,8 @@ import { Pagination } from "@/components/search/Pagination";
 import { PropertyMap } from "@/components/map/PropertyMap";
 import { PropertyCard } from "@/components/property/PropertyCard";
 import { filtersToSearchParams } from "@/lib/property-query";
+import { addRecentSearch } from "@/lib/local-store";
+import { describeSearch } from "@/lib/search-label";
 import type { ExplorerMode, PropertyFilters, PropertySearchResult } from "@/types/property";
 
 const modeLabels: Array<[ExplorerMode, string]> = [
@@ -41,6 +43,16 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
   const result = resultState?.key === requestKey ? resultState.result : null;
   const resultAbortRef = useRef<AbortController | null>(null);
   const currentFilters = useMemo(() => ({ ...filters, mode, selectedId }), [filters, mode, selectedId]);
+
+  // Registra la búsqueda actual (sin paginación ni selección) en "búsquedas
+  // recientes" cuando hay al menos un filtro significativo.
+  useEffect(() => {
+    const label = describeSearch(filters);
+    if (!label) return;
+    const params = filtersToSearchParams({ ...filters, cursor: "", page: 1, direction: "next", selectedId: "" });
+    const query = params.toString();
+    addRecentSearch({ url: `${basePath}${query ? `?${query}` : ""}`, label });
+  }, [requestKey, basePath, filters]);
 
   useEffect(() => {
     if (filters.mode === "balanced") {

@@ -1,5 +1,6 @@
 export {
   getHomeInventory,
+  getPropertiesByIds,
   getPropertyById,
   getRelatedProperties,
   searchMap,

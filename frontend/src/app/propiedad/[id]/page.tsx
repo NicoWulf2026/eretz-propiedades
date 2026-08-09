@@ -7,6 +7,7 @@ import { PropertyMap } from "@/components/map/PropertyMap";
 import { ContactActions } from "@/components/property/ContactActions";
 import { PropertyCard } from "@/components/property/PropertyCard";
 import { PropertyGallery } from "@/components/property/PropertyGallery";
+import { RecentViewTracker } from "@/components/property/RecentViewTracker";
 import { availabilityLabel, formatDate, operationLabels, propertyLocation, propertyPrice, propertySpecs, typeLabels } from "@/lib/property-presenter";
 import { getPropertyById, getRelatedProperties } from "@/lib/property-service";
 import { parsePropertyFilters, type SearchParams } from "@/lib/property-query";
@@ -51,6 +52,7 @@ export default async function PropertyPage({ params, searchParams }: { params: P
   };
   return (
     <SiteShell>
+      <RecentViewTracker id={property.id} title={property.title} price={propertyPrice(property)} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />
       <div className="container py-8">
         <nav aria-label="Migas de pan" className="flex flex-wrap items-center gap-2 text-sm text-slate-600"><Link href={returnTo} className="font-bold text-[#2166a5]">← Volver a resultados</Link><span aria-hidden="true">/</span><span aria-current="page">{typeLabels[property.propertyType]}</span></nav>
