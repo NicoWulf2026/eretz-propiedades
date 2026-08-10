@@ -1,5 +1,55 @@
 # ERETZ FUNCTIONAL V3 — Estado de implementación
 
+## Anexo 2 — UX Integration · cierre de PARTIAL + mapa avanzado (2026-08-10)
+
+Commits: `34388691d6` (4 bloques UI), `171fed37aa` (multi-zona), `ddd738b850`
+(historial de precio). Gates: typecheck 0, lint 0, **Vitest 139/139**, build OK,
+npm audit 0.
+
+**PASS END-TO-END (local, con tests):**
+- Input NL en el explorador: texto→filtros server-side, `?nl=` preservado, no
+  interpretado visible, sin inventar. Integración testeada (+3) + parser (+9).
+- Ocultar visitadas (N): toggle + filtro de vista local + señal "Vista" en card.
+- Colecciones: `/colecciones` (CRUD+ver+quitar) + `CollectionPicker` en ficha. +2.
+- NoResults inteligente: acciones contextuales (precio/sin-precio/dorm/amb/ubicación/
+  zona). +2.
+- Multi-zona del mapa (consulta+URL): rectángulo + radio (haversine) OR en
+  `buildWhere`, chips removibles por zona. +6 tests. **Sin PostGIS.**
+
+**IMPLEMENTED IN CODE / REMOTE (BROWSER) QA PENDING:**
+- **Dibujo de zona en canvas** (rectángulo/radio/polígono UI): la capa de consulta
+  y URL está lista y testeada; la interacción de dibujo sobre el canvas requiere QA
+  de navegador sobre el Preview. **Polígono libre** además requiere PostGIS
+  point-in-polygon validado contra la DB viva → diferido.
+
+**IMPLEMENTED IN CODE / DB MIGRATION PENDING (reconciliación honesta, sección 13):**
+Estas funciones tienen **código + tests**, pero su persistencia real depende de
+tablas que **no existen aún en la DB de la app** y que **no se pudieron ejecutar**
+(el entorno local no tiene `DATABASE_URL`/credencial de DB — dependencia humana,
+no timidez):
+- **Reclamo de perfil** (`/api/claims`) → tabla `perfil_claims`.
+- **Reportes** (`/api/reports`) → tabla `reportes_publicacion`.
+- **Grupos de duplicados** (`duplicates.ts`, +8 tests) → tabla `propiedad_duplicados`.
+- **Historial de precio** (read-model + ficha) → tabla `listing_price_history`
+  (+ flag `ERETZ_PRICE_HISTORY=1` + pipeline de actualización que inserte).
+Los endpoints validan y responden hoy (el UX funciona), pero **no persisten** hasta
+ejecutar las migraciones con un rol de escritura. Migraciones auditadas, idempotentes,
+aditivas, sin RLS/grants nuevos, sin tocar tablas congeladas.
+
+**"Mismo edificio":** cubierto por "Otras publicaciones (misma dirección exacta +
+ciudad)" en la ficha (`getOtherPublications`), señal data-backed prudente. La
+elevación a entidad "edificio" con confidence usa la infra de `duplicates.ts`
+(pendiente de persistencia, ver arriba).
+
+**DEFERRED — dependencia externa real:** tiempos de viaje (proveedor de routing no
+elegido); índice de mercado completo (V4); alertas reales / seguir-precio con
+notificación (Phase B / cuentas).
+
+**Acción humana pendiente:** (1) credencial de DB para ejecutar las 4 migraciones y
+QA de persistencia; (2) `ERETZ_VERCEL_BYPASS` para la batería remota.
+
+---
+
 ## Anexo — Functional UX Integration (2026-08-10, aprendizajes de Roomix)
 
 Segunda tanda de la misión, incorporando patrones de Roomix **sin copiar** (map-first
