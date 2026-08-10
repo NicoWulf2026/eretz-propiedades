@@ -1,5 +1,45 @@
 # ERETZ FUNCTIONAL V3 — Estado de implementación
 
+## Anexo — Functional UX Integration (2026-08-10, aprendizajes de Roomix)
+
+Segunda tanda de la misión, incorporando patrones de Roomix **sin copiar** (map-first
+y neutralidad de ERETZ intactos). Commits `7a389607ad` (NL/visitadas/colecciones/badge)
+y `ea586f68db` (contacto por intención/publicado-por/analítica). Gates: typecheck 0,
+lint 0, **Vitest 126/126**, build OK, npm audit 0.
+
+**IMPLEMENTADO (con tests):**
+- **Parser NL** (`lib/nl-search.ts`): texto→filtros estructurados; **nunca inventa**
+  (términos sin dato → `notInterpreted`), a diferencia del bug de Roomix. +9 tests.
+- **Visitadas** (marca al abrir ficha) y **colecciones nombrables** locales (crear/
+  renombrar/eliminar/agregar/quitar), sin cuenta. +3 tests. No reemplazan favoritos.
+- **Badge "Más filtros (N)"** con conteo real de filtros activos.
+- **Compositor de contacto por intención** (checkboxes + texto libre → mensaje sólo
+  con lo elegido, `contactMessageWithTopics`, +3 tests), multicanal y neutral.
+- **"Publicado por" linkeable** al perfil `/inmobiliaria/[slug]` + "Ver sus propiedades".
+- **Analítica**: abstracción `track()` ya existente ampliada con los eventos del brief.
+
+**BASELINE ya cumplido (verificado, no reimplementado):** sort labels explícitos
+(no "Opción N"); contacto multicanal (WhatsApp/tel/email/web/original) con neutralidad;
+favoritos/comparar/ocultas/recientes **sin login**; restauración de estado; 404 real
+(`notFound()`); filtros con counts correctos; directorio inmobiliarias/agentes + claim
+por-perfil; multi-ubicación OR; precio Con/Consultar/Todas; tri-state NULL-safe; cercanía.
+
+**PARCIAL (lógica/infra lista; falta integración UI):** control global "Ocultar
+visitadas (N)" en la toolbar y señal "Vista" en la card (store listo, `isVisited`);
+página/UI de colecciones (store listo); wiring del parser NL a un input opcional en el
+explorador (parser + tests listos); empty-state con acciones explícitas ampliado.
+
+**DEFERRED — dependencia técnica/dato/proveedor real (no timidez):**
+- **Mapa avanzado** (polígono/radio/multi-zona/dibujo): requiere predicados PostGIS
+  validados contra DB viva + QA de navegador sobre canvas; tocar el path del mapa a
+  ciegas arriesga `mapCount=62549` congelado. → etapa remota.
+- **Historial de precios**: no hay serie temporal de precios en el dato. → cuando exista.
+- **Tiempos de viaje**: requiere proveedor externo de routing (no elegido/activado).
+- **Índice de mercado completo**: DEFERRED TO V4 (arquitectura de navegación preparada).
+- **Alertas reales / seguir-precio con notificación**: DEFERRED TO ACCOUNTS (Phase B).
+
+---
+
 Documento vivo de alcance de la misión *Functional V3*. Clasifica cada bloque
 como **IMPLEMENTADO** (esta iniciativa, con tests y gates), **BASELINE**
 (ya existía y se verificó en Phase A), **INFRA LISTA** (código + tests listos,
