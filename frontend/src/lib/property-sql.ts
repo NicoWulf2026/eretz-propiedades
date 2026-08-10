@@ -1,4 +1,16 @@
-import type { GeoPoint, MapViewport, PropertyFilters, PropertySort } from "@/types/property";
+import type { GeoPoint, MapViewport, MapZone, PropertyFilters, PropertySort } from "@/types/property";
+
+// Predicado SQL de una zona del mapa. Números ya validados en el parser (finitos y
+// acotados) → seguros de inlinear. Rectángulo = BETWEEN; radio = haversine (km)
+// con acos clampeado para evitar errores de dominio. Sin PostGIS.
+function zonePredicate(zone: MapZone): string {
+  if (zone.kind === "box") {
+    return `(p.latitud BETWEEN ${Number(zone.south)} AND ${Number(zone.north)} AND p.longitud BETWEEN ${Number(zone.west)} AND ${Number(zone.east)})`;
+  }
+  const lat = Number(zone.lat), lng = Number(zone.lng), km = Number(zone.km);
+  const cosExpr = `cos(radians(${lat}))*cos(radians(p.latitud))*cos(radians(p.longitud) - radians(${lng})) + sin(radians(${lat}))*sin(radians(p.latitud))`;
+  return `(p.latitud IS NOT NULL AND p.longitud IS NOT NULL AND (6371 * acos(least(1, greatest(-1, ${cosExpr})))) <= ${km})`;
+}
 
 // SQL puro (sin acceso a base ni `server-only`) para poder testear el contrato de
 // cobertura y el orden neutral. El Quality Gate se aplica en la app y es la única
@@ -39,6 +51,10 @@ export function buildWhere(filters: PropertyFilters, extra?: MapViewport) {
       return `(${cols.map((col) => `${col} ILIKE ${addParam(params, value)}`).join(" OR ")})`;
     });
     conditions.push(`(${clauses.join(" OR ")})`);
+  }
+  // Multi-zona del mapa: OR entre zonas (rectángulo/radio), AND con el resto.
+  if (filters.zones.length) {
+    conditions.push(`(${filters.zones.map(zonePredicate).join(" OR ")})`);
   }
   if (filters.currency) add("upper(p.moneda) = ?", filters.currency);
   if (filters.minPrice !== null) add("p.precio >= ?", filters.minPrice);

@@ -53,6 +53,12 @@ export function activeChips(filters: PropertyFilters): Chip[] {
   if (filters.mortgageState === "no") chips.push({ key: "cred", label: "No apto crédito", next: reset(filters, { mortgageState: "" }) });
   if (filters.mortgageState === "sininfo") chips.push({ key: "cred", label: "Crédito sin información", next: reset(filters, { mortgageState: "" }) });
   if (filters.near) chips.push({ key: "near", label: "Cerca de un punto", next: reset(filters, { near: null, sort: filters.sort === "nearest" ? "recent" : filters.sort }) });
+  // Cada zona del mapa (rectángulo/radio) se puede quitar individualmente.
+  filters.zones.forEach((zone, index) => chips.push({
+    key: `zona-${index}`,
+    label: zone.kind === "radius" ? `Radio ${zone.km} km` : "Zona del mapa",
+    next: reset(filters, { zones: filters.zones.filter((_, i) => i !== index) }),
+  }));
   return chips;
 }
 

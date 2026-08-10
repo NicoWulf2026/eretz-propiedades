@@ -42,6 +42,13 @@ export type PriceMode = "" | "with" | "consult";
 
 export type GeoPoint = { lat: number; lng: number };
 
+// Zonas de búsqueda dibujadas en el mapa. OR entre zonas, AND con el resto.
+// (Polígono libre se difiere: requiere PostGIS point-in-polygon validado contra
+// la base viva; rectángulo y radio son aritmética lat/lng pura, testeable.)
+export type MapZone =
+  | { kind: "box"; north: number; east: number; south: number; west: number }
+  | { kind: "radius"; lat: number; lng: number; km: number };
+
 export type ExplorerMode = "map" | "balanced" | "results" | "map_only" | "results_only" | "analysis";
 
 export type PropertyPublisher = {
@@ -215,6 +222,7 @@ export type PropertyFilters = {
   city: string;
   neighborhood: string;
   locations: string[];
+  zones: MapZone[];
   minPrice: number | null;
   maxPrice: number | null;
   currency: "" | PropertyCurrency;

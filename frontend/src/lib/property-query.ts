@@ -1,4 +1,5 @@
 import type {
+  MapZone,
   PriceMode,
   PropertyCurrency,
   PropertyFilters,
@@ -7,6 +8,38 @@ import type {
   PropertyType,
   TriState,
 } from "@/types/property";
+
+export const MAX_ZONES = 6;
+
+// Zonas del mapa: formato compacto `b:n,e,s,w` (rectángulo) o `r:lat,lng,km`
+// (radio), separadas por `;`. Validadas a números finitos y acotados.
+function parseZones(value: string | string[] | undefined): MapZone[] {
+  const raw = (Array.isArray(value) ? value[0] : value) ?? "";
+  if (!raw) return [];
+  const out: MapZone[] = [];
+  for (const part of raw.split(";").slice(0, MAX_ZONES)) {
+    const [kind, nums] = part.split(":");
+    const n = (nums ?? "").split(",").map(Number);
+    if (kind === "b" && n.length === 4 && n.every(Number.isFinite)) {
+      const [north, east, south, west] = n;
+      if (north > south && east > west && Math.abs(north) <= 90 && Math.abs(south) <= 90 && Math.abs(east) <= 180 && Math.abs(west) <= 180) {
+        out.push({ kind: "box", north, east, south, west });
+      }
+    } else if (kind === "r" && n.length === 3 && n.every(Number.isFinite)) {
+      const [lat, lng, km] = n;
+      if (Math.abs(lat) <= 90 && Math.abs(lng) <= 180 && km > 0 && km <= 100) {
+        out.push({ kind: "radius", lat, lng, km });
+      }
+    }
+  }
+  return out;
+}
+
+export function serializeZones(zones: MapZone[]): string {
+  return zones
+    .map((z) => (z.kind === "box" ? `b:${z.north},${z.east},${z.south},${z.west}` : `r:${z.lat},${z.lng},${z.km}`))
+    .join(";");
+}
 
 export const MAX_LOCATIONS = 10;
 const triStates = new Set<TriState>(["si", "no", "sininfo"]);
@@ -130,6 +163,7 @@ export function parsePropertyFilters(params: SearchParams): PropertyFilters {
     city: text(params.ciudad),
     neighborhood: text(params.barrio),
     locations: parseLocations(params.ubicaciones),
+    zones: parseZones(params.zonas),
     minPrice: positive(params.precio_min),
     maxPrice: positive(params.precio_max),
     currency: currencies.has(currency) ? currency : "",
@@ -172,6 +206,7 @@ export function filtersToSearchParams(filters: PropertyFilters) {
     ["ciudad", filters.city],
     ["barrio", filters.neighborhood],
     ["ubicaciones", filters.locations.length ? filters.locations.join(",") : ""],
+    ["zonas", filters.zones.length ? serializeZones(filters.zones) : ""],
     ["precio_min", filters.minPrice],
     ["precio_max", filters.maxPrice],
     ["moneda", filters.currency],

@@ -63,6 +63,20 @@ describe("property query", () => {
     expect(parsePropertyFilters({ credito: "1" }).mortgageState).toBe("si"); // legado
   });
 
+  it("multi-zona: parsea rectángulo y radio, ida y vuelta por URL", () => {
+    const f = parsePropertyFilters({ zonas: "b:-34,-58,-35,-59;r:-31.4,-64.2,3" });
+    expect(f.zones).toEqual([
+      { kind: "box", north: -34, east: -58, south: -35, west: -59 },
+      { kind: "radius", lat: -31.4, lng: -64.2, km: 3 },
+    ]);
+    const round = parsePropertyFilters(Object.fromEntries(filtersToSearchParams(f)));
+    expect(round.zones).toEqual(f.zones);
+  });
+  it("descarta zonas inválidas (rango invertido, radio fuera de límite)", () => {
+    expect(parsePropertyFilters({ zonas: "b:-35,-58,-34,-59" }).zones).toEqual([]); // north<=south
+    expect(parsePropertyFilters({ zonas: "r:-34,-58,999" }).zones).toEqual([]); // km>100
+  });
+
   it("orden 'nearest' sólo sobrevive con un punto de referencia válido", () => {
     expect(parsePropertyFilters({ orden: "nearest" }).sort).toBe("recent"); // sin punto
     const near = parsePropertyFilters({ orden: "nearest", cerca_lat: "-34.6", cerca_lng: "-58.4" });

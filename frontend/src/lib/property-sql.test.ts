@@ -66,6 +66,28 @@ describe("multi-ubicación (OR entre términos, AND con el resto)", () => {
   });
 });
 
+describe("multi-zona del mapa (OR entre zonas, AND con el resto)", () => {
+  it("rectángulo → BETWEEN lat/lng", () => {
+    const { where } = buildWhere(parsePropertyFilters({ zonas: "b:-34,-58,-35,-59" }));
+    expect(where).toContain("p.latitud BETWEEN -35 AND -34");
+    expect(where).toContain("p.longitud BETWEEN -59 AND -58");
+  });
+  it("radio → haversine en km con acos clampeado", () => {
+    const { where } = buildWhere(parsePropertyFilters({ zonas: "r:-34.6,-58.4,5" }));
+    expect(where).toContain("6371 * acos(least(1, greatest(-1,");
+    expect(where).toContain(")) <= 5");
+    expect(where).toContain("p.latitud IS NOT NULL");
+  });
+  it("varias zonas se combinan con OR y con AND respecto de otros filtros", () => {
+    const { where } = buildWhere(parsePropertyFilters({ zonas: "b:-34,-58,-35,-59;r:-31.4,-64.2,3", operacion: "venta" }));
+    expect(where).toMatch(/\(\(p\.latitud BETWEEN .* OR \(p\.latitud IS NOT NULL/);
+    expect(where).toMatch(/p\.operacion = /);
+  });
+  it("sin zonas no agrega geometría", () => {
+    expect(buildWhere(parsePropertyFilters({})).where).not.toMatch(/BETWEEN|haversine|acos/);
+  });
+});
+
 describe("precio: con precio / a consultar / todas", () => {
   it("'todas' (default) no agrega condición de precio", () => {
     const { where } = buildWhere(parsePropertyFilters({}));
