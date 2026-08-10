@@ -51,6 +51,64 @@ describe("orden neutral (activas primero, no confirmadas por debajo)", () => {
   });
 });
 
+describe("multi-ubicación (OR entre términos, AND con el resto)", () => {
+  it("une varias ubicaciones con OR, cada una sobre provincia/ciudad/barrio/dirección", () => {
+    const { where, params } = buildWhere(parsePropertyFilters({ ubicaciones: "Palermo,Belgrano" }));
+    // dos bloques de 4 columnas cada uno, unidos por OR dentro de un paréntesis
+    expect(where).toMatch(/\(\(p\.provincia ILIKE \$1 OR p\.ciudad ILIKE \$2 OR p\.barrio ILIKE \$3 OR p\.direccion ILIKE \$4\) OR \(p\.provincia ILIKE \$5/);
+    expect(params).toEqual(["%Palermo%", "%Palermo%", "%Palermo%", "%Palermo%", "%Belgrano%", "%Belgrano%", "%Belgrano%", "%Belgrano%"]);
+  });
+
+  it("se combina con AND con otros filtros", () => {
+    const { where } = buildWhere(parsePropertyFilters({ ubicaciones: "Rosario", operacion: "venta" }));
+    expect(where).toMatch(/p\.operacion = /);
+    expect(where).toMatch(/ AND \(\(p\.provincia ILIKE/);
+  });
+});
+
+describe("precio: con precio / a consultar / todas", () => {
+  it("'todas' (default) no agrega condición de precio", () => {
+    const { where } = buildWhere(parsePropertyFilters({}));
+    expect(where).not.toMatch(/precio/);
+  });
+  it("'con precio' exige precio publicado", () => {
+    const { where } = buildWhere(parsePropertyFilters({ precio: "with" }));
+    expect(where).toContain("p.precio > 0 AND p.moneda IS NOT NULL");
+  });
+  it("'a consultar' incluye NULL/0/sin moneda", () => {
+    const { where } = buildWhere(parsePropertyFilters({ precio: "consult" }));
+    expect(where).toContain("(p.precio IS NULL OR p.precio <= 0 OR p.moneda IS NULL)");
+  });
+});
+
+describe("tri-state NULL-safe (apto crédito)", () => {
+  it("'sí' exige TRUE; 'no' exige FALSE explícito; 'sininfo' exige NULL", () => {
+    expect(buildWhere(parsePropertyFilters({ credito: "si" })).where).toContain("p.apto_credito IS TRUE");
+    expect(buildWhere(parsePropertyFilters({ credito: "no" })).where).toContain("p.apto_credito IS FALSE");
+    expect(buildWhere(parsePropertyFilters({ credito: "sininfo" })).where).toContain("p.apto_credito IS NULL");
+  });
+  it("NULL nunca cae en 'no': 'no' no toca las filas NULL", () => {
+    // IS FALSE excluye tanto TRUE como NULL; una fila sin dato (NULL) no es "no".
+    expect(buildWhere(parsePropertyFilters({ credito: "no" })).where).not.toContain("IS NULL");
+  });
+  it("default (cualquiera) no agrega condición de crédito", () => {
+    expect(buildWhere(parsePropertyFilters({})).where).not.toMatch(/apto_credito/);
+  });
+});
+
+describe("orden por cercanía (cursor-safe, sin coordenadas al final)", () => {
+  it("inlinea el punto validado y manda las filas sin coordenadas al final", () => {
+    const spec = sortSpec("nearest", { lat: -34.6, lng: -58.4 });
+    expect(spec.ascending).toBe(true);
+    expect(spec.expression).toContain("(p.latitud - (-34.6))");
+    expect(spec.expression).toContain("(p.longitud - (-58.4))");
+    expect(spec.expression).toContain("1e30"); // sin coords → al final
+  });
+  it("sin punto de referencia cae al orden por recencia", () => {
+    expect(sortSpec("nearest", null).expression).toContain("p.estado = 'activa'");
+  });
+});
+
 describe("cursor keyset (orden total y estable, desempate único por ID)", () => {
   const cur = (value: number, id: string): CursorPayload => ({ version: 1, sort: "recent", value, id });
 

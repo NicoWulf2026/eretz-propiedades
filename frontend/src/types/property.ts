@@ -29,7 +29,18 @@ export type PropertySort =
   | "price_desc"
   | "area_desc"
   | "rooms_desc"
-  | "price_m2_asc";
+  | "price_m2_asc"
+  | "nearest";
+
+// Control ternario NULL-safe: "" = Cualquiera (no filtra), "si" = verdadero,
+// "no" = falso explícito, "sininfo" = dato ausente (NULL). NULL nunca es "no".
+export type TriState = "" | "si" | "no" | "sininfo";
+
+// Precio: "" = todas (nunca excluye "consultar"), "with" = con precio publicado,
+// "consult" = a consultar (sin precio).
+export type PriceMode = "" | "with" | "consult";
+
+export type GeoPoint = { lat: number; lng: number };
 
 export type ExplorerMode = "map" | "balanced" | "results" | "map_only" | "results_only" | "analysis";
 
@@ -200,6 +211,7 @@ export type PropertyFilters = {
   province: string;
   city: string;
   neighborhood: string;
+  locations: string[];
   minPrice: number | null;
   maxPrice: number | null;
   currency: "" | PropertyCurrency;
@@ -216,12 +228,13 @@ export type PropertyFilters = {
   publisher: string;
   recentDays: number | null;
   hasImages: boolean;
-  hasPrice: boolean;
+  priceMode: PriceMode;
   hasLocation: boolean;
   hasVideo: boolean;
   hasFloorPlan: boolean;
-  mortgageEligible: boolean;
+  mortgageState: TriState;
   sort: PropertySort;
+  near: GeoPoint | null;
   page: number;
   cursor: string;
   direction: "next" | "prev";

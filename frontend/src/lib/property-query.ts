@@ -1,10 +1,15 @@
 import type {
+  PriceMode,
   PropertyCurrency,
   PropertyFilters,
   PropertyOperation,
   PropertySort,
   PropertyType,
+  TriState,
 } from "@/types/property";
+
+export const MAX_LOCATIONS = 10;
+const triStates = new Set<TriState>(["si", "no", "sininfo"]);
 
 export type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -29,7 +34,7 @@ const propertyTypes = new Set<PropertyType>([
 ]);
 const currencies = new Set<PropertyCurrency>(["USD", "ARS", "EUR", "UYU"]);
 const sorts = new Set<PropertySort>([
-  "recent", "price_asc", "price_desc", "area_desc", "rooms_desc", "price_m2_asc",
+  "recent", "price_asc", "price_desc", "area_desc", "rooms_desc", "price_m2_asc", "nearest",
 ]);
 const modes = new Set(["map", "balanced", "results", "map_only", "results_only", "analysis"] as const);
 
@@ -62,16 +67,56 @@ function parseViewport(params: SearchParams) {
   return { north, east, south, west, zoom };
 }
 
+// Multi-ubicación: OR entre términos, cada uno cotejado contra provincia/ciudad/
+// barrio/dirección. Acepta repeticiones (`ubicaciones=A&ubicaciones=B`) o coma.
+function parseLocations(value: string | string[] | undefined): string[] {
+  const raw = Array.isArray(value) ? value : [value ?? ""];
+  const tokens = raw.flatMap((entry) => String(entry ?? "").split(","));
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const token of tokens) {
+    const clean = token.replace(/[(),.*%]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
+    const key = clean.toLowerCase();
+    if (clean && !seen.has(key)) { seen.add(key); out.push(clean); }
+    if (out.length >= MAX_LOCATIONS) break;
+  }
+  return out;
+}
+
+function parseNear(params: SearchParams) {
+  const latRaw = one(params.cerca_lat);
+  const lngRaw = one(params.cerca_lng);
+  if (!latRaw || !lngRaw) return null; // `bounded("")` daría 0; exigimos valor real
+  const lat = bounded(latRaw, -90, 90);
+  const lng = bounded(lngRaw, -180, 180);
+  return lat === null || lng === null ? null : { lat, lng };
+}
+
+function parsePriceMode(value: string | string[] | undefined): PriceMode {
+  const v = one(value);
+  if (v === "with" || v === "1") return "with"; // "1" = compatibilidad con el checkbox anterior
+  if (v === "consult") return "consult";
+  return "";
+}
+
+function parseTriState(value: string | string[] | undefined): TriState {
+  const v = one(value);
+  if (v === "1") return "si"; // compatibilidad con el valor booleano anterior
+  return triStates.has(v as TriState) ? (v as TriState) : "";
+}
+
 export function parsePropertyFilters(params: SearchParams): PropertyFilters {
   const operation = one(params.operacion) as PropertyOperation;
   const propertyType = one(params.tipo) as PropertyType;
   const currency = one(params.moneda).toUpperCase() as PropertyCurrency;
+  const near = parseNear(params);
   let sort = one(params.orden) as PropertySort;
 
   if (!sorts.has(sort)) sort = "recent";
-  if ((sort === "price_asc" || sort === "price_desc") && !currencies.has(currency)) {
+  if ((sort === "price_asc" || sort === "price_desc" || sort === "price_m2_asc") && !currencies.has(currency)) {
     sort = "recent";
   }
+  if (sort === "nearest" && !near) sort = "recent";
 
   const cursorCandidate = one(params.cursor).slice(0, 420);
   const cursor = /^[A-Za-z0-9_-]+$/.test(cursorCandidate) ? cursorCandidate : "";
@@ -84,6 +129,7 @@ export function parsePropertyFilters(params: SearchParams): PropertyFilters {
     province: text(params.provincia),
     city: text(params.ciudad),
     neighborhood: text(params.barrio),
+    locations: parseLocations(params.ubicaciones),
     minPrice: positive(params.precio_min),
     maxPrice: positive(params.precio_max),
     currency: currencies.has(currency) ? currency : "",
@@ -100,12 +146,13 @@ export function parsePropertyFilters(params: SearchParams): PropertyFilters {
     publisher: text(params.publicador),
     recentDays: bounded(params.reciente, 1, 365),
     hasImages: one(params.imagenes) === "1",
-    hasPrice: one(params.precio) === "1",
+    priceMode: parsePriceMode(params.precio),
     hasLocation: one(params.ubicacion) === "1",
     hasVideo: one(params.video) === "1",
     hasFloorPlan: one(params.plano) === "1",
-    mortgageEligible: one(params.credito) === "1",
+    mortgageState: parseTriState(params.credito),
     sort,
+    near,
     page: cursor ? requestedPage : 1,
     cursor,
     direction: cursor && one(params.direccion) === "prev" ? "prev" : "next",
@@ -124,6 +171,7 @@ export function filtersToSearchParams(filters: PropertyFilters) {
     ["provincia", filters.province],
     ["ciudad", filters.city],
     ["barrio", filters.neighborhood],
+    ["ubicaciones", filters.locations.length ? filters.locations.join(",") : ""],
     ["precio_min", filters.minPrice],
     ["precio_max", filters.maxPrice],
     ["moneda", filters.currency],
@@ -140,12 +188,14 @@ export function filtersToSearchParams(filters: PropertyFilters) {
     ["publicador", filters.publisher],
     ["reciente", filters.recentDays],
     ["imagenes", filters.hasImages ? "1" : ""],
-    ["precio", filters.hasPrice ? "1" : ""],
+    ["precio", filters.priceMode],
     ["ubicacion", filters.hasLocation ? "1" : ""],
     ["video", filters.hasVideo ? "1" : ""],
     ["plano", filters.hasFloorPlan ? "1" : ""],
-    ["credito", filters.mortgageEligible ? "1" : ""],
+    ["credito", filters.mortgageState],
     ["orden", filters.sort === "recent" ? "" : filters.sort],
+    ["cerca_lat", filters.near?.lat ?? null],
+    ["cerca_lng", filters.near?.lng ?? null],
     ["pagina", filters.page > 1 ? filters.page : ""],
     ["cursor", filters.cursor],
     ["direccion", filters.cursor && filters.direction === "prev" ? "prev" : ""],

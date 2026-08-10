@@ -23,6 +23,7 @@ const sortLabels: Record<PropertySort, string> = {
   area_desc: "Mayor superficie",
   rooms_desc: "Más ambientes",
   price_m2_asc: "Menor precio por m²",
+  nearest: "Más cercanas",
 };
 
 const modeLabels: Record<ExplorerMode, string> = {

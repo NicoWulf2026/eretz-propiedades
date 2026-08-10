@@ -58,10 +58,17 @@ function QuickSelectors({ filters }: { filters: PropertyFilters }) {
 export function AdvancedFilterFields({ filters }: { filters: PropertyFilters }) {
   return (
     <>
+      {filters.near ? (
+        <>
+          <input type="hidden" name="cerca_lat" value={filters.near.lat} />
+          <input type="hidden" name="cerca_lng" value={filters.near.lng} />
+        </>
+      ) : null}
       <div className="filter-grid">
         <Field label="Provincia"><input name="provincia" defaultValue={filters.province} placeholder="Buenos Aires" /></Field>
         <Field label="Ciudad"><input name="ciudad" defaultValue={filters.city} placeholder="Córdoba" /></Field>
         <Field label="Barrio o localidad"><input name="barrio" defaultValue={filters.neighborhood} placeholder="Palermo" /></Field>
+        <Field label="Varias ubicaciones (separá con comas)"><input name="ubicaciones" defaultValue={filters.locations.join(", ")} placeholder="Palermo, Belgrano, Núñez" /></Field>
         <Field label="Inmobiliaria o publicador"><input name="publicador" defaultValue={filters.publisher} placeholder="Nombre" /></Field>
         <Field label="Moneda"><select name="moneda" defaultValue={filters.currency}><option value="">Cualquiera</option><option>USD</option><option>ARS</option><option>EUR</option><option>UYU</option></select></Field>
         <Field label="Precio mínimo"><input name="precio_min" inputMode="numeric" type="number" min="0" defaultValue={filters.minPrice ?? ""} /></Field>
@@ -71,13 +78,16 @@ export function AdvancedFilterFields({ filters }: { filters: PropertyFilters }) 
         <Field label="Baños mín."><input name="banos" type="number" min="1" max="20" defaultValue={filters.minBathrooms ?? ""} /></Field>
         <Field label="Superficie total mín."><input name="superficie" type="number" min="1" defaultValue={filters.minArea ?? ""} /></Field>
         <Field label="Superficie total máx."><input name="superficie_max" type="number" min="1" defaultValue={filters.maxArea ?? ""} /></Field>
+        <Field label="Precio"><select name="precio" defaultValue={filters.priceMode}><option value="">Todas</option><option value="with">Con precio publicado</option><option value="consult">A consultar</option></select></Field>
+        {/* Apto crédito: infraestructura tri-state lista (parse/query NULL-safe/chip),
+            pero el control se oculta mientras apto_credito sea ~100% NULL en el
+            catálogo, para no ofrecer un filtro sin respaldo de datos reales. */}
         <Field label="Publicado"><select name="reciente" defaultValue={filters.recentDays ?? ""}><option value="">Cualquier fecha</option><option value="1">Últimas 24 horas</option><option value="7">Últimos 7 días</option><option value="30">Últimos 30 días</option><option value="90">Últimos 90 días</option></select></Field>
-        <Field label="Orden"><select name="orden" defaultValue={filters.sort}><option value="recent">Incorporadas recientemente</option><option value="price_asc" disabled={!filters.currency}>Menor precio</option><option value="price_desc" disabled={!filters.currency}>Mayor precio</option><option value="area_desc">Mayor superficie</option><option value="rooms_desc">Más ambientes</option><option value="price_m2_asc" disabled={!filters.currency}>Menor precio por m²</option></select></Field>
+        <Field label="Orden"><select name="orden" defaultValue={filters.sort}><option value="recent">Incorporadas recientemente</option><option value="price_asc" disabled={!filters.currency}>Menor precio</option><option value="price_desc" disabled={!filters.currency}>Mayor precio</option><option value="area_desc">Mayor superficie</option><option value="rooms_desc">Más ambientes</option><option value="price_m2_asc" disabled={!filters.currency}>Menor precio por m²</option>{filters.near ? <option value="nearest">Más cercanas</option> : null}</select></Field>
       </div>
       <div className="filter-checks">
         <label className="check"><input name="ubicacion" value="1" type="checkbox" defaultChecked={filters.hasLocation} /> Con ubicación en mapa</label>
         <label className="check"><input name="imagenes" value="1" type="checkbox" defaultChecked={filters.hasImages} /> Con imágenes</label>
-        <label className="check"><input name="precio" value="1" type="checkbox" defaultChecked={filters.hasPrice} /> Con precio</label>
       </div>
       {!filters.currency && (filters.sort === "price_asc" || filters.sort === "price_desc" || filters.sort === "price_m2_asc") ? <p className="filter-warning">Elegí una moneda para comparar precios sin mezclar unidades.</p> : null}
     </>

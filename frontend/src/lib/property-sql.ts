@@ -1,4 +1,4 @@
-import type { MapViewport, PropertyFilters, PropertySort } from "@/types/property";
+import type { GeoPoint, MapViewport, PropertyFilters, PropertySort } from "@/types/property";
 
 // SQL puro (sin acceso a base ni `server-only`) para poder testear el contrato de
 // cobertura y el orden neutral. El Quality Gate se aplica en la app y es la única
@@ -29,6 +29,17 @@ export function buildWhere(filters: PropertyFilters, extra?: MapViewport) {
   if (filters.province) add("p.provincia ILIKE ?", `%${filters.province}%`);
   if (filters.city) add("p.ciudad ILIKE ?", `%${filters.city}%`);
   if (filters.neighborhood) add("p.barrio ILIKE ?", `%${filters.neighborhood}%`);
+  // Multi-ubicación: OR entre términos; cada término cotejado contra
+  // provincia/ciudad/barrio/dirección. El bloque completo se une con AND al resto,
+  // así que una propiedad debe coincidir con AL MENOS una ubicación pedida.
+  if (filters.locations.length) {
+    const clauses = filters.locations.map((loc) => {
+      const value = `%${loc}%`;
+      const cols = ["p.provincia", "p.ciudad", "p.barrio", "p.direccion"];
+      return `(${cols.map((col) => `${col} ILIKE ${addParam(params, value)}`).join(" OR ")})`;
+    });
+    conditions.push(`(${clauses.join(" OR ")})`);
+  }
   if (filters.currency) add("upper(p.moneda) = ?", filters.currency);
   if (filters.minPrice !== null) add("p.precio >= ?", filters.minPrice);
   if (filters.maxPrice !== null) add("p.precio <= ?", filters.maxPrice);
@@ -50,11 +61,18 @@ export function buildWhere(filters: PropertyFilters, extra?: MapViewport) {
   }
   if (filters.recentDays !== null) add("COALESCE(p.fecha_publicacion, p.updated_at, p.created_at) >= now() - (? * interval '1 day')", filters.recentDays);
   if (filters.hasImages) conditions.push("cardinality(p.imagenes) > 0");
-  if (filters.hasPrice) conditions.push("p.precio > 0 AND p.moneda IS NOT NULL");
+  // Precio: "with" = publicado; "consult" = a consultar (sin precio). El valor por
+  // defecto ("") no filtra, así que "Todas" nunca excluye las de consultar.
+  if (filters.priceMode === "with") conditions.push("p.precio > 0 AND p.moneda IS NOT NULL");
+  else if (filters.priceMode === "consult") conditions.push("(p.precio IS NULL OR p.precio <= 0 OR p.moneda IS NULL)");
   if (filters.hasLocation) conditions.push("p.latitud IS NOT NULL AND p.longitud IS NOT NULL");
   if (filters.hasVideo) conditions.push("NULLIF(p.video_url, '') IS NOT NULL");
   if (filters.hasFloorPlan) conditions.push("NULLIF(p.plano_url, '') IS NOT NULL");
-  if (filters.mortgageEligible) conditions.push("p.apto_credito IS TRUE");
+  // Tri-state NULL-safe: "no" es apto_credito FALSE explícito; "sininfo" es NULL.
+  // Un dato ausente (NULL) nunca cae en "no".
+  if (filters.mortgageState === "si") conditions.push("p.apto_credito IS TRUE");
+  else if (filters.mortgageState === "no") conditions.push("p.apto_credito IS FALSE");
+  else if (filters.mortgageState === "sininfo") conditions.push("p.apto_credito IS NULL");
   if (extra) {
     add("p.latitud <= ?", extra.north);
     add("p.latitud >= ?", extra.south);
@@ -84,17 +102,32 @@ export function buildCursorClause(
   return ` AND (${expression} ${operator} ${valueParam} OR (${expression} = ${valueParam} AND p.id ${operator} ${idParam}))`;
 }
 
-export function sortSpec(sort: PropertySort) {
+const recentExpression = "(CASE WHEN p.estado = 'activa' THEN 1e10 ELSE 0 END + p.id)";
+
+export function sortSpec(sort: PropertySort, near?: GeoPoint | null) {
   switch (sort) {
     case "price_asc": return { expression: "COALESCE(p.precio, 1e30)", ascending: true };
     case "price_desc": return { expression: "COALESCE(p.precio, 0)", ascending: false };
     case "area_desc": return { expression: "COALESCE(p.superficie_total, p.superficie_cubierta, 0)", ascending: false };
     case "rooms_desc": return { expression: "COALESCE(p.ambientes, 0)", ascending: false };
     case "price_m2_asc": return { expression: "COALESCE(p.precio / NULLIF(p.superficie_total, 0), 1e30)", ascending: true };
+    // Cercanía: distancia euclídea al cuadrado respecto de un punto de referencia
+    // (suficiente para ordenar, sin PostGIS). lat/lng ya vienen validados como
+    // números finitos y acotados, por eso se inlinean como literales seguros. Las
+    // propiedades sin coordenadas van al final (1e30) y desempatan por id.
+    case "nearest": {
+      if (!near) return { expression: recentExpression, ascending: false };
+      const dLat = `(p.latitud - (${Number(near.lat)}))`;
+      const dLng = `(p.longitud - (${Number(near.lng)}))`;
+      return {
+        expression: `(CASE WHEN p.latitud IS NULL OR p.longitud IS NULL THEN 1e30 ELSE (${dLat}*${dLat} + ${dLng}*${dLng}) END)`,
+        ascending: true,
+      };
+    }
     // Orden predeterminado (recencia): las activas primero, luego por id descendente
     // (proxy de ingesta). El escalón se pliega en un único valor float para conservar
     // un cursor keyset comparable; 1e10 supera cualquier id real, así que una activa
     // siempre ordena por encima de una no confirmada sin importar el id.
-    default: return { expression: "(CASE WHEN p.estado = 'activa' THEN 1e10 ELSE 0 END + p.id)", ascending: false };
+    default: return { expression: recentExpression, ascending: false };
   }
 }

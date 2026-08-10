@@ -29,6 +29,12 @@ export function activeChips(filters: PropertyFilters): Chip[] {
   if (filters.province) chips.push({ key: "prov", label: filters.province, next: reset(filters, { province: "" }) });
   if (filters.city) chips.push({ key: "city", label: filters.city, next: reset(filters, { city: "" }) });
   if (filters.neighborhood) chips.push({ key: "barrio", label: filters.neighborhood, next: reset(filters, { neighborhood: "" }) });
+  // Cada ubicación se puede quitar individualmente (semántica OR).
+  filters.locations.forEach((loc, index) => chips.push({
+    key: `ubi-${index}`,
+    label: loc,
+    next: reset(filters, { locations: filters.locations.filter((_, i) => i !== index) }),
+  }));
   if (filters.publisher) chips.push({ key: "pub", label: filters.publisher, next: reset(filters, { publisher: "" }) });
   if (filters.currency) chips.push({ key: "mon", label: filters.currency, next: reset(filters, { currency: "" }) });
   if (filters.minPrice !== null) chips.push({ key: "pmin", label: `Desde ${num(filters.minPrice)}`, next: reset(filters, { minPrice: null }) });
@@ -40,8 +46,13 @@ export function activeChips(filters: PropertyFilters): Chip[] {
   if (filters.maxArea !== null) chips.push({ key: "amax", label: `Sup. ≤ ${filters.maxArea} m²`, next: reset(filters, { maxArea: null }) });
   if (filters.recentDays !== null) chips.push({ key: "rec", label: `Últimos ${filters.recentDays} días`, next: reset(filters, { recentDays: null }) });
   if (filters.hasImages) chips.push({ key: "img", label: "Con imágenes", next: reset(filters, { hasImages: false }) });
-  if (filters.hasPrice) chips.push({ key: "prc", label: "Con precio", next: reset(filters, { hasPrice: false }) });
+  if (filters.priceMode === "with") chips.push({ key: "prc", label: "Con precio", next: reset(filters, { priceMode: "" }) });
+  if (filters.priceMode === "consult") chips.push({ key: "prc", label: "A consultar", next: reset(filters, { priceMode: "" }) });
   if (filters.hasLocation) chips.push({ key: "loc", label: "Con ubicación", next: reset(filters, { hasLocation: false }) });
+  if (filters.mortgageState === "si") chips.push({ key: "cred", label: "Apto crédito", next: reset(filters, { mortgageState: "" }) });
+  if (filters.mortgageState === "no") chips.push({ key: "cred", label: "No apto crédito", next: reset(filters, { mortgageState: "" }) });
+  if (filters.mortgageState === "sininfo") chips.push({ key: "cred", label: "Crédito sin información", next: reset(filters, { mortgageState: "" }) });
+  if (filters.near) chips.push({ key: "near", label: "Cerca de un punto", next: reset(filters, { near: null, sort: filters.sort === "nearest" ? "recent" : filters.sort }) });
   return chips;
 }
 

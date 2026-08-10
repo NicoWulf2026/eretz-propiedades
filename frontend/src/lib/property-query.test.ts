@@ -40,4 +40,34 @@ describe("property query", () => {
     expect(filters.hasLocation).toBe(true);
     expect(filtersToSearchParams(filters).get("publicador")).toBe("Acme");
   });
+
+  it("parsea, deduplica y limita multi-ubicación; ida y vuelta por URL", () => {
+    const filters = parsePropertyFilters({ ubicaciones: "Palermo, Belgrano ,palermo" });
+    expect(filters.locations).toEqual(["Palermo", "Belgrano"]); // dedup case-insensitive
+    const round = parsePropertyFilters(Object.fromEntries(filtersToSearchParams(filters)));
+    expect(round.locations).toEqual(["Palermo", "Belgrano"]);
+  });
+
+  it("sin filtros no produce near, priceMode ni mortgageState", () => {
+    const f = parsePropertyFilters({});
+    expect(f.near).toBeNull();
+    expect(f.priceMode).toBe("");
+    expect(f.mortgageState).toBe("");
+    expect(f.locations).toEqual([]);
+  });
+
+  it("precio y crédito aceptan valores nuevos y compatibilidad con '1'", () => {
+    expect(parsePropertyFilters({ precio: "consult" }).priceMode).toBe("consult");
+    expect(parsePropertyFilters({ precio: "1" }).priceMode).toBe("with"); // legado
+    expect(parsePropertyFilters({ credito: "sininfo" }).mortgageState).toBe("sininfo");
+    expect(parsePropertyFilters({ credito: "1" }).mortgageState).toBe("si"); // legado
+  });
+
+  it("orden 'nearest' sólo sobrevive con un punto de referencia válido", () => {
+    expect(parsePropertyFilters({ orden: "nearest" }).sort).toBe("recent"); // sin punto
+    const near = parsePropertyFilters({ orden: "nearest", cerca_lat: "-34.6", cerca_lng: "-58.4" });
+    expect(near.sort).toBe("nearest");
+    expect(near.near).toEqual({ lat: -34.6, lng: -58.4 });
+    expect(filtersToSearchParams(near).get("cerca_lat")).toBe("-34.6");
+  });
 });

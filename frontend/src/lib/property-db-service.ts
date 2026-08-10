@@ -251,7 +251,7 @@ function encodeCursor(row: DbPropertyRow, sort: PropertySort) {
 
 async function queryBatch(filters: PropertyFilters, limit: number, cursor: CursorPayload | null, viewport?: MapViewport) {
   const { where, params } = buildWhere(filters, viewport);
-  const sort = sortSpec(filters.sort);
+  const sort = sortSpec(filters.sort, filters.near);
   const cursorClause = buildCursorClause(params, cursor, sort.expression, sort.ascending, filters.direction);
   const reverse = filters.direction === "prev";
   const order = sort.ascending !== reverse ? "ASC" : "DESC";
