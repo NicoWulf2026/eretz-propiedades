@@ -1,6 +1,9 @@
 export {
+  getAgentBySlug,
+  getAgentDirectory,
   getHomeInventory,
   getPropertiesByAgency,
+  getPropertiesByAgent,
   getPropertiesByIds,
   getPropertyById,
   getRealEstateById,

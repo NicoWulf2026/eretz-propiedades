@@ -6,8 +6,10 @@ import { propertyLocation } from "@/lib/property-presenter";
 import { getPreviewQualityGate } from "@/lib/preview-quality-gate";
 import { parsePropertyFilters } from "@/lib/property-query";
 import { addParam, buildCursorClause, buildWhere, normalizeSearch, sortSpec, type CursorPayload } from "@/lib/property-sql";
-import { entitySlug } from "@/lib/slug";
+import { entitySlug, slugify } from "@/lib/slug";
 import type {
+  AgentProfile,
+  AgentSummary,
   MapSearchResponse,
   MapViewport,
   Property,
@@ -50,6 +52,7 @@ const mapCache = new Map<string, TimedPromise<MapSearchResponse>>();
 const suggestionCache = new Map<string, TimedPromise<SearchSuggestion[]>>();
 const countsCache = new Map<string, TimedPromise<{ count: number; mapCount: number }>>();
 const directoryCache = new Map<string, TimedPromise<RealEstateSummary[]>>();
+const agentCache = new Map<string, TimedPromise<AgentSummary[]>>();
 
 function cachedQuery<T>(
   store: Map<string, TimedPromise<T>>,
@@ -496,6 +499,109 @@ export async function getPropertiesByAgency(id: string, limit = 48): Promise<Pro
     return rows.filter((row) => gate.isVisible(row.id)).map((row) => toSummary(mapSupabasePropertyToProperty(row)));
   } catch (error) {
     console.error("ERETZ getPropertiesByAgency failed", error instanceof Error ? error.message : "unknown error");
+    return [];
+  }
+}
+
+// ---------------------------------------------------------- Directorio de agentes
+// Los agentes no tienen entidad propia: se derivan de las publicaciones
+// (agente_nombre). Sólo aparecen agentes con datos reales; si la columna está
+// vacía, el directorio queda vacío (no se inventa contenido). El slug es el
+// nombre normalizado (sin id, porque no existe uno estable).
+type AgentRow = {
+  nombre: string | null;
+  total: number;
+  ciudad: string | null;
+  provincia: string | null;
+  telefono?: string | null;
+};
+
+function toAgentSummary(row: AgentRow): AgentSummary {
+  const name = row.nombre?.trim() || "Agente";
+  return {
+    slug: slugify(name),
+    name,
+    city: row.ciudad?.trim() || null,
+    province: row.provincia?.trim() || null,
+    listingsCount: Number(row.total) || 0,
+  };
+}
+
+const agentDirectoryUncached = async (query: string, limit: number): Promise<AgentSummary[]> => {
+  if (!databaseUrl()) return [];
+  const clean = query.trim().slice(0, 60).replace(/[(),.*%]/g, " ").trim();
+  const params: unknown[] = [];
+  const nameFilter = clean ? `AND p.agente_nombre ILIKE ${addParam(params, `%${clean}%`)}` : "";
+  const limitParam = addParam(params, limit);
+  try {
+    const rows = await readOnly((sql) => sql.unsafe<AgentRow[]>(
+      `SELECT p.agente_nombre AS nombre, count(*)::int AS total,
+         mode() WITHIN GROUP (ORDER BY p.ciudad) AS ciudad,
+         mode() WITHIN GROUP (ORDER BY p.provincia) AS provincia,
+         mode() WITHIN GROUP (ORDER BY p.agente_telefono) AS telefono
+       FROM public.propiedades p
+       WHERE p.agente_nombre IS NOT NULL AND btrim(p.agente_nombre) <> '' ${nameFilter}
+       GROUP BY p.agente_nombre
+       HAVING count(*) > 0
+       ORDER BY count(*) DESC, p.agente_nombre ASC
+       LIMIT ${limitParam}`, params as never[]));
+    return rows.map(toAgentSummary);
+  } catch (error) {
+    console.error("ERETZ getAgentDirectory failed", error instanceof Error ? error.message : "unknown error");
+    return [];
+  }
+};
+
+export function getAgentDirectory(query = ""): Promise<AgentSummary[]> {
+  return cachedQuery(agentCache, `dir:${normalizeSearch(query.trim().slice(0, 60))}`, QUERY_CACHE_TTL_MS, () => agentDirectoryUncached(query, 60));
+}
+
+// Resuelve un slug de agente contra el conjunto real (sin id estable): agrega
+// todos los agentes y encuentra el de slug coincidente. Devuelve su perfil.
+export async function getAgentBySlug(slug: string): Promise<AgentProfile | null> {
+  if (!databaseUrl() || !slug) return null;
+  const rows = await agentDirectoryUncachedFull();
+  const match = rows.find((row) => slugify(row.nombre?.trim() || "") === slug);
+  if (!match) return null;
+  const summary = toAgentSummary(match);
+  return { ...summary, phone: match.telefono?.trim() || null };
+}
+
+// Conjunto acotado de agentes para resolver slugs (con teléfono representativo).
+const agentDirectoryUncachedFull = async (): Promise<AgentRow[]> => {
+  if (!databaseUrl()) return [];
+  try {
+    return await readOnly((sql) => sql.unsafe<AgentRow[]>(
+      `SELECT p.agente_nombre AS nombre, count(*)::int AS total,
+         mode() WITHIN GROUP (ORDER BY p.ciudad) AS ciudad,
+         mode() WITHIN GROUP (ORDER BY p.provincia) AS provincia,
+         mode() WITHIN GROUP (ORDER BY p.agente_telefono) AS telefono
+       FROM public.propiedades p
+       WHERE p.agente_nombre IS NOT NULL AND btrim(p.agente_nombre) <> ''
+       GROUP BY p.agente_nombre
+       ORDER BY count(*) DESC
+       LIMIT 2000`, []));
+  } catch (error) {
+    console.error("ERETZ agentDirectoryFull failed", error instanceof Error ? error.message : "unknown error");
+    return [];
+  }
+};
+
+// Publicaciones de un agente por nombre exacto (gate-aplicado).
+export async function getPropertiesByAgent(name: string, limit = 48): Promise<PropertySummary[]> {
+  if (!databaseUrl() || !name.trim()) return [];
+  const gate = await getPreviewQualityGate();
+  if (!gate.enabled) return [];
+  try {
+    const rows = await readOnly((sql) => sql.unsafe<DbPropertyRow[]>(
+      `SELECT ${summaryProjection}, (CASE WHEN p.estado = 'activa' THEN 1e10 ELSE 0 END + p.id) AS __sort_value
+       FROM public.propiedades p LEFT JOIN public.inmobiliarias_main i ON i.id = p.inmobiliaria_id
+       WHERE p.agente_nombre = $1
+       ORDER BY __sort_value DESC
+       LIMIT $2`, [name.trim(), Math.min(Math.max(1, limit), 96)]));
+    return rows.filter((row) => gate.isVisible(row.id)).map((row) => toSummary(mapSupabasePropertyToProperty(row)));
+  } catch (error) {
+    console.error("ERETZ getPropertiesByAgent failed", error instanceof Error ? error.message : "unknown error");
     return [];
   }
 }

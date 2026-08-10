@@ -289,6 +289,18 @@ export type RealEstateProfile = RealEstateSummary & {
 
 export type ClaimStatus = "pending" | "approved" | "rejected" | "needs_review";
 
+export type AgentSummary = {
+  slug: string;
+  name: string;
+  city: string | null;
+  province: string | null;
+  listingsCount: number;
+};
+
+export type AgentProfile = AgentSummary & {
+  phone: string | null;
+};
+
 export type PropertyDetail = Property;
 export type RelatedProperty = PropertySummary;
 export type SearchFilters = PropertyFilters;
