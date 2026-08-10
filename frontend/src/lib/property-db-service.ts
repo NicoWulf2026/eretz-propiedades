@@ -634,6 +634,23 @@ export async function getOtherPublications(property: Property, limit = 6): Promi
   }
 }
 
+export type PriceHistoryPoint = { price: number; currency: string | null; at: string };
+
+// Historial de precios (read-model). Sólo consulta si ERETZ_PRICE_HISTORY=1 y la
+// tabla existe; si no, devuelve [] (la ficha no muestra la sección). Nunca genera
+// datos ficticios. Ver migración 20260810000000_listing_price_history.
+export async function getPriceHistory(id: string): Promise<PriceHistoryPoint[]> {
+  if (process.env.ERETZ_PRICE_HISTORY !== "1" || !databaseUrl() || !/^\d+$/.test(id)) return [];
+  try {
+    const rows = await readOnly((sql) => sql.unsafe<Array<{ precio: number; moneda: string | null; observado_en: string }>>(
+      `SELECT precio, moneda, observado_en FROM public.listing_price_history
+       WHERE propiedad_id = $1 ORDER BY observado_en ASC LIMIT 50`, [Number(id)]));
+    return rows.map((r) => ({ price: Number(r.precio), currency: r.moneda, at: String(r.observado_en) }));
+  } catch {
+    return [];
+  }
+}
+
 export async function getRelatedProperties(property: Property): Promise<PropertySummary[]> {
   const filters = parsePropertyFilters({
     operacion: property.operation,

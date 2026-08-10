@@ -3,6 +3,7 @@ export {
   getAgentDirectory,
   getHomeInventory,
   getOtherPublications,
+  getPriceHistory,
   getPropertiesByAgency,
   getPropertiesByAgent,
   getPropertiesByIds,
