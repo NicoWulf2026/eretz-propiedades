@@ -2,80 +2,97 @@
 
 Documento vivo de alcance de la misión *Functional V3*. Clasifica cada bloque
 como **IMPLEMENTADO** (esta iniciativa, con tests y gates), **BASELINE**
-(ya existía y se verificó en Phase A), **PARCIAL**, **DIFERIDO** (fuera de
-alcance seguro para una sola sesión, requiere feature nueva + validación) o
-**BLOQUEADO** (requiere una acción humana / recurso indisponible).
+(ya existía y se verificó en Phase A), **INFRA LISTA** (código + tests listos,
+activación pendiente de un recurso), **PARCIAL/DATA-LIMITED** (limitación real de
+datos tras intentarlo) o **REMOTO/HUMANO** (requiere Preview + credenciales +
+QA de navegador, indisponibles localmente).
 
-Principio rector (secciones 83–85 del brief): *máxima implementación real, sin
-fingir checks verdes*. No se toca el baseline server-side frágil (conteos, RLS,
-Quality Gate) salvo adiciones aditivas y aisladas.
+Principio (secciones 83–85): *máxima implementación real, sin fingir checks
+verdes*. `buildWhere` y demás piezas SÍ se evolucionaron cuando una función lo
+requería, de forma controlada, con tests, sin pérdida silenciosa de propiedades,
+preservando semántica NULL-safe, cursor keyset estable y counts.
 
 ## Baseline preservado (invariantes)
 
-- `count=193615`, `totalCount=193615`, `mapCount=62549`, `withoutMapCount=131066`.
-- `/propiedad/106835` → 200 + "Disponibilidad no confirmada" (nunca activa falsa).
-- Paginación cursor sin duplicados · filtros server-side · 6 modos · restauración URL.
-- Quality Gate como única autoridad de visibilidad · Data API OFF · sólo servidor.
-- Gates de esta entrega: **typecheck 0 · lint 0 · Vitest 76/76 · build OK · npm audit 0**.
+- `count/totalCount = 193615`, `mapCount = 62549`, `withoutMapCount = 131066`.
+- `/propiedad/106835` → 200 + "Disponibilidad no confirmada".
+- Cursor keyset estable (desempate por id), filtros server-side, 6 modos,
+  restauración por URL, Quality Gate como única autoridad de visibilidad.
+- Gates de esta entrega: **typecheck 0 · lint 0 · Vitest 111/111 · build OK · npm audit 0**.
 
-Las funciones locales son 100% cliente sobre ese baseline: no alteran conteos,
-WHERE, RLS ni gate.
+## IMPLEMENTADO en esta misión (commits locales, sin push)
 
-## IMPLEMENTADO (commit `feat(local): favorites recent hidden compare`)
-
-| Función | Detalle | Prueba |
-|---|---|---|
-| Favoritos | Toggle ☆/★ en cada tarjeta; página `/favoritos` | 9 tests store |
-| Vistas recientes | `RecentViewTracker` en la ficha; listado con limpiar | store |
-| Búsquedas recientes | Registro en `ExplorerClient` (`describeSearch`); quitar/limpiar | 4 tests label |
-| Ocultas | Ocultar ✕ + placeholder "Mostrar de nuevo"; restaurar una/todas | store |
-| Comparar 2–4 | Toggle ⇄ (tope 4, aviso al llenar); `/comparar` tabla NULL-safe | store |
-| Datos frescos | `/api/properties/by-ids` + `getPropertiesByIds` (gate-filtrado, capado a 60, orden preservado) | build |
-| Navegación | Enlace "Favoritos" (desktop + mobile) | — |
-
-Notas de diseño:
-- SSR-safe (lecturas vacías en servidor; valor real en efecto → sin mismatch de hidratación).
-- Reactivo vía `CHANGE_EVENT` + evento `storage` (multi-pestaña).
-- Acotado por lista (favoritos 500, recientes 40, búsquedas 20, ocultas 1000, comparar 4).
-- **"Sin información" nunca equivale a 0 ni a "No"** en la comparación.
-- `/favoritos` y `/comparar` son `noindex, nofollow`.
-- Arquitectura preparada para que una cuenta futura importe/sincronice (datos planos, namespaced `eretz:*`).
+1. **Funciones locales** (`feat(local)`): favoritos, vistas recientes, búsquedas
+   recientes, ocultas, comparar 2–4. Store SSR-safe/reactivo/acotado, hook,
+   `/favoritos`, `/comparar` (tabla NULL-safe: "Sin información" nunca 0/No),
+   endpoint `by-ids` gate-filtrado. **+13 tests.**
+2. **Filtros server** (`feat(filters)`): multi-ubicación OR (URL, chips
+   removibles, dedup, tope 10); precio Todas/Con precio/A consultar (nunca excluye
+   consultar); orden por cercanía (`nearest`, punto de referencia, cursor-safe);
+   tri-state NULL-safe (infra). **+14 tests.**
+3. **Buscador universal** (`feat(search)`): autocomplete agrupado con agente e
+   **ID ERETZ** (coincidencia directa a la ficha, gate-autorizada), orden por
+   prioridad de categoría.
+4. **Directorio de inmobiliarias** (`feat(directorio)`): `/inmobiliarias`
+   (listado + búsqueda), `/inmobiliaria/[slug]` (perfil público, incluye NO
+   reclamadas, listado gate-aplicado), reclamo `/reclamar` + `POST /api/claims`
+   (nunca auto-aprueba). Slugs id-al-final. **+9 tests.**
+5. **Agentes** (`feat(agentes)`): `/agentes` y `/agente/[slug]` derivados de
+   `agente_nombre` (sólo datos reales; vacío si no hay datos, sin inventar).
+6. **Duplicados** (`feat(duplicados)`): módulo puro blocking + scoring +
+   confianza HIGH/POSSIBLE/NO_MATCH + union-find (no O(n²), transitivo, conserva
+   publicaciones); "otras publicaciones en la misma dirección" en la ficha. **+8 tests.**
+7. **Reportar** (`feat(reportar)`): `ReportButton` + `POST /api/reports` (señal,
+   no auto-modifica ni oculta). **+4 tests.**
 
 ## BASELINE (verificado, ya presente desde Phase A)
 
-- Autocomplete agrupado (`/api/properties/suggestions`, `SearchAutocomplete`).
-- Ficha completa: galería, precio, specs, publicador, contacto, aviso original,
-  estado, compartir, similares (`getRelatedProperties`).
-- "Volver a resultados" con restauración de scroll/selección (`sessionStorage`).
-- Contacto multicanal (`ContactActions`: WhatsApp/tel/email/web) — ERETZ como agregador neutral.
-- Compartir (`shareProperty`: Web Share API + copiar enlace).
+- Ficha completa: galería, precio, specs, publicador, contacto multicanal
+  (WhatsApp/tel/email/web), aviso original, compartir (Web Share + copiar),
+  similares, "volver a resultados" con restauración de scroll/selección.
+- Ciclo de vida (2 estados reales): `availabilityLabel`/`isAvailabilityConfirmed`
+  (Disponible vs Disponibilidad no confirmada); ausencia ≠ vendida/alquilada.
+- Mapa: clusters, "Buscar en esta zona" (rectángulo), ubicación actual,
+  persistencia de zona en URL, "quitar zona" (chip), "sólo con ubicación".
 - Reporte/baja/corrección: `/baja-o-correccion`.
-- Ciclo de vida: `availabilityLabel`/`isAvailabilityConfirmed` (Disponible vs
-  Disponibilidad no confirmada); `estado` real preservado; ausencia ≠ vendida/alquilada.
 
-## PARCIAL
+## INFRA LISTA (código + migración, activación pendiente de escritura en DB)
 
-- **Multi-ubicación (OR):** no implementado. El filtro de ubicación es
-  provincia/ciudad/barrio simple. Requiere modificar `buildWhere`/`property-sql`
-  (baseline congelado) + tests de cursor; se difiere por riesgo.
-- **Tri-estado (Sí/No/Sin información):** la query ya es NULL-safe, pero la UI de
-  amenities/booleanos es de 2 estados. Falta el control ternario explícito.
+- **Reclamo de perfil** y **reportes**: endpoints validan y acusan recibo; la
+  persistencia vive en `public.perfil_claims` y `public.reportes_publicacion`
+  (migraciones idempotentes, NO ejecutadas). El preview es de sólo lectura, así
+  que persisten cuando exista un rol con INSERT.
+- **Grupos de duplicados**: `public.propiedad_duplicados` (migración, NO
+  ejecutada); la lógica de scoring/agrupación ya está en `src/lib/duplicates.ts`.
+- **Tri-state apto crédito**: parse + query NULL-safe + chip completos; el control
+  UI se muestra cuando `apto_credito` deje de ser ~100% NULL en el catálogo.
 
-## DIFERIDO (feature server nueva; requiere deploy + validación)
+## PARCIAL / DATA-LIMITED (limitación real de datos)
 
-- Directorio `/inmobiliarias` + `/inmobiliaria/[slug]` + flujo de *claim* (pending/approved/rejected).
-- Agentes `/agentes` + `/agente/[slug]`.
-- Dibujo en mapa (rectángulo/polígono/radio/ubicación actual/multi-zona) + "Buscar en esta zona".
-- Infraestructura de duplicados (blocking + scoring + confianza HIGH/POSSIBLE/NO_MATCH).
-- Conteo propiedad-física vs publicación (hoy no se altera 193615).
+- **Ciclo de vida extendido** (retirada/vendida/alquilada/republicada): el dato
+  `estado` sólo distingue `activa` / `no_detectada_en_ultimo_scraping` /
+  `desconocida`. No hay señal de venta/alquiler/retiro/republicación en la base,
+  así que no se inventan estados. Infra de presentación lista para estados más
+  ricos cuando el scraping los aporte.
+- **Propiedad física vs publicación vs publicador**: modelado aditivo iniciado
+  vía duplicados (agrupa publicaciones de la misma propiedad) + "otras
+  publicaciones". El conteo físico consolidado requiere ejecutar el agrupado
+  sobre la base (persistencia en `propiedad_duplicados`), pendiente de escritura.
+- **Desarrollos/emprendimientos** en el buscador: no existe columna de desarrollo.
 
-## BLOQUEADO (acción humana / recurso indisponible)
+## REMOTO / HUMANO (requiere Preview + credenciales + QA de navegador)
 
-- **Batería de validación remota final:** requiere un nuevo Preview desplegado con
-  estos cambios + `ERETZ_VERCEL_BYPASS`. La variable estaba ausente y no se realizó
-  un nuevo deploy. Pendiente de autorización explícita de deploy + bypass disponible.
+- **Mapa avanzado — dibujo** (polígono libre, radio, punto+distancia, MÚLTIPLES
+  zonas OR simultáneas, quitar zonas individuales): requiere predicados
+  geométricos (PostGIS) validados contra la base viva y QA de navegador sobre un
+  Preview. Tocar el path del mapa a ciegas arriesga el baseline `mapCount=62549`.
+  Gated a la etapa de validación remota.
+- **Batería de validación remota final**: requiere un Preview desplegado con estos
+  commits + `ERETZ_VERCEL_BYPASS`. Localmente no hay `VERCEL_TOKEN`, CLI de Vercel
+  ni bypass; `/api/properties/counts` debe devolver `193615/193615` antes de
+  cualquier batería.
 
 ## FUERA DE ALCANCE (explícito en el brief)
 
-Login/Google/cuentas/panel SaaS/billing/CRM/chat/ML/IA/Liquid Glass/rediseño
-estético. La arquitectura local queda preparada para conectarse a cuentas a futuro.
+Login/Google/cuentas/panel SaaS/billing/CRM/chat/ML/IA/Liquid Glass/rediseño.
+La arquitectura queda preparada para conectarse a cuentas a futuro.
