@@ -9,7 +9,7 @@ import { PropertyCard } from "@/components/property/PropertyCard";
 import { PropertyGallery } from "@/components/property/PropertyGallery";
 import { RecentViewTracker } from "@/components/property/RecentViewTracker";
 import { availabilityLabel, formatDate, operationLabels, propertyLocation, propertyPrice, propertySpecs, typeLabels } from "@/lib/property-presenter";
-import { getPropertyById, getRelatedProperties } from "@/lib/property-service";
+import { getOtherPublications, getPropertyById, getRelatedProperties } from "@/lib/property-service";
 import { parsePropertyFilters, type SearchParams } from "@/lib/property-query";
 
 
@@ -35,7 +35,10 @@ export default async function PropertyPage({ params, searchParams }: { params: P
   const returnTo = returnCandidate?.startsWith("/") && !returnCandidate.startsWith("//") ? returnCandidate.slice(0, 1600) : "/";
   const property = await getPropertyById(id);
   if (!property) notFound();
-  const related = await getRelatedProperties(property);
+  const [related, otherPublications] = await Promise.all([
+    getRelatedProperties(property),
+    getOtherPublications(property),
+  ]);
   const canonical = `${siteUrl}/propiedad/${property.id}`;
   const updated = formatDate(property.updatedAt);
   const specs = propertySpecs(property);
@@ -82,6 +85,7 @@ export default async function PropertyPage({ params, searchParams }: { params: P
           </div>
           <div id="contacto" className="min-w-0 scroll-mt-24 lg:sticky lg:top-24 lg:self-start"><ContactActions property={property} canonical={canonical} /><div className="mt-4 rounded-2xl bg-amber-50 p-5 text-xs leading-5 text-amber-950"><strong>Información de terceros.</strong> El precio, la disponibilidad y las características pueden cambiar. Confirmá los datos con el responsable de la publicación. ERETZ no responde por errores del aviso original.</div></div>
         </div>
+        {otherPublications.length > 0 && <section className="mt-16"><p className="eyebrow">Misma dirección</p><h2 className="section-title">Otras publicaciones de esta propiedad</h2><p className="mt-2 text-sm text-slate-600">Avisos en la misma dirección; pueden ser la misma propiedad publicada por distintas fuentes.</p><div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{otherPublications.map((item) => <PropertyCard key={item.id} property={item} returnTo={returnTo} />)}</div></section>}
         {related.length > 0 && <section className="mt-16"><p className="eyebrow">También puede interesarte</p><h2 className="section-title">Propiedades relacionadas</h2><p className="mt-2 text-sm text-slate-600">Selección por ubicación, tipo y operación; no es una recomendación de IA.</p><div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">{related.map((item) => <PropertyCard key={item.id} property={item} returnTo={returnTo} />)}</div></section>}
       </div>
     </SiteShell>

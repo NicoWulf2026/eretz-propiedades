@@ -606,6 +606,34 @@ export async function getPropertiesByAgent(name: string, limit = 48): Promise<Pr
   }
 }
 
+// Otras publicaciones de la MISMA propiedad física: mismas señales fuertes
+// (misma dirección exacta y ciudad). Señal data-backed de duplicado sin depender
+// de la tabla de grupos. Gate-aplicado; excluye la publicación actual.
+export async function getOtherPublications(property: Property, limit = 6): Promise<PropertySummary[]> {
+  const address = property.address?.trim();
+  if (!databaseUrl() || !address || !/^\d+$/.test(property.id)) return [];
+  const gate = await getPreviewQualityGate();
+  if (!gate.enabled) return [];
+  const params: unknown[] = [Number(property.id), address];
+  let clause = "p.id <> $1 AND btrim(p.direccion) <> '' AND lower(btrim(p.direccion)) = lower(btrim($2))";
+  const city = property.city?.trim();
+  if (city) { params.push(city); clause += ` AND p.ciudad = $${params.length}`; }
+  params.push(Math.min(Math.max(1, limit), 12));
+  const limitIdx = params.length;
+  try {
+    const rows = await readOnly((sql) => sql.unsafe<DbPropertyRow[]>(
+      `SELECT ${summaryProjection}, p.id AS __sort_value
+       FROM public.propiedades p LEFT JOIN public.inmobiliarias_main i ON i.id = p.inmobiliaria_id
+       WHERE ${clause}
+       ORDER BY (CASE WHEN p.estado = 'activa' THEN 1 ELSE 0 END) DESC, p.id DESC
+       LIMIT $${limitIdx}`, params as never[]));
+    return rows.filter((row) => gate.isVisible(row.id)).map((row) => toSummary(mapSupabasePropertyToProperty(row)));
+  } catch (error) {
+    console.error("ERETZ getOtherPublications failed", error instanceof Error ? error.message : "unknown error");
+    return [];
+  }
+}
+
 export async function getRelatedProperties(property: Property): Promise<PropertySummary[]> {
   const filters = parsePropertyFilters({
     operacion: property.operation,

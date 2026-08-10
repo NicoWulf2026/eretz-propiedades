@@ -2,6 +2,7 @@ export {
   getAgentBySlug,
   getAgentDirectory,
   getHomeInventory,
+  getOtherPublications,
   getPropertiesByAgency,
   getPropertiesByAgent,
   getPropertiesByIds,
