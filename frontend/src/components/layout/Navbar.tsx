@@ -9,6 +9,7 @@ const items = [
   { label: "Inmobiliarias", href: "/inmobiliarias" },
   { label: "Agentes", href: "/agentes" },
   { label: "Favoritos", href: "/favoritos" },
+  { label: "Colecciones", href: "/colecciones" },
   { label: "Publicar", href: "/#", isInformative: true }, // "únicamente como enlace informativo real si todavía no funciona"
 ];
 

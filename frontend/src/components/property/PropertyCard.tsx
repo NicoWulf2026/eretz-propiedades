@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { PropertyImage } from "@/components/property/PropertyImage";
 import { PropertyCardActions } from "@/components/property/PropertyCardActions";
-import { hideProperty, isHidden, unhideProperty } from "@/lib/local-store";
+import { hideProperty, isHidden, isVisited, unhideProperty } from "@/lib/local-store";
 import { useLocalValue } from "@/lib/use-local-store";
 import {
   availabilityLabel,
@@ -49,6 +49,7 @@ export function PropertyCard({
   const amenities = full ? (property.amenities ?? []).filter(Boolean).slice(0, 4) : [];
   const availability = availabilityLabel(property.status);
   const hidden = useLocalValue(() => isHidden(property.id), false);
+  const visited = useLocalValue(() => isVisited(property.id), false);
   if (hidden) {
     return (
       <article className="property-card is-hidden" data-property-id={property.id}>
@@ -77,6 +78,9 @@ export function PropertyCard({
           <span className="absolute left-3 top-3 rounded-full bg-[#0b2748] px-3 py-1.5 text-xs font-bold text-white shadow">
             {operationLabels[property.operation]}
           </span>
+          {visited && (
+            <span className="absolute right-3 top-3 rounded-full bg-slate-700/90 px-2.5 py-1 text-[11px] font-bold text-white shadow">Vista</span>
+          )}
           {property.mortgageEligible && (
             <span className="absolute bottom-3 right-3 rounded-full bg-[#f4e8cc] px-3 py-1.5 text-xs font-bold text-[#0b2748]">Apto crédito</span>
           )}

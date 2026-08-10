@@ -8,8 +8,10 @@ import { NoResults } from "@/components/explorer/NoResults";
 import { Pagination } from "@/components/search/Pagination";
 import { PropertyMap } from "@/components/map/PropertyMap";
 import { PropertyCard } from "@/components/property/PropertyCard";
+import { NaturalLanguageSearch } from "@/components/search/NaturalLanguageSearch";
 import { filtersToSearchParams } from "@/lib/property-query";
-import { addRecentSearch } from "@/lib/local-store";
+import { addRecentSearch, getVisited } from "@/lib/local-store";
+import { useLocalValue } from "@/lib/use-local-store";
 import { describeSearch } from "@/lib/search-label";
 import type { ExplorerMode, PropertyFilters, PropertySearchResult } from "@/types/property";
 
@@ -36,6 +38,8 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
   const initialReturnTo = `${basePath}${initialSearch.toString() ? `?${initialSearch}` : ""}`;
   const [mode, setMode] = useState<ExplorerMode>(filters.mode);
   const [density, setDensity] = useState<"compact" | "full">("compact");
+  const [hideVisited, setHideVisited] = useState(false);
+  const visited = useLocalValue(getVisited, [] as string[]);
   const [selectedId, setSelectedId] = useState(filters.selectedId);
   const [returnTo, setReturnTo] = useState(initialReturnTo);
   const requestKey = filtersToSearchParams(filters).toString();
@@ -61,6 +65,7 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
     }
     const savedDensity = localStorage.getItem("eretz:card-density");
     if (savedDensity === "full" || savedDensity === "compact") requestAnimationFrame(() => setDensity(savedDensity));
+    if (localStorage.getItem("eretz:hide-visited") === "1") requestAnimationFrame(() => setHideVisited(true));
     try {
       const state = JSON.parse(sessionStorage.getItem(`eretz:return:${initialReturnTo}`) ?? "null") as { scrollY?: number; selectedId?: string } | null;
       if (state?.selectedId) requestAnimationFrame(() => setSelectedId(state.selectedId ?? ""));
@@ -119,6 +124,14 @@ function removeViewport() {
     try { localStorage.setItem("eretz:card-density", next); } catch { /* opcional */ }
   }
 
+  function toggleHideVisited() {
+    setHideVisited((current) => {
+      const next = !current;
+      try { localStorage.setItem("eretz:hide-visited", next ? "1" : "0"); } catch { /* opcional */ }
+      return next;
+    });
+  }
+
   function selectProperty(id: string) {
     setSelectedId(id);
     const url = new URL(window.location.href);
@@ -130,6 +143,12 @@ function removeViewport() {
 
   const resetCursor = filtersToSearchParams({ ...filters, cursor: "", page: 1, direction: "next" });
 
+  // "Ocultar visitadas": filtro de VISTA local (no altera counts server ni DB).
+  const visitedSet = useMemo(() => new Set(visited.map(String)), [visited]);
+  const pageProperties = result?.properties ?? [];
+  const visitedInPage = pageProperties.reduce((n, p) => (visitedSet.has(String(p.id)) ? n + 1 : n), 0);
+  const shownProperties = hideVisited ? pageProperties.filter((p) => !visitedSet.has(String(p.id))) : pageProperties;
+
   return (
     <div className="explorer-page">
       <header className="explorer-toolbar">
@@ -140,6 +159,7 @@ function removeViewport() {
               {modeLabels.map(([value, label]) => <button key={value} type="button" className={mode === value ? "is-active" : ""} aria-pressed={mode === value} title={label} onClick={() => chooseMode(value)}><span className="desktop-mode-label">{label}</span><span className="mobile-mode-label">{value.includes("map") ? "Mapa" : "Resultados"}</span></button>)}
             </div>
           </div>
+          <NaturalLanguageSearch basePath={basePath} />
           <FilterForm filters={currentFilters} action={basePath} onPin={() => chooseMode("analysis")} />
           <ActiveChips filters={currentFilters} basePath={basePath} onRemoveViewport={removeViewport} />
         </div>
@@ -170,6 +190,9 @@ function removeViewport() {
             <span className="density-label">Tarjetas</span>
             <button type="button" className={density === "compact" ? "is-active" : ""} aria-pressed={density === "compact"} onClick={() => chooseDensity("compact")}>Compactas</button>
             <button type="button" className={density === "full" ? "is-active" : ""} aria-pressed={density === "full"} onClick={() => chooseDensity("full")}>Completas</button>
+            <button type="button" className={`hide-visited-toggle ${hideVisited ? "is-active" : ""}`} aria-pressed={hideVisited} onClick={toggleHideVisited} disabled={!hideVisited && visitedInPage === 0}>
+              {hideVisited ? `Mostrar visitadas (${visitedInPage})` : `Ocultar visitadas (${visitedInPage})`}
+            </button>
           </div>
           {!result ? (
             <div className="state-panel" role="status"><span aria-hidden="true">⌛</span><h2>Preparando resultados</h2><p>El mapa ya está disponible. Las propiedades se cargan sólo cuando este listado es visible.</p></div>
@@ -177,9 +200,11 @@ function removeViewport() {
             <div className="state-panel" role="alert"><span aria-hidden="true">↻</span><h2>No pudimos cargar las propiedades</h2><p>El servicio puede estar temporalmente ocupado. Tus filtros siguen guardados en la URL.</p><a className="primary-button" href={returnTo}>Reintentar</a></div>
           ) : result.properties.length === 0 ? (
             <NoResults filters={currentFilters} basePath={basePath} />
+          ) : shownProperties.length === 0 ? (
+            <div className="state-panel" role="status"><span aria-hidden="true">✓</span><h2>Ya viste todas las de esta página</h2><p>Ocultaste las propiedades visitadas. Podés mostrarlas de nuevo o pasar a la siguiente página.</p><button type="button" className="secondary-button" onClick={toggleHideVisited}>Mostrar visitadas</button></div>
           ) : (
             <div className={`explorer-card-list density-${density}`} id="property-results">
-              {result.properties.map((property) => <PropertyCard key={property.id} property={property} variant={density} returnTo={returnTo} selected={selectedId === property.id} onSelect={selectProperty} />)}
+              {shownProperties.map((property) => <PropertyCard key={property.id} property={property} variant={density} returnTo={returnTo} selected={selectedId === property.id} onSelect={selectProperty} />)}
             </div>
           )}
           {result ? <Pagination filters={currentFilters} hasNext={result.hasNext} hasPrevious={result.hasPrevious} nextCursor={result.nextCursor} previousCursor={result.previousCursor} basePath={basePath} /> : null}
