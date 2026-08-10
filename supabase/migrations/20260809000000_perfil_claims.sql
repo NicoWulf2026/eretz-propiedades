@@ -34,3 +34,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS perfil_claims_dedupe_idx
 
 COMMENT ON TABLE public.perfil_claims IS
   'Reclamos de perfiles públicos. Señal, no auto-aprueba. Verificación humana posterior.';
+
+-- Seguridad: RLS habilitado SIN policies -> deny-all para anon/authenticated
+-- (aunque el Data API esté OFF, queda cerrado por defecto). La escritura la hace
+-- un rol server con BYPASSRLS/owner (service_role) vía credencial fuera del
+-- preview de sólo lectura. La app NO lee esta tabla. Idempotente.
+ALTER TABLE public.perfil_claims ENABLE ROW LEVEL SECURITY;

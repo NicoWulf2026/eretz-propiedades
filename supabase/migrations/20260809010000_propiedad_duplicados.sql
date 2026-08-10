@@ -19,3 +19,9 @@ CREATE INDEX IF NOT EXISTS propiedad_duplicados_propiedad_idx
 
 COMMENT ON TABLE public.propiedad_duplicados IS
   'Grupos de duplicados (metadato reversible). No fusiona ni borra publicaciones.';
+
+-- Seguridad: RLS habilitado SIN policies -> deny-all para anon/authenticated.
+-- La app aún NO lee esta tabla (los duplicados se calculan en duplicates.ts). Si
+-- en el futuro una vista lee grupos, se agregará un grant/policy de SELECT para
+-- eretz_preview_ro en su propia migración.
+ALTER TABLE public.propiedad_duplicados ENABLE ROW LEVEL SECURITY;

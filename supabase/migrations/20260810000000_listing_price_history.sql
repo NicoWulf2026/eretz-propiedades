@@ -23,6 +23,22 @@ CREATE INDEX IF NOT EXISTS listing_price_history_propiedad_idx
 COMMENT ON TABLE public.listing_price_history IS
   'Historial de precios (sólo futuro; sin backfill). El pipeline de actualización inserta al detectar cambio de precio.';
 
+-- Seguridad: RLS habilitado. La app SÍ lee esta tabla vía el rol de sólo lectura
+-- eretz_preview_ro (igual que public.propiedades). Se le da SELECT + policy USING
+-- (true); anon/authenticated quedan deny-all. La escritura la hace un rol server
+-- con BYPASSRLS/owner. Idempotente y guardado por existencia del rol.
+ALTER TABLE public.listing_price_history ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'eretz_preview_ro') THEN
+    GRANT SELECT ON public.listing_price_history TO eretz_preview_ro;
+    DROP POLICY IF EXISTS listing_price_history_ro_read ON public.listing_price_history;
+    CREATE POLICY listing_price_history_ro_read
+      ON public.listing_price_history FOR SELECT TO eretz_preview_ro USING (true);
+  END IF;
+END $$;
+
 -- PUNTO DE INTEGRACIÓN: el read-model de la app (getPriceHistory) lee esta tabla
 -- sólo cuando ERETZ_PRICE_HISTORY=1. Activar tras (a) ejecutar esta migración y
 -- (b) conectar el pipeline de actualización para que inserte filas.

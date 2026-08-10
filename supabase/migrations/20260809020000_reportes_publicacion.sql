@@ -21,3 +21,7 @@ CREATE INDEX IF NOT EXISTS reportes_publicacion_propiedad_idx
 
 COMMENT ON TABLE public.reportes_publicacion IS
   'Reportes de publicaciones (señal). No auto-modifica ni oculta; revisión humana.';
+
+-- Seguridad: RLS habilitado SIN policies -> deny-all para anon/authenticated.
+-- Escritura por rol server (service_role/owner). La app NO lee esta tabla.
+ALTER TABLE public.reportes_publicacion ENABLE ROW LEVEL SECURITY;
