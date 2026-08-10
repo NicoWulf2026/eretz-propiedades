@@ -6,6 +6,7 @@ import { propertyLocation } from "@/lib/property-presenter";
 import { getPreviewQualityGate } from "@/lib/preview-quality-gate";
 import { parsePropertyFilters } from "@/lib/property-query";
 import { addParam, buildCursorClause, buildWhere, normalizeSearch, sortSpec, type CursorPayload } from "@/lib/property-sql";
+import { entitySlug } from "@/lib/slug";
 import type {
   MapSearchResponse,
   MapViewport,
@@ -14,6 +15,8 @@ import type {
   PropertySearchResult,
   PropertySummary,
   PropertySort,
+  RealEstateProfile,
+  RealEstateSummary,
   SearchSuggestion,
   SupabaseProperty,
 } from "@/types/property";
@@ -46,6 +49,7 @@ const detailCache = new Map<string, TimedPromise<Property | null>>();
 const mapCache = new Map<string, TimedPromise<MapSearchResponse>>();
 const suggestionCache = new Map<string, TimedPromise<SearchSuggestion[]>>();
 const countsCache = new Map<string, TimedPromise<{ count: number; mapCount: number }>>();
+const directoryCache = new Map<string, TimedPromise<RealEstateSummary[]>>();
 
 function cachedQuery<T>(
   store: Map<string, TimedPromise<T>>,
@@ -388,6 +392,110 @@ export async function getPropertiesByIds(ids: string[]): Promise<PropertySummary
     return clean.map((id) => byId.get(id)).filter((x): x is PropertySummary => Boolean(x));
   } catch (error) {
     console.error("ERETZ getPropertiesByIds failed", error instanceof Error ? error.message : "unknown error");
+    return [];
+  }
+}
+
+// ---------------------------------------------------------- Directorio de inmobiliarias
+type DirectoryRow = {
+  id: string | number;
+  nombre: string | null;
+  web: string | null;
+  verificada: boolean | null;
+  total: number;
+  ciudad: string | null;
+  provincia: string | null;
+  telefono?: string | null;
+  email_principal?: string | null;
+};
+
+function toRealEstateSummary(row: DirectoryRow): RealEstateSummary {
+  const id = String(row.id);
+  const name = row.nombre?.trim() || `Inmobiliaria ${id}`;
+  return {
+    id,
+    name,
+    slug: entitySlug(id, name),
+    verified: row.verificada === true,
+    website: row.web?.trim() || null,
+    city: row.ciudad?.trim() || null,
+    province: row.provincia?.trim() || null,
+    listingsCount: Number(row.total) || 0,
+  };
+}
+
+// Nota: el conteo es directo de la base. Hoy el Quality Gate autoriza el catálogo
+// completo (visibleCount == total), así que coincide con el conteo gate-visible;
+// la ficha de cada inmobiliaria sí aplica el gate al listar sus propiedades.
+const directoryCountUncached = async (query: string): Promise<RealEstateSummary[]> => {
+  if (!databaseUrl()) return [];
+  const clean = query.trim().slice(0, 60).replace(/[(),.*%]/g, " ").trim();
+  const params: unknown[] = [];
+  const nameFilter = clean ? `WHERE i.nombre ILIKE ${addParam(params, `%${clean}%`)}` : "";
+  const limitParam = addParam(params, 60);
+  try {
+    const rows = await readOnly((sql) => sql.unsafe<DirectoryRow[]>(
+      `SELECT i.id, i.nombre, i.web, i.verificada,
+         count(p.id)::int AS total,
+         mode() WITHIN GROUP (ORDER BY p.ciudad) AS ciudad,
+         mode() WITHIN GROUP (ORDER BY p.provincia) AS provincia
+       FROM public.inmobiliarias_main i
+       JOIN public.propiedades p ON p.inmobiliaria_id = i.id
+       ${nameFilter}
+       GROUP BY i.id, i.nombre, i.web, i.verificada
+       HAVING count(p.id) > 0
+       ORDER BY count(p.id) DESC, i.nombre ASC
+       LIMIT ${limitParam}`, params as never[]));
+    return rows.map(toRealEstateSummary);
+  } catch (error) {
+    console.error("ERETZ getRealEstateDirectory failed", error instanceof Error ? error.message : "unknown error");
+    return [];
+  }
+};
+
+export function getRealEstateDirectory(query = ""): Promise<RealEstateSummary[]> {
+  return cachedQuery(directoryCache, normalizeSearch(query.trim().slice(0, 60)), QUERY_CACHE_TTL_MS, () => directoryCountUncached(query));
+}
+
+export async function getRealEstateById(id: string): Promise<RealEstateProfile | null> {
+  if (!databaseUrl() || !/^\d+$/.test(id)) return null;
+  try {
+    const rows = await readOnly((sql) => sql.unsafe<DirectoryRow[]>(
+      `SELECT i.id, i.nombre, i.web, i.verificada,
+         COALESCE(NULLIF(i.telefono_principal, ''), NULLIF(i.telefono, '')) AS telefono,
+         i.email_principal,
+         count(p.id)::int AS total,
+         mode() WITHIN GROUP (ORDER BY p.ciudad) AS ciudad,
+         mode() WITHIN GROUP (ORDER BY p.provincia) AS provincia
+       FROM public.inmobiliarias_main i
+       LEFT JOIN public.propiedades p ON p.inmobiliaria_id = i.id
+       WHERE i.id = $1
+       GROUP BY i.id, i.nombre, i.web, i.verificada, i.telefono_principal, i.telefono, i.email_principal
+       LIMIT 1`, [Number(id)]));
+    const row = rows[0];
+    if (!row) return null;
+    return { ...toRealEstateSummary(row), phone: row.telefono?.trim() || null, email: row.email_principal?.trim() || null };
+  } catch (error) {
+    console.error("ERETZ getRealEstateById failed", error instanceof Error ? error.message : "unknown error");
+    return null;
+  }
+}
+
+// Propiedades de una inmobiliaria (gate-aplicado, orden por recencia neutral).
+export async function getPropertiesByAgency(id: string, limit = 48): Promise<PropertySummary[]> {
+  if (!databaseUrl() || !/^\d+$/.test(id)) return [];
+  const gate = await getPreviewQualityGate();
+  if (!gate.enabled) return [];
+  try {
+    const rows = await readOnly((sql) => sql.unsafe<DbPropertyRow[]>(
+      `SELECT ${summaryProjection}, (CASE WHEN p.estado = 'activa' THEN 1e10 ELSE 0 END + p.id) AS __sort_value
+       FROM public.propiedades p LEFT JOIN public.inmobiliarias_main i ON i.id = p.inmobiliaria_id
+       WHERE p.inmobiliaria_id = $1
+       ORDER BY __sort_value DESC
+       LIMIT $2`, [Number(id), Math.min(Math.max(1, limit), 96)]));
+    return rows.filter((row) => gate.isVisible(row.id)).map((row) => toSummary(mapSupabasePropertyToProperty(row)));
+  } catch (error) {
+    console.error("ERETZ getPropertiesByAgency failed", error instanceof Error ? error.message : "unknown error");
     return [];
   }
 }

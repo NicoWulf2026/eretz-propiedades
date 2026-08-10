@@ -271,6 +271,24 @@ export type PropertySummary = Pick<
   | "images" | "publishedAt" | "updatedAt" | "status" | "mortgageEligible"
   | "description" | "amenities"
 >;
+export type RealEstateSummary = {
+  id: string;
+  name: string;
+  slug: string;
+  verified: boolean;
+  website: string | null;
+  city: string | null;
+  province: string | null;
+  listingsCount: number;
+};
+
+export type RealEstateProfile = RealEstateSummary & {
+  phone: string | null;
+  email: string | null;
+};
+
+export type ClaimStatus = "pending" | "approved" | "rejected" | "needs_review";
+
 export type PropertyDetail = Property;
 export type RelatedProperty = PropertySummary;
 export type SearchFilters = PropertyFilters;

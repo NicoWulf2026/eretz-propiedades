@@ -1,7 +1,10 @@
 export {
   getHomeInventory,
+  getPropertiesByAgency,
   getPropertiesByIds,
   getPropertyById,
+  getRealEstateById,
+  getRealEstateDirectory,
   getRelatedProperties,
   searchMap,
   searchProperties,

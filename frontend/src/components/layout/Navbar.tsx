@@ -6,6 +6,7 @@ import { Brand } from "@/components/layout/Brand";
 
 const items = [
   { label: "Explorar", href: "/" },
+  { label: "Inmobiliarias", href: "/inmobiliarias" },
   { label: "Favoritos", href: "/favoritos" },
   { label: "Publicar", href: "/#", isInformative: true }, // "únicamente como enlace informativo real si todavía no funciona"
 ];
