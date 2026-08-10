@@ -3,14 +3,21 @@
 import { useState } from "react";
 import { track } from "@/lib/analytics";
 import { phoneLinks } from "@/lib/safe-url";
-import { contactMessage, propertyShareMessage } from "@/lib/property-share";
+import { CONTACT_TOPICS, contactMessage, contactMessageWithTopics, contactTopicLabel, propertyShareMessage, type ContactTopicId } from "@/lib/property-share";
 import type { Property } from "@/types/property";
 
 export function ContactActions({ property, canonical }: { property: Property; canonical: string }) {
   const [copied, setCopied] = useState(false);
+  const [topics, setTopics] = useState<ContactTopicId[]>([]);
+  const [freeText, setFreeText] = useState("");
   const contact = property.publisher;
   const { whatsapp, telephone } = phoneLinks(contact?.phone ?? property.agentPhone);
-  const message = encodeURIComponent(contactMessage(property, canonical));
+  const toggleTopic = (id: ContactTopicId) =>
+    setTopics((current) => (current.includes(id) ? current.filter((x) => x !== id) : [...current, id]));
+  const composed = topics.length || freeText.trim()
+    ? contactMessageWithTopics(property, canonical, topics, freeText)
+    : contactMessage(property, canonical);
+  const message = encodeURIComponent(composed);
   const whatsappHref = whatsapp ? `${whatsapp}?text=${message}` : null;
   const shareMessage = propertyShareMessage(property, canonical);
   const shareHref = `https://wa.me/?text=${encodeURIComponent(shareMessage)}`;
@@ -42,6 +49,24 @@ export function ContactActions({ property, canonical }: { property: Property; ca
       <h2 className="mt-2 text-xl font-black text-[#0b2748]">{contact?.name ?? property.agentName ?? "Responsable de la publicación"}</h2>
       {contact?.verified ? <p className="mt-1 text-xs font-bold text-emerald-700">Identidad verificada en ERETZ</p> : null}
       <p className="mt-2 text-sm leading-6 text-slate-600">ERETZ no recibe ni almacena tu consulta. Te conectamos con la publicación original.</p>
+      {(whatsapp || contact?.email) ? (
+        <fieldset className="mt-4 rounded-xl border border-slate-200 p-3">
+          <legend className="px-1 text-xs font-bold text-slate-600">¿Sobre qué querés consultar? (opcional)</legend>
+          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1.5">
+            {CONTACT_TOPICS.map((t) => (
+              <label key={t.id} className="inline-flex items-center gap-1.5 text-sm text-slate-700">
+                <input type="checkbox" checked={topics.includes(t.id)} onChange={() => toggleTopic(t.id)} />
+                {contactTopicLabel(t.id)}
+              </label>
+            ))}
+          </div>
+          <label className="mt-2 block">
+            <span className="sr-only">Mensaje adicional</span>
+            <textarea value={freeText} onChange={(e) => setFreeText(e.target.value)} maxLength={400} rows={2} placeholder="Agregá algo más (opcional)" className="mt-1 w-full rounded-lg border border-slate-300 p-2 text-sm" />
+          </label>
+          <p className="mt-1 text-xs text-slate-500">Se arma un mensaje sólo con lo que elijas. Vos lo revisás antes de enviarlo.</p>
+        </fieldset>
+      ) : null}
       <div className="mt-5 grid gap-2">
         {whatsappHref && <a className="primary-button justify-center bg-emerald-700 hover:bg-emerald-800" href={whatsappHref} target="_blank" rel="noopener noreferrer" onClick={() => track("whatsapp_clicked", { property_id: property.id })}>Consultar por WhatsApp</a>}
         {telephone && <a className="secondary-button justify-center" href={telephone} onClick={() => track("phone_clicked", { property_id: property.id })}>Llamar por teléfono</a>}

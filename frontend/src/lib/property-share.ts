@@ -18,3 +18,44 @@ export function contactMessage(property: Property, url: string) {
   return `Hola, consulto por esta propiedad que vi en ERETZ: ${propertyShareMessage(property, url)}`;
 }
 
+// Compositor de intención: el usuario elige temas y se arma un mensaje útil
+// SÓLO con lo seleccionado (nunca inventa temas). Ver secciones 49–51 del brief.
+export const CONTACT_TOPICS = [
+  { id: "disponibilidad", phrase: "disponibilidad" },
+  { id: "expensas", phrase: "expensas" },
+  { id: "requisitos", phrase: "requisitos" },
+  { id: "mascotas", phrase: "si aceptan mascotas" },
+  { id: "visita", phrase: "coordinar una visita" },
+  { id: "ingreso", phrase: "fecha de ingreso" },
+] as const;
+export type ContactTopicId = (typeof CONTACT_TOPICS)[number]["id"];
+
+const TOPIC_LABELS: Record<ContactTopicId, string> = {
+  disponibilidad: "Disponibilidad",
+  expensas: "Expensas",
+  requisitos: "Requisitos",
+  mascotas: "Mascotas",
+  visita: "Coordinar visita",
+  ingreso: "Fecha de ingreso",
+};
+export const contactTopicLabel = (id: ContactTopicId): string => TOPIC_LABELS[id];
+
+function joinNatural(items: string[]): string {
+  if (items.length <= 1) return items.join("");
+  return `${items.slice(0, -1).join(", ")} y ${items[items.length - 1]}`;
+}
+
+export function contactMessageWithTopics(
+  property: Property,
+  url: string,
+  topicIds: ContactTopicId[],
+  freeText = "",
+): string {
+  const phrases = CONTACT_TOPICS.filter((t) => topicIds.includes(t.id)).map((t) => t.phrase);
+  let msg = `Hola, consulto por la propiedad ID ERETZ ${property.id}`;
+  if (phrases.length) msg += `. Quisiera consultar ${joinNatural(phrases)}`;
+  const extra = freeText.trim().slice(0, 400);
+  if (extra) msg += `. ${extra}`;
+  return `${msg}. ${url}`;
+}
+
