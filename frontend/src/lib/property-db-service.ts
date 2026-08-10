@@ -484,13 +484,16 @@ export function searchMap(filters: PropertyFilters, viewport: MapViewport): Prom
   return cachedQuery(mapCache, JSON.stringify([filters, viewport]), QUERY_CACHE_TTL_MS, () => searchMapUncached(filters, viewport));
 }
 
+// Prioridad de agrupación del autocomplete universal.
+const SUGGESTION_PRIORITY: Record<SearchSuggestion["category"], number> = {
+  id: 0, provincia: 1, ciudad: 2, barrio: 3, dirección: 4, inmobiliaria: 5, agente: 6, tipo: 7,
+};
+
 async function searchSuggestionsUncached(query: string): Promise<SearchSuggestion[]> {
   const q = query.trim().slice(0, 60);
   if (q.length < 2) return [];
-  const filters = parsePropertyFilters({ q });
   const gate = await getPreviewQualityGate();
   if (!databaseUrl() || !gate.enabled) return [];
-  const rows = await queryBatch(filters, 300, null);
   const suggestions = new Map<string, SearchSuggestion>();
   const add = (category: SearchSuggestion["category"], value: string | null | undefined) => {
     const label = value?.trim();
@@ -498,6 +501,13 @@ async function searchSuggestionsUncached(query: string): Promise<SearchSuggestio
     const key = `${category}:${normalizeSearch(label)}`;
     if (!suggestions.has(key)) suggestions.set(key, { id: key, label, category, query: label });
   };
+  // ID ERETZ: coincidencia directa a la ficha (sólo si el gate la autoriza — así
+  // no se filtra una propiedad no publicable ni una inexistente).
+  if (/^\d+$/.test(q) && gate.isVisible(q)) {
+    suggestions.set(`id:${q}`, { id: `id:${q}`, label: `Propiedad #${q}`, category: "id", query: q, href: `/propiedad/${q}` });
+  }
+  const filters = parsePropertyFilters({ q });
+  const rows = await queryBatch(filters, 300, null);
   for (const row of rows) {
     if (!gate.isVisible(row.id)) continue;
     add("provincia", row.provincia);
@@ -505,10 +515,13 @@ async function searchSuggestionsUncached(query: string): Promise<SearchSuggestio
     add("barrio", row.barrio);
     add("dirección", row.direccion);
     add("inmobiliaria", row.publisher_name);
+    add("agente", row.agente_nombre);
     add("tipo", row.tipo_propiedad);
-    if (suggestions.size >= 12) break;
+    if (suggestions.size >= 48) break;
   }
-  return [...suggestions.values()].slice(0, 12);
+  return [...suggestions.values()]
+    .sort((a, b) => SUGGESTION_PRIORITY[a.category] - SUGGESTION_PRIORITY[b.category])
+    .slice(0, 12);
 }
 
 export function searchSuggestions(query: string): Promise<SearchSuggestion[]> {

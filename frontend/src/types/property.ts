@@ -92,8 +92,11 @@ export type MapSearchResponse = {
 export type SearchSuggestion = {
   id: string;
   label: string;
-  category: "provincia" | "ciudad" | "barrio" | "dirección" | "inmobiliaria" | "tipo";
+  category: "id" | "provincia" | "ciudad" | "barrio" | "dirección" | "inmobiliaria" | "agente" | "tipo";
   query: string;
+  // Navegación directa (p. ej. una coincidencia por ID ERETZ va a la ficha en
+  // lugar de rellenar el término de búsqueda).
+  href?: string;
 };
 
 export type QualitySignals = {

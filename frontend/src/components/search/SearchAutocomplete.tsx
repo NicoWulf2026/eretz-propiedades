@@ -5,6 +5,11 @@ import type { SearchSuggestion } from "@/types/property";
 
 const recentKey = "eretz:recent-searches:v1";
 
+const CATEGORY_LABELS: Record<SearchSuggestion["category"], string> = {
+  id: "Propiedad", provincia: "Provincia", ciudad: "Ciudad", barrio: "Barrio",
+  dirección: "Dirección", inmobiliaria: "Inmobiliaria", agente: "Agente", tipo: "Tipo",
+};
+
 function readRecent(): SearchSuggestion[] {
   try {
     const values = JSON.parse(localStorage.getItem(recentKey) ?? "[]") as string[];
@@ -60,14 +65,15 @@ export function SearchAutocomplete({ defaultValue }: { defaultValue: string }) {
   }, [open, value]);
 
   function choose(suggestion: SearchSuggestion) {
-    setValue(suggestion.query);
     rememberSearch(suggestion.query);
     setOpen(false);
+    if (suggestion.href) { window.location.assign(suggestion.href); return; }
+    setValue(suggestion.query);
   }
 
   return (
     <div className="search-combobox">
-      <label className="sr-only" htmlFor={`${listId}-input`}>Buscar por ubicación, dirección, tipo o inmobiliaria</label>
+      <label className="sr-only" htmlFor={`${listId}-input`}>Buscar por ubicación, dirección, tipo, inmobiliaria, agente o ID</label>
       <span aria-hidden="true" className="search-icon">⌕</span>
       <input
         id={`${listId}-input`}
@@ -75,7 +81,7 @@ export function SearchAutocomplete({ defaultValue }: { defaultValue: string }) {
         type="search"
         autoComplete="off"
         value={value}
-        placeholder="Ciudad, barrio, dirección, tipo o inmobiliaria"
+        placeholder="Ciudad, barrio, dirección, tipo, inmobiliaria, agente o ID"
         role="combobox"
         aria-autocomplete="list"
         aria-controls={listId}
@@ -103,7 +109,7 @@ export function SearchAutocomplete({ defaultValue }: { defaultValue: string }) {
               onMouseDown={(event) => { event.preventDefault(); choose(suggestion); }}
             >
               <span>{suggestion.label}</span>
-              <small>{suggestion.id.startsWith("recent:") ? "Reciente" : suggestion.category}</small>
+              <small>{suggestion.id.startsWith("recent:") ? "Reciente" : CATEGORY_LABELS[suggestion.category]}</small>
             </li>
           ))}
         </ul>
