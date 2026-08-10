@@ -16,6 +16,8 @@ export const STORE_KEYS = {
   recentSearches: "eretz:recent-searches",
   hidden: "eretz:hidden",
   compare: "eretz:compare",
+  visited: "eretz:visited",
+  collections: "eretz:collections",
 } as const;
 
 export type StoreName = keyof typeof STORE_KEYS;
@@ -26,12 +28,15 @@ export const STORE_LIMITS: Record<StoreName, number> = {
   recentSearches: 20,
   hidden: 1000,
   compare: 4,
+  visited: 2000,
+  collections: 100,
 };
 
 export const CHANGE_EVENT = "eretz:local-store-change";
 
 export type RecentView = { id: string; title: string; price: string | null; at: number };
 export type RecentSearch = { url: string; label: string; at: number };
+export type Collection = { id: string; name: string; ids: string[]; at: number };
 
 function isBrowser(): boolean {
   return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
@@ -142,3 +147,49 @@ export const getRecentSearches = (): RecentSearch[] => read<RecentSearch>(STORE_
 export const removeRecentSearch = (url: string): void =>
   write("recentSearches", read<RecentSearch>(STORE_KEYS.recentSearches).filter((x) => x.url !== url));
 export const clearRecentSearches = (): void => write("recentSearches", []);
+
+// ----------------------------------------------------------------- Visitadas
+// Señal local de propiedades ya vistas (para atenuar/ocultar). No borra ni toca
+// la base; sólo marca. Se registra al abrir la ficha.
+export const getVisited = (): string[] => idList("visited");
+export const isVisited = (id: string): boolean => idList("visited").includes(String(id));
+export function markVisited(id: string): void {
+  const key = String(id);
+  const current = idList("visited").filter((x) => x !== key);
+  write("visited", [key, ...current]);
+}
+export const clearVisited = (): void => write("visited", []);
+
+// ----------------------------------------------------------------- Colecciones
+// Colecciones nombrables locales (sin cuenta). Datos planos, preparados para
+// sincronizar con una cuenta futura. No reemplaza a favoritos.
+function slug(): string {
+  return `c_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+}
+export const getCollections = (): Collection[] => read<Collection>(STORE_KEYS.collections);
+export function createCollection(name: string): Collection {
+  const clean = (name || "Sin nombre").trim().slice(0, 60) || "Sin nombre";
+  const collection: Collection = { id: slug(), name: clean, ids: [], at: Date.now() };
+  write("collections", [collection, ...getCollections()]);
+  return collection;
+}
+export function renameCollection(id: string, name: string): void {
+  const clean = (name || "").trim().slice(0, 60);
+  if (!clean) return;
+  write("collections", getCollections().map((c) => (c.id === id ? { ...c, name: clean } : c)));
+}
+export const deleteCollection = (id: string): void =>
+  write("collections", getCollections().filter((c) => c.id !== id));
+export function addToCollection(collectionId: string, propertyId: string): void {
+  const pid = String(propertyId);
+  write("collections", getCollections().map((c) =>
+    c.id === collectionId && !c.ids.includes(pid) ? { ...c, ids: [pid, ...c.ids] } : c));
+}
+export function removeFromCollection(collectionId: string, propertyId: string): void {
+  const pid = String(propertyId);
+  write("collections", getCollections().map((c) =>
+    c.id === collectionId ? { ...c, ids: c.ids.filter((x) => x !== pid) } : c));
+}
+/** Ids de las colecciones que contienen una propiedad. */
+export const collectionsWith = (propertyId: string): string[] =>
+  getCollections().filter((c) => c.ids.includes(String(propertyId))).map((c) => c.id);

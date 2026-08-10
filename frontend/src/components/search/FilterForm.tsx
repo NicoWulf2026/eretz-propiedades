@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { SearchAutocomplete, rememberSearch } from "@/components/search/SearchAutocomplete";
+import { activeChips } from "@/components/explorer/ActiveChips";
 import type { PropertyFilters } from "@/types/property";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -108,6 +109,7 @@ export function FilterForm({
   onUnpin?: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const activeCount = activeChips(filters).length;
   const panelRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
 
@@ -158,8 +160,8 @@ export function FilterForm({
       <input type="hidden" name="modo" value={filters.mode} />
       <div className="explorer-primary-search">
         <QuickSelectors filters={filters} />
-        <button ref={toggleRef} className="filter-toggle" type="button" aria-expanded={open} aria-controls="advanced-filters" onClick={() => setOpen(true)}>
-          Filtros <span aria-hidden="true">＋</span>
+        <button ref={toggleRef} className="filter-toggle" type="button" aria-expanded={open} aria-controls="advanced-filters" aria-label={activeCount ? `Más filtros, ${activeCount} activos` : "Más filtros"} onClick={() => setOpen(true)}>
+          {activeCount ? `Más filtros (${activeCount})` : "Filtros"} <span aria-hidden="true">＋</span>
         </button>
         <button className="primary-button explorer-search-button" type="submit">Buscar</button>
       </div>

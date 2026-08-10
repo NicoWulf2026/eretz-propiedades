@@ -3,6 +3,17 @@ import {
   STORE_LIMITS,
   addRecentSearch,
   addRecentView,
+  addToCollection,
+  clearVisited,
+  collectionsWith,
+  createCollection,
+  deleteCollection,
+  getCollections,
+  getVisited,
+  isVisited,
+  markVisited,
+  removeFromCollection,
+  renameCollection,
   clearHidden,
   clearRecentSearches,
   getCompare,
@@ -101,5 +112,41 @@ describe("búsquedas recientes", () => {
   it("ignora url vacía", () => {
     addRecentSearch({ url: "   ", label: "x" });
     expect(getRecentSearches()).toEqual([]);
+  });
+});
+
+describe("visitadas", () => {
+  it("marca, deduplica y limpia", () => {
+    markVisited("1");
+    markVisited("2");
+    markVisited("1");
+    expect(getVisited()).toEqual(["1", "2"]);
+    expect(isVisited("2")).toBe(true);
+    expect(isVisited("9")).toBe(false);
+    clearVisited();
+    expect(getVisited()).toEqual([]);
+  });
+});
+
+describe("colecciones", () => {
+  it("crea, agrega, quita, renombra y elimina", () => {
+    const c = createCollection("Para visitar");
+    expect(c.name).toBe("Para visitar");
+    addToCollection(c.id, "10");
+    addToCollection(c.id, "10"); // no duplica
+    addToCollection(c.id, "20");
+    expect(getCollections()[0].ids).toEqual(["20", "10"]);
+    expect(collectionsWith("10")).toEqual([c.id]);
+    removeFromCollection(c.id, "10");
+    expect(getCollections()[0].ids).toEqual(["20"]);
+    renameCollection(c.id, "Finalistas");
+    expect(getCollections()[0].name).toBe("Finalistas");
+    deleteCollection(c.id);
+    expect(getCollections()).toEqual([]);
+  });
+  it("no pierde favoritos existentes (store independiente)", () => {
+    toggleFavorite("77");
+    createCollection("Inversión");
+    expect(getFavorites()).toEqual(["77"]);
   });
 });
