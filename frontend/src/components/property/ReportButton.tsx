@@ -52,7 +52,7 @@ export function ReportButton({ propertyId }: { propertyId: string }) {
 
   if (!open) {
     return (
-      <button type="button" className="text-sm font-semibold text-slate-500 underline hover:text-slate-800" onClick={() => setOpen(true)}>
+      <button type="button" className="inline-action text-sm font-semibold text-slate-500 underline hover:text-slate-800" onClick={() => setOpen(true)}>
         Reportar un problema
       </button>
     );

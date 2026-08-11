@@ -873,3 +873,17 @@ nav[aria-label="Migas de pan"] a,
 footer nav a {
   padding-block: .18rem;
 }
+
+/* Casillas del panel de contacto: 24px reales para cumplir target-size sin
+   romper la escala del formulario (el acento usa el navy del sistema). */
+.form-check {
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  accent-color: var(--blue);
+  cursor: pointer;
+  flex: none;
+}
+.check-label {
+  min-block-size: 1.5rem;
+  cursor: pointer;
+}

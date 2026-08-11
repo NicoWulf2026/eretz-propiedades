@@ -54,8 +54,8 @@ export function ContactActions({ property, canonical }: { property: Property; ca
           <legend className="px-1 text-xs font-bold text-slate-600">¿Sobre qué querés consultar? (opcional)</legend>
           <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1.5">
             {CONTACT_TOPICS.map((t) => (
-              <label key={t.id} className="inline-flex items-center gap-1.5 text-sm text-slate-700">
-                <input type="checkbox" checked={topics.includes(t.id)} onChange={() => toggleTopic(t.id)} />
+              <label key={t.id} className="check-label inline-flex items-center gap-1.5 text-sm text-slate-700">
+                <input className="form-check" type="checkbox" checked={topics.includes(t.id)} onChange={() => toggleTopic(t.id)} />
                 {contactTopicLabel(t.id)}
               </label>
             ))}
