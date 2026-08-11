@@ -350,8 +350,10 @@ p { margin: 0; }
 /* Jerarquía interna: precio primero (dato decisorio), luego tipo y ubicación. */
 .property-card-body { padding: var(--space-4) var(--space-4) var(--space-3); }
 .card-price {
-  font-size: var(--text-xl); font-weight: 700; letter-spacing: -.025em; color: var(--navy);
-  font-variant-numeric: tabular-nums; line-height: 1.1;
+  /* Fluido: un importe corto luce grande, y "Precio a consultar" no se parte. */
+  font-size: clamp(1.15rem, .85rem + .55vw, 1.5rem);
+  font-weight: 700; letter-spacing: -.025em; color: var(--navy);
+  font-variant-numeric: tabular-nums; line-height: 1.15; text-wrap: balance;
 }
 .card-type { margin-top: .3rem; font-size: var(--text-xs); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--blue); }
 .card-title {
@@ -481,15 +483,20 @@ p { margin: 0; }
 /* Map-first explorer */
 .explorer-page { min-height: calc(100svh - var(--nav-height)); background: var(--paper); }
 /* --- Barra de exploración: glass sobre el mapa, compacta ------------------ */
+/* El blur va en un pseudo-elemento: aplicar backdrop-filter al contenedor crea
+   un containing block y rompería el `position: fixed` del drawer de filtros. */
 .explorer-toolbar {
   position: relative; z-index: 1200;
   border-bottom: 1px solid var(--border-subtle);
+  box-shadow: 0 4px 22px rgba(11, 39, 72, .05);
+}
+.explorer-toolbar::before {
+  content: ""; position: absolute; z-index: -1; inset: 0;
   background: rgba(250, 251, 253, .86);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(170%);
   backdrop-filter: blur(var(--glass-blur)) saturate(170%);
-  box-shadow: 0 4px 22px rgba(11, 39, 72, .05);
 }
-@supports not (backdrop-filter: blur(2px)) { .explorer-toolbar { background: #fafbfd; } }
+@supports not (backdrop-filter: blur(2px)) { .explorer-toolbar::before { background: #fafbfd; } }
 .explorer-toolbar > .container { padding-block: .8rem .7rem; display: grid; gap: .6rem; }
 .explorer-heading-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .explorer-heading-row h1 { color: var(--navy); font-size: 1.35rem; line-height: 1.15; font-weight: 700; letter-spacing: -.03em; }
