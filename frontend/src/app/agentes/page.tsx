@@ -17,7 +17,7 @@ function one(value: string | string[] | undefined) {
 export default async function Page({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;
   const query = one(params.q).slice(0, 60);
-  const agents = await getAgentDirectory(query);
+  const { items: agents, failed } = await getAgentDirectory(query);
 
   return (
     <SiteShell>
@@ -35,7 +35,11 @@ export default async function Page({ searchParams }: { searchParams: Promise<Sea
           <button type="submit" className="primary-button">Buscar</button>
         </form>
 
-        {agents.length === 0 ? (
+        {failed ? (
+          <p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-900">
+            No pudimos cargar el listado de agentes en este momento. Volvé a intentar en unos minutos.
+          </p>
+        ) : agents.length === 0 ? (
           <p className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-sm text-slate-600">
             {query ? `No encontramos agentes que coincidan con “${query}”.` : "No hay agentes con datos suficientes para mostrar por ahora."}
           </p>
