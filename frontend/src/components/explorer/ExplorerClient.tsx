@@ -46,6 +46,8 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
   const [resultState, setResultState] = useState<{ key: string; result: PropertySearchResult } | null>(null);
   const result = resultState?.key === requestKey ? resultState.result : null;
   const resultAbortRef = useRef<AbortController | null>(null);
+  // Scroll pendiente de restaurar al volver de una ficha (ver efectos abajo).
+  const pendingScrollRef = useRef<number | null>(null);
   const currentFilters = useMemo(() => ({ ...filters, mode, selectedId }), [filters, mode, selectedId]);
 
   // Registra la búsqueda actual (sin paginación ni selección) en "búsquedas
@@ -69,7 +71,10 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
     try {
       const state = JSON.parse(sessionStorage.getItem(`eretz:return:${initialReturnTo}`) ?? "null") as { scrollY?: number; selectedId?: string } | null;
       if (state?.selectedId) requestAnimationFrame(() => setSelectedId(state.selectedId ?? ""));
-      if (typeof state?.scrollY === "number") requestAnimationFrame(() => window.scrollTo({ top: state.scrollY, behavior: "instant" }));
+      // El scroll NO se restaura acá: el listado carga async y, sin altura de
+      // documento, el navegador recorta el scroll a 0. Se difiere al efecto de
+      // abajo, que espera a que la página tenga altura suficiente.
+      if (typeof state?.scrollY === "number") pendingScrollRef.current = state.scrollY;
     } catch {
       // Navigation restoration is progressive enhancement.
     }
@@ -77,6 +82,30 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
     window.addEventListener("eretz:explorer-url-change", onUrl);
     return () => window.removeEventListener("eretz:explorer-url-change", onUrl);
   }, [filters.mode, initialReturnTo]);
+
+  // Restauración de scroll diferida: espera a que el documento tenga altura
+  // suficiente (el listado llega por fetch). Si el usuario ya scrolleó por su
+  // cuenta, se cancela para no pelearle la posición.
+  useEffect(() => {
+    if (pendingScrollRef.current === null) return;
+    let frame = 0;
+    let tries = 0;
+    const attempt = () => {
+      const target = pendingScrollRef.current;
+      if (target === null) return;
+      if (window.scrollY > 40) { pendingScrollRef.current = null; return; }
+      const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+      if (maxScroll >= target - 4) {
+        window.scrollTo({ top: target, behavior: "instant" });
+        pendingScrollRef.current = null;
+        return;
+      }
+      if (tries++ < 40) frame = requestAnimationFrame(attempt);
+      else pendingScrollRef.current = null;
+    };
+    frame = requestAnimationFrame(attempt);
+    return () => cancelAnimationFrame(frame);
+  }, [result, density, mode]);
 
   useEffect(() => {
     const desktop = window.matchMedia("(min-width: 768px)").matches;
