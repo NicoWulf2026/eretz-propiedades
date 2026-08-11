@@ -851,3 +851,8 @@ p { margin: 0; }
 .page-title-inline { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
 .page-subtitle { margin-top: .55rem; max-width: 62ch; font-size: var(--text-base); color: var(--muted); line-height: 1.6; }
 .section-heading { font-size: var(--text-lg); font-weight: 700; letter-spacing: -.02em; color: var(--navy); }
+
+/* Acciones del header del drawer en una sola fila. */
+.filter-panel-header-actions { display: flex; align-items: center; gap: .5rem; }
+.filter-panel-header-actions .secondary-button { min-height: 40px; padding: .5rem .9rem; }
+.filter-panel-header-actions .icon-button { min-width: 40px; min-height: 40px; }
