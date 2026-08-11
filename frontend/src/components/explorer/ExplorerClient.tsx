@@ -70,7 +70,15 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
     if (savedDensity === "full" || savedDensity === "compact") requestAnimationFrame(() => setDensity(savedDensity));
     if (localStorage.getItem("eretz:hide-visited") === "1") requestAnimationFrame(() => setHideVisited(true));
     try {
-      const state = JSON.parse(sessionStorage.getItem(`eretz:return:${initialReturnTo}`) ?? "null") as { scrollY?: number; selectedId?: string } | null;
+      // La clave se busca por la URL REAL y por la normalizada: `selectProperty`
+      // la escribe desde window.location.href (cruda), mientras que
+      // `initialReturnTo` usa filtersToSearchParams, que puede diferir cuando un
+      // parámetro se normaliza (p. ej. `orden=price_desc` sin moneda cae a
+      // `recent`) o no se serializa (`nl=`). Sin esto, el estado no se recuperaba.
+      const rawReturnTo = `${window.location.pathname}${window.location.search}`;
+      const stored = sessionStorage.getItem(`eretz:return:${rawReturnTo}`)
+        ?? sessionStorage.getItem(`eretz:return:${initialReturnTo}`);
+      const state = JSON.parse(stored ?? "null") as { scrollY?: number; selectedId?: string } | null;
       if (state?.selectedId) requestAnimationFrame(() => setSelectedId(state.selectedId ?? ""));
       // El scroll NO se restaura acá: el listado carga async y, sin altura de
       // documento, el navegador recorta el scroll a 0. Se difiere al efecto de
