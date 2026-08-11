@@ -76,10 +76,10 @@ export function ContactActions({ property, canonical }: { property: Property; ca
       </div>
       {!whatsappHref && !telephone && !contact?.email && !contact?.website && !property.sourceUrl && <p className="mt-4 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">Esta publicación no incluye un contacto público válido.</p>}
       <div className="mt-5 flex flex-wrap gap-3 border-t border-slate-100 pt-4">
-        <a className="text-sm font-bold text-[#2166a5]" href={shareHref} target="_blank" rel="noopener noreferrer" onClick={() => track("share_clicked", { method: "whatsapp" })}>WhatsApp</a>
-        <a className="text-sm font-bold text-[#2166a5]" href={`mailto:?subject=${encodeURIComponent(property.title)}&body=${encodeURIComponent(shareMessage)}`} onClick={() => track("share_clicked", { method: "email" })}>Correo</a>
-        <button className="text-sm font-bold text-[#2166a5]" type="button" onClick={webShare}>Compartir</button>
-        <button className="text-sm font-bold text-[#2166a5]" type="button" onClick={copy}>{copied ? "Enlace copiado" : "Copiar enlace"}</button>
+        <a className="inline-action text-sm font-bold text-[#2166a5]" href={shareHref} target="_blank" rel="noopener noreferrer" onClick={() => track("share_clicked", { method: "whatsapp" })}>WhatsApp</a>
+        <a className="inline-action text-sm font-bold text-[#2166a5]" href={`mailto:?subject=${encodeURIComponent(property.title)}&body=${encodeURIComponent(shareMessage)}`} onClick={() => track("share_clicked", { method: "email" })}>Correo</a>
+        <button className="inline-action text-sm font-bold text-[#2166a5]" type="button" onClick={webShare}>Compartir</button>
+        <button className="inline-action text-sm font-bold text-[#2166a5]" type="button" onClick={copy}>{copied ? "Enlace copiado" : "Copiar enlace"}</button>
       </div>
     </aside>
   );
