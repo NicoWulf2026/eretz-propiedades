@@ -93,18 +93,21 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
   useEffect(() => {
     if (pendingScrollRef.current === null) return;
     let frame = 0;
+    let appliedAt = 0;
     const attempt = () => {
       const target = pendingScrollRef.current;
       if (target === null) return;
-      // Sólo se desiste por deadline o porque el usuario ya scrolleó: agotar
-      // "intentos" cortaba antes de que llegara el listado (fetch de 1-3 s).
+      // Se desiste por deadline (el listado llega por fetch, 1-3 s). Tras aplicar
+      // se re-verifica un momento: el router puede resetear el scroll a 0 al
+      // completar la navegación, después de nuestra restauración.
       if (Date.now() > pendingUntilRef.current) { pendingScrollRef.current = null; return; }
-      if (window.scrollY > 40) { pendingScrollRef.current = null; return; }
       const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
       if (maxScroll >= target - 4) {
-        window.scrollTo({ top: target, behavior: "instant" });
-        pendingScrollRef.current = null;
-        return;
+        if (Math.abs(window.scrollY - target) > 8) {
+          window.scrollTo({ top: target, behavior: "instant" });
+          if (!appliedAt) appliedAt = Date.now();
+        }
+        if (appliedAt && Date.now() - appliedAt > 1200) { pendingScrollRef.current = null; return; }
       }
       frame = requestAnimationFrame(attempt);
     };

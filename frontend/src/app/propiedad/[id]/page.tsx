@@ -62,7 +62,7 @@ export default async function PropertyPage({ params, searchParams }: { params: P
       <RecentViewTracker id={property.id} title={property.title} price={propertyPrice(property)} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />
       <div className="container py-8">
-        <nav aria-label="Migas de pan" className="flex flex-wrap items-center gap-2 text-sm text-slate-600"><Link href={returnTo} className="font-bold text-[#2166a5]">← Volver a resultados</Link><span aria-hidden="true">/</span><span aria-current="page">{typeLabels[property.propertyType]}</span></nav>
+        <nav aria-label="Migas de pan" className="flex flex-wrap items-center gap-2 text-sm text-slate-600"><Link href={returnTo} scroll={false} className="font-bold text-[#2166a5]">← Volver a resultados</Link><span aria-hidden="true">/</span><span aria-current="page">{typeLabels[property.propertyType]}</span></nav>
         <header id="resumen" className="mt-6 scroll-mt-24">
           <div className="flex flex-wrap gap-2"><span className="pill">{operationLabels[property.operation]}</span><span className="pill pill-light">{typeLabels[property.propertyType]}</span>{property.mortgageEligible && <span className="pill pill-gold">Apto crédito</span>}{availabilityLabel(property.status) ? <span className="pill pill-light" title="La disponibilidad de esta publicación no está confirmada en el último relevamiento.">{availabilityLabel(property.status)}</span> : null}</div>
           <h1 className="mt-5 max-w-4xl text-3xl font-black leading-tight tracking-[-0.03em] text-[#0b2748] sm:text-5xl">{property.title}</h1>
