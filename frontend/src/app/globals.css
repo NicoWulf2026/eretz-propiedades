@@ -863,3 +863,13 @@ p { margin: 0; }
   display: inline-flex; align-items: center; min-height: 24px;
 }
 .compare-col-head a, .compare-col-head button { padding-block: .25rem; }
+
+/* Objetivo táctil mínimo (24px) para enlaces de acción en línea, usando
+   padding vertical: sube el área sin romper el flujo del texto. */
+nav[aria-label="Migas de pan"] a,
+.ficha-section-nav a,
+.detail-panel a,
+.site-footer nav a,
+footer nav a {
+  padding-block: .18rem;
+}
