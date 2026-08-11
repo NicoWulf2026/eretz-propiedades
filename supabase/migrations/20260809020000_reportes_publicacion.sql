@@ -29,9 +29,14 @@ COMMENT ON TABLE public.reportes_publicacion IS
 ALTER TABLE public.reportes_publicacion ENABLE ROW LEVEL SECURITY;
 
 DO $$
+DECLARE seq text;
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'eretz_app_writer') THEN
     GRANT INSERT ON public.reportes_publicacion TO eretz_app_writer;
+    seq := pg_get_serial_sequence('public.reportes_publicacion', 'id');
+    IF seq IS NOT NULL THEN
+      EXECUTE format('GRANT USAGE ON SEQUENCE %s TO eretz_app_writer', seq);
+    END IF;
     DROP POLICY IF EXISTS reportes_publicacion_writer_insert ON public.reportes_publicacion;
     CREATE POLICY reportes_publicacion_writer_insert
       ON public.reportes_publicacion FOR INSERT TO eretz_app_writer WITH CHECK (true);

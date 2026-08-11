@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { insertSignal } from "@/lib/db-writer";
+import { insertSignal, persistenceRequired } from "@/lib/db-writer";
 
 export const dynamic = "force-dynamic";
 
@@ -38,5 +38,9 @@ export async function POST(request: Request) {
   const { persisted } = await insertSignal("reportes_publicacion", {
     propiedad_id: Number(propiedadId), motivo, detalle, email, estado: "nuevo",
   });
+  // En entorno real, si no se persistió NO devolvemos éxito falso.
+  if (!persisted && persistenceRequired()) {
+    return NextResponse.json({ error: "persistence_unavailable" }, { status: 503 });
+  }
   return NextResponse.json({ status: "received", motivo, persisted });
 }

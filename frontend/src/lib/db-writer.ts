@@ -41,21 +41,34 @@ const WRITABLE = {
 } as const;
 
 export type WritableTable = keyof typeof WRITABLE;
+export type WriteResult = { persisted: boolean; reason?: "no_writer" | "error" };
 
 export function isWriterConfigured(): boolean {
   return Boolean(writerUrl());
 }
 
-// Inserta una fila de señal. Devuelve { persisted } — false si no hay writer
-// configurado o si la escritura falla (el endpoint decide cómo responder).
+// La persistencia es OBLIGATORIA en entornos reales (Preview/Production). En esos
+// entornos, si no se pudo persistir, el endpoint devuelve 503 en vez de un éxito
+// falso. En dev/test la persistencia no es obligatoria (permite no-op/mocks).
+export function persistenceRequired(): boolean {
+  return (
+    process.env.ERETZ_PERSISTENCE_REQUIRED === "1" ||
+    process.env.VERCEL === "1" ||
+    process.env.NODE_ENV === "production"
+  );
+}
+
+// Inserta una fila de señal. `reason` distingue "no_writer" (no configurado) de
+// "error" (falló la escritura). Nunca loguea la URL ni la password: sólo el
+// mensaje de error del driver.
 export async function insertSignal(
   table: WritableTable,
   data: Record<string, unknown>,
-): Promise<{ persisted: boolean }> {
+): Promise<WriteResult> {
   const sql = writerDb();
-  if (!sql) return { persisted: false };
+  if (!sql) return { persisted: false, reason: "no_writer" };
   const cols = WRITABLE[table].filter((c) => data[c] !== undefined && data[c] !== null && data[c] !== "");
-  if (cols.length === 0) return { persisted: false };
+  if (cols.length === 0) return { persisted: false, reason: "error" };
   try {
     const colList = cols.join(", ");
     const placeholders = cols.map((_, i) => `$${i + 1}`).join(", ");
@@ -65,7 +78,8 @@ export async function insertSignal(
     });
     return { persisted: true };
   } catch (error) {
+    // Sólo el mensaje del driver — nunca la connection string ni la password.
     console.error("ERETZ insertSignal failed", table, error instanceof Error ? error.message : "unknown error");
-    return { persisted: false };
+    return { persisted: false, reason: "error" };
   }
 }

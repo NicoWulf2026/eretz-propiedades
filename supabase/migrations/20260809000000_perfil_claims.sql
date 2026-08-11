@@ -43,9 +43,16 @@ COMMENT ON TABLE public.perfil_claims IS
 ALTER TABLE public.perfil_claims ENABLE ROW LEVEL SECURITY;
 
 DO $$
+DECLARE seq text;
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'eretz_app_writer') THEN
     GRANT INSERT ON public.perfil_claims TO eretz_app_writer;
+    -- USAGE sólo sobre la secuencia identity concreta (nombre resuelto de forma
+    -- segura, sin depender del nombre generado ni tocar otras secuencias).
+    seq := pg_get_serial_sequence('public.perfil_claims', 'id');
+    IF seq IS NOT NULL THEN
+      EXECUTE format('GRANT USAGE ON SEQUENCE %s TO eretz_app_writer', seq);
+    END IF;
     DROP POLICY IF EXISTS perfil_claims_writer_insert ON public.perfil_claims;
     CREATE POLICY perfil_claims_writer_insert
       ON public.perfil_claims FOR INSERT TO eretz_app_writer WITH CHECK (true);
