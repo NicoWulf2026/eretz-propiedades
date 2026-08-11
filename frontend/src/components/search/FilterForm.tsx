@@ -160,8 +160,11 @@ export function FilterForm({
       <input type="hidden" name="modo" value={filters.mode} />
       <div className="explorer-primary-search">
         <QuickSelectors filters={filters} />
-        <button ref={toggleRef} className="filter-toggle" type="button" aria-expanded={open} aria-controls="advanced-filters" aria-label={activeCount ? `Más filtros, ${activeCount} activos` : "Más filtros"} onClick={() => setOpen(true)}>
-          {activeCount ? `Más filtros (${activeCount})` : "Filtros"} <span aria-hidden="true">＋</span>
+        {/* El nombre accesible contiene el texto visible (evita el
+            label-content-name-mismatch de Lighthouse). */}
+        <button ref={toggleRef} className="filter-toggle" type="button" aria-expanded={open} aria-controls="advanced-filters" onClick={() => setOpen(true)}>
+          <span>{activeCount ? `Más filtros (${activeCount})` : "Más filtros"}</span>
+          <span aria-hidden="true" className="filter-toggle-icon">+</span>
         </button>
         <button className="primary-button explorer-search-button" type="submit">Buscar</button>
       </div>
