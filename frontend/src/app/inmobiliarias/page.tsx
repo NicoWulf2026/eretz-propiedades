@@ -23,8 +23,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<Sea
     <SiteShell>
       <div className="container py-8">
         <header className="mb-6">
-          <h1 className="text-3xl font-black tracking-[-0.03em] text-[#0b2748]">Inmobiliarias</h1>
-          <p className="mt-2 text-sm text-slate-600">
+          <h1 className="page-title">Inmobiliarias</h1>
+          <p className="page-subtitle">
             Todas las inmobiliarias con publicaciones en el catálogo. ERETZ es un agregador
             independiente: los datos provienen de las publicaciones originales.
           </p>

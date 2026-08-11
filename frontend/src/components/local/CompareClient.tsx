@@ -37,8 +37,8 @@ export function CompareClient() {
     <div className="container py-8">
       <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-black tracking-[-0.03em] text-[#0b2748]">Comparar propiedades</h1>
-          <p className="mt-2 text-sm text-slate-600">Compará hasta 4 propiedades guardadas en este dispositivo.</p>
+          <h1 className="page-title">Comparar propiedades</h1>
+          <p className="page-subtitle">Compará hasta 4 propiedades guardadas en este dispositivo.</p>
         </div>
         {compare.length ? (
           <button type="button" className="secondary-button" onClick={clearCompare}>Vaciar comparación</button>
@@ -46,9 +46,12 @@ export function CompareClient() {
       </header>
 
       {compare.length === 0 ? (
-        <p className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-sm text-slate-600">
-          No agregaste propiedades a comparar. Tocá el botón ⇄ en cualquier propiedad para sumarla (hasta 4).
-        </p>
+        <div className="state-panel">
+          <span aria-hidden="true">⇄</span>
+          <h2>Elegí propiedades para comparar</h2>
+          <p>Sumá entre 2 y 4 propiedades con el botón de comparar y vas a ver sus precios, superficies y características una al lado de la otra.</p>
+          <Link className="primary-button" href="/propiedades">Explorar propiedades</Link>
+        </div>
       ) : loading ? (
         <p className="text-sm text-slate-600">Cargando comparación…</p>
       ) : error ? (

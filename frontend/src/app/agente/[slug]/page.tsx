@@ -32,9 +32,9 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
         </nav>
 
         <header className="mt-6 rounded-2xl border border-slate-200 bg-white p-6">
-          <h1 className="text-3xl font-black tracking-[-0.03em] text-[#0b2748]">{agent.name}</h1>
+          <h1 className="page-title">{agent.name}</h1>
           {agent.city || agent.province ? (
-            <p className="mt-2 text-sm text-slate-600">{[agent.city, agent.province].filter(Boolean).join(", ")}</p>
+            <p className="page-subtitle">{[agent.city, agent.province].filter(Boolean).join(", ")}</p>
           ) : null}
           <p className="mt-2 text-sm font-semibold text-slate-700">
             {agent.listingsCount.toLocaleString("es-AR")} {agent.listingsCount === 1 ? "publicación" : "publicaciones"}
@@ -43,7 +43,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
         </header>
 
         <section aria-labelledby="listings" className="mt-8">
-          <h2 id="listings" className="text-xl font-black text-[#0b2748]">Publicaciones</h2>
+          <h2 id="listings" className="section-heading">Publicaciones</h2>
           {properties.length === 0 ? (
             <p className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-6 text-sm text-slate-600">
               Este agente no tiene publicaciones disponibles en este momento.

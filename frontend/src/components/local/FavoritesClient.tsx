@@ -27,15 +27,15 @@ export function FavoritesClient() {
   return (
     <div className="container py-8">
       <header className="mb-6">
-        <h1 className="text-3xl font-black tracking-[-0.03em] text-[#0b2748]">Mi actividad</h1>
-        <p className="mt-2 text-sm text-slate-600">
+        <h1 className="page-title">Mi actividad</h1>
+        <p className="page-subtitle">
           Tus favoritos, comparación, propiedades vistas y ocultas se guardan en este dispositivo.
         </p>
       </header>
 
       <section aria-labelledby="fav-heading" className="mb-10">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 id="fav-heading" className="text-xl font-black text-[#0b2748]">
+          <h2 id="fav-heading" className="section-heading">
             Favoritos {favorites.length ? <span className="text-slate-500">({favorites.length})</span> : null}
           </h2>
           {compare.length ? (
@@ -43,9 +43,12 @@ export function FavoritesClient() {
           ) : null}
         </div>
         {favorites.length === 0 ? (
-          <p className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-6 text-sm text-slate-600">
-            Todavía no guardaste favoritos. Tocá la estrella ☆ en cualquier propiedad para guardarla acá.
-          </p>
+          <div className="state-panel mt-4">
+            <span aria-hidden="true">★</span>
+            <h2>Todavía no guardaste favoritos</h2>
+            <p>Tocá la estrella en cualquier propiedad para guardarla acá. No hace falta crear una cuenta.</p>
+            <Link className="primary-button" href="/propiedades">Explorar propiedades</Link>
+          </div>
         ) : loading ? (
           <p className="mt-4 text-sm text-slate-600">Cargando favoritos…</p>
         ) : error ? (
@@ -67,7 +70,7 @@ export function FavoritesClient() {
       {recent.length ? (
         <section aria-labelledby="recent-heading" className="mb-10">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 id="recent-heading" className="text-xl font-black text-[#0b2748]">Vistas recientemente</h2>
+            <h2 id="recent-heading" className="section-heading">Vistas recientemente</h2>
             <button type="button" className="secondary-button" onClick={clearRecentViews}>Limpiar</button>
           </div>
           <ul className="mt-4 divide-y divide-slate-100 rounded-xl border border-slate-200">
@@ -86,7 +89,7 @@ export function FavoritesClient() {
       {searches.length ? (
         <section aria-labelledby="searches-heading" className="mb-10">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 id="searches-heading" className="text-xl font-black text-[#0b2748]">Búsquedas recientes</h2>
+            <h2 id="searches-heading" className="section-heading">Búsquedas recientes</h2>
             <button type="button" className="secondary-button" onClick={clearRecentSearches}>Limpiar</button>
           </div>
           <ul className="mt-4 flex flex-wrap gap-2">
@@ -110,7 +113,7 @@ export function FavoritesClient() {
       {hidden.length ? (
         <section aria-labelledby="hidden-heading">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 id="hidden-heading" className="text-xl font-black text-[#0b2748]">
+            <h2 id="hidden-heading" className="section-heading">
               Propiedades ocultas <span className="text-slate-500">({hidden.length})</span>
             </h2>
             <button type="button" className="secondary-button" onClick={clearHidden}>Mostrar todas</button>

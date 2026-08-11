@@ -47,8 +47,8 @@ export function CollectionsClient() {
     <div className="container py-8">
       <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-black tracking-[-0.03em] text-[#0b2748]">Colecciones</h1>
-          <p className="mt-2 text-sm text-slate-600">Organizá propiedades en listas con nombre. Se guardan en este dispositivo, sin cuenta.</p>
+          <h1 className="page-title">Colecciones</h1>
+          <p className="page-subtitle">Organizá propiedades en listas con nombre. Se guardan en este dispositivo, sin cuenta.</p>
         </div>
         <Link href="/favoritos" className="secondary-button">Mi actividad</Link>
       </header>
@@ -71,7 +71,11 @@ export function CollectionsClient() {
       </section>
 
       {collections.length === 0 ? (
-        <p className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600">Todavía no creaste colecciones. Creá una arriba y luego agregá propiedades desde su ficha.</p>
+        <div className="state-panel">
+          <span aria-hidden="true">🗂️</span>
+          <h2>Todavía no tenés colecciones</h2>
+          <p>Agrupá propiedades en listas con nombre —por ejemplo “Para visitar” o “Finalistas”— y volvé a encontrarlas cuando quieras. Se guardan en este dispositivo, sin cuenta.</p>
+        </div>
       ) : (
         <ul className="grid gap-3">
           {collections.map((c) => (

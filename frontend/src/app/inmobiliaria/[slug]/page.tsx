@@ -39,12 +39,12 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
         <header className="mt-6 rounded-2xl border border-slate-200 bg-white p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <h1 className="flex items-center gap-3 text-3xl font-black tracking-[-0.03em] text-[#0b2748]">
+              <h1 className="page-title page-title-inline">
                 {agency.name}
                 {agency.verified ? <span className="rounded-full bg-[#e8f0f7] px-2.5 py-1 text-xs font-bold text-[#2166a5]">Verificada</span> : null}
               </h1>
               {agency.city || agency.province ? (
-                <p className="mt-2 text-sm text-slate-600">{[agency.city, agency.province].filter(Boolean).join(", ")}</p>
+                <p className="page-subtitle">{[agency.city, agency.province].filter(Boolean).join(", ")}</p>
               ) : null}
               <p className="mt-2 text-sm font-semibold text-slate-700">
                 {agency.listingsCount.toLocaleString("es-AR")} {agency.listingsCount === 1 ? "publicación" : "publicaciones"}
@@ -66,7 +66,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
         </header>
 
         <section aria-labelledby="listings" className="mt-8">
-          <h2 id="listings" className="text-xl font-black text-[#0b2748]">Publicaciones</h2>
+          <h2 id="listings" className="section-heading">Publicaciones</h2>
           {properties.length === 0 ? (
             <p className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-6 text-sm text-slate-600">
               Esta inmobiliaria no tiene publicaciones disponibles en este momento.

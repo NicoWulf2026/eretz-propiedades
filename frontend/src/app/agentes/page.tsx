@@ -23,8 +23,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<Sea
     <SiteShell>
       <div className="container py-8">
         <header className="mb-6">
-          <h1 className="text-3xl font-black tracking-[-0.03em] text-[#0b2748]">Agentes</h1>
-          <p className="mt-2 text-sm text-slate-600">
+          <h1 className="page-title">Agentes</h1>
+          <p className="page-subtitle">
             Agentes que figuran en las publicaciones del catálogo. Sólo se muestran los que tienen datos reales.
           </p>
         </header>
