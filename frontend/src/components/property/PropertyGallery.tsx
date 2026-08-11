@@ -49,10 +49,22 @@ export function PropertyGallery({ images, title }: { images: string[]; title: st
   const image = images[selected] ?? null;
   return (
     <>
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-        <button type="button" className="block aspect-[16/10] w-full" onClick={() => image && setModal(true)} aria-label={image ? "Ampliar imagen" : "Imagen no disponible"}>
-          <PropertyImage src={image} alt={`${title}, imagen ${selected + 1}`} priority />
-        </button>
+      <div className="surface overflow-hidden">
+        {image ? (
+          <button type="button" className="block aspect-[16/10] w-full" onClick={() => setModal(true)} aria-label="Ampliar imagen">
+            <PropertyImage src={image} alt={`${title}, imagen ${selected + 1}`} priority />
+          </button>
+        ) : (
+          /* Sin fotos: placeholder sobrio en lugar de una superficie vacía. */
+          <div className="gallery-empty" role="img" aria-label="Esta publicación no incluye fotos">
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="16" rx="2" />
+              <circle cx="8.5" cy="9.5" r="1.5" />
+              <path d="m21 16-5-5L9 18" />
+            </svg>
+            <span className="gallery-empty-text">Esta publicación no incluye fotos</span>
+          </div>
+        )}
         {images.length > 1 && (
           <div className="flex gap-2 overflow-x-auto p-3" aria-label="Miniaturas de la galería">
             {images.map((src, index) => (

@@ -44,17 +44,20 @@ export default async function Page({ searchParams }: { searchParams: Promise<Sea
           <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {agencies.map((agency) => (
               <li key={agency.id}>
-                <Link href={`/inmobiliaria/${agency.slug}`} className="focus-ring block h-full rounded-xl border border-slate-200 bg-white p-4 hover:border-[#2166a5] hover:shadow-md">
-                  <p className="flex items-center gap-2 text-base font-bold text-[#0b2748]">
-                    <span className="truncate">{agency.name}</span>
-                    {agency.verified ? <span className="rounded-full bg-[#e8f0f7] px-2 py-0.5 text-[11px] font-bold text-[#2166a5]">Verificada</span> : null}
-                  </p>
-                  {agency.city || agency.province ? (
-                    <p className="mt-1 truncate text-sm text-slate-600">{[agency.city, agency.province].filter(Boolean).join(", ")}</p>
-                  ) : null}
-                  <p className="mt-3 text-sm font-semibold text-slate-700">
-                    {agency.listingsCount.toLocaleString("es-AR")} {agency.listingsCount === 1 ? "publicación" : "publicaciones"}
-                  </p>
+                <Link href={`/inmobiliaria/${agency.slug}`} className="focus-ring entity-card">
+                  <span aria-hidden="true" className="entity-monogram">{agency.name.trim().charAt(0).toUpperCase()}</span>
+                  <span className="entity-body">
+                    <span className="entity-name">
+                      {agency.name}
+                      {agency.verified ? <span className="entity-verified">Verificada</span> : null}
+                    </span>
+                    {agency.city || agency.province ? (
+                      <span className="entity-meta">{[agency.city, agency.province].filter(Boolean).join(", ")}</span>
+                    ) : <span className="entity-meta entity-meta-empty">Ubicación no informada</span>}
+                    <span className="entity-count">
+                      {agency.listingsCount.toLocaleString("es-AR")} {agency.listingsCount === 1 ? "publicación" : "publicaciones"}
+                    </span>
+                  </span>
                 </Link>
               </li>
             ))}

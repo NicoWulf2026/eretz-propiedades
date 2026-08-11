@@ -43,14 +43,17 @@ export default async function Page({ searchParams }: { searchParams: Promise<Sea
           <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {agents.map((agent) => (
               <li key={agent.slug}>
-                <Link href={`/agente/${agent.slug}`} className="focus-ring block h-full rounded-xl border border-slate-200 bg-white p-4 hover:border-[#2166a5] hover:shadow-md">
-                  <p className="truncate text-base font-bold text-[#0b2748]">{agent.name}</p>
-                  {agent.city || agent.province ? (
-                    <p className="mt-1 truncate text-sm text-slate-600">{[agent.city, agent.province].filter(Boolean).join(", ")}</p>
-                  ) : null}
-                  <p className="mt-3 text-sm font-semibold text-slate-700">
-                    {agent.listingsCount.toLocaleString("es-AR")} {agent.listingsCount === 1 ? "publicación" : "publicaciones"}
-                  </p>
+                <Link href={`/agente/${agent.slug}`} className="focus-ring entity-card">
+                  <span aria-hidden="true" className="entity-monogram">{agent.name.trim().charAt(0).toUpperCase()}</span>
+                  <span className="entity-body">
+                    <span className="entity-name">{agent.name}</span>
+                    {agent.city || agent.province ? (
+                      <span className="entity-meta">{[agent.city, agent.province].filter(Boolean).join(", ")}</span>
+                    ) : <span className="entity-meta entity-meta-empty">Ubicación no informada</span>}
+                    <span className="entity-count">
+                      {agent.listingsCount.toLocaleString("es-AR")} {agent.listingsCount === 1 ? "publicación" : "publicaciones"}
+                    </span>
+                  </span>
                 </Link>
               </li>
             ))}
