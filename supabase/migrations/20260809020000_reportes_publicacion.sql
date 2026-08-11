@@ -22,6 +22,18 @@ CREATE INDEX IF NOT EXISTS reportes_publicacion_propiedad_idx
 COMMENT ON TABLE public.reportes_publicacion IS
   'Reportes de publicaciones (señal). No auto-modifica ni oculta; revisión humana.';
 
--- Seguridad: RLS habilitado SIN policies -> deny-all para anon/authenticated.
--- Escritura por rol server (service_role/owner). La app NO lee esta tabla.
+-- Seguridad: RLS habilitado. anon/authenticated -> deny-all. La app inserta con
+-- el rol writer dedicado eretz_app_writer (sólo INSERT + policy de INSERT), nunca
+-- anon/authenticated ni BYPASSRLS global. La app NO lee esta tabla. Idempotente y
+-- guardado por existencia del rol writer.
 ALTER TABLE public.reportes_publicacion ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'eretz_app_writer') THEN
+    GRANT INSERT ON public.reportes_publicacion TO eretz_app_writer;
+    DROP POLICY IF EXISTS reportes_publicacion_writer_insert ON public.reportes_publicacion;
+    CREATE POLICY reportes_publicacion_writer_insert
+      ON public.reportes_publicacion FOR INSERT TO eretz_app_writer WITH CHECK (true);
+  END IF;
+END $$;

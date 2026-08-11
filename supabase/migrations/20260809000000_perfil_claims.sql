@@ -35,8 +35,19 @@ CREATE UNIQUE INDEX IF NOT EXISTS perfil_claims_dedupe_idx
 COMMENT ON TABLE public.perfil_claims IS
   'Reclamos de perfiles públicos. Señal, no auto-aprueba. Verificación humana posterior.';
 
--- Seguridad: RLS habilitado SIN policies -> deny-all para anon/authenticated
--- (aunque el Data API esté OFF, queda cerrado por defecto). La escritura la hace
--- un rol server con BYPASSRLS/owner (service_role) vía credencial fuera del
--- preview de sólo lectura. La app NO lee esta tabla. Idempotente.
+-- Seguridad: RLS habilitado. anon/authenticated -> deny-all (sin policies para
+-- ellos). La app inserta con el rol writer dedicado eretz_app_writer (mínimo
+-- privilegio: sólo INSERT + policy de INSERT), NUNCA con anon/authenticated ni
+-- BYPASSRLS global. La app NO lee esta tabla (no se le da SELECT). Idempotente y
+-- guardado por existencia del rol writer.
 ALTER TABLE public.perfil_claims ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'eretz_app_writer') THEN
+    GRANT INSERT ON public.perfil_claims TO eretz_app_writer;
+    DROP POLICY IF EXISTS perfil_claims_writer_insert ON public.perfil_claims;
+    CREATE POLICY perfil_claims_writer_insert
+      ON public.perfil_claims FOR INSERT TO eretz_app_writer WITH CHECK (true);
+  END IF;
+END $$;
