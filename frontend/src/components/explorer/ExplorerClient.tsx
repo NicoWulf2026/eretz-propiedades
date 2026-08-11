@@ -48,6 +48,7 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
   const resultAbortRef = useRef<AbortController | null>(null);
   // Scroll pendiente de restaurar al volver de una ficha (ver efectos abajo).
   const pendingScrollRef = useRef<number | null>(null);
+  const pendingUntilRef = useRef<number>(0);
   const currentFilters = useMemo(() => ({ ...filters, mode, selectedId }), [filters, mode, selectedId]);
 
   // Registra la búsqueda actual (sin paginación ni selección) en "búsquedas
@@ -74,7 +75,10 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
       // El scroll NO se restaura acá: el listado carga async y, sin altura de
       // documento, el navegador recorta el scroll a 0. Se difiere al efecto de
       // abajo, que espera a que la página tenga altura suficiente.
-      if (typeof state?.scrollY === "number") pendingScrollRef.current = state.scrollY;
+      if (typeof state?.scrollY === "number") {
+        pendingScrollRef.current = state.scrollY;
+        pendingUntilRef.current = Date.now() + 10_000; // ventana para que cargue el listado
+      }
     } catch {
       // Navigation restoration is progressive enhancement.
     }
@@ -89,10 +93,12 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
   useEffect(() => {
     if (pendingScrollRef.current === null) return;
     let frame = 0;
-    let tries = 0;
     const attempt = () => {
       const target = pendingScrollRef.current;
       if (target === null) return;
+      // Sólo se desiste por deadline o porque el usuario ya scrolleó: agotar
+      // "intentos" cortaba antes de que llegara el listado (fetch de 1-3 s).
+      if (Date.now() > pendingUntilRef.current) { pendingScrollRef.current = null; return; }
       if (window.scrollY > 40) { pendingScrollRef.current = null; return; }
       const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
       if (maxScroll >= target - 4) {
@@ -100,8 +106,7 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
         pendingScrollRef.current = null;
         return;
       }
-      if (tries++ < 40) frame = requestAnimationFrame(attempt);
-      else pendingScrollRef.current = null;
+      frame = requestAnimationFrame(attempt);
     };
     frame = requestAnimationFrame(attempt);
     return () => cancelAnimationFrame(frame);
