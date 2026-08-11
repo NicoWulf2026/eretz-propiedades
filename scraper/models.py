@@ -113,6 +113,7 @@ ALLOWED_OPERACIONES = {
     "alquiler_temporario",
     "consultar",
     "venta_y_alquiler",
+    "desconocida",
     "proyecto",  # legacy — no eliminar
 }
 

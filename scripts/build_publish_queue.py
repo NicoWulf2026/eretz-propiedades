@@ -26,7 +26,7 @@ except Exception:
 REPO_ROOT = Path(__file__).resolve().parents[1]
 # FASE 1 — Sprint A: ampliado con consultar y venta_y_alquiler.
 # Todas las operaciones normalizadas son válidas para publicar.
-VALID_OPERATIONS = {"venta", "alquiler", "alquiler_temporario", "consultar", "venta_y_alquiler"}
+VALID_OPERATIONS = {"venta", "alquiler", "alquiler_temporario", "consultar", "venta_y_alquiler", "desconocida"}
 
 STAGING_SELECT_SQL = """
 SELECT

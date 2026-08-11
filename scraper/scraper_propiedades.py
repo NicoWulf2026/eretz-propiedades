@@ -444,6 +444,10 @@ OPERACION_MAP: Dict[str, str] = {
     "vacation": "alquiler_temporario", "turÃƒÂ­stico": "alquiler_temporario",
     "temporaria": "alquiler_temporario", "por dÃƒÂ­a": "alquiler_temporario",
     "por semana": "alquiler_temporario", "short term": "alquiler_temporario",
+    # "consultar" sólo sale de aquí: cuando la fuente lo dice. El fallback de
+    # operacion desconocida es "desconocida" (ver normalizar_operacion).
+    "consultar": "consultar", "a consultar": "consultar", "consulte": "consultar",
+    "precio a consultar": "consultar", "consultar precio": "consultar",
 }
 
 # Fix por familia ASP CMS: inferir operacion desde subfolder de URL de detalle
@@ -618,12 +622,16 @@ def normalizar_operacion(raw: Any) -> str:
     """Normaliza la operación de una propiedad.
 
     FASE 1 — Sprint A: nunca devuelve "venta" como fallback silencioso.
-    - Sin input → "consultar"
+    FASE 4: "desconocida" != "consultar". Antes ambos casos colapsaban en
+    "consultar", así que un aviso que decía "Consultar" era indistinguible de uno
+    cuya operacion no se pudo determinar. "consultar" sale ahora sólo de
+    OPERACION_MAP, es decir, sólo cuando la fuente lo indica.
+    - Sin input → "desconocida"
     - Señales simultáneas de venta Y alquiler → "venta_y_alquiler"
-    - No reconocido → "consultar"  (antes: "venta", que era incorrecto)
+    - No reconocido → "desconocida"
     """
     if not raw:
-        return "consultar"
+        return "desconocida"
     text = str(raw).lower().strip()
     # Detectar señal de venta Y alquiler simultáneos
     _has_venta = any(k in text for k in ("venta", "sale", "sell", "compra", "en venta", "for sale"))
@@ -633,7 +641,7 @@ def normalizar_operacion(raw: Any) -> str:
     for key, val in OPERACION_MAP.items():
         if key in text:
             return val
-    return "consultar"
+    return "desconocida"
 
 
 def _infer_op_from_asp_url_path(url: str) -> Optional[str]:
