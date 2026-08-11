@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { insertSignal } from "@/lib/db-writer";
 
 export const dynamic = "force-dynamic";
 
@@ -32,8 +33,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "El email no es válido." }, { status: 422 });
   }
 
-  // Payload validado, listo para persistir como señal (estado 'nuevo'); nunca
-  // modifica ni oculta la publicación automáticamente.
-  const report = { propiedadId, motivo, detalle, email, estado: "nuevo" } as const;
-  return NextResponse.json({ status: "received", motivo: report.motivo });
+  // Persiste como señal (estado 'nuevo') vía el rol writer dedicado si está
+  // configurado; nunca modifica ni oculta la publicación. Sin writer, acusa recibo.
+  const { persisted } = await insertSignal("reportes_publicacion", {
+    propiedad_id: Number(propiedadId), motivo, detalle, email, estado: "nuevo",
+  });
+  return NextResponse.json({ status: "received", motivo, persisted });
 }

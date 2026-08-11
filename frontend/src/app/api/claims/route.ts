@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { insertSignal } from "@/lib/db-writer";
 import type { ClaimStatus } from "@/types/property";
 
 export const dynamic = "force-dynamic";
@@ -47,9 +48,11 @@ export async function POST(request: Request) {
   // Sin teléfono ni rol el reclamo entra con menos señales de confianza.
   const status: ClaimStatus = telefono && rol ? "pending" : "needs_review";
 
-  // Payload validado, listo para persistir en public.perfil_claims cuando exista
-  // un rol con permiso de escritura. La verificación es humana; nunca se aprueba
-  // automáticamente ni se modifica el perfil.
-  const claim = { tipo, entidadId, nombre, email, telefono, rol, mensaje, estado: status } as const;
-  return NextResponse.json({ status: claim.estado, tipo: claim.tipo });
+  // Persiste como señal en public.perfil_claims vía el rol writer dedicado (si
+  // está configurado). Nunca auto-aprueba ni modifica el perfil. Si no hay writer
+  // (preview de sólo lectura), se acusa recibo sin persistir.
+  const { persisted } = await insertSignal("perfil_claims", {
+    tipo, entidad_id: Number(entidadId), nombre, email, telefono, rol, mensaje, estado: status,
+  });
+  return NextResponse.json({ status, tipo, persisted });
 }
