@@ -72,7 +72,7 @@ export function CollectionsClient() {
 
       {collections.length === 0 ? (
         <div className="state-panel">
-          <span aria-hidden="true">🗂️</span>
+          <span aria-hidden="true">▤</span>
           <h2>Todavía no tenés colecciones</h2>
           <p>Agrupá propiedades en listas con nombre —por ejemplo “Para visitar” o “Finalistas”— y volvé a encontrarlas cuando quieras. Se guardan en este dispositivo, sin cuenta.</p>
         </div>
