@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { insertSignal, persistenceRequired } from "@/lib/db-writer";
+import { realEstateExists } from "@/lib/property-service";
 import type { ClaimStatus } from "@/types/property";
 
 export const dynamic = "force-dynamic";
@@ -33,6 +34,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Solicitud inválida." }, { status: 400 });
   }
 
+  // Un `tipo` desconocido se rechaza en vez de asumir "inmobiliaria": aceptarlo
+  // silenciosamente guardaba el reclamo contra una entidad que el usuario nunca
+  // nombró.
+  if (body.tipo !== undefined && body.tipo !== "agente" && body.tipo !== "inmobiliaria") {
+    return NextResponse.json({ error: "Tipo de perfil inválido." }, { status: 422 });
+  }
   const tipo = body.tipo === "agente" ? "agente" : "inmobiliaria";
   const entidadId = String(body.entidadId ?? "");
   const nombre = clean(body.nombre, 120);
@@ -43,6 +50,21 @@ export async function POST(request: Request) {
 
   if (!/^\d+$/.test(entidadId) || nombre.length < 2 || !EMAIL.test(email)) {
     return NextResponse.json({ error: "Completá nombre y un email válido." }, { status: 422 });
+  }
+
+  // El perfil reclamado tiene que existir. Sin esta comprobación cualquier id
+  // numérico entraba en la cola de revisión. Un fallo de base no puede leerse
+  // como "no existe": ahí devolvemos 503 para no rechazar un reclamo legítimo.
+  if (tipo === "inmobiliaria") {
+    let exists: boolean;
+    try {
+      exists = await realEstateExists(entidadId);
+    } catch {
+      return NextResponse.json({ error: "persistence_unavailable" }, { status: 503 });
+    }
+    if (!exists) {
+      return NextResponse.json({ error: "No encontramos ese perfil." }, { status: 404 });
+    }
   }
 
   // Sin teléfono ni rol el reclamo entra con menos señales de confianza.

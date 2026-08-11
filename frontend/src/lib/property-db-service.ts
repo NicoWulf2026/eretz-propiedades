@@ -44,6 +44,8 @@ type MapCandidate = {
   __sort_value: string | number;
 };
 type TimedPromise<T> = { expiresAt: number; value: Promise<T> };
+// `failed` separa "la consulta no devolvió nada" de "la consulta no se pudo hacer".
+export type DirectoryResult<T> = { items: T[]; failed: boolean };
 
 let client: Sql | null = null;
 const searchCache = new Map<string, TimedPromise<PropertySearchResult>>();
@@ -452,12 +454,32 @@ const directoryCountUncached = async (query: string): Promise<RealEstateSummary[
     return rows.map(toRealEstateSummary);
   } catch (error) {
     console.error("ERETZ getRealEstateDirectory failed", error instanceof Error ? error.message : "unknown error");
-    return [];
+    throw error;
   }
 };
 
-export function getRealEstateDirectory(query = ""): Promise<RealEstateSummary[]> {
-  return cachedQuery(directoryCache, normalizeSearch(query.trim().slice(0, 60)), QUERY_CACHE_TTL_MS, () => directoryCountUncached(query));
+// Devuelve `failed` para que el directorio pueda decir "no pudimos cargar" en
+// vez de afirmar "no hay inmobiliarias", que es información falsa cuando lo que
+// ocurrió fue un error de base.
+export async function getRealEstateDirectory(query = ""): Promise<DirectoryResult<RealEstateSummary>> {
+  try {
+    const items = await cachedQuery(directoryCache, normalizeSearch(query.trim().slice(0, 60)), QUERY_CACHE_TTL_MS, () => directoryCountUncached(query));
+    return { items, failed: false };
+  } catch {
+    return { items: [], failed: true };
+  }
+}
+
+// Existencia de una inmobiliaria, para validar reclamos antes de persistirlos.
+// A diferencia de getRealEstateById NO atrapa el error: quien llama necesita
+// distinguir "no existe" (404) de "la base no respondió" (503). Devolver false
+// ante un fallo transitorio marcaría como inexistente un perfil que sí existe.
+export async function realEstateExists(id: string): Promise<boolean> {
+  if (!/^\d+$/.test(id)) return false;
+  if (!databaseUrl()) throw new Error("database is not configured");
+  const rows = await readOnly((sql) => sql.unsafe<{ ok: number }[]>(
+    "SELECT 1 AS ok FROM public.inmobiliarias_main WHERE id = $1 LIMIT 1", [Number(id)]));
+  return rows.length > 0;
 }
 
 export async function getRealEstateById(id: string): Promise<RealEstateProfile | null> {
@@ -548,12 +570,17 @@ const agentDirectoryUncached = async (query: string, limit: number): Promise<Age
     return rows.map(toAgentSummary);
   } catch (error) {
     console.error("ERETZ getAgentDirectory failed", error instanceof Error ? error.message : "unknown error");
-    return [];
+    throw error;
   }
 };
 
-export function getAgentDirectory(query = ""): Promise<AgentSummary[]> {
-  return cachedQuery(agentCache, `dir:${normalizeSearch(query.trim().slice(0, 60))}`, QUERY_CACHE_TTL_MS, () => agentDirectoryUncached(query, 60));
+export async function getAgentDirectory(query = ""): Promise<DirectoryResult<AgentSummary>> {
+  try {
+    const items = await cachedQuery(agentCache, `dir:${normalizeSearch(query.trim().slice(0, 60))}`, QUERY_CACHE_TTL_MS, () => agentDirectoryUncached(query, 60));
+    return { items, failed: false };
+  } catch {
+    return { items: [], failed: true };
+  }
 }
 
 // Resuelve un slug de agente contra el conjunto real (sin id estable): agrega

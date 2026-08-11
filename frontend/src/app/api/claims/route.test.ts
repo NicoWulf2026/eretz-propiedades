@@ -1,10 +1,15 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { POST } from "@/app/api/claims/route";
 import * as writer from "@/lib/db-writer";
+import * as service from "@/lib/property-service";
 
 vi.mock("@/lib/db-writer", () => ({
   insertSignal: vi.fn(async () => ({ persisted: false, reason: "no_writer" as const })),
   persistenceRequired: vi.fn(() => false),
+}));
+
+vi.mock("@/lib/property-service", () => ({
+  realEstateExists: vi.fn(async () => true),
 }));
 
 function post(body: unknown) {
@@ -18,8 +23,10 @@ function post(body: unknown) {
 const validBody = { entidadId: "10", nombre: "Juan Pérez", email: "j@x.com", telefono: "111", rol: "Titular" };
 
 beforeEach(() => {
+  vi.clearAllMocks();
   vi.mocked(writer.insertSignal).mockResolvedValue({ persisted: false, reason: "no_writer" });
   vi.mocked(writer.persistenceRequired).mockReturnValue(false);
+  vi.mocked(service.realEstateExists).mockResolvedValue(true);
 });
 
 describe("POST /api/claims — validación", () => {
@@ -38,6 +45,30 @@ describe("POST /api/claims — validación", () => {
     const data = await (await post({ entidadId: "10", nombre: "Juan Pérez", email: "j@x.com" })).json();
     expect(data.status).toBe("needs_review");
     expect(data.status).not.toBe("approved");
+  });
+
+  // Regresión: la API aceptaba un id numérico cualquiera y lo dejaba en la cola
+  // de revisión aunque el perfil no existiera.
+  it("rechaza con 404 un perfil inexistente", async () => {
+    vi.mocked(service.realEstateExists).mockResolvedValue(false);
+    const res = await post({ ...validBody, entidadId: "999999999" });
+    expect(res.status).toBe(404);
+    expect(writer.insertSignal).not.toHaveBeenCalled();
+  });
+
+  // Regresión: un fallo de base no puede leerse como "no existe".
+  it("si la base falla devuelve 503, no 404", async () => {
+    vi.mocked(service.realEstateExists).mockRejectedValue(new Error("db down"));
+    const res = await post(validBody);
+    expect(res.status).toBe(503);
+    expect(writer.insertSignal).not.toHaveBeenCalled();
+  });
+
+  // Regresión: un tipo desconocido se guardaba silenciosamente como inmobiliaria.
+  it("rechaza un tipo desconocido en vez de asumir inmobiliaria", async () => {
+    const res = await post({ ...validBody, tipo: "cualquier-cosa" });
+    expect(res.status).toBe(422);
+    expect(writer.insertSignal).not.toHaveBeenCalled();
   });
 });
 

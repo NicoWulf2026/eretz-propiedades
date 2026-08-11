@@ -9,6 +9,7 @@ export {
   getPropertiesByIds,
   getPropertyById,
   getRealEstateById,
+  realEstateExists,
   getRealEstateDirectory,
   getRelatedProperties,
   searchMap,
