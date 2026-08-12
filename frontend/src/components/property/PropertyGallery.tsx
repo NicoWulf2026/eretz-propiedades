@@ -49,9 +49,12 @@ export function PropertyGallery({ images, title }: { images: string[]; title: st
   const image = images[selected] ?? null;
   return (
     <>
-      <div className="surface overflow-hidden">
+      {/* Mosaico 1+4: la imagen principal ocupa la mitad izquierda y hasta cuatro
+          secundarias forman una grilla 2x2 a la derecha. Con menos de cinco fotos
+          el mosaico degrada solo: la principal se expande al ancho disponible. */}
+      <div className="ficha-gallery-mosaic">
         {image ? (
-          <button type="button" className="block aspect-[16/10] w-full" onClick={() => setModal(true)} aria-label="Ampliar imagen">
+          <button type="button" className="ficha-gallery-main" onClick={() => setModal(true)} aria-label="Ampliar imagen">
             <PropertyImage src={image} alt={`${title}, imagen ${selected + 1}`} priority />
           </button>
         ) : (
@@ -65,6 +68,18 @@ export function PropertyGallery({ images, title }: { images: string[]; title: st
             <span className="gallery-empty-text">Esta publicación no incluye fotos</span>
           </div>
         )}
+        {images.length > 1 && (
+          <div className="ficha-gallery-side" aria-hidden="true">
+            {images.slice(1, 5).map((src, index) => (
+              <button key={src} type="button" className="ficha-gallery-tile"
+                      onClick={() => { setSelected(index + 1); setModal(true); }} tabIndex={-1}>
+                <PropertyImage src={src} alt="" />
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="surface overflow-hidden">
         {images.length > 1 && (
           <div className="ficha-gallery-thumbs flex gap-2 overflow-x-auto p-3" aria-label="Miniaturas de la galería">
             {images.map((src, index) => (

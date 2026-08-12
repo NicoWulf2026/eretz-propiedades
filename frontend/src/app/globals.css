@@ -1721,3 +1721,40 @@ body {
 .explorer-toolbar { box-shadow: none; border-block-end: 1px solid var(--border-subtle); }
 .explorer-toolbar::before { -webkit-backdrop-filter: none; backdrop-filter: none; background: #fff; }
 .site-header { box-shadow: none; border-block-end: 1px solid var(--border-subtle); }
+
+/* --- U4: galeria en mosaico 1+4 (medido: 613x459 + 4x 302x227, gap 8) --- */
+.ficha-gallery-mosaic {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .5rem;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.ficha-gallery-main {
+  display: block;
+  aspect-ratio: 4 / 3;
+  inline-size: 100%;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.ficha-gallery-side {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: .5rem;
+}
+.ficha-gallery-tile {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  aspect-ratio: 4 / 3;
+}
+.ficha-gallery-tile img { block-size: 100%; object-fit: cover; }
+/* Con menos de cinco fotos la principal toma todo el ancho. */
+.ficha-gallery-mosaic:not(:has(.ficha-gallery-side)) { grid-template-columns: 1fr; }
+@media (max-width: 900px) {
+  .ficha-gallery-mosaic { grid-template-columns: 1fr; }
+  .ficha-gallery-side { display: none; }
+}
+/* Titulo de ficha a la escala de la referencia (30px). */
+.detail-page h1 { font-size: 1.875rem; line-height: 2.25rem; }
