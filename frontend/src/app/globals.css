@@ -1585,3 +1585,101 @@ body {
   line-height: 1.55;
 }
 .detail-disclaimer strong { color: var(--navy); font-weight: 700; }
+
+/* ============================================================
+   ROOMIX-DERIVED FOUNDATIONS (U2)
+   Valores tomados de la medicion real de roomix.ai (ver
+   ROOMIX_VISUAL_AUDIT_V1.md). Se adopta su disciplina espacial y su
+   escala de control; la paleta sigue siendo la de ERETZ.
+   Esta capa reemplaza al sistema Liquid Glass como direccion principal:
+   sombras profundas, refraccion y superficies de vidrio quedan neutralizadas
+   donde contradicen la referencia.
+   ============================================================ */
+
+:root {
+  /* Contenedor: casi ancho completo con margen chico (medido 1265 en 1280). */
+  --container-max: 1280px;
+  --container-gutter: 1rem;
+
+  /* Modulo de control: 36px en resultados, 44px en hero/CTA. */
+  --control-h: 2.25rem;
+  --control-h-lg: 2.75rem;
+  --card-action: 2.25rem;
+
+  /* Radio base 16px. */
+  --radius-xs: .5rem;
+  --radius-sm: .75rem;
+  --radius-md: 1rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.25rem;
+
+  /* Grilla de resultados: 3 columnas, gap 32. */
+  --grid-gap: 2rem;
+  --card-w: 400px;
+
+  /* Sombras hairline: la referencia casi no usa elevacion. */
+  --shadow-xs: 0 0 0 1px rgba(11, 39, 72, .05);
+  --shadow-sm: 0 1px 2px rgba(11, 39, 72, .06);
+  --shadow-md: 0 2px 8px rgba(11, 39, 72, .07);
+  --shadow-lg: 0 6px 20px rgba(11, 39, 72, .10);
+  --shadow-xl: 0 16px 40px rgba(11, 39, 72, .14);
+
+  /* Borde solido tenue en lugar del canto de vidrio. */
+  --border-subtle: #e6e9ee;
+  --border: #d8dde5;
+
+  /* Escala tipografica de la referencia. */
+  --text-xs: .75rem;
+  --text-sm: .8125rem;
+  --text-base: .875rem;
+  --text-body-detail: .9375rem;
+  --lh-detail: 1.9;
+  --text-lg: 1.125rem;
+  --text-xl: 1.5rem;
+  --text-h2: 2.25rem;
+
+  /* Offsets sticky: header y barra de busqueda son dos capas. */
+  --header-h: 4rem;
+  --searchbar-h: 4.5rem;
+}
+
+.container { width: min(100% - (var(--container-gutter) * 2), var(--container-max)); }
+
+/* Neutraliza el vidrio donde contradice la referencia: superficies solidas,
+   sin blur ni refraccion. Se conserva el blur solo en el header. */
+.property-card, .entity-card, .detail-panel, .context-bar, .filter-group,
+.field input, .field select, .field textarea, .secondary-button,
+.card-action-button, .chip {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: #fff;
+  border-color: var(--border-subtle);
+}
+.property-card, .entity-card, .detail-panel {
+  border-radius: var(--radius-md);
+  box-shadow: none;
+}
+.property-card:hover, .entity-card:hover {
+  transform: none;
+  border-color: var(--border);
+  box-shadow: var(--shadow-md);
+}
+.card-action-button {
+  inline-size: var(--card-action);
+  block-size: var(--card-action);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-sm);
+}
+.primary-button, .secondary-button {
+  min-block-size: var(--control-h-lg);
+  border-radius: var(--radius-sm);
+  box-shadow: none;
+}
+.primary-button:hover { transform: none; box-shadow: var(--shadow-sm); }
+.chip { min-block-size: var(--control-h); border-radius: var(--radius-pill); }
+
+/* Ficha: cuerpo mas chico y aireado, titulo mas contenido. */
+.detail-panel p, .detail-panel li {
+  font-size: var(--text-body-detail);
+  line-height: var(--lh-detail);
+}
