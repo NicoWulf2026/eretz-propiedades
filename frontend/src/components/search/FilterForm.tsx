@@ -12,11 +12,14 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 // Grupo de filtros con contador de activos. El contador se omite en 0 para no
 // agregar ruido, y el nombre accesible incluye el texto visible.
-function FilterGroup({ label, hint, count, children }: {
-  label: string; hint: string; count: number; children: React.ReactNode;
+// Un grupo es a la vez destino de la navegación lateral y panel de contenido.
+// Todos quedan en el DOM (no se desmontan) para que el formulario envíe siempre
+// el conjunto completo de filtros, aunque sólo uno esté visible.
+function FilterGroup({ id, label, hint, count, children }: {
+  id: string; label: string; hint: string; count: number; children: React.ReactNode;
 }) {
   return (
-    <fieldset className="filter-group">
+    <fieldset className="filter-group" id={`filter-group-${id}`} data-group={id}>
       <legend className="filter-group-legend">
         <span className="filter-group-name">{label}</span>
         {count > 0 ? <span className="filter-group-count">{count}</span> : null}
@@ -24,6 +27,35 @@ function FilterGroup({ label, hint, count, children }: {
       </legend>
       <div className="filter-grid">{children}</div>
     </fieldset>
+  );
+}
+
+// Navegación lateral de categorías: cada entrada lleva su contador propio y el
+// subtítulo que describe qué contiene, como en la referencia.
+function FilterNav({ counts, active, onSelect }: {
+  counts: Record<string, number>; active: string; onSelect: (id: string) => void;
+}) {
+  return (
+    <nav className="filter-nav" aria-label="Categorías de filtros">
+      {FILTER_GROUPS.map((group) => {
+        const count = counts[group.id] ?? 0;
+        return (
+          <button
+            key={group.id}
+            type="button"
+            className={`filter-nav-item${active === group.id ? " is-active" : ""}`}
+            aria-current={active === group.id ? "true" : undefined}
+            onClick={() => onSelect(group.id)}
+          >
+            <span className="filter-nav-label">
+              {group.label}
+              {count > 0 ? <span className="filter-group-count">{count}</span> : null}
+            </span>
+            <span className="filter-nav-hint">{group.hint}</span>
+          </button>
+        );
+      })}
+    </nav>
   );
 }
 
@@ -74,7 +106,10 @@ function QuickSelectors({ filters }: { filters: PropertyFilters }) {
 
 // Campos avanzados (compartidos por modal y panel fijado). Solo filtros con
 // respaldo de datos reales del catálogo público (ver DESKTOP_FILTER_MATRIX.md).
-export function AdvancedFilterFields({ filters }: { filters: PropertyFilters }) {
+// `active` lo consume el contenedor via data-active: la visibilidad del grupo se
+// resuelve en CSS para que todos los campos sigan en el DOM y el formulario
+// envie siempre el conjunto completo de filtros.
+export function AdvancedFilterFields({ filters }: { filters: PropertyFilters; active?: string }) {
   const counts = filterGroupCounts(filters);
   return (
     <>
@@ -84,19 +119,19 @@ export function AdvancedFilterFields({ filters }: { filters: PropertyFilters }) 
           <input type="hidden" name="cerca_lng" value={filters.near.lng} />
         </>
       ) : null}
-      <FilterGroup label={FILTER_GROUPS[0].label} hint={FILTER_GROUPS[0].hint} count={counts.ubicacion}>
+      <FilterGroup id="ubicacion" label={FILTER_GROUPS[0].label} hint={FILTER_GROUPS[0].hint} count={counts.ubicacion}>
         <Field label="Provincia"><input name="provincia" defaultValue={filters.province} placeholder="Buenos Aires" /></Field>
         <Field label="Ciudad"><input name="ciudad" defaultValue={filters.city} placeholder="Córdoba" /></Field>
         <Field label="Barrio o localidad"><input name="barrio" defaultValue={filters.neighborhood} placeholder="Palermo" /></Field>
         <Field label="Varias ubicaciones (separá con comas)"><input name="ubicaciones" defaultValue={filters.locations.join(", ")} placeholder="Palermo, Belgrano, Núñez" /></Field>
       </FilterGroup>
-      <FilterGroup label={FILTER_GROUPS[1].label} hint={FILTER_GROUPS[1].hint} count={counts.precio}>
+      <FilterGroup id="precio" label={FILTER_GROUPS[1].label} hint={FILTER_GROUPS[1].hint} count={counts.precio}>
         <Field label="Moneda"><select name="moneda" defaultValue={filters.currency}><option value="">Cualquiera</option><option>USD</option><option>ARS</option><option>EUR</option><option>UYU</option></select></Field>
         <Field label="Precio mínimo"><input name="precio_min" inputMode="numeric" type="number" min="0" defaultValue={filters.minPrice ?? ""} /></Field>
         <Field label="Precio máximo"><input name="precio_max" inputMode="numeric" type="number" min="0" defaultValue={filters.maxPrice ?? ""} /></Field>
         <Field label="Precio"><select name="precio" defaultValue={filters.priceMode}><option value="">Todas</option><option value="with">Con precio publicado</option><option value="consult">A consultar</option></select></Field>
       </FilterGroup>
-      <FilterGroup label={FILTER_GROUPS[2].label} hint={FILTER_GROUPS[2].hint} count={counts.caracteristicas}>
+      <FilterGroup id="caracteristicas" label={FILTER_GROUPS[2].label} hint={FILTER_GROUPS[2].hint} count={counts.caracteristicas}>
         <Field label="Ambientes mín."><input name="ambientes" type="number" min="1" max="30" defaultValue={filters.minRooms ?? ""} /></Field>
         <Field label="Dormitorios mín."><input name="dormitorios" type="number" min="1" max="30" defaultValue={filters.minBedrooms ?? ""} /></Field>
         <Field label="Baños mín."><input name="banos" type="number" min="1" max="20" defaultValue={filters.minBathrooms ?? ""} /></Field>
@@ -107,7 +142,7 @@ export function AdvancedFilterFields({ filters }: { filters: PropertyFilters }) 
           <label className="check"><input name="imagenes" value="1" type="checkbox" defaultChecked={filters.hasImages} /> Con imágenes</label>
         </div>
       </FilterGroup>
-      <FilterGroup label={FILTER_GROUPS[3].label} hint={FILTER_GROUPS[3].hint} count={counts.publicacion}>
+      <FilterGroup id="publicacion" label={FILTER_GROUPS[3].label} hint={FILTER_GROUPS[3].hint} count={counts.publicacion}>
         <Field label="Inmobiliaria o publicador"><input name="publicador" defaultValue={filters.publisher} placeholder="Nombre" /></Field>
         {/* Apto crédito: infraestructura tri-state lista (parse/query NULL-safe/chip),
             pero el control se oculta mientras apto_credito sea ~100% NULL en el
@@ -134,6 +169,7 @@ export function FilterForm({
   onUnpin?: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [activeGroup, setActiveGroup] = useState<string>(FILTER_GROUPS[0].id);
   const activeCount = activeChips(filters).length;
   const panelRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
@@ -197,16 +233,25 @@ export function FilterForm({
       <button className="filter-backdrop" type="button" aria-label="Cerrar filtros" onClick={closePanel} />
       <div id="advanced-filters" ref={panelRef} className="filter-panel is-open" role="dialog" aria-modal="true" aria-label="Filtros de propiedades">
         <div className="filter-panel-header">
-          <div><p className="eyebrow">Afinar búsqueda</p><h2>Filtros</h2></div>
+          <h2>Filtros{activeCount ? <span className="filter-panel-count">{activeCount} activos</span> : null}</h2>
           <div className="filter-panel-header-actions">
             {onPin ? <button type="button" className="secondary-button" onClick={() => { onPin(); closePanel(); }}>Fijar panel</button> : null}
             <button className="icon-button" type="button" aria-label="Cerrar filtros" onClick={closePanel}>×</button>
           </div>
         </div>
-        <AdvancedFilterFields filters={filters} />
-        <div className="filter-panel-actions">
-          <a href={action} className="secondary-button">Restablecer</a>
-          <button className="primary-button" type="submit">Ver resultados</button>
+        {/* Master-detail: la navegación de categorías queda a la izquierda con las
+            acciones al pie, y el contenido del grupo elegido a la derecha. */}
+        <div className="filter-panel-body">
+          <div className="filter-panel-aside">
+            <FilterNav counts={filterGroupCounts(filters)} active={activeGroup} onSelect={setActiveGroup} />
+            <div className="filter-panel-actions">
+              <a href={action} className="secondary-button">Limpiar</a>
+              <button className="primary-button" type="submit">Aplicar</button>
+            </div>
+          </div>
+          <div className="filter-panel-content" data-active={activeGroup}>
+            <AdvancedFilterFields filters={filters} active={activeGroup} />
+          </div>
         </div>
       </div>
       </> : null}

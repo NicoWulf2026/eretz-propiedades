@@ -2140,3 +2140,181 @@ a:hover { color: #dcb0ff; }
   color: #fff !important;
   border-color: var(--accent) !important;
 }
+
+/* ============================================================
+   U8 — PANEL DE FILTROS (composicion medida en la referencia)
+   Overlay centrado rgba(0,0,0,.5) con padding 16 y blur. Dentro, master-detail:
+   navegacion de categorias de ~235px con sus acciones al pie, y panel de
+   contenido a la derecha. Categorias de 55-61px con radio 14, opciones en
+   pildoras de 31px (radio 8) y tarjetas de 54px (radio 14), titulos de grupo a
+   12px/600, cabecera 20px/700 y boton de cerrar circular de 36px.
+   ============================================================ */
+
+/* El panel deja de ser un drawer lateral y pasa a modal centrado. */
+.filter-panel {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  inline-size: auto;
+  translate: none;
+  display: none;
+  grid-template-rows: auto 1fr;
+  inline-size: min(100% - 2rem, 1100px);
+  block-size: min(100% - 4rem, 680px);
+  margin: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-xl);
+  overflow: hidden;
+  padding: 0;
+}
+.filter-panel.is-open { display: grid; visibility: visible; }
+.filter-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-modal) - 1);
+  background: rgba(0, 0, 0, .5);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  border: 0;
+}
+
+.filter-panel-header {
+  position: static;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin: 0;
+  padding: var(--space-4) var(--space-5);
+  border-block-end: 1px solid var(--border-subtle);
+  background: transparent;
+}
+.filter-panel-header h2 {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -.01em;
+}
+.filter-panel-count {
+  font-size: .75rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+.filter-panel-header-actions .icon-button {
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  border-radius: var(--radius-pill);
+}
+
+/* Dos columnas: navegacion + contenido. */
+.filter-panel-body {
+  display: grid;
+  grid-template-columns: 235px minmax(0, 1fr);
+  min-block-size: 0;
+}
+.filter-panel-aside {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border-inline-end: 1px solid var(--border-subtle);
+  min-block-size: 0;
+}
+.filter-nav { display: flex; flex-direction: column; gap: .35rem; overflow-y: auto; }
+.filter-nav-item {
+  display: flex;
+  flex-direction: column;
+  gap: .15rem;
+  padding: .6rem .75rem;
+  border: 1px solid transparent;
+  border-radius: .875rem;
+  background: transparent;
+  color: var(--text-secondary);
+  text-align: start;
+  cursor: pointer;
+  transition: background 150ms var(--ease-out), color 150ms var(--ease-out);
+}
+.filter-nav-item:hover { background: var(--surface-translucent); color: var(--text); }
+.filter-nav-item.is-active {
+  background: var(--surface-translucent-strong);
+  border-color: var(--accent-border);
+  color: var(--text);
+}
+.filter-nav-label {
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  font-size: .875rem;
+  font-weight: 600;
+}
+.filter-nav-hint { font-size: .75rem; color: var(--muted); line-height: 1.35; }
+
+/* Contenido: solo el grupo activo es visible; el resto sigue en el DOM para que
+   el formulario envie el conjunto completo de filtros. */
+.filter-panel-content { overflow-y: auto; padding: var(--space-5); min-block-size: 0; }
+.filter-panel-content .filter-group { display: none; border: 0; padding: 0; margin: 0; background: transparent; }
+.filter-panel-content[data-active="ubicacion"] #filter-group-ubicacion,
+.filter-panel-content[data-active="precio"] #filter-group-precio,
+.filter-panel-content[data-active="caracteristicas"] #filter-group-caracteristicas,
+.filter-panel-content[data-active="publicacion"] #filter-group-publicacion { display: block; }
+.filter-panel-content .filter-group-legend { margin-block-end: var(--space-4); }
+.filter-panel-content .filter-group-name { font-size: 1.125rem; font-weight: 600; }
+.filter-panel-content .field span {
+  font-size: .75rem;
+  font-weight: 600;
+  letter-spacing: .01em;
+  color: var(--text-secondary);
+}
+.filter-panel-content .field input,
+.filter-panel-content .field select,
+.filter-panel-content .field textarea { min-block-size: var(--control-h); border-radius: .5rem; }
+
+/* Acciones: Aplicar con forma de pildora, Limpiar rectangular. La jerarquia se
+   apoya en la forma ademas del color, como en la referencia. */
+.filter-panel-aside .filter-panel-actions {
+  position: static;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .5rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.filter-panel-aside .filter-panel-actions .secondary-button,
+.filter-panel-aside .filter-panel-actions .primary-button {
+  min-inline-size: 0;
+  min-block-size: var(--control-h);
+  margin: 0;
+  order: 0;
+  font-size: .8125rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.filter-panel-aside .filter-panel-actions .secondary-button { border-radius: .875rem; }
+.filter-panel-aside .filter-panel-actions .primary-button { border-radius: var(--radius-pill); }
+
+@media (max-width: 860px) {
+  .filter-panel {
+    inline-size: 100%;
+    block-size: 100%;
+    border-radius: 0;
+    border: 0;
+  }
+  .filter-panel-body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+  .filter-panel-aside {
+    flex-direction: column;
+    border-inline-end: 0;
+    border-block-end: 1px solid var(--border-subtle);
+  }
+  .filter-nav { flex-direction: row; overflow-x: auto; gap: .4rem; }
+  .filter-nav-item { flex: 0 0 auto; }
+  .filter-nav-hint { display: none; }
+}
