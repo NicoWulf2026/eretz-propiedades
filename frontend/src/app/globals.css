@@ -954,3 +954,268 @@ footer nav a {
   margin-inline-end: auto;
   font-size: .9rem;
 }
+
+/* ============================================================
+   ERETZ LIQUID GLASS V1
+   Vidrio controlado sobre superficies mayormente solidas (~75/25).
+   El glass define capas flotantes; el contenido de lectura sigue solido.
+   ============================================================ */
+
+:root {
+  /* Tres niveles de vidrio: 1 ambiental, 2 estructural, 3 flotante. */
+  --glass-1: rgba(252, 253, 255, .70);
+  --glass-2: rgba(252, 253, 255, .84);
+  --glass-3: rgba(255, 255, 255, .93);
+  --glass-blur-1: 10px;
+  --glass-blur-2: 16px;
+  --glass-blur-3: 24px;
+  --glass-border: rgba(11, 39, 72, .09);
+  --glass-shadow-1: 0 1px 2px rgba(11, 39, 72, .04), 0 4px 14px rgba(11, 39, 72, .045);
+  --glass-shadow-2: 0 10px 30px rgba(11, 39, 72, .09), 0 2px 6px rgba(11, 39, 72, .05);
+  --motion-glass: 170ms;
+}
+
+/* Fondo con una deriva tonal minima: hace que blanco y vidrio se separen
+   solos, sin decoracion. */
+body {
+  background-image: linear-gradient(178deg, #f7f9fc 0%, var(--paper) 46%, #eef2f7 100%);
+  background-attachment: fixed;
+}
+
+/* --- Header: capa ambiental, misma altura --- */
+.site-header {
+  background: var(--glass-1);
+  -webkit-backdrop-filter: saturate(170%) blur(var(--glass-blur-2));
+  backdrop-filter: saturate(170%) blur(var(--glass-blur-2));
+  border-block-end: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow-1), var(--glass-highlight);
+}
+
+/* --- Toolbar: se separa del header por tono, no por otra linea dura --- */
+.explorer-toolbar::before {
+  background: var(--glass-2);
+  -webkit-backdrop-filter: saturate(170%) blur(var(--glass-blur-2));
+  backdrop-filter: saturate(170%) blur(var(--glass-blur-2));
+}
+.explorer-toolbar { box-shadow: var(--glass-shadow-1); }
+
+/* --- Buscador: material, no decorativo --- */
+.explorer-primary-search input,
+.explorer-primary-search select,
+.nl-search input {
+  background: var(--glass-3);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--glass-highlight);
+  transition: background var(--motion-glass) var(--ease-out),
+              border-color var(--motion-glass) var(--ease-out),
+              box-shadow var(--motion-glass) var(--ease-out);
+}
+.explorer-primary-search input:hover,
+.explorer-primary-search select:hover { border-color: rgba(11, 39, 72, .16); }
+.explorer-primary-search input:focus,
+.explorer-primary-search select:focus,
+.nl-search input:focus {
+  background: #fff;
+  border-color: rgba(33, 102, 165, .42);
+  box-shadow: var(--glass-highlight), 0 0 0 3px rgba(33, 102, 165, .13);
+  outline: none;
+}
+
+/* --- Autocomplete: capa flotante de nivel 3 --- */
+.autocomplete-panel, .search-suggestions {
+  background: var(--glass-3);
+  -webkit-backdrop-filter: saturate(180%) blur(var(--glass-blur-3));
+  backdrop-filter: saturate(180%) blur(var(--glass-blur-3));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--glass-shadow-2), var(--glass-highlight);
+  animation: glass-rise var(--motion-glass) var(--ease-out);
+}
+@keyframes glass-rise { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+/* --- Selector de seis modos: contenedor de vidrio, activo como superficie interna --- */
+.view-mode-tabs, .explorer-view-tabs {
+  background: var(--glass-1);
+  -webkit-backdrop-filter: blur(var(--glass-blur-1));
+  backdrop-filter: blur(var(--glass-blur-1));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-pill);
+  padding: .22rem;
+  box-shadow: var(--glass-highlight);
+}
+.view-mode-tab, .explorer-view-tab {
+  border: 0;
+  background: transparent;
+  border-radius: var(--radius-pill);
+  transition: background var(--motion-glass) var(--ease-out), color var(--motion-glass) var(--ease-out), box-shadow var(--motion-glass) var(--ease-out);
+}
+.view-mode-tab:hover, .explorer-view-tab:hover { background: rgba(255, 255, 255, .6); }
+.view-mode-tab.is-active, .explorer-view-tab.is-active {
+  background: #fff;
+  color: var(--navy);
+  box-shadow: var(--shadow-xs), var(--glass-highlight);
+}
+
+/* --- Chips --- */
+.chip {
+  background: var(--glass-2);
+  -webkit-backdrop-filter: blur(var(--glass-blur-1));
+  backdrop-filter: blur(var(--glass-blur-1));
+  border-color: var(--glass-border);
+  transition: background var(--motion-glass) var(--ease-out), border-color var(--motion-glass) var(--ease-out);
+}
+.chip:hover { background: #fff; border-color: rgba(33, 102, 165, .28); }
+
+/* --- Barra de contexto: editorial, no dashboard --- */
+.context-bar {
+  background: var(--glass-2);
+  -webkit-backdrop-filter: saturate(165%) blur(var(--glass-blur-1));
+  backdrop-filter: saturate(165%) blur(var(--glass-blur-1));
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow-1), var(--glass-highlight);
+}
+
+/* --- Panel de filtros: superficie de alta opacidad --- */
+.filter-panel {
+  background: var(--glass-3);
+  -webkit-backdrop-filter: saturate(175%) blur(var(--glass-blur-3));
+  backdrop-filter: saturate(175%) blur(var(--glass-blur-3));
+  border-inline-start: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-xl);
+}
+.filter-backdrop { -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); background: rgba(11, 39, 72, .18); }
+
+/* Fix del legend: con float el titulo fluye dentro del fieldset en vez de
+   montarse sobre su borde superior. Mantiene fieldset/legend reales. */
+.filter-group { padding-block-start: var(--space-3); }
+.filter-group-legend {
+  float: inline-start;
+  inline-size: 100%;
+  padding-inline: 0;
+  margin-block-end: var(--space-3);
+}
+.filter-group-legend + * { clear: both; }
+.filter-group-count {
+  background: linear-gradient(180deg, var(--blue) 0%, var(--navy) 100%);
+  box-shadow: 0 1px 2px rgba(11, 39, 72, .22), inset 0 1px 0 rgba(255, 255, 255, .28);
+}
+
+/* --- Footer del panel: vidrio con separacion propia --- */
+.filter-panel-actions {
+  background: var(--glass-3);
+  -webkit-backdrop-filter: saturate(175%) blur(var(--glass-blur-2));
+  backdrop-filter: saturate(175%) blur(var(--glass-blur-2));
+  border-block-start: 1px solid var(--glass-border);
+  box-shadow: 0 -6px 18px rgba(11, 39, 72, .05);
+}
+
+/* --- Mapa: integrado, no incrustado --- */
+.leaflet-container { background: #eaeff5; }
+.leaflet-bar a, .leaflet-control-zoom a {
+  background: var(--glass-3);
+  -webkit-backdrop-filter: blur(var(--glass-blur-2));
+  backdrop-filter: blur(var(--glass-blur-2));
+  border-color: var(--glass-border);
+  color: var(--navy);
+  box-shadow: var(--glass-highlight);
+  transition: background var(--motion-glass) var(--ease-out);
+}
+.leaflet-bar a:hover, .leaflet-control-zoom a:hover { background: #fff; }
+.leaflet-bar { box-shadow: var(--glass-shadow-1); border-radius: var(--radius-sm); overflow: hidden; }
+
+/* --- "Buscar en esta zona": pieza flotante caracteristica --- */
+.map-search-area, .map-area-button {
+  background: var(--glass-3);
+  -webkit-backdrop-filter: saturate(180%) blur(var(--glass-blur-3));
+  backdrop-filter: saturate(180%) blur(var(--glass-blur-3));
+  border: 1px solid rgba(33, 102, 165, .22);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--glass-shadow-2), var(--glass-highlight);
+  transition: transform var(--motion-fast) var(--ease-out), box-shadow var(--motion-glass) var(--ease-out), background var(--motion-glass) var(--ease-out);
+}
+.map-search-area:hover, .map-area-button:hover { transform: translateY(-1px); background: #fff; }
+.map-search-area:active, .map-area-button:active { transform: scale(.98); }
+
+/* Zona aplicada: informativa y neutral, nunca warning. */
+.map-zone-applied, .zone-chip {
+  background: var(--glass-3);
+  -webkit-backdrop-filter: blur(var(--glass-blur-2));
+  backdrop-filter: blur(var(--glass-blur-2));
+  border: 1px solid rgba(33, 102, 165, .20);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--glass-shadow-1);
+}
+
+/* --- Cards: solidas. Solo se refina borde, radio, sombra y hover. --- */
+.property-card, .entity-card {
+  border-radius: var(--radius-md);
+  border-color: var(--glass-border);
+  box-shadow: var(--shadow-xs);
+  transition: transform var(--motion-glass) var(--ease-out),
+              box-shadow var(--motion-glass) var(--ease-out),
+              border-color var(--motion-glass) var(--ease-out);
+}
+.property-card:hover, .entity-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: rgba(33, 102, 165, .22);
+}
+
+/* Badges sobre imagen: unico glass permitido dentro de la card. */
+.card-visited-badge {
+  -webkit-backdrop-filter: saturate(170%) blur(var(--glass-blur-1));
+  backdrop-filter: saturate(170%) blur(var(--glass-blur-1));
+  box-shadow: var(--glass-highlight);
+}
+.card-action-button {
+  background: var(--glass-3);
+  -webkit-backdrop-filter: blur(var(--glass-blur-1));
+  backdrop-filter: blur(var(--glass-blur-1));
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-highlight);
+  transition: background var(--motion-glass) var(--ease-out), transform var(--motion-fast) var(--ease-out);
+}
+.card-action-button:hover { background: #fff; transform: translateY(-1px); }
+.card-action-button:active { transform: scale(.96); }
+
+/* --- Ficha --- */
+.detail-panel { border-radius: var(--radius-md); border-color: var(--glass-border); box-shadow: var(--shadow-xs); }
+
+/* Botones: profundidad minima y respuesta al presionar. */
+.primary-button, .secondary-button {
+  transition: transform var(--motion-fast) var(--ease-out), box-shadow var(--motion-glass) var(--ease-out), background var(--motion-glass) var(--ease-out);
+}
+.primary-button { box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255, 255, 255, .14); }
+.primary-button:hover { transform: translateY(-1px); box-shadow: var(--shadow-md), inset 0 1px 0 rgba(255, 255, 255, .14); }
+.primary-button:active, .secondary-button:active { transform: scale(.985); }
+.secondary-button {
+  background: var(--glass-3);
+  -webkit-backdrop-filter: blur(var(--glass-blur-1));
+  backdrop-filter: blur(var(--glass-blur-1));
+  border-color: var(--glass-border);
+  box-shadow: var(--glass-highlight);
+}
+.secondary-button:hover { background: #fff; border-color: rgba(33, 102, 165, .26); }
+
+/* Sin backdrop-filter: todo cae a superficies solidas legibles. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .site-header, .explorer-toolbar::before, .context-bar, .filter-panel,
+  .filter-panel-actions, .autocomplete-panel, .search-suggestions,
+  .map-search-area, .map-area-button, .map-zone-applied, .zone-chip,
+  .card-action-button, .secondary-button, .view-mode-tabs, .chip,
+  .leaflet-bar a, .leaflet-control-zoom a {
+    background: var(--surface);
+  }
+}
+
+/* Respeta la preferencia de menos movimiento. */
+@media (prefers-reduced-motion: reduce) {
+  .property-card, .entity-card, .primary-button, .secondary-button,
+  .card-action-button, .map-search-area, .map-area-button {
+    transition: none;
+  }
+  .property-card:hover, .entity-card:hover, .primary-button:hover,
+  .card-action-button:hover, .map-search-area:hover { transform: none; }
+  .autocomplete-panel, .search-suggestions { animation: none; }
+}
