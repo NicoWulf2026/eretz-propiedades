@@ -2130,3 +2130,13 @@ a:hover { color: #dcb0ff; }
 .bg-\[\#eef5fb\] { background-color: var(--accent-surface) !important; }
 .text-\[\#0b2748\] { color: var(--text) !important; }
 .text-\[\#2166a5\] { color: var(--accent-soft) !important; }
+
+/* U7d — El violeta claro es color de texto sobre oscuro; como relleno con
+   texto blanco da 2.69:1. Los estados activos usan el violeta de relleno. */
+.density-toggle .is-active,
+.density-toggle button[aria-pressed="true"],
+[class*="toggle"] .is-active {
+  background: var(--accent) !important;
+  color: #fff !important;
+  border-color: var(--accent) !important;
+}
