@@ -1,12 +1,23 @@
+import { displayableImages } from "@/lib/image-quality";
 import type {
   Property,
   PropertyCurrency,
   PropertyOperation,
+  PropertyStatus,
   PropertyType,
   QualitySignals,
   SupabaseProperty,
 } from "@/types/property";
 import { safeExternalUrl } from "@/lib/safe-url";
+
+// Preserva el estado real de scraping. No inventa disponibilidad: cualquier estado
+// distinto de "activa" que el Quality Gate autorice se conserva como no confirmado.
+export function normalizeStatus(estado: string | null | undefined): PropertyStatus {
+  const value = (estado ?? "").trim().toLowerCase();
+  if (value === "activa") return "activa";
+  if (value === "no_detectada_en_ultimo_scraping") return "no_detectada_en_ultimo_scraping";
+  return "desconocida";
+}
 
 const blockedImages = [
   "static.tokkobroker.com/tfw/img/prop-icons",
@@ -84,6 +95,11 @@ function validImage(value: unknown): value is string {
   return !blockedImages.some((pattern) => normalized.includes(pattern));
 }
 
+function safeEmail(value: unknown): string | null {
+  const email = cleanText(value).toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 254 ? email : null;
+}
+
 function qualitySignals(item: SupabaseProperty, images: string[]): QualitySignals {
   const title = cleanText(item.titulo);
   return {
@@ -99,7 +115,13 @@ function qualitySignals(item: SupabaseProperty, images: string[]): QualitySignal
 }
 
 export function mapSupabasePropertyToProperty(item: SupabaseProperty): Property {
-  const images = Array.from(new Set((item.imagenes ?? []).filter(validImage)));
+  // `rawImages` conserva el dato de origen tal cual llegó. `images` es lo que se
+  // muestra: se descartan los recursos que no representan la propiedad (tiles de
+  // mapa, Open Graph del home, samples de theme, logos del publicador...), que el
+  // histórico almacenó antes de que existiera el detector de ingesta. El frontend
+  // no clasifica; recibe la lista ya depurada.
+  const rawImages = Array.from(new Set((item.imagenes ?? []).filter(validImage)));
+  const images = displayableImages(rawImages, cleanText(item.publisher_name) || null);
   const quality = qualitySignals(item, images);
   const rawType = cleanText(item.tipo_propiedad) || null;
   const normalizedTitle = cleanText(item.titulo).toLowerCase();
@@ -112,6 +134,25 @@ export function mapSupabasePropertyToProperty(item: SupabaseProperty): Property 
   return {
     id: String(item.id),
     agencyId: item.inmobiliaria_id == null ? null : String(item.inmobiliaria_id),
+    publisher: cleanText(item.publisher_name)
+      ? {
+          id: item.inmobiliaria_id == null ? null : String(item.inmobiliaria_id),
+          name: cleanText(item.publisher_name),
+          phone: cleanText(item.publisher_phone) || cleanText(item.agente_telefono) || null,
+          email: safeEmail(item.publisher_email),
+          website: safeExternalUrl(item.publisher_website),
+          verified: typeof item.publisher_verified === "boolean" ? item.publisher_verified : null,
+        }
+      : cleanText(item.agente_nombre)
+        ? {
+            id: null,
+            name: cleanText(item.agente_nombre),
+            phone: cleanText(item.agente_telefono) || null,
+            email: null,
+            website: null,
+            verified: null,
+          }
+        : null,
     sourceUrl: safeExternalUrl(item.url),
     title: quality.hasValidTitle ? cleanText(item.titulo) : "Propiedad sin título",
     description: quality.hasDescription ? cleanText(item.descripcion) : null,
@@ -150,7 +191,7 @@ export function mapSupabasePropertyToProperty(item: SupabaseProperty): Property 
     publishedAt: item.fecha_publicacion,
     createdAt: item.created_at,
     updatedAt: item.updated_at,
-    status: "activa",
+    status: normalizeStatus(item.estado),
     mortgageEligible: item.apto_credito === true,
     quality,
   };

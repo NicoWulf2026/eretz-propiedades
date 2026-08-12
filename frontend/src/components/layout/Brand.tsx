@@ -1,26 +1,22 @@
 import Link from "next/link";
 
+// Marca ERETZ (Identity V1): monograma en verde de marca + wordmark tipográfico
+// en Inter. No existe un logotipo oficial todavía —`public/brand/` sigue
+// pendiente en la documentación—, así que el wordmark se resuelve con la
+// tipografía del sistema en vez de inventar un símbolo.
+// `dark` invierte el monograma para fondos oscuros (footer/hero).
+// Sin aria-label: el nombre accesible sale del texto visible ("ERETZ
+// Propiedades"); un aria-label distinto disparaba label-content-name-mismatch.
 export function Brand({ dark = false }: { dark?: boolean }) {
   return (
-    <Link href="/" aria-label="ERETZ Propiedades, inicio" className="group inline-flex items-center gap-3">
-      <span
-        aria-hidden="true"
-        className={`relative grid size-10 place-items-center rounded-xl border text-sm font-black tracking-tight ${
-          dark
-            ? "border-white/20 bg-white text-[#0b2748]"
-            : "border-[#0b2748]/10 bg-[#0b2748] text-white"
-        }`}
-      >
+    <Link href="/" prefetch={false} className="brand focus-ring">
+      <span aria-hidden="true" className={`brand-mark${dark ? " is-dark" : ""}`}>
         E
-        <span className="absolute -bottom-1 size-2 rotate-45 bg-[#d6b66f]" />
       </span>
-      <span className={dark ? "text-white" : "text-[#0b2748]"}>
-        <span className="block text-lg font-black leading-none tracking-[0.12em]">ERETZ</span>
-        <span className="mt-1 block text-[10px] font-semibold uppercase tracking-[0.22em] opacity-70">
-          Propiedades
-        </span>
+      <span className={`brand-text${dark ? " is-dark" : ""}`}>
+        <span className="brand-word">ERETZ</span>
+        <span className="brand-sub">Propiedades</span>
       </span>
     </Link>
   );
 }
-

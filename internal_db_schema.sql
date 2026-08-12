@@ -1,5 +1,5 @@
 -- =============================================================================
--- InmoCapital - Internal DB Schema (Neon u otro Postgres dedicado al scraper)
+-- ERETZ Propiedades - Internal DB Schema (Neon u otro Postgres dedicado al scraper)
 -- =============================================================================
 -- Proposito
 -- ---------

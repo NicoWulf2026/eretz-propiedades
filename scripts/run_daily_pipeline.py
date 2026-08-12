@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Controlled daily orchestrator for the InmoCapital dual pipeline.
+"""Controlled daily orchestrator for the ERETZ Propiedades dual pipeline.
 
 This script coordinates existing scripts by subprocess. It does not reimplement
 scraping, validation, queue building, or Supabase publishing logic.

@@ -63,7 +63,7 @@ CITY_BOUNDS = {
     "capital federal": (-34.72, -34.52, -58.55, -58.32),
     "caba": (-34.72, -34.52, -58.55, -58.32),
     "ciudad autonoma de buenos aires": (-34.72, -34.52, -58.55, -58.32),
-    # Fix L — ciudades activas InmoCapital (validadas contra coordenadas reales del geocoding commit)
+    # Fix L — ciudades activas ERETZ Propiedades (validadas contra coordenadas reales del geocoding commit)
     # Rawson: excluye Trelew (~lon -65.31) y Puerto Madryn (~lat -42.76)
     "rawson": (-43.40, -43.25, -65.20, -65.00),
     # Playa Union: barrio costero adyacente a Rawson
@@ -1670,7 +1670,7 @@ def validate_applied_results(limit: int) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Geocoder de Inmocapital basado en cola Supabase")
+    parser = argparse.ArgumentParser(description="Geocoder de ERETZ Propiedades basado en cola Supabase")
     parser.add_argument("--limit", type=int, default=20, help="Cantidad maxima de propiedades a leer de v_next_geocoding_batch")
     parser.add_argument("--dry-run", action="store_true", help="Leer pendientes y mostrar acciones sin llamar proveedor ni guardar")
     parser.add_argument(

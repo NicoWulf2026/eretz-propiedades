@@ -18,10 +18,14 @@ describe("public frontend security", () => {
     expect(phoneLinks("123")).toEqual({ whatsapp: null, telephone: null });
   });
 
-  it("does not reference private backend credentials or RPCs", () => {
-    const service = readFileSync(join(process.cwd(), "src/lib/property-supabase-service.ts"), "utf8");
-    expect(service).not.toMatch(/service[_-]?role|DATABASE_URL|SUPABASE_SERVICE/i);
+  it("keeps the database adapter server-only and out of browser bundles", () => {
+    const service = readFileSync(join(process.cwd(), "src/lib/property-db-service.ts"), "utf8");
+    const config = readFileSync(join(process.cwd(), "next.config.ts"), "utf8");
+    const envTemplate = readFileSync(join(process.cwd(), ".env.local.example"), "utf8");
+    expect(service.startsWith('import "server-only"')).toBe(true);
+    expect(service).not.toMatch(/service[_-]?role|NEXT_PUBLIC_|SUPABASE_ANON/i);
     expect(service).not.toMatch(/rpc\s*\(/i);
+    expect(config).toContain('"connect-src \'self\'"');
+    expect(envTemplate).not.toMatch(/NEXT_PUBLIC_(SUPABASE|DATABASE)/);
   });
 });
-

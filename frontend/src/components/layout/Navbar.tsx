@@ -1,51 +1,80 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { usePathname } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import { Brand } from "@/components/layout/Brand";
 
 const items = [
-  { label: "Comprar", href: "/propiedades?operacion=venta" },
-  { label: "Alquilar", href: "/propiedades?operacion=alquiler" },
-  { label: "Propiedades", href: "/propiedades" },
-  { label: "Cómo funciona", href: "/#como-funciona" },
+  { label: "Explorar", href: "/" },
+  { label: "Inmobiliarias", href: "/inmobiliarias" },
+  { label: "Agentes", href: "/agentes" },
+];
+
+// Accesos personales (sin cuenta): viven en su propio grupo para no competir
+// con la navegación principal.
+const personal = [
+  { label: "Favoritos", href: "/favoritos" },
+  { label: "Colecciones", href: "/colecciones" },
+  { label: "Comparar", href: "/comparar" },
 ];
 
 export function Navbar() {
   const [open, setOpen] = useState(false);
+  const pathname = usePathname();
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: KeyboardEvent) => { if (event.key === "Escape") { setOpen(false); buttonRef.current?.focus(); } };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [open]);
+
+  const isActive = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
+
   return (
-    <header className="sticky top-0 z-[1000] border-b border-white/10 bg-[#071d35]/95 text-white backdrop-blur">
-      <nav className="container flex h-[72px] items-center justify-between" aria-label="Navegación principal">
-        <Brand dark />
-        <div className="hidden items-center gap-1 lg:flex">
+    <header className="site-header">
+      <nav className="site-header-inner container" aria-label="Navegación principal">
+        <Brand />
+        <div className="site-nav">
           {items.map((item) => (
-            <Link key={item.href} href={item.href} className="rounded-lg px-3 py-2 text-sm font-semibold text-white/75 hover:bg-white/10 hover:text-white">
+            <Link key={item.href} href={item.href} prefetch={false}
+              className={`nav-link${isActive(item.href) ? " is-active" : ""}`}
+              aria-current={isActive(item.href) ? "page" : undefined}>
               {item.label}
             </Link>
           ))}
-          <Link href="/contacto" className="nav-contact ml-2 rounded-lg bg-white px-4 py-2.5 text-sm font-bold hover:bg-[#f4e8cc]">
-            Contacto
-          </Link>
+          <span className="nav-divider" aria-hidden="true" />
+          {personal.map((item) => (
+            <Link key={item.href} href={item.href} prefetch={false}
+              className={`nav-link is-personal${isActive(item.href) ? " is-active" : ""}`}
+              aria-current={isActive(item.href) ? "page" : undefined}>
+              {item.label}
+            </Link>
+          ))}
         </div>
         <button
           type="button"
-          className="focus-ring grid size-11 place-items-center rounded-lg border border-white/15 lg:hidden"
+          ref={buttonRef}
+          className="nav-toggle focus-ring"
           aria-label={open ? "Cerrar menú" : "Abrir menú"}
           aria-expanded={open}
+          aria-controls="mobile-navigation"
           onClick={() => setOpen((value) => !value)}
         >
-          <span aria-hidden="true" className="text-xl">{open ? "×" : "☰"}</span>
+          <span aria-hidden="true">{open ? "×" : "☰"}</span>
         </button>
       </nav>
       {open && (
-        <div className="border-t border-white/10 bg-[#071d35] lg:hidden">
-          <div className="container flex flex-col py-3">
-            {items.map((item) => (
-              <Link key={item.href} href={item.href} onClick={() => setOpen(false)} className="rounded-lg px-3 py-3 text-base font-semibold text-white/85 hover:bg-white/10">
+        <div id="mobile-navigation" className="nav-mobile">
+          <div className="container nav-mobile-inner">
+            {[...items, ...personal].map((item) => (
+              <Link key={item.href} href={item.href} prefetch={false} onClick={() => setOpen(false)}
+                className={`nav-link${isActive(item.href) ? " is-active" : ""}`}>
                 {item.label}
               </Link>
             ))}
-            <Link href="/contacto" onClick={() => setOpen(false)} className="nav-contact mt-2 rounded-lg bg-white px-3 py-3 text-center font-bold">Contacto</Link>
+            <Link href="/privacidad" prefetch={false} onClick={() => setOpen(false)} className="nav-link">Privacidad</Link>
           </div>
         </div>
       )}

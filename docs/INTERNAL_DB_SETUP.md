@@ -39,7 +39,7 @@ El scraper escribe en una u otra base según corresponda. `propiedades` y
 
 1. Crear cuenta gratis en [neon.tech](https://neon.tech).
 2. Crear nuevo proyecto:
-   - Nombre sugerido: `inmocapital-scraper-internal`
+   - Nombre sugerido: `eretz-scraper-internal`
    - Región: la más cercana a tu Supabase actual (usualmente `aws-us-east-1`)
    - Postgres version: la más reciente disponible (16+)
 3. Una vez creado, anotar el **connection string** que muestra Neon. Tiene

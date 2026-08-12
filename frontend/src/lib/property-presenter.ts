@@ -1,4 +1,14 @@
-import type { Property, PropertyOperation, PropertyType } from "@/types/property";
+import type { Property, PropertyOperation, PropertyStatus, PropertyType } from "@/types/property";
+
+// Sólo "activa" es disponibilidad confirmada. El resto (autorizado por el Quality
+// Gate) se muestra con una indicación neutral, sin afirmar vigencia.
+export function isAvailabilityConfirmed(status: PropertyStatus) {
+  return status === "activa";
+}
+
+export function availabilityLabel(status: PropertyStatus): string | null {
+  return isAvailabilityConfirmed(status) ? null : "Disponibilidad no confirmada";
+}
 
 export const operationLabels: Record<PropertyOperation, string> = {
   venta: "Venta",
@@ -23,19 +33,19 @@ export const typeLabels: Record<PropertyType, string> = {
 
 const money = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 });
 
-export function propertyPrice(property: Property) {
+export function propertyPrice(property: Pick<Property, "price" | "currency">) {
   if (!property.price || !property.currency) return "Precio a consultar";
   return `${property.currency} ${money.format(property.price)}`;
 }
 
-export function propertyLocation(property: Property) {
+export function propertyLocation(property: Pick<Property, "neighborhood" | "city" | "province">) {
   const values = [property.neighborhood, property.city, property.province].filter(
     (value, index, all): value is string => Boolean(value) && all.indexOf(value) === index,
   );
   return values.length ? values.join(", ") : "Ubicación no especificada";
 }
 
-export function propertySpecs(property: Property) {
+export function propertySpecs(property: Pick<Property, "rooms" | "bedrooms" | "bathrooms" | "garages" | "totalArea" | "coveredArea">) {
   const specs: string[] = [];
   if (property.rooms) specs.push(`${property.rooms} amb.`);
   if (property.bedrooms) specs.push(`${property.bedrooms} dorm.`);
@@ -56,4 +66,3 @@ export function formatDate(value: string | null) {
     year: "numeric",
   }).format(date);
 }
-

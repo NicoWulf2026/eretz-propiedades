@@ -45,7 +45,7 @@ from scripts.image_quality import normalize_property_images
 
 # FASE 1 — Sprint A: ampliado con consultar y venta_y_alquiler.
 # Debe mantenerse en sync con build_publish_queue.py::VALID_OPERATIONS.
-VALID_OPERATIONS = {"venta", "alquiler", "alquiler_temporario", "consultar", "venta_y_alquiler"}
+VALID_OPERATIONS = {"venta", "alquiler", "alquiler_temporario", "consultar", "venta_y_alquiler", "desconocida"}
 
 QUEUE_SELECT_DRY_RUN_SQL = """
 SELECT

@@ -1,7 +1,18 @@
 export {
+  getAgentBySlug,
+  getAgentDirectory,
   getHomeInventory,
+  getOtherPublications,
+  getPriceHistory,
+  getPropertiesByAgency,
+  getPropertiesByAgent,
+  getPropertiesByIds,
   getPropertyById,
+  getRealEstateById,
+  realEstateExists,
+  getRealEstateDirectory,
   getRelatedProperties,
+  searchMap,
   searchProperties,
-} from "@/lib/property-supabase-service";
-
+  searchSuggestions,
+} from "@/lib/property-db-service";

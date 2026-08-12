@@ -8,13 +8,14 @@ type PaginationProps = {
   hasPrevious: boolean;
   nextCursor: string | null;
   previousCursor: string | null;
+  basePath?: string;
 };
 
-export function Pagination({ filters, hasNext, hasPrevious, nextCursor, previousCursor }: PaginationProps) {
+export function Pagination({ filters, hasNext, hasPrevious, nextCursor, previousCursor, basePath = "/" }: PaginationProps) {
   if (!hasNext && !hasPrevious) return null;
   const href = (page: number, cursor: string, direction: "next" | "prev") => {
     const params = filtersToSearchParams({ ...filters, page, cursor, direction });
-    return `/propiedades?${params.toString()}`;
+    return `${basePath}?${params.toString()}`;
   };
   return (
     <nav aria-label="Paginación" className="mt-10 flex items-center justify-between gap-4">

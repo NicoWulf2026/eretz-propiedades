@@ -5,6 +5,24 @@ y las publica desde Supabase a un frontend Next.js. El repositorio contiene el
 scraper Python, herramientas operativas y de calidad, migraciones SQL y el
 frontend público.
 
+## Estructura
+
+- `frontend/` — aplicación pública Next.js (App Router, TypeScript, Tailwind).
+- `scraper/` — scraper Python (Playwright) y pipelines de ingesta.
+- `scripts/` — herramientas operativas y de calidad.
+- `migrations/` y `supabase/migrations/` — migraciones SQL (historial preservado).
+- `tests/` — pruebas del backend/scraper (`python -m pytest`).
+- `docs/` — documentación operativa; `docs/obsidian/` conserva notas históricas.
+
+## Catálogo, Quality Gate y acceso
+
+- El catálogo público lo define un **Quality Gate privado** aplicado en la capa de
+  aplicación (server-only); es la única autoridad de visibilidad.
+- El acceso a la base es **server-only**; la **Data API de Supabase está OFF**.
+- El scraping productivo **no** se ejecuta desde el frontend.
+- El Preview está protegido por **Vercel Authentication** y permanece `noindex`.
+- **Production no forma parte de esta fase.**
+
 ## Estado de seguridad
 
 - Pipeline B y las escrituras en Neon están fuera del flujo autorizado.

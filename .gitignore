@@ -16,6 +16,7 @@ node_modules/
 
 # Local artifacts and temp files
 reports/
+!frontend/src/app/api/reports/
 backups/
 _scratch/
 scripts/_*

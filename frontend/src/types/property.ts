@@ -17,9 +17,94 @@ export type PropertyType =
   | "campo"
   | "otro";
 
-export type PropertyStatus = "activa";
+// El Quality Gate es la autoridad de visibilidad; `estado` refleja el estado real
+// de scraping y se preserva. Sólo "activa" es disponibilidad confirmada; el resto
+// se muestra como "Disponibilidad no confirmada" y ordena por debajo de las activas.
+export type PropertyStatus = "activa" | "no_detectada_en_ultimo_scraping" | "desconocida";
 export type PropertyCurrency = "USD" | "ARS" | "EUR" | "UYU";
-export type PropertySort = "recent" | "price_asc" | "price_desc" | "area_desc";
+export type PropertySort =
+  | "relevance"
+  | "recent"
+  | "price_asc"
+  | "price_desc"
+  | "area_desc"
+  | "rooms_desc"
+  | "price_m2_asc"
+  | "nearest";
+
+// Control ternario NULL-safe: "" = Cualquiera (no filtra), "si" = verdadero,
+// "no" = falso explícito, "sininfo" = dato ausente (NULL). NULL nunca es "no".
+export type TriState = "" | "si" | "no" | "sininfo";
+
+// Precio: "" = todas (nunca excluye "consultar"), "with" = con precio publicado,
+// "consult" = a consultar (sin precio).
+export type PriceMode = "" | "with" | "consult";
+
+export type GeoPoint = { lat: number; lng: number };
+
+// Zonas de búsqueda dibujadas en el mapa. OR entre zonas, AND con el resto.
+// (Polígono libre se difiere: requiere PostGIS point-in-polygon validado contra
+// la base viva; rectángulo y radio son aritmética lat/lng pura, testeable.)
+export type MapZone =
+  | { kind: "box"; north: number; east: number; south: number; west: number }
+  | { kind: "radius"; lat: number; lng: number; km: number };
+
+export type ExplorerMode = "map" | "balanced" | "results" | "map_only" | "results_only" | "analysis";
+
+export type PropertyPublisher = {
+  id: string | null;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  website: string | null;
+  verified: boolean | null;
+};
+
+export type ContactData = Pick<PropertyPublisher, "name" | "phone" | "email" | "website">;
+
+export type MapViewport = {
+  north: number;
+  east: number;
+  south: number;
+  west: number;
+  zoom: number;
+};
+
+export type MapMarker = {
+  kind: "property";
+  id: string;
+  latitude: number;
+  longitude: number;
+  price: number | null;
+  currency: PropertyCurrency | null;
+  title: string;
+  location: string;
+};
+
+export type MapCluster = {
+  kind: "cluster";
+  id: string;
+  latitude: number;
+  longitude: number;
+  count: number;
+};
+
+export type MapSearchResponse = {
+  points: Array<MapMarker | MapCluster>;
+  visibleCount: number;
+  scannedCount: number;
+  truncated: boolean;
+};
+
+export type SearchSuggestion = {
+  id: string;
+  label: string;
+  category: "id" | "provincia" | "ciudad" | "barrio" | "dirección" | "inmobiliaria" | "agente" | "tipo";
+  query: string;
+  // Navegación directa (p. ej. una coincidencia por ID ERETZ va a la ficha en
+  // lugar de rellenar el término de búsqueda).
+  href?: string;
+};
 
 export type QualitySignals = {
   hasValidTitle: boolean;
@@ -75,11 +160,17 @@ export type SupabaseProperty = {
   created_at: string | null;
   updated_at: string | null;
   apto_credito: boolean | null;
+  publisher_name?: string | null;
+  publisher_phone?: string | null;
+  publisher_email?: string | null;
+  publisher_website?: string | null;
+  publisher_verified?: boolean | null;
 };
 
 export type Property = {
   id: string;
   agencyId: string | null;
+  publisher: PropertyPublisher | null;
   sourceUrl: string | null;
   title: string;
   description: string | null;
@@ -130,6 +221,8 @@ export type PropertyFilters = {
   province: string;
   city: string;
   neighborhood: string;
+  locations: string[];
+  zones: MapZone[];
   minPrice: number | null;
   maxPrice: number | null;
   currency: "" | PropertyCurrency;
@@ -138,23 +231,90 @@ export type PropertyFilters = {
   minBathrooms: number | null;
   minGarages: number | null;
   minArea: number | null;
+  maxArea: number | null;
+  minCoveredArea: number | null;
+  minLandArea: number | null;
+  maxExpenses: number | null;
+  maxAge: number | null;
+  publisher: string;
+  recentDays: number | null;
   hasImages: boolean;
-  hasPrice: boolean;
+  priceMode: PriceMode;
+  hasLocation: boolean;
+  hasVideo: boolean;
+  hasFloorPlan: boolean;
+  mortgageState: TriState;
   sort: PropertySort;
+  near: GeoPoint | null;
   page: number;
   cursor: string;
   direction: "next" | "prev";
+  mode: ExplorerMode;
+  viewport: MapViewport | null;
+  selectedId: string;
 };
 
 export type PropertySearchResult = {
-  properties: Property[];
+  properties: PropertySummary[];
   count: number | null;
+  totalCount: number | null;
+  mapCount: number | null;
   page: number;
   pageSize: number;
   hasNext: boolean;
   hasPrevious: boolean;
   nextCursor: string | null;
   previousCursor: string | null;
-  source: "supabase" | "unconfigured" | "error";
+  source: "database" | "fixture" | "unconfigured" | "error";
   error: boolean;
+  invalidCursor: boolean;
 };
+
+export type PropertySummary = Pick<
+  Property,
+  | "id" | "agencyId" | "publisher" | "title" | "price" | "currency"
+  | "propertyType" | "rawPropertyType" | "operation" | "rooms" | "bedrooms"
+  | "bathrooms" | "garages" | "totalArea" | "coveredArea" | "address"
+  | "neighborhood" | "city" | "province" | "country" | "latitude" | "longitude"
+  | "images" | "publishedAt" | "updatedAt" | "status" | "mortgageEligible"
+  | "description" | "amenities"
+>;
+export type RealEstateSummary = {
+  id: string;
+  name: string;
+  slug: string;
+  verified: boolean;
+  website: string | null;
+  city: string | null;
+  province: string | null;
+  listingsCount: number;
+};
+
+export type RealEstateProfile = RealEstateSummary & {
+  phone: string | null;
+  email: string | null;
+};
+
+export type ClaimStatus = "pending" | "approved" | "rejected" | "needs_review";
+
+export type AgentSummary = {
+  slug: string;
+  name: string;
+  city: string | null;
+  province: string | null;
+  listingsCount: number;
+};
+
+export type AgentProfile = AgentSummary & {
+  phone: string | null;
+};
+
+export type PropertyDetail = Property;
+export type RelatedProperty = PropertySummary;
+export type SearchFilters = PropertyFilters;
+export type SearchCursor = string;
+export type SearchResponse = PropertySearchResult;
+export type PropertyLocation = Pick<
+  Property,
+  "address" | "neighborhood" | "city" | "province" | "country" | "latitude" | "longitude"
+>;
