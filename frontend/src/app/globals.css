@@ -1851,3 +1851,24 @@ body { background-image: none; background-color: #f7f8fa; }
 }
 .map-search-area:hover { background: var(--navy-700, #0a2240); }
 .map-search-area:active { transform: scale(.98); }
+
+/* ============================================================
+   U6 — DENSIDAD DE CARD
+   La referencia usa card de 400x275: la imagen ocupa algo mas de la mitad, no
+   la card entera. Sin un ratio explicito la media crecia hasta ~380px y se
+   perdia la capacidad de escanear varias propiedades de un vistazo.
+   ============================================================ */
+
+.property-card-media {
+  aspect-ratio: 16 / 10;
+  max-block-size: 13rem;
+}
+.property-card.is-compact .property-card-media,
+.density-compact .property-card-media {
+  aspect-ratio: 3 / 2;
+  max-block-size: 11rem;
+}
+.property-card-media img { block-size: 100%; object-fit: cover; }
+/* El placeholder sin foto respeta la misma altura que una imagen real. */
+.property-card-media .gallery-empty,
+.property-card-media [class*="no-disponible"] { block-size: 100%; }
