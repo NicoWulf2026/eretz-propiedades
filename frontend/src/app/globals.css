@@ -1554,3 +1554,44 @@ body {
   .primary-button:hover, .primary-button:active, .secondary-button:active,
   .card-action-button:active, .property-card:hover { transform: none; }
 }
+
+/* ============================================================
+   CIERRE DE DEFECTOS DE FICHA
+   ============================================================ */
+
+/* La nav de secciones es sticky y el contenido pasa por debajo. Las miniaturas
+   de la galeria son controles: si quedan a medias bajo la barra dejan de ser
+   alcanzables. Se les reserva el alto de la nav como margen de scroll y la
+   galeria deja de cruzar la barra a media altura. */
+.ficha-gallery-thumbs {
+  position: relative;
+  z-index: 1;
+  scroll-margin-block-start: calc(var(--nav-height) + 3.5rem);
+  padding-block-start: var(--space-2);
+}
+.ficha-gallery-thumbs button,
+.ficha-gallery-thumbs [role="button"] {
+  scroll-margin-block-start: calc(var(--nav-height) + 3.5rem);
+}
+/* La barra sticky se vuelve opaca al pegarse: el contenido que pasa por debajo
+   se lee como capa inferior y no como recorte. */
+.ficha-section-nav {
+  background: var(--glass-content-2, rgba(255, 255, 255, .985));
+  padding-block: var(--space-2);
+}
+
+/* Aviso legal de la ficha. Mantiene su semantica informativa -no es un warning-
+   y usa los tokens del sistema en vez de un amarillo plano fuera de escala. */
+.detail-disclaimer {
+  border-radius: var(--r-piece, 1.05rem);
+  border: 1px solid var(--glass-edge, rgba(11, 39, 72, .085));
+  background: var(--glass-content, rgba(255, 255, 255, .965));
+  -webkit-backdrop-filter: saturate(150%) blur(var(--glass-blur-content, 8px));
+  backdrop-filter: saturate(150%) blur(var(--glass-blur-content, 8px));
+  box-shadow: var(--edge-top), var(--edge-bottom);
+  padding: var(--space-4);
+  color: var(--text-secondary, #526276);
+  font-size: .78rem;
+  line-height: 1.55;
+}
+.detail-disclaimer strong { color: var(--navy); font-weight: 700; }
