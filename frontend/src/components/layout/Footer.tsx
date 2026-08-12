@@ -5,7 +5,7 @@ const email = "eretzpropiedades@gmail.com";
 
 export function Footer() {
   return (
-    <footer className="mt-auto border-t border-slate-200 bg-white">
+    <footer className="site-footer mt-auto border-t">
       <div className="container grid gap-10 py-12 md:grid-cols-[1.4fr_1fr_1fr]">
         <div>
           <Brand />

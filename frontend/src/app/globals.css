@@ -2089,3 +2089,44 @@ a:hover { color: #dcb0ff; }
 }
 .primary-button, .view-mode-tabs button.is-active, .filter-group-count,
 .map-search-area { background: var(--accent); }
+
+/* ============================================================
+   U7c — BARRIDO DE SUPERFICIES CLARAS RESIDUALES
+   Con la paleta oscura quedaban superficies en blanco (footer, panel de
+   contacto, alertas, mapa a pantalla completa, selector de coleccion) donde el
+   texto claro caia a 1.04:1. Se convierten al sistema.
+   ============================================================ */
+
+.site-footer {
+  background: var(--bg-deep);
+  border-color: var(--border-subtle);
+  color: var(--text-secondary);
+}
+.site-footer a { color: var(--text-secondary); }
+.site-footer a:hover { color: var(--accent-soft); }
+.site-footer h2, .site-footer h3, .site-footer strong { color: var(--text); }
+
+.alert { background: var(--surface-raised); color: var(--text); border-color: var(--border); }
+.alert-warning { background: #3a2a12; border-color: rgba(251, 191, 36, .3); color: #fbbf24; }
+
+.interactive-map.is-fullscreen { background: var(--bg-deep); }
+.collection-picker-panel { background: var(--surface-raised); border-color: var(--border); color: var(--text); }
+.gallery-close { background: var(--surface-overlay); color: var(--text); border: 1px solid var(--border); }
+.gallery-close:hover { background: var(--surface-raised); }
+.card-action-button:hover { background: var(--surface-translucent-strong); transform: none; }
+.leaflet-control-zoom a:hover { background: var(--surface-overlay) !important; color: var(--text) !important; }
+.map-search-area:hover { background: var(--accent-hover); }
+.brand-mark.is-dark { background: var(--accent); color: #fff; }
+.glass-strong { background: var(--surface-raised); }
+@supports not (backdrop-filter: blur(2px)) { .search-suggestions { background: var(--surface-raised); } }
+
+/* Utilidades claras de Tailwind que quedan en markup compartido. */
+.bg-white, .bg-slate-50, .bg-slate-100 { background-color: var(--surface) !important; }
+.text-slate-600, .text-slate-500, .text-slate-700 { color: var(--text-secondary) !important; }
+.text-slate-800, .text-slate-900 { color: var(--text) !important; }
+.border-slate-200, .border-slate-100 { border-color: var(--border-subtle) !important; }
+.bg-amber-50 { background-color: #3a2a12 !important; }
+.text-amber-900, .text-amber-950 { color: #fbbf24 !important; }
+.bg-\[\#eef5fb\] { background-color: var(--accent-surface) !important; }
+.text-\[\#0b2748\] { color: var(--text) !important; }
+.text-\[\#2166a5\] { color: var(--accent-soft) !important; }

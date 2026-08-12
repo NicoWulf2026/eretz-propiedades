@@ -92,7 +92,7 @@ export function PropertyGallery({ images, title }: { images: string[]; title: st
       </div>
       {modal && image && (
         <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Galería ampliada" className="fixed inset-0 z-[2000] grid place-items-center bg-black/90 p-4" onClick={() => setModal(false)}>
-          <button type="button" className="absolute right-4 top-4 grid size-12 place-items-center rounded-full bg-white text-2xl text-black" onClick={() => setModal(false)} aria-label="Cerrar galería">×</button>
+          <button type="button" className="gallery-close absolute right-4 top-4 grid size-12 place-items-center rounded-full text-2xl" onClick={() => setModal(false)} aria-label="Cerrar galería">×</button>
           <div className="h-[82vh] w-full max-w-6xl" onClick={(event) => event.stopPropagation()}>
             <PropertyImage src={image} alt={`${title}, imagen ampliada`} />
           </div>

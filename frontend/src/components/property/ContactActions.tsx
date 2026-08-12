@@ -44,7 +44,7 @@ export function ContactActions({ property, canonical }: { property: Property; ca
     }
   }
   return (
-    <aside className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <aside className="detail-panel rounded-2xl border p-5">
       <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#2166a5]">Contacto directo</p>
       <h2 className="mt-2 text-xl font-black text-[#0b2748]">{contact?.name ?? property.agentName ?? "Responsable de la publicación"}</h2>
       {contact?.verified ? <p className="mt-1 text-xs font-bold text-emerald-700">Identidad verificada en ERETZ</p> : null}
