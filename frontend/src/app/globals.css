@@ -1023,7 +1023,7 @@ body {
 }
 
 /* --- Autocomplete: capa flotante de nivel 3 --- */
-.autocomplete-panel, .search-suggestions {
+.search-suggestions {
   background: var(--glass-3);
   -webkit-backdrop-filter: saturate(180%) blur(var(--glass-blur-3));
   backdrop-filter: saturate(180%) blur(var(--glass-blur-3));
@@ -1035,7 +1035,7 @@ body {
 @keyframes glass-rise { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 
 /* --- Selector de seis modos: contenedor de vidrio, activo como superficie interna --- */
-.view-mode-tabs, .explorer-view-tabs {
+.view-mode-tabs {
   background: var(--glass-1);
   -webkit-backdrop-filter: blur(var(--glass-blur-1));
   backdrop-filter: blur(var(--glass-blur-1));
@@ -1044,14 +1044,14 @@ body {
   padding: .22rem;
   box-shadow: var(--glass-highlight);
 }
-.view-mode-tab, .explorer-view-tab {
+.view-mode-tabs button {
   border: 0;
   background: transparent;
   border-radius: var(--radius-pill);
   transition: background var(--motion-glass) var(--ease-out), color var(--motion-glass) var(--ease-out), box-shadow var(--motion-glass) var(--ease-out);
 }
-.view-mode-tab:hover, .explorer-view-tab:hover { background: rgba(255, 255, 255, .6); }
-.view-mode-tab.is-active, .explorer-view-tab.is-active {
+.view-mode-tabs button:hover { background: rgba(255, 255, 255, .6); }
+.view-mode-tabs button.is-active {
   background: #fff;
   color: var(--navy);
   box-shadow: var(--shadow-xs), var(--glass-highlight);
@@ -1103,7 +1103,7 @@ body {
 
 /* --- Footer del panel: vidrio con separacion propia --- */
 .filter-panel-actions {
-  background: var(--glass-3);
+  background: rgba(255, 255, 255, .975);
   -webkit-backdrop-filter: saturate(175%) blur(var(--glass-blur-2));
   backdrop-filter: saturate(175%) blur(var(--glass-blur-2));
   border-block-start: 1px solid var(--glass-border);
@@ -1125,7 +1125,7 @@ body {
 .leaflet-bar { box-shadow: var(--glass-shadow-1); border-radius: var(--radius-sm); overflow: hidden; }
 
 /* --- "Buscar en esta zona": pieza flotante caracteristica --- */
-.map-search-area, .map-area-button {
+.map-search-area {
   background: var(--glass-3);
   -webkit-backdrop-filter: saturate(180%) blur(var(--glass-blur-3));
   backdrop-filter: saturate(180%) blur(var(--glass-blur-3));
@@ -1134,11 +1134,11 @@ body {
   box-shadow: var(--glass-shadow-2), var(--glass-highlight);
   transition: transform var(--motion-fast) var(--ease-out), box-shadow var(--motion-glass) var(--ease-out), background var(--motion-glass) var(--ease-out);
 }
-.map-search-area:hover, .map-area-button:hover { transform: translateY(-1px); background: #fff; }
-.map-search-area:active, .map-area-button:active { transform: scale(.98); }
+.map-search-area:hover { transform: translateY(-1px); background: #fff; }
+.map-search-area:active { transform: scale(.98); }
 
 /* Zona aplicada: informativa y neutral, nunca warning. */
-.map-zone-applied, .zone-chip {
+.context-bar-viewport-badge {
   background: var(--glass-3);
   -webkit-backdrop-filter: blur(var(--glass-blur-2));
   backdrop-filter: blur(var(--glass-blur-2));
@@ -1201,8 +1201,8 @@ body {
 /* Sin backdrop-filter: todo cae a superficies solidas legibles. */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .site-header, .explorer-toolbar::before, .context-bar, .filter-panel,
-  .filter-panel-actions, .autocomplete-panel, .search-suggestions,
-  .map-search-area, .map-area-button, .map-zone-applied, .zone-chip,
+  .filter-panel-actions, .search-suggestions,
+  .map-search-area, .context-bar-viewport-badge,
   .card-action-button, .secondary-button, .view-mode-tabs, .chip,
   .leaflet-bar a, .leaflet-control-zoom a {
     background: var(--surface);
@@ -1212,10 +1212,10 @@ body {
 /* Respeta la preferencia de menos movimiento. */
 @media (prefers-reduced-motion: reduce) {
   .property-card, .entity-card, .primary-button, .secondary-button,
-  .card-action-button, .map-search-area, .map-area-button {
+  .card-action-button, .map-search-area {
     transition: none;
   }
   .property-card:hover, .entity-card:hover, .primary-button:hover,
   .card-action-button:hover, .map-search-area:hover { transform: none; }
-  .autocomplete-panel, .search-suggestions { animation: none; }
+  .search-suggestions { animation: none; }
 }
