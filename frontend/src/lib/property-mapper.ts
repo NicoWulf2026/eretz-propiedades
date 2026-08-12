@@ -1,3 +1,4 @@
+import { displayableImages } from "@/lib/image-quality";
 import type {
   Property,
   PropertyCurrency,
@@ -114,7 +115,13 @@ function qualitySignals(item: SupabaseProperty, images: string[]): QualitySignal
 }
 
 export function mapSupabasePropertyToProperty(item: SupabaseProperty): Property {
-  const images = Array.from(new Set((item.imagenes ?? []).filter(validImage)));
+  // `rawImages` conserva el dato de origen tal cual llegó. `images` es lo que se
+  // muestra: se descartan los recursos que no representan la propiedad (tiles de
+  // mapa, Open Graph del home, samples de theme, logos del publicador...), que el
+  // histórico almacenó antes de que existiera el detector de ingesta. El frontend
+  // no clasifica; recibe la lista ya depurada.
+  const rawImages = Array.from(new Set((item.imagenes ?? []).filter(validImage)));
+  const images = displayableImages(rawImages, cleanText(item.publisher_name) || null);
   const quality = qualitySignals(item, images);
   const rawType = cleanText(item.tipo_propiedad) || null;
   const normalizedTitle = cleanText(item.titulo).toLowerCase();
