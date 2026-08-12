@@ -1767,3 +1767,89 @@ body {
   line-height: 2.25rem;
   letter-spacing: -.02em;
 }
+
+/* ============================================================
+   U5 — BARRIDO ANTI-HIBRIDOS
+   El sistema Liquid Glass dejo ~80 reglas con backdrop-filter y decenas de
+   referencias a tokens de vidrio. En vez de editar cada regla, se redefinen los
+   tokens en la raiz: toda regla que use var(--glass-*) pasa a producir una
+   superficie solida. Asi no queda ninguna superficie del sistema anterior
+   conviviendo con el nuevo.
+   ============================================================ */
+
+:root {
+  /* Superficies: de vidrio translucido a solido. */
+  --glass-bg: #fff;
+  --glass-bg-strong: #fff;
+  --glass-1: #fff;
+  --glass-2: #fff;
+  --glass-3: #fff;
+  --glass-4: #fff;
+  --glass-5: #fff;
+  --glass-0: transparent;
+  --glass-content: #fff;
+  --glass-content-2: #fff;
+
+  /* Blur a cero: los backdrop-filter existentes quedan sin efecto. */
+  --glass-blur: 0px;
+  --glass-blur-strong: 0px;
+  --glass-blur-1: 0px;
+  --glass-blur-2: 0px;
+  --glass-blur-3: 0px;
+  --glass-blur-0: 0px;
+  --glass-blur-4: 0px;
+  --glass-blur-5: 0px;
+  --glass-blur-content: 0px;
+
+  /* Cantos opticos y refraccion: fuera. */
+  --glass-highlight: none;
+  --edge-top: none;
+  --edge-bottom: none;
+  --edge-inner: none;
+  --edge-optical: none;
+  --refract: transparent;
+  --glass-border: var(--border-subtle);
+  --glass-edge: var(--border-subtle);
+  --glass-edge-strong: var(--border);
+
+  /* Sombras de objeto: a hairline. */
+  --glass-shadow-1: var(--shadow-sm);
+  --glass-shadow-2: var(--shadow-md);
+  --drop-1: var(--shadow-sm);
+  --drop-2: var(--shadow-md);
+  --drop-3: var(--shadow-lg);
+
+  /* Geometria concentrica al radio nuevo. */
+  --r-piece: var(--radius-md);
+  --r-inner: var(--radius-sm);
+}
+
+/* El fondo deja de tener deriva tonal: la referencia usa blanco plano. */
+body { background-image: none; background-color: #f7f8fa; }
+
+/* Sin transformaciones de elevacion en hover: la referencia no las usa. */
+.primary-button:hover, .secondary-button:hover, .card-action-button:hover,
+.map-search-area:hover, .property-card:hover, .entity-card:hover {
+  transform: none;
+}
+
+/* --- FAB de "Buscar en esta zona" (medido en la referencia: 186x48,
+   fixed bottom-6 right-6). En ERETZ conserva su comportamiento opt-in. --- */
+.map-search-area {
+  position: absolute;
+  inset-block-end: 1.5rem;
+  inset-inline-end: 1.5rem;
+  inset-block-start: auto;
+  inset-inline-start: auto;
+  min-inline-size: 11.5rem;
+  min-block-size: 3rem;
+  border-radius: var(--radius-pill);
+  background: var(--navy);
+  color: #fff;
+  border: 0;
+  box-shadow: var(--shadow-lg);
+  font-weight: 700;
+  z-index: 500;
+}
+.map-search-area:hover { background: var(--navy-700, #0a2240); }
+.map-search-area:active { transform: scale(.98); }
