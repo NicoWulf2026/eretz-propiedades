@@ -1683,3 +1683,41 @@ body {
   font-size: var(--text-body-detail);
   line-height: var(--lh-detail);
 }
+
+/* ============================================================
+   U3 — GRILLA DE RESULTADOS Y BARRA DE CONTROLES
+   Metricas de la referencia: 3 columnas, card ~400, gap 32, split 60/40,
+   acciones de card 36px, controles de barra 44-46px.
+   ============================================================ */
+
+/* Card de ~400 con gap 32; en paneles angostos cae a 2 y 1 columna sola. */
+.explorer-card-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(var(--card-w), 100%), 1fr));
+  gap: var(--grid-gap);
+  align-content: start;
+}
+/* Solo resultados usa el ancho completo: alli si entran 3 columnas. */
+.explorer-workspace.mode-results_only .explorer-card-list,
+.explorer-workspace.mode-wide .explorer-card-list {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+@media (max-width: 1180px) {
+  .explorer-workspace.mode-results_only .explorer-card-list,
+  .explorer-workspace.mode-wide .explorer-card-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 720px) {
+  .explorer-card-list { grid-template-columns: 1fr; gap: 1rem; }
+}
+
+/* Split 60/40 exacto, como la referencia (lista 768 / mapa 512 en 1280). */
+.explorer-workspace { grid-template-columns: minmax(0, 60fr) minmax(340px, 40fr); }
+
+/* Barra de resultados: acciones a la izquierda en fila de 44-46,
+   toggles de vista apilados al extremo derecho. */
+.context-bar { border-radius: var(--radius-md); box-shadow: none; }
+.explorer-toolbar { box-shadow: none; border-block-end: 1px solid var(--border-subtle); }
+.explorer-toolbar::before { -webkit-backdrop-filter: none; backdrop-filter: none; background: #fff; }
+.site-header { box-shadow: none; border-block-end: 1px solid var(--border-subtle); }
