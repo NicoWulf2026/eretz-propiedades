@@ -78,7 +78,7 @@ export function PropertyCard({
           <span className="pill absolute left-3 top-3">{operationLabels[property.operation]}</span>
           {visited && <span className="card-visited-badge absolute bottom-3 left-3">Vista</span>}
           {property.mortgageEligible && (
-            <span className="pill pill-gold absolute bottom-3 right-3">Apto crédito</span>
+            <span className="pill pill-pick absolute bottom-3 right-3">Apto crédito</span>
           )}
         </div>
         <div className="property-card-body">
