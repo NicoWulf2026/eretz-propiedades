@@ -1385,3 +1385,172 @@ body {
     background: var(--surface);
   }
 }
+
+/* ============================================================
+   ERETZ LIQUID GLASS V3 — VIDRIO OPTICO
+   V2 dio pertenencia material a todas las superficies. V3 les da ESPESOR.
+   Derivado de REFERENCE_04 (Liquid Glass UI Kit): el vidrio premium no es
+   opacidad + blur, sino canto iluminado asimetrico, reflejo interno, sombra
+   proyectada y geometria concentrica.
+   ============================================================ */
+
+:root {
+  /* Canto del vidrio: luz arriba, peso abajo. Sustituye al borde uniforme. */
+  --edge-top: inset 0 1px 0 rgba(255, 255, 255, .92);
+  --edge-bottom: inset 0 -1px 0 rgba(11, 39, 72, .07);
+  --edge-inner: inset 0 0 0 1px rgba(255, 255, 255, .18);
+  --edge-optical: var(--edge-top), var(--edge-bottom), var(--edge-inner);
+
+  /* Refraccion cromatica minima: un frio azulado, nunca multicolor. */
+  --refract: rgba(96, 165, 220, .13);
+
+  /* Sombra de objeto: la pieza se apoya sobre el ambiente, no flota difusa. */
+  --drop-1: 0 1px 1px rgba(11, 39, 72, .05), 0 4px 12px -4px rgba(11, 39, 72, .10);
+  --drop-2: 0 2px 4px rgba(11, 39, 72, .06), 0 10px 26px -8px rgba(11, 39, 72, .16);
+  --drop-3: 0 4px 8px rgba(11, 39, 72, .07), 0 20px 48px -12px rgba(11, 39, 72, .22);
+
+  /* Geometria concentrica: radio interno = externo - padding. */
+  --r-pill: 999px;
+  --r-piece: 1.05rem;
+  --r-inner: .72rem;
+}
+
+/* Pieza de vidrio con espesor. Se aplica por composicion, no a todo. */
+.glass-piece {
+  position: relative;
+  box-shadow: var(--edge-optical), var(--drop-1);
+  isolation: isolate;
+}
+/* Reflejo interno superior: la luz entra por arriba y se apaga hacia el medio. */
+.glass-piece::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  block-size: 45%;
+  border-start-start-radius: inherit;
+  border-start-end-radius: inherit;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .38), rgba(255, 255, 255, 0));
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* --- Header: canto optico, sin ganar altura --- */
+.site-header {
+  box-shadow: var(--edge-optical), var(--drop-1);
+  border-block-end-color: transparent;
+}
+
+/* --- Buscador y toolbar: espesor real --- */
+.explorer-toolbar { box-shadow: var(--edge-optical), var(--drop-1); }
+.explorer-primary-search input,
+.explorer-primary-search select,
+.nl-search input {
+  border-radius: var(--r-inner);
+  box-shadow: var(--edge-top), var(--edge-bottom);
+}
+.explorer-primary-search input:focus,
+.explorer-primary-search select:focus,
+.nl-search input:focus {
+  box-shadow: var(--edge-top), var(--edge-bottom), 0 0 0 3px var(--refract);
+}
+
+/* --- Selector de modos: pieza agrupada, geometria concentrica --- */
+.view-mode-tabs {
+  border-radius: var(--r-pill);
+  padding: .3rem;
+  box-shadow: var(--edge-optical), var(--drop-1);
+}
+.view-mode-tabs button {
+  border-radius: var(--r-pill);
+  transition: background 170ms var(--ease-out), box-shadow 170ms var(--ease-out), transform 110ms var(--ease-out);
+}
+.view-mode-tabs button.is-active {
+  box-shadow: var(--edge-top), var(--drop-1);
+}
+.view-mode-tabs button:active { transform: scale(.97); }
+
+/* --- Panel de filtros: overlay con canto y sombra de objeto --- */
+.filter-panel { box-shadow: var(--edge-top), var(--drop-3); }
+.filter-group {
+  border-radius: var(--r-piece);
+  box-shadow: var(--edge-top), var(--edge-bottom);
+}
+.field input, .field select, .field textarea {
+  border-radius: var(--r-inner);
+  box-shadow: var(--edge-top), var(--edge-bottom);
+}
+.field input:focus, .field select:focus, .field textarea:focus {
+  box-shadow: var(--edge-top), var(--edge-bottom), 0 0 0 3px var(--refract);
+}
+.filter-panel-actions { box-shadow: var(--edge-top), 0 -8px 22px -10px rgba(11, 39, 72, .18); }
+
+/* --- Cards: espesor sin blur adicional (coste cero de compositing) --- */
+.property-card {
+  border-radius: var(--r-piece);
+  box-shadow: var(--edge-optical), var(--drop-1);
+}
+.property-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--edge-optical), var(--drop-2);
+}
+.property-card-media { border-radius: var(--r-inner); }
+
+/* --- Controles del mapa: objetos flotantes sobre cartografia --- */
+.leaflet-bar, .leaflet-control-zoom {
+  border-radius: var(--r-inner);
+  box-shadow: var(--edge-optical), var(--drop-2);
+}
+.leaflet-bar a, .leaflet-control-zoom a { border: 0; }
+
+/* --- "Buscar en esta zona": la pieza icono del sistema --- */
+.map-search-area {
+  border-radius: var(--r-pill);
+  box-shadow: var(--edge-top), var(--edge-inner), var(--drop-3);
+  transition: transform 140ms var(--ease-out), box-shadow 170ms var(--ease-out), background 170ms var(--ease-out);
+}
+.map-search-area:hover { transform: translateY(-1px); box-shadow: var(--edge-top), var(--edge-inner), var(--drop-3), 0 0 0 4px var(--refract); }
+.map-search-area:active { transform: scale(.97); box-shadow: var(--edge-bottom), var(--drop-1); }
+.map-result-indicator, .context-bar-viewport-badge {
+  border-radius: var(--r-pill);
+  box-shadow: var(--edge-top), var(--drop-1);
+}
+
+/* --- Ficha: navegacion agrupada con la misma geometria que los modos --- */
+.ficha-section-nav {
+  border-radius: var(--r-pill);
+  padding: .3rem;
+  box-shadow: var(--edge-optical), var(--drop-2);
+}
+.ficha-section-nav a { border-radius: var(--r-pill); }
+.ficha-section-nav a:hover { box-shadow: var(--edge-top), var(--drop-1); }
+.detail-panel {
+  border-radius: var(--r-piece);
+  box-shadow: var(--edge-optical), var(--drop-1);
+}
+
+/* --- Botones: masa solida con canto y estado presionado fisico --- */
+.primary-button {
+  border-radius: var(--r-inner);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .16), var(--drop-1);
+  transition: transform 110ms var(--ease-out), box-shadow 170ms var(--ease-out);
+}
+.primary-button:hover { transform: translateY(-1px); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .16), var(--drop-2); }
+.primary-button:active { transform: translateY(0) scale(.98); box-shadow: inset 0 2px 4px rgba(6, 25, 47, .28); }
+.secondary-button {
+  border-radius: var(--r-inner);
+  box-shadow: var(--edge-top), var(--edge-bottom), var(--drop-1);
+}
+.secondary-button:active { transform: scale(.98); box-shadow: inset 0 2px 4px rgba(11, 39, 72, .10); }
+.card-action-button {
+  box-shadow: var(--edge-top), var(--drop-1);
+}
+.card-action-button:active { transform: scale(.94); box-shadow: inset 0 1px 3px rgba(11, 39, 72, .14); }
+.chip { border-radius: var(--r-pill); box-shadow: var(--edge-top), var(--edge-bottom); }
+
+@media (prefers-reduced-motion: reduce) {
+  .view-mode-tabs button, .map-search-area, .primary-button,
+  .secondary-button, .card-action-button, .property-card { transition: none; }
+  .view-mode-tabs button:active, .map-search-area:active, .map-search-area:hover,
+  .primary-button:hover, .primary-button:active, .secondary-button:active,
+  .card-action-button:active, .property-card:hover { transform: none; }
+}
