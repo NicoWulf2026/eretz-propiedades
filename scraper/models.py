@@ -105,7 +105,12 @@ ALLOWED_PROPERTY_TYPES = {
 
 ALLOWED_MONEDAS = {"ARS", "USD"}
 # Operaciones reconocidas por ERETZ Propiedades (FASE 1 — Sprint A).
-# - consultar: operacion desconocida o no detectada → no rechazar, publicar con consultar
+# - consultar: la fuente dice explicitamente "consultar" → se publica como tal
+# - desconocida: no se pudo determinar la operacion (FASE 4). No es lo mismo que
+#   "consultar": antes ambos casos colapsaban y un aviso que decia "Consultar"
+#   quedaba indistinguible de uno sin operacion detectable. Aca solo puntua la
+#   completitud del registro; el efecto duro esta en safe_merge (que si no la
+#   reconoce la degrada a "consultar") y en las colas de publicacion.
 # - venta_y_alquiler: propiedad publicada simultáneamente como venta y alquiler
 ALLOWED_OPERACIONES = {
     "venta",
@@ -113,6 +118,7 @@ ALLOWED_OPERACIONES = {
     "alquiler_temporario",
     "consultar",
     "venta_y_alquiler",
+    "desconocida",
     "proyecto",  # legacy — no eliminar
 }
 

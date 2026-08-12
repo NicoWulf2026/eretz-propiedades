@@ -127,6 +127,7 @@ _VALID_OPERATIONS = {
     "alquiler_temporario",
     "consultar",
     "venta_y_alquiler",
+    "desconocida",
 }
 _VALID_TYPES = {
     "casa",
