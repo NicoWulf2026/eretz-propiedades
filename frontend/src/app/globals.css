@@ -2231,7 +2231,7 @@ a:hover { color: #dcb0ff; }
   display: flex;
   flex-direction: column;
   gap: .1rem;
-  padding: .5rem .7rem;
+  padding: .6rem .7rem;
   border: 1px solid transparent;
   border-radius: .875rem;
   background: transparent;
@@ -2256,7 +2256,7 @@ a:hover { color: #dcb0ff; }
 .filter-nav-hint {
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 1;
   overflow: hidden;
   font-size: .7rem;
   color: var(--muted);

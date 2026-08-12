@@ -7,10 +7,10 @@ import type { PropertyFilters } from "@/types/property";
 export type FilterGroupId = "ubicacion" | "precio" | "caracteristicas" | "publicacion";
 
 export const FILTER_GROUPS: ReadonlyArray<{ id: FilterGroupId; label: string; hint: string }> = [
-  { id: "ubicacion", label: "Ubicación", hint: "Provincia, ciudad, barrio y zonas" },
-  { id: "precio", label: "Precio", hint: "Moneda, rango y publicación del precio" },
-  { id: "caracteristicas", label: "Características", hint: "Ambientes, superficie e imágenes" },
-  { id: "publicacion", label: "Publicación", hint: "Publicador, antigüedad del aviso y orden" },
+  { id: "ubicacion", label: "Ubicación", hint: "Provincia, ciudad y zonas" },
+  { id: "precio", label: "Precio", hint: "Moneda y rango de precio" },
+  { id: "caracteristicas", label: "Características", hint: "Ambientes, superficie, fotos" },
+  { id: "publicacion", label: "Publicación", hint: "Publicador, antigüedad, orden" },
 ];
 
 // Un filtro cuenta como activo cuando el usuario fijó un valor. Los vacíos
