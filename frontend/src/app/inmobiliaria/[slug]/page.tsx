@@ -31,7 +31,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
     <SiteShell>
       <div className="container py-8">
         <nav aria-label="Migas de pan" className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
-          <Link href="/inmobiliarias" className="font-bold text-[#2166a5]">← Inmobiliarias</Link>
+          <Link href="/inmobiliarias" className="font-bold text-[color:var(--brand)]">← Inmobiliarias</Link>
           <span aria-hidden="true">/</span>
           <span aria-current="page">{agency.name}</span>
         </nav>
@@ -41,7 +41,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
             <div>
               <h1 className="page-title page-title-inline">
                 {agency.name}
-                {agency.verified ? <span className="rounded-full bg-[#e8f0f7] px-2.5 py-1 text-xs font-bold text-[#2166a5]">Verificada</span> : null}
+                {agency.verified ? <span className="rounded-full bg-[color:var(--surface-2)] px-2.5 py-1 text-xs font-bold text-[color:var(--brand)]">Verificada</span> : null}
               </h1>
               {agency.city || agency.province ? (
                 <p className="page-subtitle">{[agency.city, agency.province].filter(Boolean).join(", ")}</p>

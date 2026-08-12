@@ -45,8 +45,8 @@ export function ContactActions({ property, canonical }: { property: Property; ca
   }
   return (
     <aside className="detail-panel rounded-2xl border p-5">
-      <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#2166a5]">Contacto directo</p>
-      <h2 className="mt-2 text-xl font-black text-[#0b2748]">{contact?.name ?? property.agentName ?? "Responsable de la publicación"}</h2>
+      <p className="text-xs font-bold uppercase tracking-[0.16em] text-[color:var(--brand)]">Contacto directo</p>
+      <h2 className="mt-2 text-xl font-black text-[color:var(--ink)]">{contact?.name ?? property.agentName ?? "Responsable de la publicación"}</h2>
       {contact?.verified ? <p className="mt-1 text-xs font-bold text-emerald-700">Identidad verificada en ERETZ</p> : null}
       <p className="mt-2 text-sm leading-6 text-slate-600">ERETZ no recibe ni almacena tu consulta. Te conectamos con la publicación original.</p>
       {(whatsapp || contact?.email) ? (
@@ -76,10 +76,10 @@ export function ContactActions({ property, canonical }: { property: Property; ca
       </div>
       {!whatsappHref && !telephone && !contact?.email && !contact?.website && !property.sourceUrl && <p className="mt-4 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">Esta publicación no incluye un contacto público válido.</p>}
       <div className="mt-5 flex flex-wrap gap-3 border-t border-slate-100 pt-4">
-        <a className="inline-action text-sm font-bold text-[#2166a5]" href={shareHref} target="_blank" rel="noopener noreferrer" onClick={() => track("share_clicked", { method: "whatsapp" })}>WhatsApp</a>
-        <a className="inline-action text-sm font-bold text-[#2166a5]" href={`mailto:?subject=${encodeURIComponent(property.title)}&body=${encodeURIComponent(shareMessage)}`} onClick={() => track("share_clicked", { method: "email" })}>Correo</a>
-        <button className="inline-action text-sm font-bold text-[#2166a5]" type="button" onClick={webShare}>Compartir</button>
-        <button className="inline-action text-sm font-bold text-[#2166a5]" type="button" onClick={copy}>{copied ? "Enlace copiado" : "Copiar enlace"}</button>
+        <a className="inline-action text-sm font-bold text-[color:var(--brand)]" href={shareHref} target="_blank" rel="noopener noreferrer" onClick={() => track("share_clicked", { method: "whatsapp" })}>WhatsApp</a>
+        <a className="inline-action text-sm font-bold text-[color:var(--brand)]" href={`mailto:?subject=${encodeURIComponent(property.title)}&body=${encodeURIComponent(shareMessage)}`} onClick={() => track("share_clicked", { method: "email" })}>Correo</a>
+        <button className="inline-action text-sm font-bold text-[color:var(--brand)]" type="button" onClick={webShare}>Compartir</button>
+        <button className="inline-action text-sm font-bold text-[color:var(--brand)]" type="button" onClick={copy}>{copied ? "Enlace copiado" : "Copiar enlace"}</button>
       </div>
     </aside>
   );

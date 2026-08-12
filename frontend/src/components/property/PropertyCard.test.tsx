@@ -20,7 +20,9 @@ describe("PropertyCard", () => {
   it("renders complete public fields and an accessible detail link", () => {
     render(<PropertyCard property={mapSupabasePropertyToProperty(completeRow)} />);
     expect(screen.getByRole("link")).toHaveAttribute("href", "/propiedad/123?volver=%2F");
-    expect(screen.getByText("USD 180.000")).toBeInTheDocument();
+    // El precio se compone de dos spans (moneda en versalita + monto tabular):
+    // se verifica el texto resultante, que debe seguir siendo identico.
+    expect(document.querySelector(".card-price")?.textContent?.replace(/\s+/g, " ").trim()).toBe("USD 180.000");
     expect(screen.getByText(/Centro, Córdoba/)).toBeInTheDocument();
     expect(screen.getByText("María")).toBeInTheDocument();
   });

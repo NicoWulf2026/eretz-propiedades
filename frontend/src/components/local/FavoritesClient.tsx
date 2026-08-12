@@ -95,7 +95,7 @@ export function FavoritesClient() {
           <ul className="mt-4 flex flex-wrap gap-2">
             {searches.map((s) => (
               <li key={s.url} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white pl-3">
-                <Link href={s.url} className="py-1.5 text-sm font-semibold text-[#2166a5]">{s.label}</Link>
+                <Link href={s.url} className="py-1.5 text-sm font-semibold text-[color:var(--brand)]">{s.label}</Link>
                 <button
                   type="button"
                   aria-label={`Quitar la búsqueda ${s.label}`}

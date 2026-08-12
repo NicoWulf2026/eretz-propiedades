@@ -83,7 +83,7 @@ export function PropertyGallery({ images, title }: { images: string[]; title: st
         {images.length > 1 && (
           <div className="ficha-gallery-thumbs flex gap-2 overflow-x-auto p-3" aria-label="Miniaturas de la galería">
             {images.map((src, index) => (
-              <button key={src} type="button" className={`h-16 w-24 shrink-0 overflow-hidden rounded-lg border-2 ${index === selected ? "border-[#2166a5]" : "border-transparent"}`} onClick={() => setSelected(index)} aria-label={`Ver imagen ${index + 1}`}>
+              <button key={src} type="button" className={`h-16 w-24 shrink-0 overflow-hidden rounded-lg border-2 ${index === selected ? "border-[color:var(--pick)]" : "border-transparent"}`} onClick={() => setSelected(index)} aria-label={`Ver imagen ${index + 1}`}>
                 <PropertyImage src={src} alt="" />
               </button>
             ))}

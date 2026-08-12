@@ -69,9 +69,9 @@ export function CompareClient() {
                 <th scope="col" className="compare-row-label">Propiedad</th>
                 {properties.map((p) => (
                   <th key={p.id} scope="col" className="compare-col-head">
-                    <span className="block truncate font-bold text-[#0b2748]">{p.title}</span>
+                    <span className="block truncate font-bold text-[color:var(--ink)]">{p.title}</span>
                     <span className="mt-2 flex flex-wrap gap-2">
-                      <Link href={`/propiedad/${p.id}?volver=/comparar`} className="text-xs font-bold text-[#2166a5]">Ver ficha</Link>
+                      <Link href={`/propiedad/${p.id}?volver=/comparar`} className="text-xs font-bold text-[color:var(--brand)]">Ver ficha</Link>
                       <button type="button" className="text-xs font-bold text-slate-500 hover:text-slate-800" onClick={() => toggleCompare(p.id)}>
                         Quitar
                       </button>

@@ -26,7 +26,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
     <SiteShell>
       <div className="container py-8">
         <nav aria-label="Migas de pan" className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
-          <Link href="/agentes" className="font-bold text-[#2166a5]">← Agentes</Link>
+          <Link href="/agentes" className="font-bold text-[color:var(--brand)]">← Agentes</Link>
           <span aria-hidden="true">/</span>
           <span aria-current="page">{agent.name}</span>
         </nav>

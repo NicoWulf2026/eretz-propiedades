@@ -65,8 +65,8 @@ export function CollectionsClient() {
       {/* Favoritos como colección compatible (no se pierde) */}
       <section className="mb-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
         <div className="flex items-center justify-between gap-3">
-          <p className="font-bold text-[#0b2748]">Favoritos <span className="text-slate-500">({favorites.length})</span></p>
-          <Link href="/favoritos" className="text-sm font-bold text-[#2166a5]">Ver favoritos →</Link>
+          <p className="font-bold text-[color:var(--ink)]">Favoritos <span className="text-slate-500">({favorites.length})</span></p>
+          <Link href="/favoritos" className="text-sm font-bold text-[color:var(--brand)]">Ver favoritos →</Link>
         </div>
       </section>
 
@@ -89,11 +89,11 @@ export function CollectionsClient() {
                   </form>
                 ) : (
                   <>
-                    <button type="button" className="text-left text-base font-bold text-[#0b2748]" onClick={() => setSelected(selected === c.id ? null : c.id)} aria-expanded={selected === c.id}>
+                    <button type="button" className="text-left text-base font-bold text-[color:var(--ink)]" onClick={() => setSelected(selected === c.id ? null : c.id)} aria-expanded={selected === c.id}>
                       {c.name} <span className="text-slate-500">({c.ids.length})</span>
                     </button>
                     <div className="flex gap-2">
-                      <button type="button" className="text-sm font-semibold text-[#2166a5]" onClick={() => setSelected(selected === c.id ? null : c.id)}>{selected === c.id ? "Ocultar" : "Ver"}</button>
+                      <button type="button" className="text-sm font-semibold text-[color:var(--brand)]" onClick={() => setSelected(selected === c.id ? null : c.id)}>{selected === c.id ? "Ocultar" : "Ver"}</button>
                       <button type="button" className="text-sm font-semibold text-slate-600" onClick={() => { setRenaming(c.id); setRenameValue(c.name); }}>Renombrar</button>
                       <button type="button" className="text-sm font-semibold text-red-700" onClick={() => { if (selected === c.id) setSelected(null); deleteCollection(c.id); }}>Eliminar</button>
                     </div>

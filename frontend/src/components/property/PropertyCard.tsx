@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { PriceTag } from "@/components/property/PriceTag";
 import { PropertyImage } from "@/components/property/PropertyImage";
 import { PropertyCardActions } from "@/components/property/PropertyCardActions";
 import { hideProperty, isHidden, isVisited, unhideProperty } from "@/lib/local-store";
@@ -10,7 +11,6 @@ import {
   formatDate,
   operationLabels,
   propertyLocation,
-  propertyPrice,
   propertySpecs,
   typeLabels,
 } from "@/lib/property-presenter";
@@ -82,7 +82,7 @@ export function PropertyCard({
           )}
         </div>
         <div className="property-card-body">
-          <p className="card-price price">{propertyPrice(property)}</p>
+          <PriceTag property={property} className="card-price" />
           <p className="card-type">{typeLabels[property.propertyType]}</p>
           <h2 className="card-title">{property.title}</h2>
           <p className="card-location">{propertyLocation(property)}</p>
