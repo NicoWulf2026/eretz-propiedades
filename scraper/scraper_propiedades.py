@@ -3877,6 +3877,165 @@ def fake_property_image_reason(image_url: Any) -> Optional[str]:
     return None
 
 
+# --- Clasificacion de imagenes que no representan la propiedad -----------------
+# Derivado de la auditoria real sobre el inventario: el problema no son solo los
+# logos. Las URLs que llegaron como "fotos" incluyen tiles de OpenStreetMap,
+# marcadores de Google Maps, imagenes Open Graph del home, samples de theme,
+# GIFs transparentes, "sinfoto", matriculas y avatares. Casi ninguna contiene la
+# palabra "logo", por eso el detector por nombre de archivo no las veia.
+#
+# Tres niveles:
+#   HIGH_CONFIDENCE_NON_PROPERTY_IMAGE  evidencia estructural inequivoca
+#   POSSIBLE_NON_PROPERTY_IMAGE         sospecha (repeticion sin senal propia)
+#   LIKELY_VALID_IMAGE                  se trata como foto real
+#
+# La repeticion NUNCA basta por si sola: la auditoria encontro fotos legitimas
+# repetidas (un loteo compartido entre lotes, una fachada entre unidades).
+
+IMAGE_CLASS_HIGH = "HIGH_CONFIDENCE_NON_PROPERTY_IMAGE"
+IMAGE_CLASS_POSSIBLE = "POSSIBLE_NON_PROPERTY_IMAGE"
+IMAGE_CLASS_VALID = "LIKELY_VALID_IMAGE"
+
+IMAGE_DETECTOR_VERSION = "2026-08-12.1"
+
+# Hosts que sirven UI de mapas: jamas son la foto de un aviso.
+_UI_MAP_HOSTS = (
+    "tile.osm.org", "tile.openstreetmap.org", "a.tile.", "b.tile.", "c.tile.",
+    "maps.gstatic.com", "ssl.gstatic.com", "maps.googleapis.com",
+    "unpkg.com/leaflet", "cdnjs.cloudflare.com/ajax/libs/leaflet",
+)
+
+# Marcadores semanticos: el propio nombre declara que no es una foto del aviso.
+_NON_PROPERTY_STEMS = (
+    "sinfoto", "sin-foto", "sin_foto", "nofoto", "no-foto",
+    "no-image", "noimage", "sin-imagen", "sinimagen",
+    "placeholder", "default", "sample", "dummy", "spacer", "blank",
+    "transparent", "transparente", "pixel", "1x1",
+    "avatar", "matricula", "matricula_", "logo", "isotipo", "imagotipo",
+    "isologo", "favicon", "watermark", "marca-agua",
+    "og-home", "og_home", "og-image", "og_image", "opengraph",
+    "impression-header", "spotlight-poi",
+)
+
+# Rutas propias de plantilla/CMS, no del contenido cargado por el publicador.
+_TEMPLATE_PATHS = (
+    "/wp-content/themes/", "/wp-content/plugins/",
+    "/static/src/img/", "/assets/og/", "/assets/img/theme",
+    "/stthemeeditor/", "/themeeditor/", "/mapfiles/",
+    "/includes/images/", "/admin/uploads/", "/slider/",
+)
+
+
+def _norm_token(value):
+    """Normaliza para comparar nombres: minusculas, sin acentos ni separadores."""
+    import unicodedata
+    text = unicodedata.normalize("NFD", str(value or "").lower())
+    text = "".join(c for c in text if unicodedata.category(c) != "Mn")
+    return re.sub(r"[^a-z0-9]+", "", text)
+
+
+def non_property_image_signals(image_url, publisher_name=None):
+    """Devuelve la lista de senales estructurales detectadas en la URL."""
+    url = _normalize_image_url(image_url) or str(image_url or "")
+    low = unquote(url.lower())
+    signals = []
+    if not low.strip():
+        return ["empty_url"]
+
+    # URL sin resolver: plantilla de tiles. No es una imagen concreta.
+    if re.search(r"\{[szxy]\}", low):
+        signals.append("unresolved_url_template")
+    if any(h in low for h in _UI_MAP_HOSTS):
+        signals.append("map_ui_asset")
+
+    parsed = urlparse(low)
+    path = parsed.path or low
+    filename = path.rsplit("/", 1)[-1]
+    stem = _norm_token(filename.rsplit(".", 1)[0])
+
+    for marker in _NON_PROPERTY_STEMS:
+        if _norm_token(marker) and _norm_token(marker) in stem:
+            signals.append("semantic_marker:%s" % marker)
+            break
+    for tpath in _TEMPLATE_PATHS:
+        if tpath in low:
+            signals.append("template_asset")
+            break
+    if path.endswith((".svg", ".ico", ".gif")):
+        signals.append("non_photo_format")
+
+    # Branding del propio publicador: el archivo lleva su nombre.
+    if publisher_name:
+        pub = _norm_token(publisher_name)
+        # Se usa el token mas largo del nombre para evitar coincidencias debiles.
+        # Se descartan las palabras genericas del rubro: "Inmobiliaria Bessa"
+        # sin este filtro haria match con cualquier archivo que diga inmobiliaria.
+        generic = {"inmobiliaria", "inmobiliarias", "propiedades", "negocios",
+                   "servicios", "bienes", "raices", "inmuebles", "desarrollos",
+                   "asociados", "grupo", "estudio", "consultora", "gestion"}
+        parts = [p for p in re.split(r"[^A-Za-zÁÉÍÓÚÑáéíóúñ]+", str(publisher_name))
+                 if len(p) >= 5 and _norm_token(p) not in generic]
+        for part in parts:
+            if _norm_token(part) and _norm_token(part) in stem:
+                signals.append("publisher_name_in_filename")
+                break
+        del pub
+    # Fondo transparente declarado: firma tipica de un logo exportado.
+    if "fondotransp" in stem or "transp" in stem:
+        signals.append("declared_transparent_background")
+    # Variante cromatica: los logos se exportan como "-blanco" / "-negro".
+    if re.search(r"(?:^|[a-z0-9])(blanc[oa]|negr[oa]|white|black)$", stem):
+        signals.append("color_variant_marker")
+    return signals
+
+
+def classify_property_image(image_url, publisher_name=None, repetition_scoped=0):
+    """Clasifica una URL. Devuelve (clase, reasons, confidence).
+
+    `repetition_scoped` es cuantas publicaciones del MISMO publicador usan esta
+    misma URL. Sola no alcanza para HIGH: eleva a POSSIBLE, o confirma HIGH
+    cuando ya hay una senal estructural.
+    """
+    signals = non_property_image_signals(image_url, publisher_name)
+
+    if "empty_url" in signals:
+        return IMAGE_CLASS_HIGH, ["empty_url"], 1.0
+
+    strong = {"unresolved_url_template", "map_ui_asset", "template_asset", "non_photo_format"}
+    has_strong = any(s in strong for s in signals)
+    has_semantic = any(s.startswith("semantic_marker:") for s in signals)
+    # Nombre del publicador + firma de exportacion de logo (fondo transparente o
+    # variante cromatica) es evidencia suficiente por si sola.
+    branding = ("publisher_name_in_filename" in signals
+                and ("declared_transparent_background" in signals
+                     or "color_variant_marker" in signals))
+
+    # Inequivocas por si mismas, sin necesidad de repeticion.
+    if has_strong or has_semantic or branding:
+        return IMAGE_CLASS_HIGH, signals, 0.95
+
+    # Senal debil aislada + repeticion alta dentro del mismo publicador.
+    weak = [s for s in signals if s in ("publisher_name_in_filename",
+                                       "declared_transparent_background",
+                                       "color_variant_marker")]
+    if weak and repetition_scoped >= 10:
+        return IMAGE_CLASS_HIGH, signals + ["scoped_repetition>=10"], 0.9
+    if weak:
+        return IMAGE_CLASS_POSSIBLE, signals, 0.5
+
+    # Repeticion sin ninguna otra senal: sospecha, nunca certeza. La auditoria
+    # encontro fotos reales repetidas legitimamente entre unidades de un loteo.
+    if repetition_scoped >= 10:
+        return IMAGE_CLASS_POSSIBLE, ["scoped_repetition>=%d" % repetition_scoped], 0.4
+
+    return IMAGE_CLASS_VALID, signals, 0.0
+
+
+def is_high_confidence_non_property_image(image_url, publisher_name=None, repetition_scoped=0):
+    cls, _, _ = classify_property_image(image_url, publisher_name, repetition_scoped)
+    return cls == IMAGE_CLASS_HIGH
+
+
 def is_fake_property_image_url(image_url: Any) -> bool:
     return fake_property_image_reason(image_url) is not None
 
