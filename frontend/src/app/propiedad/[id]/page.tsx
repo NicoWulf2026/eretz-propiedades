@@ -68,7 +68,10 @@ export default async function PropertyPage({ params, searchParams }: { params: P
           <h1 className="mt-5 max-w-4xl text-3xl font-black leading-tight tracking-[-0.03em] text-[#0b2748] sm:text-5xl">{property.title}</h1>
           <div className="mt-4 flex flex-wrap items-end justify-between gap-3"><div><p className="detail-price">{propertyPrice(property)}</p><p className="mt-2 text-sm text-slate-600">{propertyLocation(property)}</p>{property.publisher ? <p className="mt-2 text-sm font-bold text-[#0b2748]">Publicado por {property.publisher.name}</p> : null}</div><div className="text-right">{updated && <p className="text-xs text-slate-600">Actualizado el {updated}</p>}<p className="mt-1 text-xs text-slate-600">ID ERETZ {property.id}</p></div></div>
         </header>
-        <nav aria-label="Secciones de la propiedad" className="ficha-section-nav">
+        <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1.6fr)_minmax(320px,.7fr)]">
+          <div className="min-w-0 space-y-8">
+            <PropertyGallery images={property.images} title={property.title} />
+            <nav aria-label="Secciones de la propiedad" className="ficha-section-nav">
           <a href="#resumen">Resumen</a>
           <a href="#descripcion">Descripción</a>
           <a href="#caracteristicas">Características</a>
@@ -77,9 +80,6 @@ export default async function PropertyPage({ params, searchParams }: { params: P
           <a href="#publicador">Publicador</a>
           <a href="#aviso">Información del aviso</a>
         </nav>
-        <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1.6fr)_minmax(320px,.7fr)]">
-          <div className="min-w-0 space-y-8">
-            <PropertyGallery images={property.images} title={property.title} />
             <section id="caracteristicas" className="detail-panel scroll-mt-24"><h2>Características</h2>{specs.length ? <ul className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">{specs.map((spec) => <li key={spec} className="rounded-xl bg-[#eef5fb] p-3 text-sm font-bold text-[#0b2748]">{spec}</li>)}</ul> : <p className="mt-3 text-slate-600">Características no informadas.</p>}<div className="mt-4 grid gap-2 text-sm text-slate-600 sm:grid-cols-2">{property.toilettes ? <p>{property.toilettes} toilette{property.toilettes > 1 ? "s" : ""}</p> : null}{property.age ? <p>Antigüedad: {property.age} años</p> : null}{property.floor ? <p>Piso: {property.floor}</p> : null}{property.landArea ? <p>Terreno: {Intl.NumberFormat("es-AR").format(property.landArea)} m²</p> : null}{property.expenses && property.expensesCurrency ? <p>Expensas: {property.expensesCurrency} {Intl.NumberFormat("es-AR").format(property.expenses)}</p> : null}</div></section>
             <section id="descripcion" className="detail-panel scroll-mt-24"><h2>Descripción</h2><p className="mt-4 whitespace-pre-line text-base leading-7 text-slate-700">{property.description ?? "Descripción no disponible"}</p></section>
             {property.amenities.length > 0 && <section id="servicios" className="detail-panel scroll-mt-24"><h2>Servicios y amenities</h2><ul className="mt-4 flex flex-wrap gap-2">{property.amenities.map((amenity) => <li className="rounded-full bg-slate-100 px-3 py-2 text-sm text-slate-700" key={amenity}>{amenity}</li>)}</ul></section>}
