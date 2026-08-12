@@ -183,3 +183,39 @@ El explorer pasó de 94 a 86 al adoptar el ratio de tarjeta de la referencia
 (hay más píxel de foto por tarjeta). Se recuperó a **90** saltando el render de
 las tarjetas fuera de pantalla con `content-visibility`, sin cambiar nada
 visualmente y sin reintroducir `backdrop-filter`.
+
+---
+
+## 6. Estado final
+
+**ROOMIX_FIDELITY_V1: CERRADO**
+
+| | |
+|---|---|
+| Resultado funcional | **PASS** |
+| Resultado visual/espacial | **PASS**, según mediciones DOM reales |
+| Regresión | **15/15** |
+| Vitest | **184/184** |
+| TypeScript | **0 errores** |
+| ESLint | **0 errores** |
+| Build | **OK** |
+| axe | **0 critical / 0 serious** |
+| Lighthouse | accesibilidad **100**, best-practices **100** |
+| Baselines | **193.615** · **62.549** · **131.066** |
+| Producción | **intacta** |
+| Identidad propia de ERETZ | **pendiente de fase futura** |
+| `docs/ERETZ_IDENTITY_V1.md` | **preservado** como fuente para esa futura fase |
+
+Preview de cierre: `dpl_5xhTjMxJU29z9RxN1thtkj6bpBvS`
+(`eretz-propiedades-7dv1wyfvh-nicowulf2026s-projects.vercel.app`), target
+`preview`, Ready, protegido y con `noindex, nofollow`.
+
+Nota sobre §5: la cifra de performance 90 corresponde a la medición intermedia.
+Sobre el Preview de cierre el explorer midió **97** y la ficha **87**.
+
+### Limitación documental
+
+No se generaron pares visuales Roomix ↔ ERETZ porque el entorno utilizado no
+permitía componer/capturar el panel del navegador. La comparación final se
+realizó mediante mediciones del DOM real y `getComputedStyle`. Esto no
+constituye una deuda funcional ni bloquea el cierre de ROOMIX_FIDELITY_V1.
