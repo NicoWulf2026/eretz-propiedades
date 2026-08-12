@@ -1835,12 +1835,10 @@ body { background-image: none; background-color: #f7f8fa; }
 
 /* --- FAB de "Buscar en esta zona" (medido en la referencia: 186x48,
    fixed bottom-6 right-6). En ERETZ conserva su comportamiento opt-in. --- */
+/* Se conserva la posicion original dentro de .map-top-controls: sacarlo de ese
+   flujo lo dejaba bajo el header y el click no llegaba. Se adopta solo la forma
+   medida en la referencia (pildora ~186x48 con masa solida). */
 .map-search-area {
-  position: absolute;
-  inset-block-end: 1.5rem;
-  inset-inline-end: 1.5rem;
-  inset-block-start: auto;
-  inset-inline-start: auto;
   min-inline-size: 11.5rem;
   min-block-size: 3rem;
   border-radius: var(--radius-pill);
