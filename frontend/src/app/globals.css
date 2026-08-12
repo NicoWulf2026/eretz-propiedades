@@ -1750,11 +1750,20 @@ body {
   aspect-ratio: 4 / 3;
 }
 .ficha-gallery-tile img { block-size: 100%; object-fit: cover; }
-/* Con menos de cinco fotos la principal toma todo el ancho. */
+/* La grilla lateral se adapta a la cantidad real de secundarias: con dos o
+   menos usa una sola fila, para no dejar celdas vacias. */
+.ficha-gallery-side { grid-template-rows: 1fr; }
+.ficha-gallery-side:has(> :nth-child(3)) { grid-template-rows: 1fr 1fr; }
+.ficha-gallery-side:not(:has(> :nth-child(2))) { grid-template-columns: 1fr; }
+/* Sin secundarias, la principal toma todo el ancho. */
 .ficha-gallery-mosaic:not(:has(.ficha-gallery-side)) { grid-template-columns: 1fr; }
 @media (max-width: 900px) {
   .ficha-gallery-mosaic { grid-template-columns: 1fr; }
   .ficha-gallery-side { display: none; }
 }
 /* Titulo de ficha a la escala de la referencia (30px). */
-.detail-page h1 { font-size: 1.875rem; line-height: 2.25rem; }
+.detail-shell h1, main h1.text-3xl {
+  font-size: 1.875rem;
+  line-height: 2.25rem;
+  letter-spacing: -.02em;
+}
