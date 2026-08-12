@@ -1,114 +1,124 @@
 @import "tailwindcss";
 
 /* ==========================================================================
-   ERETZ PROPIEDADES - IDENTITY V1
-   Derivada de la documentacion real de marca (obsidian 01-Estrategia,
-   06-Marketing): plataforma de inteligencia inmobiliaria, el mapa como centro
-   de la experiencia, trazabilidad a la fuente, calidad antes que cantidad,
-   producto simple. ERETZ es marco: no compite con la propiedad ni con la
-   inmobiliaria que muestra.
+   ERETZ — ROOMIX FIDELITY V1
+   Base visual medida en roomix.ai en vivo (2026-08-12). Esta fase construye
+   deliberadamente una BASE ROOMIX FIEL sobre la que despues se construira la
+   identidad propia de ERETZ. Cuando la identidad ERETZ V1 y la referencia
+   entraban en conflicto, en esta fase gana la referencia.
 
-   Base clara: la cartografia OSM es clara, las fotos de propiedad son el
-   contenido y las sesiones son de lectura numerica prolongada.
-
-   Dos colores con roles distintos y NO intercambiables:
-     verde petroleo = MARCA e interaccion
-     terracota      = SELECCION del usuario ("esto lo elegiste vos")
+   Medido en el sitio vivo:
+     html            oklch(0.12 0 0)
+     body            linear-gradient(135deg, #171717 0%, #1a1a1c 100%)
+     texto           oklch(0.98 0 0) / #e5e7eb / #d1d5db / #9ca3af
+     bordes          oklch(0.269 0 0) paneles, oklch(0.371 0 0) controles,
+                     oklch(0.439 0 0) elevados, #9d4edd a.25 divisores
+     acento          #9d4edd focus, #c77dff claro, #a855f7 sombra
+     radios          14px dominante (496 usos), 16px (70), 24px overlay,
+                     10px segmentos, 8px pills chicas, 9999px pildoras
+     contenedor      1265 en 1280
+     grilla          3 x 400.3px, gap 32
+     card            400x275 imagen + 85 texto, SIN superficie ni borde
+     controles       28 / 31-32 / 35-36 / 44 / 50 / 58
+     tipografia      14/400/20 base, 14/600 enfasis, 18/600/24.75 titulo card,
+                     20/600/28 precio card, 24/700/32 precio ficha,
+                     30/700/36 h1 ficha, 36/700/40 h2, 72/700 hero
    ========================================================================== */
 :root {
-  color-scheme: light;
+  color-scheme: dark;
 
-  /* --- Lienzo y superficies --------------------------------------------- */
-  --canvas: #edeae3;           /* papel calido: el lienzo es mesa, las cards son documento */
-  --surface-1: #ffffff;        /* el documento: cards, paneles, ficha */
-  --surface-2: #f4f2ec;        /* hundido: inputs, celdas, toolbar */
-  --surface-3: #e5e1d8;        /* pozo profundo / hover sobre hundido */
-  --elevated: #ffffff;         /* modales y dropdowns (con sombra real) */
+  /* --- Lienzo y superficies -------------------------------------------- */
+  --canvas: #171717;
+  --canvas-deep: #141414;
+  --canvas-tint: #1a1a1c;
+  --surface-1: #1f1f1f;
+  --surface-2: #252527;
+  --surface-3: #2e2e30;
+  --elevated: rgba(41, 41, 41, .95);
+  --overlay-veil: rgba(0, 0, 0, .5);
 
-  /* --- Tinta ------------------------------------------------------------ */
-  --ink: #14201d;              /* texto primario, ~16.9:1 sobre lienzo */
-  --ink-2: #46524f;            /* secundario, ~7.3:1 */
-  --ink-3: #5f6a66;            /* atenuado, 4.7:1 sobre lienzo */
-  --ink-inverse: #ffffff;
+  /* --- Texto ------------------------------------------------------------ */
+  --ink: #fafafa;
+  --ink-2: #e5e7eb;
+  --ink-3: #d1d5db;
+  --ink-4: #9ca3af;
+  --ink-inverse: #171717;
 
-  /* --- Lineas: solidas y calidas, nunca translucidas -------------------- */
-  --line: #e0ddd5;
-  --line-strong: #c8c4b9;
+  /* --- Bordes: la referencia usa grises neutros y un divisor violeta ---- */
+  --line: #333333;
+  --line-strong: #4d4d4d;
+  --line-raised: #5f5f5f;
+  --line-accent: rgba(157, 78, 221, .25);
 
-  /* --- Marca: verde petroleo -------------------------------------------- */
-  --brand: #0d5c55;            /* ~7.8:1 sobre blanco */
-  --brand-hover: #0a4a45;
-  --brand-active: #073833;
-  --brand-tint: #e4efed;
-  --brand-tint-strong: #cbe0dc;
-
-  /* --- Seleccion del usuario: terracota --------------------------------- */
-  --pick: #a8421f;             /* 6.1:1 sobre blanco, 5.1:1 sobre lienzo */
-  --pick-hover: #8c3719;
-  --pick-tint: #fbeee8;
-  --pick-tint-strong: #f4d9cd;
+  /* --- Acento violeta --------------------------------------------------- */
+  --accent: #9d4edd;
+  --accent-strong: #7b2cbf;
+  --accent-soft: #c77dff;
+  --accent-hover: #a855f7;
+  --accent-surface: rgba(157, 78, 221, .16);
+  --accent-ring: rgba(157, 78, 221, .25);
 
   /* --- Estados semanticos ----------------------------------------------- */
-  --ok: #1c6b47;      --ok-tint: #e6f1eb;
-  --warn: #8a5a06;    --warn-tint: #fbf1de;
-  --bad: #a32218;     --bad-tint: #fbeae8;
-  --info: #0d5c55;    --info-tint: #e4efed;
+  --ok: #34d399;      --ok-tint: rgba(52, 211, 153, .14);
+  --warn: #fbbf24;    --warn-tint: rgba(251, 191, 36, .14);
+  --bad: #f87171;     --bad-tint: rgba(248, 113, 113, .14);
+  --info: #c77dff;    --info-tint: rgba(157, 78, 221, .16);
 
-  /* --- Mapa: los marcadores son fichas de dato, no globos --------------- */
-  --marker-bg: #ffffff;
-  --marker-ink: #14201d;
-  --marker-line: #14201d;
-  --marker-selected-bg: #a8421f;
-  --cluster-bg: #0d5c55;
+  /* --- Mapa ------------------------------------------------------------- */
+  --marker-bg: #9d4edd;
+  --marker-ink: #ffffff;
+  --marker-line: rgba(255, 255, 255, .92);
+  --marker-selected-bg: #c77dff;
+  --cluster-bg: #7b2cbf;
 
-  /* --- Elevacion: casi plana; solo los overlays flotan de verdad -------- */
-  --shadow-xs: 0 1px 0 rgba(20, 32, 29, .04);
-  --shadow-sm: 0 1px 2px rgba(20, 32, 29, .06);
-  --shadow-md: 0 4px 12px rgba(20, 32, 29, .08);
-  --shadow-lg: 0 12px 32px rgba(20, 32, 29, .12);
-  --shadow-xl: 0 24px 64px rgba(20, 32, 29, .18);
+  /* --- Elevacion: la referencia casi no proyecta sombra ----------------- */
+  --shadow-xs: 0 0 1px 0 rgba(220, 220, 240, .08) inset;
+  --shadow-sm: 0 2px 4px 0 rgba(0, 0, 0, .3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, .35);
+  --shadow-lg: 0 8px 32px -8px rgba(168, 85, 247, .2);
+  --shadow-xl: 0 24px 64px rgba(0, 0, 0, .55);
 
-  /* --- Radios: documentales, mas cerrados que los de la base espacial --- */
-  --radius-xs: 4px;
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 10px;
-  --radius-xl: 14px;
-  --radius-pill: 999px;
+  /* --- Radios medidos en la referencia ---------------------------------- */
+  --radius-xs: 8px;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-pill: 9999px;
 
   /* --- Espaciado -------------------------------------------------------- */
   --space-1: .25rem;  --space-2: .5rem;   --space-3: .75rem;
   --space-4: 1rem;    --space-5: 1.5rem;  --space-6: 2rem;
   --space-7: 2.5rem;  --space-8: 3rem;    --space-9: 4rem;
 
-  /* --- Tipografia: una sola familia, Inter, autoalojada ----------------- */
-  --font-ui: var(--font-sans), "Segoe UI", system-ui, -apple-system, sans-serif;
-  --font-brand: var(--font-sans), "Segoe UI", system-ui, sans-serif;
-  --text-xs: .75rem;  --text-sm: .8125rem; --text-base: .9375rem;
-  --text-md: 1.0625rem; --text-lg: 1.25rem; --text-xl: 1.5rem;
-  --text-2xl: 1.9rem; --text-3xl: 2.5rem;  --text-4xl: 3.25rem;
+  /* --- Tipografia: la referencia usa la pila del sistema ---------------- */
+  --font-ui: var(--font-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-brand: var(--font-ui);
+  --text-xs: .75rem;   --text-sm: .8125rem; --text-base: .875rem;
+  --text-md: 1rem;     --text-lg: 1.125rem; --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;  --text-3xl: 1.875rem; --text-4xl: 2.25rem;
 
-  /* --- Movimiento: confirma, no entretiene ------------------------------ */
+  /* --- Movimiento ------------------------------------------------------- */
   --motion-fast: 120ms;
   --motion-normal: 180ms;
   --motion-slow: 260ms;
   --ease-out: cubic-bezier(.22, .61, .36, 1);
   --ease-in-out: cubic-bezier(.4, 0, .2, 1);
 
-  /* --- Foco ------------------------------------------------------------- */
-  --focus-ring: 0 0 0 3px rgba(13, 92, 85, .32);
-  --focus-ring-offset: 0 0 0 2px var(--surface-1), 0 0 0 5px rgba(13, 92, 85, .38);
+  /* --- Foco: anillo violeta, como la referencia ------------------------- */
+  --focus-ring: 0 0 0 1px var(--accent-ring), 0 0 0 3px rgba(157, 78, 221, .35);
+  --focus-ring-offset: 0 0 0 2px var(--canvas), 0 0 0 5px rgba(157, 78, 221, .38);
 
-  /* --- Metricas y capas (heredadas de la base espacial) ----------------- */
+  /* --- Metricas y capas ------------------------------------------------- */
   --control: 2.75rem;
   --control-sm: 2.25rem;
-  --nav-height: 66px;
+  --nav-height: 64px;
   --z-map: 10;
-  --z-sticky: 900;
-  --z-nav: 1500;
+  --z-sticky: 55;
+  --z-nav: 60;
   --z-dropdown: 1800;
   --z-overlay: 2100;
-  --z-modal: 2400;
+  --z-modal: 20000;
 }
 
 * { box-sizing: border-box; }
@@ -130,7 +140,7 @@ button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: .62; }
 button, a, summary { -webkit-tap-highlight-color: transparent; }
-::selection { background: var(--brand-tint); color: var(--ink); }
+::selection { background: var(--accent-surface); color: var(--ink); }
 
 /* Jerarquía tipográfica: pesos contenidos y tracking negativo en títulos. */
 h1, h2, h3, h4 { margin: 0; color: var(--ink); letter-spacing: -.02em; line-height: 1.15; font-weight: 700; }
@@ -179,12 +189,12 @@ p { margin: 0; }
 .brand { display: inline-flex; align-items: center; gap: .7rem; text-decoration: none; border-radius: var(--radius-sm); }
 .brand-mark {
   position: relative; display: grid; place-items: center; width: 38px; height: 38px;
-  border-radius: var(--radius-sm); background: var(--brand); color: #fff;
+  border-radius: var(--radius-sm); background: var(--accent-strong); color: #fff;
   font-size: .95rem; font-weight: 700; letter-spacing: .02em;
   box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255, 255, 255, .18);
 }
 .brand-mark.is-dark { background: #fff; color: var(--ink); }
-.brand-mark-accent { position: absolute; right: -3px; bottom: -3px; width: 9px; height: 9px; rotate: 45deg; background: var(--pick); border-radius: 1px; }
+.brand-mark-accent { position: absolute; right: -3px; bottom: -3px; width: 9px; height: 9px; rotate: 45deg; background: var(--accent); border-radius: 1px; }
 .brand-text { display: grid; color: var(--ink); }
 .brand-text.is-dark { color: #fff; }
 .brand-word { font-family: var(--font-brand); font-size: 1.4rem; line-height: 1; letter-spacing: .06em; }
@@ -203,7 +213,7 @@ p { margin: 0; }
 .nav-link.is-active { color: var(--ink); font-weight: 600; }
 .nav-link.is-active::after {
   content: ""; position: absolute; left: .75rem; right: .75rem; bottom: .18rem;
-  height: 2px; border-radius: 2px; background: var(--pick);
+  height: 2px; border-radius: 2px; background: var(--accent);
 }
 .nav-link.is-personal { color: var(--ink-3); }
 .nav-divider { width: 1px; height: 22px; margin: 0 .5rem; background: var(--line); }
@@ -219,7 +229,7 @@ p { margin: 0; }
 .hero {
   position: relative;
   overflow: hidden;
-  background: var(--brand);
+  background: var(--accent-strong);
 }
 .hero-image { z-index: 0; }
 .hero-overlay {
@@ -235,9 +245,9 @@ p { margin: 0; }
   z-index: 3;
   inset: auto 0 0;
   height: 4px;
-  background: var(--pick);
+  background: var(--accent);
 }
-.eyebrow { font-size: var(--text-xs); font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--brand); }
+.eyebrow { font-size: var(--text-xs); font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--accent-strong); }
 .section-title { margin-top: .45rem; color: var(--ink); font-size: clamp(1.6rem, 3.2vw, 2.3rem); line-height: 1.12; font-weight: 700; letter-spacing: -.03em; }
 
 .field { display: grid; gap: .4rem; }
@@ -256,9 +266,9 @@ p { margin: 0; }
 }
 .field input::placeholder, .field textarea::placeholder { color: var(--ink-3); }
 .field input:hover, .field select:hover { border-color: var(--line-strong); background: var(--surface-2); }
-.field input:focus, .field select:focus, .field textarea:focus { border-color: var(--brand); background: var(--surface-1); box-shadow: var(--focus-ring); }
+.field input:focus, .field select:focus, .field textarea:focus { border-color: var(--accent-strong); background: var(--surface-1); box-shadow: var(--focus-ring); }
 .check { display: flex; min-height: 44px; align-items: center; gap: .55rem; font-size: var(--text-base); font-weight: 500; color: var(--ink-2); }
-.check input { width: 1.05rem; height: 1.05rem; accent-color: var(--brand); }
+.check input { width: 1.05rem; height: 1.05rem; accent-color: var(--accent-strong); }
 
 .primary-button, .secondary-button {
   display: inline-flex;
@@ -277,12 +287,12 @@ p { margin: 0; }
               transform var(--motion-fast) var(--ease-out);
 }
 .primary-button {
-  border: 1px solid var(--brand);
-  background: var(--brand);
+  border: 1px solid var(--accent-strong);
+  background: var(--accent-strong);
   color: var(--ink-inverse);
   box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255, 255, 255, .12);
 }
-.primary-button:hover { background: var(--brand-hover); box-shadow: var(--shadow-md), inset 0 1px 0 rgba(255, 255, 255, .16); }
+.primary-button:hover { background: var(--accent); box-shadow: var(--shadow-md), inset 0 1px 0 rgba(255, 255, 255, .16); }
 .primary-button:active { transform: translateY(1px); box-shadow: var(--shadow-xs); }
 .secondary-button {
   border: 1px solid var(--line-strong);
@@ -290,10 +300,10 @@ p { margin: 0; }
   color: var(--ink);
   box-shadow: var(--shadow-xs);
 }
-.secondary-button:hover { background: var(--brand-tint); border-color: var(--brand); box-shadow: var(--shadow-sm); }
+.secondary-button:hover { background: var(--accent-surface); border-color: var(--accent-strong); box-shadow: var(--shadow-sm); }
 .secondary-button:active { transform: translateY(1px); }
 .focus-ring:focus-visible, .primary-button:focus-visible, .secondary-button:focus-visible, a:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
-  outline: 2px solid var(--brand);
+  outline: 2px solid var(--accent-strong);
   outline-offset: 2px;
   border-radius: var(--radius-xs);
 }
@@ -316,8 +326,8 @@ p { margin: 0; }
 .property-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); border-color: var(--line); }
 .property-card:hover .property-card-media img { transform: scale(1.035); }
 .property-card.is-selected {
-  border-color: var(--brand);
-  box-shadow: 0 0 0 2px var(--brand), var(--shadow-lg);
+  border-color: var(--accent-strong);
+  box-shadow: 0 0 0 2px var(--accent-strong), var(--shadow-lg);
 }
 .property-card.is-hidden {
   display: grid; place-content: center; min-height: 190px; text-align: center;
@@ -335,7 +345,7 @@ p { margin: 0; }
   font-weight: 700; letter-spacing: -.025em; color: var(--ink);
   font-variant-numeric: tabular-nums; line-height: 1.15; text-wrap: balance;
 }
-.card-type { margin-top: .3rem; font-size: var(--text-xs); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--brand); }
+.card-type { margin-top: .3rem; font-size: var(--text-xs); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--accent-strong); }
 .card-title {
   margin-top: .55rem; font-size: var(--text-base); font-weight: 600; line-height: 1.4; color: var(--ink);
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 2.8em;
@@ -366,10 +376,10 @@ p { margin: 0; }
 }
 .card-action-button:hover { background: #fff; transform: scale(1.06); }
 .card-action-button:active { transform: scale(.96); }
-.card-action-button[aria-pressed="true"] { background: var(--brand); border-color: var(--ink); color: #fff; }
+.card-action-button[aria-pressed="true"] { background: var(--accent-strong); border-color: var(--ink); color: #fff; }
 .card-action-notice {
   position: absolute; right: 0; top: 42px; max-width: 210px;
-  border-radius: var(--radius-sm); background: var(--brand); color: #fff;
+  border-radius: var(--radius-sm); background: var(--accent-strong); color: #fff;
   padding: .4rem .6rem; font-size: var(--text-xs); font-weight: 500; line-height: 1.35;
   box-shadow: var(--shadow-lg);
 }
@@ -391,18 +401,18 @@ p { margin: 0; }
 .compare-col-head { background: var(--surface-1); min-width: 190px; vertical-align: bottom; }
 .compare-cell { color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .property-fallback { display: grid; height: 100%; width: 100%; place-content: center; gap: .5rem; background: var(--surface-2); color: var(--ink-2); text-align: center; }
-.property-fallback span { font-size: 2.5rem; line-height: 1; color: var(--brand); }
+.property-fallback span { font-size: 2.5rem; line-height: 1; color: var(--accent-strong); }
 .property-fallback p { font-size: .75rem; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
 .empty-panel { border: 1px dashed var(--line-strong); border-radius: var(--radius-lg); background: var(--surface-1); padding: 2.25rem; color: var(--ink-3); text-align: center; }
 .detail-panel { border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface-1); padding: clamp(1.35rem, 3vw, 2rem); box-shadow: var(--shadow-sm); }
 .detail-panel h2 { color: var(--ink); font-size: var(--text-lg); font-weight: 700; letter-spacing: -.02em; }
-.pill { display: inline-flex; align-items: center; border-radius: var(--radius-pill); background: var(--brand); padding: .32rem .75rem; color: #fff; font-size: var(--text-xs); font-weight: 600; letter-spacing: .01em; box-shadow: var(--shadow-sm); }
-.pill-light { background: var(--brand-tint); color: var(--brand-hover); box-shadow: none; }
-.pill-pick { background: var(--pick-tint); color: var(--pick-hover); box-shadow: none; }
+.pill { display: inline-flex; align-items: center; border-radius: var(--radius-pill); background: var(--accent-strong); padding: .32rem .75rem; color: #fff; font-size: var(--text-xs); font-weight: 600; letter-spacing: .01em; box-shadow: var(--shadow-sm); }
+.pill-light { background: var(--accent-surface); color: var(--accent); box-shadow: none; }
+.pill-pick { background: var(--accent-surface); color: var(--accent-soft); box-shadow: none; }
 .legal-copy { color: #475569; font-size: 1rem; line-height: 1.8; }
 .legal-copy h2 { margin-top: 2rem; color: var(--ink); font-size: 1.35rem; line-height: 1.3; font-weight: 900; }
 .legal-copy p { margin-top: .75rem; }
-.legal-copy a { color: var(--brand); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.legal-copy a { color: var(--accent-strong); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
 .skeleton { border-radius: var(--radius-md); background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-2) 50%, var(--surface-2) 75%); background-size: 200% 100%; animation: skeleton 1.6s infinite linear; }
 .map-loading { display: grid; height: 100%; place-items: center; color: #526276; font-size: .875rem; font-weight: 700; }
 .map-progressive-placeholder { position: relative; isolation: isolate; display: grid; height: 100%; min-height: 480px; place-content: center; justify-items: center; overflow: hidden; gap: .45rem; background: #dfe9ee; color: var(--ink); text-align: center; }
@@ -411,15 +421,15 @@ p { margin: 0; }
 .map-progressive-placeholder strong { font-size: var(--text-md); font-weight: 600; letter-spacing: -.015em; }
 .map-progressive-placeholder small { max-width: 21rem; color: var(--ink-3); font-size: var(--text-sm); line-height: 1.5; }
 .map-progressive-placeholder button { min-height: 40px; margin-top: .7rem; padding: .5rem 1rem; font-size: var(--text-sm); font-weight: 600; }
-.map-placeholder-pin { display: block; width: 30px; height: 30px; border: 5px solid white; border-radius: 50% 50% 50% 0; background: var(--brand); box-shadow: 0 5px 16px rgba(6,25,47,.24); transform: rotate(-45deg); }
+.map-placeholder-pin { display: block; width: 30px; height: 30px; border: 5px solid white; border-radius: 50% 50% 50% 0; background: var(--accent-strong); box-shadow: 0 5px 16px rgba(6,25,47,.24); transform: rotate(-45deg); }
 /* Marcador ERETZ: ficha de dato en papel con filo de tinta. Ver Identity V1. */
 .eretz-map-marker {
   display: block; width: 20px; height: 20px; border: 3px solid #fff;
-  border-radius: 50% 50% 50% 0; background: var(--brand);
+  border-radius: 50% 50% 50% 0; background: var(--accent-strong);
   box-shadow: 0 4px 12px rgba(6, 25, 47, .38); transform: rotate(-45deg);
   transition: transform var(--motion-fast) var(--ease-out), background var(--motion-fast) var(--ease-out);
 }
-.eretz-map-marker:hover { background: var(--brand); transform: rotate(-45deg) scale(1.12); }
+.eretz-map-marker:hover { background: var(--accent-strong); transform: rotate(-45deg) scale(1.12); }
 /* --- Integración de Leaflet con el lenguaje ERETZ ------------------------- */
 .leaflet-container { z-index: 0; font-family: var(--font-ui); }
 /* Controles de zoom nativos -> superficie ERETZ. */
@@ -432,7 +442,7 @@ p { margin: 0; }
   transition: background var(--motion-fast) var(--ease-out);
 }
 .leaflet-control-zoom a:last-child { border-bottom: 1px solid var(--line) !important; }
-.leaflet-control-zoom a:hover { background: #fff !important; color: var(--brand) !important; }
+.leaflet-control-zoom a:hover { background: #fff !important; color: var(--accent-strong) !important; }
 .leaflet-control-attribution {
   background: var(--surface-1) !important;  border-radius: var(--radius-xs) 0 0 0; color: var(--ink-3) !important; font-size: 10px !important;
 }
@@ -447,9 +457,9 @@ p { margin: 0; }
 
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 .icon-button { display: grid; min-width: 44px; min-height: 44px; place-items: center; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-1); color: var(--ink); font-size: 1.25rem; transition: background var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out); }
-.icon-button:hover { background: var(--brand-tint); border-color: var(--brand); }
+.icon-button:hover { background: var(--accent-surface); border-color: var(--accent-strong); }
 .alert { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; border: 1px solid var(--line); border-radius: var(--radius-md); background: white; padding: .85rem 1rem; font-size: .875rem; }
-.alert a { margin-left: auto; color: var(--brand); font-weight: 800; text-decoration: underline; }
+.alert a { margin-left: auto; color: var(--accent-strong); font-weight: 800; text-decoration: underline; }
 .alert-warning { border-color: #efd498; background: #fff9eb; color: #6d490d; }
 
 /* Map-first explorer */
@@ -490,10 +500,10 @@ p { margin: 0; }
   text-decoration: none; box-shadow: var(--shadow-xs); cursor: pointer;
   transition: background var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
 }
-.chip:hover { background: var(--brand-tint); border-color: var(--brand); }
+.chip:hover { background: var(--accent-surface); border-color: var(--accent-strong); }
 .chip [aria-hidden="true"] { color: var(--ink-3); font-size: 1rem; line-height: 1; }
-.chip:hover [aria-hidden="true"] { color: var(--brand); }
-.chip-viewport { background: var(--brand-tint); border-color: var(--brand); color: var(--brand-hover); }
+.chip:hover [aria-hidden="true"] { color: var(--accent-strong); }
+.chip-viewport { background: var(--accent-surface); border-color: var(--accent-strong); color: var(--accent); }
 .chip-clear { background: transparent; border-color: transparent; color: var(--ink-3); box-shadow: none; text-decoration: underline; text-underline-offset: 3px; }
 .chip-clear:hover { background: transparent; color: var(--bad); border-color: transparent; }
 
@@ -518,10 +528,10 @@ p { margin: 0; }
 .context-bar-viewport { display: inline-flex; align-items: center; gap: .4rem; }
 .context-bar-viewport-badge {
   display: inline-flex; align-items: center; gap: .35rem; border-radius: var(--radius-pill);
-  background: var(--brand-tint); color: var(--brand-hover); border: 1px solid var(--brand-tint);
+  background: var(--accent-surface); color: var(--accent); border: 1px solid var(--accent-surface);
   padding: .28rem .7rem; font-size: var(--text-sm); font-weight: 500;
 }
-.context-bar-viewport-remove { border: 0; background: transparent; color: var(--brand-hover); font-size: var(--text-sm); text-decoration: underline; text-underline-offset: 3px; }
+.context-bar-viewport-remove { border: 0; background: transparent; color: var(--accent); font-size: var(--text-sm); text-decoration: underline; text-underline-offset: 3px; }
 .context-bar-viewport-remove:hover { color: var(--bad); }
 .mobile-mode-label { display: none; }
 .explorer-primary-search { display: grid; grid-template-columns: minmax(240px,1fr) minmax(170px,.24fr) minmax(185px,.26fr) auto auto; gap: .55rem; align-items: center; }
@@ -532,7 +542,7 @@ p { margin: 0; }
   transition: border-color var(--motion-fast) var(--ease-out), background var(--motion-fast) var(--ease-out);
 }
 .filter-toggle { display: flex; min-width: 128px; align-items: center; justify-content: space-between; gap: .45rem; font-weight: 600; }
-.filter-toggle:hover, .explorer-primary-search > select:hover { border-color: var(--brand); background: var(--brand-tint); }
+.filter-toggle:hover, .explorer-primary-search > select:hover { border-color: var(--accent-strong); background: var(--accent-surface); }
 .explorer-search-button { height: var(--control); min-width: 104px; }
 
 /* Buscador universal: el control más importante del producto. */
@@ -545,8 +555,8 @@ p { margin: 0; }
   transition: border-color var(--motion-fast) var(--ease-out), box-shadow var(--motion-fast) var(--ease-out);
 }
 .search-combobox input::placeholder { color: var(--ink-3); }
-.search-combobox input:focus, .explorer-primary-search select:focus { border-color: var(--brand); box-shadow: var(--focus-ring); }
-.search-icon { position: absolute; z-index: 1; left: 1rem; top: 50%; translate: 0 -52%; color: var(--brand); font-size: 1.2rem; font-weight: 600; pointer-events: none; }
+.search-combobox input:focus, .explorer-primary-search select:focus { border-color: var(--accent-strong); box-shadow: var(--focus-ring); }
+.search-icon { position: absolute; z-index: 1; left: 1rem; top: 50%; translate: 0 -52%; color: var(--accent-strong); font-size: 1.2rem; font-weight: 600; pointer-events: none; }
 .search-suggestions {
   position: absolute; z-index: var(--z-dropdown); top: calc(100% + .45rem); left: 0; right: 0;
   overflow: auto; max-height: 340px;
@@ -560,7 +570,7 @@ p { margin: 0; }
   border-radius: var(--radius-xs); padding: .55rem .7rem; color: var(--ink); cursor: pointer;
   font-size: var(--text-base);
 }
-.search-suggestions li.is-active, .search-suggestions li:hover { background: var(--brand-tint); color: var(--ink); }
+.search-suggestions li.is-active, .search-suggestions li:hover { background: var(--accent-surface); color: var(--ink); }
 .search-suggestions small { color: var(--ink-3); font-size: var(--text-xs); font-weight: 500; letter-spacing: .02em; }
 @keyframes eretz-pop { from { opacity: 0; transform: translateY(-4px) scale(.99); } to { opacity: 1; transform: none; } }
 .filter-backdrop { position: fixed; z-index: 2150; inset: 0; border: 0; background: rgba(6,25,47,.52); }
@@ -585,7 +595,7 @@ p { margin: 0; }
 }
 .filter-warning {
   margin-top: .85rem; border-radius: var(--radius-sm); background: var(--warn-tint);
-  border: 1px solid var(--pick-tint); padding: .7rem .8rem; color: var(--warn); font-size: var(--text-sm);
+  border: 1px solid var(--accent-surface); padding: .7rem .8rem; color: var(--warn); font-size: var(--text-sm);
 }
 .filter-panel-actions {
   position: sticky; bottom: -1.4rem; display: flex; align-items: center; justify-content: space-between; gap: .8rem;
@@ -629,8 +639,8 @@ p { margin: 0; }
   font-size: var(--text-sm); box-shadow: var(--shadow-xs);
   transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out);
 }
-.density-toggle button:hover:not(:disabled) { border-color: var(--brand); color: var(--ink); background: var(--brand-tint); }
-.density-toggle button.is-active { background: var(--brand); border-color: var(--ink); color: #fff; font-weight: 600; }
+.density-toggle button:hover:not(:disabled) { border-color: var(--accent-strong); color: var(--ink); background: var(--accent-surface); }
+.density-toggle button.is-active { background: var(--accent-strong); border-color: var(--ink); color: #fff; font-weight: 600; }
 .hide-visited-toggle { margin-left: auto; }
 .hide-visited-toggle:disabled { opacity: .5; cursor: not-allowed; }
 /* Búsqueda en lenguaje natural: entrada opcional, visualmente ligada al
@@ -643,11 +653,11 @@ p { margin: 0; }
   outline: none; transition: border-color var(--motion-fast) var(--ease-out), background var(--motion-fast) var(--ease-out), box-shadow var(--motion-fast) var(--ease-out);
 }
 .nl-search-input::placeholder { color: var(--ink-3); }
-.nl-search-input:focus { border-style: solid; border-color: var(--brand); background: var(--surface-1); box-shadow: var(--focus-ring); }
+.nl-search-input:focus { border-style: solid; border-color: var(--accent-strong); background: var(--surface-1); box-shadow: var(--focus-ring); }
 .nl-search .primary-button { min-height: var(--control); }
 .nl-note {
   flex-basis: 100%; margin: 0; font-size: var(--text-sm); color: var(--warn);
-  background: var(--warn-tint); border: 1px solid var(--pick-tint);
+  background: var(--warn-tint); border: 1px solid var(--accent-surface);
   border-radius: var(--radius-sm); padding: .45rem .7rem;
 }
 .collection-picker-panel { margin-top: .5rem; border: 1px solid var(--line); border-radius: .6rem; padding: .6rem .7rem; background: #fff; }
@@ -658,7 +668,7 @@ p { margin: 0; }
 .ficha-section-nav { position: sticky; top: var(--nav-height, 64px); z-index: 20; display: flex; flex-wrap: wrap; gap: .25rem; margin-top: 1.25rem; border-bottom: 1px solid var(--line); background: rgba(255,255,255,.97); padding: .5rem 0; }
 .ficha-section-nav a { border-radius: .5rem; padding: .35rem .7rem; font-size: .78rem; font-weight: 800; color: #526276; }
 .ficha-section-nav a:hover, .ficha-section-nav a:focus-visible { background: #f1f5f9; color: var(--ink); }
-.state-panel > span { display: grid; place-items: center; width: 56px; height: 56px; border-radius: var(--radius-pill); background: var(--brand-tint); color: var(--brand); font-size: 1.6rem; }
+.state-panel > span { display: grid; place-items: center; width: 56px; height: 56px; border-radius: var(--radius-pill); background: var(--accent-surface); color: var(--accent-strong); font-size: 1.6rem; }
 .state-panel h2 { margin-top: .9rem; color: var(--ink); font-size: var(--text-lg); font-weight: 700; letter-spacing: -.02em; }
 .state-panel p { max-width: 34rem; margin-top: .45rem; color: var(--ink-3); font-size: var(--text-base); line-height: 1.6; }
 .state-panel .primary-button { margin-top: 1rem; }
@@ -769,8 +779,8 @@ p { margin: 0; }
 .entity-card:hover { transform: translateY(-2px); border-color: var(--line); box-shadow: var(--shadow-md); }
 .entity-monogram {
   display: grid; place-items: center; flex: 0 0 auto; width: 42px; height: 42px;
-  border-radius: var(--radius-sm); background: var(--brand-tint); color: var(--brand-hover);
-  font-size: var(--text-md); font-weight: 600; border: 1px solid var(--brand-tint);
+  border-radius: var(--radius-sm); background: var(--accent-surface); color: var(--accent);
+  font-size: var(--text-md); font-weight: 600; border: 1px solid var(--accent-surface);
 }
 .entity-body { display: grid; gap: .2rem; min-width: 0; }
 .entity-name {
@@ -818,7 +828,7 @@ footer nav a {
 .form-check {
   inline-size: 1.5rem;
   block-size: 1.5rem;
-  accent-color: var(--brand);
+  accent-color: var(--accent-strong);
   cursor: pointer;
   flex: none;
 }
@@ -856,7 +866,7 @@ footer nav a {
   block-size: 1.5rem;
   padding-inline: .4rem;
   border-radius: 999px;
-  background: var(--brand);
+  background: var(--accent-strong);
   color: #fff;
   font-size: .78rem;
   font-weight: 700;
@@ -937,7 +947,7 @@ footer nav a {
 :root {
   /* Contenedor: casi ancho completo con margen chico (medido 1265 en 1280). */
   --container-max: 1280px;
-  --container-gutter: 1rem;
+  --container-gutter: .5rem;   /* medido: 1265 utiles en 1280 */
 
   /* Modulo de control: 36px en resultados, 44px en hero/CTA. */
   --control-h: 2.25rem;
@@ -1107,14 +1117,14 @@ footer nav a {
   min-inline-size: 11.5rem;
   min-block-size: 3rem;
   border-radius: var(--radius-pill);
-  background: var(--brand);
+  background: var(--accent-strong);
   color: #fff;
   border: 0;
   box-shadow: var(--shadow-lg);
   font-weight: 700;
   z-index: 500;
 }
-.map-search-area:hover { background: var(--brand-hover); }
+.map-search-area:hover { background: var(--accent); }
 .map-search-area:active { transform: scale(.98); }
 
 /* ============================================================
@@ -1128,15 +1138,17 @@ footer nav a {
    limitan cuanto alto puede crecer, nunca cuanto ancho ocupa. Sin inline-size
    explicito, con la card en una sola columna ancha el tope de altura derivaba
    un ancho de 264px y la foto quedaba flotando en media tarjeta. */
+/* Ratio de la referencia: card de 400x275, es decir 16/11. El tope de altura
+   se retira: era lo que aplastaba la foto a 176px. */
 .property-card-media {
   inline-size: 100%;
-  aspect-ratio: 16 / 10;
-  max-block-size: 13rem;
+  aspect-ratio: 400 / 275;
+  max-block-size: none;
 }
 .property-card.is-compact .property-card-media,
 .density-compact .property-card-media {
   aspect-ratio: 3 / 2;
-  max-block-size: 11rem;
+  max-block-size: none;
 }
 .property-card-media img { inline-size: 100%; block-size: 100%; object-fit: cover; }
 /* El placeholder sin foto respeta la misma altura que una imagen real. */
@@ -1145,95 +1157,85 @@ footer nav a {
 
 
 /* ==========================================================================
-   ERETZ IDENTITY V1 — CAPA DE CARACTER
-   La disciplina espacial (grilla, densidad, split, master-detail, mosaico) ya
-   esta resuelta en las capas anteriores y NO se toca aqui. Esta capa define
-   unicamente lo que hace que el producto sea reconocible como ERETZ.
-
-   Reglas del sistema:
-   1. El dato antes que la decoracion.
-   2. La superficie nunca compite con la fotografia de la propiedad.
-   3. El verde es la MARCA y lo interactivo. La terracota es la SELECCION del
-      usuario. Nunca se usan como sinonimos.
-   4. Bordes solidos y hairline; sombra solo donde algo flota de verdad.
-   5. Numeros tabulares en todo lo comparable.
+   ROOMIX FIDELITY V1 — CAPA DE SUPERFICIE
+   Reemplaza a las tres capas de ERETZ Identity V1 (caracter, firmas y cierre
+   de utilidades). Las ideas de Identity V1 quedan en el historial de git y en
+   docs/ERETZ_IDENTITY_V1.md; no son la prioridad de esta fase.
    ========================================================================== */
 
-/* --- Lienzo ------------------------------------------------------------- */
-html, body { background: var(--canvas); color: var(--ink); }
-body { background-image: none; }
-::selection { background: var(--brand-tint-strong); color: var(--ink); }
+/* --- Lienzo: gradiente sutil medido en la referencia -------------------- */
+html { background: var(--canvas-deep); }
+body {
+  background: var(--canvas);
+  background-image: linear-gradient(135deg, var(--canvas) 0%, var(--canvas-tint) 100%);
+  background-attachment: fixed;
+  color: var(--ink);
+  font-size: var(--text-base);
+  line-height: 1.43;
+}
+::selection { background: var(--accent-surface); color: var(--ink); }
 
 h1, h2, h3, h4 { color: var(--ink); }
+h1 { font-size: var(--text-3xl); line-height: 1.2; font-weight: 700; }
+h2 { font-size: var(--text-2xl); line-height: 1.25; font-weight: 700; }
+h3 { font-size: var(--text-lg); line-height: 1.375; font-weight: 600; }
 
-/* --- Marca: monograma + wordmark tipografico ---------------------------- */
+/* --- Marca: monograma y wordmark sobre oscuro --------------------------- */
 .brand { display: inline-flex; align-items: center; gap: .6rem; text-decoration: none; }
 .brand-mark {
   display: grid;
   place-items: center;
   inline-size: 2.15rem;
   block-size: 2.15rem;
-  border: 1px solid var(--brand);
-  border-radius: var(--radius-sm);
-  background: var(--brand);
-  color: var(--ink-inverse);
+  border: 1px solid var(--accent-strong);
+  border-radius: var(--radius-md);
+  background: var(--accent-strong);
+  color: #fff;
   font-size: 1.05rem;
   font-weight: 700;
-  letter-spacing: 0;
   line-height: 1;
 }
-.brand-mark.is-dark { border-color: var(--ink-inverse); background: transparent; color: var(--ink-inverse); }
+.brand-mark.is-dark { border-color: rgba(255, 255, 255, .5); background: transparent; }
 .brand-text { display: grid; gap: .1rem; line-height: 1; }
-.brand-word {
-  font-family: var(--font-ui);
-  font-size: 1.02rem;
-  font-weight: 700;
-  letter-spacing: .13em;
-  color: var(--ink);
-}
-.brand-sub {
-  font-size: .5625rem;
-  font-weight: 600;
-  letter-spacing: .2em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-}
-.brand-text.is-dark .brand-word { color: var(--ink-inverse); }
-.brand-text.is-dark .brand-sub { color: rgba(255, 255, 255, .72); }
+.brand-word { font-family: var(--font-ui); font-size: 1.5rem; font-weight: 700; letter-spacing: -.01em; color: var(--ink); }
+.brand-sub { font-size: .5625rem; font-weight: 600; letter-spacing: .2em; text-transform: uppercase; color: var(--ink-4); }
+.brand-text.is-dark .brand-word { color: var(--ink); }
+.brand-text.is-dark .brand-sub { color: var(--ink-4); }
 
-/* --- Shell: el header es un documento, no una barra flotante ------------ */
+/* --- Shell: dos capas fijas, como la referencia ------------------------- */
 .site-header {
-  background: var(--surface-1);
+  background: var(--canvas);
   border-block-end: 1px solid var(--line);
   box-shadow: none;
+  padding-block-start: 0;
 }
-.nav-link { color: var(--ink-2); font-weight: 500; border-radius: var(--radius-sm); }
-.nav-link:hover { color: var(--ink); background: var(--surface-2); }
-.nav-link.is-active { color: var(--brand); font-weight: 600; }
+.nav-link { color: var(--ink-2); font-weight: 500; border-radius: var(--radius-md); }
+.nav-link:hover { color: var(--ink); background: rgba(255, 255, 255, .06); }
+.nav-link.is-active { color: var(--ink); font-weight: 600; }
 
 .explorer-toolbar { background: var(--canvas); border-block-end: 1px solid var(--line); }
 .explorer-toolbar::before { background: var(--canvas); }
-.explorer-page, .explorer-results-pane { background: var(--canvas); }
-.explorer-results-pane::before { background: var(--canvas); }
-.explorer-map-pane { background: var(--surface-2); border-color: var(--line); }
+.explorer-page, .explorer-results-pane { background: transparent; }
+.explorer-results-pane::before { background: transparent; }
+.explorer-map-pane { background: var(--canvas-deep); border-color: var(--line); }
 
-/* --- Buscador: el principal momento de marca ---------------------------- */
+/* --- Buscador ----------------------------------------------------------- */
 .explorer-primary-search input,
 .explorer-primary-search select,
 .nl-search input,
 .field input, .field select, .field textarea {
-  background: var(--surface-1);
+  background: rgba(255, 255, 255, .06);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-md);
   color: var(--ink);
 }
 .explorer-primary-search input::placeholder,
 .nl-search input::placeholder,
-.field input::placeholder { color: var(--ink-3); }
+.field input::placeholder { color: var(--ink-4); }
 .explorer-primary-search input:focus,
 .nl-search input:focus,
 .field input:focus, .field select:focus, .field textarea:focus {
-  border-color: var(--brand);
+  border-color: var(--accent);
   box-shadow: var(--focus-ring);
   outline: none;
 }
@@ -1241,32 +1243,30 @@ h1, h2, h3, h4 { color: var(--ink); }
   background: var(--elevated);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-xl);
   color: var(--ink);
 }
 .search-suggestions button:hover,
-.search-suggestions [role="option"]:hover { background: var(--surface-2); }
-.search-suggestions [aria-selected="true"],
-.search-suggestions .is-active {
-  background: var(--brand-tint);
-  color: var(--brand-active);
-  box-shadow: inset 3px 0 0 var(--brand);
+.search-suggestions li:hover { background: rgba(255, 255, 255, .08); }
+.search-suggestions [aria-selected="true"], .search-suggestions .is-active {
+  background: var(--accent-surface);
+  color: var(--ink);
 }
 
-/* --- Controles ---------------------------------------------------------- */
+/* --- Controles: radio 14 dominante, pildora para la accion primaria ----- */
 .primary-button {
-  background: var(--brand);
-  border: 1px solid var(--brand);
-  border-radius: var(--radius-md);
-  color: var(--ink-inverse);
+  background: var(--accent-strong);
+  border: 1px solid var(--accent-strong);
+  border-radius: var(--radius-pill);
+  color: #fff;
   font-weight: 600;
   box-shadow: none;
 }
-.primary-button:hover { background: var(--brand-hover); border-color: var(--brand-hover); }
-.primary-button:active { background: var(--brand-active); border-color: var(--brand-active); }
+.primary-button:hover { background: var(--accent); border-color: var(--accent); }
+.primary-button:active { background: var(--accent-strong); }
 .secondary-button, .icon-button, .card-action-button, .filter-toggle {
-  background: var(--surface-1);
-  border: 1px solid var(--line-strong);
+  background: rgba(255, 255, 255, .06);
+  border: 1px solid rgba(255, 255, 255, .2);
   border-radius: var(--radius-md);
   color: var(--ink);
   font-weight: 500;
@@ -1274,264 +1274,274 @@ h1, h2, h3, h4 { color: var(--ink); }
 }
 .secondary-button:hover, .icon-button:hover,
 .card-action-button:hover, .filter-toggle:hover {
-  background: var(--surface-2);
-  border-color: var(--ink-3);
+  background: rgba(255, 255, 255, .12);
+  border-color: var(--line-raised);
 }
-.focus-ring:focus-visible,
-button:focus-visible, a:focus-visible,
+.icon-button { border-radius: var(--radius-pill); }
+.focus-ring:focus-visible, button:focus-visible, a:focus-visible,
 input:focus-visible, select:focus-visible, textarea:focus-visible {
-  outline: 2px solid var(--brand);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
-/* Selector de modos: pieza agrupada sobre superficie hundida. */
+/* Selector de modos: segmento de radio 10 con botones de radio 8. */
 .view-mode-tabs {
-  background: var(--surface-2);
+  background: rgba(255, 255, 255, .06);
   border: 1px solid var(--line);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
 }
-.view-mode-tabs button { color: var(--ink-2); border-radius: var(--radius-sm); font-weight: 500; }
-.view-mode-tabs button:hover { color: var(--ink); background: var(--surface-1); }
+.view-mode-tabs button { color: var(--ink-3); border-radius: var(--radius-xs); font-weight: 500; }
+.view-mode-tabs button:hover { color: var(--ink); background: rgba(255, 255, 255, .08); }
 .view-mode-tabs button.is-active {
-  background: var(--surface-1);
-  color: var(--brand);
+  background: var(--accent-strong);
+  color: #fff;
   font-weight: 600;
-  box-shadow: var(--shadow-xs), inset 0 -2px 0 var(--brand);
+  box-shadow: none;
 }
 
-/* --- Familia unica de chips, pills y badges ----------------------------- */
+/* --- Chips, pills y badges --------------------------------------------- */
 .chip, .pill, .badge, .pill-light, .pill-pick {
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   border: 1px solid var(--line-strong);
-  background: var(--surface-1);
+  background: rgba(255, 255, 255, .06);
   color: var(--ink-2);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  letter-spacing: .01em;
+  font-size: var(--text-sm);
+  font-weight: 500;
 }
-.chip:hover { background: var(--surface-2); border-color: var(--ink-3); }
-.pill-light { background: var(--brand-tint); border-color: var(--brand-tint-strong); color: var(--brand-active); }
-.pill-pick { background: var(--pick-tint); border-color: var(--pick-tint-strong); color: var(--pick-hover); }
+.chip:hover { background: rgba(255, 255, 255, .12); border-color: var(--line-raised); }
+.pill-light { background: var(--accent-surface); border-color: var(--accent-ring); color: var(--accent-soft); }
+.pill-pick { background: var(--accent-surface); border-color: var(--accent-ring); color: var(--accent-soft); }
 .filter-group-count {
-  background: var(--brand);
-  color: var(--ink-inverse);
+  background: var(--accent-strong);
+  color: #fff;
   border-radius: var(--radius-pill);
   font-variant-numeric: tabular-nums;
 }
 
-/* --- Tarjeta de propiedad: la foto manda, la superficie se retira ------- */
-.property-card, .entity-card, .detail-panel, .state-panel, .context-bar, .surface {
+/* --- Tarjeta de propiedad ----------------------------------------------
+   La referencia NO usa superficie de tarjeta: fondo transparente, sin borde y
+   sin sombra. Solo la imagen lleva radio 16. El texto se apoya directamente
+   sobre el lienzo. Es la diferencia mas visible con la fase anterior. */
+.property-card {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--ink);
+  padding: 0;
+}
+.property-card:hover { border: 0; box-shadow: none; background: transparent; }
+.property-card-media {
+  border-radius: var(--radius-lg);
+  overflow: hidden;
   background: var(--surface-1);
+}
+.property-card:hover .property-card-media { opacity: .92; }
+.property-card-body { padding-inline: 0; padding-block-start: .6rem; }
+
+.card-title { font-size: 1.125rem; font-weight: 600; line-height: 1.375; color: var(--ink); }
+.card-price, .price { font-size: 1.25rem; font-weight: 600; line-height: 1.4; color: var(--ink); }
+.card-type, .card-location, .card-publisher, .card-availability, .card-specs {
+  font-size: var(--text-base);
+  font-weight: 400;
+  color: var(--ink-4);
+  border: 0;
+  padding-block-start: 0;
+  margin-block-start: .1rem;
+}
+.page-subtitle, small { color: var(--ink-4); }
+.eyebrow { color: var(--accent-soft); font-weight: 600; letter-spacing: .1em; text-transform: uppercase; font-size: var(--text-xs); }
+
+/* Estados de tarjeta: la referencia los resuelve con el mismo violeta. */
+.property-card.is-selected .property-card-media { box-shadow: 0 0 0 2px var(--accent); }
+.property-card.is-compared .property-card-media { box-shadow: 0 0 0 2px var(--accent-soft); }
+.property-card.is-visited .property-card-media { opacity: .6; }
+.card-visited-badge {
+  z-index: 2;
+  border-radius: var(--radius-xs);
+  background: rgba(0, 0, 0, .7);
+  color: #fff;
+  padding: .1rem .45rem;
+  font-size: 10px;
+  font-weight: 500;
+}
+.card-action-button.is-active { background: var(--accent-strong); border-color: var(--accent-strong); color: #fff; }
+
+/* --- Superficies de contenido ------------------------------------------ */
+.entity-card, .detail-panel, .state-panel, .context-bar, .surface, .surface-raised {
+  background: rgba(255, 255, 255, .04);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   box-shadow: none;
   color: var(--ink);
 }
-.property-card:hover, .entity-card:hover {
-  border-color: var(--line-strong);
-  box-shadow: var(--shadow-sm);
-}
-.property-card-media { background: var(--surface-2); }
-
-/* Precio: tabular, con la moneda en versalita atenuada delante del numero.
-   Es el mismo tratamiento en card, ficha, comparador y mapa. */
-.card-price, .detail-price, .price {
-  color: var(--ink);
-  font-variant-numeric: tabular-nums;
-  font-feature-settings: "tnum" 1;
-  letter-spacing: -.015em;
+.entity-card:hover { border-color: var(--accent-ring); background: rgba(255, 255, 255, .07); }
+.entity-card .entity-monogram, .entity-card [class*="monogram"] {
+  background: var(--accent-surface);
+  border: 1px solid var(--accent-ring);
+  border-radius: var(--radius-md);
+  color: var(--accent-soft);
   font-weight: 700;
 }
-.card-currency, .price-currency, .detail-currency {
-  font-size: .68em;
-  font-weight: 600;
-  letter-spacing: .08em;
-  color: var(--ink-3);
-}
-.card-location, .card-publisher, .card-availability, .page-subtitle, small {
-  color: var(--ink-3);
-}
-.eyebrow {
-  color: var(--brand);
-  font-weight: 700;
-  letter-spacing: .14em;
-  text-transform: uppercase;
-  font-size: var(--text-xs);
-}
+.entity-card .entity-count { color: var(--ink-4); font-variant-numeric: tabular-nums; }
 
-/* --- Lenguaje de SELECCION: terracota, siempre con la misma gramatica ---
-   Un filo de 3px del lado de entrada + tinte. Sirve en card, sugerencia,
-   categoria de filtro, marcador de mapa y fila de comparacion. */
-.property-card.is-selected,
-.entity-card.is-selected {
-  border-color: var(--pick);
-  box-shadow: inset 3px 0 0 var(--pick), var(--shadow-sm);
-}
-.property-card.is-compared { border-color: var(--pick); }
-.property-card.is-visited .property-card-media { opacity: .68; }
-.card-visited-badge {
-  z-index: 2;
-  border-radius: var(--radius-pill);
-  background: var(--ink);
-  color: var(--ink-inverse);
-  padding: .1rem .45rem;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: .04em;
-}
-.card-action-button.is-active {
-  background: var(--pick-tint);
-  border-color: var(--pick);
-  color: var(--pick-hover);
-}
-
-/* --- Mapa: los marcadores son fichas de dato, no globos -----------------
-   Esta es la firma mas visible del sistema. Un precio en el mapa se lee como
-   una etiqueta de documento: fondo papel, tinta oscura, filo definido. */
+/* --- Mapa: marcadores del lenguaje de la referencia --------------------- */
 .eretz-price-marker {
   display: inline-flex;
   min-width: 58px;
-  min-height: 26px;
+  min-height: 28px;
   align-items: center;
   justify-content: center;
-  border: 1.5px solid var(--marker-line);
-  border-radius: var(--radius-sm);
+  border: 2px solid var(--marker-line);
+  border-radius: var(--radius-pill);
   background: var(--marker-bg);
-  padding: .2rem .45rem;
+  padding: .2rem .55rem;
   color: var(--marker-ink);
   font-size: var(--text-xs);
-  font-weight: 700;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -.01em;
   box-shadow: var(--shadow-sm);
   white-space: nowrap;
-  transition: background var(--motion-fast) var(--ease-out),
-              color var(--motion-fast) var(--ease-out);
+  transition: background var(--motion-fast) var(--ease-out);
 }
-.eretz-price-marker:hover { background: var(--brand-tint); border-color: var(--brand); }
+.eretz-price-marker:hover { background: var(--accent-hover); }
 .eretz-price-marker.is-selected {
   background: var(--marker-selected-bg);
-  border-color: var(--marker-selected-bg);
+  border-color: #fff;
   color: var(--ink-inverse);
-  scale: 1.08;
-  box-shadow: var(--shadow-md);
+  scale: 1.1;
 }
 .eretz-map-cluster {
   display: grid;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   place-items: center;
-  border: 2px solid var(--surface-1);
+  border: 3px solid rgba(255, 255, 255, .92);
   border-radius: var(--radius-pill);
   background: var(--cluster-bg);
-  color: var(--ink-inverse);
+  color: #fff;
   font-size: var(--text-sm);
-  font-weight: 700;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   box-shadow: var(--shadow-md);
-  transition: background var(--motion-fast) var(--ease-out);
 }
-.eretz-map-cluster:hover { background: var(--brand-hover); }
+.eretz-map-cluster:hover { background: var(--accent); }
 .leaflet-bar a, .leaflet-control-zoom a {
-  background: var(--surface-1);
-  color: var(--ink);
-  border-color: var(--line-strong);
+  background: var(--elevated); color: var(--ink); border-color: var(--line-strong);
 }
-.leaflet-bar a:hover, .leaflet-control-zoom a:hover { background: var(--surface-2); }
+.leaflet-bar a:hover, .leaflet-control-zoom a:hover { background: var(--surface-3); }
 .map-search-area {
-  background: var(--brand);
-  border: 1px solid var(--brand);
+  background: var(--accent-strong);
+  border: 0;
   border-radius: var(--radius-md);
-  color: var(--ink-inverse);
+  color: #fff;
   font-weight: 600;
   box-shadow: var(--shadow-lg);
 }
-.map-search-area:hover { background: var(--brand-hover); }
+.map-search-area:hover { background: var(--accent); }
 .map-result-indicator, .context-bar-viewport-badge, .map-icon-controls button {
-  background: var(--surface-1);
-  color: var(--ink);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
-}
-.map-progressive-placeholder { background: var(--surface-2); color: var(--ink-2); }
-.map-popup { color: var(--ink); }
-.map-popup small { color: var(--ink-3); }
-
-/* --- Sistema unico de capas flotantes: modales, drawers y dropdowns ----- */
-.filter-panel, .filter-panel-header, .filter-panel-actions {
   background: var(--elevated);
   color: var(--ink);
-}
-.filter-panel {
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-xl);
-}
-.filter-panel-header { border-block-end: 1px solid var(--line); }
-.filter-backdrop { background: rgba(20, 32, 29, .42); }
-
-.filter-nav-item { color: var(--ink-2); border-radius: var(--radius-md); }
-.filter-nav-item:hover { background: var(--surface-2); color: var(--ink); }
-.filter-nav-item.is-active {
-  background: var(--brand-tint);
-  border-color: var(--brand-tint-strong);
-  color: var(--brand-active);
-  box-shadow: inset 3px 0 0 var(--brand);
-}
-.filter-nav-item.is-active .filter-nav-hint { color: var(--brand-active); opacity: .78; }
-.filter-panel-content .filter-group-name { color: var(--ink); }
-.filter-panel-aside { border-inline-end: 1px solid var(--line); }
-
-/* --- Estados vacios, carga y error: sobrios, sin ilustracion ------------ */
-.state-panel, .gallery-empty, .empty-state {
-  background: var(--surface-2);
-  border: 1px dashed var(--line-strong);
-  border-radius: var(--radius-lg);
-  color: var(--ink-2);
-  box-shadow: none;
-}
-.gallery-empty-text, .empty-state small { color: var(--ink-3); }
-.filter-warning {
-  background: var(--warn-tint);
-  border: 1px solid var(--warn);
+  border: 1px solid rgba(255, 255, 255, .2);
   border-radius: var(--radius-md);
-  color: var(--warn);
-}
-.detail-disclaimer {
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  color: var(--ink-2);
-}
-.detail-disclaimer strong { color: var(--ink); }
-
-/* --- Ficha -------------------------------------------------------------- */
-.ficha-section-nav {
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-}
-.ficha-section-nav a { color: var(--ink-2); border-radius: var(--radius-sm); font-weight: 500; }
-.ficha-section-nav a:hover { background: var(--surface-1); color: var(--ink); }
-.detail-contact {
-  background: var(--surface-1);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
 }
+.map-progressive-placeholder { background: var(--canvas-deep); color: var(--ink-3); }
+.map-popup { color: var(--ink); }
+.map-popup small { color: var(--ink-4); }
 
-/* --- Movimiento: corto, funcional y desactivable ------------------------ */
+/* --- Capas flotantes: overlay al 50% de negro, panel de radio 24 -------- */
+.filter-panel {
+  background: var(--elevated);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-xl);
+  color: var(--ink);
+}
+.filter-panel-header, .filter-panel-actions { background: transparent; color: var(--ink); }
+.filter-panel-header { border-block-end: 1px solid var(--line-accent); }
+.filter-backdrop { background: var(--overlay-veil); }
+
+.filter-nav-item { color: var(--ink); border-radius: var(--radius-md); }
+.filter-nav-item:hover { background: rgba(255, 255, 255, .06); }
+.filter-nav-item.is-active {
+  background: rgba(255, 255, 255, .06);
+  border-color: var(--line-strong);
+  color: var(--ink);
+  box-shadow: none;
+}
+.filter-nav-item.is-active .filter-nav-hint { color: var(--ink-4); }
+.filter-panel-content .filter-group-name { color: var(--ink); }
+.filter-panel-aside { border-inline-end: 1px solid var(--line-accent); }
+
+/* --- Estados vacios, carga y error -------------------------------------- */
+.state-panel, .gallery-empty, .empty-state, .empty-panel {
+  background: rgba(255, 255, 255, .04);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  color: var(--ink-3);
+  box-shadow: none;
+}
+.gallery-empty-text, .empty-state small { color: var(--ink-4); }
+.filter-warning { background: var(--warn-tint); border: 1px solid rgba(251, 191, 36, .3); border-radius: var(--radius-md); color: var(--warn); }
+.detail-disclaimer {
+  background: rgba(255, 255, 255, .04);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  color: var(--ink-3);
+}
+.detail-disclaimer strong { color: var(--ink); }
+.skeleton { background: var(--surface-2); }
+.alert { background: rgba(255, 255, 255, .06); border-color: var(--line-strong); color: var(--ink-2); border-radius: var(--radius-md); }
+
+/* --- Ficha --------------------------------------------------------------
+   H1 30/700/36, precio 24/700/32, metadatos 16/400/24, subtitulo 14/400/20. */
+.detail-price { font-size: 1.5rem; font-weight: 700; line-height: 1.33; color: var(--ink); }
+.detail-panel > h2 { border: 0; padding-block-end: 0; }
+.detail-panel > h2::after, .section-heading::after { content: none; }
+.section-heading { border: 0; padding-block-end: 0; }
+.ficha-section-nav {
+  background: rgba(255, 255, 255, .06);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+.ficha-section-nav a { color: var(--ink-3); border-radius: var(--radius-xs); font-weight: 500; }
+.ficha-section-nav a:hover { background: rgba(255, 255, 255, .08); color: var(--ink); }
+.detail-contact {
+  background: rgba(255, 255, 255, .04);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: none;
+}
+
+/* --- Pie ---------------------------------------------------------------- */
+.site-footer { background: var(--canvas-deep); border-block-start: 1px solid var(--line); color: var(--ink-3); }
+.site-footer a { color: var(--ink-3); }
+.site-footer a:hover { color: var(--ink); }
+.site-footer h2, .site-footer strong { color: var(--ink); }
+.footer-lede { color: var(--ink-3); }
+.footer-heading { color: var(--ink); font-weight: 700; }
+.footer-rule { border-block-start: 1px solid var(--line); }
+.footer-fineprint { color: var(--ink-4); }
+
+/* --- Utilidades Tailwind heredadas: a la escala oscura ------------------ */
+.text-slate-400, .text-slate-500 { color: var(--ink-4) !important; }
+.text-slate-600, .text-slate-700 { color: var(--ink-3) !important; }
+.text-slate-800, .text-slate-900 { color: var(--ink) !important; }
+.bg-white { background-color: rgba(255, 255, 255, .04) !important; }
+.bg-slate-50 { background-color: rgba(255, 255, 255, .06) !important; }
+.border-slate-100, .border-slate-200 { border-color: var(--line) !important; }
+.border-slate-300 { border-color: var(--line-strong) !important; }
+
+/* --- Movimiento --------------------------------------------------------- */
 .property-card, .entity-card, .nav-link, .chip,
 .primary-button, .secondary-button, .icon-button, .card-action-button,
 .filter-nav-item, .view-mode-tabs button {
   transition: background var(--motion-fast) var(--ease-out),
               border-color var(--motion-fast) var(--ease-out),
               color var(--motion-fast) var(--ease-out),
+              opacity var(--motion-fast) var(--ease-out),
               box-shadow var(--motion-fast) var(--ease-out);
-}
-.primary-button:active, .secondary-button:active, .card-action-button:active {
-  transform: translateY(1px);
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -1540,147 +1550,37 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     transition-duration: .001ms !important;
     scroll-behavior: auto !important;
   }
-  .primary-button:active, .secondary-button:active,
-  .card-action-button:active, .eretz-price-marker.is-selected { transform: none; scale: 1; }
+  .eretz-price-marker.is-selected { scale: 1; }
 }
 
-/* ==========================================================================
-   ERETZ IDENTITY V1 — ELEMENTOS FIRMA
-   Cuatro recursos repetibles que hacen reconocible al producto sin repetir el
-   logo. Todos salen del sistema, no de un efecto decorativo.
-   ========================================================================== */
+/* --- Precio: la referencia lo trata como un solo bloque tipografico ------
+   El componente PriceTag conserva su semantica (moneda y monto separables,
+   estado "a consultar"), pero la moneda deja de ir en versalita atenuada. */
+.price { display: inline; }
+.price-currency, .price-amount {
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: normal;
+  text-transform: none;
+  color: inherit;
+}
+.price-amount { font-variant-numeric: tabular-nums; }
+.price-consult { color: var(--ink-4); font-weight: 500; font-size: .92em; }
 
-/* FIRMA 1 — El filo de marca.
-   Una linea de 3px del verde de marca en el borde superior de la pagina. Es lo
-   unico permanentemente coloreado del shell: la marca esta presente sin ocupar
-   superficie ni competir con las fotos. */
-body::before {
-  content: "";
-  position: fixed;
-  z-index: calc(var(--z-nav) + 1);
-  inset-block-start: 0;
-  inset-inline: 0;
-  block-size: 3px;
-  background: var(--brand);
-  pointer-events: none;
+/* Densidad del cuerpo de tarjeta: la referencia usa 85px para dos lineas.
+   ERETZ muestra siete (tipo, titulo, ubicacion, ambientes, publicador, fecha),
+   que son datos propios y no se eliminan; lo que se ajusta es el ritmo
+   vertical para acercarse a su capacidad de barrido. */
+.property-card-body { display: grid; gap: .15rem; padding-block-start: .55rem; }
+.property-card-body > * { margin: 0; }
+.card-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
 }
-.site-header { padding-block-start: 3px; }
-
-/* FIRMA 2 — El precio como dato, no como titular publicitario.
-   Moneda en versalita atenuada delante, monto en cifras tabulares con tracking
-   cerrado. Identico en tarjeta, ficha, comparador y marcador de mapa. */
-.price { display: flex; align-items: baseline; gap: .3rem; }
-.price-currency {
-  font-size: .62em;
-  font-weight: 600;
-  letter-spacing: .1em;
-  color: var(--ink-3);
-  text-transform: uppercase;
-}
-.price-amount {
-  font-variant-numeric: tabular-nums;
-  font-feature-settings: "tnum" 1;
-  letter-spacing: -.02em;
-  font-weight: 700;
-  color: var(--ink);
-}
-.price-consult { color: var(--ink-3); font-weight: 600; font-size: .92em; }
-.card-price { font-size: 1.28rem; }
-.detail-price { font-size: 2.1rem; }
-
-/* FIRMA 3 — Metadatos en renglones con filete.
-   La informacion de una propiedad se lee como un registro: pares separados por
-   hairline, nunca como bloques de color. Es coherente con la trazabilidad que
-   define el producto. */
-.card-specs {
-  border-block-start: 1px solid var(--line);
-  padding-block-start: .5rem;
-  color: var(--ink-2);
-  font-variant-numeric: tabular-nums;
-}
-.card-publisher {
-  border-block-start: 1px solid var(--line);
-  margin-block-start: .5rem;
-  padding-block-start: .45rem;
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--ink-3);
-}
-
-/* FIRMA 4 — La seleccion siempre entra por el filo izquierdo, en terracota.
-   El usuario reconoce "esto lo elegi yo" con la misma gramatica en tarjeta,
-   sugerencia, categoria de filtro, fila de comparacion y marcador. */
-.is-selected, [aria-selected="true"], [aria-current="true"].filter-nav-item {
-  --selection-edge: inset 3px 0 0 var(--pick);
-}
-
-/* --- Encabezados de seccion: filete de marca corto, no fondo de color ---- */
-.section-heading, .detail-panel > h2, .state-panel > h2 {
-  position: relative;
-  padding-block-end: .45rem;
-  border-block-end: 1px solid var(--line);
-}
-.detail-panel > h2::after, .section-heading::after {
-  content: "";
-  position: absolute;
-  inset-block-end: -1px;
-  inset-inline-start: 0;
-  inline-size: 2.5rem;
-  block-size: 2px;
-  background: var(--brand);
-}
-
-/* --- Directorio de inmobiliarias: ERETZ es marco, no protagonista -------
-   La tarjeta de una inmobiliaria ajena no lleva color de marca ERETZ: solo
-   tinta, linea y el monograma de la propia inmobiliaria. */
-.entity-card { background: var(--surface-1); }
-.entity-card .entity-monogram, .entity-card [class*="monogram"] {
-  background: var(--surface-2);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-sm);
-  color: var(--ink-2);
-  font-weight: 700;
-}
-.entity-card:hover { border-color: var(--brand); }
-.entity-card .entity-count { color: var(--ink-3); font-variant-numeric: tabular-nums; }
-
-/* --- Footer: unica superficie de tinta llena del producto --------------- */
-.site-footer {
-  background: var(--ink);
-  border-block-start: 0;
-  color: rgba(255, 255, 255, .78);
-}
-.site-footer a { color: rgba(255, 255, 255, .78); }
-.site-footer a:hover { color: var(--ink-inverse); }
-.site-footer h2, .site-footer strong { color: var(--ink-inverse); }
-
-/* ==========================================================================
-   ERETZ IDENTITY V1 — CIERRE DE UTILIDADES HEREDADAS
-   Quedan ~90 utilidades Tailwind de la escala slate (gris azulado) repartidas
-   en componentes. En vez de reescribir 12 archivos, se remapean a la escala de
-   tinta ERETZ: asi todo el producto tiene una sola temperatura de gris y el
-   sistema semantico manda, sin dejar dos paletas conviviendo.
-   ========================================================================== */
-.text-slate-400 { color: var(--ink-3) !important; }
-.text-slate-500 { color: var(--ink-3) !important; }
-.text-slate-600 { color: var(--ink-2) !important; }
-.text-slate-700 { color: var(--ink-2) !important; }
-.text-slate-800, .text-slate-900 { color: var(--ink) !important; }
-.bg-white { background-color: var(--surface-1) !important; }
-.bg-slate-50 { background-color: var(--surface-2) !important; }
-.border-slate-100 { border-color: var(--line) !important; }
-.border-slate-200 { border-color: var(--line) !important; }
-.border-slate-300 { border-color: var(--line-strong) !important; }
-
-/* Pie de pagina: unica superficie de tinta llena; su texto es inverso. */
-.footer-lede { color: rgba(255, 255, 255, .80); }
-.footer-heading { color: var(--ink-inverse); font-weight: 700; }
-.footer-rule { border-block-start: 1px solid rgba(255, 255, 255, .14); }
-.footer-fineprint { color: rgba(255, 255, 255, .62); }
-.site-footer .text-slate-400, .site-footer .text-slate-500,
-.site-footer .text-slate-600, .site-footer .text-slate-700 {
-  color: rgba(255, 255, 255, .80) !important;
-}
+.card-type { font-size: var(--text-sm); }
+.card-specs, .card-publisher, .card-availability { font-size: var(--text-sm); line-height: 1.35; }
 
 /* ============================================================
    U8 — PANEL DE FILTROS (composicion medida en la referencia)
@@ -1700,8 +1600,8 @@ body::before {
   translate: none;
   display: none;
   grid-template-rows: auto 1fr;
-  inline-size: min(100% - 2rem, 1100px);
-  block-size: min(100% - 4rem, 680px);
+  inline-size: min(100% - 2rem, 1006px);
+  block-size: min(100% - 4rem, 640px);
   margin: auto;
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
@@ -1753,7 +1653,7 @@ body::before {
 /* Dos columnas: navegacion + contenido. */
 .filter-panel-body {
   display: grid;
-  grid-template-columns: 235px minmax(0, 1fr);
+  grid-template-columns: 291px minmax(0, 1fr);
   min-block-size: 0;
 }
 .filter-panel-aside {
@@ -1782,7 +1682,7 @@ body::before {
 .filter-nav-item:hover { background: var(--surface-2); color: var(--ink); }
 .filter-nav-item.is-active {
   background: var(--surface-3);
-  border-color: var(--brand);
+  border-color: var(--accent-strong);
   color: var(--ink);
 }
 .filter-nav-label {

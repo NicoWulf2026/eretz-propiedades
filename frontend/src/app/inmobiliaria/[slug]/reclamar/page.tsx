@@ -21,7 +21,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
     <SiteShell>
       <div className="container py-8">
         <nav aria-label="Migas de pan" className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
-          <Link href={`/inmobiliaria/${agency.slug}`} className="font-bold text-[color:var(--brand)]">← {agency.name}</Link>
+          <Link href={`/inmobiliaria/${agency.slug}`} className="font-bold text-[color:var(--accent-soft)]">← {agency.name}</Link>
           <span aria-hidden="true">/</span>
           <span aria-current="page">Reclamar perfil</span>
         </nav>

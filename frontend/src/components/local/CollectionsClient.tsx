@@ -66,7 +66,7 @@ export function CollectionsClient() {
       <section className="mb-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
         <div className="flex items-center justify-between gap-3">
           <p className="font-bold text-[color:var(--ink)]">Favoritos <span className="text-slate-500">({favorites.length})</span></p>
-          <Link href="/favoritos" className="text-sm font-bold text-[color:var(--brand)]">Ver favoritos →</Link>
+          <Link href="/favoritos" className="text-sm font-bold text-[color:var(--accent-soft)]">Ver favoritos →</Link>
         </div>
       </section>
 
@@ -93,7 +93,7 @@ export function CollectionsClient() {
                       {c.name} <span className="text-slate-500">({c.ids.length})</span>
                     </button>
                     <div className="flex gap-2">
-                      <button type="button" className="text-sm font-semibold text-[color:var(--brand)]" onClick={() => setSelected(selected === c.id ? null : c.id)}>{selected === c.id ? "Ocultar" : "Ver"}</button>
+                      <button type="button" className="text-sm font-semibold text-[color:var(--accent-soft)]" onClick={() => setSelected(selected === c.id ? null : c.id)}>{selected === c.id ? "Ocultar" : "Ver"}</button>
                       <button type="button" className="text-sm font-semibold text-slate-600" onClick={() => { setRenaming(c.id); setRenameValue(c.name); }}>Renombrar</button>
                       <button type="button" className="text-sm font-semibold text-red-700" onClick={() => { if (selected === c.id) setSelected(null); deleteCollection(c.id); }}>Eliminar</button>
                     </div>
