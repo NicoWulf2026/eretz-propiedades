@@ -414,7 +414,7 @@ p { margin: 0; }
 .legal-copy p { margin-top: .75rem; }
 .legal-copy a { color: var(--accent-strong); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
 .skeleton { border-radius: var(--radius-md); background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-2) 50%, var(--surface-2) 75%); background-size: 200% 100%; animation: skeleton 1.6s infinite linear; }
-.map-loading { display: grid; height: 100%; place-items: center; color: #526276; font-size: .875rem; font-weight: 700; }
+.map-loading { display: grid; height: 100%; place-items: center; color: var(--ink-3); font-size: .875rem; font-weight: 700; }
 .map-progressive-placeholder { position: relative; isolation: isolate; display: grid; height: 100%; min-height: 480px; place-content: center; justify-items: center; overflow: hidden; gap: .45rem; background: #dfe9ee; color: var(--ink); text-align: center; }
 .map-progressive-placeholder::before { position: absolute; z-index: -2; inset: -20%; background: linear-gradient(30deg, transparent 47%, rgba(33,102,165,.14) 48% 51%, transparent 52%), linear-gradient(120deg, transparent 46%, rgba(11,39,72,.1) 47% 50%, transparent 51%); background-size: 86px 74px, 112px 96px; content: ""; transform: rotate(-4deg); }
 .map-progressive-placeholder::after { position: absolute; z-index: -1; inset: 0; background: radial-gradient(circle at 50% 48%, rgba(255,255,255,.96), rgba(255,255,255,.56) 34%, transparent 68%); content: ""; }
@@ -1447,6 +1447,18 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   box-shadow: var(--shadow-sm);
 }
 .map-progressive-placeholder { background: var(--canvas-deep); color: var(--ink-3); }
+/* Los pseudo-elementos de la capa base pintaban una trama azul clara y un
+   resplandor radial blanco: sobre el lienzo oscuro quedaba una mancha que
+   encandilaba. La trama pasa al violeta del sistema y el resplandor se apaga. */
+.map-progressive-placeholder::before {
+  background:
+    linear-gradient(30deg, transparent 47%, rgba(157, 78, 221, .10) 48% 51%, transparent 52%),
+    linear-gradient(120deg, transparent 46%, rgba(255, 255, 255, .05) 47% 50%, transparent 51%);
+}
+.map-progressive-placeholder::after {
+  background: radial-gradient(circle at 50% 48%, rgba(157, 78, 221, .12), transparent 62%);
+}
+.map-progressive-placeholder strong { color: var(--ink); }
 .map-popup { color: var(--ink); }
 .map-popup small { color: var(--ink-4); }
 
@@ -1581,6 +1593,24 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 }
 .card-type { font-size: var(--text-sm); }
 .card-specs, .card-publisher, .card-availability { font-size: var(--text-sm); line-height: 1.35; }
+
+/* Fondos claros de Tailwind que sobrevivian en componentes: sobre el lienzo
+   oscuro dejaban texto claro sobre superficie clara. Se remapean al sistema. */
+.bg-slate-100 { background-color: rgba(255, 255, 255, .08) !important; }
+.bg-amber-50, .bg-amber-100 { background-color: var(--warn-tint) !important; color: var(--warn) !important; }
+.bg-emerald-700, .bg-emerald-800 { background-color: var(--accent-strong) !important; }
+.text-amber-700, .text-amber-800, .text-amber-900 { color: var(--warn) !important; }
+.text-emerald-700, .text-emerald-800 { color: var(--ok) !important; }
+.text-red-600, .text-red-700 { color: var(--bad) !important; }
+
+/* La card de la referencia es mas alta (media 400x275 en vez de un tope de
+   176px), asi que hay mas pixel que pintar por tarjeta. Se compensa saltando
+   el render de las tarjetas fuera de pantalla; el tamano intrinseco evita que
+   el scroll salte. No cambia nada visualmente. */
+.explorer-card-list > * {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 480px;
+}
 
 /* ============================================================
    U8 — PANEL DE FILTROS (composicion medida en la referencia)
