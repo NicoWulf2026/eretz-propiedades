@@ -1103,6 +1103,14 @@ body {
 
 /* --- Footer del panel: vidrio con separacion propia --- */
 .filter-panel-actions {
+  /* El panel tiene padding 1.4rem: un sticky con inset-block-end 0 se detiene en
+     el borde del content box y deja ver una franja del formulario por debajo.
+     Se cancela el padding con margenes negativos, igual que ya hace el header. */
+  inset-block-end: -1.4rem;
+  margin-inline: -1.4rem;
+  margin-block-end: -1.4rem;
+  padding-inline: 1.4rem;
+  padding-block-end: 1.1rem;
   background: rgba(255, 255, 255, .975);
   -webkit-backdrop-filter: saturate(175%) blur(var(--glass-blur-2));
   backdrop-filter: saturate(175%) blur(var(--glass-blur-2));
