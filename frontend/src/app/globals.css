@@ -2057,3 +2057,35 @@ h1, h2, h3, .page-title, .section-heading, .card-price, .detail-price { color: v
 .filter-warning { background: #3a2a12; color: #fbbf24; border: 1px solid rgba(251, 191, 36, .3); }
 .gallery-empty { background: var(--surface-raised); color: var(--muted); }
 .gallery-empty-text { color: var(--muted); }
+
+/* ============================================================
+   U7b — CORRECCION DE CONTRASTE
+   Remapear --navy al violeta primario hizo que todo texto que lo usaba quedara
+   en #7b2cbf sobre superficie oscura: 2.31:1, muy por debajo de AA. El violeta
+   oscuro es color de RELLENO (con texto blanco encima), no de texto sobre
+   fondo oscuro. Para texto se usa la variante clara.
+   ============================================================ */
+
+:root {
+  /* El token historico deja de usarse como color de texto. */
+  --navy: #c77dff;
+  --navy-700: #7b2cbf;
+}
+
+/* Texto que antes era navy pasa a claro; el acento se reserva para enfasis. */
+.entity-name, .card-title, .card-price, .detail-price, .brand-word,
+.page-title, .section-heading, .filter-group-name, h1, h2, h3, h4 {
+  color: var(--text);
+}
+.entity-monogram { background: var(--accent-surface); color: var(--accent-soft); }
+a { color: var(--accent-soft); }
+a:hover { color: #dcb0ff; }
+.inline-action { color: var(--accent-soft); }
+
+/* Los rellenos violeta conservan el tono oscuro con texto blanco, que si pasa AA. */
+.primary-button, .view-mode-tabs button.is-active, .filter-group-count,
+.map-search-area, .pill:not(.pill-light):not(.pill-gold) {
+  color: #fff;
+}
+.primary-button, .view-mode-tabs button.is-active, .filter-group-count,
+.map-search-area { background: var(--accent); }
