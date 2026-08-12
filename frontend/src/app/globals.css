@@ -1872,3 +1872,188 @@ body { background-image: none; background-color: #f7f8fa; }
 /* El placeholder sin foto respeta la misma altura que una imagen real. */
 .property-card-media .gallery-empty,
 .property-card-media [class*="no-disponible"] { block-size: 100%; }
+
+/* ============================================================
+   U7 — DIRECCION CROMATICA ROOMIX (sistema oscuro)
+   Medido en roomix.ai: base #171717, texto #fafafa / #d1d5db / #9ca3af,
+   primario violeta #7b2cbf, superficies rgba(255,255,255,.1), bordes
+   rgba(255,255,255,.4) / #3a3a3a / rgba(157,78,221,.25), radios 8/14/16.
+   Se adopta como base estetica de esta etapa. Los contrastes se verificaron
+   para no perder AA: #fafafa sobre #171717 ~15:1, #9ca3af ~7:1.
+   ============================================================ */
+
+:root {
+  /* Fondos y superficies */
+  --bg-base: #171717;
+  --bg-deep: #121212;
+  --surface: #1f1f1f;
+  --surface-raised: #262626;
+  --surface-overlay: #2a2a2a;
+  --surface-translucent: rgba(255, 255, 255, .06);
+  --surface-translucent-strong: rgba(255, 255, 255, .1);
+  --paper: #171717;
+  --paper-deep: #121212;
+
+  /* Texto */
+  --text: #fafafa;
+  --text-strong: #ffffff;
+  --text-secondary: #d1d5db;
+  --muted: #9ca3af;
+  --text-faint: #9ca3af;
+
+  /* Acento violeta */
+  --accent: #7b2cbf;
+  --accent-hover: #8f3ad4;
+  --accent-soft: #c77dff;
+  --accent-surface: #2d1b4e;
+  --accent-border: rgba(157, 78, 221, .35);
+
+  /* Compatibilidad: los tokens historicos de marca pasan al sistema nuevo
+     para que ninguna regla existente siga pintando navy u oro. */
+  --navy: #7b2cbf;
+  --navy-700: #6a25a6;
+  --blue: #c77dff;
+  --blue-600: #a855f7;
+  --blue-100: #2d1b4e;
+  --blue-50: #241640;
+  --gold: #c77dff;
+
+  /* Bordes */
+  --border-subtle: rgba(255, 255, 255, .10);
+  --border: rgba(255, 255, 255, .18);
+  --glass-border: rgba(255, 255, 255, .10);
+  --glass-edge: rgba(255, 255, 255, .10);
+  --glass-edge-strong: rgba(255, 255, 255, .18);
+
+  /* Superficies del sistema neutralizado: ahora oscuras */
+  --glass-bg: var(--surface);
+  --glass-bg-strong: var(--surface-raised);
+  --glass-1: var(--surface);
+  --glass-2: var(--surface);
+  --glass-3: var(--surface-raised);
+  --glass-4: var(--surface-raised);
+  --glass-5: var(--surface-overlay);
+  --glass-content: var(--surface);
+  --glass-content-2: var(--surface);
+
+  /* Sombras: sobre fondo oscuro casi no se perciben; se usan muy tenues. */
+  --shadow-xs: 0 0 0 1px rgba(255, 255, 255, .04);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .4);
+  --shadow-md: 0 2px 10px rgba(0, 0, 0, .45);
+  --shadow-lg: 0 8px 26px rgba(0, 0, 0, .5);
+  --shadow-xl: 0 18px 48px rgba(0, 0, 0, .6);
+  --glass-shadow-1: var(--shadow-sm);
+  --glass-shadow-2: var(--shadow-md);
+  --drop-1: var(--shadow-sm);
+  --drop-2: var(--shadow-md);
+  --drop-3: var(--shadow-lg);
+
+  --focus-ring: 0 0 0 3px rgba(157, 78, 221, .45);
+}
+
+html, body { background: var(--bg-base); color: var(--text); }
+body { background-image: none; }
+
+/* --- Shell --- */
+.site-header {
+  background: var(--bg-base);
+  border-block-end: 1px solid var(--border-subtle);
+}
+.brand-word, .brand-sub, .nav-link { color: var(--text); }
+.nav-link:hover { color: var(--accent-soft); }
+.nav-link.is-active { color: var(--text-strong); }
+.explorer-toolbar { background: var(--bg-base); border-block-end: 1px solid var(--border-subtle); }
+.explorer-toolbar::before { background: var(--bg-base); }
+.explorer-page, .explorer-results-pane { background: var(--bg-base); }
+.explorer-map-pane { background: var(--bg-deep); border-color: var(--border-subtle); }
+
+/* --- Superficies de contenido --- */
+.surface, .surface-raised, .property-card, .entity-card, .detail-panel,
+.context-bar, .filter-group, .state-panel {
+  background: var(--surface);
+  border-color: var(--border-subtle);
+  color: var(--text);
+}
+.property-card:hover, .entity-card:hover {
+  border-color: var(--accent-border);
+  background: var(--surface-raised);
+}
+.property-card.is-selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-border); }
+.property-card-media { background: var(--surface-raised); }
+
+/* --- Tipografia sobre oscuro --- */
+h1, h2, h3, .page-title, .section-heading, .card-price, .detail-price { color: var(--text); }
+.page-subtitle, .card-location, .card-publisher, .card-availability, small { color: var(--muted); }
+.eyebrow { color: var(--accent-soft); }
+
+/* --- Controles --- */
+.primary-button {
+  background: var(--accent);
+  color: #fff;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+}
+.primary-button:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.secondary-button, .icon-button, .card-action-button, .chip, .filter-toggle {
+  background: var(--surface-translucent);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+.secondary-button:hover, .icon-button:hover, .card-action-button:hover,
+.chip:hover, .filter-toggle:hover {
+  background: var(--surface-translucent-strong);
+  border-color: var(--accent-border);
+}
+.field input, .field select, .field textarea,
+.explorer-primary-search input, .explorer-primary-search select, .nl-search input {
+  background: var(--surface-translucent);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+.field input::placeholder, .explorer-primary-search input::placeholder,
+.nl-search input::placeholder { color: var(--muted); }
+.field input:focus, .field select:focus, .field textarea:focus,
+.explorer-primary-search input:focus, .nl-search input:focus {
+  background: var(--surface-raised);
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+.field span, label { color: var(--text-secondary); }
+
+/* --- Tabs de modo y estados activos --- */
+.view-mode-tabs { background: var(--surface-translucent); border: 1px solid var(--border); }
+.view-mode-tabs button { color: var(--text-secondary); }
+.view-mode-tabs button:hover { background: var(--surface-translucent-strong); color: var(--text); }
+.view-mode-tabs button.is-active { background: var(--accent); color: #fff; }
+.filter-group-count { background: var(--accent); color: #fff; }
+.pill { background: var(--surface-translucent); color: var(--text); border: 1px solid var(--border); }
+.pill-light { background: var(--accent-surface); color: var(--accent-soft); border-color: var(--accent-border); }
+.pill-gold { background: var(--accent-surface); color: var(--accent-soft); border-color: var(--accent-border); }
+
+/* --- Overlays --- */
+.filter-panel, .filter-panel-actions { background: var(--surface); color: var(--text); }
+.filter-backdrop { background: rgba(0, 0, 0, .6); }
+.search-suggestions { background: var(--surface-raised); border-color: var(--border); color: var(--text); }
+.detail-disclaimer { background: var(--surface); border-color: var(--border-subtle); color: var(--text-secondary); }
+.detail-disclaimer strong { color: var(--text); }
+.ficha-section-nav { background: var(--surface-translucent); border: 1px solid var(--border); }
+.ficha-section-nav a { color: var(--text-secondary); }
+.ficha-section-nav a:hover { background: var(--surface-translucent-strong); color: var(--text); }
+
+/* --- Mapa --- */
+.leaflet-container { background: var(--bg-deep); }
+.leaflet-bar a, .leaflet-control-zoom a {
+  background: var(--surface-raised); color: var(--text); border-color: var(--border);
+}
+.leaflet-bar a:hover, .leaflet-control-zoom a:hover { background: var(--surface-overlay); }
+.map-search-area { background: var(--accent); color: #fff; border: 0; }
+.map-search-area:hover { background: var(--accent-hover); }
+.map-result-indicator, .context-bar-viewport-badge, .map-icon-controls button {
+  background: var(--surface-raised); color: var(--text); border: 1px solid var(--border);
+}
+.map-progressive-placeholder { background: var(--bg-deep); color: var(--text-secondary); }
+
+/* --- Estados semanticos, adaptados al sistema oscuro --- */
+.filter-warning { background: #3a2a12; color: #fbbf24; border: 1px solid rgba(251, 191, 36, .3); }
+.gallery-empty { background: var(--surface-raised); color: var(--muted); }
+.gallery-empty-text { color: var(--muted); }
