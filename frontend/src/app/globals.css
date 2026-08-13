@@ -1927,6 +1927,12 @@ aside.detail-panel {
 .leaflet-control-zoom a:first-child { border-start-start-radius: var(--radius-md) !important; border-start-end-radius: var(--radius-md) !important; }
 .leaflet-control-zoom a:last-child { border-end-start-radius: var(--radius-md) !important; border-end-end-radius: var(--radius-md) !important; }
 
+/* La paginacion vive al fondo del panel de resultados, que scrollea por dentro.
+   Sin holgura inferior queda pegada al recorte del contenedor y Lighthouse la
+   mide como destino tactil parcialmente tapado (17px de 45 reales). */
+.explorer-results-pane { padding-block-end: 2.5rem; }
+nav[aria-label="Paginación"] { padding-block: .5rem 1.5rem; }
+
 /* ============================================================
    U8 — PANEL DE FILTROS (composicion medida en la referencia)
    Overlay centrado rgba(0,0,0,.5) con padding 16 y blur. Dentro, master-detail:
