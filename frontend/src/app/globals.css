@@ -1148,9 +1148,11 @@ footer nav a {
   aspect-ratio: 400 / 275;
   max-block-size: none;
 }
+/* Todas las densidades usan el ratio de la referencia (400x275): con 3/2 el
+   recorte de la foto no coincidia. */
 .property-card.is-compact .property-card-media,
 .density-compact .property-card-media {
-  aspect-ratio: 3 / 2;
+  aspect-ratio: 400 / 275;
   max-block-size: none;
 }
 .property-card-media img { inline-size: 100%; block-size: 100%; object-fit: cover; }
@@ -1878,6 +1880,53 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   .home-hero-links { gap: 1rem; }
 }
 
+/* ==========================================================================
+   PASE DE VERIFICACION — diferencias medidas contra la referencia
+   ========================================================================== */
+
+/* Escala base. La referencia usa body a 16px y baja a 14 en la UI densa;
+   ERETZ tenia el body a 14, con lo que toda la tipografia quedaba un escalon
+   por debajo de la referencia. */
+body { font-size: 1rem; line-height: 1.5; }
+.explorer-page, .explorer-toolbar, .explorer-workspace { font-size: var(--text-base); }
+
+/* Header: la referencia mide 114px con padding 16. */
+.site-header { padding-block: 1rem; }
+.site-header-inner { min-block-size: 3rem; }
+.nav-link { font-size: var(--text-md); font-weight: 600; padding: .35rem .6rem; }
+
+/* Tarjeta: la referencia usa titulo 18/600/24.75, precio 20/600/28 y la linea
+   secundaria 14/500/20 atenuada. El precio "a consultar" heredaba del body y
+   caia a 12.88px: es el mismo dato, tiene que leerse al mismo tamano. */
+.card-title { font-size: 1.125rem; font-weight: 600; line-height: 1.375; }
+.card-price { font-size: 1.25rem; font-weight: 600; line-height: 1.4; }
+.card-price.price-consult { font-size: 1.25rem; font-weight: 500; color: var(--ink-4); }
+.card-location, .card-type, .card-specs, .card-publisher, .card-availability {
+  font-size: var(--text-base);
+  font-weight: 500;
+  line-height: 1.43;
+  color: var(--ink-4);
+}
+.card-type { font-size: var(--text-sm); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--accent-soft); }
+
+/* --- Correcciones del pase de verificacion ------------------------------ */
+
+/* El panel de contacto de la ficha no usa .detail-contact: su clase real es
+   .detail-panel dentro de un aside. La regla anterior no pintaba nada. */
+aside.detail-panel {
+  background: rgba(255, 255, 255, .04);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: none;
+}
+
+/* Los controles de zoom conservaban el radio por defecto de Leaflet
+   (2px 2px 0 0) porque la regla nativa gana por !important. */
+.leaflet-control-zoom { border-radius: var(--radius-md) !important; overflow: hidden; }
+.leaflet-control-zoom a { border-radius: 0 !important; inline-size: 38px; block-size: 38px; }
+.leaflet-control-zoom a:first-child { border-start-start-radius: var(--radius-md) !important; border-start-end-radius: var(--radius-md) !important; }
+.leaflet-control-zoom a:last-child { border-end-start-radius: var(--radius-md) !important; border-end-end-radius: var(--radius-md) !important; }
+
 /* ============================================================
    U8 — PANEL DE FILTROS (composicion medida en la referencia)
    Overlay centrado rgba(0,0,0,.5) con padding 16 y blur. Dentro, master-detail:
@@ -1900,8 +1949,9 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   block-size: min(100% - 4rem, 640px);
   margin: auto;
   border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  background: var(--surface-1);
+  /* La referencia usa 24 en este overlay, no el radio de tarjeta. */
+  border-radius: var(--radius-xl);
+  background: var(--elevated);
   box-shadow: var(--shadow-xl);
   overflow: hidden;
   padding: 0;

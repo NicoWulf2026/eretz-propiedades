@@ -82,10 +82,11 @@ export function PropertyCard({
           )}
         </div>
         <div className="property-card-body">
-          <PriceTag property={property} className="card-price" />
-          <p className="card-type">{typeLabels[property.propertyType]}</p>
+          {/* Orden de la referencia: primero la direccion, despues el precio. */}
           <h2 className="card-title">{property.title}</h2>
+          <PriceTag property={property} className="card-price" />
           <p className="card-location">{propertyLocation(property)}</p>
+          <p className="card-type">{typeLabels[property.propertyType]}</p>
           {availability ? (
             <p className="card-availability" title="La disponibilidad de esta publicación no está confirmada en el último relevamiento.">
               {availability}
