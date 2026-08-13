@@ -14,11 +14,13 @@ import build_full_coverage_manifests as manifests  # noqa: E402
 import audit_duplicate_source_records as duplicate_sources  # noqa: E402
 import build_playwright_recovery_manifest as pw_manifest  # noqa: E402
 import audit_missing_website_identity as missing_identity  # noqa: E402
+import audit_historical_url_recovery as historical_urls  # noqa: E402
 import run_production_parser_playwright_recheck as production_pw_recheck  # noqa: E402
 import build_safe_url_candidate_recheck as safe_urls  # noqa: E402
 import repair_historical_fk_deterministic as fk_repair  # noqa: E402
 import run_targeted_coverage_diagnostic as targeted  # noqa: E402
 import run_targeted_playwright_diagnostic as targeted_playwright  # noqa: E402
+import finalize_playwright_gap_results as finalize_pw_gaps  # noqa: E402
 
 
 def test_fk_classification_keeps_only_deterministic_non_conflicting_row():
@@ -215,8 +217,41 @@ def test_manifest_normalizes_playwright_and_production_recheck_statuses():
     })["final_status"] == "partial_due_to_cap"
     assert manifests._normalize_result({"final_status": "recovered_parser"})["final_status"] == "success"
     assert manifests._normalize_result({
+        "final_status": "external_transport_error"
+    })["final_status"] == "dns_external"
+    assert manifests._normalize_result({
+        "final_status": "external_http_error"
+    })["final_status"] == "remote_http_error"
+    assert manifests._normalize_result({
+        "final_status": "external_timeout"
+    })["final_status"] == "remote_http_error"
+    assert manifests._normalize_result({
+        "final_status": "external_empty"
+    })["final_status"] == "external_empty"
+    assert manifests._normalize_result({
         "playwright_final_status": "playwright_login_required"
     })["final_status"] == "auth_required"
+
+
+def test_manifest_final_external_result_overrides_old_internal_gap():
+    parser_gap = {"final_status": "no_property_links"}
+    transport = {"final_status": "dns_external"}
+
+    assert manifests._merge_result(parser_gap, transport) is transport
+
+
+def test_manifest_url_final_states_are_external_final():
+    assert manifests.RESULT_EXTERNAL_FINAL["missing_listing_url_unrecoverable"] == "MISSING_LISTING_URL_UNRECOVERABLE"
+    assert manifests.RESULT_EXTERNAL_FINAL["ssl_external"] == "SSL_EXTERNAL"
+
+
+def test_manifest_plain_timeout_remains_retryable_until_finalized():
+    assert manifests._normalize_result({"final_status": "timeout"})["final_status"] == "timeout"
+    assert manifests._gap_family({"final_status": "timeout"}, {}) == "transient_http"
+
+
+def test_manifest_quality_fix_is_not_automatic_success():
+    assert "success_low_quality" not in manifests.SUCCESS_STATUSES
 
 
 def test_manifest_prohibited_url_covers_regional_and_shared_portals():
@@ -224,6 +259,25 @@ def test_manifest_prohibited_url_covers_regional_and_shared_portals():
     assert manifests._is_prohibited_url("https://remax.com.ar/comprar-propiedades")
     assert manifests._is_prohibited_url("https://linktr.ee/example")
     assert not manifests._is_prohibited_url("https://agencia.example/propiedades")
+
+
+def test_manifest_recovered_url_uses_validated_listing_override():
+    source = {
+        "source_id": "10",
+        "nombre": "Agency",
+        "website_url": "https://agency.test",
+        "current_listing_url": "https://agency.test",
+        "requires_playwright": "False",
+    }
+
+    row = manifests._manifest_row(
+        source,
+        "recovered_url",
+        "validated",
+        "https://agency.test/propiedades",
+    )
+
+    assert row["new_url_listado"] == "https://agency.test/propiedades"
 
 
 def test_duplicate_source_audit_is_fail_closed_for_different_names():
@@ -310,6 +364,36 @@ def test_missing_website_identity_requires_location_compatibility():
     assert missing_identity.classify(universe, incompatible)[0]["decision"] == "manual_identity_review"
 
 
+def test_historical_url_recovery_requires_same_id_name_and_unique_domain():
+    universe = [
+        {"source_id": "1", "nombre": "Acme Propiedades", "website_url": "", "current_listing_url": ""},
+        {"source_id": "2", "nombre": "Other", "website_url": "", "current_listing_url": ""},
+    ]
+    history = [
+        ("main.csv", {"id": "1", "nombre": "Acme Inmobiliaria", "web": "https://acme.test", "url_listado": "https://acme.test/propiedades"}),
+        ("scraping.csv", {"id": "1", "nombre": "Acme Propiedades", "web": "https://www.acme.test", "url_listado": ""}),
+        ("main.csv", {"id": "2", "nombre": "Different", "web": "https://wrong.test", "url_listado": ""}),
+    ]
+
+    results = historical_urls.classify(universe, history)
+
+    assert results[0]["confidence"] == "HIGH"
+    assert results[0]["proposed_url"] == "https://acme.test/propiedades"
+    assert results[1]["confidence"] == "NO_MATCH"
+
+
+def test_historical_url_recovery_rejects_prohibited_and_ambiguous_domains():
+    universe = [{"source_id": "1", "nombre": "Acme", "website_url": "", "current_listing_url": ""}]
+    prohibited = [("main.csv", {"id": "1", "nombre": "Acme", "web": "https://zonaprop.com.ar/acme", "url_listado": ""})]
+    ambiguous = [
+        ("main.csv", {"id": "1", "nombre": "Acme", "web": "https://one.test", "url_listado": ""}),
+        ("scraping.csv", {"id": "1", "nombre": "Acme", "web": "https://two.test", "url_listado": ""}),
+    ]
+
+    assert historical_urls.classify(universe, prohibited)[0]["confidence"] == "NO_MATCH"
+    assert historical_urls.classify(universe, ambiguous)[0]["status"] == "historical_domain_ambiguous"
+
+
 def test_production_playwright_recheck_parses_rendered_data_url():
     html = """
       <article class="property-card">
@@ -323,6 +407,68 @@ def test_production_playwright_recheck_parses_rendered_data_url():
     )
 
     assert "https://agency.test/propiedad/departamento-en-venta-321" in links
+
+
+def test_production_playwright_recheck_classifies_remote_transport_errors():
+    error = RuntimeError("Page.goto: net::ERR_NAME_NOT_RESOLVED")
+    assert production_pw_recheck.classify_exception(error)[0] == "external_transport_error"
+    disconnected = RuntimeError("Page.goto: net::ERR_INTERNET_DISCONNECTED")
+    assert production_pw_recheck.classify_exception(disconnected)[0] == "external_transport_error"
+    changed = RuntimeError("Page.goto: net::ERR_NETWORK_CHANGED")
+    assert production_pw_recheck.classify_exception(changed)[0] == "external_transport_error"
+    empty = RuntimeError("Page.goto: net::ERR_EMPTY_RESPONSE")
+    assert production_pw_recheck.classify_exception(empty)[0] == "external_transport_error"
+    reset = RuntimeError("Page.goto: net::ERR_CONNECTION_RESET")
+    assert production_pw_recheck.classify_exception(reset)[0] == "external_transport_error"
+    assert production_pw_recheck.classify_exception(TimeoutError("late"))[0] == "timeout"
+
+
+def test_production_playwright_recheck_loads_gap_csv_with_exclusions(tmp_path):
+    gaps = tmp_path / "gaps.csv"
+    gaps.write_text(
+        "source_id,nombre,website_url,current_listing_url,gap_family,current_http_status\n"
+        "1,One,https://one.test,,strategy,cms_unknown\n"
+        "2,Two,https://two.test,,url,bad_listing_url\n"
+        "3,Three,https://three.test,,parser,no_property_links\n",
+        encoding="utf-8",
+    )
+
+    rows = production_pw_recheck._load_input(gaps, {"strategy", "parser"}, {3})
+
+    assert [row["source_id"] for row in rows] == [1]
+    assert rows[0]["listing_url"] == "https://one.test"
+
+
+def test_finalize_playwright_gap_results_prefers_retry_and_closes_externals():
+    broad = {
+        1: {"source_id": 1, "final_status": "internal_error", "error_type": "ERR_INTERNET_DISCONNECTED"},
+        2: {"source_id": 2, "final_status": "still_no_property_links"},
+        3: {"source_id": 3, "final_status": "timeout"},
+    }
+    retry = {
+        1: {"source_id": 1, "final_status": "recovered_parser"},
+    }
+
+    rows = finalize_pw_gaps.choose_result(broad, retry)
+    by_id = {row["source_id"]: row for row in rows}
+
+    assert by_id[1]["final_status"] == "recovered_parser"
+    assert by_id[2]["final_status"] == "external_empty"
+    assert by_id[3]["final_status"] == "external_timeout"
+
+
+def test_finalize_playwright_gap_results_maps_legacy_playwright_statuses():
+    status, reason = finalize_pw_gaps.finalize_status({
+        "source_id": 1,
+        "playwright_final_status": "playwright_timeout",
+    })
+    assert status == "external_timeout"
+    assert reason == "playwright_status_final"
+    status, _reason = finalize_pw_gaps.finalize_status({
+        "source_id": 2,
+        "playwright_final_status": "playwright_zero_properties",
+    })
+    assert status == "external_empty"
 
 
 def test_safe_url_recheck_rejects_details_forms_and_prohibited_portals():

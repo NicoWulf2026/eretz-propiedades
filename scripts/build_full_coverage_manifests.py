@@ -24,6 +24,11 @@ RESULT_EXTERNAL_FINAL = {
     "antibot": "ANTI_BOT",
     "captcha": "CAPTCHA",
     "auth_required": "AUTH_REQUIRED",
+    "dns_external": "DNS_EXTERNAL",
+    "remote_http_error": "REMOTE_HTTP_ERROR",
+    "external_empty": "SUCCESS_EXTERNAL_EMPTY",
+    "missing_listing_url_unrecoverable": "MISSING_LISTING_URL_UNRECOVERABLE",
+    "ssl_external": "SSL_EXTERNAL",
 }
 PROHIBITED_DOMAINS = {
     "facebook.com", "instagram.com", "twitter.com", "x.com", "tiktok.com",
@@ -63,8 +68,8 @@ def _result_rank(row: dict[str, str]) -> int:
     status = row.get("final_status") or ""
     if status in SUCCESS_STATUSES:
         return 40
-    if status == "success_low_quality":
-        return 35
+    if status in RESULT_EXTERNAL_FINAL:
+        return 30
     if status in TRANSIENT_STATUSES:
         return 10
     if status:
@@ -95,7 +100,10 @@ def _normalize_result(row: dict[str, str]) -> dict[str, str]:
         "still_no_property_links": "no_property_links",
         "external_antibot": "antibot",
         "external_captcha": "captcha",
-        "external_http_error": "http_error",
+        "external_http_error": "remote_http_error",
+        "external_transport_error": "dns_external",
+        "external_empty": "external_empty",
+        "external_timeout": "remote_http_error",
         "internal_error": "unexpected_error",
     }.get(status, status)
     normalized["final_status"] = status
@@ -124,9 +132,16 @@ def _slug(value: Any, source_id: Any) -> str:
     return text or f"src_{source_id}"
 
 
-def _manifest_row(source: dict[str, str], family: str, evidence: str) -> dict[str, Any]:
+def _manifest_row(
+    source: dict[str, str],
+    family: str,
+    evidence: str,
+    listing_override: str = "",
+) -> dict[str, Any]:
     source_id = int(source["source_id"])
-    listing = source.get("current_listing_url") or source.get("website_url") or ""
+    listing = listing_override or source.get("current_listing_url") or source.get("website_url") or ""
+    if _is_prohibited_url(listing):
+        raise RuntimeError(f"Prohibited listing override for source_id={source_id}")
     return {
         "source_id": source_id,
         "source_name": source.get("nombre") or "",
@@ -268,12 +283,28 @@ def main() -> int:
                 "classification": classification,
             })
             assignments[source_id] = "external_blocked"
+        elif (
+            source.get("current_category") == "INTERNAL_ERROR"
+            and source.get("diagnostic_status") == "needs_quality_fix"
+        ):
+            external.append({
+                **source,
+                "reason": (
+                    (result or {}).get("error_detail_short")
+                    or (result or {}).get("final_status")
+                    or source.get("final_exclusion_reason")
+                    or "quality fix required before safe automatic execution"
+                ),
+                "classification": "DATA_QUALITY_EXTERNAL",
+            })
+            assignments[source_id] = "external_blocked"
         elif result and (result.get("final_status") or "") in SUCCESS_STATUSES:
             family = _recovery_family(source)
             families[family].append(_manifest_row(
                 source,
                 family,
                 f"current HTTP diagnostic={result.get('final_status')}; properties_parsed={result.get('properties_parsed')}",
+                result.get("listing_url") or "",
             ))
             assignments[source_id] = family
         elif category in {"SUCCESS_NEW", "SUCCESS_NO_NEW"} and _truth(source.get("final_eligible")):

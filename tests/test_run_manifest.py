@@ -951,6 +951,47 @@ def test_safe_fk_missing_source_is_classified():
     assert errors == [("9999", "Missing", "missing FK candidate")]
 
 
+def test_safe_fk_lookup_retries_transient_transport_failure():
+    import run_manifest as rm
+
+    source = {"source_id": "10", "_manifest_name": "Retry Inmo", "web": "https://retry.test"}
+    primary = [{
+        "id": 10,
+        "nombre": "Retry Inmo",
+        "web": "https://retry.test",
+        "url_listado": "https://retry.test/propiedades",
+        "scraping_id_origen": 10,
+    }]
+
+    with patch("time.sleep") as mocked_sleep:
+        with patch(
+            "requests.get",
+            side_effect=[
+                requests.ReadTimeout("temporary fk preflight timeout"),
+                _fk_response(primary),
+                _fk_response(primary),
+            ],
+        ) as mocked_get:
+            mapping, errors = rm._lookup_inmobiliaria_ids_safe("https://fake.co", "fake", [source])
+
+    assert mapping == {"10": 10}
+    assert errors == []
+    assert mocked_get.call_count == 3
+    mocked_sleep.assert_called_once_with(0.5)
+
+
+def test_safe_fk_lookup_fails_closed_after_bounded_transport_retries():
+    import run_manifest as rm
+
+    source = {"source_id": "10", "_manifest_name": "Retry Inmo", "web": "https://retry.test"}
+    with patch("time.sleep") as mocked_sleep:
+        with patch("requests.get", side_effect=requests.ReadTimeout("offline")):
+            with pytest.raises(RuntimeError, match="FK lookup transport failure after bounded retries"):
+                rm._lookup_inmobiliaria_ids_safe("https://fake.co", "fake", [source])
+
+    assert mocked_sleep.call_count == 2
+
+
 def test_fk_missing_source_excluded_from_execute():
     """La lógica de FK filtering de run_execute separa fuentes con/sin match."""
     # Simular el algoritmo de filtering que vive en run_execute:

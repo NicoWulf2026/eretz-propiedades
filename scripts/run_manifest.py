@@ -310,10 +310,10 @@ def _count_links_fallback(html: str) -> int:
 
 def run_canary_http(fuentes, limit, session=None) -> List[Dict]:
     import requests as req_lib  # noqa: PLC0415
-    import urllib3              # noqa: PLC0415
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    from scraper.network_security import secure_get  # noqa: PLC0415
 
     parse_cards = _load_parse_cards()
+    injected_session = session is not None
     if session is None:
         session = req_lib.Session()
         session.headers.update({"User-Agent": CANARY_UA, "Accept-Language": "es-AR,es;q=0.9"})
@@ -341,7 +341,12 @@ def run_canary_http(fuentes, limit, session=None) -> List[Dict]:
         t0 = time.time()
         print(f"  [{i:02d}/{len(subset)}] id={sid:<6} {name[:38]:<38} -> {url}")
         try:
-            resp = session.get(url, timeout=20, verify=False, allow_redirects=True)
+            resp = secure_get(
+                session,
+                url,
+                timeout=(8, 20),
+                resolve_dns=not injected_session,
+            )
             elapsed = round(time.time() - t0, 2)
             r["http_status"] = resp.status_code
             r["elapsed_s"]   = elapsed
@@ -537,25 +542,35 @@ def _lookup_inmobiliaria_ids_safe(
         return name_ok or domain_ok
 
     select = "id,nombre,web,url_listado,scraping_id_origen"
+
+    def get_fk_response(params: Dict[str, str]) -> Any:
+        last_exc: Optional[BaseException] = None
+        for attempt in range(3):
+            try:
+                return requests.get(
+                    f"{supabase_url.rstrip('/')}/rest/v1/inmobiliarias_main",
+                    headers=headers,
+                    params=params,
+                    timeout=30,
+                )
+            except requests.exceptions.RequestException as exc:
+                last_exc = exc
+                if attempt == 2:
+                    break
+                time.sleep(0.5 * (attempt + 1))
+        raise RuntimeError(f"FK lookup transport failure after bounded retries: {last_exc}") from last_exc
+
     for offset in range(0, len(source_ids), chunk_size):
         chunk = source_ids[offset : offset + chunk_size]
         ids_csv = ",".join(chunk)
-        primary_response = requests.get(
-            f"{supabase_url.rstrip('/')}/rest/v1/inmobiliarias_main",
-            headers=headers,
-            params={
+        primary_response = get_fk_response(
+            {
                 "select": select,
                 "scraping_id_origen": f"in.({ids_csv})",
                 "limit": str(chunk_size * 2),
             },
-            timeout=30,
         )
-        fallback_response = requests.get(
-            f"{supabase_url.rstrip('/')}/rest/v1/inmobiliarias_main",
-            headers=headers,
-            params={"select": select, "id": f"in.({ids_csv})", "limit": str(chunk_size)},
-            timeout=30,
-        )
+        fallback_response = get_fk_response({"select": select, "id": f"in.({ids_csv})", "limit": str(chunk_size)})
         if primary_response.status_code != 200 or fallback_response.status_code != 200:
             raise RuntimeError(
                 "FK lookup HTTP failure "
@@ -1693,10 +1708,6 @@ def main(argv=None) -> int:
 
     excluded_ids: Set[str] = set()
     excl_path = Path(args.exclude) if args.exclude else None
-    if excl_path is None:
-        default_excl = REPO_ROOT / "_scratch" / "prod_preflight_url_parser_09a" / "manifest_excluded.csv"
-        if default_excl.exists():
-            excl_path = default_excl
     if excl_path and excl_path.exists():
         excl_rows    = load_manifest(excl_path)
         excluded_ids = {r.get("source_id", "").strip() for r in excl_rows if r.get("source_id")}

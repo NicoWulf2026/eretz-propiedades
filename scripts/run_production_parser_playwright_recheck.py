@@ -68,7 +68,30 @@ def discover_rendered_property_links(
     return links
 
 
-def _load_input(path: Path) -> list[dict[str, Any]]:
+def _load_input(
+    path: Path,
+    families: set[str] | None = None,
+    excluded_ids: set[int] | None = None,
+) -> list[dict[str, Any]]:
+    excluded_ids = excluded_ids or set()
+    if path.suffix.lower() == ".csv":
+        with path.open(encoding="utf-8-sig", newline="") as handle:
+            rows = list(csv.DictReader(handle))
+        selected = []
+        for row in rows:
+            source_id = int(row["source_id"])
+            if source_id in excluded_ids:
+                continue
+            if families and row.get("gap_family") not in families:
+                continue
+            selected.append({
+                "source_id": source_id,
+                "source_name": row.get("nombre") or row.get("source_name") or "",
+                "listing_url": row.get("current_listing_url") or row.get("website_url") or "",
+                "playwright_final_status": row.get("current_http_status") or "diagnostic_gap",
+                "diagnostic_recheck": True,
+            })
+        return selected
     selected = []
     with path.open(encoding="utf-8", errors="replace") as handle:
         for line in handle:
@@ -76,7 +99,10 @@ def _load_input(path: Path) -> list[dict[str, Any]]:
                 row = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if row.get("playwright_final_status") in RECHECK_STATUSES:
+            if (
+                row.get("playwright_final_status") in RECHECK_STATUSES
+                or row.get("diagnostic_recheck") is True
+            ) and int(row.get("source_id") or 0) not in excluded_ids:
                 selected.append(row)
     return selected
 
@@ -92,6 +118,23 @@ def _done(path: Path) -> set[int]:
             except (ValueError, KeyError, json.JSONDecodeError):
                 continue
     return output
+
+
+def classify_exception(exc: Exception) -> tuple[str, str]:
+    name = type(exc).__name__
+    message = str(exc).replace("\r", " ").replace("\n", " ")[:240]
+    combined = f"{name} {message}".lower()
+    if "timeout" in combined:
+        return "timeout", message or name
+    if any(token in combined for token in (
+        "err_name_not_resolved", "err_connection_refused", "err_connection_timed_out",
+        "err_address_unreachable", "err_cert_", "err_ssl_", "err_aborted",
+        "err_internet_disconnected", "err_network_changed", "err_socket_not_connected",
+        "err_network_access_denied", "err_proxy_connection_failed", "err_tunnel_connection_failed",
+        "err_empty_response", "err_connection_reset",
+    )):
+        return "external_transport_error", message or name
+    return "internal_error", message or name
 
 
 async def _diagnose(browser, source: dict[str, Any], timeout_s: int) -> dict[str, Any]:
@@ -169,9 +212,7 @@ async def _diagnose(browser, source: dict[str, Any], timeout_s: int) -> dict[str
             record["final_status"] = "recovered_parser" if links else "still_no_property_links"
             record["evidence"] = f"rendered_html={len(rendered)} frames={frames_checked} links={len(links)}"
     except Exception as exc:
-        name = type(exc).__name__
-        record["error_type"] = name
-        record["final_status"] = "timeout" if "Timeout" in name else "internal_error"
+        record["final_status"], record["error_type"] = classify_exception(exc)
     finally:
         record["duration_seconds"] = round(time.monotonic() - started, 2)
         await context.close()
@@ -179,7 +220,12 @@ async def _diagnose(browser, source: dict[str, Any], timeout_s: int) -> dict[str
 
 
 async def _run(args) -> int:
-    rows = _load_input(args.input)
+    excluded_ids: set[int] = set()
+    if args.exclude_ids_file:
+        with args.exclude_ids_file.open(encoding="utf-8-sig", newline="") as handle:
+            excluded_ids = {int(row["source_id"]) for row in csv.DictReader(handle)}
+    families = {value.strip() for value in args.families.split(",") if value.strip()}
+    rows = _load_input(args.input, families or None, excluded_ids)
     if args.limit:
         rows = rows[: args.limit]
     args.out.mkdir(parents=True, exist_ok=True)
@@ -244,6 +290,8 @@ def main() -> int:
     parser.add_argument("--timeout", type=int, default=25)
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--exclude-ids-file", type=Path)
+    parser.add_argument("--families", default="")
     args = parser.parse_args()
     if not 1 <= args.workers <= 2:
         raise RuntimeError("MAX_ACTIVE_BROWSERS=2")
