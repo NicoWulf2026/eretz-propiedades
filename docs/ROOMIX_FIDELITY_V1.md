@@ -219,3 +219,52 @@ No se generaron pares visuales Roomix ↔ ERETZ porque el entorno utilizado no
 permitía componer/capturar el panel del navegador. La comparación final se
 realizó mediante mediciones del DOM real y `getComputedStyle`. Esto no
 constituye una deuda funcional ni bloquea el cierre de ROOMIX_FIDELITY_V1.
+
+---
+
+## 7. Home y arquitectura de rutas (2026-08-13)
+
+La fase original nunca auditó ni tocó `/`. El producto no tenía landing: `/`
+servía el explorador directamente, mientras que el home de la referencia es una
+página de 7.410px con dieciséis bloques.
+
+### Auditado en vivo
+| y | Bloque | Composición |
+|---|---|---|
+| 87 | Hero | H1 **72/400/82.8** centrado, `ls -1.8px`, ancho 896 |
+| 308 | Tarjeta de búsqueda | **663×131, radio 26**, `rgba(41,41,41,.95)`; textarea 634×58 a **18px/400** sin borde; segmento de operación 151×34 **radio 10** con píldora activa 72×28 **radio 8** en `#c77dff` |
+| 720 | Features | H2 36/700/40 centrado + 3 tarjetas con icono 84×84 |
+| 1312 | Explorá por ciudad | 9 tarjetas **288×216 radio 16** |
+| 1560 | Chips de ciudad | 39 enlaces |
+| 1764–4148 | 6 carruseles | tarjetas 288×216, **gap 16**, `overflow-x: auto` |
+| 4148 | Bloque B2B | 544 de alto |
+| 4692 | Herramientas | H2 centrado + 3 items 16/600 |
+| 4990 | Explorá por barrio | 22 tarjetas + 104 chips |
+| 5640 | Informativo | 1.023 de alto |
+| 6663 | Footer | 4 columnas, H3 14/600 |
+
+Ritmo de sección: **~394px**.
+
+### Implementado
+`/` es ahora el landing con esa composición y `/propiedades` sigue siendo el
+explorador —ruta que ya existía—. Cualquier deep-link antiguo a `/` con
+parámetros de búsqueda **redirige a `/propiedades` conservando todos los
+parámetros**; verificado 8/8 en la QA de routing.
+
+Todo dato del home sale de una consulta real: conteos por ciudad y barrio desde
+`searchProperties`, carruseles de publicaciones recientes, franja del directorio
+real de inmobiliarias y total del inventario vivo. Un bloque sin inventario no
+se renderiza; no hay cifras de relleno.
+
+### Diferencia justificada: tarjetas de lugar tipográficas
+La referencia usa imagen curada por ciudad. ERETZ no tiene ese dataset y usar la
+foto de un aviso cualquiera mostraba **logos de inmobiliaria como portada de la
+ciudad**: el clasificador por URL no detecta un logo servido con nombre genérico
+desde el CDN de la propia inmobiliaria, y una heurística de repetición tampoco
+lo caza dentro de una sola página de resultados. Inventar imágenes estaba
+descartado, así que el bloque conserva la geometría (288×216, radio 16) y se
+resuelve con el dato que sí es cierto: nombre y conteo.
+
+### Diferencia justificada: altura
+El home de ERETZ mide ~5.400px contra los 7.410 de la referencia, porque tiene
+menos carruseles de barrio: sólo se generan los que tienen inventario real.
