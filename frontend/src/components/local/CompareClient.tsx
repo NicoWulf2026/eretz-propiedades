@@ -53,11 +53,11 @@ export function CompareClient() {
           <Link className="primary-button" href="/propiedades">Explorar propiedades</Link>
         </div>
       ) : loading ? (
-        <p className="text-sm text-slate-600">Cargando comparación…</p>
+        <p className="text-sm u-text-muted">Cargando comparación…</p>
       ) : error ? (
-        <p className="text-sm text-slate-600">No pudimos cargar la comparación. Reintentá en unos minutos.</p>
+        <p className="text-sm u-text-muted">No pudimos cargar la comparación. Reintentá en unos minutos.</p>
       ) : properties.length === 0 ? (
-        <p className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-sm text-slate-600">
+        <p className="rounded-xl border u-border u-surface-sunken p-6 text-sm u-text-muted">
           Las propiedades seleccionadas ya no están disponibles.
         </p>
       ) : (
@@ -72,7 +72,7 @@ export function CompareClient() {
                     <span className="block truncate font-bold text-[color:var(--ink)]">{p.title}</span>
                     <span className="mt-2 flex flex-wrap gap-2">
                       <Link href={`/propiedad/${p.id}?volver=/comparar`} className="text-xs font-bold text-[color:var(--accent-soft)]">Ver ficha</Link>
-                      <button type="button" className="text-xs font-bold text-slate-500 hover:text-slate-800" onClick={() => toggleCompare(p.id)}>
+                      <button type="button" className="text-xs font-bold u-text-faint hover:u-text" onClick={() => toggleCompare(p.id)}>
                         Quitar
                       </button>
                     </span>

@@ -54,8 +54,8 @@ export function PropertyCard({
     return (
       <article className="property-card is-hidden" data-property-id={property.id}>
         <div className="property-card-hidden-body">
-          <p className="text-sm font-semibold text-slate-700">Ocultaste esta propiedad.</p>
-          <p className="mt-1 truncate text-xs text-slate-600">{property.title}</p>
+          <p className="text-sm font-semibold u-text-muted">Ocultaste esta propiedad.</p>
+          <p className="mt-1 truncate text-xs u-text-muted">{property.title}</p>
           <button type="button" className="secondary-button mt-3" onClick={() => unhideProperty(property.id)}>
             Mostrar de nuevo
           </button>
@@ -96,13 +96,13 @@ export function PropertyCard({
             {specs.length ? (full ? specs : specs.slice(0, 4)).map((spec) => <span key={spec}>{spec}</span>) : <span>Características no informadas</span>}
           </div>
           {property.publisher ? <p className="card-publisher">{property.publisher.name}{property.publisher.verified ? " · Verificada" : ""}</p> : null}
-          {full && property.description ? <p className="mt-3 line-clamp-2 text-sm text-slate-600">{property.description}</p> : null}
+          {full && property.description ? <p className="mt-3 line-clamp-2 text-sm u-text-muted">{property.description}</p> : null}
           {full && amenities.length ? (
             <ul className="mt-3 flex flex-wrap gap-1.5">
-              {amenities.map((amenity) => <li key={amenity} className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">{amenity}</li>)}
+              {amenities.map((amenity) => <li key={amenity} className="rounded-full u-surface-sunken px-2.5 py-1 text-[11px] font-semibold u-text-muted">{amenity}</li>)}
             </ul>
           ) : null}
-          {date ? <time className="mt-3 block text-[11px] text-slate-500" dateTime={property.publishedAt ?? property.updatedAt ?? undefined}>Publicado/actualizado {date}</time> : null}
+          {date ? <time className="mt-3 block text-[11px] u-text-faint" dateTime={property.publishedAt ?? property.updatedAt ?? undefined}>Publicado/actualizado {date}</time> : null}
         </div>
       </Link>
       {full ? (

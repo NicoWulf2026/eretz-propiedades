@@ -307,7 +307,6 @@ p { margin: 0; }
   outline-offset: 2px;
   border-radius: var(--radius-xs);
 }
-.nav-contact { color: var(--ink) !important; }
 
 /* --- Tarjeta de propiedad -------------------------------------------------
    Superficie de documento: borde hairline visible y sin sombra propia.
@@ -578,12 +577,10 @@ p { margin: 0; }
 @keyframes eretz-pop { from { opacity: 0; transform: translateY(-4px) scale(.99); } to { opacity: 1; transform: none; } }
 .filter-backdrop { position: fixed; z-index: 2150; inset: 0; border: 0; background: rgba(6,25,47,.52); }
 /* --- Panel de filtros: drawer premium, no formulario técnico -------------- */
-.filter-panel {
-  position: fixed; z-index: var(--z-modal); top: var(--nav-height); right: 0; bottom: 0;
-  width: min(92vw, 580px); overflow-y: auto; translate: 100% 0;
-  background: var(--surface-1); padding: 1.4rem;
-  box-shadow: var(--shadow-xl); transition: translate var(--motion-slow) var(--ease-out); visibility: hidden;
-}
+/* Historico: el panel era un drawer lateral. Su geometria, superficie y sombra
+   ahora viven en un solo sitio, el bloque del panel de filtros al final del
+   archivo. Aqui solo queda la transicion, que aquel bloque no declara. */
+.filter-panel { transition: translate var(--motion-slow) var(--ease-out); }
 .filter-panel.is-open { translate: 0; visibility: visible; }
 .filter-panel-header {
   position: sticky; z-index: 1; top: -1.4rem; display: flex; align-items: center; justify-content: space-between;
@@ -1468,13 +1465,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 .map-popup small { color: var(--ink-4); }
 
 /* --- Capas flotantes: overlay al 50% de negro, panel de radio 24 -------- */
-.filter-panel {
-  background: var(--elevated);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-xl);
-  color: var(--ink);
-}
+.filter-panel { color: var(--ink); }
 .filter-panel-header, .filter-panel-actions { background: transparent; color: var(--ink); }
 .filter-panel-header { border-block-end: 1px solid var(--line-accent); }
 .filter-backdrop { background: var(--overlay-veil); }
@@ -1536,19 +1527,28 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 .site-footer a { color: var(--ink-3); }
 .site-footer a:hover { color: var(--ink); }
 .site-footer h2, .site-footer strong { color: var(--ink); }
+.site-footer .u-text-muted, .site-footer .u-text-faint { color: var(--ink-3); }
 .footer-lede { color: var(--ink-3); }
 .footer-heading { color: var(--ink); font-weight: 700; }
 .footer-rule { border-block-start: 1px solid var(--line); }
 .footer-fineprint { color: var(--ink-4); }
 
-/* --- Utilidades Tailwind heredadas: a la escala oscura ------------------ */
-.text-slate-400, .text-slate-500 { color: var(--ink-4) !important; }
-.text-slate-600, .text-slate-700 { color: var(--ink-3) !important; }
-.text-slate-800, .text-slate-900 { color: var(--ink) !important; }
-.bg-white { background-color: rgba(255, 255, 255, .04) !important; }
-.bg-slate-50 { background-color: rgba(255, 255, 255, .06) !important; }
-.border-slate-100, .border-slate-200 { border-color: var(--line) !important; }
-.border-slate-300 { border-color: var(--line-strong) !important; }
+/* --- Utilidades semanticas propias --------------------------------------
+   Aqui vivia un bloque que neutralizaba con !important las utilidades Tailwind
+   de la escala slate/amber/emerald que quedaban sueltas en 19 componentes. Esas
+   120 clases se migraron a estas utilidades, asi que la fidelidad ya no depende
+   de ganarle una guerra de especificidad a una escala ajena. */
+.u-text { color: var(--ink); }
+.u-text-muted { color: var(--ink-3); }
+.u-text-faint { color: var(--ink-4); }
+.u-surface { background-color: rgba(255, 255, 255, .04); }
+.u-surface-sunken { background-color: rgba(255, 255, 255, .06); }
+.u-border { border-color: var(--line); }
+.u-border-strong { border-color: var(--line-strong); }
+.u-warn-surface { background-color: var(--warn-tint); }
+.u-warn-text { color: var(--warn); }
+.u-ok-text { color: var(--ok); }
+.u-bad-text { color: var(--bad); }
 
 /* --- Movimiento --------------------------------------------------------- */
 .property-card, .entity-card, .nav-link, .chip,
@@ -1599,14 +1599,6 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 .card-type { font-size: var(--text-sm); }
 .card-specs, .card-publisher, .card-availability { font-size: var(--text-sm); line-height: 1.35; }
 
-/* Fondos claros de Tailwind que sobrevivian en componentes: sobre el lienzo
-   oscuro dejaban texto claro sobre superficie clara. Se remapean al sistema. */
-.bg-slate-100 { background-color: rgba(255, 255, 255, .08) !important; }
-.bg-amber-50, .bg-amber-100 { background-color: var(--warn-tint) !important; color: var(--warn) !important; }
-.bg-emerald-700, .bg-emerald-800 { background-color: var(--accent-strong) !important; }
-.text-amber-700, .text-amber-800, .text-amber-900 { color: var(--warn) !important; }
-.text-emerald-700, .text-emerald-800 { color: var(--ok) !important; }
-.text-red-600, .text-red-700 { color: var(--bad) !important; }
 
 /* La card de la referencia es mas alta (media 400x275 en vez de un tope de
    176px), asi que hay mas pixel que pintar por tarjeta. Se compensa saltando

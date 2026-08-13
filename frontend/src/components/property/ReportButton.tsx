@@ -52,14 +52,14 @@ export function ReportButton({ propertyId }: { propertyId: string }) {
 
   if (!open) {
     return (
-      <button type="button" className="inline-action text-sm font-semibold text-slate-500 underline hover:text-slate-800" onClick={() => setOpen(true)}>
+      <button type="button" className="inline-action text-sm font-semibold u-text-faint underline hover:u-text" onClick={() => setOpen(true)}>
         Reportar un problema
       </button>
     );
   }
 
   return (
-    <form onSubmit={onSubmit} className="mt-2 grid gap-3 rounded-xl border border-slate-200 p-4">
+    <form onSubmit={onSubmit} className="mt-2 grid gap-3 rounded-xl border u-border p-4">
       <label className="field"><span>Motivo</span>
         <select name="motivo" required defaultValue="">
           <option value="" disabled>Elegí un motivo</option>
@@ -68,8 +68,8 @@ export function ReportButton({ propertyId }: { propertyId: string }) {
       </label>
       <label className="field"><span>Detalle (opcional)</span><textarea name="detalle" maxLength={1000} rows={3} /></label>
       <label className="field"><span>Tu email (opcional, por si necesitamos más datos)</span><input name="email" type="email" maxLength={160} /></label>
-      {state === "error" ? <p role="alert" className="text-sm font-semibold text-red-700">{error}</p> : null}
-      <p className="text-xs text-slate-500">Tu reporte es una señal para revisión humana; no modifica ni oculta la publicación.</p>
+      {state === "error" ? <p role="alert" className="text-sm font-semibold u-bad-text">{error}</p> : null}
+      <p className="text-xs u-text-faint">Tu reporte es una señal para revisión humana; no modifica ni oculta la publicación.</p>
       <div className="flex gap-2">
         <button type="submit" className="primary-button" disabled={state === "sending"}>{state === "sending" ? "Enviando…" : "Enviar reporte"}</button>
         <button type="button" className="secondary-button" onClick={() => setOpen(false)}>Cancelar</button>

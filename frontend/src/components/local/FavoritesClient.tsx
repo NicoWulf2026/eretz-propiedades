@@ -36,7 +36,7 @@ export function FavoritesClient() {
       <section aria-labelledby="fav-heading" className="mb-10">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 id="fav-heading" className="section-heading">
-            Favoritos {favorites.length ? <span className="text-slate-500">({favorites.length})</span> : null}
+            Favoritos {favorites.length ? <span className="u-text-faint">({favorites.length})</span> : null}
           </h2>
           {compare.length ? (
             <Link href="/comparar" className="primary-button">Comparar ({compare.length})</Link>
@@ -50,16 +50,16 @@ export function FavoritesClient() {
             <Link className="primary-button" href="/propiedades">Explorar propiedades</Link>
           </div>
         ) : loading ? (
-          <p className="mt-4 text-sm text-slate-600">Cargando favoritos…</p>
+          <p className="mt-4 text-sm u-text-muted">Cargando favoritos…</p>
         ) : error ? (
-          <p className="mt-4 text-sm text-slate-600">No pudimos cargar tus favoritos. Reintentá en unos minutos.</p>
+          <p className="mt-4 text-sm u-text-muted">No pudimos cargar tus favoritos. Reintentá en unos minutos.</p>
         ) : (
           <div className="mt-4 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {properties.map((p) => (
               <PropertyCard key={p.id} property={p} variant="full" returnTo="/favoritos" />
             ))}
             {properties.length < favorites.length ? (
-              <p className="col-span-full text-xs text-slate-500">
+              <p className="col-span-full text-xs u-text-faint">
                 Algunos favoritos ya no están disponibles y no se muestran.
               </p>
             ) : null}
@@ -73,12 +73,12 @@ export function FavoritesClient() {
             <h2 id="recent-heading" className="section-heading">Vistas recientemente</h2>
             <button type="button" className="secondary-button" onClick={clearRecentViews}>Limpiar</button>
           </div>
-          <ul className="mt-4 divide-y divide-slate-100 rounded-xl border border-slate-200">
+          <ul className="mt-4 divide-y divide-slate-100 rounded-xl border u-border">
             {recent.map((r) => (
               <li key={r.id}>
-                <Link href={`/propiedad/${r.id}?volver=/favoritos`} className="flex items-center justify-between gap-3 p-3 hover:bg-slate-50">
-                  <span className="truncate text-sm font-semibold text-slate-800">{r.title}</span>
-                  <span className="shrink-0 text-sm text-slate-600">{r.price ?? "Consultar precio"}</span>
+                <Link href={`/propiedad/${r.id}?volver=/favoritos`} className="flex items-center justify-between gap-3 p-3 hover:u-surface-sunken">
+                  <span className="truncate text-sm font-semibold u-text">{r.title}</span>
+                  <span className="shrink-0 text-sm u-text-muted">{r.price ?? "Consultar precio"}</span>
                 </Link>
               </li>
             ))}
@@ -94,12 +94,12 @@ export function FavoritesClient() {
           </div>
           <ul className="mt-4 flex flex-wrap gap-2">
             {searches.map((s) => (
-              <li key={s.url} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white pl-3">
+              <li key={s.url} className="inline-flex items-center gap-1 rounded-full border u-border u-surface pl-3">
                 <Link href={s.url} className="py-1.5 text-sm font-semibold text-[color:var(--accent-soft)]">{s.label}</Link>
                 <button
                   type="button"
                   aria-label={`Quitar la búsqueda ${s.label}`}
-                  className="px-2 py-1 text-slate-500 hover:text-slate-800"
+                  className="px-2 py-1 u-text-faint hover:u-text"
                   onClick={() => removeRecentSearch(s.url)}
                 >
                   <span aria-hidden="true">✕</span>
@@ -114,11 +114,11 @@ export function FavoritesClient() {
         <section aria-labelledby="hidden-heading">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 id="hidden-heading" className="section-heading">
-              Propiedades ocultas <span className="text-slate-500">({hidden.length})</span>
+              Propiedades ocultas <span className="u-text-faint">({hidden.length})</span>
             </h2>
             <button type="button" className="secondary-button" onClick={clearHidden}>Mostrar todas</button>
           </div>
-          <p className="mt-3 text-sm text-slate-600">
+          <p className="mt-3 text-sm u-text-muted">
             No aparecen en los resultados hasta que las restaures.
           </p>
         </section>

@@ -30,13 +30,13 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
   return (
     <SiteShell>
       <div className="container py-8">
-        <nav aria-label="Migas de pan" className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
+        <nav aria-label="Migas de pan" className="flex flex-wrap items-center gap-2 text-sm u-text-muted">
           <Link href="/inmobiliarias" className="font-bold text-[color:var(--accent-soft)]">← Inmobiliarias</Link>
           <span aria-hidden="true">/</span>
           <span aria-current="page">{agency.name}</span>
         </nav>
 
-        <header className="mt-6 rounded-2xl border border-slate-200 bg-white p-6">
+        <header className="mt-6 rounded-2xl border u-border u-surface p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <h1 className="page-title page-title-inline">
@@ -46,7 +46,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
               {agency.city || agency.province ? (
                 <p className="page-subtitle">{[agency.city, agency.province].filter(Boolean).join(", ")}</p>
               ) : null}
-              <p className="mt-2 text-sm font-semibold text-slate-700">
+              <p className="mt-2 text-sm font-semibold u-text-muted">
                 {agency.listingsCount.toLocaleString("es-AR")} {agency.listingsCount === 1 ? "publicación" : "publicaciones"}
               </p>
             </div>
@@ -57,8 +57,8 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
             </div>
           </div>
           {!agency.verified ? (
-            <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-              <p className="font-semibold text-slate-800">¿Sos responsable de esta inmobiliaria?</p>
+            <div className="mt-5 rounded-xl border u-border u-surface-sunken p-4 text-sm u-text-muted">
+              <p className="font-semibold u-text">¿Sos responsable de esta inmobiliaria?</p>
               <p className="mt-1">Este perfil es público y se genera con datos de las publicaciones. Podés reclamarlo para gestionarlo.</p>
               <Link href={`/inmobiliaria/${agency.slug}/reclamar`} className="primary-button mt-3 inline-flex">Reclamar este perfil</Link>
             </div>
@@ -68,7 +68,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
         <section aria-labelledby="listings" className="mt-8">
           <h2 id="listings" className="section-heading">Publicaciones</h2>
           {properties.length === 0 ? (
-            <p className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-6 text-sm text-slate-600">
+            <p className="mt-4 rounded-xl border u-border u-surface-sunken p-6 text-sm u-text-muted">
               Esta inmobiliaria no tiene publicaciones disponibles en este momento.
             </p>
           ) : (
