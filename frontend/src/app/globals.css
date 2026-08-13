@@ -1654,6 +1654,230 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   .explorer-search-card .nl-search-input { font-size: 1rem; min-block-size: 2.75rem; }
 }
 
+/* ==========================================================================
+   HOME — composicion medida en el home de la referencia (7410px, 16 bloques)
+   hero H1 72/400/82.8 centrado ls-1.8 | search card 663x131 r26
+   H2 de seccion 36/700/40 | tarjeta de lugar/carrusel 288x216 r16 | gap 16
+   ritmo de seccion ~394px
+   ========================================================================== */
+.home-hero { padding-block: 5.5rem 3rem; text-align: center; }
+.home-hero-title {
+  margin: 0 auto;
+  max-inline-size: 56rem;
+  font-size: clamp(2.25rem, 5.6vw, 4.5rem);
+  font-weight: 400;
+  line-height: 1.15;
+  letter-spacing: -.025em;
+  color: var(--ink);
+}
+.home-hero-lede {
+  margin: 1rem auto 0;
+  max-inline-size: 38rem;
+  color: var(--ink-4);
+  font-size: var(--text-md);
+}
+.home-search-card {
+  display: grid;
+  gap: .75rem;
+  inline-size: min(100%, 663px);
+  margin: 2rem auto 0;
+  border: 1px solid var(--line);
+  border-radius: 26px;
+  background: var(--elevated);
+  padding: 1rem 1.1rem;
+  text-align: start;
+  box-shadow: var(--shadow-md);
+}
+.home-search-input {
+  inline-size: 100%;
+  min-block-size: 3.6rem;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 1.125rem;
+  line-height: 1.4;
+  resize: none;
+}
+.home-search-input:focus { outline: none; }
+.home-search-input::placeholder { color: var(--ink-4); }
+.home-search-row { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+
+/* Segmento de operacion: contenedor r10, pildora activa r8 (medido 151x34 / 72x28). */
+.home-op-segment {
+  display: inline-flex;
+  gap: .15rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  padding: .18rem;
+}
+.home-op-segment button {
+  min-block-size: 1.75rem;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  padding-inline: .875rem;
+  color: var(--ink-3);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
+}
+.home-op-segment button:hover { color: var(--ink); }
+.home-op-segment button.is-active { background: var(--accent-soft); color: var(--ink-inverse); }
+.home-search-submit { min-block-size: 2.25rem; padding-inline: 1.4rem; }
+.home-hero-links { display: flex; justify-content: center; gap: 1.5rem; margin-block-start: 1.5rem; flex-wrap: wrap; }
+.home-hero-links a { color: var(--ink-3); font-size: var(--text-base); text-decoration: none; }
+.home-hero-links a:hover { color: var(--ink); text-decoration: underline; }
+
+/* --- Ritmo de seccion --------------------------------------------------- */
+.home-section { padding-block: 2.75rem; }
+.home-section-centered { text-align: center; }
+.home-section-title { font-size: 2.25rem; font-weight: 700; line-height: 1.11; letter-spacing: -.02em; color: var(--ink); }
+.home-section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+.home-section-more { color: var(--accent-soft); font-size: var(--text-base); font-weight: 600; text-decoration: none; white-space: nowrap; }
+.home-section-more:hover { text-decoration: underline; }
+.home-section-lede { margin: .6rem auto 0; max-inline-size: 40rem; color: var(--ink-4); font-size: var(--text-md); }
+.home-section-lede-left { margin-inline: 0; text-align: start; }
+
+/* --- Tarjetas de lugar: 288x216, radio 16 -------------------------------- */
+.place-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1rem;
+  margin-block-start: 1.5rem;
+}
+.place-card {
+  position: relative;
+  display: grid;
+  align-content: end;
+  aspect-ratio: 288 / 216;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(160deg, var(--accent-surface) 0%, rgba(255, 255, 255, .04) 70%);
+  text-decoration: none;
+  transition: border-color var(--motion-fast) var(--ease-out), background var(--motion-fast) var(--ease-out);
+}
+.place-card:hover { border-color: var(--accent-ring); background: linear-gradient(160deg, var(--accent-surface) 0%, rgba(255, 255, 255, .09) 70%); }
+.place-card-body { display: grid; gap: .15rem; padding: 1rem; }
+.place-card-name { color: var(--ink); font-size: 1.125rem; font-weight: 700; line-height: 1.55; }
+.place-card-count { color: var(--ink-4); font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
+
+/* --- Chips de lugar ------------------------------------------------------ */
+.home-chips { padding-block-end: 1.5rem; }
+.place-chip-list { display: flex; flex-wrap: wrap; gap: .5rem; margin: 0; padding: 0; list-style: none; }
+.place-chip {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 2.25rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, .06);
+  padding-inline: .9rem;
+  color: var(--ink-2);
+  font-size: var(--text-base);
+  font-weight: 500;
+  text-decoration: none;
+}
+.place-chip:hover { background: rgba(255, 255, 255, .12); border-color: var(--line-raised); color: var(--ink); }
+
+/* --- Carrusel de propiedades: 288x216, gap 16, scroll horizontal --------- */
+.home-carousel {
+  display: flex;
+  gap: 1rem;
+  margin: 1.25rem 0 0;
+  padding: 0 0 .5rem;
+  list-style: none;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+}
+.home-carousel > li { flex: 0 0 288px; scroll-snap-align: start; }
+.carousel-card { display: grid; gap: .1rem; text-decoration: none; }
+.carousel-card-media {
+  display: block;
+  aspect-ratio: 288 / 216;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+}
+.carousel-card-media img { inline-size: 100%; block-size: 100%; object-fit: cover; }
+.carousel-card:hover .carousel-card-media { opacity: .92; }
+.carousel-card-price { margin-block-start: .55rem; font-size: 1.25rem; font-weight: 600; color: var(--ink); }
+.carousel-card-type { color: var(--accent-soft); font-size: var(--text-xs); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+.carousel-card-location { color: var(--ink-4); font-size: var(--text-base); }
+
+/* --- Bloques de funciones ------------------------------------------------ */
+.feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; margin-block-start: 2rem; text-align: start; }
+.feature-card {
+  display: grid;
+  gap: .5rem;
+  align-content: start;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, .04);
+  padding: 1.4rem;
+  text-decoration: none;
+}
+.feature-card:hover { border-color: var(--accent-ring); background: rgba(255, 255, 255, .07); }
+.feature-icon {
+  display: grid;
+  place-items: center;
+  inline-size: 3rem;
+  block-size: 3rem;
+  border-radius: var(--radius-md);
+  background: var(--accent-surface);
+  color: var(--accent-soft);
+  font-size: 1.4rem;
+}
+.feature-card h3 { font-size: var(--text-md); font-weight: 600; color: var(--ink); }
+.feature-card p { color: var(--ink-4); font-size: var(--text-base); line-height: 1.5; }
+
+/* --- Franja de inmobiliarias --------------------------------------------- */
+.agency-strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: .75rem; margin: 1.5rem 0 0; padding: 0; list-style: none; }
+.agency-chip-card {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, .04);
+  padding: .85rem 1rem;
+  text-decoration: none;
+}
+.agency-chip-card:hover { border-color: var(--accent-ring); background: rgba(255, 255, 255, .07); }
+.agency-chip-monogram {
+  display: grid;
+  place-items: center;
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+  flex: 0 0 auto;
+  border-radius: var(--radius-md);
+  background: var(--accent-surface);
+  color: var(--accent-soft);
+  font-weight: 700;
+}
+.agency-chip-body { display: grid; gap: .1rem; min-inline-size: 0; }
+.agency-chip-name { color: var(--ink); font-size: var(--text-base); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agency-chip-meta { color: var(--ink-4); font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
+
+/* --- Bloque informativo --------------------------------------------------- */
+.home-about { border-block-start: 1px solid var(--line); }
+.home-about-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 2rem; margin-block-start: 1.5rem; }
+.home-about-grid p { color: var(--ink-3); font-size: var(--text-md); line-height: 1.7; }
+.home-about-grid p + p { margin-block-start: 1rem; }
+
+@media (max-width: 767px) {
+  .home-hero { padding-block: 2.5rem 1.5rem; }
+  .home-search-card { border-radius: var(--radius-xl); padding: .8rem .9rem; }
+  .home-search-input { font-size: 1rem; min-block-size: 3rem; }
+  .home-section { padding-block: 1.75rem; }
+  .home-section-title { font-size: 1.6rem; }
+  .place-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  .home-carousel > li { flex-basis: 240px; }
+  .home-hero-links { gap: 1rem; }
+}
+
 /* ============================================================
    U8 — PANEL DE FILTROS (composicion medida en la referencia)
    Overlay centrado rgba(0,0,0,.5) con padding 16 y blur. Dentro, master-detail:
