@@ -268,3 +268,74 @@ resuelve con el dato que sí es cierto: nombre y conteo.
 ### Diferencia justificada: altura
 El home de ERETZ mide ~5.400px contra los 7.410 de la referencia, porque tiene
 menos carruseles de barrio: sólo se generan los que tienen inventario real.
+
+---
+
+## 8. CSS Architecture Closure (2026-08-13)
+
+### Capas que existían
+`globals.css` tenía diez bloques encadenados por orden de fuente:
+
+| # | Bloque | Rol |
+|---|---|---|
+| 0 | Raíz Roomix + base histórica | tokens actuales sobre el sistema navy/oro retokenizado |
+| 1 | Cierre de defectos de ficha | parche |
+| 2 | Roomix-derived foundations (U2) | métricas |
+| 3 | U3 grilla | métricas |
+| 4 | U6 densidad de card | métricas |
+| 5 | **Roomix Fidelity — capa de superficie** | el sistema visual real |
+| 6 | Tarjeta de búsqueda | añadido |
+| 7 | Home | añadido |
+| 8 | Pase de verificación | correcciones |
+| 9 | **U8 panel de filtros** | cargaba **último** |
+
+**34 selectores** se declaraban en más de un bloque con propiedades de riesgo en
+conflicto. El caso que se detectó en producción —el panel de filtros volviendo a
+radio 16— no era único: era el síntoma visible de ese patrón.
+
+### Qué se consolidó
+- **Utilidades ajenas.** 120 clases Tailwind de las escalas `slate`, `amber` y
+  `emerald` vivían en 19 componentes, y el CSS global cargaba un bloque cuyo
+  único trabajo era ganarles con `!important`. Se migraron a utilidades
+  semánticas propias (`.u-text`, `.u-surface`, `.u-warn-text`…) y el bloque
+  neutralizador desapareció.
+- **`.filter-panel`.** Se declaraba en cuatro lugares de tres épocas: un drawer
+  lateral histórico, la capa Roomix y el bloque del panel. Quedan sólo las
+  declaraciones del bloque del panel más la transición del drawer, que aquél no
+  declara.
+- **CSS muerto.** `.nav-contact` no tenía uso en ningún componente.
+
+### `!important`
+| | Antes | Después |
+|---|---|---|
+| Internos | **14** | **0** |
+| Leaflet (terceros) | 15 | 15 |
+| `prefers-reduced-motion` | 9 | 9 |
+
+Los de Leaflet son justificados: su hoja nativa declara `border-radius`,
+tamaños y colores en los controles de zoom, popup y atribución con reglas que de
+otro modo ganan. Los de `prefers-reduced-motion` deben ganarle a todo por
+definición.
+
+### Excepción de comportamiento corregida
+El CTA de WhatsApp llevaba `bg-emerald-700` y el bloque neutralizador lo estaba
+forzando en silencio al violeta de marca. Al retirar el bloque habría quedado
+verde, así que se le quitó la clase de color: `.primary-button` lo pinta.
+
+### Prueba de que el render no cambió
+Huella de estilos computados: **500 registros** (75 selectores × 10 superficies ×
+2 anchos), capturada antes y después. **Cero diferencias atribuibles a estilos.**
+Las dos únicas deltas son la franja de inmobiliarias del home apareciendo en una
+captura y no en la otra, que es timing de la consulta.
+
+### Hallazgo abierto para la fase de identidad
+Al capturar Roomix con Playwright directo (UA real) se obtuvo el home en
+**HTTP 200 y en tema CLARO**: fondo blanco con degradado violeta y titular
+**serif itálico**. Todas las mediciones de esta fase se tomaron a través del
+panel del navegador, que corría con `prefers-color-scheme: dark`, de modo que la
+base construida corresponde al **tema oscuro de Roomix**, que es un tema real
+suyo. La ruta de resultados sigue devolviendo 403 por anti-bot.
+
+Esto no invalida la base aprobada, pero conviene tenerlo presente cuando se
+diseñe ERETZ Identity V2: la referencia tiene dos temas y una tipografía de
+display serif que esta fase no replicó.
