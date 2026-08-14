@@ -28,3 +28,7 @@ docs/obsidian/.obsidian/
 
 # Runtime scraper checkpoints are local operational state, never source code.
 scraper/checkpoint*.txt
+
+# Datos de la campana de cobertura de inmobiliarias (masivos, no versionables)
+/ERETZ_AGENCY_DATA/
+*.jsonl
