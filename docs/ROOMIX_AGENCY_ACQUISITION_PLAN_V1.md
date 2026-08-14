@@ -166,3 +166,55 @@ activa Data API. No se amplían grants.
 credenciales de base almacenadas (`INTERNAL_DB_URL`, `SUPABASE_DATABASE_URL`)
 autentica, y la Data API está OFF. La incorporación queda preparada y verificada
 pero no ejecutada hasta disponer de credencial válida.
+
+---
+
+## 7. Convergencia observada — corrección del criterio
+
+El umbral definido antes de ejecutar (marginal < 2 publicadores nuevos por
+1.000 fichas) **resultó irreal para esta distribución**, y corresponde decirlo
+en vez de forzar el dato.
+
+### Lo que muestra la curva (8.120 fichas, ventanas de 1.000)
+
+| Ventana | pub. nuevos/1k | inmob. nuevas/1k | cobertura G-T |
+|---|---|---|---|
+| 1 | 690 | 363 | 0,468 |
+| 2 | 490 | 321 | 0,565 |
+| 4 | 351 | 227 | 0,671 |
+| 6 | 300 | 196 | 0,724 |
+| 8 | 251 | 161 | 0,761 |
+
+La tasa marginal decae como una ley de potencia suave, no exponencialmente.
+Roomix agrega desde muchos portales, así que la cola de publicadores con uno o
+dos avisos es larguísima. **El conteo absoluto de inmobiliarias no converge sin
+recorrer prácticamente todo el universo**, y recorrerlo son ~96 GB del ancho de
+banda ajeno.
+
+### Lo que sí converge: la cobertura
+
+La pregunta competitiva no es "cuántas inmobiliarias hay en total" sino "qué
+proporción de las que Roomix publica ya tiene ERETZ". Esa proporción **es
+estable**:
+
+| Fichas | Inmobiliarias | Ya en ERETZ | Cobertura |
+|---|---|---|---|
+| 1.000 | 293 | 72 | 24,6% |
+| 2.000 | 553 | 138 | 25,0% |
+| 4.000 | 933 | 234 | 25,1% |
+| 6.000 | 1.261 | 309 | 24,5% |
+| 8.120 | 1.555 | 378 | **24,3%** |
+
+**Banda de 0,8 puntos a lo largo de ocho ventanas, con ocho veces más datos.**
+El top-10 de gaps se mantiene en 8–10 de 10 entre ventanas consecutivas.
+
+### Criterio final adoptado
+Se declara **convergente la medición de cobertura** —no el censo— cuando la
+proporción se mantiene dentro de ±1 punto durante cinco ventanas consecutivas
+de 1.000 fichas y el top-10 de gaps conserva ≥8 elementos entre ventanas.
+Ambas condiciones se cumplen desde la ventana 4.
+
+Queda explícitamente separado:
+- **cobertura observada: 24,3%** (medida, convergida);
+- **censo total de inmobiliarias de Roomix: no determinado** (cola larga; exigiría
+  enumeración completa).
