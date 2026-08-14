@@ -218,3 +218,33 @@ Queda explícitamente separado:
 - **cobertura observada: 24,3%** (medida, convergida);
 - **censo total de inmobiliarias de Roomix: no determinado** (cola larga; exigiría
   enumeración completa).
+
+### Corrección con la campaña completa (14.120 fichas)
+
+Al duplicar los datos, la cobertura **no se mantuvo dentro de ±1 punto**:
+
+| Fichas | Inmobiliarias | Ya en ERETZ | Cobertura |
+|---|---|---|---|
+| 4.000 | 933 | 234 | 25,1% |
+| 8.000 | 1.541 | 376 | 24,4% |
+| 10.000 | 1.746 | 425 | 24,3% |
+| 12.000 | 1.961 | 467 | 23,8% |
+| 14.120 | 2.142 | 498 | **23,2%** |
+
+Hay una **deriva descendente de 1,9 puntos**, no una meseta. La lectura correcta
+es que ERETZ cubre bien las inmobiliarias grandes —que aparecen temprano en
+cualquier muestra— y la cola larga está desproporcionadamente descubierta. Por lo
+tanto:
+
+- **cobertura observada a 14.120 fichas: 23,2%**;
+- **la cobertura real sobre el universo completo es probablemente algo MENOR**,
+  porque cada tramo adicional aporta más cola no cubierta;
+- el criterio de "±1 punto en cinco ventanas" que se adoptó a 8.120 fichas **no
+  se sostuvo** y queda anulado.
+
+Lo que sí es sólido: el orden de magnitud (≈¼ de cobertura), la concentración del
+gap en oficinas de franquicia, y el ranking de gaps principales, que se mantuvo
+estable en todos los cortes.
+
+Chao1 sobre 14.120 fichas estima **7.552 publicadores** como cota inferior del
+universo, contra 4.194 observados: queda al menos un 44% del padrón sin ver.
