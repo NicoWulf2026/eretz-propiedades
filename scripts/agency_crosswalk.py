@@ -16,11 +16,13 @@ No escribe en ninguna base. Ver docs/ROOMIX_AGENCY_ACQUISITION_PLAN_V1.md.
 from __future__ import annotations
 
 import argparse
+import html as _html
 import json
 import re
 import sys
 import unicodedata
 from collections import Counter, defaultdict
+from difflib import SequenceMatcher
 from pathlib import Path
 
 MATCHING_VERSION = "v1"
@@ -40,11 +42,20 @@ def strip_accents(s: str) -> str:
 
 
 def norm_name(raw: str) -> str:
-    """Clave conservadora para comparar. NUNCA reemplaza al raw."""
-    s = strip_accents((raw or "").lower())
+    """Clave conservadora para comparar. NUNCA reemplaza al raw.
+
+    Los nombres de ERETZ llegan con entidades HTML sin decodificar
+    (`D&#x27;onofrio`); sin decodificarlas el apostrofo se convertia en tokens
+    `x27` y partia el match. Tambien se quitan calificadores entre parentesis y
+    sufijos societarios finales, que no cambian la identidad.
+    """
+    s = _html.unescape(raw or "")
+    s = re.sub(r"\([^)]*\)", " ", s)
+    s = strip_accents(s.lower())
     s = s.replace("&", " y ")
     s = re.sub(r"[^a-z0-9\s]", " ", s)
     s = re.sub(r"\s+", " ", s).strip()
+    s = re.sub(r"\s+(sa|srl|sas|sh|scs)$", "", s)
     return s
 
 
@@ -122,7 +133,29 @@ def build_index(eretz: list[dict]) -> dict:
             continue
         by_name[norm_name(e["name"])].append(e)
         by_core[norm_core(e["name"])].append(e)
-    return {"by_name": by_name, "by_core": by_core}
+    for e in eretz:
+        e["_norm"] = norm_name(e.get("name") or "")
+        e["_toks"] = set(e["_norm"].split())
+    return {"by_name": by_name, "by_core": by_core, "all": eretz}
+
+
+def near_neighbour(n: str, eretz: list[dict], floor: float = 0.72):
+    """Vecino mas parecido en ERETZ. Un candidato con vecino cercano no puede
+    declararse nuevo: queda AMBIGUOUS para revision, nunca se auto-fusiona."""
+    toks = set(n.split())
+    best, score = None, 0.0
+    for e in eretz:
+        en = e.get("_norm") or ""
+        if not en:
+            continue
+        et = e["_toks"]
+        ov = len(toks & et) / max(1, len(toks | et))
+        if ov < 0.34:
+            continue
+        sc = 0.5 * ov + 0.5 * SequenceMatcher(None, n, en).ratio()
+        if sc > score:
+            best, score = e, sc
+    return (best, score) if score >= floor else (None, score)
 
 
 def match(pub: dict, idx: dict) -> tuple[str, list[dict], str]:
@@ -145,6 +178,10 @@ def match(pub: dict, idx: dict) -> tuple[str, list[dict], str]:
     # Nucleo demasiado generico para decidir por nombre solo.
     if len(c) < 6:
         return "INSUFFICIENT_DATA", [], "nucleo_corto"
+
+    nb, sc = near_neighbour(n, idx["all"])
+    if nb is not None:
+        return "AMBIGUOUS", [nb], "vecino_cercano_%.2f" % sc
 
     return "NEW_HIGH_CONFIDENCE", [], "sin_coincidencia"
 
