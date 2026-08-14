@@ -212,3 +212,76 @@ def test_clave_de_dedupe_es_estable():
                        "match_state": "NEW_HIGH_CONFIDENCE", "match_signal": ""}, None)
     # Misma entidad escrita distinto: misma clave logica, no se duplica.
     assert a["nombre_normalizado"] == b["nombre_normalizado"]
+
+
+# ------------------------------------------------------------------ rollout
+ro = _load("agency_coverage_rollout")
+
+
+def test_canary_es_representativo_y_determinista():
+    rows = []
+    for i in range(40):
+        brand = ["RE/MAX", "Century 21", None, None][i % 4]
+        rows.append({
+            "nombre_normalizado": f"agencia {i}",
+            "metadata_zonaprop": {"franchise": {"brand": brand} if brand else None},
+        })
+    a = ro.pick_canary(rows, 12)
+    b = ro.pick_canary(rows, 12)
+    assert [r["nombre_normalizado"] for r in a] == [r["nombre_normalizado"] for r in b]
+    marcas = {(r["metadata_zonaprop"].get("franchise") or {}).get("brand") for r in a}
+    assert len([m for m in marcas if m]) >= 2, "debe incluir mas de una franquicia"
+    assert None in marcas, "debe incluir independientes"
+
+
+def test_canary_no_repite_entidad():
+    rows = [{"nombre_normalizado": "misma", "metadata_zonaprop": {"franchise": None}}
+            for _ in range(10)]
+    assert len(ro.pick_canary(rows, 12)) == 1
+
+
+class _Cur:
+    """Cursor falso: registra el SQL en vez de ejecutarlo."""
+    def __init__(self):
+        self.sql = []
+        self.rowcount = 1
+
+    def execute(self, q, params=None):
+        self.sql.append((q, params))
+
+
+def test_insert_solo_usa_columnas_existentes():
+    cur = _Cur()
+    row = {"nombre": "X", "fuente": "roomix_coverage_v1", "columna_inexistente": "y"}
+    ro.insert_batch(cur, "public", {"nombre", "fuente"}, [row])
+    q = cur.sql[0][0]
+    assert "columna_inexistente" not in q
+    assert '"nombre"' in q and '"fuente"' in q
+
+
+def test_insert_es_idempotente_por_construccion():
+    cur = _Cur()
+    ro.insert_batch(cur, "public", {"nombre"}, [{"nombre": "X"}])
+    assert "on conflict do nothing" in cur.sql[0][0].lower()
+
+
+def test_insert_solo_escribe_en_staging():
+    cur = _Cur()
+    ro.insert_batch(cur, "public", {"nombre"}, [{"nombre": "X"}])
+    q = cur.sql[0][0].lower()
+    assert "inmobiliarias_staging" in q
+    assert "inmobiliarias_main" not in q
+    assert " update " not in q and "delete" not in q
+
+
+def test_jsonb_se_serializa():
+    cur = _Cur()
+    ro.insert_batch(cur, "public", {"metadata_zonaprop"},
+                    [{"metadata_zonaprop": {"discovered_via": "roomix"}}])
+    params = cur.sql[0][1]
+    assert isinstance(params[0], str) and "discovered_via" in params[0]
+
+
+def test_variable_de_entorno_es_la_dedicada():
+    assert ro.ENV_VAR == "ERETZ_AGENCY_COVERAGE_DATABASE_URL"
+    assert ro.ENV_VAR not in ("SUPABASE_DATABASE_URL", "INTERNAL_DB_URL")
