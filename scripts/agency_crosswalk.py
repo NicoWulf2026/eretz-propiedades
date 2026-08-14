@@ -88,17 +88,23 @@ PORTAL_NAMES = {"roomix", "zonaprop", "argenprop", "mercadolibre", "meli",
 
 def classify(raw: str) -> str:
     n = norm_name(raw)
-    if not n or n in GARBAGE_EXACT or len(n) < 3:
+    if not n or len(n) < 3:
+        return "UNKNOWN"
+    # "Dueno directo" es un TIPO real de publicador, no basura: se clasifica
+    # antes de descartar, para poder contarlo.
+    if any(h in n for h in (norm_name(x) for x in OWNER_HINTS)):
+        return "DUENO_DIRECTO"
+    if n in GARBAGE_EXACT:
         return "UNKNOWN"
     if n in PORTAL_NAMES or any(p == n for p in PORTAL_NAMES):
         return "OTRO"
-    if any(h in n for h in OWNER_HINTS):
-        return "DUENO_DIRECTO"
-    if any(f in n for f in FRANCHISES):
+    # Las listas se normalizan con la misma funcion que el nombre: comparar
+    # "re/max" contra un texto ya normalizado a "re max" no coincide nunca.
+    if any(f in n for f in (norm_name(x) for x in FRANCHISES) if f):
         return "RED_FRANQUICIA"
-    if any(d in n for d in DEV_HINTS):
+    if any(x in n for x in (norm_name(y) for y in DEV_HINTS) if x):
         return "DESARROLLADORA"
-    if any(a in n for a in AGENCY_HINTS):
+    if any(x in n for x in (norm_name(y) for y in AGENCY_HINTS) if x):
         return "INMOBILIARIA"
     # Nombre de persona: dos o tres palabras sin marcador de rubro.
     words = n.split()
