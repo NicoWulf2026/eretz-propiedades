@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import {
-  type CoveragePayload, callIdentity, callPreflight, callStage,
+  type CoveragePayload, callEcho, callFuncdef, callIdentity, callPreflight, callStage,
   isCoverageBridgeConfigured, isPreviewEnvironment, safeError,
   snapshotKeys, snapshotSummary,
 } from "@/lib/coverage-writer";
@@ -48,6 +48,12 @@ export async function GET(request: Request) {
 
   const op = new URL(request.url).searchParams.get("op");
 
+  if (op === "echo") {
+    return NextResponse.json({ echo: await callEcho({ nombre: "prueba", x: 1 }) });
+  }
+  if (op === "def") {
+    return NextResponse.json({ def: await callFuncdef() });
+  }
   if (op === "keys") {
     return NextResponse.json({ keys: await snapshotKeys() });
   }

@@ -25,7 +25,7 @@ export const SOURCE_NAME = "roomix_agency_coverage";
 const RPC = {
   preflight: "select public.eretz_agency_coverage_preflight_v1() as result",
   snapshot: "select * from public.eretz_agency_coverage_snapshot_v1()",
-  stage: "select * from public.eretz_agency_coverage_stage_v1($1, $2)",
+  stage: "select * from public.eretz_agency_coverage_stage_v1($1::text, $2::jsonb)",
   // El preflight corre DENTRO de una función SECURITY DEFINER, así que
   // `current_user` es el dueño (postgres) y los privilegios que informa son los
   // del dueño, no los del rol que llama. Esto se ejecuta fuera de toda función,
@@ -40,6 +40,14 @@ const RPC = {
                     has_table_privilege('public.inmobiliarias_staging', 'INSERT') as staging_insert,
                     has_table_privilege('public.inmobiliarias_staging', 'UPDATE') as staging_update,
                     has_table_privilege('public.inmobiliarias_staging', 'DELETE') as staging_delete`,
+  echo: "select jsonb_typeof($1::jsonb) as tipo, ($1::jsonb)->>'nombre' as nombre",
+  // Contrato real de las tres funciones. Sólo catálogo. Sirve para llamarlas
+  // como esperan en vez de adivinar la forma del payload.
+  funcdef: `select p.proname,
+                   pg_get_function_identity_arguments(p.oid) as args,
+                   pg_get_functiondef(p.oid) as def
+              from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+             where n.nspname = 'public' and p.proname like 'eretz_agency_coverage_%'`,
 } as const;
 
 // Claves admitidas en el payload. La función decide qué columnas escribe; esto
@@ -128,6 +136,16 @@ export function callIdentity(): Promise<RpcResult> {
   return run("identity");
 }
 
+/** Diagnóstico: qué ve la base del payload que le mandamos. */
+export function callEcho(payload: unknown): Promise<RpcResult> {
+  return run("echo", [payload]);
+}
+
+/** Contrato de las tres funciones, leído del catálogo. */
+export function callFuncdef(): Promise<RpcResult> {
+  return run("funcdef");
+}
+
 export type SnapshotSummary = {
   ok: boolean;
   main: number;
@@ -207,5 +225,8 @@ export function callStage(candidateKey: string, payload: CoveragePayload): Promi
   for (const k of PAYLOAD_KEYS) {
     if (payload[k] !== undefined) clean[k] = payload[k];
   }
-  return run("stage", [candidateKey, JSON.stringify(clean)]);
+  // Sin JSON.stringify: el driver ya serializa el objeto una vez. Pasarle el
+  // texto ya serializado lo codifica de nuevo y la función recibe un string
+  // JSON en vez de un objeto, con lo que `payload->>'nombre'` sale nulo.
+  return run("stage", [candidateKey, clean]);
 }

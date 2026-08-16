@@ -110,8 +110,13 @@ def send(base: str, items: list[dict]) -> tuple[list[dict], dict, int]:
             errores += len(items[i:i + HTTP_CHUNK])
             log(f"      request falló: {r.get('error') or r.get('_error')}")
             continue
-        results += r.get("results") or []
+        lote = r.get("results") or []
+        results += lote
         errores += r.get("errores", 0)
+        # Los errores se muestran, no sólo se cuentan: un recuento sin el motivo
+        # obliga a otra corrida para averiguar qué pasó.
+        for m in sorted({str(x.get("error")) for x in lote if not x.get("ok")})[:3]:
+            log(f"      error: {m}")
         snap = r.get("snapshot") or snap
     return results, snap, errores
 
