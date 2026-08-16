@@ -285,3 +285,20 @@ def test_jsonb_se_serializa():
 def test_variable_de_entorno_es_la_dedicada():
     assert ro.ENV_VAR == "ERETZ_AGENCY_COVERAGE_DATABASE_URL"
     assert ro.ENV_VAR not in ("SUPABASE_DATABASE_URL", "INTERNAL_DB_URL")
+
+
+# ------------------------------------- endpoint temporal de Preview (cliente)
+rp = _load("agency_coverage_rollout_via_preview")
+
+
+def test_canary_del_cliente_es_determinista_y_mixto():
+    rows = []
+    for i in range(40):
+        brand = ["RE/MAX", "Century 21", None, None][i % 4]
+        rows.append({"nombre_normalizado": f"a{i}",
+                     "metadata_zonaprop": {"franchise": {"brand": brand} if brand else None}})
+    a = rp.pick_canary(rows, 12)
+    b = rp.pick_canary(rows, 12)
+    assert [r["nombre_normalizado"] for r in a] == [r["nombre_normalizado"] for r in b]
+    marcas = {((r["metadata_zonaprop"] or {}).get("franchise") or {}).get("brand") for r in a}
+    assert len([m for m in marcas if m]) >= 2 and None in marcas
