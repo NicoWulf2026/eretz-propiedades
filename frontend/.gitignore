@@ -63,3 +63,6 @@ logs/
 # scraper debug
 debug/
 checkpoints/
+
+.vercel
+.env*

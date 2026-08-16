@@ -1,129 +1,137 @@
 import { NextResponse } from "next/server";
 import {
-  type CoverageRow, existingKeys, insertBatch, isCoverageWriterConfigured,
-  isPreviewEnvironment, preflight, stagingStats,
+  type CoveragePayload, callIdentity, callPreflight, callStage,
+  isCoverageBridgeConfigured, isPreviewEnvironment, safeError,
+  snapshotKeys, snapshotSummary,
 } from "@/lib/coverage-writer";
 
-// Endpoint TEMPORAL del rollout de Agency Coverage. Existe sólo mientras dura la
-// incorporación y se retira después, junto con la credencial.
+// Endpoint TEMPORAL del rollout de Agency Coverage. Existe sólo mientras dura
+// la incorporación y se retira después, junto con el puente de base.
 //
 // Cuatro compuertas, y las cuatro tienen que abrir:
 //   1. VERCEL_ENV debe ser preview. En production responde 404, no 403: no se
 //      anuncia que existe.
-//   2. La credencial temporal tiene que estar configurada. Sin ella, no-op.
+//   2. El puente tiene que estar configurado. Sin él, no-op.
 //   3. Vercel Deployment Protection ya cubre el deployment entero; esta ruta no
 //      la reemplaza ni la debilita.
-//   4. El servidor fija `fuente`; el cliente no puede escribir en nombre de otro
-//      import aunque lo mande en el cuerpo.
+//   4. El request no elige nada: ni función, ni tabla, ni columna. `op` es una
+//      unión cerrada de tres valores que mapean a sentencias constantes, y la
+//      fuente la fija la función en el servidor.
 //
 // Nunca devuelve ni loguea la connection string.
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
-const MAX_ROWS_PER_REQUEST = 250;
-
-function notFound() {
-  // 404 y no 403: en Production la ruta no debe existir para quien la pruebe.
-  return NextResponse.json({ error: "not found" }, { status: 404 });
-}
+const MAX_ITEMS_PER_REQUEST = 250;
 
 function guard(): NextResponse | null {
-  if (!isPreviewEnvironment()) return notFound();
-  if (!isCoverageWriterConfigured()) {
-    return NextResponse.json(
-      { error: "coverage writer no configurado en este entorno" }, { status: 503 });
+  // 404 y no 403: en Production la ruta no debe existir para quien la pruebe.
+  if (!isPreviewEnvironment()) return NextResponse.json({ error: "not found" }, { status: 404 });
+  if (!isCoverageBridgeConfigured()) {
+    return NextResponse.json({ error: "puente no configurado" }, { status: 503 });
   }
   return null;
 }
 
-/** GET: preflight y estado. No escribe nada. */
-export async function GET() {
+/**
+ * GET: preflight, identidad y snapshot. Ninguno escribe.
+ *
+ * `op` es una unión cerrada de tres valores. Cualquier otro cae en el caso por
+ * defecto: no hay forma de nombrar desde el request una función, tabla o
+ * columna que no esté escrita en el módulo.
+ */
+export async function GET(request: Request) {
   const blocked = guard();
   if (blocked) return blocked;
 
-  const pre = await preflight();
-  const stats = pre.ok ? await stagingStats() : null;
+  const op = new URL(request.url).searchParams.get("op");
+
+  if (op === "keys") {
+    return NextResponse.json({ keys: await snapshotKeys() });
+  }
+  if (op === "snapshot") {
+    return NextResponse.json({ snapshot: await snapshotSummary() });
+  }
+
+  const [pre, ident, snap] = await Promise.all([
+    callPreflight(), callIdentity(), snapshotSummary(),
+  ]);
   return NextResponse.json({
     environment: process.env.VERCEL_ENV ?? "local",
     preflight: pre,
-    staging: stats,
-    // El alcance esperado, para poder comparar de un vistazo.
-    expected: {
-      canSelectMain: true, canInsertStaging: true,
-      canUpdateStaging: false, canDeleteStaging: false,
-    },
+    // Lo que informa el preflight son los privilegios del DUEÑO de la función,
+    // no los del rol que llama. Esto último es lo que dice `identity`.
+    identity: ident,
+    snapshot: snap,
   });
 }
 
+type Item = { candidateKey?: unknown; payload?: unknown };
+
 /**
- * POST: inserta un lote.
+ * POST: stagea un lote.
  *
- * Cuerpo: { rows: CoverageRow[], dryRun?: boolean }
- * El dedupe contra main y staging se hace acá, con el estado del momento, no
- * con el snapshot del crosswalk: entre el cruce y ahora pudo cargarse algo.
+ * Cuerpo: { items: [{ candidateKey, payload }], dryRun?: boolean }
+ *
+ * El dedupe no se hace acá. Lo hace `stage_v1` contra el estado real en el
+ * momento de cada insert, bajo advisory lock por candidate key. Replicarlo del
+ * lado del cliente daría una segunda respuesta que puede discrepar de la
+ * primera, y la que manda es la de la función.
  */
 export async function POST(request: Request) {
   const blocked = guard();
   if (blocked) return blocked;
 
-  const pre = await preflight();
-  if (!pre.ok) {
-    return NextResponse.json({ error: "preflight falló", preflight: pre }, { status: 503 });
-  }
-  // Si el rol tuviera más alcance del previsto, no se escribe: es señal de que
-  // los grants no quedaron como se diseñaron.
-  if (pre.canUpdateStaging || pre.canDeleteStaging) {
-    return NextResponse.json({
-      error: "el rol tiene UPDATE/DELETE sobre staging; se esperaba sólo SELECT+INSERT",
-      preflight: pre,
-    }, { status: 409 });
-  }
-
-  let body: { rows?: unknown; dryRun?: unknown };
+  let body: { items?: unknown; dryRun?: unknown };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "cuerpo inválido" }, { status: 400 });
   }
 
-  const rows = Array.isArray(body.rows) ? (body.rows as CoverageRow[]) : null;
-  if (!rows) return NextResponse.json({ error: "falta rows[]" }, { status: 400 });
-  if (rows.length > MAX_ROWS_PER_REQUEST) {
+  const items = Array.isArray(body.items) ? (body.items as Item[]) : null;
+  if (!items) return NextResponse.json({ error: "falta items[]" }, { status: 400 });
+  if (items.length > MAX_ITEMS_PER_REQUEST) {
     return NextResponse.json(
-      { error: `máximo ${MAX_ROWS_PER_REQUEST} filas por request` }, { status: 413 });
+      { error: `máximo ${MAX_ITEMS_PER_REQUEST} items por request` }, { status: 413 });
   }
 
-  const { main, staging } = await existingKeys();
-  const pending: CoverageRow[] = [];
-  const skipped = { sinClave: 0, yaEnMain: 0, yaEnStaging: 0 };
-  const seen = new Set<string>();
-
-  for (const row of rows) {
-    const key = String(row.nombre_normalizado ?? "").toLowerCase();
-    if (!key) { skipped.sinClave += 1; continue; }
-    if (main.has(key)) { skipped.yaEnMain += 1; continue; }
-    if (staging.has(key) || seen.has(key)) { skipped.yaEnStaging += 1; continue; }
-    seen.add(key);
-    pending.push(row);
+  const prepared: Array<{ key: string; payload: CoveragePayload }> = [];
+  let sinClave = 0;
+  for (const it of items) {
+    const key = typeof it?.candidateKey === "string" ? it.candidateKey.trim() : "";
+    const payload = it?.payload;
+    if (!key || !payload || typeof payload !== "object") { sinClave += 1; continue; }
+    prepared.push({ key, payload: payload as CoveragePayload });
   }
 
   if (body.dryRun) {
-    return NextResponse.json({ dryRun: true, recibidas: rows.length, aInsertar: pending.length, skipped });
+    return NextResponse.json({
+      dryRun: true, recibidos: items.length, aProcesar: prepared.length, sinClave,
+    });
   }
 
-  const before = await stagingStats();
-  const result = await insertBatch(pending);
-  const after = await stagingStats();
+  const results: Array<Record<string, unknown>> = [];
+  let errores = 0;
+  for (const { key, payload } of prepared) {
+    try {
+      const r = await callStage(key, payload);
+      if (!r.ok) errores += 1;
+      results.push({ candidateKey: key, ok: r.ok, error: r.error, rows: r.rows });
+    } catch (error) {
+      errores += 1;
+      results.push({ candidateKey: key, ok: false, error: safeError(error) });
+    }
+  }
+
+  // El snapshot posterior es la verificación del lote: lo que diga la base, no
+  // lo que el cliente crea haber insertado.
+  const after = await snapshotSummary();
 
   return NextResponse.json({
-    recibidas: rows.length,
-    aInsertar: pending.length,
-    insertadas: result.inserted,
-    skipped,
-    error: result.error,
-    staging: { before, after },
-    // Si estos dos no coinciden hay duplicados y el cliente debe detenerse.
-    duplicados: after.mine - after.distinct,
+    recibidos: items.length, procesados: prepared.length, sinClave, errores,
+    results, snapshot: after,
   });
 }
