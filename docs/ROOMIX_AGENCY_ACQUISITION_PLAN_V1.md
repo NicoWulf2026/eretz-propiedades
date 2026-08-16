@@ -248,3 +248,62 @@ estable en todos los cortes.
 
 Chao1 sobre 14.120 fichas estima **7.552 publicadores** como cota inferior del
 universo, contra 4.194 observados: queda al menos un 44% del padrón sin ver.
+
+---
+
+## Corrección conceptual: "nuevo para ERETZ" no es "ausente de main"
+
+El rollout de incorporación dejó al descubierto un error de encuadre del cruce.
+El crosswalk se construyó comparando los publicadores de Roomix **contra
+`inmobiliarias_main` solamente**, y todo lo que no aparecía ahí se etiquetó
+`NEW_HIGH_CONFIDENCE`. Pero el padrón de ERETZ no vive sólo en main: en el
+momento del rollout `inmobiliarias_staging` tenía 11.538 filas de otros imports
+—9.040 de Zonaprop y 2.498 del colegio de Córdoba— que el cruce nunca miró.
+
+El resultado se vio al escribir: de 1.635 candidatas presentadas como nuevas,
+**1.290 (79%) ya estaban en staging** y sólo 260 eran realmente nuevas. El
+dedupe server-side las frenó a todas, así que no se duplicó nada; pero la
+métrica de cobertura que produjo la campaña estaba inflada por construcción.
+
+### Los tres estados hay que distinguirlos
+
+Un cruce competitivo tiene que clasificar cada publicador externo en uno de
+tres, y no en dos:
+
+- **A — presente en MAIN.** Está en el producto vivo. Cuenta como cobertura
+  real frente al usuario.
+- **B — presente en STAGING.** Ya lo conocemos y está en la cola de
+  incorporación, sin promover. No es un descubrimiento; volver a "descubrirlo"
+  no agrega nada.
+- **C — realmente nuevo.** No está en ninguna de las dos. Sólo esto es
+  hallazgo.
+
+Etiquetar B como C es lo que pasó acá, y sobrestima tanto el gap del competidor
+como el aporte de la campaña.
+
+### Dos coberturas, no una
+
+Por eso conviene reportar dos números separados y nunca sumarlos ni
+confundirlos:
+
+- **`LIVE_COVERAGE`** — contra `inmobiliarias_main`. Es lo que un usuario ve
+  hoy. Es la métrica honesta para comparar contra un competidor.
+- **`KNOWN_PIPELINE_COVERAGE`** — contra `main ∪ staging`. Es lo que la
+  organización ya conoce, promovido o no. Es la métrica que sirve para decidir
+  si vale la pena una campaña de adquisición nueva.
+
+La cobertura observada del 23,2% que documenta este plan es `LIVE_COVERAGE`, y
+como tal sigue siendo válida. Lo que no es válido es leer las 1.635 candidatas
+como incorporaciones potenciales: contra `main ∪ staging` eran 260.
+
+### Un segundo hueco: la clave de dedupe
+
+El dedupe contra main compara `nombre_normalizado`. De las 7.004 filas de main,
+**1.984 lo tienen en NULL**, así que quedan invisibles para esa comparación por
+más que su `nombre` diga exactamente lo mismo. Eso dejó 31 filas staged que
+casi con certeza ya existen en main (ver
+`collision_manifest_staging_main.jsonl`, fuera del repo).
+
+Antes del próximo cruce conviene poblar `nombre_normalizado` en main, o
+comparar contra `coalesce(nombre_normalizado, normalizar(nombre))` en vez de
+sólo contra la columna.
