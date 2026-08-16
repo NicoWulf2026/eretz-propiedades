@@ -83,6 +83,7 @@ export type Preflight = {
   canUpdateStaging?: boolean;
   canDeleteStaging?: boolean;
   stagingSchema?: string;
+  uniqueIndexes?: string[];
   error?: string;
 };
 
@@ -98,8 +99,20 @@ export async function preflight(): Promise<Preflight> {
              has_table_privilege('public.${TABLE}', 'UPDATE')                as can_update_staging,
              has_table_privilege('public.${TABLE}', 'DELETE')                as can_delete_staging
     `);
+    // De esto depende que `on conflict do nothing` sea una red real: sin índice
+    // único no hay conflicto que detectar, y la idempotencia queda apoyada sólo
+    // en el dedupe de aplicación. Conviene saberlo antes de escribir, no después.
+    const idx = await sql.unsafe<Array<{ def: string }>>(`
+      select pg_get_indexdef(i.oid) as def
+        from pg_index x
+        join pg_class c on c.oid = x.indrelid
+        join pg_class i on i.oid = x.indexrelid
+        join pg_namespace n on n.oid = c.relnamespace
+       where n.nspname = 'public' and c.relname = '${TABLE}' and x.indisunique
+    `);
     const r = rows[0] ?? {};
     return {
+      uniqueIndexes: idx.map((v) => v.def),
       ok: Boolean(r.can_select_main) && Boolean(r.can_insert_staging),
       role: String(r.role ?? ""),
       canSelectMain: Boolean(r.can_select_main),

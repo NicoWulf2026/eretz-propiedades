@@ -120,6 +120,15 @@ def main() -> int:
     log(f"  UPDATE staging:     {p.get('canUpdateStaging')} (esperado False)")
     log(f"  DELETE staging:     {p.get('canDeleteStaging')} (esperado False)")
     log(f"  staging actual:     {pre.get('staging')}")
+    uq = p.get("uniqueIndexes") or []
+    if uq:
+        for d in uq:
+            log(f"  índice único:       {d}")
+    else:
+        # Sin índice único no hay conflicto que `on conflict` pueda absorber: la
+        # idempotencia queda apoyada sólo en el dedupe de aplicación y en el
+        # detector de duplicados. Se sigue, pero conviene saberlo.
+        log("  índice único:       NINGUNO (idempotencia sólo por dedupe de aplicación)")
     if not p.get("ok"):
         log(f"  preflight NO OK: {p.get('error')}")
         return 3
