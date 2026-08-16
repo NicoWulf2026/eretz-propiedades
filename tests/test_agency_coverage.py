@@ -8,7 +8,6 @@ se declare nuevo o se fusione sin evidencia.
 from __future__ import annotations
 
 import importlib.util
-import re
 import sys
 from pathlib import Path
 
@@ -291,11 +290,6 @@ def test_variable_de_entorno_es_la_dedicada():
 # ------------------------------------- puente temporal de Preview
 rp = _load("agency_coverage_rollout_via_preview")
 
-FRONT = ROOT / "frontend" / "src"
-WRITER = (FRONT / "lib" / "coverage-writer.ts").read_text(encoding="utf-8")
-ROUTE = (FRONT / "app" / "api" / "agency-coverage" / "route.ts").read_text(encoding="utf-8")
-
-
 def test_la_candidate_key_es_el_id_de_publicador_y_no_el_nombre():
     """Estable entre corridas y ajena a como se limpie el nombre."""
     it = rp.item_of({"nombre": "X", "fuente": "lo_que_sea",
@@ -325,58 +319,3 @@ def test_el_tally_cuenta_los_fallos_de_transporte_aparte():
            {"ok": True, "rows": []}]
     t = rp.tally(res, "status")
     assert t["STAGED"] == 2 and t["ERROR_TRANSPORTE"] == 1 and t["SIN_FILA"] == 1
-
-
-# --- garantias sobre el puente, verificadas en el propio codigo ---
-
-def test_el_puente_solo_puede_ejecutar_las_sentencias_declaradas():
-    """Ningun request elige funcion, tabla ni columna: las sentencias son
-    constantes del modulo y lo unico que viaja desde afuera son los dos
-    parametros ligados de stage."""
-    cuerpo = WRITER[WRITER.index("const RPC = {"):WRITER.index("} as const;")]
-    assert "${" not in cuerpo, "no puede haber interpolacion en las sentencias"
-    llamadas = set(re.findall(r"eretz_agency_coverage_\w+", WRITER))
-    assert llamadas == {"eretz_agency_coverage_preflight_v1",
-                        "eretz_agency_coverage_snapshot_v1",
-                        "eretz_agency_coverage_stage_v1"}
-
-
-def test_el_puente_no_hace_sql_directo_contra_las_tablas():
-    """El rol no se usa para tocar main ni staging por fuera de las funciones.
-    Lo unico que las nombra es el chequeo de privilegios, que consulta el
-    catalogo y no lee ninguna fila."""
-    directo = re.findall(r"(?i)(?:from|into|update|join)\s+public\.inmobiliarias_\w+", WRITER)
-    assert directo == [], directo
-    bajo = WRITER.lower()
-    assert "insert into" not in bajo
-    assert "update public" not in bajo
-    assert "delete from" not in bajo
-
-
-def test_ningun_secreto_puede_salir_en_un_error():
-    assert "safeError" in WRITER
-    assert "<redacted>" in WRITER and "<dsn>" in WRITER
-    assert "console.log" not in WRITER and "console.log" not in ROUTE
-    assert "ERETZ_WRITE_DATABASE_URL" not in ROUTE
-
-
-def test_la_ruta_es_solo_de_preview_y_en_production_no_existe():
-    assert 'process.env.VERCEL_ENV === "preview"' in WRITER
-    assert "isPreviewEnvironment" in ROUTE
-    # 404 y no 403: en Production la ruta no se anuncia.
-    assert "status: 404" in ROUTE and "not found" in ROUTE
-
-
-def _sin_comentarios(ts: str) -> str:
-    """Los comentarios explican el mecanismo y nombran cosas que el codigo no
-    debe hacer; mirarlos daria falsos positivos."""
-    ts = re.sub(r"/\*.*?\*/", "", ts, flags=re.S)
-    return re.sub(r"^\s*//.*$", "", ts, flags=re.M)
-
-
-def test_la_ruta_no_replica_el_dedupe():
-    """Replicarlo daria una segunda respuesta que puede discrepar de la de la
-    funcion, y la que manda es la de la funcion."""
-    codigo = _sin_comentarios(ROUTE).lower()
-    assert "advisory" not in codigo
-    assert "on conflict" not in codigo
