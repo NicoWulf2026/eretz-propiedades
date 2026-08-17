@@ -3,15 +3,64 @@
 Estado vivo de la misión integral. Se actualiza al cerrar cada frente y antes
 de cualquier corte de sesión.
 
-**Última actualización:** 2026-08-17
+**Última actualización:** 2026-08-17 (puente DB operativo; campaña exhaustiva en curso)
 
 ---
 
 ## Situación de una línea
 
-El trabajo de datos está **gateado por un único bloqueo humano**: nadie puede
-escribir en la base. Todo lo que no depende de escribir está hecho o en curso;
-todo lo que sí depende está construido y probado, esperando la credencial.
+El bloqueo de base **se resolvió**: el puente `eretz_agency_coverage_writer`
+funciona y quedó verificado 7/7. El frente abierto ahora es la campaña
+exhaustiva de Roomix, que necesita ~51 horas de crawl cortés.
+
+## Puente DB — VERIFICADO Y OPERATIVO
+
+Entrada por `SUPABASE_DATABASE_URL` (`eretz_preview_ro`), que es miembro NOINHERIT
+de `eretz_agency_coverage_writer`. Los privilegios sólo existen dentro de una
+transacción con `SET LOCAL ROLE`.
+
+Dos cosas hubo que resolver para que funcionara:
+
+1. `eretz_preview_ro` no puede leer staging por sí solo, así que **toda** lectura
+   de staging va elevada, no sólo las escrituras.
+2. El rol de entrada trae `default_transaction_read_only` activo: la transacción
+   nacía de sólo lectura y el INSERT fallaba pese a tener el privilegio. Se
+   levanta con `SET LOCAL transaction_read_only = off` como primera sentencia de
+   la transacción. Nunca a nivel de sesión: con pooler, un cambio persistente lo
+   heredaría la siguiente consulta que tome esa conexión física.
+
+Pruebas de privilegio, todas correctas:
+
+| Operación | Esperado | Real |
+|---|---|---|
+| SELECT main | permitido | permitido |
+| SELECT staging | permitido | permitido |
+| INSERT staging | permitido | permitido |
+| INSERT main | denegado | `permission denied` |
+| UPDATE staging | denegado | `permission denied` |
+| DELETE staging | denegado | `permission denied` |
+| CREATE TABLE | denegado | `permission denied` |
+
+Los negativos se comprueban intentándolos y revirtiendo; ninguno escribió nada.
+
+## Campaña exhaustiva de Roomix — EN CURSO
+
+**No existe fuente exhaustiva de publicadores.** El `sitemap_index.xml` tiene 13
+sitemaps —static, blog, buscar, edificios, landings, venta, barrios y 6 de
+propiedades—. Ninguno enumera agencias; los landings son páginas SEO por zona y
+tipo. El publicador sólo aparece en el payload RSC de cada ficha, así que
+exhaustivo significa recorrer las 168.563.
+
+| | |
+|---|---|
+| Universo | 168.563 fichas |
+| Procesadas | 14.120 |
+| Restantes | 154.443 |
+| Ritmo medido | 3.033 fichas/hora (2 navegadores) |
+| **ETA** | **~51 horas ≈ 2,1 días** |
+
+Lanzada como proceso aislado (la tanda 2 murió por compartir consola).
+Reanudable e idempotente vía `state.json`.
 
 ---
 
@@ -138,13 +187,13 @@ insertadas, 1.290 ya en staging, 74 ya en main, 0 duplicados, 0 errores.
 | 1 | `ERETZ_WRITE_DATABASE_URL` | **parcial** — ya no es `postgres`; falta el `ALTER ROLE` |
 | 2 | 31 colisiones | **hecho** — clasificadas, manifest fuera del repo |
 | 3 | Backfill `nombre_normalizado` | **código hecho y probado**; ejecución bloqueada |
-| 4 | Auditoría de staging | **bloqueada** — sin SELECT sobre staging |
+| 4 | Auditoría de staging | **desbloqueada** — staging legible vía puente |
 | 5 | Motor de dedupe | **hecho** — 20 tests |
 | 6 | Pipeline staging→main | pendiente (depende de 4) |
 | 7 | Franquicias | pendiente |
 | 8 | Agentes y desarrolladoras | pendiente |
 | 9 | Métricas de cobertura | **parcial** — terminología documentada; recálculo bloqueado |
-| 10 | Crawl competitivo Roomix | no reanudado, por diseño |
+| 10 | Crawl exhaustivo Roomix | **en curso** — 14.120/168.563 |
 | 11 | Cierre estructural CSS | pendiente |
 | 12 | Identity V2 | pendiente |
 | 13 | Auditoría repo ↔ Supabase | pendiente |
