@@ -44,6 +44,24 @@ Tags: `roomix-fidelity-v1`, `checkpoint/main-pre-integration`,
 
 Sin push. Sin merge. `main` intacta.
 
+### Clasificación de ramas (Fase 14)
+
+`main` local está **163 commits por delante** de `origin/main` y 0 por detrás:
+todo el rescate y la integración previa ya viven en `main` local, sin publicar.
+
+| Rama | Commits sobre `main` | Exclusivos vs agency | Categoría |
+|---|---|---|---|
+| `feat/roomix-agency-coverage` | 18 | — | **KEEP** (base de integración) |
+| `feat/eretz-frontend-phase-a` | 7 | 7 | **KEEP** (único frontend no contenido) |
+| `integrate/eretz-pre-main` | 0 | 0 | **ALREADY_PRESENT** |
+| `rescue/release-worktree-integrated` | 4 | 0 | **ALREADY_PRESENT** — el rescate ya está contenido |
+| `integrate/release-dirty-recovery` | 3 | — | **NEEDS_REVIEW** |
+| `release/eretz-private-preview` | 2 | — | **NEEDS_REVIEW** (worktree sucio, 92 archivos) |
+
+Lectura para la Fase 15: la base correcta de `integration/eretz-rc` es la rama
+de agency, que ya contiene el rescate, más los 7 commits de frontend por
+cherry-pick. Los fixes del rescate no se pierden: ya están.
+
 ---
 
 ## Acceso a base — el hecho que gobierna todo
@@ -130,7 +148,7 @@ insertadas, 1.290 ya en staging, 74 ya en main, 0 duplicados, 0 errores.
 | 11 | Cierre estructural CSS | pendiente |
 | 12 | Identity V2 | pendiente |
 | 13 | Auditoría repo ↔ Supabase | pendiente |
-| 14 | Ordenar branches | pendiente |
+| 14 | Ordenar branches | **hecho** — clasificadas arriba |
 | 15 | Rama de integración | pendiente |
 | 16 | Release Candidate | pendiente |
 | 17 | Preview RC | pendiente |
