@@ -43,6 +43,33 @@ Pruebas de privilegio, todas correctas:
 
 Los negativos se comprueban intentándolos y revirtiendo; ninguno escribió nada.
 
+## Dos contadores que NO son el mismo
+
+Se compararon como si fueran una sola serie y pareció que las entidades habían
+bajado de 4.613 a 4.194. Nunca bajaron: 4.613 era el contador vivo del crawler a
+16.920 fichas, y 4.194 era `publishers.jsonl`, un archivo congelado el 14/08 con
+14.120 fichas que desde entonces no se regeneró. Dos fotos de momentos
+distintos.
+
+Quedan separados y no se vuelven a mezclar:
+
+| Métrica | Definición | Valor |
+|---|---|---|
+| `RAW_PUBLISHER_IDENTITIES` | `agent_id` distintos, tal como los emite Roomix | 4.708 |
+| `CANONICAL_PUBLISHER_ENTITIES` | tras unir los `agent_id` que son la misma entidad | 4.666 |
+| **Entidades inmobiliarias** | INMOBILIARIA + oficina de franquicia | **3.296** |
+
+El primero es siempre ≥ el segundo. 42 alias fusionados hasta ahora.
+
+## KPI del crawl
+
+**Nuevas entidades inmobiliarias únicas por 1.000 fichas.** Cuenta INMOBILIARIA
+y oficina individual de franquicia; no cuenta agente, marca genérica sin
+oficina, desarrolladora, unknown ni garbage.
+
+Se mide por ventana, nunca como acumulado, y **no se usa como criterio de
+corte**. `scripts/coverage_windows.py`.
+
 ## Campaña exhaustiva de Roomix — EN CURSO
 
 **No existe fuente exhaustiva de publicadores.** El `sitemap_index.xml` tiene 13
