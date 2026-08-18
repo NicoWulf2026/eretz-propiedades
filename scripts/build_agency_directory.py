@@ -39,8 +39,13 @@ def _load(name: str):
 
 d = _load("eretz_dedupe")
 cw = _load("agency_crosswalk")
+cwin = _load("coverage_windows")
 
-DIRECTORY_VERSION = "roomix_agency_directory_v1"
+# Misma definicion que el KPI: la oficina cuenta, la marca sola no.
+tipo_de = cwin.tipo_de
+CUENTA_COMO_AGENCIA = cwin.CUENTA_COMO_AGENCIA
+
+DIRECTORY_VERSION = "roomix_agency_directory_v2"
 LOGO = "https://cdn.roomix.ai/agents/{agent_id}"
 
 # Tokens del slug que describen la propiedad, no la zona. Se descartan para que
@@ -112,52 +117,88 @@ def main() -> int:
         eretz_main = {x.lower() for x in k.get("main", [])}
         eretz_staging = {x.lower() for x in k.get("staging", [])}
 
+    # --- consolidacion canonica ---
+    # El padron se indexa por ENTIDAD, no por agent_id. Roomix emite a veces
+    # varios id para la misma inmobiliaria; agruparlos por clave normalizada los
+    # une sin perder cual era cual, porque los raw ids quedan dentro de la fila.
+    # Ante duda no se une: la clave exige nombre normalizado identico, no
+    # parecido.
+    grupos: dict[str, list[str]] = defaultdict(list)
+    dominante: dict[str, str] = {}
+    for aid in set(list(pubs) + list(ev_nombres)):
+        nombres_vistos = ev_nombres.get(aid)
+        nom = (nombres_vistos.most_common(1)[0][0] if nombres_vistos
+               else (pubs.get(aid, {}).get("raw_name") or ""))
+        dominante[aid] = nom
+        k = d.norm_name(nom)
+        if k:
+            grupos[k].append(aid)
+
     filas = []
-    for aid, p in pubs.items():
-        nombre = p.get("raw_name") or ""
-        norm = d.norm_name(nombre)
-        tipo = p.get("type") or cw.classify(nombre)
+    for clave, aids in grupos.items():
+        # Nombre principal: el del agent_id con mas avisos, que es el que mas
+        # veces escribio Roomix.
+        aids = sorted(aids, key=lambda x: -len(ev_urls[x]))
+        principal = aids[0]
+        nombre = dominante[principal]
+        tipo = tipo_de(nombre)
         red = red_de(nombre)
-        zonas = [z for z, _ in ev_zonas[aid].most_common(5)]
+
+        urls, zonas, variantes = [], Counter(), Counter()
+        prim, ult = None, None
+        for aid in aids:
+            urls += ev_urls[aid]
+            zonas.update(ev_zonas[aid])
+            variantes.update(ev_nombres[aid])
+            if primera.get(aid) is not None:
+                prim = primera[aid] if prim is None else min(prim, primera[aid])
+            if ultima.get(aid) is not None:
+                ult = ultima[aid] if ult is None else max(ult, ultima[aid])
 
         if not eretz_main and not eretz_staging:
             clasif, razon = "SIN_CRUZAR", "no se aportaron claves de ERETZ"
-        elif norm in eretz_main:
+        elif clave in eretz_main:
             clasif, razon = "EXACT_MATCH", "presente en inmobiliarias_main"
-        elif norm in eretz_staging:
+        elif clave in eretz_staging:
             clasif, razon = "HIGH_CONFIDENCE_EXISTING", "presente en inmobiliarias_staging"
-        elif tipo != "INMOBILIARIA":
+        elif tipo not in CUENTA_COMO_AGENCIA:
             clasif, razon = "REJECTED_NOT_AGENCY", f"tipo {tipo}"
-        elif len(norm) < 4:
+        elif len(clave) < 4:
             clasif, razon = "INSUFFICIENT_DATA", "nombre demasiado corto"
         else:
             clasif, razon = "HIGH_CONFIDENCE_NEW", "sin coincidencia en main ni staging"
 
         filas.append({
-            "stable_id": aid,
+            "stable_id": f"roomix:{clave}",
+            "raw_agent_ids": aids,
+            "raw_identities": len(aids),
             "nombre_original": nombre,
-            "nombre_normalizado": norm,
+            "nombre_normalizado": clave,
             "nucleo": d.norm_core(nombre),
-            "variantes_de_nombre": [n for n, _ in ev_nombres[aid].most_common(3)],
+            "variantes_de_nombre": [n for n, _ in variantes.most_common(5)],
             "tipo": tipo,
             "red_franquicia": red,
-            "roomix_agent_id": aid,
-            "roomix_logo": LOGO.format(agent_id=aid),
-            "avisos_observados": len(ev_urls[aid]),
-            "evidencia_urls": ev_urls[aid][:10],
-            "evidencia_total": len(ev_urls[aid]),
-            "zonas_observadas": zonas,
+            "roomix_logo": LOGO.format(agent_id=principal),
+            "avisos_observados": len(urls),
+            "evidencia_urls": urls[:10],
+            "evidencia_total": len(urls),
+            "zonas_observadas": [z for z, _ in zonas.most_common(5)],
             # Roomix no publica estos datos del anunciante. Verificado en la
-            # ficha: solo hay nombre y logo.
+            # ficha: solo hay nombre y logo. La web se busca fuera, en la fase
+            # de descubrimiento.
             "telefono": None, "web": None, "email": None,
             "clasificacion_eretz": clasif,
             "razon": razon,
             "matricula": sorted(d.matriculas(nombre)),
-            "primera_vista_ts": primera.get(aid),
-            "ultima_vista_ts": ultima.get(aid),
+            "first_seen_ts": prim,
+            "last_seen_ts": ult,
             "matcher_version": d.MATCHER_VERSION,
             "directory_version": DIRECTORY_VERSION,
             "provenance": "roomix_public_property_page",
+            "official_web": None,
+            "official_office_page": None,
+            "official_web_status": "PENDIENTE",
+            "official_web_evidence": [],
         })
 
     filas.sort(key=lambda r: -r["avisos_observados"])
@@ -167,7 +208,10 @@ def main() -> int:
 
     print("### ROOMIX_AGENCY_DIRECTORY ###", flush=True)
     print(f"  avisos usados como evidencia: {len(obs):,}", flush=True)
-    print(f"  publicadores unicos:          {len(filas):,}", flush=True)
+    raw_total = sum(r["raw_identities"] for r in filas)
+    print(f"  RAW_PUBLISHER_IDENTITIES:     {raw_total:,}", flush=True)
+    print(f"  CANONICAL_PUBLISHER_ENTITIES: {len(filas):,}", flush=True)
+    print(f"  alias fusionados:             {raw_total - len(filas):,}", flush=True)
     print(f"  compresion evidencia->entidad: {len(obs)/max(len(filas),1):.1f} avisos por entidad",
           flush=True)
     print(f"\n  por tipo:            {dict(Counter(r['tipo'] for r in filas).most_common())}",

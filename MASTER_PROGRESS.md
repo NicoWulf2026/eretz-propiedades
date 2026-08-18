@@ -3,7 +3,7 @@
 Estado vivo de la misión integral. Se actualiza al cerrar cada frente y antes
 de cualquier corte de sesión.
 
-**Última actualización:** 2026-08-17 (puente DB operativo; campaña exhaustiva en curso)
+**Última actualización:** 2026-08-18 (padrón canónico + verificador de webs)
 
 ---
 
@@ -42,6 +42,28 @@ Pruebas de privilegio, todas correctas:
 | CREATE TABLE | denegado | `permission denied` |
 
 Los negativos se comprueban intentándolos y revirtiendo; ninguno escribió nada.
+
+## Fase de webs oficiales — motor construido, sin ejecutar
+
+`scripts/agency_web_discovery.py`. La lógica de decisión está completa y
+probada; falta enchufarle la capa de búsqueda y correrla sobre el padrón, cosa
+que sólo tiene sentido cuando el padrón esté cerrado.
+
+Reglas que fija el verificador, todas nacidas de un modo de fallar concreto:
+
+- **Un portal nunca es web oficial.** Zonaprop, Argenprop, Instagram y compañía
+  son evidencia para llegar al dominio, no lo reemplazan.
+- **El dominio de la red no es el de la oficina.** `remax.com.ar` vale para las
+  191 oficinas y por eso no identifica a ninguna. Si la oficina tiene perfil
+  dentro del dominio de la red, va a `official_office_page`, que es un campo
+  distinto de `official_domain`.
+- **Un HTTP 200 no demuestra propiedad.** Hace falta que el sitio hable de la
+  misma entidad: nombre completo, localidad, teléfono o matrícula.
+- **Dos dominios igualmente sostenidos → AMBIGUOUS.** Es el caso de las
+  homónimas en provincias distintas; elegir uno sería inventar.
+
+Estados: VERIFIED · HIGH_CONFIDENCE · AMBIGUOUS · NOT_FOUND · INACTIVE ·
+NO_INDEPENDENT_WEBSITE. 17 tests.
 
 ## Dos contadores que NO son el mismo
 
