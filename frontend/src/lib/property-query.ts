@@ -69,7 +69,13 @@ const currencies = new Set<PropertyCurrency>(["USD", "ARS", "EUR", "UYU"]);
 const sorts = new Set<PropertySort>([
   "recent", "price_asc", "price_desc", "area_desc", "rooms_desc", "price_m2_asc", "nearest",
 ]);
-const modes = new Set(["map", "balanced", "results", "map_only", "results_only", "analysis"] as const);
+function parseExplorerMode(value: string): PropertyFilters["mode"] {
+  if (value === "map_only") return "map_only";
+  if (value === "results_only" || value === "results") return "results_only";
+  // Compatibilidad con URLs históricas: `map` y `analysis` vuelven a la vista
+  // combinada, sin reintroducir los seis modos en la interfaz.
+  return "balanced";
+}
 
 function one(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
@@ -154,7 +160,6 @@ export function parsePropertyFilters(params: SearchParams): PropertyFilters {
   const cursorCandidate = one(params.cursor).slice(0, 420);
   const cursor = /^[A-Za-z0-9_-]+$/.test(cursorCandidate) ? cursorCandidate : "";
   const requestedPage = Math.min(Math.max(1, Math.floor(positive(params.pagina) ?? 1)), 10_000);
-  const modeCandidate = one(params.modo) as PropertyFilters["mode"];
   return {
     q: text(params.q),
     operation: operations.has(operation) ? operation : "",
@@ -190,7 +195,7 @@ export function parsePropertyFilters(params: SearchParams): PropertyFilters {
     page: cursor ? requestedPage : 1,
     cursor,
     direction: cursor && one(params.direccion) === "prev" ? "prev" : "next",
-    mode: modes.has(modeCandidate as never) ? modeCandidate : "balanced",
+    mode: parseExplorerMode(one(params.modo)),
     viewport: parseViewport(params),
     selectedId: /^\d+$/.test(one(params.seleccion)) ? one(params.seleccion) : "",
   };

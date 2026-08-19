@@ -10,7 +10,7 @@ describe("restauración por URL (round-trip lossless)", () => {
     const params = {
       operacion: "venta", tipo: "casa", ciudad: "Córdoba", barrio: "Nueva Córdoba",
       moneda: "USD", precio_min: "50000", precio_max: "200000", dormitorios: "2",
-      orden: "price_asc", modo: "analysis",
+      orden: "price_asc", modo: "results_only",
       norte: "10", este: "20", sur: "5", oeste: "10", zoom: "12",
     };
     const first = parsePropertyFilters(params);
@@ -26,7 +26,7 @@ describe("restauración por URL (round-trip lossless)", () => {
     expect(restored.maxPrice).toBe(200000);
     expect(restored.minBedrooms).toBe(2);
     expect(restored.sort).toBe("price_asc");
-    expect(restored.mode).toBe("analysis");
+    expect(restored.mode).toBe("results_only");
     expect(restored.viewport).toEqual({ north: 10, east: 20, south: 5, west: 10, zoom: 12 });
   });
 

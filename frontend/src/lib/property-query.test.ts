@@ -41,6 +41,13 @@ describe("property query", () => {
     expect(filtersToSearchParams(filters).get("publicador")).toBe("Acme");
   });
 
+  it("normaliza los seis modos históricos a las tres vistas desktop V2", () => {
+    expect(parsePropertyFilters({ modo: "map" }).mode).toBe("balanced");
+    expect(parsePropertyFilters({ modo: "analysis" }).mode).toBe("balanced");
+    expect(parsePropertyFilters({ modo: "results" }).mode).toBe("results_only");
+    expect(parsePropertyFilters({ modo: "map_only" }).mode).toBe("map_only");
+  });
+
   it("parsea, deduplica y limita multi-ubicación; ida y vuelta por URL", () => {
     const filters = parsePropertyFilters({ ubicaciones: "Palermo, Belgrano ,palermo" });
     expect(filters.locations).toEqual(["Palermo", "Belgrano"]); // dedup case-insensitive

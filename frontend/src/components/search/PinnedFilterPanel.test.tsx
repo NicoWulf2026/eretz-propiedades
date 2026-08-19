@@ -4,15 +4,15 @@ import { FilterForm } from "@/components/search/FilterForm";
 import { parsePropertyFilters } from "@/lib/property-query";
 
 // Fase C/D: el mismo FilterForm se reutiliza en modal y fijado (sin duplicar).
-describe("FilterForm — panel fijable y modo Análisis", () => {
-  it("el parser acepta el modo 'analysis' y cae a 'balanced' si es inválido", () => {
-    expect(parsePropertyFilters({ modo: "analysis" }).mode).toBe("analysis");
+describe("FilterForm — reutilización interna del panel", () => {
+  it("normaliza el modo histórico 'analysis' a la vista combinada", () => {
+    expect(parsePropertyFilters({ modo: "analysis" }).mode).toBe("balanced");
     expect(parsePropertyFilters({ modo: "inexistente" }).mode).toBe("balanced");
   });
 
   it("fijado: muestra el CTA de conteo y 'Desfijar' (llama onUnpin)", () => {
     const onUnpin = vi.fn();
-    render(<FilterForm filters={parsePropertyFilters({ modo: "analysis" })} pinned onUnpin={onUnpin} />);
+    render(<FilterForm filters={parsePropertyFilters({})} pinned onUnpin={onUnpin} />);
     expect(screen.getByText("Filtros fijados")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Calculando resultados|Ver .* propiedades|Aplicar filtros/ })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Desfijar" }));

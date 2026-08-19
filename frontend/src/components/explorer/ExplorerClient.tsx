@@ -5,6 +5,7 @@ import { FilterForm } from "@/components/search/FilterForm";
 import { ContextBar } from "@/components/explorer/ContextBar";
 import { ActiveChips } from "@/components/explorer/ActiveChips";
 import { NoResults } from "@/components/explorer/NoResults";
+import { ViewModeSelector } from "@/components/explorer/ViewModeSelector";
 import { Pagination } from "@/components/search/Pagination";
 import { PropertyMap } from "@/components/map/PropertyMap";
 import { PropertyCard } from "@/components/property/PropertyCard";
@@ -13,15 +14,6 @@ import { addRecentSearch, getVisited } from "@/lib/local-store";
 import { useLocalValue } from "@/lib/use-local-store";
 import { describeSearch } from "@/lib/search-label";
 import type { ExplorerMode, PropertyFilters, PropertySearchResult } from "@/types/property";
-
-const modeLabels: Array<[ExplorerMode, string]> = [
-  ["balanced", "Exploración"],
-  ["analysis", "Análisis"],
-  ["results", "Resultados amplios"],
-  ["map", "Mapa protagonista"],
-  ["results_only", "Solo resultados"],
-  ["map_only", "Solo mapa"],
-];
 
 function unavailableResult(filters: PropertyFilters): PropertySearchResult {
   return {
@@ -45,6 +37,7 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
   const requestKey = filtersToSearchParams(filters).toString();
   const [resultState, setResultState] = useState<{ key: string; result: PropertySearchResult } | null>(null);
   const result = resultState?.key === requestKey ? resultState.result : null;
+  const [mapOnlyCounts, setMapOnlyCounts] = useState<{ key: string; count: number | null; mapCount: number | null } | null>(null);
   const resultAbortRef = useRef<AbortController | null>(null);
   // Scroll pendiente de restaurar al volver de una ficha (ver efectos abajo).
   const pendingScrollRef = useRef<number | null>(null);
@@ -66,7 +59,7 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
   useEffect(() => {
     if (filters.mode === "balanced") {
       const saved = localStorage.getItem("eretz:explorer-mode") as ExplorerMode | null;
-      if (saved && modeLabels.some(([value]) => value === saved)) requestAnimationFrame(() => setMode(saved));
+      if (saved === "balanced" || saved === "results_only" || saved === "map_only") requestAnimationFrame(() => setMode(saved));
     }
     const savedDensity = localStorage.getItem("eretz:card-density");
     if (savedDensity === "full" || savedDensity === "compact") requestAnimationFrame(() => setDensity(savedDensity));
@@ -150,15 +143,30 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
     return () => controller.abort();
   }, [filters, mode, requestKey, result]);
 
+  useEffect(() => {
+    if (mode !== "map_only" || result || mapOnlyCounts?.key === requestKey) return;
+    const controller = new AbortController();
+    void fetch(`/api/properties/counts?${filtersToSearchParams(filters)}`, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("count request failed");
+        return response.json() as Promise<{ count: number | null; mapCount: number | null }>;
+      })
+      .then((counts) => setMapOnlyCounts({ key: requestKey, count: counts.count, mapCount: counts.mapCount }))
+      .catch((error: unknown) => {
+        if ((error as Error).name !== "AbortError") setMapOnlyCounts({ key: requestKey, count: null, mapCount: null });
+      });
+    return () => controller.abort();
+  }, [filters, mapOnlyCounts?.key, mode, requestKey, result]);
+
   function chooseMode(next: ExplorerMode) {
-  setMode(next);
-  localStorage.setItem("eretz:explorer-mode", next);
-  const url = new URL(window.location.href);
-  if (next === "balanced") url.searchParams.delete("modo"); else url.searchParams.set("modo", next);
-  const nextUrl = `${url.pathname}${url.search ? url.search : ""}`;
-  window.history.replaceState(window.history.state, "", nextUrl);
-  setReturnTo(nextUrl);
-}
+    setMode(next);
+    localStorage.setItem("eretz:explorer-mode", next);
+    const url = new URL(window.location.href);
+    if (next === "balanced") url.searchParams.delete("modo"); else url.searchParams.set("modo", next);
+    const nextUrl = `${url.pathname}${url.search ? url.search : ""}`;
+    window.history.replaceState(window.history.state, "", nextUrl);
+    setReturnTo(nextUrl);
+  }
 
 function removeViewport() {
   // Clear viewport filter and update URL
@@ -199,6 +207,8 @@ function removeViewport() {
   const pageProperties = result?.properties ?? [];
   const visitedInPage = pageProperties.reduce((n, p) => (visitedSet.has(String(p.id)) ? n + 1 : n), 0);
   const shownProperties = hideVisited ? pageProperties.filter((p) => !visitedSet.has(String(p.id))) : pageProperties;
+  const mapViewCount = result?.count ?? (mapOnlyCounts?.key === requestKey ? mapOnlyCounts.count : null);
+  const mapViewLocatedCount = result?.mapCount ?? (mapOnlyCounts?.key === requestKey ? mapOnlyCounts.mapCount : null);
 
   return (
     <div className="explorer-page">
@@ -206,12 +216,10 @@ function removeViewport() {
         <div className="container">
           <div className="explorer-heading-row">
             <div><p className="eyebrow">Explorador nacional</p><h1>Encontrá propiedades en el mapa</h1></div>
-            <div className="view-mode-tabs" role="group" aria-label="Modo de visualización">
-              {modeLabels.map(([value, label]) => <button key={value} type="button" className={mode === value ? "is-active" : ""} aria-pressed={mode === value} onClick={() => chooseMode(value)}><span className="desktop-mode-label">{label}</span><span className="mobile-mode-label">{value.includes("map") ? "Mapa" : "Resultados"}</span></button>)}
-            </div>
+            <ViewModeSelector mode={mode} onChange={chooseMode} />
           </div>
           <div className="explorer-search-card">
-            <FilterForm filters={currentFilters} action={basePath} onPin={() => chooseMode("analysis")} onOpenChange={setFiltersOpen} />
+            <FilterForm filters={currentFilters} action={basePath} onOpenChange={setFiltersOpen} />
           </div>
           <ActiveChips filters={currentFilters} basePath={basePath} onRemoveViewport={removeViewport} />
         </div>
@@ -220,13 +228,14 @@ function removeViewport() {
       {result?.invalidCursor ? <div className="container py-4"><div className="alert alert-warning" role="alert"><strong>Este enlace de paginación venció o no es válido.</strong><span> Podés volver al inicio de estos resultados sin perder tus filtros.</span><a href={`${basePath}?${resetCursor}`}>Volver a la primera página</a></div></div> : null}
 
       <main className={`explorer-workspace mode-${mode}${filtersOpen ? " filters-open" : ""}`}>
-        {mode === "analysis" ? (
-          <aside className="explorer-filters-pane" aria-label="Filtros fijados">
-            <FilterForm filters={currentFilters} action={basePath} pinned onUnpin={() => chooseMode("balanced")} />
-          </aside>
-        ) : null}
         <section className="explorer-map-pane" aria-label="Explorar en el mapa">
           <PropertyMap properties={result?.properties ?? []} filters={currentFilters} selectedId={selectedId} onSelect={selectProperty} returnTo={returnTo} />
+          {mode === "map_only" ? (
+            <div className="map-view-summary" aria-live="polite">
+              <strong>{mapViewCount === null ? "Calculando propiedades…" : `${mapViewCount.toLocaleString("es-AR")} propiedades`}</strong>
+              {mapViewLocatedCount !== null ? <span>{mapViewLocatedCount.toLocaleString("es-AR")} con ubicación orientativa en el mapa</span> : null}
+            </div>
+          ) : null}
         </section>
         <section ref={resultsPaneRef} className="explorer-results-pane" aria-label="Resultados de propiedades">
           <ContextBar
@@ -255,7 +264,7 @@ function removeViewport() {
           ) : shownProperties.length === 0 ? (
             <div className="state-panel" role="status"><span aria-hidden="true">✓</span><h2>Ya viste todas las de esta página</h2><p>Ocultaste las propiedades visitadas. Podés mostrarlas de nuevo o pasar a la siguiente página.</p><button type="button" className="secondary-button" onClick={toggleHideVisited}>Mostrar visitadas</button></div>
           ) : (
-            <div className={`explorer-card-list density-${density}`} id="property-results">
+            <div className={`explorer-card-list density-${density}`} id="property-results" data-view={mode}>
               {shownProperties.map((property) => <PropertyCard key={property.id} property={property} variant={density} returnTo={returnTo} selected={selectedId === property.id} onSelect={selectProperty} />)}
             </div>
           )}

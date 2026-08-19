@@ -49,7 +49,7 @@ export type MapZone =
   | { kind: "box"; north: number; east: number; south: number; west: number }
   | { kind: "radius"; lat: number; lng: number; km: number };
 
-export type ExplorerMode = "map" | "balanced" | "results" | "map_only" | "results_only" | "analysis";
+export type ExplorerMode = "balanced" | "map_only" | "results_only";
 
 export type PropertyPublisher = {
   id: string | null;

@@ -16,6 +16,7 @@ from playwright.sync_api import Browser, Page, expect, sync_playwright
 
 
 BASE_URL = os.environ.get("ERETZ_E2E_BASE_URL", "http://localhost:3100").rstrip("/")
+VERCEL_COOKIE_FILE = os.environ.get("ERETZ_E2E_VERCEL_COOKIE_FILE")
 AXE_PATH = Path(__file__).parents[1] / "node_modules" / "axe-core" / "axe.min.js"
 
 
@@ -32,6 +33,32 @@ def activate_interactive_map(page: Page) -> None:
     expect(page.locator(".leaflet-container")).to_be_visible(timeout=20_000)
 
 
+def load_vercel_qa_cookies() -> list[dict[str, object]]:
+    """Load a temporary Netscape cookie jar without exposing its values."""
+    if not VERCEL_COOKIE_FILE:
+        return []
+
+    cookies: list[dict[str, object]] = []
+    for raw_line in Path(VERCEL_COOKIE_FILE).read_text(encoding="utf-8").splitlines():
+        line = raw_line.removeprefix("#HttpOnly_")
+        if not line or line.startswith("#"):
+            continue
+        domain, _include_subdomains, path, secure, expires, name, value = line.split("\t", 6)
+        cookies.append(
+            {
+                "name": name,
+                "value": value,
+                "domain": domain,
+                "path": path,
+                "secure": secure.upper() == "TRUE",
+                "httpOnly": raw_line.startswith("#HttpOnly_"),
+                "expires": int(expires),
+                "sameSite": "Lax",
+            }
+        )
+    return cookies
+
+
 @pytest.fixture()
 def browser() -> Browser:
     with sync_playwright() as playwright:
@@ -43,6 +70,9 @@ def browser() -> Browser:
 @pytest.fixture()
 def page(browser: Browser):
     context = browser.new_context(locale="es-AR", reduced_motion="reduce")
+    cookies = load_vercel_qa_cookies()
+    if cookies:
+        context.add_cookies(cookies)
     current = context.new_page()
     current.set_default_timeout(60_000)
     expect.set_options(timeout=60_000)
@@ -97,8 +127,8 @@ def test_search_filter_map_area_detail_and_restoration(page: Page) -> None:
 def test_mobile_map_results_and_missing_property(page: Page) -> None:
     page.set_viewport_size({"width": 390, "height": 844})
     page.goto(BASE_URL, wait_until="domcontentloaded")
-    expect(page.get_by_role("button", name="Mapa", exact=True)).to_be_visible()
-    results_button = page.get_by_role("button", name="Resultados", exact=True)
+    expect(page.get_by_role("button", name="Solo mapa", exact=True)).to_be_visible()
+    results_button = page.get_by_role("button", name="Solo propiedades", exact=True)
     results_button.click()
     expect(results_button).to_have_attribute("aria-pressed", "true")
     expect(page.get_by_role("region", name="Resultados de propiedades")).to_be_visible()
@@ -106,6 +136,69 @@ def test_mobile_map_results_and_missing_property(page: Page) -> None:
     expect(page.locator("[data-property-id]").first).to_be_visible(timeout=60_000)
     page.goto(app_url("/propiedad/999999999999"), wait_until="domcontentloaded")
     expect(page.get_by_role("heading", name="No encontramos esta propiedad")).to_be_visible()
+
+
+def test_three_desktop_views_preserve_filters_url_and_selection(page: Page) -> None:
+    page.set_viewport_size({"width": 1440, "height": 900})
+    page.goto(app_url("/propiedades?operacion=venta"), wait_until="domcontentloaded")
+    expect(page.locator("[data-property-id]")).to_have_count(24)
+    buttons = page.get_by_role("group", name="Vista del explorador").get_by_role("button")
+    expect(buttons).to_have_count(3)
+
+    first_card = page.locator("[data-property-id]").first
+    property_id = first_card.get_attribute("data-property-id")
+    first_card.hover()
+    expect(first_card).to_have_class(re.compile(r"is-selected"))
+    expect(page).to_have_url(re.compile(rf"[?&]seleccion={property_id}(?:&|$)"))
+
+    properties_button = page.get_by_role("button", name="Solo propiedades", exact=True)
+    properties_button.click()
+    expect(properties_button).to_have_attribute("aria-pressed", "true")
+    expect(page).to_have_url(re.compile(r"[?&]modo=results_only(?:&|$)"))
+    assert "operacion=venta" in page.url and f"seleccion={property_id}" in page.url
+    expect(page.get_by_role("region", name="Resultados de propiedades")).to_be_visible()
+    expect(page.get_by_role("region", name="Explorar en el mapa")).not_to_be_visible()
+
+    map_button = page.get_by_role("button", name="Solo mapa", exact=True)
+    map_button.click()
+    expect(map_button).to_have_attribute("aria-pressed", "true")
+    expect(page).to_have_url(re.compile(r"[?&]modo=map_only(?:&|$)"))
+    assert "operacion=venta" in page.url and f"seleccion={property_id}" in page.url
+    expect(page.get_by_role("region", name="Explorar en el mapa")).to_be_visible()
+    expect(page.get_by_role("region", name="Resultados de propiedades")).not_to_be_visible()
+    expect(page.locator(".map-view-summary")).to_contain_text("propiedades")
+
+    combined_button = page.get_by_role("button", name="Mapa + propiedades", exact=True)
+    combined_button.click()
+    expect(combined_button).to_have_attribute("aria-pressed", "true")
+    assert "modo=" not in page.url and "operacion=venta" in page.url and f"seleccion={property_id}" in page.url
+    expect(page.get_by_role("region", name="Explorar en el mapa")).to_be_visible()
+    expect(page.get_by_role("region", name="Resultados de propiedades")).to_be_visible()
+
+
+@pytest.mark.parametrize("width,height,solo_columns", [(1180, 800, 3), (1366, 768, 4), (1440, 900, 4), (1600, 900, 4)])
+def test_desktop_views_density_and_overflow(page: Page, width: int, height: int, solo_columns: int) -> None:
+    page.set_viewport_size({"width": width, "height": height})
+    page.goto(app_url("/propiedades?tipo=departamento"), wait_until="domcontentloaded")
+    expect(page.locator("[data-property-id]")).to_have_count(24)
+
+    combined_columns = page.locator("#property-results").evaluate(
+        "element => getComputedStyle(element).gridTemplateColumns.split(' ').length"
+    )
+    assert combined_columns == 2
+
+    page.get_by_role("button", name="Solo propiedades", exact=True).click()
+    columns = page.locator("#property-results").evaluate(
+        "element => getComputedStyle(element).gridTemplateColumns.split(' ').length"
+    )
+    assert columns == solo_columns
+
+    for label in ("Solo mapa", "Mapa + propiedades"):
+        page.get_by_role("button", name=label, exact=True).click()
+        dimensions = page.evaluate(
+            "() => ({ viewport: document.documentElement.clientWidth, content: document.documentElement.scrollWidth })"
+        )
+        assert dimensions["content"] <= dimensions["viewport"] + 1, {"view": label, **dimensions}
 
 
 @pytest.mark.parametrize("width,height", [(390, 844), (1366, 900)])

@@ -4,6 +4,7 @@ import L, { type LatLngBounds } from "leaflet";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MapContainer, Marker, Popup, useMap, useMapEvents } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
+import { mergeDetailedPagePoints } from "@/lib/map-points";
 import { propertyLocation } from "@/lib/property-presenter";
 import type { MapSearchResponse, MapViewport, PropertySummary } from "@/types/property";
 
@@ -52,6 +53,25 @@ function CanvasTileLayer() {
   return null;
 }
 
+function MapResizeSync() {
+  const map = useMap();
+  useEffect(() => {
+    const container = map.getContainer();
+    let frame = 0;
+    const resize = () => {
+      if (container.clientWidth > 0 && container.clientHeight > 0) map.invalidateSize({ animate: false });
+    };
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(resize);
+    });
+    observer.observe(container);
+    frame = requestAnimationFrame(resize);
+    return () => { cancelAnimationFrame(frame); observer.disconnect(); };
+  }, [map]);
+  return null;
+}
+
 function markerIcon(point: MapPoint, selected: boolean) {
   if (point.kind === "cluster") {
     return L.divIcon({
@@ -65,7 +85,7 @@ function markerIcon(point: MapPoint, selected: boolean) {
     : "Ver";
   return L.divIcon({
     className: "",
-    html: `<span class="eretz-price-marker${selected ? " is-selected" : ""}">${price}</span>`,
+    html: `<span class="eretz-price-marker is-location-approximate${selected ? " is-selected" : ""}" data-property-marker-id="${point.id}" aria-label="${price}; ubicación orientativa">${price}</span>`,
     iconAnchor: [36, 18], popupAnchor: [0, -20],
   });
 }
@@ -200,7 +220,7 @@ export function PropertyLeafletMap({
       const response = await fetch(`/api/properties/map?${params.toString()}`, { signal: controller.signal });
       if (!response.ok) throw new Error("map request failed");
       const result = await response.json() as MapSearchResponse;
-      setPoints(result.points);
+      setPoints(mergeDetailedPagePoints(result.points, initialPoints, target));
       setTruncated(result.truncated);
       setPending(false);
     } catch (requestError) {
@@ -232,6 +252,7 @@ export function PropertyLeafletMap({
     <div className={`interactive-map ${fullScreen ? "is-fullscreen" : ""}`} aria-describedby="map-alternative">
       <MapContainer center={center} zoom={initialViewport?.zoom ?? (initialPoints.length ? 6 : 4)} className="h-full w-full" scrollWheelZoom>
         <CanvasTileLayer />
+        <MapResizeSync />
         <MapEvents onViewport={handleViewport} locateRequest={locateRequest} onLocationError={() => setError("No pudimos acceder a tu ubicación. Podés permitirla desde el navegador o seguir explorando el mapa.")} />
         <InitialView points={initialPoints} viewport={initialViewport} resetRequest={resetRequest} />
         {points.map((point) => (
@@ -244,12 +265,12 @@ export function PropertyLeafletMap({
               else onSelect?.(point.id);
             } }}
           >
-            {point.kind === "property" ? <Popup><a href={`/propiedad/${point.id}?volver=${encodeURIComponent(returnTo)}`} className="map-popup"><strong>{point.price && point.currency ? `${point.currency} ${Intl.NumberFormat("es-AR").format(point.price)}` : "Precio a consultar"}</strong><span>{point.title}</span><small>{point.location}</small></a></Popup> : null}
+            {point.kind === "property" ? <Popup><a href={`/propiedad/${point.id}?volver=${encodeURIComponent(returnTo)}`} className="map-popup"><strong>{point.price && point.currency ? `${point.currency} ${Intl.NumberFormat("es-AR").format(point.price)}` : "Precio a consultar"}</strong><span>{point.title}</span><small>{point.location}</small><small className="map-location-confidence">Ubicación orientativa informada por la publicación</small></a></Popup> : null}
           </Marker>
         ))}
       </MapContainer>
       <div className="map-top-controls">
-        {pending ? <button type="button" className="map-search-area" disabled={loading} onClick={searchArea}>{loading ? "Buscando…" : "Buscar en esta zona"}</button> : <span className="map-result-indicator">{points.length.toLocaleString("es-AR")} puntos visibles</span>}
+        {pending ? <button type="button" className="map-search-area" disabled={loading} onClick={searchArea}>{loading ? "Buscando…" : "Buscar en esta zona"}</button> : <span className="map-result-indicator" title="Los marcadores reproducen las coordenadas informadas por cada publicación y pueden ser aproximados.">{points.length.toLocaleString("es-AR")} puntos · ubicaciones orientativas</span>}
         <div className="map-icon-controls">
           <button type="button" aria-label="Volver a encuadrar resultados" title="Recentrar resultados" onClick={() => setResetRequest((value) => value + 1)}>◎</button>
           <button type="button" aria-label="Usar mi ubicación" title="Usar mi ubicación" onClick={() => setLocationPrompt(true)}>⌖</button>
