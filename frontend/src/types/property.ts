@@ -101,6 +101,10 @@ export type SearchSuggestion = {
   label: string;
   category: "id" | "provincia" | "ciudad" | "barrio" | "dirección" | "inmobiliaria" | "agente" | "tipo";
   query: string;
+  // Contexto geográfico o semántico derivado de la misma fila. No se fabrican
+  // conteos: el endpoint sólo lo informa cuando dispone de un dato fiable.
+  context?: string;
+  count?: number;
   // Navegación directa (p. ej. una coincidencia por ID ERETZ va a la ficha en
   // lugar de rellenar el término de búsqueda).
   href?: string;

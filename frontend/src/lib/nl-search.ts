@@ -45,7 +45,7 @@ const CURRENCY_WORDS: Array<[RegExp, string, string]> = [
 
 // Amenities/atributos SIN filtro con respaldo de datos hoy → se listan como no
 // interpretados (transparencia), nunca se inventan como filtro.
-const KNOWN_UNBACKED = /\b(balc[oó]n|pileta|piscina|patio|parrilla|terraza|quincho|luminoso|amoblado|cochera|garage)\b/g;
+const KNOWN_UNBACKED = /\b(balc[oó]n|pileta|piscina|patio|parrilla|terraza|quincho|luminoso|amoblado)\b/g;
 
 // Convierte "200000", "200.000", "200 mil", "200k", "1,5 millones", "1.2m".
 function parseAmount(raw: string): number | null {
@@ -139,6 +139,9 @@ export function interpretNaturalQuery(input: string): NlResult {
   if (dorm != null) { params.dormitorios = String(dorm); interpreted.push({ field: "dormitorios", label: `${dorm}+ dormitorios` }); }
   const ban = firstInt(original, /(\d+)\s*(?:ba[ñn]os?)/);
   if (ban != null) { params.banos = String(ban); interpreted.push({ field: "banos", label: `${ban}+ baños` }); }
+  const garages = firstInt(original, /(\d+)\s*(?:cocheras?|garages?)/)
+    ?? (/\bcon\s+(?:cochera|garage)\b/.test(t) ? 1 : null);
+  if (garages != null) { params.cocheras = String(garages); interpreted.push({ field: "cocheras", label: `${garages}+ cocheras` }); }
 
   // Ubicaciones (OR)
   const locations = parseLocations(original);

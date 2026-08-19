@@ -541,15 +541,16 @@ p { margin: 0; }
 .context-bar-viewport-remove { border: 0; background: transparent; color: var(--accent); font-size: var(--text-sm); text-decoration: underline; text-underline-offset: 3px; }
 .context-bar-viewport-remove:hover { color: var(--bad); }
 .mobile-mode-label { display: none; }
-.explorer-primary-search { display: grid; grid-template-columns: minmax(240px,1fr) minmax(170px,.24fr) minmax(185px,.26fr) auto auto; gap: .55rem; align-items: center; }
-.explorer-primary-search > select, .filter-toggle {
+.explorer-primary-search { display: grid; grid-template-columns: minmax(280px,1fr) minmax(138px,.22fr) minmax(138px,.22fr) auto auto auto auto; gap: .5rem; align-items: start; }
+.explorer-primary-search > select, .filter-toggle, .quick-filter-button {
   height: var(--control); border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
   background: var(--surface-1); padding-inline: .85rem; color: var(--ink);
   font-size: var(--text-base); font-weight: 500; outline: none; box-shadow: var(--shadow-xs);
   transition: border-color var(--motion-fast) var(--ease-out), background var(--motion-fast) var(--ease-out);
 }
-.filter-toggle { display: flex; min-width: 128px; align-items: center; justify-content: space-between; gap: .45rem; font-weight: 600; }
-.filter-toggle:hover, .explorer-primary-search > select:hover { border-color: var(--accent-strong); background: var(--accent-surface); }
+.filter-toggle, .quick-filter-button { display: flex; min-width: 112px; align-items: center; justify-content: space-between; gap: .45rem; font-weight: 600; white-space: nowrap; }
+.quick-filter-button { max-width: 178px; overflow: hidden; text-overflow: ellipsis; }
+.filter-toggle:hover, .quick-filter-button:hover, .explorer-primary-search > select:hover { border-color: var(--accent-strong); background: var(--accent-surface); }
 .explorer-search-button { height: var(--control); min-width: 104px; }
 
 /* Buscador universal: el control más importante del producto. */
@@ -647,6 +648,25 @@ p { margin: 0; }
   .explorer-toolbar { flex: 0 0 auto; }
   .explorer-workspace { flex: 1 1 auto; height: auto; min-height: 0; }
 }
+.suggestion-copy { display: grid; min-width: 0; gap: .12rem; }
+.suggestion-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .9rem; }
+.suggestion-copy mark { background: transparent; color: var(--accent-strong); font-weight: 800; }
+.suggestion-arrow { flex: none; color: var(--ink-3); font-size: 1rem; }
+.suggestion-remove {
+  display: grid; flex: none; inline-size: 2rem; block-size: 2rem; place-items: center;
+  border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--ink-3); font-size: 1.1rem;
+}
+.suggestion-remove:hover { background: var(--surface-3); color: var(--bad); }
+.search-interpretation { display: grid; gap: .35rem; padding: .45rem .1rem 0; }
+.interpretation-row { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .5rem; }
+.interpretation-label { flex: none; color: var(--ink-3); font-size: var(--text-xs); font-weight: 600; }
+.interpretation-chips { display: flex; flex-wrap: wrap; gap: .3rem; }
+.interpretation-chip {
+  min-block-size: 28px; border: 1px solid var(--accent-ring); border-radius: var(--radius-pill);
+  background: var(--accent-surface); padding: .2rem .55rem; color: var(--accent-soft); font-size: var(--text-xs); font-weight: 600;
+}
+.interpretation-chip.is-muted { border-style: dashed; border-color: var(--line-strong); background: var(--surface-2); color: var(--ink-3); }
+.interpretation-row.is-unrecognized .interpretation-label { color: var(--warn); }
 .mode-results .explorer-card-list.density-full, .mode-results_only .explorer-card-list.density-full { grid-template-columns: repeat(2,minmax(0,1fr)); }
 .density-toggle { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; margin-bottom: .85rem; font-size: var(--text-sm); }
 .density-toggle .density-label { font-weight: 500; color: var(--ink-3); margin-right: .25rem; }
@@ -723,8 +743,8 @@ p { margin: 0; }
 .map-popup small { color: var(--ink-3); }
 
 @media (max-width: 1180px) {
-  .explorer-primary-search { grid-template-columns: minmax(240px,1fr) minmax(135px,.25fr) auto auto; }
-  .explorer-primary-search > select:nth-of-type(2) { display: none; }
+  .explorer-primary-search { grid-template-columns: minmax(240px,1fr) minmax(128px,.2fr) minmax(128px,.2fr) auto auto auto auto; gap: .4rem; }
+  .filter-toggle, .quick-filter-button { min-width: 94px; padding-inline: .65rem; }
   .explorer-card-list, .mode-results .explorer-card-list, .mode-results_only .explorer-card-list { grid-template-columns: 1fr; }
 }
 
@@ -741,6 +761,7 @@ p { margin: 0; }
   .mobile-mode-label { display: inline; }
   .explorer-primary-search { grid-template-columns: minmax(0,1fr) auto auto; }
   .explorer-primary-search > select { display: none; }
+  .quick-filter-button { display: none; }
   .filter-toggle { min-width: 48px; padding-inline: .65rem; font-size: 0; }
   .filter-toggle span { font-size: 1.2rem; }
   .explorer-search-button { min-width: 68px; padding-inline: .7rem; }
@@ -1611,29 +1632,16 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   contain-intrinsic-size: auto 480px;
 }
 
-/* Barra de búsqueda de transición: conserva las dos funciones reales hasta
-   la fase de búsqueda universal, pero reduce su peso dentro del viewport. */
+/* Superficie única de búsqueda: autocomplete, frase determinista y filtros
+   frecuentes comparten una sola puerta de entrada. */
 .explorer-search-card {
-  display: grid;
-  gap: .4rem;
+  display: block;
   border-radius: var(--radius-md);
   background: var(--surface-1);
   border: 1px solid var(--line);
   padding: .55rem .65rem;
   box-shadow: var(--shadow-xs);
 }
-.explorer-search-card .nl-search { margin: 0; }
-.explorer-search-card .nl-search-input {
-  min-block-size: 2.65rem;
-  border: 0;
-  background: transparent;
-  padding-inline: .25rem;
-  font-size: 1rem;
-  line-height: 1.4;
-  color: var(--ink);
-}
-.explorer-search-card .nl-search-input:focus { border: 0; box-shadow: none; outline: none; }
-.explorer-search-card .nl-search-input::placeholder { color: var(--ink-4); }
 .explorer-search-card .explorer-primary-search { margin: 0; }
 .explorer-search-card .explorer-primary-search input,
 .explorer-search-card .explorer-primary-search select {
@@ -1642,7 +1650,6 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 }
 @media (max-width: 767px) {
   .explorer-search-card { border-radius: var(--radius-lg); padding: .7rem .75rem; }
-  .explorer-search-card .nl-search-input { font-size: 1rem; min-block-size: 2.75rem; }
 }
 
 /* ==========================================================================
@@ -1923,42 +1930,30 @@ aside.detail-panel {
 nav[aria-label="Paginación"] { padding-block: .5rem 1.5rem; }
 
 /* ============================================================
-   U8 — PANEL DE FILTROS (composicion medida en la referencia)
-   Overlay centrado rgba(0,0,0,.5) con padding 16 y blur. Dentro, master-detail:
-   navegacion de categorias de ~235px con sus acciones al pie, y panel de
-   contenido a la derecha. Categorias de 55-61px con radio 14, opciones en
-   pildoras de 31px (radio 8) y tarjetas de 54px (radio 14), titulos de grupo a
-   12px/600, cabecera 20px/700 y boton de cerrar circular de 36px.
+   UX/UI V2 FASE 2 — PANEL DE FILTROS EN EL RAIL
+   Reemplaza temporalmente el rail derecho y mantiene el mapa visible. No es
+   modal: no bloquea ni oscurece el resto de la exploración.
    ============================================================ */
-
-/* El panel deja de ser un drawer lateral y pasa a modal centrado. */
 .filter-panel {
   position: fixed;
-  inset: 0;
   z-index: var(--z-modal);
-  inline-size: auto;
-  translate: none;
+  inset-inline-end: 0;
+  inset-block-end: 0;
   display: none;
-  grid-template-rows: auto 1fr;
-  inline-size: min(100% - 2rem, 1006px);
-  block-size: min(100% - 4rem, 640px);
-  margin: auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  inline-size: clamp(440px, 38vw, 480px);
+  margin: 0;
   border: 1px solid var(--line);
-  /* La referencia usa 24 en este overlay, no el radio de tarjeta. */
-  border-radius: var(--radius-xl);
+  border-inline-end: 0;
+  border-block-end: 0;
+  border-radius: var(--radius-xl) 0 0 0;
   background: var(--elevated);
   box-shadow: var(--shadow-xl);
   overflow: hidden;
   padding: 0;
 }
 .filter-panel.is-open { display: grid; visibility: visible; }
-.filter-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: calc(var(--z-modal) - 1);
-  background: rgba(0, 0, 0, .5);
-  border: 0;
-}
+.explorer-workspace.filters-open .explorer-results-pane { visibility: hidden; }
 
 .filter-panel-header {
   position: static;
@@ -1991,68 +1986,13 @@ nav[aria-label="Paginación"] { padding-block: .5rem 1.5rem; }
   border-radius: var(--radius-pill);
 }
 
-/* Dos columnas: navegacion + contenido. */
-.filter-panel-body {
-  display: grid;
-  grid-template-columns: 291px minmax(0, 1fr);
-  min-block-size: 0;
-}
-.filter-panel-aside {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: var(--space-4);
-  padding: var(--space-4);
-  border-inline-end: 1px solid var(--line);
-  min-block-size: 0;
-}
-.filter-nav { display: flex; flex-direction: column; gap: .35rem; overflow-y: auto; }
-.filter-nav-item {
-  display: flex;
-  flex-direction: column;
-  gap: .1rem;
-  padding: .6rem .7rem;
-  border: 1px solid transparent;
-  border-radius: .875rem;
-  background: transparent;
-  color: var(--ink-2);
-  text-align: start;
-  cursor: pointer;
-  transition: background 150ms var(--ease-out), color 150ms var(--ease-out);
-}
-.filter-nav-item:hover { background: var(--surface-2); color: var(--ink); }
-.filter-nav-item.is-active {
-  background: var(--surface-3);
-  border-color: var(--accent-strong);
-  color: var(--ink);
-}
-.filter-nav-label {
-  display: flex;
-  align-items: center;
-  gap: .45rem;
-  font-size: .875rem;
-  font-weight: 600;
-}
-.filter-nav-hint {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 1;
-  overflow: hidden;
-  font-size: .7rem;
-  color: var(--ink-3);
-  line-height: 1.3;
-}
-
-/* Contenido: solo el grupo activo es visible; el resto sigue en el DOM para que
-   el formulario envie el conjunto completo de filtros. */
-.filter-panel-content { overflow-y: auto; padding: var(--space-5); min-block-size: 0; }
-.filter-panel-content .filter-group { display: none; border: 0; padding: 0; margin: 0; background: transparent; }
-.filter-panel-content[data-active="ubicacion"] #filter-group-ubicacion,
-.filter-panel-content[data-active="precio"] #filter-group-precio,
-.filter-panel-content[data-active="caracteristicas"] #filter-group-caracteristicas,
-.filter-panel-content[data-active="publicacion"] #filter-group-publicacion { display: block; }
-.filter-panel-content .filter-group-legend { margin-block-end: var(--space-4); }
-.filter-panel-content .filter-group-name { font-size: 1.125rem; font-weight: 600; }
+.filter-panel-content { overflow-y: auto; padding: var(--space-4); min-block-size: 0; overscroll-behavior: contain; }
+.filter-panel-content .filter-group { display: block; border: 0; border-block-end: 1px solid var(--line); border-radius: 0; padding: 0 0 var(--space-5); margin: 0 0 var(--space-5); background: transparent; scroll-margin-block-start: var(--space-4); }
+.filter-panel-content .filter-group:last-of-type { border-block-end: 0; }
+.filter-panel-content .filter-group-legend { margin-block-end: var(--space-4); padding: 0; }
+.filter-panel-content .filter-group-heading { display: inline-flex; align-items: center; gap: .45rem; }
+.filter-panel-content .filter-group-name { font-size: 1.05rem; font-weight: 650; }
+.filter-level { flex-basis: 100%; color: var(--accent-strong); font-size: .68rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .filter-panel-content .field span {
   font-size: .75rem;
   font-weight: 600;
@@ -2062,22 +2002,25 @@ nav[aria-label="Paginación"] { padding-block: .5rem 1.5rem; }
 .filter-panel-content .field input,
 .filter-panel-content .field select,
 .filter-panel-content .field textarea { min-block-size: var(--control-h); border-radius: .5rem; }
+.filter-panel-content .filter-grid { grid-template-columns: 1fr 1fr; gap: .8rem; }
+.filter-panel-content .filter-checks { grid-column: 1 / -1; margin-block-start: .2rem; }
+.filter-data-note { margin: 0; border-radius: var(--radius-md); background: var(--surface-2); padding: .75rem; color: var(--ink-3); font-size: var(--text-xs); line-height: 1.5; }
 
 /* Acciones: Aplicar con forma de pildora, Limpiar rectangular. La jerarquia se
    apoya en la forma ademas del color, como en la referencia. */
-.filter-panel-aside .filter-panel-actions {
+.filter-panel > .filter-panel-actions {
   position: static;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: .5rem;
   margin: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
+  padding: var(--space-3) var(--space-4);
+  border-block-start: 1px solid var(--line);
+  background: var(--surface-1);
   box-shadow: none;
 }
-.filter-panel-aside .filter-panel-actions .secondary-button,
-.filter-panel-aside .filter-panel-actions .primary-button {
+.filter-panel > .filter-panel-actions .secondary-button,
+.filter-panel > .filter-panel-actions .primary-button {
   min-inline-size: 0;
   min-block-size: var(--control-h);
   block-size: var(--control-h);
@@ -2090,37 +2033,18 @@ nav[aria-label="Paginación"] { padding-block: .5rem 1.5rem; }
   align-items: center;
   justify-content: center;
 }
-.filter-panel-aside .filter-panel-actions .secondary-button { border-radius: .875rem; }
-.filter-panel-aside .filter-panel-actions .primary-button { border-radius: var(--radius-pill); }
+.filter-panel > .filter-panel-actions .secondary-button { border-radius: .875rem; }
+.filter-panel > .filter-panel-actions .primary-button { border-radius: var(--radius-pill); }
 
 @media (max-width: 860px) {
   .filter-panel {
+    inset-block-start: var(--nav-height) !important;
     inline-size: 100%;
-    block-size: 100%;
+    max-block-size: calc(100dvh - var(--nav-height));
     border-radius: 0;
     border: 0;
   }
-  /* minmax(0,1fr) y no 1fr: 1fr equivale a minmax(auto,1fr), asi que la
-     columna no podia achicarse por debajo del ancho de la fila de categorias
-     (441px) y el panel la recortaba con overflow:hidden. */
-  .filter-panel-body {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr);
-  }
-  .filter-panel-aside {
-    flex-direction: column;
-    min-inline-size: 0;
-    border-inline-end: 0;
-    border-block-end: 1px solid var(--line);
-  }
   .filter-panel-header, .filter-panel-content { min-inline-size: 0; }
-  .filter-nav {
-    flex-direction: row;
-    min-inline-size: 0;
-    overflow-x: auto;
-    gap: .4rem;
-    scrollbar-width: thin;
-  }
-  .filter-nav-item { flex: 0 0 auto; }
-  .filter-nav-hint { display: none; }
+  .filter-panel-content .filter-grid { grid-template-columns: 1fr; }
+  .explorer-workspace.filters-open .explorer-results-pane { visibility: visible; }
 }

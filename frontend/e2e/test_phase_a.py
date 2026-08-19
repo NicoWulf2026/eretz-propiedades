@@ -64,16 +64,16 @@ def test_map_first_real_server_flow_and_no_supabase_browser_requests(page: Page)
 
 def test_search_filter_map_area_detail_and_restoration(page: Page) -> None:
     page.goto(BASE_URL, wait_until="domcontentloaded")
-    search = page.get_by_role("combobox", name="Buscar por ubicación, dirección, tipo, inmobiliaria, agente o ID")
+    search = page.get_by_role("combobox", name=re.compile(r"Buscá por barrio, ciudad, dirección"))
     search.fill("Palermo")
     page.get_by_role("button", name="Buscar", exact=True).click()
     expect(page).to_have_url(re.compile(r"[?&]q=Palermo(?:&|$)"))
     expect(page.get_by_role("heading", name="Encontrá propiedades en el mapa")).to_be_visible()
 
-    page.get_by_role("button", name="Filtros", exact=False).click()
-    expect(page.get_by_role("dialog", name="Filtros de propiedades")).to_be_visible()
+    page.get_by_role("button", name="Más filtros", exact=False).click()
+    expect(page.get_by_role("dialog", name="Más filtros de propiedades")).to_be_visible()
     page.keyboard.press("Escape")
-    expect(page.get_by_role("dialog", name="Filtros de propiedades")).not_to_be_visible()
+    expect(page.get_by_role("dialog", name="Más filtros de propiedades")).not_to_be_visible()
 
     activate_interactive_map(page)
     expect(page.locator(".map-result-indicator")).to_be_visible(timeout=30_000)
@@ -126,9 +126,26 @@ def test_accessibility_has_no_serious_or_critical_axe_violations(page: Page, wid
     ]
 
 
-@pytest.mark.parametrize("width", [320, 375, 390, 768, 1024, 1366, 1440])
-def test_supported_viewports_have_no_horizontal_overflow(page: Page, width: int) -> None:
-    page.set_viewport_size({"width": width, "height": 900})
+def test_filter_panel_keyboard_focus_and_axe(page: Page) -> None:
+    page.set_viewport_size({"width": 1366, "height": 768})
+    page.goto(BASE_URL, wait_until="domcontentloaded")
+    toggle = page.get_by_role("button", name="Más filtros", exact=False)
+    toggle.click()
+    panel = page.get_by_role("dialog", name="Más filtros de propiedades")
+    expect(panel).to_be_visible()
+    expect(page.get_by_role("textbox", name="Provincia")).to_be_focused()
+    page.add_script_tag(path=str(AXE_PATH))
+    result = page.evaluate("async () => await axe.run(document, { resultTypes: ['violations'] })")
+    severe = [v for v in result["violations"] if v.get("impact") in {"serious", "critical"}]
+    assert severe == [], [{"id": v["id"], "impact": v["impact"], "nodes": len(v["nodes"])} for v in severe]
+    page.keyboard.press("Escape")
+    expect(panel).not_to_be_visible()
+    expect(toggle).to_be_focused()
+
+
+@pytest.mark.parametrize("width,height", [(320, 900), (375, 900), (390, 844), (768, 900), (1024, 900), (1180, 800), (1366, 768), (1440, 900), (1600, 900)])
+def test_supported_viewports_have_no_horizontal_overflow(page: Page, width: int, height: int) -> None:
+    page.set_viewport_size({"width": width, "height": height})
     page.goto(BASE_URL, wait_until="domcontentloaded")
     expect(page.get_by_role("heading", name="Encontrá propiedades en el mapa")).to_be_visible()
     dimensions = page.evaluate(

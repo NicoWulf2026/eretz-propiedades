@@ -8,7 +8,6 @@ import { NoResults } from "@/components/explorer/NoResults";
 import { Pagination } from "@/components/search/Pagination";
 import { PropertyMap } from "@/components/map/PropertyMap";
 import { PropertyCard } from "@/components/property/PropertyCard";
-import { NaturalLanguageSearch } from "@/components/search/NaturalLanguageSearch";
 import { filtersToSearchParams } from "@/lib/property-query";
 import { addRecentSearch, getVisited } from "@/lib/local-store";
 import { useLocalValue } from "@/lib/use-local-store";
@@ -39,6 +38,7 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
   const [mode, setMode] = useState<ExplorerMode>(filters.mode);
   const [density, setDensity] = useState<"compact" | "full">("compact");
   const [hideVisited, setHideVisited] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const visited = useLocalValue(getVisited, [] as string[]);
   const [selectedId, setSelectedId] = useState(filters.selectedId);
   const [returnTo, setReturnTo] = useState(initialReturnTo);
@@ -211,8 +211,7 @@ function removeViewport() {
             </div>
           </div>
           <div className="explorer-search-card">
-            <NaturalLanguageSearch basePath={basePath} />
-            <FilterForm filters={currentFilters} action={basePath} onPin={() => chooseMode("analysis")} />
+            <FilterForm filters={currentFilters} action={basePath} onPin={() => chooseMode("analysis")} onOpenChange={setFiltersOpen} />
           </div>
           <ActiveChips filters={currentFilters} basePath={basePath} onRemoveViewport={removeViewport} />
         </div>
@@ -220,7 +219,7 @@ function removeViewport() {
 
       {result?.invalidCursor ? <div className="container py-4"><div className="alert alert-warning" role="alert"><strong>Este enlace de paginación venció o no es válido.</strong><span> Podés volver al inicio de estos resultados sin perder tus filtros.</span><a href={`${basePath}?${resetCursor}`}>Volver a la primera página</a></div></div> : null}
 
-      <main className={`explorer-workspace mode-${mode}`}>
+      <main className={`explorer-workspace mode-${mode}${filtersOpen ? " filters-open" : ""}`}>
         {mode === "analysis" ? (
           <aside className="explorer-filters-pane" aria-label="Filtros fijados">
             <FilterForm filters={currentFilters} action={basePath} pinned onUnpin={() => chooseMode("balanced")} />

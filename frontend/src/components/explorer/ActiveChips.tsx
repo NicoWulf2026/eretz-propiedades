@@ -36,12 +36,13 @@ export function activeChips(filters: PropertyFilters): Chip[] {
     next: reset(filters, { locations: filters.locations.filter((_, i) => i !== index) }),
   }));
   if (filters.publisher) chips.push({ key: "pub", label: filters.publisher, next: reset(filters, { publisher: "" }) });
-  if (filters.currency) chips.push({ key: "mon", label: filters.currency, next: reset(filters, { currency: "" }) });
-  if (filters.minPrice !== null) chips.push({ key: "pmin", label: `Desde ${num(filters.minPrice)}`, next: reset(filters, { minPrice: null }) });
-  if (filters.maxPrice !== null) chips.push({ key: "pmax", label: `Hasta ${num(filters.maxPrice)}`, next: reset(filters, { maxPrice: null }) });
+  if (filters.currency && filters.minPrice === null && filters.maxPrice === null) chips.push({ key: "mon", label: filters.currency, next: reset(filters, { currency: "" }) });
+  if (filters.minPrice !== null) chips.push({ key: "pmin", label: `Desde ${filters.currency ? `${filters.currency} ` : ""}${num(filters.minPrice)}`, next: reset(filters, { minPrice: null }) });
+  if (filters.maxPrice !== null) chips.push({ key: "pmax", label: `Hasta ${filters.currency ? `${filters.currency} ` : ""}${num(filters.maxPrice)}`, next: reset(filters, { maxPrice: null }) });
   if (filters.minRooms !== null) chips.push({ key: "amb", label: `${filters.minRooms}+ amb.`, next: reset(filters, { minRooms: null }) });
   if (filters.minBedrooms !== null) chips.push({ key: "dorm", label: `${filters.minBedrooms}+ dorm.`, next: reset(filters, { minBedrooms: null }) });
   if (filters.minBathrooms !== null) chips.push({ key: "ban", label: `${filters.minBathrooms}+ baños`, next: reset(filters, { minBathrooms: null }) });
+  if (filters.minGarages !== null) chips.push({ key: "coch", label: `${filters.minGarages}+ cocheras`, next: reset(filters, { minGarages: null }) });
   if (filters.minArea !== null) chips.push({ key: "amin", label: `Sup. ${filters.minArea}+ m²`, next: reset(filters, { minArea: null }) });
   if (filters.maxArea !== null) chips.push({ key: "amax", label: `Sup. ≤ ${filters.maxArea} m²`, next: reset(filters, { maxArea: null }) });
   if (filters.recentDays !== null) chips.push({ key: "rec", label: `Últimos ${filters.recentDays} días`, next: reset(filters, { recentDays: null }) });
@@ -74,7 +75,7 @@ export function ActiveChips({ filters, basePath = "/", onRemoveViewport }: { fil
   return (
     <div className="active-chips" role="group" aria-label="Filtros activos">
       {chips.map((chip) => (
-        <a key={chip.key} className="chip" href={href(chip.next)}>
+        <a key={chip.key} className="chip" href={href(chip.next)} aria-label={`Quitar filtro ${chip.label}`}>
           <span>{chip.label}</span>
           <span aria-hidden="true"> ×</span>
           <span className="sr-only"> — quitar filtro</span>

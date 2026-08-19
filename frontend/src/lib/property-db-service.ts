@@ -775,17 +775,32 @@ const SUGGESTION_PRIORITY: Record<SearchSuggestion["category"], number> = {
   id: 0, provincia: 1, ciudad: 2, barrio: 3, dirección: 4, inmobiliaria: 5, agente: 6, tipo: 7,
 };
 
+export function suggestionMatchRank(query: string, label: string | null | undefined): number | null {
+  const normalizedQuery = normalizeSearch(query.trim());
+  const normalizedLabel = normalizeSearch(label?.trim() ?? "");
+  if (!normalizedQuery || !normalizedLabel || !normalizedLabel.includes(normalizedQuery)) return null;
+  if (normalizedLabel === normalizedQuery) return 0;
+  if (normalizedLabel.startsWith(normalizedQuery)) return 1;
+  return 2;
+}
+
 async function searchSuggestionsUncached(query: string): Promise<SearchSuggestion[]> {
   const q = query.trim().slice(0, 60);
   if (q.length < 2) return [];
   const gate = await getPreviewQualityGate();
   if (!databaseUrl() || !gate.enabled) return [];
   const suggestions = new Map<string, SearchSuggestion>();
-  const add = (category: SearchSuggestion["category"], value: string | null | undefined) => {
+  const add = (category: SearchSuggestion["category"], value: string | null | undefined, context?: string | null) => {
     const label = value?.trim();
     if (!label) return;
-    const key = `${category}:${normalizeSearch(label)}`;
-    if (!suggestions.has(key)) suggestions.set(key, { id: key, label, category, query: label });
+    const normalizedLabel = normalizeSearch(label);
+    // queryBatch encuentra filas por cualquiera de sus campos. El autocomplete
+    // sólo debe exponer el campo que realmente coincide: nunca arrastra barrio,
+    // dirección o publicador no relacionados desde la misma fila.
+    if (suggestionMatchRank(q, label) === null) return;
+    const key = `${category}:${normalizedLabel}`;
+    const cleanContext = context?.trim();
+    if (!suggestions.has(key)) suggestions.set(key, { id: key, label, category, query: label, context: cleanContext || undefined });
   };
   // ID ERETZ: coincidencia directa a la ficha (sólo si el gate la autoriza — así
   // no se filtra una propiedad no publicable ni una inexistente).
@@ -796,17 +811,21 @@ async function searchSuggestionsUncached(query: string): Promise<SearchSuggestio
   const rows = await queryBatch(filters, 300, null);
   for (const row of rows) {
     if (!gate.isVisible(row.id)) continue;
-    add("provincia", row.provincia);
-    add("ciudad", row.ciudad);
-    add("barrio", row.barrio);
-    add("dirección", row.direccion);
+    add("provincia", row.provincia, row.pais);
+    add("ciudad", row.ciudad, row.provincia);
+    add("barrio", row.barrio, [row.ciudad, row.provincia].filter(Boolean).join(", "));
+    add("dirección", row.direccion, [row.barrio, row.ciudad].filter(Boolean).join(", "));
     add("inmobiliaria", row.publisher_name);
     add("agente", row.agente_nombre);
     add("tipo", row.tipo_propiedad);
     if (suggestions.size >= 48) break;
   }
   return [...suggestions.values()]
-    .sort((a, b) => SUGGESTION_PRIORITY[a.category] - SUGGESTION_PRIORITY[b.category])
+    .sort((a, b) => {
+      return (suggestionMatchRank(q, a.label) ?? 3) - (suggestionMatchRank(q, b.label) ?? 3)
+        || SUGGESTION_PRIORITY[a.category] - SUGGESTION_PRIORITY[b.category]
+        || a.label.localeCompare(b.label, "es-AR");
+    })
     .slice(0, 12);
 }
 

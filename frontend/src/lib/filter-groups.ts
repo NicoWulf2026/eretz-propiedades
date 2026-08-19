@@ -42,8 +42,9 @@ export function filterGroupCounts(filters: PropertyFilters): Record<FilterGroupI
   }
 
   for (const value of [
-    filters.minRooms, filters.minBedrooms, filters.minBathrooms,
+    filters.minRooms, filters.minBedrooms, filters.minBathrooms, filters.minGarages,
     filters.minArea, filters.maxArea, filters.hasLocation, filters.hasImages,
+    filters.mortgageState,
   ]) {
     if (on(value)) counts.caracteristicas += 1;
   }

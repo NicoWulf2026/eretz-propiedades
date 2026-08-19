@@ -30,6 +30,11 @@ describe("filterGroupCounts", () => {
     expect(filterGroupCounts(f).caracteristicas).toBe(3);
   });
 
+  it("cuenta cochera y el estado tri-state de crédito por separado", () => {
+    const f = parsePropertyFilters({ cocheras: "1", credito: "no" });
+    expect(filterGroupCounts(f).caracteristicas).toBe(2);
+  });
+
   it("el orden por defecto no suma; otro orden sí", () => {
     expect(filterGroupCounts(parsePropertyFilters({ orden: "recent" })).publicacion).toBe(0);
     expect(filterGroupCounts(parsePropertyFilters({ orden: "area_desc" })).publicacion).toBe(1);

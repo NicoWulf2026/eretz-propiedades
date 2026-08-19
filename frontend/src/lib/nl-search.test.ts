@@ -26,7 +26,7 @@ describe("interpretNaturalQuery — no inventa filtros (anti-Roomix)", () => {
     expect(r.params.ubicaciones).toBe("Rosario");
     // balcón/pileta NO se convierten en filtro (no hay dato) → notInterpreted
     expect(r.notInterpreted).toEqual(expect.arrayContaining(["balcon", "pileta"]));
-    expect(Object.keys(r.params)).not.toContain("cochera");
+    expect(Object.keys(r.params)).not.toContain("amenities");
   });
 
   it("no asume operación cuando no se expresa", () => {
@@ -51,6 +51,11 @@ describe("interpretNaturalQuery — no inventa filtros (anti-Roomix)", () => {
     expect(r.params.tipo).toBe("departamento");
     expect(r.params.ambientes).toBe("3");
     expect(r.params.operacion).toBe("alquiler");
+  });
+
+  it("interpreta cochera ahora que el catálogo tiene respaldo real", () => {
+    expect(interpretNaturalQuery("casa con cochera").params.cocheras).toBe("1");
+    expect(interpretNaturalQuery("casa con 2 cocheras").params.cocheras).toBe("2");
   });
 
   it("input ambiguo/vacío no inventa nada", () => {
