@@ -70,7 +70,20 @@ export function PropertyCard({
         href={detailHref}
         className="focus-ring block"
         onClick={() => {
-          try { sessionStorage.setItem(`eretz:return:${returnTo}`, JSON.stringify({ scrollY: window.scrollY, selectedId: property.id })); } catch { /* opcional */ }
+          try {
+            const resultsPane = document.querySelector<HTMLElement>(".explorer-results-pane");
+            const usesResultsScroll = !!resultsPane
+              && resultsPane.scrollHeight > resultsPane.clientHeight
+              && window.getComputedStyle(resultsPane).overflowY !== "visible";
+            const state = JSON.stringify({
+              scrollY: usesResultsScroll ? resultsPane.scrollTop : window.scrollY,
+              scrollTarget: usesResultsScroll ? "results" : "window",
+              selectedId: property.id,
+            });
+            const visibleReturnTo = `${window.location.pathname}${window.location.search}`;
+            sessionStorage.setItem(`eretz:return:${returnTo}`, state);
+            if (visibleReturnTo !== returnTo) sessionStorage.setItem(`eretz:return:${visibleReturnTo}`, state);
+          } catch { /* opcional */ }
         }}
       >
         <div className="property-card-media relative aspect-[4/3]">

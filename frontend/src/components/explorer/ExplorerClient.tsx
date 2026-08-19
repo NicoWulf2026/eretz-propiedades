@@ -48,7 +48,9 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
   const resultAbortRef = useRef<AbortController | null>(null);
   // Scroll pendiente de restaurar al volver de una ficha (ver efectos abajo).
   const pendingScrollRef = useRef<number | null>(null);
+  const pendingScrollTargetRef = useRef<"window" | "results">("window");
   const pendingUntilRef = useRef<number>(0);
+  const resultsPaneRef = useRef<HTMLElement | null>(null);
   const currentFilters = useMemo(() => ({ ...filters, mode, selectedId }), [filters, mode, selectedId]);
 
   // Registra la búsqueda actual (sin paginación ni selección) en "búsquedas
@@ -78,13 +80,13 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
       const rawReturnTo = `${window.location.pathname}${window.location.search}`;
       const stored = sessionStorage.getItem(`eretz:return:${rawReturnTo}`)
         ?? sessionStorage.getItem(`eretz:return:${initialReturnTo}`);
-      const state = JSON.parse(stored ?? "null") as { scrollY?: number; selectedId?: string } | null;
+      const state = JSON.parse(stored ?? "null") as { scrollY?: number; scrollTarget?: "window" | "results"; selectedId?: string } | null;
       if (state?.selectedId) requestAnimationFrame(() => setSelectedId(state.selectedId ?? ""));
-      // El scroll NO se restaura acá: el listado carga async y, sin altura de
-      // documento, el navegador recorta el scroll a 0. Se difiere al efecto de
-      // abajo, que espera a que la página tenga altura suficiente.
+      // El scroll NO se restaura acá: el listado carga async y el destino todavía
+      // no tiene altura suficiente. Se difiere al efecto de abajo.
       if (typeof state?.scrollY === "number") {
         pendingScrollRef.current = state.scrollY;
+        pendingScrollTargetRef.current = state.scrollTarget ?? "window";
         pendingUntilRef.current = Date.now() + 10_000; // ventana para que cargue el listado
       }
     } catch {
@@ -95,9 +97,8 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
     return () => window.removeEventListener("eretz:explorer-url-change", onUrl);
   }, [filters.mode, initialReturnTo]);
 
-  // Restauración de scroll diferida: espera a que el documento tenga altura
-  // suficiente (el listado llega por fetch). Si el usuario ya scrolleó por su
-  // cuenta, se cancela para no pelearle la posición.
+  // Restauración diferida: espera a que el documento o el rail tengan altura
+  // suficiente (el listado llega por fetch).
   useEffect(() => {
     if (pendingScrollRef.current === null) return;
     let frame = 0;
@@ -109,10 +110,15 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
       // se re-verifica un momento: el router puede resetear el scroll a 0 al
       // completar la navegación, después de nuestra restauración.
       if (Date.now() > pendingUntilRef.current) { pendingScrollRef.current = null; return; }
-      const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+      const resultsPane = pendingScrollTargetRef.current === "results" ? resultsPaneRef.current : null;
+      const maxScroll = resultsPane
+        ? resultsPane.scrollHeight - resultsPane.clientHeight
+        : document.documentElement.scrollHeight - window.innerHeight;
       if (maxScroll >= target - 4) {
-        if (Math.abs(window.scrollY - target) > 8) {
-          window.scrollTo({ top: target, behavior: "instant" });
+        const currentScroll = resultsPane?.scrollTop ?? window.scrollY;
+        if (Math.abs(currentScroll - target) > 8) {
+          if (resultsPane) resultsPane.scrollTo({ top: target, behavior: "instant" });
+          else window.scrollTo({ top: target, behavior: "instant" });
           if (!appliedAt) appliedAt = Date.now();
         }
         if (appliedAt && Date.now() - appliedAt > 1200) { pendingScrollRef.current = null; return; }
@@ -223,7 +229,7 @@ function removeViewport() {
         <section className="explorer-map-pane" aria-label="Explorar en el mapa">
           <PropertyMap properties={result?.properties ?? []} filters={currentFilters} selectedId={selectedId} onSelect={selectProperty} returnTo={returnTo} />
         </section>
-        <section className="explorer-results-pane" aria-label="Resultados de propiedades">
+        <section ref={resultsPaneRef} className="explorer-results-pane" aria-label="Resultados de propiedades">
           <ContextBar
             totalCount={result?.totalCount ?? null}
             count={result?.count ?? null}
