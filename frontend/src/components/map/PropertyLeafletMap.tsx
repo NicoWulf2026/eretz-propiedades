@@ -163,6 +163,10 @@ export function PropertyLeafletMap({
   const initialMapRequestRef = useRef(false);
 
   useEffect(() => {
+    // Once the map owns its viewport query, its complete/clustered response is
+    // authoritative. A slower rail response must not replace it with the
+    // coordinates from only the current 24-card page.
+    if (initialMapRequestRef.current) return;
     const frame = requestAnimationFrame(() => setPoints(initialPoints));
     return () => cancelAnimationFrame(frame);
   }, [initialPoints]);
