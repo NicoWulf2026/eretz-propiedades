@@ -1,9 +1,10 @@
 import "server-only";
 
 import postgres, { type Sql } from "postgres";
-import { cleanText, mapSupabasePropertyToProperty, normalizeCurrency } from "@/lib/property-mapper";
+import { cleanText, mapSupabasePropertyToProperty, normalizeCurrency, normalizePropertyType } from "@/lib/property-mapper";
 import { assessLocationConfidence, hasValidArgentinaCoordinates, type GeoPointStats } from "@/lib/geo-confidence";
 import { propertyLocation } from "@/lib/property-presenter";
+import { clusterMapMarkers } from "@/lib/map-points";
 import { getPreviewQualityGate } from "@/lib/preview-quality-gate";
 import { parsePropertyFilters } from "@/lib/property-query";
 import { addParam, buildCursorClause, buildWhere, normalizeSearch, sortSpec, type CursorPayload } from "@/lib/property-sql";
@@ -39,6 +40,7 @@ type MapCandidate = {
   titulo: string | null;
   precio: number | null;
   moneda: string | null;
+  tipo_propiedad: string | null;
   latitud: number;
   longitud: number;
   direccion: string | null;
@@ -365,7 +367,7 @@ async function queryMapBatch(filters: PropertyFilters, limit: number, cursor: Cu
   const publisherJoin = filters.q || filters.publisher
     ? "LEFT JOIN public.inmobiliarias_main i ON i.id = p.inmobiliaria_id"
     : "";
-  const statement = `SELECT p.id, p.inmobiliaria_id, p.titulo, p.precio, p.moneda, p.latitud, p.longitud,
+  const statement = `SELECT p.id, p.inmobiliaria_id, p.titulo, p.precio, p.moneda, p.tipo_propiedad, p.latitud, p.longitud,
       p.direccion, p.barrio, p.ciudad, p.provincia, ${sort.expression} AS __sort_value
     FROM public.propiedades p
     ${publisherJoin}
@@ -784,6 +786,7 @@ function clusterMapProperties(valid: ClassifiedMapCandidate[], zoom: number): Ma
     longitude: Number(property.longitud),
     price: Number(property.precio) > 0 ? Number(property.precio) : null,
     currency: normalizeCurrency(property.moneda),
+    propertyType: normalizePropertyType(property.tipo_propiedad),
     title: cleanText(property.titulo) || "Propiedad sin título",
     location: propertyLocation({
       neighborhood: cleanText(property.barrio) || null,
@@ -792,31 +795,7 @@ function clusterMapProperties(valid: ClassifiedMapCandidate[], zoom: number): Ma
     }),
     locationConfidence: property.locationConfidence,
   });
-  if (zoom >= 12) {
-    return valid.slice(0, 800).map(marker);
-  }
-  const cell = Math.max(0.008, (zoom <= 6 ? 128 : 48) / (2 ** zoom));
-  const groups = new Map<string, { latitude: number; longitude: number; count: number; first: ClassifiedMapCandidate }>();
-  for (const property of valid) {
-    const latitude = Number(property.latitud);
-    const longitude = Number(property.longitud);
-    const key = `${Math.floor(latitude / cell)}:${Math.floor(longitude / cell)}`;
-    const group = groups.get(key);
-    if (group) {
-      group.latitude += latitude;
-      group.longitude += longitude;
-      group.count += 1;
-    } else {
-      groups.set(key, { latitude, longitude, count: 1, first: property });
-    }
-  }
-  return [...groups.entries()].slice(0, 800).map(([key, group]) => group.count === 1 ? marker(group.first) : {
-    kind: "cluster" as const,
-    id: `cluster-${key}`,
-    latitude: group.latitude / group.count,
-    longitude: group.longitude / group.count,
-    count: group.count,
-  });
+  return clusterMapMarkers(valid.map(marker), zoom);
 }
 
 async function searchMapUncached(filters: PropertyFilters, viewport: MapViewport): Promise<MapSearchResponse> {

@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { PropertyCard } from "@/components/property/PropertyCard";
 import { mapSupabasePropertyToProperty } from "@/lib/property-mapper";
 import { completeRow } from "@/test/fixtures";
@@ -58,5 +58,19 @@ describe("PropertyCard", () => {
     expect(screen.getByText("Precio a consultar")).toBeInTheDocument();
     expect(screen.getByText("Ubicación no especificada")).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Imagen no disponible" })).toBeInTheDocument();
+  });
+
+  it("separa la previsualización por hover de la selección intencional", () => {
+    const onPreview = vi.fn();
+    const onCommit = vi.fn();
+    render(<PropertyCard property={mapSupabasePropertyToProperty(completeRow)} onPreview={onPreview} onCommit={onCommit} />);
+    const card = document.querySelector<HTMLElement>("[data-property-id]");
+    if (!card) throw new Error("property card missing");
+    fireEvent.pointerEnter(card);
+    expect(onPreview).toHaveBeenLastCalledWith("123");
+    fireEvent.pointerLeave(card);
+    expect(onPreview).toHaveBeenLastCalledWith(null);
+    fireEvent.click(screen.getByRole("link"));
+    expect(onCommit).toHaveBeenCalledWith("123");
   });
 });

@@ -1,12 +1,18 @@
 "use client";
 
 import L, { type LatLngBounds } from "leaflet";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { MapContainer, Marker, Popup, useMap, useMapEvents } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import { locationConfidenceDescription, locationConfidenceLabel } from "@/lib/geo-confidence";
+import {
+  clusterSize,
+  formatMapPriceAccessible,
+  formatMapPriceCompact,
+  viewportMovedMeaningfully,
+} from "@/lib/map-presentation";
 import { mergeDetailedPagePoints } from "@/lib/map-points";
-import { propertyLocation } from "@/lib/property-presenter";
+import { propertyLocation, typeLabels } from "@/lib/property-presenter";
 import type { MapSearchResponse, MapViewport, PropertySummary } from "@/types/property";
 
 type MapPoint = MapSearchResponse["points"][number];
@@ -23,6 +29,7 @@ class OpenStreetMapCanvasLayer extends L.GridLayer {
 
   override createTile(coords: L.Coords, done: L.DoneCallback) {
     const canvas = document.createElement("canvas");
+    canvas.className = "eretz-map-tile";
     const density = Math.min(window.devicePixelRatio || 1, 2);
     canvas.width = 256 * density;
     canvas.height = 256 * density;
@@ -47,9 +54,7 @@ function CanvasTileLayer() {
   useEffect(() => {
     const layer = new OpenStreetMapCanvasLayer();
     layer.addTo(map);
-    return () => {
-      layer.removeFrom(map);
-    };
+    return () => { layer.removeFrom(map); };
   }, [map]);
   return null;
 }
@@ -73,24 +78,119 @@ function MapResizeSync() {
   return null;
 }
 
-function markerIcon(point: MapPoint, selected: boolean) {
+function markerIcon(point: MapPoint) {
   if (point.kind === "cluster") {
+    const size = clusterSize(point.count);
     return L.divIcon({
-      className: "",
-      html: `<span class="eretz-map-cluster" aria-label="${point.count} propiedades">${point.count > 999 ? "999+" : point.count}</span>`,
-      iconSize: [44, 44], iconAnchor: [22, 22],
+      className: "eretz-map-marker-host",
+      html: `<span class="eretz-map-cluster is-${size}" aria-hidden="true">${point.count > 999 ? "999+" : point.count}</span>`,
+      iconSize: size === "large" ? [52, 52] : size === "medium" ? [46, 46] : [40, 40],
+      iconAnchor: size === "large" ? [26, 26] : size === "medium" ? [23, 23] : [20, 20],
     });
   }
-  const price = point.price && point.currency
-    ? `${point.currency === "USD" ? "US$" : point.currency} ${Intl.NumberFormat("es-AR", { notation: "compact", maximumFractionDigits: 1 }).format(point.price)}`
-    : "Ver";
-  const confidence = locationConfidenceLabel(point.locationConfidence).toLocaleLowerCase("es-AR");
+  const price = formatMapPriceCompact(point.price, point.currency);
   return L.divIcon({
-    className: "",
-    html: `<span class="eretz-price-marker is-location-${point.locationConfidence}${selected ? " is-selected" : ""}" data-property-marker-id="${point.id}" aria-label="${price}; ${confidence}">${price}</span>`,
-    iconAnchor: [36, 18], popupAnchor: [0, -20],
+    className: "eretz-map-marker-host",
+    html: `<span class="eretz-price-marker is-location-${point.locationConfidence}" aria-hidden="true">${price}</span>`,
+    iconSize: [92, 36],
+    iconAnchor: [46, 34],
+    popupAnchor: [0, -34],
   });
 }
+
+function markerAccessibleName(point: MapPoint): string {
+  if (point.kind === "cluster") return `${point.count.toLocaleString("es-AR")} propiedades agrupadas. Activar para acercar.`;
+  const confidence = point.locationConfidence === "high"
+    ? ""
+    : `, ${locationConfidenceLabel(point.locationConfidence).toLocaleLowerCase("es-AR")}`;
+  return `${typeLabels[point.propertyType]} en ${point.location}, ${formatMapPriceAccessible(point.price, point.currency)}${confidence}`;
+}
+
+const InteractiveMarker = memo(function InteractiveMarker({
+  point,
+  selected,
+  onSelect,
+  onPreview,
+  returnTo,
+}: {
+  point: MapPoint;
+  selected: boolean;
+  onSelect?: (id: string) => void;
+  onPreview?: (id: string | null) => void;
+  returnTo: string;
+}) {
+  const map = useMap();
+  const markerRef = useRef<L.Marker | null>(null);
+  const accessibleName = markerAccessibleName(point);
+  const icon = useMemo(() => markerIcon(point), [point]);
+
+  useEffect(() => {
+    const element = markerRef.current?.getElement();
+    if (!element) return;
+    element.setAttribute("role", "button");
+    element.setAttribute("aria-label", accessibleName);
+    element.setAttribute("data-map-point-kind", point.kind);
+    element.tabIndex = 0;
+    const activateWithKeyboard = (event: KeyboardEvent) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      markerRef.current?.fire("click");
+    };
+    element.addEventListener("keydown", activateWithKeyboard);
+    if (point.kind === "property") {
+      element.setAttribute("data-property-marker-id", point.id);
+      element.setAttribute("aria-pressed", selected ? "true" : "false");
+      element.querySelector(".eretz-price-marker")?.classList.toggle("is-selected", selected);
+      const preview = () => onPreview?.(point.id);
+      const clearPreview = () => onPreview?.(null);
+      element.addEventListener("focus", preview);
+      element.addEventListener("blur", clearPreview);
+      return () => {
+        element.removeEventListener("keydown", activateWithKeyboard);
+        element.removeEventListener("focus", preview);
+        element.removeEventListener("blur", clearPreview);
+      };
+    } else {
+      element.removeAttribute("aria-pressed");
+    }
+    return () => element.removeEventListener("keydown", activateWithKeyboard);
+  }, [accessibleName, onPreview, point, selected]);
+
+  return (
+    <Marker
+      ref={markerRef}
+      position={[point.latitude, point.longitude]}
+      icon={icon}
+      keyboard={false}
+      riseOnHover
+      riseOffset={350}
+      alt={accessibleName}
+      eventHandlers={{
+        click: () => {
+          if (point.kind === "cluster") map.setView([point.latitude, point.longitude], Math.min(map.getZoom() + 2, 18));
+          else onSelect?.(point.id);
+        },
+        mouseover: () => { if (point.kind === "property") onPreview?.(point.id); },
+        mouseout: () => { if (point.kind === "property") onPreview?.(null); },
+      }}
+    >
+      {point.kind === "property" ? (
+        <Popup closeButton minWidth={190} maxWidth={250}>
+          <a href={`/propiedad/${point.id}?volver=${encodeURIComponent(returnTo)}`} className="map-popup">
+            <strong>{formatMapPriceAccessible(point.price, point.currency)}</strong>
+            <span>{typeLabels[point.propertyType]} · {point.location}</span>
+            {point.locationConfidence !== "high" ? (
+              <small className={`map-location-confidence is-${point.locationConfidence}`}>
+                <strong>{locationConfidenceLabel(point.locationConfidence)}</strong>
+                <span>{locationConfidenceDescription(point.locationConfidence)}</span>
+              </small>
+            ) : null}
+          </a>
+        </Popup>
+      ) : null}
+    </Marker>
+  );
+});
 
 function viewportFromBounds(bounds: LatLngBounds, zoom: number): MapViewport {
   return {
@@ -110,7 +210,10 @@ function MapEvents({ onViewport, locateRequest, onLocationError }: { onViewport:
       onViewport(viewportFromBounds(map.getBounds(), map.getZoom()), userInteraction.current);
       userInteraction.current = false;
     },
-    locationfound(event) { map.setView(event.latlng, Math.max(map.getZoom(), 14)); },
+    locationfound(event) {
+      userInteraction.current = true;
+      map.setView(event.latlng, Math.max(map.getZoom(), 14));
+    },
     locationerror() { onLocationError(); },
   });
   useEffect(() => {
@@ -153,12 +256,22 @@ function InitialView({ points, viewport, resetRequest }: { points: MapPoint[]; v
   return null;
 }
 
+function MapIcon({ name }: { name: "frame" | "location" | "expand" | "close" }) {
+  if (name === "frame") return <svg aria-hidden="true" viewBox="0 0 24 24"><rect x="5" y="6" width="14" height="12" rx="2" /><path d="M9 10h6v4H9z" /></svg>;
+  if (name === "location") return <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M12 2v3m0 14v3M2 12h3m14 0h3" /></svg>;
+  if (name === "close") return <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18" /></svg>;
+  return <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M8 21H3v-5m13 5h5v-5" /></svg>;
+}
+
 export function PropertyLeafletMap({
   properties,
   baseSearch,
   initialViewport,
   selectedId,
   onSelect,
+  onPreview,
+  resultCount,
+  mapCount,
   returnTo,
 }: {
   properties: PropertySummary[];
@@ -166,15 +279,30 @@ export function PropertyLeafletMap({
   initialViewport: MapViewport | null;
   selectedId: string;
   onSelect?: (id: string) => void;
+  onPreview?: (id: string | null) => void;
+  resultCount: number | null;
+  mapCount: number | null;
   returnTo: string;
 }) {
   const initialPoints = useMemo<MapPoint[]>(() => properties
     .filter((property): property is PropertySummary & { latitude: number; longitude: number; locationConfidence: "high" | "approximate" | "doubtful" } => property.latitude !== null && property.longitude !== null && property.locationConfidence !== "none")
-    .map((property) => ({ kind: "property", id: property.id, latitude: property.latitude, longitude: property.longitude, price: property.price, currency: property.currency, title: property.title, location: propertyLocation(property), locationConfidence: property.locationConfidence })), [properties]);
+    .map((property) => ({
+      kind: "property",
+      id: property.id,
+      latitude: property.latitude,
+      longitude: property.longitude,
+      price: property.price,
+      currency: property.currency,
+      propertyType: property.propertyType,
+      title: property.title,
+      location: propertyLocation(property),
+      locationConfidence: property.locationConfidence,
+    })), [properties]);
   const [points, setPoints] = useState(initialPoints);
   const [viewport, setViewport] = useState<MapViewport | null>(initialViewport);
   const [pending, setPending] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [applyingArea, setApplyingArea] = useState(false);
   const [error, setError] = useState("");
   const [truncated, setTruncated] = useState(false);
   const [fullScreen, setFullScreen] = useState(false);
@@ -183,27 +311,43 @@ export function PropertyLeafletMap({
   const [resetRequest, setResetRequest] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
   const initialMapRequestRef = useRef(false);
+  const lastQueriedViewportRef = useRef<MapViewport | null>(initialViewport);
+  const fullScreenButtonRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
-    // Once the map owns its viewport query, its complete/clustered response is
-    // authoritative. A slower rail response must not replace it with the
-    // coordinates from only the current 24-card page.
     if (initialMapRequestRef.current) return;
     const frame = requestAnimationFrame(() => setPoints(initialPoints));
     return () => cancelAnimationFrame(frame);
   }, [initialPoints]);
 
+  useEffect(() => {
+    if (!fullScreen && !locationPrompt) return;
+    const previousOverflow = document.body.style.overflow;
+    if (fullScreen) document.body.style.overflow = "hidden";
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (locationPrompt) setLocationPrompt(false);
+      else if (fullScreen) {
+        setFullScreen(false);
+        requestAnimationFrame(() => fullScreenButtonRef.current?.focus());
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [fullScreen, locationPrompt]);
+
   function handleViewport(next: MapViewport, persist: boolean) {
     setViewport(next);
     if (!initialMapRequestRef.current) {
       initialMapRequestRef.current = true;
-      setPending(true);
+      lastQueriedViewportRef.current = next;
       void searchViewport(next);
       return;
     }
-    // Mover el mapa sólo propone una zona pendiente: no cambia URL, listado ni
-    // conteos ni reinicia el cursor. La aplicación ocurre en "Buscar en esta zona".
-    if (persist) setPending(true);
+    if (persist && viewportMovedMeaningfully(lastQueriedViewportRef.current, next)) setPending(true);
   }
 
   async function searchViewport(target: MapViewport) {
@@ -224,19 +368,16 @@ export function PropertyLeafletMap({
       const result = await response.json() as MapSearchResponse;
       setPoints(mergeDetailedPagePoints(result.points, initialPoints, target));
       setTruncated(result.truncated);
-      setPending(false);
     } catch (requestError) {
       if ((requestError as Error).name !== "AbortError") setError("No pudimos actualizar esta zona. Podés seguir usando el listado.");
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   }
 
-  // "Buscar en esta zona": promueve la zona pendiente a viewport aplicado sobre
-  // TODO el explorador -> navega con la zona + reinicio de cursor, de modo que el
-  // servidor re-consulta listado, conteos y mapa. Conserva el resto de los filtros.
   function searchArea() {
     if (!viewport) return;
+    setApplyingArea(true);
     const params = new URLSearchParams(baseSearch);
     params.set("norte", String(viewport.north));
     params.set("este", String(viewport.east));
@@ -249,38 +390,75 @@ export function PropertyLeafletMap({
   const center: [number, number] = initialViewport
     ? [(initialViewport.north + initialViewport.south) / 2, (initialViewport.east + initialViewport.west) / 2]
     : initialPoints[0] ? [initialPoints[0].latitude, initialPoints[0].longitude] : [-38.4161, -63.6167];
+  const selectedPoint = initialPoints.find((point) => point.kind === "property" && point.id === selectedId);
+  const displayPoints = selectedPoint && !points.some((point) => point.kind === "property" && point.id === selectedPoint.id)
+    ? [...points, selectedPoint]
+    : points;
+  const representedCount = mapCount ?? points.reduce((total, point) => total + (point.kind === "cluster" ? point.count : 1), 0);
+  const mapStatus = resultCount !== null && mapCount !== null
+    ? `${resultCount.toLocaleString("es-AR")} propiedades · ${mapCount.toLocaleString("es-AR")} en el mapa`
+    : `${representedCount.toLocaleString("es-AR")} ubicaciones representadas`;
 
   return (
-    <div className={`interactive-map ${fullScreen ? "is-fullscreen" : ""}`} aria-describedby="map-alternative">
+    <div
+      className={`interactive-map ${fullScreen ? "is-fullscreen" : ""}`}
+      aria-describedby="map-alternative"
+      data-rendered-map-points={displayPoints.length}
+    >
       <MapContainer center={center} zoom={initialViewport?.zoom ?? (initialPoints.length ? 6 : 4)} className="h-full w-full" scrollWheelZoom>
         <CanvasTileLayer />
         <MapResizeSync />
         <MapEvents onViewport={handleViewport} locateRequest={locateRequest} onLocationError={() => setError("No pudimos acceder a tu ubicación. Podés permitirla desde el navegador o seguir explorando el mapa.")} />
         <InitialView points={initialPoints} viewport={initialViewport} resetRequest={resetRequest} />
-        {points.map((point) => (
-          <Marker
+        {displayPoints.map((point) => (
+          <InteractiveMarker
             key={point.id}
-            position={[point.latitude, point.longitude]}
-            icon={markerIcon(point, point.kind === "property" && point.id === selectedId)}
-            eventHandlers={{ click: (event) => {
-              if (point.kind === "cluster") event.target._map.setView([point.latitude, point.longitude], event.target._map.getZoom() + 2);
-              else onSelect?.(point.id);
-            } }}
-          >
-            {point.kind === "property" ? <Popup><a href={`/propiedad/${point.id}?volver=${encodeURIComponent(returnTo)}`} className="map-popup"><strong>{point.price && point.currency ? `${point.currency} ${Intl.NumberFormat("es-AR").format(point.price)}` : "Precio a consultar"}</strong><span>{point.title}</span><small>{point.location}</small><small className={`map-location-confidence is-${point.locationConfidence}`}><strong>{locationConfidenceLabel(point.locationConfidence)}.</strong> {locationConfidenceDescription(point.locationConfidence)}</small></a></Popup> : null}
-          </Marker>
+            point={point}
+            selected={point.kind === "property" && point.id === selectedId}
+            onSelect={onSelect}
+            onPreview={onPreview}
+            returnTo={returnTo}
+          />
         ))}
       </MapContainer>
+
       <div className="map-top-controls">
-        {pending ? <button type="button" className="map-search-area" disabled={loading} onClick={searchArea}>{loading ? "Buscando…" : "Buscar en esta zona"}</button> : <span className="map-result-indicator" title="ERETZ comunica la confianza disponible para cada coordenada; no presume precisión exacta.">{points.length.toLocaleString("es-AR")} puntos · precisión indicada</span>}
+        <div className="map-primary-status" aria-live="polite">
+          {pending ? (
+            <button type="button" className="map-search-area" disabled={applyingArea} onClick={searchArea}>
+              <strong>{applyingArea ? "Actualizando propiedades…" : "Buscar en esta zona"}</strong>
+              {!applyingArea ? <small>Los resultados todavía son de la zona anterior</small> : null}
+            </button>
+          ) : loading ? (
+            <span className="map-result-indicator is-updating"><span className="map-status-pulse" aria-hidden="true" />Actualizando mapa…</span>
+          ) : (
+            <span className="map-result-indicator" title="ERETZ comunica la confianza disponible para cada coordenada; no presume precisión exacta.">{mapStatus}</span>
+          )}
+        </div>
         <div className="map-icon-controls">
-          <button type="button" aria-label="Volver a encuadrar resultados" title="Recentrar resultados" onClick={() => setResetRequest((value) => value + 1)}>◎</button>
-          <button type="button" aria-label="Usar mi ubicación" title="Usar mi ubicación" onClick={() => setLocationPrompt(true)}>⌖</button>
-          <button type="button" aria-label={fullScreen ? "Salir de pantalla completa" : "Ver mapa en pantalla completa"} onClick={() => setFullScreen((value) => !value)}>{fullScreen ? "×" : "⛶"}</button>
+          <button type="button" aria-label="Volver a encuadrar resultados" title="Reencuadrar" onClick={() => { setPending(false); setResetRequest((value) => value + 1); }}><MapIcon name="frame" /></button>
+          <button type="button" aria-label="Usar mi ubicación" title="Usar mi ubicación" onClick={() => setLocationPrompt(true)}><MapIcon name="location" /></button>
+          <button ref={fullScreenButtonRef} type="button" aria-label={fullScreen ? "Salir de pantalla completa" : "Ver mapa en pantalla completa"} title={fullScreen ? "Salir de pantalla completa" : "Pantalla completa"} aria-pressed={fullScreen} onClick={() => setFullScreen((value) => !value)}><MapIcon name={fullScreen ? "close" : "expand"} /></button>
         </div>
       </div>
-      {locationPrompt ? <div className="map-location-prompt" role="dialog" aria-label="Permiso de ubicación"><p>ERETZ usa tu ubicación solo para centrar este mapa. No la guarda ni la envía al publicador.</p><div><button type="button" className="secondary-button" onClick={() => setLocationPrompt(false)}>Cancelar</button><button type="button" className="primary-button" onClick={() => { setLocationPrompt(false); setLocateRequest((value) => value + 1); }}>Permitir y centrar</button></div></div> : null}
-      {error ? <div className="map-error" role="alert">{error} <button type="button" onClick={searchArea}>Reintentar</button></div> : null}
+
+      <details className="map-confidence-legend">
+        <summary>Ubicaciones</summary>
+        <div>
+          <p><span className="legend-marker is-high" aria-hidden="true" />Alta confianza</p>
+          <p><span className="legend-marker is-approximate" aria-hidden="true" />Aproximada</p>
+          <p><span className="legend-marker is-doubtful" aria-hidden="true" />Dudosa</p>
+          <small>La precisión depende de la publicación original.</small>
+        </div>
+      </details>
+
+      {locationPrompt ? (
+        <div className="map-location-prompt" role="dialog" aria-label="Permiso de ubicación">
+          <p>ERETZ usa tu ubicación solo para centrar este mapa. No la guarda ni la envía al publicador.</p>
+          <div><button type="button" className="secondary-button" onClick={() => setLocationPrompt(false)}>Cancelar</button><button type="button" className="primary-button" onClick={() => { setLocationPrompt(false); setLocateRequest((value) => value + 1); }}>Permitir y centrar</button></div>
+        </div>
+      ) : null}
+      {error ? <div className="map-error" role="alert">{error} <button type="button" onClick={() => { if (viewport) void searchViewport(viewport); }}>Reintentar</button></div> : null}
       {truncated ? <p className="map-truncated">Acercá el mapa para ver esta zona con más detalle.</p> : null}
     </div>
   );

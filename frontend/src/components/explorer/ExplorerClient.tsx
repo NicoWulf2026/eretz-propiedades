@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FilterForm } from "@/components/search/FilterForm";
 import { ContextBar } from "@/components/explorer/ContextBar";
 import { ActiveChips } from "@/components/explorer/ActiveChips";
@@ -33,6 +33,7 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
   const [filtersOpen, setFiltersOpen] = useState(false);
   const visited = useLocalValue(getVisited, [] as string[]);
   const [selectedId, setSelectedId] = useState(filters.selectedId);
+  const [previewId, setPreviewId] = useState<string | null>(null);
   const [returnTo, setReturnTo] = useState(initialReturnTo);
   const requestKey = filtersToSearchParams(filters).toString();
   const [resultState, setResultState] = useState<{ key: string; result: PropertySearchResult } | null>(null);
@@ -191,14 +192,25 @@ function removeViewport() {
     });
   }
 
-  function selectProperty(id: string) {
+  const selectProperty = useCallback((id: string, revealCard = false) => {
     setSelectedId(id);
+    setPreviewId(null);
     const url = new URL(window.location.href);
     url.searchParams.set("seleccion", id);
     const nextUrl = `${url.pathname}?${url.searchParams.toString()}`;
     window.history.replaceState(window.history.state, "", nextUrl);
     setReturnTo(nextUrl);
-  }
+    if (revealCard) {
+      requestAnimationFrame(() => {
+        const card = [...document.querySelectorAll<HTMLElement>("[data-property-id]")]
+          .find((element) => element.dataset.propertyId === id);
+        if (!card) return;
+        const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        card.scrollIntoView({ block: "nearest", inline: "nearest", behavior: reducedMotion ? "auto" : "smooth" });
+      });
+    }
+  }, []);
+  const selectPropertyFromMap = useCallback((id: string) => selectProperty(id, true), [selectProperty]);
 
   const resetCursor = filtersToSearchParams({ ...filters, cursor: "", page: 1, direction: "next" });
 
@@ -209,6 +221,7 @@ function removeViewport() {
   const shownProperties = hideVisited ? pageProperties.filter((p) => !visitedSet.has(String(p.id))) : pageProperties;
   const mapViewCount = result?.count ?? (mapOnlyCounts?.key === requestKey ? mapOnlyCounts.count : null);
   const mapViewLocatedCount = result?.mapCount ?? (mapOnlyCounts?.key === requestKey ? mapOnlyCounts.mapCount : null);
+  const activePropertyId = previewId ?? selectedId;
 
   return (
     <div className="explorer-page">
@@ -229,13 +242,17 @@ function removeViewport() {
 
       <main className={`explorer-workspace mode-${mode}${filtersOpen ? " filters-open" : ""}`}>
         <section className="explorer-map-pane" aria-label="Explorar en el mapa">
-          <PropertyMap properties={result?.properties ?? []} filters={currentFilters} selectedId={selectedId} onSelect={selectProperty} returnTo={returnTo} />
-          {mode === "map_only" ? (
-            <div className="map-view-summary" aria-live="polite">
-              <strong>{mapViewCount === null ? "Calculando propiedades…" : `${mapViewCount.toLocaleString("es-AR")} propiedades`}</strong>
-              {mapViewLocatedCount !== null ? <span>{mapViewLocatedCount.toLocaleString("es-AR")} con coordenadas en el mapa</span> : null}
-            </div>
-          ) : null}
+          <PropertyMap
+            properties={result?.properties ?? []}
+            filters={currentFilters}
+            selectedId={activePropertyId}
+            onSelect={selectPropertyFromMap}
+            onPreview={setPreviewId}
+            resultCount={mapViewCount}
+            mapCount={mapViewLocatedCount}
+            onShowResults={() => chooseMode("results_only")}
+            returnTo={returnTo}
+          />
         </section>
         <section ref={resultsPaneRef} className="explorer-results-pane" aria-label="Resultados de propiedades">
           <ContextBar
@@ -265,7 +282,17 @@ function removeViewport() {
             <div className="state-panel" role="status"><span aria-hidden="true">✓</span><h2>Ya viste todas las de esta página</h2><p>Ocultaste las propiedades visitadas. Podés mostrarlas de nuevo o pasar a la siguiente página.</p><button type="button" className="secondary-button" onClick={toggleHideVisited}>Mostrar visitadas</button></div>
           ) : (
             <div className={`explorer-card-list density-${density}`} id="property-results" data-view={mode}>
-              {shownProperties.map((property) => <PropertyCard key={property.id} property={property} variant={density} returnTo={returnTo} selected={selectedId === property.id} onSelect={selectProperty} />)}
+              {shownProperties.map((property) => (
+                <PropertyCard
+                  key={property.id}
+                  property={property}
+                  variant={density}
+                  returnTo={returnTo}
+                  selected={activePropertyId === property.id}
+                  onPreview={setPreviewId}
+                  onCommit={(id) => selectProperty(id)}
+                />
+              ))}
             </div>
           )}
           {result ? <Pagination filters={currentFilters} hasNext={result.hasNext} hasPrevious={result.hasPrevious} nextCursor={result.nextCursor} previousCursor={result.previousCursor} basePath={basePath} /> : null}

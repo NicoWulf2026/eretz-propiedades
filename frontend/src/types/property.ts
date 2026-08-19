@@ -78,6 +78,7 @@ export type MapMarker = {
   longitude: number;
   price: number | null;
   currency: PropertyCurrency | null;
+  propertyType: PropertyType;
   title: string;
   location: string;
   locationConfidence: Exclude<LocationConfidence, "none">;

@@ -34,14 +34,16 @@ export function PropertyCard({
   priority = false,
   returnTo = "/",
   selected = false,
-  onSelect,
+  onPreview,
+  onCommit,
 }: {
   property: PropertySummary;
   variant?: PropertyCardVariant;
   priority?: boolean;
   returnTo?: string;
   selected?: boolean;
-  onSelect?: (id: string) => void;
+  onPreview?: (id: string | null) => void;
+  onCommit?: (id: string) => void;
 }) {
   const specs = propertySpecs(property);
   const date = formatDate(property.publishedAt ?? property.updatedAt);
@@ -65,12 +67,22 @@ export function PropertyCard({
     );
   }
   return (
-    <article className={`property-card ${full ? "is-full" : "is-compact"} ${selected ? "is-selected" : ""}`} data-property-id={property.id} onMouseEnter={() => onSelect?.(property.id)} onFocus={() => onSelect?.(property.id)}>
+    <article
+      className={`property-card ${full ? "is-full" : "is-compact"} ${selected ? "is-selected" : ""}`}
+      data-property-id={property.id}
+      onPointerEnter={() => onPreview?.(property.id)}
+      onPointerLeave={() => onPreview?.(null)}
+      onFocusCapture={() => onPreview?.(property.id)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) onPreview?.(null);
+      }}
+    >
       <PropertyCardActions id={property.id} onHide={() => hideProperty(property.id)} />
       <Link
         href={detailHref}
         className="focus-ring block"
         onClick={() => {
+          onCommit?.(property.id);
           try {
             const resultsPane = document.querySelector<HTMLElement>(".explorer-results-pane");
             const usesResultsScroll = !!resultsPane

@@ -27,10 +27,11 @@ def app_url(path: str = "/") -> str:
 
 def activate_interactive_map(page: Page) -> None:
     """Exercise the intentional V2 progressive-map activation contract."""
+    leaflet = page.locator(".leaflet-container")
     activate = page.get_by_role("button", name="Activar ahora")
-    if activate.is_visible():
-        activate.click()
-    expect(page.locator(".leaflet-container")).to_be_visible(timeout=20_000)
+    if not leaflet.is_visible() and activate.is_visible():
+        activate.evaluate("element => element.click()")
+    expect(leaflet).to_be_visible(timeout=20_000)
 
 
 def load_vercel_qa_cookies() -> list[dict[str, object]]:
@@ -146,16 +147,16 @@ def test_three_desktop_views_preserve_filters_url_and_selection(page: Page) -> N
     expect(buttons).to_have_count(3)
 
     first_card = page.locator("[data-property-id]").first
-    property_id = first_card.get_attribute("data-property-id")
+    url_before_hover = page.url
     first_card.hover()
     expect(first_card).to_have_class(re.compile(r"is-selected"))
-    expect(page).to_have_url(re.compile(rf"[?&]seleccion={property_id}(?:&|$)"))
+    assert page.url == url_before_hover
 
     properties_button = page.get_by_role("button", name="Solo propiedades", exact=True)
     properties_button.click()
     expect(properties_button).to_have_attribute("aria-pressed", "true")
     expect(page).to_have_url(re.compile(r"[?&]modo=results_only(?:&|$)"))
-    assert "operacion=venta" in page.url and f"seleccion={property_id}" in page.url
+    assert "operacion=venta" in page.url and "seleccion=" not in page.url
     expect(page.get_by_role("region", name="Resultados de propiedades")).to_be_visible()
     expect(page.get_by_role("region", name="Explorar en el mapa")).not_to_be_visible()
 
@@ -163,17 +164,116 @@ def test_three_desktop_views_preserve_filters_url_and_selection(page: Page) -> N
     map_button.click()
     expect(map_button).to_have_attribute("aria-pressed", "true")
     expect(page).to_have_url(re.compile(r"[?&]modo=map_only(?:&|$)"))
-    assert "operacion=venta" in page.url and f"seleccion={property_id}" in page.url
+    assert "operacion=venta" in page.url and "seleccion=" not in page.url
     expect(page.get_by_role("region", name="Explorar en el mapa")).to_be_visible()
     expect(page.get_by_role("region", name="Resultados de propiedades")).not_to_be_visible()
-    expect(page.locator(".map-view-summary")).to_contain_text("propiedades")
+    activate_interactive_map(page)
+    expect(page.locator(".map-result-indicator")).to_contain_text("propiedades")
 
     combined_button = page.get_by_role("button", name="Mapa + propiedades", exact=True)
     combined_button.click()
     expect(combined_button).to_have_attribute("aria-pressed", "true")
-    assert "modo=" not in page.url and "operacion=venta" in page.url and f"seleccion={property_id}" in page.url
+    assert "modo=" not in page.url and "operacion=venta" in page.url and "seleccion=" not in page.url
     expect(page.get_by_role("region", name="Explorar en el mapa")).to_be_visible()
     expect(page.get_by_role("region", name="Resultados de propiedades")).to_be_visible()
+
+
+def test_map_v2_price_marker_keyboard_selection_fullscreen_and_legend(page: Page) -> None:
+    page.set_viewport_size({"width": 1440, "height": 900})
+    page.goto(
+        app_url(
+            "/propiedades?q=La%20Pampa%202700&norte=-34.546&este=-58.426&sur=-34.586&oeste=-58.487&zoom=14"
+        ),
+        wait_until="domcontentloaded",
+    )
+    card = page.locator('[data-property-id="104773"]')
+    expect(card).to_be_visible(timeout=60_000)
+    activate_interactive_map(page)
+
+    marker = page.locator('[data-property-marker-id="104773"]')
+    expect(marker).to_be_visible(timeout=60_000)
+    expect(marker).to_have_attribute("role", "button")
+    expect(marker).to_have_attribute("aria-label", re.compile(r"Casa en .*ARS 360\.000"))
+    expect(marker.locator(".eretz-price-marker")).to_have_text("ARS 360k")
+    expect(marker.locator(".eretz-price-marker")).to_have_class(re.compile(r"is-location-high"))
+
+    original_url = page.url
+    card.hover()
+    expect(marker.locator(".eretz-price-marker")).to_have_class(re.compile(r"is-selected"))
+    assert page.url == original_url
+    marker.focus()
+    expect(card).to_have_class(re.compile(r"is-selected"))
+    assert page.url == original_url
+    marker.press("Enter")
+    expect(page).to_have_url(re.compile(r"[?&]seleccion=104773(?:&|$)"))
+    expect(marker).to_have_attribute("aria-pressed", "true")
+    expect(page.locator(".map-popup")).to_contain_text("ARS 360.000")
+
+    legend = page.locator(".map-confidence-legend")
+    legend.locator("summary").click()
+    expect(legend).to_contain_text("Alta confianza")
+    expect(legend).to_contain_text("Aproximada")
+    expect(legend).to_contain_text("Dudosa")
+
+    fullscreen = page.get_by_role("button", name="Ver mapa en pantalla completa")
+    fullscreen.click()
+    expect(page.locator(".interactive-map")).to_have_class(re.compile(r"is-fullscreen"))
+    page.keyboard.press("Escape")
+    expect(page.locator(".interactive-map")).not_to_have_class(re.compile(r"is-fullscreen"))
+    expect(page.get_by_role("button", name="Ver mapa en pantalla completa")).to_be_focused()
+
+
+def test_map_v2_confidence_price_fallback_and_cluster_keyboard(page: Page) -> None:
+    page.set_viewport_size({"width": 1366, "height": 768})
+    cases = [
+        (
+            "/propiedades?q=ALTO%20VILLASOL&norte=-31.406&este=-64.16&sur=-31.446&oeste=-64.22&zoom=14",
+            "104962",
+            "ARS 115k",
+            "is-location-doubtful",
+            "ubicación dudosa",
+        ),
+        (
+            "/propiedades?q=Saenz%20Pe%C3%B1a%20Dos%20Ambientes&norte=-34.58&este=-58.48&sur=-34.63&oeste=-58.54&zoom=14",
+            "116107",
+            "USD 680k",
+            "is-location-approximate",
+            "ubicación aproximada",
+        ),
+        (
+            "/propiedades?q=Valentin%20Coria&norte=-34.49&este=-58.49&sur=-34.54&oeste=-58.56&zoom=14",
+            "115673",
+            "Consultar",
+            "is-location-doubtful",
+            "ubicación dudosa",
+        ),
+    ]
+    for path, property_id, price, confidence_class, accessible_confidence in cases:
+        page.goto(app_url(path), wait_until="domcontentloaded")
+        activate_interactive_map(page)
+        marker = page.locator(f'[data-property-marker-id="{property_id}"]')
+        expect(marker).to_be_visible(timeout=60_000)
+        expect(marker.locator(".eretz-price-marker")).to_have_text(price)
+        expect(marker.locator(".eretz-price-marker")).to_have_class(re.compile(confidence_class))
+        expect(marker).to_have_attribute("aria-label", re.compile(accessible_confidence, re.IGNORECASE))
+
+    page.goto(app_url(cases[0][0]), wait_until="domcontentloaded")
+    activate_interactive_map(page)
+    cluster = page.locator('[data-map-point-kind="cluster"]').first
+    expect(cluster).to_be_visible(timeout=60_000)
+    expect(cluster).to_have_attribute("aria-label", re.compile(r"\d+ propiedades agrupadas"))
+    cluster.focus()
+    cluster.press("Enter")
+    expect(page.get_by_role("button", name="Buscar en esta zona")).to_be_visible()
+
+
+def test_map_v2_results_without_coordinates_have_an_explicit_alternative(page: Page) -> None:
+    page.set_viewport_size({"width": 1180, "height": 800})
+    page.goto(app_url("/propiedades?q=EDIFICIO%20EN%20VENTA%20-%20CIUDAD"), wait_until="domcontentloaded")
+    expect(page.locator('[data-property-id="350926"]')).to_be_visible(timeout=60_000)
+    expect(page.get_by_text("Estas propiedades no tienen ubicación disponible en el mapa.")).to_be_visible()
+    expect(page.get_by_role("button", name="Ver resultados")).to_be_visible()
+    expect(page.locator(".leaflet-container")).to_have_count(0)
 
 
 @pytest.mark.parametrize("width,height,solo_columns", [(1180, 800, 3), (1366, 768, 4), (1440, 900, 4), (1600, 900, 4)])
