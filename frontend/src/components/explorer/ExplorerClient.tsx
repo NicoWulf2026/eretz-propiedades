@@ -233,7 +233,7 @@ function removeViewport() {
           {mode === "map_only" ? (
             <div className="map-view-summary" aria-live="polite">
               <strong>{mapViewCount === null ? "Calculando propiedades…" : `${mapViewCount.toLocaleString("es-AR")} propiedades`}</strong>
-              {mapViewLocatedCount !== null ? <span>{mapViewLocatedCount.toLocaleString("es-AR")} con ubicación orientativa en el mapa</span> : null}
+              {mapViewLocatedCount !== null ? <span>{mapViewLocatedCount.toLocaleString("es-AR")} con coordenadas en el mapa</span> : null}
             </div>
           ) : null}
         </section>

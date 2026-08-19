@@ -5,6 +5,12 @@ import { mapSupabasePropertyToProperty } from "@/lib/property-mapper";
 import { completeRow } from "@/test/fixtures";
 
 describe("PropertyCard", () => {
+  it("comunica una ubicación aproximada sin afirmar exactitud", () => {
+    render(<PropertyCard property={mapSupabasePropertyToProperty(completeRow)} />);
+    expect(screen.getByText("Ubicación aproximada")).toBeInTheDocument();
+    expect(screen.queryByText(/ubicación exacta/i)).not.toBeInTheDocument();
+  });
+
   it("variant full muestra las acciones Ver/Compartir/Contactar", () => {
     render(<PropertyCard property={mapSupabasePropertyToProperty(completeRow)} variant="full" />);
     expect(screen.getByRole("link", { name: "Ver propiedad" })).toBeInTheDocument();

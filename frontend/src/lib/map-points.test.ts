@@ -7,7 +7,7 @@ type MapPoint = MapSearchResponse["points"][number];
 const viewport: MapViewport = { north: -34.55, east: -58.4, south: -34.6, west: -58.48, zoom: 14 };
 const pageMarker: MapPoint = {
   kind: "property", id: "card-1", latitude: -34.57, longitude: -58.44,
-  price: null, currency: null, title: "Propiedad", location: "CABA",
+  price: null, currency: null, title: "Propiedad", location: "CABA", locationConfidence: "high",
 };
 
 describe("mergeDetailedPagePoints", () => {

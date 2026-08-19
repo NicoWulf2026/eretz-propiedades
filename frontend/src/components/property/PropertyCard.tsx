@@ -6,6 +6,7 @@ import { PropertyImage } from "@/components/property/PropertyImage";
 import { PropertyCardActions } from "@/components/property/PropertyCardActions";
 import { hideProperty, isHidden, isVisited, unhideProperty } from "@/lib/local-store";
 import { useLocalValue } from "@/lib/use-local-store";
+import { locationConfidenceLabel } from "@/lib/geo-confidence";
 import {
   availabilityLabel,
   formatDate,
@@ -99,6 +100,11 @@ export function PropertyCard({
           <h2 className="card-title">{property.title}</h2>
           <PriceTag property={property} className="card-price" />
           <p className="card-location">{propertyLocation(property)}</p>
+          {property.locationConfidence !== "high" ? (
+            <p className={`card-location-confidence is-${property.locationConfidence}`}>
+              {locationConfidenceLabel(property.locationConfidence)}
+            </p>
+          ) : null}
           <p className="card-type">{typeLabels[property.propertyType]}</p>
           {availability ? (
             <p className="card-availability" title="La disponibilidad de esta publicación no está confirmada en el último relevamiento.">

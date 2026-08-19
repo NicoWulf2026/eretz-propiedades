@@ -743,7 +743,43 @@ p { margin: 0; }
 .map-popup span { overflow: hidden; max-width: 240px; font-size: .78rem; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
 .map-popup small { color: var(--ink-3); }
 .map-popup .map-location-confidence { margin-top: .2rem; border-top: 1px solid var(--line); padding-top: .35rem; color: var(--warn); font-size: .68rem; font-weight: 700; }
+.map-popup .map-location-confidence.is-high { color: var(--ok); }
+.map-popup .map-location-confidence.is-approximate { color: var(--ink-3); }
 .eretz-price-marker.is-location-approximate { outline: 1px dashed rgba(6, 25, 47, .45); outline-offset: 2px; }
+.eretz-price-marker.is-location-high { outline: 1px solid rgba(15, 118, 110, .65); outline-offset: 2px; }
+.eretz-price-marker.is-location-doubtful {
+  outline: 2px dashed rgba(180, 83, 9, .8);
+  outline-offset: 7px;
+  box-shadow: 0 0 0 12px rgba(245, 158, 11, .16), var(--shadow-sm);
+}
+
+.card-location-confidence {
+  margin-top: .2rem;
+  font-size: .6875rem;
+  font-weight: 700;
+  color: var(--ink-3);
+}
+.card-location-confidence.is-doubtful { color: #92400e; }
+.card-location-confidence.is-none { color: var(--ink-4); }
+
+.location-confidence-badge {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: .25rem .55rem;
+  font-size: .6875rem;
+  font-weight: 800;
+  color: var(--ink-3);
+  background: var(--surface-2);
+}
+.location-confidence-badge.is-high { color: #0f766e; border-color: rgba(15, 118, 110, .3); }
+.location-confidence-badge.is-doubtful { color: #92400e; border-color: rgba(180, 83, 9, .35); background: rgba(245, 158, 11, .08); }
+.location-unavailable {
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem;
+  color: var(--ink-3);
+  background: var(--surface-2);
+}
 .map-view-summary {
   position: absolute; z-index: 820; inset-block-start: .8rem; inset-inline-start: 4.25rem; display: grid; gap: .08rem;
   max-inline-size: min(22rem, calc(100% - 8rem)); border: 1px solid var(--line); border-radius: var(--radius-md);

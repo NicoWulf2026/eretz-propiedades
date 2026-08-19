@@ -9,6 +9,7 @@ import type {
   SupabaseProperty,
 } from "@/types/property";
 import { safeExternalUrl } from "@/lib/safe-url";
+import { assessLocationConfidence, hasValidArgentinaCoordinates, type GeoPointStats } from "@/lib/geo-confidence";
 
 // Preserva el estado real de scraping. No inventa disponibilidad: cualquier estado
 // distinto de "activa" que el Quality Gate autorice se conserva como no confirmado.
@@ -75,19 +76,6 @@ export function normalizePropertyType(value: unknown): PropertyType {
   return "otro";
 }
 
-function validCoordinates(latitude: unknown, longitude: unknown) {
-  const lat = Number(latitude);
-  const lng = Number(longitude);
-  return (
-    Number.isFinite(lat) &&
-    Number.isFinite(lng) &&
-    lat >= -55.2 &&
-    lat <= -21.7 &&
-    lng >= -73.7 &&
-    lng <= -53.5
-  );
-}
-
 function validImage(value: unknown): value is string {
   const url = safeExternalUrl(value);
   if (!url) return false;
@@ -109,12 +97,12 @@ function qualitySignals(item: SupabaseProperty, images: string[]): QualitySignal
     hasPrice: positiveNumber(item.precio) !== null,
     hasCurrency: normalizeCurrency(item.moneda) !== null,
     hasLocation: Boolean(cleanText(item.barrio) || cleanText(item.ciudad) || cleanText(item.provincia)),
-    hasCoordinates: validCoordinates(item.latitud, item.longitud),
+    hasCoordinates: hasValidArgentinaCoordinates(item.latitud, item.longitud),
     hasImages: images.length > 0,
   };
 }
 
-export function mapSupabasePropertyToProperty(item: SupabaseProperty): Property {
+export function mapSupabasePropertyToProperty(item: SupabaseProperty, pointStats?: GeoPointStats | null): Property {
   // `rawImages` conserva el dato de origen tal cual llegó. `images` es lo que se
   // muestra: se descartan los recursos que no representan la propiedad (tiles de
   // mapa, Open Graph del home, samples de theme, logos del publicador...), que el
@@ -130,6 +118,15 @@ export function mapSupabasePropertyToProperty(item: SupabaseProperty): Property 
     normalizedTitle.includes("edificio comercial")
       ? "otro"
       : normalizePropertyType(item.tipo_propiedad);
+  const locationConfidence = assessLocationConfidence({
+    latitude: item.latitud,
+    longitude: item.longitud,
+    address: item.direccion,
+    neighborhood: item.barrio,
+    city: item.ciudad,
+    province: item.provincia,
+    pointStats,
+  }).level;
 
   return {
     id: String(item.id),
@@ -182,6 +179,7 @@ export function mapSupabasePropertyToProperty(item: SupabaseProperty): Property 
     country: cleanText(item.pais) || null,
     latitude: quality.hasCoordinates ? Number(item.latitud) : null,
     longitude: quality.hasCoordinates ? Number(item.longitud) : null,
+    locationConfidence,
     images,
     videoUrl: safeExternalUrl(item.video_url),
     floorPlanUrl: safeExternalUrl(item.plano_url),

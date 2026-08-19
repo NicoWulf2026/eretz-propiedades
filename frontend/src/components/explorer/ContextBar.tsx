@@ -69,7 +69,7 @@ export function ContextBar({
           </div>
           {count !== null && mapCount !== null && (
             <div className="context-bar-breakdown">
-              <span>{mapCount.toLocaleString("es-AR")} con ubicación orientativa en el mapa</span>
+              <span>{mapCount.toLocaleString("es-AR")} con coordenadas en el mapa</span>
               {withoutLocation !== null && withoutLocation > 0 && (
                 <span className="context-bar-separator">·</span>
               )}

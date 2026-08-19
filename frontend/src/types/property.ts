@@ -41,6 +41,7 @@ export type TriState = "" | "si" | "no" | "sininfo";
 export type PriceMode = "" | "with" | "consult";
 
 export type GeoPoint = { lat: number; lng: number };
+export type LocationConfidence = "high" | "approximate" | "doubtful" | "none";
 
 // Zonas de búsqueda dibujadas en el mapa. OR entre zonas, AND con el resto.
 // (Polígono libre se difiere: requiere PostGIS point-in-polygon validado contra
@@ -79,6 +80,7 @@ export type MapMarker = {
   currency: PropertyCurrency | null;
   title: string;
   location: string;
+  locationConfidence: Exclude<LocationConfidence, "none">;
 };
 
 export type MapCluster = {
@@ -204,6 +206,7 @@ export type Property = {
   country: string | null;
   latitude: number | null;
   longitude: number | null;
+  locationConfidence: LocationConfidence;
   images: string[];
   videoUrl: string | null;
   floorPlanUrl: string | null;
@@ -280,6 +283,7 @@ export type PropertySummary = Pick<
   | "propertyType" | "rawPropertyType" | "operation" | "rooms" | "bedrooms"
   | "bathrooms" | "garages" | "totalArea" | "coveredArea" | "address"
   | "neighborhood" | "city" | "province" | "country" | "latitude" | "longitude"
+  | "locationConfidence"
   | "images" | "publishedAt" | "updatedAt" | "status" | "mortgageEligible"
   | "description" | "amenities"
 >;

@@ -2,6 +2,7 @@ import "server-only";
 
 import postgres, { type Sql } from "postgres";
 import { cleanText, mapSupabasePropertyToProperty, normalizeCurrency } from "@/lib/property-mapper";
+import { assessLocationConfidence, hasValidArgentinaCoordinates, type GeoPointStats } from "@/lib/geo-confidence";
 import { propertyLocation } from "@/lib/property-presenter";
 import { getPreviewQualityGate } from "@/lib/preview-quality-gate";
 import { parsePropertyFilters } from "@/lib/property-query";
@@ -17,6 +18,7 @@ import type {
   PropertySearchResult,
   PropertySummary,
   PropertySort,
+  LocationConfidence,
   RealEstateProfile,
   RealEstateSummary,
   SearchSuggestion,
@@ -33,16 +35,19 @@ const MAX_QUERY_CACHE_ENTRIES = 160;
 type DbPropertyRow = SupabaseProperty & { __sort_value: string | number };
 type MapCandidate = {
   id: string | number;
+  inmobiliaria_id: string | number | null;
   titulo: string | null;
   precio: number | null;
   moneda: string | null;
   latitud: number;
   longitud: number;
+  direccion: string | null;
   barrio: string | null;
   ciudad: string | null;
   provincia: string | null;
   __sort_value: string | number;
 };
+type ClassifiedMapCandidate = MapCandidate & { locationConfidence: Exclude<LocationConfidence, "none"> };
 type TimedPromise<T> = { expiresAt: number; value: Promise<T> };
 // `failed` separa "la consulta no devolvió nada" de "la consulta no se pudo hacer".
 export type DirectoryResult<T> = { items: T[]; failed: boolean };
@@ -55,6 +60,8 @@ const suggestionCache = new Map<string, TimedPromise<SearchSuggestion[]>>();
 const countsCache = new Map<string, TimedPromise<{ count: number; mapCount: number }>>();
 const directoryCache = new Map<string, TimedPromise<RealEstateSummary[]>>();
 const agentCache = new Map<string, TimedPromise<AgentSummary[]>>();
+const pointStatsCache = new Map<string, { expiresAt: number; value: GeoPointStats }>();
+const POINT_STATS_CACHE_LIMIT = 4_000;
 
 function cachedQuery<T>(
   store: Map<string, TimedPromise<T>>,
@@ -189,6 +196,7 @@ function toSummary(property: Property): PropertySummary {
     country: property.country,
     latitude: property.latitude,
     longitude: property.longitude,
+    locationConfidence: property.locationConfidence,
     images: property.images.slice(0, 1),
     publishedAt: property.publishedAt,
     updatedAt: property.updatedAt,
@@ -198,6 +206,81 @@ function toSummary(property: Property): PropertySummary {
     description: property.description ? property.description.slice(0, 220) : null,
     amenities: property.amenities.slice(0, 6),
   };
+}
+
+function coordinateKey(latitude: unknown, longitude: unknown) {
+  return `${Number(latitude)}:${Number(longitude)}`;
+}
+
+async function getPointStats(
+  rows: Array<{ latitud: number | null; longitud: number | null }>,
+): Promise<Map<string, GeoPointStats>> {
+  const now = Date.now();
+  const result = new Map<string, GeoPointStats>();
+  const missing = new Map<string, { latitude: number; longitude: number }>();
+  for (const row of rows) {
+    if (!hasValidArgentinaCoordinates(row.latitud, row.longitud)) continue;
+    const key = coordinateKey(row.latitud, row.longitud);
+    const cached = pointStatsCache.get(key);
+    if (cached && cached.expiresAt > now) result.set(key, cached.value);
+    else missing.set(key, { latitude: Number(row.latitud), longitude: Number(row.longitud) });
+  }
+  if (missing.size > 0) {
+    const targets = [...missing.values()];
+    const statsRows = await readOnly((sql) => sql.unsafe<Array<{
+      latitud: number;
+      longitud: number;
+      point_properties: number;
+      point_addresses: number;
+      point_cities: number;
+      point_provinces: number;
+      point_agencies: number;
+    }>>(`WITH targets AS MATERIALIZED (
+        SELECT DISTINCT latitud, longitud
+        FROM unnest($1::double precision[], $2::double precision[]) AS t(latitud, longitud)
+      )
+      SELECT t.latitud, t.longitud, count(p.id)::int AS point_properties,
+        count(DISTINCT nullif(lower(btrim(p.direccion)), ''))::int AS point_addresses,
+        count(DISTINCT nullif(lower(btrim(p.ciudad)), ''))::int AS point_cities,
+        count(DISTINCT nullif(lower(btrim(p.provincia)), ''))::int AS point_provinces,
+        count(DISTINCT p.inmobiliaria_id)::int AS point_agencies
+      FROM targets t
+      JOIN public.propiedades p ON p.latitud = t.latitud AND p.longitud = t.longitud
+      GROUP BY t.latitud, t.longitud`, [
+        targets.map((target) => target.latitude) as never,
+        targets.map((target) => target.longitude) as never,
+      ]));
+    for (const row of statsRows) {
+      const key = coordinateKey(row.latitud, row.longitud);
+      const value: GeoPointStats = {
+        propertyCount: Number(row.point_properties),
+        addressCount: Number(row.point_addresses),
+        cityCount: Number(row.point_cities),
+        provinceCount: Number(row.point_provinces),
+        agencyCount: Number(row.point_agencies),
+      };
+      result.set(key, value);
+      pointStatsCache.set(key, { expiresAt: now + QUERY_CACHE_TTL_MS, value });
+    }
+    while (pointStatsCache.size > POINT_STATS_CACHE_LIMIT) {
+      const oldest = pointStatsCache.keys().next().value;
+      if (!oldest) break;
+      pointStatsCache.delete(oldest);
+    }
+  }
+  return result;
+}
+
+async function mapRowsToProperties<T extends SupabaseProperty>(rows: T[]) {
+  const stats = await getPointStats(rows);
+  return rows.map((row) => mapSupabasePropertyToProperty(
+    row,
+    stats.get(coordinateKey(row.latitud, row.longitud)),
+  ));
+}
+
+async function mapRowsToSummaries<T extends SupabaseProperty>(rows: T[]) {
+  return (await mapRowsToProperties(rows)).map(toSummary);
 }
 
 async function getSearchCountsUncached(filters: PropertyFilters): Promise<{ count: number; mapCount: number }> {
@@ -282,8 +365,8 @@ async function queryMapBatch(filters: PropertyFilters, limit: number, cursor: Cu
   const publisherJoin = filters.q || filters.publisher
     ? "LEFT JOIN public.inmobiliarias_main i ON i.id = p.inmobiliaria_id"
     : "";
-  const statement = `SELECT p.id, p.titulo, p.precio, p.moneda, p.latitud, p.longitud,
-      p.barrio, p.ciudad, p.provincia, ${sort.expression} AS __sort_value
+  const statement = `SELECT p.id, p.inmobiliaria_id, p.titulo, p.precio, p.moneda, p.latitud, p.longitud,
+      p.direccion, p.barrio, p.ciudad, p.provincia, ${sort.expression} AS __sort_value
     FROM public.propiedades p
     ${publisherJoin}
     WHERE ${where}${cursorClause}
@@ -307,12 +390,12 @@ async function searchPropertiesUncached(filters: PropertyFilters): Promise<Prope
   const decoded = decodeCursor(filters.cursor, filters.sort);
   if (filters.cursor && !decoded) return emptyResult(filters, "database", false, true);
   try {
-    const accepted: Array<{ row: DbPropertyRow; property: PropertySummary }> = [];
+    const accepted: DbPropertyRow[] = [];
     let scanCursor = decoded;
     for (let batch = 0; batch < MAX_LIST_SCAN_BATCHES && accepted.length <= PROPERTY_PAGE_SIZE; batch += 1) {
       const rows = await queryBatch(filters, SCAN_BATCH_SIZE, scanCursor);
       for (const row of rows) {
-        if (gate.isVisible(row.id)) accepted.push({ row, property: toSummary(mapSupabasePropertyToProperty(row)) });
+        if (gate.isVisible(row.id)) accepted.push(row);
         if (accepted.length > PROPERTY_PAGE_SIZE) break;
       }
       if (rows.length < SCAN_BATCH_SIZE) break;
@@ -325,10 +408,13 @@ async function searchPropertiesUncached(filters: PropertyFilters): Promise<Prope
     if (filters.direction === "prev") pageItems = pageItems.reverse();
     const first = pageItems[0];
     const last = pageItems.at(-1);
-    const counts = await getSearchCounts(filters);
+    const [counts, properties] = await Promise.all([
+      getSearchCounts(filters),
+      mapRowsToSummaries(pageItems),
+    ]);
     
     return {
-      properties: pageItems.map((item) => item.property),
+      properties,
       count: counts.count,
       totalCount: gate.visibleCount,
       mapCount: counts.mapCount,
@@ -336,8 +422,8 @@ async function searchPropertiesUncached(filters: PropertyFilters): Promise<Prope
       pageSize: PROPERTY_PAGE_SIZE,
       hasNext: filters.direction === "prev" ? filters.page > 1 : hasExtra,
       hasPrevious: filters.direction === "prev" ? hasExtra : filters.page > 1,
-      nextCursor: last ? encodeCursor(last.row, filters.sort) : null,
-      previousCursor: first ? encodeCursor(first.row, filters.sort) : null,
+      nextCursor: last ? encodeCursor(last, filters.sort) : null,
+      previousCursor: first ? encodeCursor(first, filters.sort) : null,
       source: "database",
       error: false,
       invalidCursor: false,
@@ -366,7 +452,7 @@ async function getPropertyByIdUncached(id: string): Promise<Property | null> {
     const rows = await readOnly((sql) => sql.unsafe<DbPropertyRow[]>(`SELECT ${projection}, p.id AS __sort_value
       FROM public.propiedades p LEFT JOIN public.inmobiliarias_main i ON i.id = p.inmobiliaria_id
       WHERE p.id = $1 LIMIT 1`, [Number(id)]));
-    return rows[0] ? mapSupabasePropertyToProperty(rows[0]) : null;
+    return rows[0] ? (await mapRowsToProperties([rows[0]]))[0] : null;
   } catch {
     return null;
   }
@@ -390,9 +476,11 @@ export async function getPropertiesByIds(ids: string[]): Promise<PropertySummary
       `SELECT ${summaryProjection}, p.id AS __sort_value
        FROM public.propiedades p LEFT JOIN public.inmobiliarias_main i ON i.id = p.inmobiliaria_id
        WHERE p.id = ANY($1)`, [clean.map(Number) as never]));
+    const visibleRows = rows.filter((row) => gate.isVisible(row.id));
+    const summaries = await mapRowsToSummaries(visibleRows);
     const byId = new Map<string, PropertySummary>();
-    for (const row of rows) {
-      if (gate.isVisible(row.id)) byId.set(String(row.id), toSummary(mapSupabasePropertyToProperty(row)));
+    for (const property of summaries) {
+      byId.set(property.id, property);
     }
     return clean.map((id) => byId.get(id)).filter((x): x is PropertySummary => Boolean(x));
   } catch (error) {
@@ -518,7 +606,7 @@ export async function getPropertiesByAgency(id: string, limit = 48): Promise<Pro
        WHERE p.inmobiliaria_id = $1
        ORDER BY __sort_value DESC
        LIMIT $2`, [Number(id), Math.min(Math.max(1, limit), 96)]));
-    return rows.filter((row) => gate.isVisible(row.id)).map((row) => toSummary(mapSupabasePropertyToProperty(row)));
+    return mapRowsToSummaries(rows.filter((row) => gate.isVisible(row.id)));
   } catch (error) {
     console.error("ERETZ getPropertiesByAgency failed", error instanceof Error ? error.message : "unknown error");
     return [];
@@ -626,7 +714,7 @@ export async function getPropertiesByAgent(name: string, limit = 48): Promise<Pr
        WHERE p.agente_nombre = $1
        ORDER BY __sort_value DESC
        LIMIT $2`, [name.trim(), Math.min(Math.max(1, limit), 96)]));
-    return rows.filter((row) => gate.isVisible(row.id)).map((row) => toSummary(mapSupabasePropertyToProperty(row)));
+    return mapRowsToSummaries(rows.filter((row) => gate.isVisible(row.id)));
   } catch (error) {
     console.error("ERETZ getPropertiesByAgent failed", error instanceof Error ? error.message : "unknown error");
     return [];
@@ -654,7 +742,7 @@ export async function getOtherPublications(property: Property, limit = 6): Promi
        WHERE ${clause}
        ORDER BY (CASE WHEN p.estado = 'activa' THEN 1 ELSE 0 END) DESC, p.id DESC
        LIMIT $${limitIdx}`, params as never[]));
-    return rows.filter((row) => gate.isVisible(row.id)).map((row) => toSummary(mapSupabasePropertyToProperty(row)));
+    return mapRowsToSummaries(rows.filter((row) => gate.isVisible(row.id)));
   } catch (error) {
     console.error("ERETZ getOtherPublications failed", error instanceof Error ? error.message : "unknown error");
     return [];
@@ -688,8 +776,8 @@ export async function getRelatedProperties(property: Property): Promise<Property
   return result.properties.filter((item) => item.id !== property.id).slice(0, 4);
 }
 
-function clusterMapProperties(valid: MapCandidate[], zoom: number): MapSearchResponse["points"] {
-  const marker = (property: MapCandidate) => ({
+function clusterMapProperties(valid: ClassifiedMapCandidate[], zoom: number): MapSearchResponse["points"] {
+  const marker = (property: ClassifiedMapCandidate) => ({
     kind: "property" as const,
     id: String(property.id),
     latitude: Number(property.latitud),
@@ -702,12 +790,13 @@ function clusterMapProperties(valid: MapCandidate[], zoom: number): MapSearchRes
       city: cleanText(property.ciudad) || null,
       province: cleanText(property.provincia) || null,
     }),
+    locationConfidence: property.locationConfidence,
   });
   if (zoom >= 12) {
     return valid.slice(0, 800).map(marker);
   }
   const cell = Math.max(0.008, (zoom <= 6 ? 128 : 48) / (2 ** zoom));
-  const groups = new Map<string, { latitude: number; longitude: number; count: number; first: MapCandidate }>();
+  const groups = new Map<string, { latitude: number; longitude: number; count: number; first: ClassifiedMapCandidate }>();
   for (const property of valid) {
     const latitude = Number(property.latitud);
     const longitude = Number(property.longitud);
@@ -758,8 +847,21 @@ async function searchMapUncached(filters: PropertyFilters, viewport: MapViewport
     scanCursor = { version: 1, sort: "recent", value: last.__sort_value, id: String(last.id) };
     if (batch === 1) truncated = true;
   }
+  const stats = await getPointStats(accepted);
+  const classified = accepted.map((property): ClassifiedMapCandidate => ({
+    ...property,
+    locationConfidence: assessLocationConfidence({
+      latitude: property.latitud,
+      longitude: property.longitud,
+      address: property.direccion,
+      neighborhood: property.barrio,
+      city: property.ciudad,
+      province: property.provincia,
+      pointStats: stats.get(coordinateKey(property.latitud, property.longitud)),
+    }).level as Exclude<LocationConfidence, "none">,
+  }));
   return {
-    points: clusterMapProperties(accepted, viewport.zoom),
+    points: clusterMapProperties(classified, viewport.zoom),
     visibleCount: accepted.length,
     scannedCount,
     truncated,

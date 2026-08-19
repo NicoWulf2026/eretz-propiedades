@@ -4,6 +4,7 @@ import L, { type LatLngBounds } from "leaflet";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MapContainer, Marker, Popup, useMap, useMapEvents } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
+import { locationConfidenceDescription, locationConfidenceLabel } from "@/lib/geo-confidence";
 import { mergeDetailedPagePoints } from "@/lib/map-points";
 import { propertyLocation } from "@/lib/property-presenter";
 import type { MapSearchResponse, MapViewport, PropertySummary } from "@/types/property";
@@ -83,9 +84,10 @@ function markerIcon(point: MapPoint, selected: boolean) {
   const price = point.price && point.currency
     ? `${point.currency === "USD" ? "US$" : point.currency} ${Intl.NumberFormat("es-AR", { notation: "compact", maximumFractionDigits: 1 }).format(point.price)}`
     : "Ver";
+  const confidence = locationConfidenceLabel(point.locationConfidence).toLocaleLowerCase("es-AR");
   return L.divIcon({
     className: "",
-    html: `<span class="eretz-price-marker is-location-approximate${selected ? " is-selected" : ""}" data-property-marker-id="${point.id}" aria-label="${price}; ubicación orientativa">${price}</span>`,
+    html: `<span class="eretz-price-marker is-location-${point.locationConfidence}${selected ? " is-selected" : ""}" data-property-marker-id="${point.id}" aria-label="${price}; ${confidence}">${price}</span>`,
     iconAnchor: [36, 18], popupAnchor: [0, -20],
   });
 }
@@ -167,8 +169,8 @@ export function PropertyLeafletMap({
   returnTo: string;
 }) {
   const initialPoints = useMemo<MapPoint[]>(() => properties
-    .filter((property): property is PropertySummary & { latitude: number; longitude: number } => property.latitude !== null && property.longitude !== null)
-    .map((property) => ({ kind: "property", id: property.id, latitude: property.latitude, longitude: property.longitude, price: property.price, currency: property.currency, title: property.title, location: propertyLocation(property) })), [properties]);
+    .filter((property): property is PropertySummary & { latitude: number; longitude: number; locationConfidence: "high" | "approximate" | "doubtful" } => property.latitude !== null && property.longitude !== null && property.locationConfidence !== "none")
+    .map((property) => ({ kind: "property", id: property.id, latitude: property.latitude, longitude: property.longitude, price: property.price, currency: property.currency, title: property.title, location: propertyLocation(property), locationConfidence: property.locationConfidence })), [properties]);
   const [points, setPoints] = useState(initialPoints);
   const [viewport, setViewport] = useState<MapViewport | null>(initialViewport);
   const [pending, setPending] = useState(false);
@@ -265,12 +267,12 @@ export function PropertyLeafletMap({
               else onSelect?.(point.id);
             } }}
           >
-            {point.kind === "property" ? <Popup><a href={`/propiedad/${point.id}?volver=${encodeURIComponent(returnTo)}`} className="map-popup"><strong>{point.price && point.currency ? `${point.currency} ${Intl.NumberFormat("es-AR").format(point.price)}` : "Precio a consultar"}</strong><span>{point.title}</span><small>{point.location}</small><small className="map-location-confidence">Ubicación orientativa informada por la publicación</small></a></Popup> : null}
+            {point.kind === "property" ? <Popup><a href={`/propiedad/${point.id}?volver=${encodeURIComponent(returnTo)}`} className="map-popup"><strong>{point.price && point.currency ? `${point.currency} ${Intl.NumberFormat("es-AR").format(point.price)}` : "Precio a consultar"}</strong><span>{point.title}</span><small>{point.location}</small><small className={`map-location-confidence is-${point.locationConfidence}`}><strong>{locationConfidenceLabel(point.locationConfidence)}.</strong> {locationConfidenceDescription(point.locationConfidence)}</small></a></Popup> : null}
           </Marker>
         ))}
       </MapContainer>
       <div className="map-top-controls">
-        {pending ? <button type="button" className="map-search-area" disabled={loading} onClick={searchArea}>{loading ? "Buscando…" : "Buscar en esta zona"}</button> : <span className="map-result-indicator" title="Los marcadores reproducen las coordenadas informadas por cada publicación y pueden ser aproximados.">{points.length.toLocaleString("es-AR")} puntos · ubicaciones orientativas</span>}
+        {pending ? <button type="button" className="map-search-area" disabled={loading} onClick={searchArea}>{loading ? "Buscando…" : "Buscar en esta zona"}</button> : <span className="map-result-indicator" title="ERETZ comunica la confianza disponible para cada coordenada; no presume precisión exacta.">{points.length.toLocaleString("es-AR")} puntos · precisión indicada</span>}
         <div className="map-icon-controls">
           <button type="button" aria-label="Volver a encuadrar resultados" title="Recentrar resultados" onClick={() => setResetRequest((value) => value + 1)}>◎</button>
           <button type="button" aria-label="Usar mi ubicación" title="Usar mi ubicación" onClick={() => setLocationPrompt(true)}>⌖</button>
