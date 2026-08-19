@@ -1,89 +1,78 @@
 @import "tailwindcss";
 
-/* ==========================================================================
-   ERETZ — ROOMIX FIDELITY V1
-   Base visual medida en roomix.ai en vivo (2026-08-12). Esta fase construye
-   deliberadamente una BASE ROOMIX FIEL sobre la que despues se construira la
-   identidad propia de ERETZ. Cuando la identidad ERETZ V1 y la referencia
-   entraban en conflicto, en esta fase gana la referencia.
-
-   Medido en el sitio vivo:
-     html            oklch(0.12 0 0)
-     body            linear-gradient(135deg, #171717 0%, #1a1a1c 100%)
-     texto           oklch(0.98 0 0) / #e5e7eb / #d1d5db / #9ca3af
-     bordes          oklch(0.269 0 0) paneles, oklch(0.371 0 0) controles,
-                     oklch(0.439 0 0) elevados, #9d4edd a.25 divisores
-     acento          #9d4edd focus, #c77dff claro, #a855f7 sombra
-     radios          14px dominante (496 usos), 16px (70), 24px overlay,
-                     10px segmentos, 8px pills chicas, 9999px pildoras
-     contenedor      1265 en 1280
-     grilla          3 x 400.3px, gap 32
-     card            400x275 imagen + 85 texto, SIN superficie ni borde
-     controles       28 / 31-32 / 35-36 / 44 / 50 / 58
-     tipografia      14/400/20 base, 14/600 enfasis, 18/600/24.75 titulo card,
-                     20/600/28 precio card, 24/700/32 precio ficha,
-                     30/700/36 h1 ficha, 36/700/40 h2, 72/700 hero
+/* ===========================================================================
+   ERETZ UX/UI V2 — FUNDAMENTOS
+   Paleta clara propia, shell navy y dorado usado únicamente como firma.
+   Esta es la fuente canónica de color, tipografía, espacio, elevación y motion.
    ========================================================================== */
 :root {
-  color-scheme: dark;
+  color-scheme: light;
+
+  /* --- Marca ------------------------------------------------------------ */
+  --navy-950: #071a2d;
+  --navy-900: #0b2440;
+  --navy-700: #174a75;
+  --blue-50: #eaf2f8;
+  --gold-500: #c59a42;
+  --gold-100: #f6eedc;
 
   /* --- Lienzo y superficies -------------------------------------------- */
-  --canvas: #171717;
-  --canvas-deep: #141414;
-  --canvas-tint: #1a1a1c;
-  --surface-1: #1f1f1f;
-  --surface-2: #252527;
-  --surface-3: #2e2e30;
-  --elevated: rgba(41, 41, 41, .95);
-  --overlay-veil: rgba(0, 0, 0, .5);
+  --canvas: #f5f7f9;
+  --canvas-deep: #eef2f5;
+  --canvas-tint: #f8fafb;
+  --surface-1: #ffffff;
+  --surface-2: #f8fafc;
+  --surface-3: #eef2f5;
+  --elevated: #ffffff;
+  --overlay-veil: rgba(7, 26, 45, .44);
 
   /* --- Texto ------------------------------------------------------------ */
-  --ink: #fafafa;
-  --ink-2: #e5e7eb;
-  --ink-3: #d1d5db;
-  --ink-4: #9ca3af;
-  --ink-inverse: #171717;
+  --ink: #101828;
+  --ink-2: #344054;
+  --ink-3: #596579;
+  --ink-4: #66758a;
+  --ink-inverse: #ffffff;
 
-  /* --- Bordes: la referencia usa grises neutros y un divisor violeta ---- */
-  --line: #333333;
-  --line-strong: #4d4d4d;
-  --line-raised: #5f5f5f;
-  --line-accent: rgba(157, 78, 221, .25);
+  /* --- Bordes ----------------------------------------------------------- */
+  --line: #dde3e8;
+  --line-strong: #c4cdd6;
+  --line-raised: #9eabb8;
+  --line-accent: rgba(23, 74, 117, .22);
 
-  /* --- Acento violeta --------------------------------------------------- */
-  --accent: #9d4edd;
-  --accent-strong: #7b2cbf;
-  --accent-soft: #c77dff;
-  --accent-hover: #a855f7;
-  --accent-surface: rgba(157, 78, 221, .16);
-  --accent-ring: rgba(157, 78, 221, .25);
+  /* --- Interacción: navy; el dorado no sustituye al foco accesible ------ */
+  --accent: var(--navy-700);
+  --accent-strong: var(--navy-900);
+  --accent-soft: #315f88;
+  --accent-hover: #123e65;
+  --accent-surface: rgba(23, 74, 117, .10);
+  --accent-ring: rgba(23, 74, 117, .24);
 
   /* --- Estados semanticos ----------------------------------------------- */
-  --ok: #34d399;      --ok-tint: rgba(52, 211, 153, .14);
-  --warn: #fbbf24;    --warn-tint: rgba(251, 191, 36, .14);
-  --bad: #f87171;     --bad-tint: rgba(248, 113, 113, .14);
-  --info: #c77dff;    --info-tint: rgba(157, 78, 221, .16);
+  --ok: #19734b;      --ok-tint: rgba(25, 115, 75, .10);
+  --warn: #946200;    --warn-tint: rgba(148, 98, 0, .10);
+  --bad: #b42318;     --bad-tint: rgba(180, 35, 24, .09);
+  --info: var(--navy-700); --info-tint: var(--accent-surface);
 
   /* --- Mapa ------------------------------------------------------------- */
-  --marker-bg: #9d4edd;
+  --marker-bg: var(--navy-700);
   --marker-ink: #ffffff;
   --marker-line: rgba(255, 255, 255, .92);
-  --marker-selected-bg: #c77dff;
-  --cluster-bg: #7b2cbf;
+  --marker-selected-bg: var(--navy-950);
+  --cluster-bg: var(--navy-900);
 
-  /* --- Elevacion: la referencia casi no proyecta sombra ----------------- */
-  --shadow-xs: 0 0 1px 0 rgba(220, 220, 240, .08) inset;
-  --shadow-sm: 0 2px 4px 0 rgba(0, 0, 0, .3);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, .35);
-  --shadow-lg: 0 8px 32px -8px rgba(168, 85, 247, .2);
-  --shadow-xl: 0 24px 64px rgba(0, 0, 0, .55);
+  /* --- Elevación neutra y discreta -------------------------------------- */
+  --shadow-xs: 0 1px 2px rgba(7, 26, 45, .05);
+  --shadow-sm: 0 2px 6px rgba(7, 26, 45, .08);
+  --shadow-md: 0 8px 20px rgba(7, 26, 45, .10);
+  --shadow-lg: 0 16px 36px rgba(7, 26, 45, .14);
+  --shadow-xl: 0 24px 56px rgba(7, 26, 45, .18);
 
-  /* --- Radios medidos en la referencia ---------------------------------- */
+  /* --- Radios V2: controles 8, cards 12, paneles 16 --------------------- */
   --radius-xs: 8px;
-  --radius-sm: 10px;
-  --radius-md: 14px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
   --radius-lg: 16px;
-  --radius-xl: 24px;
+  --radius-xl: 16px;
   --radius-pill: 9999px;
 
   /* --- Espaciado -------------------------------------------------------- */
@@ -91,7 +80,7 @@
   --space-4: 1rem;    --space-5: 1.5rem;  --space-6: 2rem;
   --space-7: 2.5rem;  --space-8: 3rem;    --space-9: 4rem;
 
-  /* --- Tipografia: la referencia usa la pila del sistema ---------------- */
+  /* --- Tipografía: una sola sans legible y sin costo adicional ---------- */
   --font-ui: var(--font-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-brand: var(--font-ui);
   --text-xs: .75rem;   --text-sm: .8125rem; --text-base: .875rem;
@@ -105,9 +94,9 @@
   --ease-out: cubic-bezier(.22, .61, .36, 1);
   --ease-in-out: cubic-bezier(.4, 0, .2, 1);
 
-  /* --- Foco: anillo violeta, como la referencia ------------------------- */
-  --focus-ring: 0 0 0 1px var(--accent-ring), 0 0 0 3px rgba(157, 78, 221, .35);
-  --focus-ring-offset: 0 0 0 2px var(--canvas), 0 0 0 5px rgba(157, 78, 221, .38);
+  /* --- Foco visible en superficies claras y navy ------------------------ */
+  --focus-ring: 0 0 0 1px var(--surface-1), 0 0 0 4px rgba(23, 74, 117, .35);
+  --focus-ring-offset: 0 0 0 2px var(--surface-1), 0 0 0 5px rgba(23, 74, 117, .40);
 
   /* --- Metricas y capas ------------------------------------------------- */
   --control: 2.75rem;
@@ -152,10 +141,10 @@ p { margin: 0; }
 /* Números tabulares: precios y métricas alineados y comparables. */
 .tabular, .property-card .price, .price { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }
 
-/* Marca ERETZ: serif de display sólo para el wordmark y titulares de portada. */
+/* Marca ERETZ: la misma sans de UI, con peso y tracking propios. */
 .brand-word, .display-serif {
   font-family: var(--font-brand);
-  font-weight: 400;
+  font-weight: 700;
   letter-spacing: -.01em;
 }
 
@@ -177,14 +166,15 @@ p { margin: 0; }
 
 .container { width: min(100% - 2.5rem, 1480px); margin-inline: auto; }
 
-/* --- Header global: superficie de documento, hairline inferior, sticky --- */
+/* --- App Shell V2: header navy, navegación reducida y menús reales ------- */
 .site-header {
   position: sticky; top: 0; z-index: var(--z-nav);
-  background: rgba(248, 250, 252, .78);
-  border-bottom: 1px solid var(--line);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, .6) inset, 0 4px 20px rgba(11, 39, 72, .04);
+  background: var(--navy-950);
+  border-bottom: 1px solid rgba(255, 255, 255, .12);
+  box-shadow: none;
 }
 .site-header-inner { display: flex; align-items: center; justify-content: space-between; gap: var(--space-5); min-height: var(--nav-height); }
+.site-header-left { display: flex; min-width: 0; align-items: center; gap: var(--space-6); }
 
 .brand { display: inline-flex; align-items: center; gap: .7rem; text-decoration: none; border-radius: var(--radius-sm); }
 .brand-mark {
@@ -193,7 +183,7 @@ p { margin: 0; }
   font-size: .95rem; font-weight: 700; letter-spacing: .02em;
   box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255, 255, 255, .18);
 }
-.brand-mark.is-dark { background: #fff; color: var(--ink); }
+.brand-mark.is-dark { border-color: rgba(197, 154, 66, .7); background: rgba(255, 255, 255, .08); color: #fff; }
 .brand-mark-accent { position: absolute; right: -3px; bottom: -3px; width: 9px; height: 9px; rotate: 45deg; background: var(--accent); border-radius: 1px; }
 .brand-text { display: grid; color: var(--ink); }
 .brand-text.is-dark { color: #fff; }
@@ -202,30 +192,47 @@ p { margin: 0; }
    identidad ya fija el color y el peso definitivos). */
 .brand-sub { margin-top: .12rem; text-transform: uppercase; }
 
-.site-nav { display: none; align-items: center; gap: .15rem; }
+.site-nav { display: none; align-items: center; gap: .2rem; }
 @media (min-width: 1024px) { .site-nav { display: flex; } }
 .nav-link {
   position: relative; border-radius: var(--radius-sm); padding: .5rem .75rem;
-  font-size: var(--text-base); font-weight: 500; color: var(--ink-2); text-decoration: none;
+  border: 0; background: transparent; font-size: var(--text-base); font-weight: 600; color: rgba(255, 255, 255, .78); text-decoration: none;
   transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
 }
-.nav-link:hover { background: rgba(11, 39, 72, .06); color: var(--ink); }
-.nav-link.is-active { color: var(--ink); font-weight: 600; }
+.nav-link:hover { background: rgba(255, 255, 255, .08); color: #fff; }
+.nav-link.is-active { color: #fff; font-weight: 700; }
 .nav-link.is-active::after {
   content: ""; position: absolute; left: .75rem; right: .75rem; bottom: .18rem;
-  height: 2px; border-radius: 2px; background: var(--accent);
+  height: 2px; border-radius: 2px; background: var(--gold-500);
 }
-.nav-link.is-personal { color: var(--ink-3); }
-.nav-divider { width: 1px; height: 22px; margin: 0 .5rem; background: var(--line); }
+.nav-menu { position: relative; }
+.nav-menu-trigger { display: inline-flex; align-items: center; gap: .35rem; cursor: pointer; }
+.nav-menu-trigger > span { color: var(--gold-500); font-size: .85rem; transition: rotate var(--motion-fast) var(--ease-out); }
+.nav-menu-trigger[aria-expanded="true"] > span { rotate: 180deg; }
+.nav-dropdown {
+  position: absolute; z-index: var(--z-dropdown); top: calc(100% + .55rem); right: 0;
+  display: grid; min-width: 210px; gap: .2rem; border: 1px solid var(--line);
+  border-radius: var(--radius-md); background: var(--surface-1); padding: .4rem;
+  box-shadow: var(--shadow-lg); color: var(--ink);
+}
+.site-nav-primary .nav-dropdown { right: auto; left: 0; }
+.nav-dropdown a { border-radius: var(--radius-sm); padding: .7rem .75rem; color: var(--ink-2); font-size: var(--text-base); font-weight: 600; text-decoration: none; }
+.nav-dropdown a:hover, .nav-dropdown a.is-active { background: var(--blue-50); color: var(--navy-900); }
+.site-header a:focus-visible, .site-header button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(197, 154, 66, .34);
+}
 .nav-toggle {
   display: grid; place-items: center; width: 44px; height: 44px;
-  border: 1px solid var(--line); border-radius: var(--radius-sm);
-  background: var(--surface-1); color: var(--ink); font-size: 1.2rem;
+  border: 1px solid rgba(255, 255, 255, .22); border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, .08); color: #fff; font-size: 1.2rem;
 }
 @media (min-width: 1024px) { .nav-toggle { display: none; } }
-.nav-mobile { border-top: 1px solid var(--line); background: var(--surface-1); }
+.nav-mobile { border-top: 1px solid rgba(255, 255, 255, .12); background: var(--navy-950); }
 .nav-mobile-inner { display: flex; flex-direction: column; padding: .5rem 0 .75rem; }
 .nav-mobile .nav-link { padding: .75rem .5rem; font-size: var(--text-md); }
+.nav-mobile-group { margin: .75rem .5rem .2rem; color: var(--gold-500); font-size: var(--text-xs); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
 .hero {
   position: relative;
   overflow: hidden;
@@ -408,9 +415,7 @@ p { margin: 0; }
 .pill { display: inline-flex; align-items: center; border-radius: var(--radius-pill); background: var(--accent-strong); padding: .32rem .75rem; color: #fff; font-size: var(--text-xs); font-weight: 600; letter-spacing: .01em; box-shadow: var(--shadow-sm); }
 .pill-light { background: var(--accent-surface); color: var(--accent); box-shadow: none; }
 .pill-pick { background: var(--accent-surface); color: var(--accent-soft); box-shadow: none; }
-/* Las paginas legales/contacto quedaron con el gris de la fase clara: #475569
-   sobre el lienzo oscuro da 2.2:1, y sus enlaces en el violeta de relleno
-   daban 1.65:1. Ninguna estaba cubierta por las corridas de axe. */
+/* Copia legal sobre superficie clara con color semántico compartido. */
 .legal-copy { color: var(--ink-3); font-size: 1rem; line-height: 1.8; }
 .legal-copy h2 { margin-top: 2rem; color: var(--ink); font-size: 1.35rem; line-height: 1.3; font-weight: 700; }
 .legal-copy p { margin-top: .75rem; }
@@ -465,20 +470,20 @@ p { margin: 0; }
 .alert-warning { border-color: #efd498; background: #fff9eb; color: #6d490d; }
 
 /* Map-first explorer */
-.explorer-page { min-height: calc(100svh - var(--nav-height)); background: var(--canvas); }
+.explorer-page { min-height: calc(100dvh - var(--nav-height)); background: var(--canvas); }
 /* --- Barra de exploracion: banda de lienzo sobre el mapa, compacta ------- */
 /* El blur va en un pseudo-elemento: aplicar backdrop-filter al contenedor crea
    un containing block y rompería el `position: fixed` del drawer de filtros. */
 .explorer-toolbar {
   position: relative; z-index: 1200;
   border-bottom: 1px solid var(--line);
-  box-shadow: 0 4px 22px rgba(11, 39, 72, .05);
+  box-shadow: 0 1px 0 rgba(7, 26, 45, .03);
 }
 .explorer-toolbar::before {
   content: ""; position: absolute; z-index: -1; inset: 0;
-  background: rgba(250, 251, 253, .86);
+  background: var(--surface-1);
 }
-.explorer-toolbar > .container { padding-block: .8rem .7rem; display: grid; gap: .6rem; }
+.explorer-toolbar > .container { padding-block: .65rem .6rem; display: grid; gap: .5rem; }
 .explorer-heading-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .explorer-heading-row h1 { color: var(--ink); font-size: 1.35rem; line-height: 1.15; font-weight: 700; letter-spacing: -.03em; }
 .explorer-heading-row .eyebrow { margin-bottom: .1rem; }
@@ -511,7 +516,7 @@ p { margin: 0; }
 
 /* --- Barra de contexto: conteos a la izquierda, meta a la derecha --------- */
 .context-bar { border-bottom: 1px solid var(--line); background: var(--surface-1); }
-.context-bar-inner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .6rem 1.2rem; padding-block: .7rem; }
+.context-bar-inner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .55rem 1rem; padding: .75rem 1rem; }
 .context-bar-counts { display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem .8rem; }
 .context-bar-total { font-size: var(--text-xs); color: var(--ink-3); order: 3; }
 .context-bar-result { font-size: var(--text-md); font-weight: 700; color: var(--ink); letter-spacing: -.02em; font-variant-numeric: tabular-nums; order: 1; }
@@ -603,7 +608,7 @@ p { margin: 0; }
   background: var(--surface-1);  padding: 1rem 1.4rem;
 }
 .filter-toggle-icon { font-size: 1.05rem; line-height: 1; color: var(--ink-3); }
-.explorer-workspace { display: grid; grid-template-columns: minmax(0,1.25fr) minmax(360px,.75fr); height: max(690px, calc(100svh - 176px)); min-height: 690px; }
+.explorer-workspace { display: grid; grid-template-columns: minmax(0,1.65fr) minmax(420px,1fr); min-height: 640px; }
 .explorer-workspace.mode-map { grid-template-columns: minmax(0,1.7fr) minmax(330px,.55fr); }
 .explorer-workspace.mode-results { grid-template-columns: minmax(380px,.75fr) minmax(0,1.25fr); }
 .explorer-workspace.mode-map_only { grid-template-columns: 1fr; }
@@ -617,10 +622,10 @@ p { margin: 0; }
 .explorer-workspace.mode-analysis .explorer-results-pane { order: 1; }
 .explorer-workspace.mode-analysis .explorer-map-pane { order: 2; border-left: 1px solid var(--line); border-right: 0; }
 .explorer-filter-form.is-pinned .explorer-primary-search.is-stacked { display: grid; gap: .5rem; margin-bottom: .75rem; }
-.explorer-map-pane { min-width: 0; border-right: 1px solid var(--line); background: #e8edf2; }
+.explorer-map-pane { min-width: 0; border-right: 1px solid var(--line); background: var(--canvas-deep); }
 .property-map-shell, .interactive-map { position: relative; height: 100%; min-height: 480px; }
 .interactive-map.is-fullscreen { position: fixed; z-index: 2000; inset: 0; height: 100svh; min-height: 100svh; background: white; }
-.explorer-results-pane { overflow-y: auto; min-width: 0; padding: 1rem; overscroll-behavior: contain; }
+.explorer-results-pane { overflow-y: auto; min-width: 0; padding: 0 1rem 1rem; background: var(--canvas); overscroll-behavior: contain; scrollbar-gutter: stable; }
 .results-summary { position: sticky; z-index: 10; top: -1rem; display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin: -1rem -1rem 1rem; border-bottom: 1px solid var(--line); background: rgba(246,248,251,.96); padding: .85rem 1rem; }
 .results-summary p { color: var(--ink-3); font-size: .82rem; }
 .results-summary strong { color: var(--ink); }
@@ -630,6 +635,18 @@ p { margin: 0; }
 .mode-results .explorer-card-list, .mode-results_only .explorer-card-list { grid-template-columns: repeat(3,minmax(0,1fr)); }
 /* Densidad: tarjetas completas usan una columna menos para dar aire al contenido extra. */
 .explorer-card-list.density-full { grid-template-columns: 1fr; }
+
+@media (min-width: 768px) {
+  .explorer-page {
+    display: flex;
+    height: calc(100dvh - var(--nav-height));
+    min-height: 680px;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .explorer-toolbar { flex: 0 0 auto; }
+  .explorer-workspace { flex: 1 1 auto; height: auto; min-height: 0; }
+}
 .mode-results .explorer-card-list.density-full, .mode-results_only .explorer-card-list.density-full { grid-template-columns: repeat(2,minmax(0,1fr)); }
 .density-toggle { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; margin-bottom: .85rem; font-size: var(--text-sm); }
 .density-toggle .density-label { font-weight: 500; color: var(--ink-3); margin-right: .25rem; }
@@ -935,35 +952,25 @@ footer nav a {
 .detail-disclaimer strong { color: var(--ink); font-weight: 700; }
 
 /* ============================================================
-   ROOMIX-DERIVED FOUNDATIONS (U2)
-   Valores tomados de la medicion real de roomix.ai (ver
-   ROOMIX_VISUAL_AUDIT_V1.md). Se adopta su disciplina espacial y su
-   escala de control; la paleta sigue siendo la de ERETZ.
-   Esta capa fijo la disciplina espacial que ERETZ conserva:
-   sombras profundas, refraccion y superficies de vidrio quedan neutralizadas
-   donde contradicen la referencia.
+   ERETZ V2 — MÉTRICAS DE LAYOUT
+   La escala espacial previa se consolida aquí para el shell map-first.
    ============================================================ */
 
 :root {
-  /* Contenedor: casi ancho completo con margen chico (medido 1265 en 1280). */
-  --container-max: 1280px;
-  --container-gutter: .5rem;   /* medido: 1265 utiles en 1280 */
+  --container-max: 1600px;
+  --container-gutter: 1.25rem;
 
   /* Modulo de control: 36px en resultados, 44px en hero/CTA. */
   --control-h: 2.25rem;
   --control-h-lg: 2.75rem;
   --card-action: 2.25rem;
 
-  /* Los radios NO se heredan de la referencia: son identidad, no arquitectura
-     espacial. ERETZ usa la escala documental definida en la raiz (4/6/8/10/14),
-     mas cerrada que los 16px dominantes de la referencia. */
-
-  /* Grilla de resultados: 3 columnas, gap 32. */
-  --grid-gap: 2rem;
+  /* Grilla preservada; el rail define la densidad según su ancho real. */
+  --grid-gap: 1rem;
   --card-w: 400px;
 
 
-  /* Escala tipografica de la referencia. */
+  /* Escala funcional V2: body 16, UI compacta 14, metadata 13. */
   --text-xs: .75rem;
   --text-sm: .8125rem;
   --text-base: .875rem;
@@ -973,7 +980,7 @@ footer nav a {
   --text-xl: 1.5rem;
   --text-h2: 2.25rem;
 
-  /* Offsets sticky: header y barra de busqueda son dos capas. */
+  /* Offsets sticky del app shell. */
   --header-h: 4rem;
   --searchbar-h: 4.5rem;
 }
@@ -1045,12 +1052,12 @@ footer nav a {
   .explorer-card-list { grid-template-columns: 1fr; gap: 1rem; }
 }
 
-/* Split 60/40 exacto, como la referencia (lista 768 / mapa 512 en 1280). */
-.explorer-workspace { grid-template-columns: minmax(0, 60fr) minmax(340px, 40fr); }
+/* Workspace V2: mapa protagonista y rail entre 420 y 580px cuando hay espacio. */
+.explorer-workspace { grid-template-columns: minmax(0, 1fr) clamp(420px, 38vw, 580px); }
 
 /* Barra de resultados: acciones a la izquierda en fila de 44-46,
    toggles de vista apilados al extremo derecho. */
-.context-bar { border-radius: var(--radius-md); box-shadow: none; }
+.context-bar { border-radius: 0; box-shadow: none; }
 .explorer-toolbar { box-shadow: none; border-block-end: 1px solid var(--line); }
 .explorer-toolbar::before { background: #fff; }
 .site-header { box-shadow: none; border-block-end: 1px solid var(--line); }
@@ -1158,22 +1165,19 @@ footer nav a {
 .property-card-media [class*="no-disponible"] { block-size: 100%; }
 
 
-/* ==========================================================================
-   ROOMIX FIDELITY V1 — CAPA DE SUPERFICIE
-   Reemplaza a las tres capas de ERETZ Identity V1 (caracter, firmas y cierre
-   de utilidades). Las ideas de Identity V1 quedan en el historial de git y en
-   docs/ERETZ_IDENTITY_V1.md; no son la prioridad de esta fase.
+/* ===========================================================================
+   ERETZ UX/UI V2 — CAPA DE SUPERFICIE CANÓNICA
+   Consolida la anterior base oscura en superficies claras y shell navy.
    ========================================================================== */
 
-/* --- Lienzo: gradiente sutil medido en la referencia -------------------- */
-html { background: var(--canvas-deep); }
+/* --- Lienzo claro, sin gradientes ni fondos decorativos ----------------- */
+html { background: var(--canvas); }
 body {
   background: var(--canvas);
-  background-image: linear-gradient(135deg, var(--canvas) 0%, var(--canvas-tint) 100%);
-  background-attachment: fixed;
+  background-image: none;
   color: var(--ink);
   font-size: var(--text-base);
-  line-height: 1.43;
+  line-height: 1.5;
 }
 ::selection { background: var(--accent-surface); color: var(--ink); }
 
@@ -1182,42 +1186,43 @@ h1 { font-size: var(--text-3xl); line-height: 1.2; font-weight: 700; }
 h2 { font-size: var(--text-2xl); line-height: 1.25; font-weight: 700; }
 h3 { font-size: var(--text-lg); line-height: 1.375; font-weight: 600; }
 
-/* --- Marca: monograma y wordmark sobre oscuro --------------------------- */
+/* --- Marca: wordmark sobrio con firma dorada controlada ----------------- */
 .brand { display: inline-flex; align-items: center; gap: .6rem; text-decoration: none; }
 .brand-mark {
   display: grid;
   place-items: center;
   inline-size: 2.15rem;
   block-size: 2.15rem;
-  border: 1px solid var(--accent-strong);
-  border-radius: var(--radius-md);
-  background: var(--accent-strong);
+  border: 1px solid var(--navy-700);
+  border-radius: var(--radius-sm);
+  background: var(--navy-900);
   color: #fff;
   font-size: 1.05rem;
   font-weight: 700;
   line-height: 1;
 }
-.brand-mark.is-dark { border-color: rgba(255, 255, 255, .5); background: transparent; }
+.brand-mark.is-dark { border-color: rgba(197, 154, 66, .72); background: rgba(255, 255, 255, .08); }
 .brand-text { display: grid; gap: .1rem; line-height: 1; }
 .brand-word { font-family: var(--font-ui); font-size: 1.5rem; font-weight: 700; letter-spacing: -.01em; color: var(--ink); }
 .brand-sub { font-size: .5625rem; font-weight: 600; letter-spacing: .2em; text-transform: uppercase; color: var(--ink-4); }
-.brand-text.is-dark .brand-word { color: var(--ink); }
-.brand-text.is-dark .brand-sub { color: var(--ink-4); }
+.brand-text.is-dark .brand-word { color: #fff; }
+.brand-text.is-dark .brand-sub { color: #d9e2ec; }
 
-/* --- Shell: dos capas fijas, como la referencia ------------------------- */
+/* --- Shell V2 ----------------------------------------------------------- */
 .site-header {
-  background: var(--canvas);
-  border-block-end: 1px solid var(--line);
+  background: var(--navy-950);
+  border-block-end: 1px solid rgba(255, 255, 255, .12);
   box-shadow: none;
   padding-block-start: 0;
 }
-.nav-link { color: var(--ink-2); font-weight: 500; border-radius: var(--radius-md); }
-.nav-link:hover { color: var(--ink); background: rgba(255, 255, 255, .06); }
-.nav-link.is-active { color: var(--ink); font-weight: 600; }
+.nav-link { color: rgba(255, 255, 255, .78); font-weight: 600; border-radius: var(--radius-sm); }
+.nav-link:hover { color: #fff; background: rgba(255, 255, 255, .08); }
+.nav-link.is-active { color: #fff; font-weight: 700; }
 
-.explorer-toolbar { background: var(--canvas); border-block-end: 1px solid var(--line); }
-.explorer-toolbar::before { background: var(--canvas); }
-.explorer-page, .explorer-results-pane { background: transparent; }
+.explorer-toolbar { background: var(--surface-1); border-block-end: 1px solid var(--line); }
+.explorer-toolbar::before { background: var(--surface-1); }
+.explorer-page { background: var(--canvas); }
+.explorer-results-pane { background: var(--canvas); }
 .explorer-results-pane::before { background: transparent; }
 .explorer-map-pane { background: var(--canvas-deep); border-color: var(--line); }
 
@@ -1226,9 +1231,9 @@ h3 { font-size: var(--text-lg); line-height: 1.375; font-weight: 600; }
 .explorer-primary-search select,
 .nl-search input,
 .field input, .field select, .field textarea {
-  background: rgba(255, 255, 255, .06);
+  background: var(--surface-1);
   border: 1px solid var(--line-strong);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   color: var(--ink);
 }
 .explorer-primary-search input::placeholder,
@@ -1249,35 +1254,35 @@ h3 { font-size: var(--text-lg); line-height: 1.375; font-weight: 600; }
   color: var(--ink);
 }
 .search-suggestions button:hover,
-.search-suggestions li:hover { background: rgba(255, 255, 255, .08); }
+.search-suggestions li:hover { background: var(--blue-50); }
 .search-suggestions [aria-selected="true"], .search-suggestions .is-active {
   background: var(--accent-surface);
   color: var(--ink);
 }
 
-/* --- Controles: radio 14 dominante, pildora para la accion primaria ----- */
+/* --- Controles V2 ------------------------------------------------------- */
 .primary-button {
-  background: var(--accent-strong);
-  border: 1px solid var(--accent-strong);
-  border-radius: var(--radius-pill);
+  background: var(--navy-900);
+  border: 1px solid var(--navy-900);
+  border-radius: var(--radius-sm);
   color: #fff;
   font-weight: 600;
   box-shadow: none;
 }
-.primary-button:hover { background: var(--accent); border-color: var(--accent); }
+.primary-button:hover { background: var(--navy-700); border-color: var(--navy-700); }
 .primary-button:active { background: var(--accent-strong); }
 .secondary-button, .icon-button, .card-action-button, .filter-toggle {
-  background: rgba(255, 255, 255, .06);
-  border: 1px solid rgba(255, 255, 255, .2);
-  border-radius: var(--radius-md);
+  background: var(--surface-1);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
   color: var(--ink);
   font-weight: 500;
   box-shadow: none;
 }
 .secondary-button:hover, .icon-button:hover,
 .card-action-button:hover, .filter-toggle:hover {
-  background: rgba(255, 255, 255, .12);
-  border-color: var(--line-raised);
+  background: var(--blue-50);
+  border-color: var(--navy-700);
 }
 .icon-button { border-radius: var(--radius-pill); }
 .focus-ring:focus-visible, button:focus-visible, a:focus-visible,
@@ -1286,16 +1291,16 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   outline-offset: 2px;
 }
 
-/* Selector de modos: segmento de radio 10 con botones de radio 8. */
+/* Selector de modos preservado, visualmente subordinado. */
 .view-mode-tabs {
-  background: rgba(255, 255, 255, .06);
+  background: var(--surface-2);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
 }
 .view-mode-tabs button { color: var(--ink-3); border-radius: var(--radius-xs); font-weight: 500; }
-.view-mode-tabs button:hover { color: var(--ink); background: rgba(255, 255, 255, .08); }
+.view-mode-tabs button:hover { color: var(--ink); background: var(--blue-50); }
 .view-mode-tabs button.is-active {
-  background: var(--accent-strong);
+  background: var(--navy-900);
   color: #fff;
   font-weight: 600;
   box-shadow: none;
@@ -1303,14 +1308,14 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 
 /* --- Chips, pills y badges --------------------------------------------- */
 .chip, .pill, .badge, .pill-light, .pill-pick {
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-pill);
   border: 1px solid var(--line-strong);
-  background: rgba(255, 255, 255, .06);
+  background: var(--surface-1);
   color: var(--ink-2);
   font-size: var(--text-sm);
   font-weight: 500;
 }
-.chip:hover { background: rgba(255, 255, 255, .12); border-color: var(--line-raised); }
+.chip:hover { background: var(--blue-50); border-color: var(--navy-700); }
 .pill-light { background: var(--accent-surface); border-color: var(--accent-ring); color: var(--accent-soft); }
 .pill-pick { background: var(--accent-surface); border-color: var(--accent-ring); color: var(--accent-soft); }
 .filter-group-count {
@@ -1320,26 +1325,24 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 
-/* --- Tarjeta de propiedad ----------------------------------------------
-   La referencia NO usa superficie de tarjeta: fondo transparente, sin borde y
-   sin sombra. Solo la imagen lleva radio 16. El texto se apoya directamente
-   sobre el lienzo. Es la diferencia mas visible con la fase anterior. */
+/* --- Tarjeta existente adaptada al rail V2; su rediseño semántico se difiere. */
 .property-card {
-  background: transparent;
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-xs);
   color: var(--ink);
   padding: 0;
-}
-.property-card:hover { border: 0; box-shadow: none; background: transparent; }
-.property-card-media {
-  border-radius: var(--radius-lg);
   overflow: hidden;
-  background: var(--surface-1);
+}
+.property-card:hover { border-color: var(--line-strong); box-shadow: var(--shadow-sm); background: var(--surface-1); }
+.property-card-media {
+  border-radius: 0;
+  overflow: hidden;
+  background: var(--surface-3);
 }
 .property-card:hover .property-card-media { opacity: .92; }
-.property-card-body { padding-inline: 0; padding-block-start: .6rem; }
+.property-card-body { padding: .75rem .8rem .85rem; }
 
 .card-title { font-size: 1.125rem; font-weight: 600; line-height: 1.375; color: var(--ink); }
 .card-price, .price { font-size: 1.25rem; font-weight: 600; line-height: 1.4; color: var(--ink); }
@@ -1351,12 +1354,13 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   padding-block-start: 0;
   margin-block-start: .1rem;
 }
-.page-subtitle, small { color: var(--ink-4); }
-.eyebrow { color: var(--accent-soft); font-weight: 600; letter-spacing: .1em; text-transform: uppercase; font-size: var(--text-xs); }
+.page-subtitle, small { color: var(--ink-3); }
+.eyebrow { color: var(--navy-700); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; font-size: var(--text-xs); }
 
-/* Estados de tarjeta: la referencia los resuelve con el mismo violeta. */
-.property-card.is-selected .property-card-media { box-shadow: 0 0 0 2px var(--accent); }
-.property-card.is-compared .property-card-media { box-shadow: 0 0 0 2px var(--accent-soft); }
+/* Selección: navy + firma dorada, nunca dorado como única señal. */
+.property-card.is-selected { border-color: var(--navy-700); box-shadow: 0 0 0 2px var(--navy-700), 0 0 0 4px var(--gold-100); }
+.property-card.is-selected .property-card-media { box-shadow: inset 0 -3px 0 var(--gold-500); }
+.property-card.is-compared .property-card-media { box-shadow: inset 0 -3px 0 var(--navy-700); }
 .property-card.is-visited .property-card-media { opacity: .6; }
 .card-visited-badge {
   z-index: 2;
@@ -1371,18 +1375,18 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 
 /* --- Superficies de contenido ------------------------------------------ */
 .entity-card, .detail-panel, .state-panel, .context-bar, .surface, .surface-raised {
-  background: rgba(255, 255, 255, .04);
+  background: var(--surface-1);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   box-shadow: none;
   color: var(--ink);
 }
-.entity-card:hover { border-color: var(--accent-ring); background: rgba(255, 255, 255, .07); }
+.entity-card:hover { border-color: var(--line-strong); background: var(--surface-1); }
 .entity-card .entity-monogram, .entity-card [class*="monogram"] {
   background: var(--accent-surface);
   border: 1px solid var(--accent-ring);
   border-radius: var(--radius-md);
-  color: var(--accent-soft);
+  color: var(--navy-700);
   font-weight: 700;
 }
 .entity-card .entity-count { color: var(--ink-4); font-variant-numeric: tabular-nums; }
@@ -1410,8 +1414,9 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 .eretz-price-marker.is-selected {
   background: var(--marker-selected-bg);
   border-color: #fff;
-  color: var(--ink-inverse);
+  color: #fff;
   scale: 1.1;
+  box-shadow: 0 0 0 3px var(--gold-500), var(--shadow-md);
 }
 .eretz-map-cluster {
   display: grid;
@@ -1427,11 +1432,11 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   font-variant-numeric: tabular-nums;
   box-shadow: var(--shadow-md);
 }
-.eretz-map-cluster:hover { background: var(--accent); }
+.eretz-map-cluster:hover { background: var(--navy-700); }
 .leaflet-bar a, .leaflet-control-zoom a {
   background: var(--elevated); color: var(--ink); border-color: var(--line-strong);
 }
-.leaflet-bar a:hover, .leaflet-control-zoom a:hover { background: var(--surface-3); }
+.leaflet-bar a:hover, .leaflet-control-zoom a:hover { background: var(--blue-50); }
 .map-search-area {
   background: var(--accent-strong);
   border: 0;
@@ -1440,25 +1445,22 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   font-weight: 600;
   box-shadow: var(--shadow-lg);
 }
-.map-search-area:hover { background: var(--accent); }
+.map-search-area:hover { background: var(--navy-700); }
 .map-result-indicator, .context-bar-viewport-badge, .map-icon-controls button {
   background: var(--elevated);
   color: var(--ink);
-  border: 1px solid rgba(255, 255, 255, .2);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
   box-shadow: var(--shadow-sm);
 }
 .map-progressive-placeholder { background: var(--canvas-deep); color: var(--ink-3); }
-/* Los pseudo-elementos de la capa base pintaban una trama azul clara y un
-   resplandor radial blanco: sobre el lienzo oscuro quedaba una mancha que
-   encandilaba. La trama pasa al violeta del sistema y el resplandor se apaga. */
 .map-progressive-placeholder::before {
   background:
-    linear-gradient(30deg, transparent 47%, rgba(157, 78, 221, .10) 48% 51%, transparent 52%),
-    linear-gradient(120deg, transparent 46%, rgba(255, 255, 255, .05) 47% 50%, transparent 51%);
+    linear-gradient(30deg, transparent 47%, rgba(23, 74, 117, .08) 48% 51%, transparent 52%),
+    linear-gradient(120deg, transparent 46%, rgba(7, 26, 45, .05) 47% 50%, transparent 51%);
 }
 .map-progressive-placeholder::after {
-  background: radial-gradient(circle at 50% 48%, rgba(157, 78, 221, .12), transparent 62%);
+  background: radial-gradient(circle at 50% 48%, rgba(255, 255, 255, .9), transparent 62%);
 }
 .map-progressive-placeholder strong { color: var(--ink); }
 .map-popup { color: var(--ink); }
@@ -1467,24 +1469,24 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 /* --- Capas flotantes: overlay al 50% de negro, panel de radio 24 -------- */
 .filter-panel { color: var(--ink); }
 .filter-panel-header, .filter-panel-actions { background: transparent; color: var(--ink); }
-.filter-panel-header { border-block-end: 1px solid var(--line-accent); }
+.filter-panel-header { border-block-end: 1px solid var(--line); }
 .filter-backdrop { background: var(--overlay-veil); }
 
 .filter-nav-item { color: var(--ink); border-radius: var(--radius-md); }
-.filter-nav-item:hover { background: rgba(255, 255, 255, .06); }
+.filter-nav-item:hover { background: var(--blue-50); }
 .filter-nav-item.is-active {
-  background: rgba(255, 255, 255, .06);
-  border-color: var(--line-strong);
+  background: var(--blue-50);
+  border-color: var(--navy-700);
   color: var(--ink);
   box-shadow: none;
 }
 .filter-nav-item.is-active .filter-nav-hint { color: var(--ink-4); }
 .filter-panel-content .filter-group-name { color: var(--ink); }
-.filter-panel-aside { border-inline-end: 1px solid var(--line-accent); }
+.filter-panel-aside { border-inline-end: 1px solid var(--line); }
 
 /* --- Estados vacios, carga y error -------------------------------------- */
 .state-panel, .gallery-empty, .empty-state, .empty-panel {
-  background: rgba(255, 255, 255, .04);
+  background: var(--surface-1);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   color: var(--ink-3);
@@ -1493,14 +1495,14 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 .gallery-empty-text, .empty-state small { color: var(--ink-4); }
 .filter-warning { background: var(--warn-tint); border: 1px solid rgba(251, 191, 36, .3); border-radius: var(--radius-md); color: var(--warn); }
 .detail-disclaimer {
-  background: rgba(255, 255, 255, .04);
+  background: var(--surface-2);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   color: var(--ink-3);
 }
 .detail-disclaimer strong { color: var(--ink); }
 .skeleton { background: var(--surface-2); }
-.alert { background: rgba(255, 255, 255, .06); border-color: var(--line-strong); color: var(--ink-2); border-radius: var(--radius-md); }
+.alert { background: var(--surface-1); border-color: var(--line-strong); color: var(--ink-2); border-radius: var(--radius-md); }
 
 /* --- Ficha --------------------------------------------------------------
    H1 30/700/36, precio 24/700/32, metadatos 16/400/24, subtitulo 14/400/20. */
@@ -1509,29 +1511,29 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 .detail-panel > h2::after, .section-heading::after { content: none; }
 .section-heading { border: 0; padding-block-end: 0; }
 .ficha-section-nav {
-  background: rgba(255, 255, 255, .06);
+  background: var(--surface-1);
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
 }
 .ficha-section-nav a { color: var(--ink-3); border-radius: var(--radius-xs); font-weight: 500; }
-.ficha-section-nav a:hover { background: rgba(255, 255, 255, .08); color: var(--ink); }
+.ficha-section-nav a:hover { background: var(--blue-50); color: var(--ink); }
 .detail-contact {
-  background: rgba(255, 255, 255, .04);
+  background: var(--surface-1);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   box-shadow: none;
 }
 
 /* --- Pie ---------------------------------------------------------------- */
-.site-footer { background: var(--canvas-deep); border-block-start: 1px solid var(--line); color: var(--ink-3); }
-.site-footer a { color: var(--ink-3); }
-.site-footer a:hover { color: var(--ink); }
-.site-footer h2, .site-footer strong { color: var(--ink); }
-.site-footer .u-text-muted, .site-footer .u-text-faint { color: var(--ink-3); }
-.footer-lede { color: var(--ink-3); }
-.footer-heading { color: var(--ink); font-weight: 700; }
-.footer-rule { border-block-start: 1px solid var(--line); }
-.footer-fineprint { color: var(--ink-4); }
+.site-footer { background: var(--navy-950); border-block-start: 1px solid rgba(255, 255, 255, .12); color: #d9e2ec; }
+.site-footer a { color: #d9e2ec; }
+.site-footer a:hover { color: #fff; }
+.site-footer h2, .site-footer strong { color: #fff; }
+.site-footer .u-text-muted, .site-footer .u-text-faint { color: #c1ceda; }
+.footer-lede { color: #c1ceda; }
+.footer-heading { color: #fff; font-weight: 700; }
+.footer-rule { border-block-start: 1px solid rgba(255, 255, 255, .12); }
+.footer-fineprint { color: #aab9c7; }
 
 /* --- Utilidades semanticas propias --------------------------------------
    Aqui vivia un bloque que neutralizaba con !important las utilidades Tailwind
@@ -1541,8 +1543,8 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 .u-text { color: var(--ink); }
 .u-text-muted { color: var(--ink-3); }
 .u-text-faint { color: var(--ink-4); }
-.u-surface { background-color: rgba(255, 255, 255, .04); }
-.u-surface-sunken { background-color: rgba(255, 255, 255, .06); }
+.u-surface { background-color: var(--surface-1); }
+.u-surface-sunken { background-color: var(--surface-2); }
 .u-border { border-color: var(--line); }
 .u-border-strong { border-color: var(--line-strong); }
 .u-warn-surface { background-color: var(--warn-tint); }
@@ -1609,29 +1611,24 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   contain-intrinsic-size: auto 480px;
 }
 
-/* ==========================================================================
-   TARJETA DE BUSQUEDA — medida en el home de la referencia
-   663x131, radio 26, superficie rgba(41,41,41,.95). Dentro: textarea de
-   lenguaje natural de 18px sin borde, y debajo la fila de controles. ERETZ
-   conserva sus propios controles (operacion, tipo, mas filtros, buscar), que
-   son mas que los dos de la referencia; lo que se adopta es la composicion.
-   ========================================================================== */
+/* Barra de búsqueda de transición: conserva las dos funciones reales hasta
+   la fase de búsqueda universal, pero reduce su peso dentro del viewport. */
 .explorer-search-card {
   display: grid;
-  gap: .5rem;
-  border-radius: 26px;
-  background: var(--elevated);
+  gap: .4rem;
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
   border: 1px solid var(--line);
-  padding: .9rem 1rem;
-  box-shadow: var(--shadow-sm);
+  padding: .55rem .65rem;
+  box-shadow: var(--shadow-xs);
 }
 .explorer-search-card .nl-search { margin: 0; }
 .explorer-search-card .nl-search-input {
-  min-block-size: 3.25rem;
+  min-block-size: 2.65rem;
   border: 0;
   background: transparent;
   padding-inline: .25rem;
-  font-size: 1.125rem;
+  font-size: 1rem;
   line-height: 1.4;
   color: var(--ink);
 }
@@ -1640,7 +1637,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 .explorer-search-card .explorer-primary-search { margin: 0; }
 .explorer-search-card .explorer-primary-search input,
 .explorer-search-card .explorer-primary-search select {
-  background: rgba(255, 255, 255, .06);
+  background: var(--surface-2);
   border-color: var(--line-strong);
 }
 @media (max-width: 767px) {
@@ -1872,8 +1869,8 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   .home-hero-links { gap: 1rem; }
 }
 
-/* ==========================================================================
-   PASE DE VERIFICACION — diferencias medidas contra la referencia
+/* ===========================================================================
+   CIERRE TIPOGRÁFICO Y DE COMPONENTES V2
    ========================================================================== */
 
 /* Escala base. La referencia usa body a 16px y baja a 14 en la UI densa;
@@ -1882,9 +1879,9 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 body { font-size: 1rem; line-height: 1.5; }
 .explorer-page, .explorer-toolbar, .explorer-workspace { font-size: var(--text-base); }
 
-/* Header: la referencia mide 114px con padding 16. */
-.site-header { padding-block: 1rem; }
-.site-header-inner { min-block-size: 3rem; }
+/* Shell fijo de 64px. */
+.site-header { padding-block: 0; }
+.site-header-inner { min-block-size: var(--nav-height); }
 .nav-link { font-size: var(--text-md); font-weight: 600; padding: .35rem .6rem; }
 
 /* Tarjeta: la referencia usa titulo 18/600/24.75, precio 20/600/28 y la linea
@@ -1906,7 +1903,7 @@ body { font-size: 1rem; line-height: 1.5; }
 /* El panel de contacto de la ficha no usa .detail-contact: su clase real es
    .detail-panel dentro de un aside. La regla anterior no pintaba nada. */
 aside.detail-panel {
-  background: rgba(255, 255, 255, .04);
+  background: var(--surface-1);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   box-shadow: none;

@@ -1,17 +1,13 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Instrument_Serif } from "next/font/google";
+import { Inter } from "next/font/google";
 import { siteUrl } from "@/lib/site-url";
 import "./globals.css";
 
-// Tipografía ERETZ: Inter variable para toda la UI (con números tabulares para
-// precios) e Instrument Serif sólo para el display de marca. Autoalojadas por
-// next/font: sin requests a terceros y sin layout shift.
+// Inter variable cubre toda la interfaz V2, incluido el wordmark tipográfico.
+// Evitamos descargar una segunda familia que no se utilizaba en la UI real.
 const inter = Inter({ subsets: ["latin"], display: "swap", variable: "--font-sans" });
-const instrumentSerif = Instrument_Serif({
-  subsets: ["latin"], weight: "400", display: "swap", variable: "--font-display",
-});
 
-export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#071d35" };
+export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#071A2D" };
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -35,7 +31,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="es-AR" className={`${inter.variable} ${instrumentSerif.variable}`}>
+    <html lang="es-AR" className={inter.variable}>
       <body>{children}</body>
     </html>
   );

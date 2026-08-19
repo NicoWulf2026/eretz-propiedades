@@ -56,8 +56,8 @@ export function ContextBar({
     count !== null && mapCount !== null ? Math.max(0, count - mapCount) : null;
 
   return (
-    <div className="context-bar">
-      <div className="container context-bar-inner">
+    <div className="context-bar" aria-live="polite">
+      <div className="context-bar-inner">
         {/* Left: counts */}
         <div className="context-bar-counts">
           {totalCount !== null && (
