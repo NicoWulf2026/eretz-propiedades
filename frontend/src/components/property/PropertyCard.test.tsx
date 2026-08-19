@@ -11,21 +11,25 @@ describe("PropertyCard", () => {
     expect(screen.queryByText(/ubicación exacta/i)).not.toBeInTheDocument();
   });
 
-  it("variant full muestra las acciones Ver/Compartir/Contactar", () => {
-    render(<PropertyCard property={mapSupabasePropertyToProperty(completeRow)} variant="full" />);
-    expect(screen.getByRole("link", { name: "Ver propiedad" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Compartir" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Contactar" })).toBeInTheDocument();
+  it("prioriza precio y ubicación sin mostrar el título scrapeado", () => {
+    render(<PropertyCard property={mapSupabasePropertyToProperty(completeRow)} variant="grid" />);
+    expect(screen.queryByText("Casa luminosa con jardín")).toBeNull();
+    expect(document.querySelector(".card-price")?.textContent?.replace(/\s+/g, " ").trim()).toBe("USD 180.000");
+    expect(screen.getByText(/Centro, Córdoba/)).toBeInTheDocument();
   });
 
-  it("variant compact no muestra las acciones extra", () => {
+  it("deja favorito visible y concentra las acciones secundarias en un menú", () => {
     render(<PropertyCard property={mapSupabasePropertyToProperty(completeRow)} variant="compact" />);
-    expect(screen.queryByRole("button", { name: "Compartir" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Agregar a favoritos" })).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("Más acciones"));
+    expect(screen.getByRole("button", { name: "Agregar a comparar" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Compartir" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ocultar propiedad" })).toBeInTheDocument();
   });
 
   it("renders complete public fields and an accessible detail link", () => {
     render(<PropertyCard property={mapSupabasePropertyToProperty(completeRow)} />);
-    expect(screen.getByRole("link")).toHaveAttribute("href", "/propiedad/123?volver=%2F");
+    expect(screen.getByRole("link", { name: /Ver casa en Centro, Córdoba/ })).toHaveAttribute("href", "/propiedad/123?volver=%2F");
     // El precio se compone de dos spans (moneda en versalita + monto tabular):
     // se verifica el texto resultante, que debe seguir siendo identico.
     expect(document.querySelector(".card-price")?.textContent?.replace(/\s+/g, " ").trim()).toBe("USD 180.000");
@@ -55,7 +59,7 @@ describe("PropertyCard", () => {
       imagenes: null,
     });
     render(<PropertyCard property={property} />);
-    expect(screen.getByText("Precio a consultar")).toBeInTheDocument();
+    expect(screen.getByText("Consultar")).toBeInTheDocument();
     expect(screen.getByText("Ubicación no especificada")).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Imagen no disponible" })).toBeInTheDocument();
   });
@@ -70,7 +74,7 @@ describe("PropertyCard", () => {
     expect(onPreview).toHaveBeenLastCalledWith("123");
     fireEvent.pointerLeave(card);
     expect(onPreview).toHaveBeenLastCalledWith(null);
-    fireEvent.click(screen.getByRole("link"));
+    fireEvent.click(screen.getByRole("link", { name: /Ver casa en Centro, Córdoba/ }));
     expect(onCommit).toHaveBeenCalledWith("123");
   });
 });

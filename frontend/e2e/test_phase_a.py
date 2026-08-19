@@ -29,7 +29,8 @@ def activate_interactive_map(page: Page) -> None:
     """Exercise the intentional V2 progressive-map activation contract."""
     leaflet = page.locator(".leaflet-container")
     activate = page.get_by_role("button", name="Activar ahora")
-    if not leaflet.is_visible() and activate.is_visible():
+    if not leaflet.is_visible():
+        expect(activate).to_be_visible(timeout=20_000)
         activate.evaluate("element => element.click()")
     expect(leaflet).to_be_visible(timeout=20_000)
 
@@ -114,7 +115,7 @@ def test_search_filter_map_area_detail_and_restoration(page: Page) -> None:
     area_button.click()
     expect(area_button).not_to_be_visible(timeout=30_000)
 
-    first_card = page.locator("[data-property-id] a").first
+    first_card = page.locator("[data-property-id] > a").first
     expect(first_card).to_be_visible(timeout=60_000)
     first_card.click()
     page.wait_for_url("**/propiedad/**")
@@ -276,22 +277,30 @@ def test_map_v2_results_without_coordinates_have_an_explicit_alternative(page: P
     expect(page.locator(".leaflet-container")).to_have_count(0)
 
 
-@pytest.mark.parametrize("width,height,solo_columns", [(1180, 800, 3), (1366, 768, 4), (1440, 900, 4), (1600, 900, 4)])
-def test_desktop_views_density_and_overflow(page: Page, width: int, height: int, solo_columns: int) -> None:
+@pytest.mark.parametrize(
+    "width,height,combined_columns,solo_columns",
+    [(1180, 800, 1, 3), (1366, 768, 2, 4), (1440, 900, 2, 4), (1600, 900, 2, 4)],
+)
+def test_desktop_views_density_and_overflow(
+    page: Page, width: int, height: int, combined_columns: int, solo_columns: int
+) -> None:
     page.set_viewport_size({"width": width, "height": height})
     page.goto(app_url("/propiedades?tipo=departamento"), wait_until="domcontentloaded")
     expect(page.locator("[data-property-id]")).to_have_count(24)
 
-    combined_columns = page.locator("#property-results").evaluate(
+    actual_combined_columns = page.locator("#property-results").evaluate(
         "element => getComputedStyle(element).gridTemplateColumns.split(' ').length"
     )
-    assert combined_columns == 2
+    assert actual_combined_columns == combined_columns
+    expect(page.locator("[data-card-variant='compact']")).to_have_count(24)
+    expect(page.get_by_role("group", name="Densidad de tarjetas")).to_have_count(0)
 
     page.get_by_role("button", name="Solo propiedades", exact=True).click()
     columns = page.locator("#property-results").evaluate(
         "element => getComputedStyle(element).gridTemplateColumns.split(' ').length"
     )
     assert columns == solo_columns
+    expect(page.locator("[data-card-variant='grid']")).to_have_count(24)
 
     for label in ("Solo mapa", "Mapa + propiedades"):
         page.get_by_role("button", name=label, exact=True).click()
@@ -323,6 +332,8 @@ def test_filter_panel_keyboard_focus_and_axe(page: Page) -> None:
     page.set_viewport_size({"width": 1366, "height": 768})
     page.goto(BASE_URL, wait_until="domcontentloaded")
     toggle = page.get_by_role("button", name="Más filtros", exact=False)
+    # DOM content can precede client hydration on a cold protected preview.
+    page.wait_for_timeout(500)
     toggle.click()
     panel = page.get_by_role("dialog", name="Más filtros de propiedades")
     expect(panel).to_be_visible()

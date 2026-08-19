@@ -2,12 +2,26 @@
 
 import { useState } from "react";
 
-export function PropertyImage({ src, alt, priority = false }: { src: string | null; alt: string; priority?: boolean }) {
+export function PropertyImage({
+  src,
+  alt,
+  fallbackLabel,
+  priority = false,
+}: {
+  src: string | null;
+  alt: string;
+  fallbackLabel?: string;
+  priority?: boolean;
+}) {
   const [failed, setFailed] = useState(false);
   if (!src || failed) {
     return (
       <div className="property-fallback" role="img" aria-label="Imagen no disponible">
-        <span aria-hidden="true">⌂</span>
+        <svg viewBox="0 0 32 32" aria-hidden="true">
+          <path d="M5 14.5 16 5l11 9.5V27H5V14.5Z" />
+          <path d="M12 27v-8h8v8M9 13h14" />
+        </svg>
+        {fallbackLabel ? <strong>{fallbackLabel}</strong> : null}
         <p>Imagen no disponible</p>
       </div>
     );

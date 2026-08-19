@@ -24,7 +24,7 @@ function CollectionProperties({ ids, onRemove }: { ids: string[]; onRemove: (id:
     <div className="mt-4 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
       {properties.map((p) => (
         <div key={p.id}>
-          <PropertyCard property={p} variant="full" returnTo="/colecciones" />
+          <PropertyCard property={p} variant="grid" returnTo="/colecciones" />
           <button type="button" className="secondary-button mt-2 w-full" onClick={() => onRemove(p.id)}>Quitar de la colección</button>
         </div>
       ))}

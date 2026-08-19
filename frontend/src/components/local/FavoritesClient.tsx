@@ -56,7 +56,7 @@ export function FavoritesClient() {
         ) : (
           <div className="mt-4 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {properties.map((p) => (
-              <PropertyCard key={p.id} property={p} variant="full" returnTo="/favoritos" />
+              <PropertyCard key={p.id} property={p} variant="grid" returnTo="/favoritos" />
             ))}
             {properties.length < favorites.length ? (
               <p className="col-span-full text-xs u-text-faint">

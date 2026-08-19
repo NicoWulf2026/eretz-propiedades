@@ -28,7 +28,6 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
   const initialSearch = filtersToSearchParams(filters);
   const initialReturnTo = `${basePath}${initialSearch.toString() ? `?${initialSearch}` : ""}`;
   const [mode, setMode] = useState<ExplorerMode>(filters.mode);
-  const [density, setDensity] = useState<"compact" | "full">("compact");
   const [hideVisited, setHideVisited] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const visited = useLocalValue(getVisited, [] as string[]);
@@ -62,8 +61,6 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
       const saved = localStorage.getItem("eretz:explorer-mode") as ExplorerMode | null;
       if (saved === "balanced" || saved === "results_only" || saved === "map_only") requestAnimationFrame(() => setMode(saved));
     }
-    const savedDensity = localStorage.getItem("eretz:card-density");
-    if (savedDensity === "full" || savedDensity === "compact") requestAnimationFrame(() => setDensity(savedDensity));
     if (localStorage.getItem("eretz:hide-visited") === "1") requestAnimationFrame(() => setHideVisited(true));
     try {
       // La clave se busca por la URL REAL y por la normalizada: `selectProperty`
@@ -121,7 +118,7 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
     };
     frame = requestAnimationFrame(attempt);
     return () => cancelAnimationFrame(frame);
-  }, [result, density, mode]);
+  }, [result, mode]);
 
   useEffect(() => {
     const desktop = window.matchMedia("(min-width: 768px)").matches;
@@ -178,11 +175,6 @@ function removeViewport() {
   window.location.assign(`${basePath}${search.toString() ? `?${search}` : ""}`);
 }
 
-
-  function chooseDensity(next: "compact" | "full") {
-    setDensity(next);
-    try { localStorage.setItem("eretz:card-density", next); } catch { /* opcional */ }
-  }
 
   function toggleHideVisited() {
     setHideVisited((current) => {
@@ -264,10 +256,7 @@ function removeViewport() {
             viewportApplied={!!filters.viewport}
             onRemoveViewport={removeViewport}
           />
-          <div className="density-toggle" role="group" aria-label="Densidad de tarjetas">
-            <span className="density-label">Tarjetas</span>
-            <button type="button" className={density === "compact" ? "is-active" : ""} aria-pressed={density === "compact"} onClick={() => chooseDensity("compact")}>Compactas</button>
-            <button type="button" className={density === "full" ? "is-active" : ""} aria-pressed={density === "full"} onClick={() => chooseDensity("full")}>Completas</button>
+          <div className="results-list-tools">
             <button type="button" className={`hide-visited-toggle ${hideVisited ? "is-active" : ""}`} aria-pressed={hideVisited} onClick={toggleHideVisited} disabled={!hideVisited && visitedInPage === 0}>
               {hideVisited ? `Mostrar visitadas (${visitedInPage})` : `Ocultar visitadas (${visitedInPage})`}
             </button>
@@ -281,16 +270,16 @@ function removeViewport() {
           ) : shownProperties.length === 0 ? (
             <div className="state-panel" role="status"><span aria-hidden="true">✓</span><h2>Ya viste todas las de esta página</h2><p>Ocultaste las propiedades visitadas. Podés mostrarlas de nuevo o pasar a la siguiente página.</p><button type="button" className="secondary-button" onClick={toggleHideVisited}>Mostrar visitadas</button></div>
           ) : (
-            <div className={`explorer-card-list density-${density}`} id="property-results" data-view={mode}>
+            <div className="explorer-card-list" id="property-results" data-view={mode}>
               {shownProperties.map((property) => (
                 <PropertyCard
                   key={property.id}
                   property={property}
-                  variant={density}
+                  variant={mode === "results_only" ? "grid" : "compact"}
                   returnTo={returnTo}
                   selected={activePropertyId === property.id}
                   onPreview={setPreviewId}
-                  onCommit={(id) => selectProperty(id)}
+                  onCommit={selectProperty}
                 />
               ))}
             </div>

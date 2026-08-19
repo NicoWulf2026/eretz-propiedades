@@ -9,13 +9,15 @@ import { propertyPrice } from "@/lib/property-presenter";
 export function PriceTag({
   property,
   className = "",
+  consultLabel,
 }: {
   property: Pick<Property, "price" | "currency">;
   className?: string;
+  consultLabel?: string;
 }) {
   const text = propertyPrice(property);
   if (!property.price || !property.currency) {
-    return <p className={`price price-consult ${className}`.trim()}>{text}</p>;
+    return <p className={`price price-consult ${className}`.trim()}>{consultLabel ?? text}</p>;
   }
   const amount = text.slice(property.currency.length).trim();
   return (
