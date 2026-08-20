@@ -56,6 +56,13 @@ AMBIGUOUS = "OFFICIAL_WEB_AMBIGUOUS"
 NOT_FOUND = "OFFICIAL_WEB_NOT_FOUND"
 INACTIVE = "OFFICIAL_WEB_INACTIVE"
 NO_SITE = "NO_INDEPENDENT_WEBSITE"
+# Estados OPERATIVOS, no resultados. Existen para no mentir en el artefacto:
+# NOT_FOUND significa "se busco y no hay", y usarlo por falta de credencial o
+# por un fallo del proveedor convertiria una limitacion nuestra en un hecho
+# sobre la inmobiliaria.
+PENDING = "SEARCH_API_PENDING"
+SEARCH_ERROR = "SEARCH_API_ERROR"
+OPERATIVOS = (PENDING, SEARCH_ERROR)
 
 # Nunca son web oficial de una inmobiliaria. Sirven como evidencia.
 PORTALES = {
@@ -292,3 +299,39 @@ def cargar_hechas(salida: Path) -> set[str]:
         return set()
     return {json.loads(l)["canonical_agency_id"]
             for l in salida.open(encoding="utf-8") if l.strip()}
+
+
+# --------------------------------------------------------- auditoria ERETZ
+CORRECTA = "correcta"
+REDIRECT_OK = "redirect_valido"
+MUERTA = "dominio_muerto"
+OTRA_ENTIDAD = "otra_entidad"
+PORTAL = "portal_generico"
+FALTANTE = "missing"
+
+
+def auditar_web_eretz(entidad: dict, cand: "Candidata | None") -> dict:
+    """Estado de la web que ERETZ ya tenia cargada.
+
+    No se asume que sea correcta. Una web vieja apuntando a otra entidad es peor
+    que no tener ninguna: parece un dato y manda a la persona al lugar
+    equivocado.
+    """
+    actual = (entidad.get("current_eretz_web") or "").strip()
+    if not actual:
+        return {"estado": FALTANTE, "detalle": "ERETZ no tiene web para esta entidad"}
+    if es_portal(actual):
+        return {"estado": PORTAL, "detalle": f"{dominio(actual)} es un portal, no un sitio propio"}
+    if cand is None or cand.http is None:
+        return {"estado": MUERTA, "detalle": "el dominio no responde"}
+    if cand.http >= 400:
+        return {"estado": MUERTA, "detalle": f"responde {cand.http}"}
+
+    v = verificar(entidad, [cand])
+    if v.estado in (VERIFIED, HIGH_CONFIDENCE):
+        redirigio = bool(cand.redirects) and dominio(cand.url) != dominio(actual)
+        return {"estado": REDIRECT_OK if redirigio else CORRECTA,
+                "detalle": v.explicacion if hasattr(v, "explicacion") else v.razon,
+                "destino": cand.url}
+    return {"estado": OTRA_ENTIDAD,
+            "detalle": "responde pero no hay evidencia de que sea esta inmobiliaria"}
