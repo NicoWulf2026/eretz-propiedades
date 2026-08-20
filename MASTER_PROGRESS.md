@@ -3,7 +3,7 @@
 Estado vivo de la misión integral. Se actualiza al cerrar cada frente y antes
 de cualquier corte de sesión.
 
-**Última actualización:** 2026-08-18 (padrón canónico + verificador de webs)
+**Última actualización:** 2026-08-20 (snapshot agotado; delta en curso con cierre determinista)
 
 ---
 
@@ -42,6 +42,34 @@ Pruebas de privilegio, todas correctas:
 | CREATE TABLE | denegado | `permission denied` |
 
 Los negativos se comprueban intentándolos y revirtiendo; ninguno escribió nada.
+
+## Cadena desatendida en marcha
+
+| Tarea de Windows | Qué hace | Estado |
+|---|---|---|
+| `EretzRoomixCrawl` | crawl inicial | **terminado** (168.563/168.563, 20/08 06:28) |
+| `EretzDeltaChain` | espera al delta en curso y lanza `delta_loop.py` | **corriendo** |
+
+`run_delta_chain.bat` no mata nada: espera a que no queden procesos python y
+recién entonces arranca el bucle. `delta_loop.py` reconstruye su estado desde
+`observations.jsonl`, así que no reprocesa nada de lo ya hecho.
+
+Bitácora por delta: `delta_audit.jsonl`, una fila por pasada con las quince
+categorías, sin ocultar ninguna.
+
+### Cierre del delta (aprobado, determinista)
+
+Dos deltas consecutivos completos con, a la vez:
+`NEW_INMOBILIARIA = 0`, `NEW_OFICINA_FRANQUICIA = 0` y
+`NEW_UNKNOWN_POTENCIALMENTE_INMOBILIARIA = 0`.
+
+Un delta puede traer miles de avisos, cientos de `agent_id`, agentes y
+desarrolladoras nuevas, y contar como cero igual.
+
+### Recuperación de fichas sin publicador — cerrada
+
+274 reintentadas, **4 recuperadas**, 270 sin anunciante. Son avisos de dueño
+directo: residual legítimo y cuantificado, no un agujero.
 
 ## El delta no puede cerrar por avisos — cierra por publicadores
 
@@ -307,8 +335,15 @@ proyectos está denegado por el clasificador de permisos.
 
 ## Próxima acción exacta
 
-1. Aplicar el verificador SCRAM (ver bloqueo arriba).
-2. Conceder SELECT sobre `inmobiliarias_staging` a un rol alcanzable.
-3. Correr `scripts/backfill_main_normalizado.py` en dry-run contra datos reales,
-   revisar conflictos, y recién después `--commit`.
-4. Con staging legible: Fase 4 (auditoría) → Fase 6 (pipeline).
+La cadena corre sola. Cuando `delta_loop` alcance los dos ceros consecutivos,
+seguir sin pausa con:
+
+1. `python scripts/build_agency_directory.py` — canónico definitivo
+2. crosswalk: `python scripts/agency_rollout.py --base <preview> --dry-run`
+3. canary + rollout: el mismo comando sin `--dry-run`
+4. `python scripts/run_web_discovery.py` — webs oficiales
+5. suite completa + informe final
+
+El puente necesita un Preview desplegado: `vercel link` al proyecto
+`eretz-propiedades` y `vercel deploy` desde `frontend/`. Los deployments
+temporales se eliminan al terminar.
