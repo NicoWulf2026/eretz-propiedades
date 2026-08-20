@@ -61,24 +61,44 @@ def observadas(obs_p: Path) -> tuple[set[str], list[str]]:
     return vistas, sin_agente
 
 
-def procesar(f, urls: list[str], obs_p: Path, etiqueta: str) -> Counter:
-    """Baja cada ficha y anota solo al publicador. Nada del inmueble."""
+def procesar(f, urls: list[str], obs_p: Path, etiqueta: str,
+             cada: int = 25) -> Counter:
+    """Baja cada ficha y anota solo al publicador. Nada del inmueble.
+
+    El archivo se abre y se cierra por tandas en vez de mantener un handle
+    abierto durante horas. Una corrida de 27.000 fichas dura media jornada, y si
+    el proceso queda huerfano -por ejemplo porque murio la sesion que lo lanzo-
+    Windows invalida el handle y el `flush` revienta con Errno 22, perdiendo el
+    resto de la corrida. Reabrir por tanda hace que el peor caso sea perder la
+    tanda en curso.
+    """
     stats: Counter = Counter()
-    with obs_p.open("a", encoding="utf-8") as fh:
-        for i, u in enumerate(urls, 1):
-            html = f.get(u)
-            if not html:
-                stats["fetch_error"] += 1
-                continue
+    buffer: list[str] = []
+
+    def volcar() -> None:
+        if not buffer:
+            return
+        with obs_p.open("a", encoding="utf-8") as fh:
+            fh.write("".join(buffer))
+        buffer.clear()
+
+    for i, u in enumerate(urls, 1):
+        html = f.get(u)
+        if not html:
+            stats["fetch_error"] += 1
+        else:
             aid, nombre, metodo = rd.parse_publisher(html)
             stats[metodo] += 1
             if aid:
-                fh.write(json.dumps({"url": u, "agent_id": aid, "agent_name": nombre,
-                                     "method": metodo, "ts": int(time.time())},
-                                    ensure_ascii=False) + "\n")
-                fh.flush()
-            if i % 50 == 0:
-                print(f"    {etiqueta}: {i}/{len(urls)}  {dict(stats)}", flush=True)
+                buffer.append(json.dumps(
+                    {"url": u, "agent_id": aid, "agent_name": nombre,
+                     "method": metodo, "ts": int(time.time())},
+                     ensure_ascii=False) + "\n")
+        if i % cada == 0:
+            volcar()
+        if i % 50 == 0:
+            print(f"    {etiqueta}: {i}/{len(urls)}  {dict(stats)}", flush=True)
+    volcar()
     return stats
 
 
