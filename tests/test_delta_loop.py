@@ -8,6 +8,7 @@ inmobiliarias, no la actividad.
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -81,3 +82,93 @@ def test_ninguna_categoria_queda_sin_reportar():
               "NEW_UNKNOWN_POTENCIALMENTE_INMOBILIARIA", "canonical_nuevas",
               "NEW_TARGET_ENTITIES"):
         assert k in a, k
+
+
+# ---------------------------------------------- persistencia y recuperacion
+rdm = _load("roomix_delta")
+
+
+def _obs(tmp_path, filas):
+    p = tmp_path / "observations.jsonl"
+    p.write_text("".join(json.dumps(f, ensure_ascii=False) + "\n" for f in filas),
+                 encoding="utf-8")
+    return p
+
+
+def test_una_linea_truncada_no_bloquea_el_reanudar(tmp_path):
+    """Si el proceso muere en medio de una escritura, la ultima linea queda
+    partida. Sin tolerancia, reanudar reventaria siempre en el mismo byte."""
+    p = _obs(tmp_path, [{"url": "u1", "agent_id": "a", "agent_name": "Alfa Propiedades"}])
+    with p.open("a", encoding="utf-8") as fh:
+        fh.write('{"url": "u2", "agent_id": "b", "agent_na')  # corte a mitad
+    canon, raw, urls = dl.estado(p)
+    assert urls == {"u1"}
+    assert raw == {"a"}
+
+
+def test_observadas_tambien_tolera_lineas_rotas(tmp_path):
+    p = _obs(tmp_path, [{"url": "u1", "agent_id": "a", "agent_name": "Alfa"}])
+    with p.open("a", encoding="utf-8") as fh:
+        fh.write("{roto\n")
+    vistas, sin_agente = rdm.observadas(p)
+    assert vistas == {"u1"} and sin_agente == []
+
+
+def test_el_lector_ignora_archivo_inexistente(tmp_path):
+    assert list(rdm.leer_jsonl(tmp_path / "no-existe.jsonl")) == []
+
+
+def test_reanudar_no_reprocesa_lo_ya_observado(tmp_path):
+    """El delta compara contra las URLs ya vistas: reanudar salta lo hecho."""
+    p = _obs(tmp_path, [{"url": f"u{i}", "agent_id": f"a{i}", "agent_name": f"Inmo {i}"}
+                        for i in range(5)])
+    _, _, urls = dl.estado(p)
+    universo = [f"u{i}" for i in range(8)]
+    nuevas = [u for u in universo if u not in urls]
+    assert nuevas == ["u5", "u6", "u7"]
+
+
+def test_el_append_por_tandas_escribe_lineas_completas(tmp_path):
+    """El fix del handle: cada tanda se cierra, asi que lo escrito es valido."""
+    p = tmp_path / "observations.jsonl"
+
+    class FetcherFalso:
+        stats = {}
+
+        def get(self, u):
+            return '"agent":{"_id":"abc123def4567890","name":"Alfa Propiedades"}'
+
+    st = rdm.procesar(FetcherFalso(), [f"https://x/{i}" for i in range(7)], p, "t", cada=2)
+    assert st["agent_block"] == 7
+    filas = list(rdm.leer_jsonl(p))
+    assert len(filas) == 7
+    assert all("agent_id" in f and "url" in f for f in filas)
+
+
+def test_observations_es_idempotente_por_url(tmp_path):
+    """Reprocesar una URL agrega una fila, pero el estado sigue contando una
+    sola observacion por URL."""
+    p = _obs(tmp_path, [{"url": "u1", "agent_id": "a", "agent_name": "Alfa Propiedades"},
+                        {"url": "u1", "agent_id": "a", "agent_name": "Alfa Propiedades"}])
+    _, raw, urls = dl.estado(p)
+    assert urls == {"u1"} and raw == {"a"}
+
+
+def test_la_bitacora_de_deltas_queda_en_jsonl_valido(tmp_path):
+    p = tmp_path / "delta_audit.jsonl"
+    for n in (1, 2):
+        with p.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"delta": n, "NEW_TARGET_ENTITIES": 0}) + "\n")
+    filas = [json.loads(l) for l in p.open(encoding="utf-8") if l.strip()]
+    assert [f["delta"] for f in filas] == [1, 2]
+
+
+def test_el_lanzador_usa_rutas_absolutas():
+    """El Programador no hereda el PATH interactivo ni el cwd."""
+    bat = Path(r"D:\INMO CAPITAL\ERETZ_AGENCY_DATA\run_delta_loop.bat")
+    if not bat.exists():
+        return
+    txt = bat.read_text(encoding="utf-8", errors="ignore")
+    assert "cd /d" in txt
+    assert "python.exe" in txt and ":\\" in txt
+    assert txt.count(":\\") >= 3  # interprete, script y logs

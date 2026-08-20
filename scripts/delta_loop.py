@@ -49,6 +49,7 @@ def _load(name: str):
 
 rd = _load("roomix_agency_discovery")
 delta = _load("roomix_delta")
+leer_jsonl = delta.leer_jsonl
 d = _load("eretz_dedupe")
 cwin = _load("coverage_windows")
 
@@ -79,10 +80,7 @@ def estado(obs_p: Path) -> tuple[dict[str, str], set[str], set[str]]:
     """Entidades canonicas actuales: clave -> tipo. Ademas raw ids y URLs."""
     nombres: dict[str, Counter] = defaultdict(Counter)
     urls: set[str] = set()
-    for linea in obs_p.open(encoding="utf-8"):
-        if not linea.strip():
-            continue
-        o = json.loads(linea)
+    for o in leer_jsonl(obs_p):
         u = o.get("url")
         if u:
             urls.add(u)
@@ -156,10 +154,7 @@ def main() -> int:
         despues, raw_despues, _ = estado(obs_p)
         # Nombre representativo de cada clave nueva, para juzgar los UNKNOWN.
         nombres_clave: dict[str, str] = {}
-        for linea in obs_p.open(encoding="utf-8"):
-            if not linea.strip():
-                continue
-            o = json.loads(linea)
+        for o in leer_jsonl(obs_p):
             if o.get("agent_name"):
                 k = d.norm_name(o["agent_name"])
                 nombres_clave.setdefault(k, o["agent_name"])

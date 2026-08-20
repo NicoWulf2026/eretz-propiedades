@@ -44,14 +44,33 @@ def _load(name: str):
 rd = _load("roomix_agency_discovery")
 
 
+def leer_jsonl(ruta: Path):
+    """Lee un JSONL saltando lineas que no parseen.
+
+    Si el proceso muere en medio de una escritura -corte de energia, kill- la
+    ultima linea puede quedar partida. Sin esta tolerancia, el reanudar
+    reventaria en el mismo punto para siempre: un byte a medias bloquearia una
+    campana de 170.000 fichas. Una linea ilegible es una observacion perdida,
+    y esa ficha se vuelve a bajar en el proximo delta.
+    """
+    if not ruta.exists():
+        return
+    with ruta.open(encoding="utf-8") as fh:
+        for linea in fh:
+            linea = linea.strip()
+            if not linea:
+                continue
+            try:
+                yield json.loads(linea)
+            except json.JSONDecodeError:
+                continue
+
+
 def observadas(obs_p: Path) -> tuple[set[str], list[str]]:
     """URLs ya vistas, y las que quedaron sin publicador."""
     vistas: set[str] = set()
     sin_agente: list[str] = []
-    for linea in obs_p.open(encoding="utf-8"):
-        if not linea.strip():
-            continue
-        o = json.loads(linea)
+    for o in leer_jsonl(obs_p):
         u = o.get("url")
         if not u:
             continue
