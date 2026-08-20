@@ -226,22 +226,65 @@ const COLUMNAS = [
 ] as const;
 
 export type Fila = Partial<Record<(typeof COLUMNAS)[number], unknown>>;
-export type Resultado = { insertadas: number; error?: string };
+export type Resultado = {
+  insertadas: number;
+  saltadas: Record<string, number>;
+  detalle: Array<Record<string, unknown>>;
+  error?: string;
+};
 
 /**
- * Inserta un lote en staging.
+ * Inserta un lote en staging, deduplicando DENTRO de la transaccion.
  *
- * Todo el lote va en una sola transacción con el rol elevado: si algo falla, no
- * queda medio lote escrito. `fuente` la fija el servidor.
+ * El dedupe no puede hacerse en el cliente. Entre que el cliente calcula su
+ * lista y el servidor escribe, el estado puede cambiar; la unica comprobacion
+ * que vale es la que ocurre bajo la misma transaccion que el insert.
+ *
+ * La clave se calcula con `lower(btrim(...))` sobre `nombre_normalizado` y, si
+ * esta en NULL, sobre `nombre`. Ese fallback importa: 1.983 filas de main
+ * tienen la columna vacia y compararlas solo por ella las volveria invisibles,
+ * que es exactamente el defecto que produjo las 31 colisiones anteriores.
+ *
+ * `fuente` la fija el servidor.
  */
 export async function insertar(filas: Fila[]): Promise<Resultado> {
-  if (filas.length === 0) return { insertadas: 0 };
+  if (filas.length === 0) return { insertadas: 0, saltadas: {}, detalle: [] };
   try {
-    const n = await withWriter(async (tx) => {
-      let total = 0;
+    return await withWriter(async (tx) => {
+      let insertadas = 0;
+      const saltadas: Record<string, number> = {};
+      const detalle: Array<Record<string, unknown>> = [];
+
       for (const fila of filas) {
+        const clave = String(fila.nombre_normalizado ?? fila.nombre ?? "")
+          .trim().toLowerCase();
+        if (!clave) {
+          saltadas.sin_clave = (saltadas.sin_clave ?? 0) + 1;
+          continue;
+        }
+
+        const previo = await tx.unsafe<Array<{ origen: string; id: string }>>(`
+          select 'main' as origen, id::text as id
+            from public.inmobiliarias_main
+           where lower(btrim(coalesce(nombre_normalizado, nombre))) = $1
+          union all
+          select 'staging', id::text
+            from public.inmobiliarias_staging
+           where lower(btrim(coalesce(nombre_normalizado, nombre))) = $1
+           limit 1`, [clave] as never[]);
+
+        if (previo.length > 0) {
+          const donde = `ya_en_${previo[0].origen}`;
+          saltadas[donde] = (saltadas[donde] ?? 0) + 1;
+          detalle.push({ clave, resultado: donde, id: previo[0].id });
+          continue;
+        }
+
         const cols = COLUMNAS.filter((c) => fila[c] !== undefined);
-        if (cols.length === 0) continue;
+        if (cols.length === 0) {
+          saltadas.sin_columnas = (saltadas.sin_columnas ?? 0) + 1;
+          continue;
+        }
         const lista = cols.map((c) => `"${c}"`).join(", ");
         const marcas = cols.map((_, i) => `$${i + 1}`).join(", ");
         const valores = cols.map((c) => {
@@ -251,12 +294,13 @@ export async function insertar(filas: Fila[]): Promise<Resultado> {
         const res = await tx.unsafe(
           `insert into public.inmobiliarias_staging (${lista}, "fuente")
            values (${marcas}, '${SOURCE_NAME}')`, valores as never[]);
-        total += (res as unknown as { count?: number }).count ?? 0;
+        const n = (res as unknown as { count?: number }).count ?? 0;
+        insertadas += n;
+        detalle.push({ clave, resultado: "insertada" });
       }
-      return total;
+      return { insertadas, saltadas, detalle };
     });
-    return { insertadas: n };
   } catch (e) {
-    return { insertadas: 0, error: safeError(e) };
+    return { insertadas: 0, saltadas: {}, detalle: [], error: safeError(e) };
   }
 }

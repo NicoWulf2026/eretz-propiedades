@@ -168,3 +168,34 @@ def test_reanudable_no_repite_entidades_resueltas(tmp_path):
     p.write_text('{"canonical_agency_id": "roomix:alfa"}\n', encoding="utf-8")
     assert w.cargar_hechas(p) == {"roomix:alfa"}
     assert w.cargar_hechas(tmp_path / "no-existe.jsonl") == set()
+
+
+# ------------------------------------------------- puente: dedupe server-side
+BRIDGE = (ROOT / "frontend" / "src" / "lib" / "agency-bridge.ts").read_text(encoding="utf-8")
+
+
+def test_el_dedupe_ocurre_dentro_de_la_transaccion_del_insert():
+    """En el cliente no sirve: entre que calcula y la base escribe, el estado
+    puede cambiar."""
+    cuerpo = BRIDGE[BRIDGE.index("export async function insertar"):]
+    assert "withWriter" in cuerpo
+    assert "inmobiliarias_main" in cuerpo and "inmobiliarias_staging" in cuerpo
+    # la comprobacion va antes del insert
+    assert cuerpo.index("select 'main' as origen") < cuerpo.index("insert into public.inmobiliarias_staging")
+
+
+def test_la_clave_de_dedupe_cae_en_nombre_si_el_normalizado_es_null():
+    """1.983 filas de main tienen nombre_normalizado NULL; sin el fallback
+    quedarian invisibles, que es lo que produjo las 31 colisiones."""
+    assert "coalesce(nombre_normalizado, nombre)" in BRIDGE
+
+
+def test_el_puente_nunca_escribe_en_main():
+    cuerpo = BRIDGE[BRIDGE.index("export async function insertar"):]
+    assert "insert into public.inmobiliarias_main" not in cuerpo.lower()
+    assert "update public.inmobiliarias_main" not in cuerpo.lower()
+
+
+def test_la_fuente_la_fija_el_servidor():
+    assert "\"fuente\") \n" not in BRIDGE
+    assert "'${SOURCE_NAME}'" in BRIDGE
