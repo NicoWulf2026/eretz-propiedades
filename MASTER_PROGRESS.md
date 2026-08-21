@@ -3,11 +3,53 @@
 Estado vivo de la misión integral. Se actualiza al cerrar cada frente y antes
 de cualquier corte de sesión.
 
-**Última actualización:** 2026-08-20 (snapshot agotado; delta en curso con cierre determinista)
+**Última actualización:** 2026-08-21 (campaña cerrada; rollout hecho; auditoría de webs completa)
 
 ---
 
-## Situación de una línea
+## Situación de una línea — CAMPAÑA CERRADA
+
+Crawl, delta, crosswalk, rollout y auditoría gratuita de webs: **todo terminado**.
+Nada corriendo. El único frente abierto necesita una API key de búsqueda.
+
+### Resultado final
+
+| | |
+|---|---|
+| Universo Roomix procesado | 168.563 + 24.256 del delta |
+| `observations.jsonl` | 202.111 filas |
+| RAW / CANONICAL | 9.773 / 9.622 (151 alias) |
+| **Inmobiliarias + oficinas** | **6.597** |
+| Ya en `main` / staging | 1.122 / 4.920 |
+| **Nuevas incorporadas a staging** | **465** |
+| Ambiguas preservadas | 80 |
+| **Duplicados introducidos** | **0** |
+
+### Webs (auditoría gratuita, cero consultas pagas)
+
+| | |
+|---|---|
+| VERIFIED | 417 |
+| HIGH_CONFIDENCE | 148 |
+| **Fuentes READY para scrapear** | **535** |
+| AMBIGUOUS / INACTIVE / portal | 277 / 75 / 18 |
+| Sin URL cargada | 5.662 |
+| **Cola para Search API** | **6.032** |
+
+### Bloqueo único
+
+`BRAVE_SEARCH_API_KEY` ausente. Sin ella, 6.032 entidades quedan en
+`SEARCH_API_PENDING` — nunca en `NOT_FOUND`. Consultas estimadas: 6.032 a 12.064
+según escenario.
+
+### Frente libre pendiente (no requiere key)
+
+Lote 2: las inmobiliarias históricas marcadas como no scrapeables. El
+diagnóstico de URL histórica ya está construido y probado
+(`identity_scoring.diagnosticar_url_historica`), y puede recuperar fuentes dadas
+por perdidas por un parser viejo y no por falta de web.
+
+## Situación anterior
 
 El bloqueo de base **se resolvió**: el puente `eretz_agency_coverage_writer`
 funciona y quedó verificado 7/7. El frente abierto ahora es la campaña
