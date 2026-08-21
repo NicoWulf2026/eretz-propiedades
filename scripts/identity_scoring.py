@@ -86,6 +86,9 @@ UMBRAL_ALTA = 45
 # pretende ser exhaustiva: alcanza con que cubra los casos que aparecen cuando
 # un dominio con nombre parecido pertenece a otro negocio.
 OTROS_RUBROS = {
+    # Un aviso de empleo NOMBRA a la inmobiliaria; no es su sitio.
+    "empleo": r"\b(oferta de trabajo|b[uú]squeda laboral|postularme|postulate|"
+              r"envia tu cv|curriculum|vacante|reclutamiento|jornada laboral)\b",
     "indumentaria": r"\b(indumentaria|ropa|calzoncillo|remera|jeans|talles?|"
                     r"vestido|calzado|zapatilla|moda|boutique de ropa)\b",
     "gastronomia": r"\b(restaurante|men[uú] del d[ií]a|pizzer[ií]a|cafeter[ií]a|"

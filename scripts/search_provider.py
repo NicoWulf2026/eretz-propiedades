@@ -233,6 +233,98 @@ class Tavily(Proveedor):
                 for i, r in enumerate(datos.get("results") or [], 1)]
 
 
+class Serper(Proveedor):
+    """Serper, sobre resultados de Google. Una consulta = un credito.
+
+    A diferencia de Tavily, cada respuesta trae el saldo restante en el campo
+    `credits`, asi que el tope no depende solo de nuestro contador: si la cuenta
+    informa menos de lo que creiamos, el limite se ajusta solo hacia abajo.
+    """
+    nombre = "serper"
+    ENDPOINT = "https://google.serper.dev/search"
+    ENV = "SERPER_API_KEY"
+
+    def __init__(self, pausa: float = 0.35, reintentos: int = 3, tope: int = 2400):
+        self.pausa = pausa
+        self.reintentos = reintentos
+        self.tope = tope
+        self.emitidas = 0
+        self.sin_creditos = False
+        self.creditos_informados: int | None = None
+        self._ultimo = 0.0
+
+    def _key(self) -> str:
+        return (os.environ.get(self.ENV) or "").strip()
+
+    def disponible(self) -> bool:
+        return bool(self._key())
+
+    @property
+    def agotado(self) -> bool:
+        return self.sin_creditos or self.emitidas >= self.tope
+
+    def buscar(self, consulta: str, pais: str = "AR", idioma: str = "es",
+               cantidad: int = 10) -> list[Resultado]:
+        key = self._key()
+        if not key:
+            raise RuntimeError(f"{self.ENV} ausente")
+        if self.agotado:
+            raise RuntimeError(f"tope de {self.tope} consultas alcanzado")
+
+        espera = self.pausa - (time.time() - self._ultimo)
+        if espera > 0:
+            time.sleep(espera)
+
+        cuerpo = json.dumps({"q": consulta, "gl": pais.lower(), "hl": idioma,
+                             "num": max(1, min(cantidad, 10))}).encode("utf-8")
+        req = urllib.request.Request(
+            self.ENDPOINT, data=cuerpo, method="POST",
+            headers={"Content-Type": "application/json", "X-API-KEY": key})
+
+        demora = 2.0
+        datos = None
+        for intento in range(1, self.reintentos + 1):
+            try:
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    self._ultimo = time.time()
+                    self.emitidas += 1
+                    datos = json.loads(r.read().decode("utf-8", "ignore"))
+                break
+            except urllib.error.HTTPError as e:
+                self._ultimo = time.time()
+                # 402/429 en Serper: cuota agotada o limitada. No se reintenta.
+                if e.code in (401, 402, 403, 429):
+                    self.sin_creditos = True
+                    raise RuntimeError(redactar(f"serper sin creditos o limitado (HTTP {e.code})", key)) from None
+                if e.code >= 500 and intento < self.reintentos:
+                    time.sleep(demora); demora *= 2
+                    continue
+                raise RuntimeError(redactar(f"serper HTTP {e.code}", key)) from None
+            except Exception as e:
+                self._ultimo = time.time()
+                if intento < self.reintentos:
+                    time.sleep(demora); demora *= 2
+                    continue
+                raise RuntimeError(redactar(f"serper: {type(e).__name__}", key)) from None
+        if datos is None:
+            raise RuntimeError("serper: sin respuesta tras reintentos")
+
+        # La respuesta informa el saldo: si es menor que nuestro margen, el tope
+        # se ajusta solo. Un limite que ignora lo que dice la cuenta no es un
+        # limite.
+        cred = datos.get("credits")
+        if isinstance(cred, int):
+            self.creditos_informados = cred
+            if cred <= 1:
+                self.sin_creditos = True
+
+        ahora = time.strftime("%Y-%m-%dT%H:%M:%S")
+        return [Resultado(url=r.get("link") or "", titulo=r.get("title") or "",
+                          resumen=r.get("snippet") or "", rank=r.get("position") or i,
+                          provider=self.nombre, fetched_at=ahora)
+                for i, r in enumerate(datos.get("organic") or [], 1)]
+
+
 def normalizar_consulta(consulta: str) -> str:
     """Clave de cache. Dos consultas que solo difieren en espacios o
     mayusculas no deberian pagarse dos veces."""

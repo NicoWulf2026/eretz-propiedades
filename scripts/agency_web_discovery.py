@@ -73,6 +73,14 @@ PORTALES = {
     "inmobusqueda.com.ar", "meridianoinmobiliario.com", "clasificadosrn.com.ar",
     # Secciones inmobiliarias de diarios: listan la inmobiliaria, no son suyas.
     "inmuebles.clarin.com", "clasificados.clarin.com", "inmuebles.lanacion.com.ar",
+    # Agregadores que republican avisos de terceros.
+    "trovitargentina.com.ar", "trovit.com.ar", "trovit.com", "mitula.com.ar",
+    "nestoria.com.ar", "nuroa.com.ar", "hogar360.com.ar",
+}
+# Bolsas de trabajo: un aviso de empleo NOMBRA a la inmobiliaria, no es su web.
+EMPLEO = {
+    "computrabajo.com", "ar.computrabajo.com", "bumeran.com.ar", "zonajobs.com.ar",
+    "indeed.com", "ar.indeed.com", "glassdoor.com", "jobatus.com.ar", "empleos.net",
 }
 # Medios. Publican SOBRE una inmobiliaria; su sitio no es el de ella.
 MEDIOS = {
@@ -90,7 +98,7 @@ AGREGADORES = {
     "paginasamarillas.com.ar", "cylex.com.ar", "yelp.com", "linktr.ee",
     "sites.google.com", "wixsite.com", "blogspot.com", "wordpress.com",
 }
-NO_OFICIALES = PORTALES | MEDIOS | REDES | AGREGADORES
+NO_OFICIALES = PORTALES | MEDIOS | EMPLEO | REDES | AGREGADORES
 
 # Dominios de red: valen para la pagina de oficina, nunca como dominio propio.
 DOMINIOS_FRANQUICIA = {

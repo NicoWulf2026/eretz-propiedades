@@ -245,3 +245,12 @@ def test_una_url_con_fecha_es_una_nota():
 
 def test_una_ruta_profunda_con_slug_largo_es_una_nota():
     assert sc.es_articulo("https://medio.com/seccion/titulo-largo-de-la-nota-publicada-hoy")
+
+
+def test_un_aviso_de_empleo_no_es_la_web_de_la_inmobiliaria():
+    """Serper devolvio una oferta de trabajo de agente inmobiliario que nombraba
+    a la agencia."""
+    p = sc.puntuar(ent(nombre_original="RE/MAX Exclusivo"),
+                   sitio("Oferta de trabajo. Agente inmobiliario. Enviá tu CV. "
+                         "Postulate a esta vacante.", "Trabajo en RE/MAX Exclusivo"))
+    assert p.rechazado_por_rubro and p.rubro_detectado == "empleo"
