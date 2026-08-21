@@ -212,7 +212,8 @@ export function stagingPorFuente(): Promise<Array<Record<string, unknown>>> {
 export function nombres(tabla: "main" | "staging"): Promise<Array<Record<string, unknown>>> {
   const t = tabla === "main" ? "inmobiliarias_main" : "inmobiliarias_staging";
   return readAsWriter(`
-    select id, nombre, nombre_normalizado, coalesce(fuente,'(sin fuente)') as fuente
+    select id, nombre, nombre_normalizado, coalesce(fuente,'(sin fuente)') as fuente,
+           web, telefono, email_principal, direccion, ciudad, provincia
       from public.${t} order by id`);
 }
 
