@@ -129,7 +129,10 @@ def test_reanudar_no_reprocesa_lo_ya_observado(tmp_path):
 
 
 def test_el_append_por_tandas_escribe_lineas_completas(tmp_path):
-    """El fix del handle: cada tanda se cierra, asi que lo escrito es valido."""
+    """El fix del handle: cada tanda se cierra, asi que lo escrito es valido.
+
+    Corre con hilos, que es como trabaja de verdad: comprueba ademas que la
+    concurrencia no parta ni entrelace lineas."""
     p = tmp_path / "observations.jsonl"
 
     class FetcherFalso:
@@ -138,7 +141,8 @@ def test_el_append_por_tandas_escribe_lineas_completas(tmp_path):
         def get(self, u):
             return '"agent":{"_id":"abc123def4567890","name":"Alfa Propiedades"}'
 
-    st = rdm.procesar(FetcherFalso(), [f"https://x/{i}" for i in range(7)], p, "t", cada=2)
+    st = rdm.procesar(FetcherFalso(), [f"https://x/{i}" for i in range(7)], p, "t",
+                      lote=2, hilos=2)
     assert st["agent_block"] == 7
     filas = list(rdm.leer_jsonl(p))
     assert len(filas) == 7

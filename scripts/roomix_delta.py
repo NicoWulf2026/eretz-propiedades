@@ -28,6 +28,7 @@ import json
 import sys
 import time
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -81,8 +82,12 @@ def observadas(obs_p: Path) -> tuple[set[str], list[str]]:
 
 
 def procesar(f, urls: list[str], obs_p: Path, etiqueta: str,
-             cada: int = 25) -> Counter:
+             lote: int = 50, hilos: int = 4) -> Counter:
     """Baja cada ficha y anota solo al publicador. Nada del inmueble.
+
+    Cuatro hilos sobre un unico Fetcher, igual que el crawl original. El limite
+    de ritmo vive en el Fetcher y es global, asi que la concurrencia no golpea
+    mas a Roomix: solo evita que el proceso se quede esperando de a una.
 
     El archivo se abre y se cierra por tandas en vez de mantener un handle
     abierto durante horas. Una corrida de 27.000 fichas dura media jornada, y si
@@ -101,22 +106,33 @@ def procesar(f, urls: list[str], obs_p: Path, etiqueta: str,
             fh.write("".join(buffer))
         buffer.clear()
 
-    for i, u in enumerate(urls, 1):
+    def trabajo(u: str) -> tuple[str, dict | None, str]:
         html = f.get(u)
         if not html:
-            stats["fetch_error"] += 1
-        else:
-            aid, nombre, metodo = rd.parse_publisher(html)
-            stats[metodo] += 1
-            if aid:
-                buffer.append(json.dumps(
-                    {"url": u, "agent_id": aid, "agent_name": nombre,
-                     "method": metodo, "ts": int(time.time())},
-                     ensure_ascii=False) + "\n")
-        if i % cada == 0:
-            volcar()
-        if i % 50 == 0:
-            print(f"    {etiqueta}: {i}/{len(urls)}  {dict(stats)}", flush=True)
+            return u, None, "fetch_error"
+        aid, nombre, metodo = rd.parse_publisher(html)
+        if not aid:
+            return u, None, metodo
+        return u, {"url": u, "agent_id": aid, "agent_name": nombre,
+                   "method": metodo, "ts": int(time.time())}, metodo
+
+    # Mismo patron que el crawl original: cuatro hilos sobre UN Fetcher
+    # compartido. No aumenta el ritmo contra Roomix -el lock del Fetcher sigue
+    # imponiendo el limite global de 3/s- sino que deja de desperdiciarlo. En
+    # serie el proceso pasaba ~7,5 s por ficha esperando la respuesta y despues
+    # cumplia su pausa de 0,33 s, usando menos del 5% del cupo que ya se habia
+    # decidido cortes.
+    i = 0
+    for inicio in range(0, len(urls), lote):
+        with ThreadPoolExecutor(max_workers=hilos) as ex:
+            for u, fila, metodo in ex.map(trabajo, urls[inicio:inicio + lote]):
+                i += 1
+                stats[metodo] += 1
+                if fila:
+                    buffer.append(json.dumps(fila, ensure_ascii=False) + "\n")
+        volcar()
+        print(f"    {etiqueta}: {i}/{len(urls)}  {dict(stats)}", flush=True)
+
     volcar()
     return stats
 
