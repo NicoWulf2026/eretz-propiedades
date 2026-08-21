@@ -160,6 +160,10 @@ class Tavily(Proveedor):
         self.reintentos = reintentos
         self.tope = tope
         self.emitidas = 0
+        # Bandera separada del contador: marcarse agotado subiendo `emitidas`
+        # al tope falsea el numero de consultas realmente emitidas, que es
+        # justo el dato que hay que reportar con exactitud.
+        self.sin_creditos = False
         self._ultimo = 0.0
 
     def _key(self) -> str:
@@ -170,7 +174,7 @@ class Tavily(Proveedor):
 
     @property
     def agotado(self) -> bool:
-        return self.emitidas >= self.tope
+        return self.sin_creditos or self.emitidas >= self.tope
 
     def buscar(self, consulta: str, pais: str = "AR", idioma: str = "es",
                cantidad: int = 8) -> list[Resultado]:
@@ -207,7 +211,7 @@ class Tavily(Proveedor):
                 self._ultimo = time.time()
                 # 432/433 son "sin creditos" en Tavily: no se reintenta, se corta.
                 if e.code in (402, 429, 432, 433):
-                    self.emitidas = self.tope
+                    self.sin_creditos = True
                     raise RuntimeError(redactar(f"tavily sin creditos o limitado (HTTP {e.code})", key)) from None
                 if e.code >= 500 and intento < self.reintentos:
                     time.sleep(demora); demora *= 2

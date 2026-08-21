@@ -179,3 +179,24 @@ def test_web_eretz_que_responde_pero_es_de_otra_entidad():
     c = wd.Candidata(url="https://ferreteria.com.ar", titulo="Ferreteria Don Jose",
                      texto="tornillos y clavos", http=200)
     assert wd.auditar_web_eretz(e, c)["estado"] == wd.OTRA_ENTIDAD
+
+
+# ------------------------------------------------- tope y contador
+def test_el_contador_no_se_falsea_al_quedarse_sin_creditos():
+    """El log reporto 1.450 consultas cuando se habian emitido 999: marcarse
+    agotado subiendo el contador destruye el dato que hay que informar."""
+    t = sp.Tavily(tope=1450)
+    t.emitidas = 999
+    t.sin_creditos = True
+    assert t.agotado is True
+    assert t.emitidas == 999
+
+
+def test_el_tope_duro_detiene_aunque_queden_creditos():
+    t = sp.Tavily(tope=10)
+    t.emitidas = 10
+    assert t.agotado is True
+
+
+def test_un_proveedor_nuevo_no_esta_agotado():
+    assert sp.Tavily(tope=5).agotado is False
