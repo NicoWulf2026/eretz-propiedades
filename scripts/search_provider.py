@@ -250,7 +250,7 @@ class Serper(Proveedor):
         self.tope = tope
         self.emitidas = 0
         self.sin_creditos = False
-        self.creditos_informados: int | None = None
+        self.creditos_consumidos = 0
         self._ultimo = 0.0
 
     def _key(self) -> str:
@@ -309,14 +309,14 @@ class Serper(Proveedor):
         if datos is None:
             raise RuntimeError("serper: sin respuesta tras reintentos")
 
-        # La respuesta informa el saldo: si es menor que nuestro margen, el tope
-        # se ajusta solo. Un limite que ignora lo que dice la cuenta no es un
-        # limite.
+        # `credits` en la respuesta es lo que COSTO esta consulta, no el saldo
+        # que queda. Leerlo como saldo mata el lote en la primera consulta, que
+        # es exactamente lo que paso: devolvio 1 y el runner se dio por agotado.
+        # El saldo no viaja en la respuesta de busqueda; el agotamiento se
+        # detecta por HTTP 402/429 y por el tope duro.
         cred = datos.get("credits")
         if isinstance(cred, int):
-            self.creditos_informados = cred
-            if cred <= 1:
-                self.sin_creditos = True
+            self.creditos_consumidos += cred
 
         ahora = time.strftime("%Y-%m-%dT%H:%M:%S")
         return [Resultado(url=r.get("link") or "", titulo=r.get("title") or "",

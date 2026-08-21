@@ -251,14 +251,14 @@ def main() -> int:
     interno = buscador.interno
     print("\n### RESULTADO ###", flush=True)
     print(f"  entidades buscadas:      {procesadas:,}", flush=True)
-    print(f"  consultas Tavily:        {interno.emitidas:,}", flush=True)
+    print(f"  consultas {a.proveedor}:{' '*(14-len(a.proveedor))}{interno.emitidas:,}", flush=True)
     print(f"  cache hits:              {buscador.hits:,}", flush=True)
     for k, v in estados.most_common():
         print(f"    {k:32} {v:6,}", flush=True)
     print(f"  pendientes restantes:    {len(restantes):,}", flush=True)
-    inf = getattr(interno, "creditos_informados", None)
-    if inf is not None:
-        print(f"  creditos informados por el proveedor: {inf:,}", flush=True)
+    cons = getattr(interno, "creditos_consumidos", None)
+    if cons:
+        print(f"  creditos consumidos (informados): {cons:,}", flush=True)
     print(f"  cola siguiente -> {salida_cola.name}", flush=True)
     return 0
 

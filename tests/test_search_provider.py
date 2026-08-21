@@ -200,3 +200,22 @@ def test_el_tope_duro_detiene_aunque_queden_creditos():
 
 def test_un_proveedor_nuevo_no_esta_agotado():
     assert sp.Tavily(tope=5).agotado is False
+
+
+def test_credits_de_serper_es_costo_no_saldo():
+    """La respuesta devolvio credits=1 y el runner se dio por agotado en la
+    primera consulta. Ese campo es lo que costo el request, no lo que queda."""
+    t = sp.Serper(tope=100)
+    t.creditos_consumidos += 1
+    assert t.sin_creditos is False
+    assert t.agotado is False
+    assert t.creditos_consumidos == 1
+
+
+def test_serper_se_agota_por_http_y_por_tope():
+    t = sp.Serper(tope=3)
+    t.sin_creditos = True
+    assert t.agotado is True
+    t2 = sp.Serper(tope=3)
+    t2.emitidas = 3
+    assert t2.agotado is True
