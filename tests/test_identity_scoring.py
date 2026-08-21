@@ -218,3 +218,30 @@ def test_el_diagnostico_no_scrapea_nada():
     src = inspect.getsource(sc.diagnosticar_scrapeabilidad)
     for prohibido in ("urlopen", "requests.", "httpx", "socket.", "urllib"):
         assert prohibido not in src, prohibido
+
+
+# ------------------------------------------------- notas periodisticas
+def test_una_nota_sobre_la_inmobiliaria_no_es_su_web():
+    """El caso real que aparecio en la prueba con Tavily: un articulo de revista
+    sobre RE/MAX Solutions puntuaba 49 y se llevaba el puesto de web oficial."""
+    u = ("https://www.revistaareatres.com.ar/arquitectura/"
+         "remax-solutions-lanza-su-tercer-edicion-de-hot-house-la-campana")
+    p = sc.puntuar(ent(nombre_original="Remax Solutions", ciudad="Mendoza"),
+                   sitio("Revista. Redaccion. Inmobiliaria en Mendoza. Leer mas.",
+                         "Remax Solutions lanza", url=u))
+    assert p.rechazado_por_rubro
+    assert sc.clasificar(p) == sc.OTHER_ENTITY
+
+
+def test_la_home_de_una_inmobiliaria_no_es_una_nota():
+    assert not sc.es_articulo("https://remaxsolutions.com.ar/")
+    assert not sc.es_articulo("https://remaxsolutions.com.ar/propiedades")
+    assert not sc.es_articulo("https://alfa.com.ar/quienes-somos")
+
+
+def test_una_url_con_fecha_es_una_nota():
+    assert sc.es_articulo("https://diario.com.ar/2026/03/nota-sobre-la-inmobiliaria")
+
+
+def test_una_ruta_profunda_con_slug_largo_es_una_nota():
+    assert sc.es_articulo("https://medio.com/seccion/titulo-largo-de-la-nota-publicada-hoy")

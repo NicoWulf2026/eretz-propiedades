@@ -70,6 +70,7 @@ PESOS = {
     "rubro_inmobiliario": 6,
 }
 PENAS = {
+    "es_una_nota": -100,   # rechazo: el sitio habla DE la inmobiliaria
     "telefono_distinto": -35,
     "localidad_incompatible": -30,
     "otro_rubro": -100,     # rechazo efectivo
@@ -120,7 +121,7 @@ class Puntaje:
 
     @property
     def rechazado_por_rubro(self) -> bool:
-        return any(s.clave == "otro_rubro" for s in self.negativas)
+        return any(s.clave in ("otro_rubro", "es_una_nota") for s in self.negativas)
 
     @property
     def explicacion(self) -> str:
@@ -181,6 +182,21 @@ def detectar_otro_rubro(texto: str, nombre_entidad: str = "") -> str | None:
     return None
 
 
+# Un articulo vive en una ruta profunda con slug largo; la web de una
+# inmobiliaria vive en la raiz de su dominio o a un nivel.
+ARTICULO = re.compile(r"^/[^/]+/[^/]*-[^/]*-[^/]*-[^/]*-", re.I)
+
+
+def es_articulo(url: str) -> bool:
+    """La URL tiene forma de nota, no de home de inmobiliaria."""
+    from urllib.parse import urlsplit
+    camino = urlsplit(url if "://" in url else "https://" + url).path
+    if ARTICULO.match(camino):
+        return True
+    # /2026/03/titulo-largo-de-la-nota
+    return bool(re.match(r"^/(19|20)[0-9][0-9]/", camino))
+
+
 def puntuar(entidad: dict, sitio: dict) -> Puntaje:
     """Compara una inmobiliaria contra el contenido de un sitio.
 
@@ -190,6 +206,14 @@ def puntuar(entidad: dict, sitio: dict) -> Puntaje:
     p = Puntaje()
     texto = f"{sitio.get('titulo','')} {sitio.get('texto','')}"
     bajo = d.strip_accents(texto.lower())
+
+    # --- rechazo: el sitio es una nota SOBRE la inmobiliaria ---
+    url = sitio.get("url") or ""
+    if url and es_articulo(url):
+        p.negativas.append(Señal("es_una_nota", PENAS["es_una_nota"],
+                                 "la URL tiene forma de articulo, no de sitio propio"))
+        p.total = PENAS["es_una_nota"]
+        return p
 
     # --- rechazo por rubro, antes de puntuar nada ---
     rubro = detectar_otro_rubro(texto, entidad.get("nombre_original") or "")

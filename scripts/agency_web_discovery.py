@@ -68,7 +68,18 @@ OPERATIVOS = (PENDING, SEARCH_ERROR)
 PORTALES = {
     "zonaprop.com.ar", "zonaprop.com", "argenprop.com", "mercadolibre.com.ar",
     "properati.com.ar", "properati.com", "inmuebles24.com", "roomix.ai",
-    "inmoclick.com.ar", "clasificados.lavoz.com.ar",
+    "inmoclick.com.ar", "clasificados.lavoz.com.ar", "plusvalia.com",
+    "icasas.com.ar", "buscadorprop.com.ar", "demicasa.com", "puntopropiedad.com",
+    "inmobusqueda.com.ar", "meridianoinmobiliario.com", "clasificadosrn.com.ar",
+    # Secciones inmobiliarias de diarios: listan la inmobiliaria, no son suyas.
+    "inmuebles.clarin.com", "clasificados.clarin.com", "inmuebles.lanacion.com.ar",
+}
+# Medios. Publican SOBRE una inmobiliaria; su sitio no es el de ella.
+MEDIOS = {
+    "clarin.com", "lanacion.com.ar", "infobae.com", "pagina12.com.ar",
+    "ambito.com", "cronista.com", "lavoz.com.ar", "losandes.com.ar",
+    "rionegro.com.ar", "lacapital.com.ar", "eldia.com", "lagaceta.com.ar",
+    "perfil.com", "iprofesional.com", "revistaareatres.com.ar", "arquitecturaydiseno.es",
 }
 REDES = {
     "facebook.com", "instagram.com", "linkedin.com", "twitter.com", "x.com",
@@ -79,7 +90,7 @@ AGREGADORES = {
     "paginasamarillas.com.ar", "cylex.com.ar", "yelp.com", "linktr.ee",
     "sites.google.com", "wixsite.com", "blogspot.com", "wordpress.com",
 }
-NO_OFICIALES = PORTALES | REDES | AGREGADORES
+NO_OFICIALES = PORTALES | MEDIOS | REDES | AGREGADORES
 
 # Dominios de red: valen para la pagina de oficina, nunca como dominio propio.
 DOMINIOS_FRANQUICIA = {
