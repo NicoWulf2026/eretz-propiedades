@@ -235,4 +235,27 @@ def test_el_runner_distingue_los_dos_errores():
     assert "except sp.ConsultaInvalida" in src
     assert src.index("except sp.ConsultaInvalida") < src.index("except RuntimeError")
     bloque = src[src.index("except sp.ConsultaInvalida"):src.index("except RuntimeError")]
-    assert "continue" in bloque and "break" not in bloque
+    # Una rechazada suelta continua; solo una racha corta. El `break` de aqui
+    # es el de la racha, y va condicionado.
+    assert "continue" in bloque
+    assert "if racha_rechazos >=" in bloque
+    assert bloque.index("if racha_rechazos >=") < bloque.index("break")
+
+
+def test_una_racha_de_rechazos_cierra_el_lote():
+    """Serper devuelve 400 -no 402- al agotarse el free tier. Sin este corte el
+    lote muele miles de entidades sin emitir una consulta util."""
+    import pathlib
+    src = pathlib.Path(ROOT / "scripts" / "run_search_batch.py").read_text(encoding="utf-8")
+    assert "RACHA_MAXIMA_RECHAZOS" in src
+    assert sp.RACHA_MAXIMA_RECHAZOS >= 2
+    bloque = src[src.index("except sp.ConsultaInvalida"):src.index("except RuntimeError")]
+    assert "racha_rechazos" in bloque and "break" in bloque
+
+
+def test_el_directorio_se_escribe_por_checkpoint():
+    """Escribir recien al final costo perder una corrida de 2.400 entidades."""
+    import pathlib
+    src = pathlib.Path(ROOT / "scripts" / "run_search_batch.py").read_text(encoding="utf-8")
+    assert "def volcar_directorio" in src
+    assert src.count("volcar_directorio(") >= 2  # definicion + llamada periodica

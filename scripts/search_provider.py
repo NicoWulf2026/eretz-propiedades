@@ -348,6 +348,9 @@ def normalizar_consulta(consulta: str) -> str:
     return " ".join((consulta or "").lower().split())
 
 
+RACHA_MAXIMA_RECHAZOS = 5
+
+
 @dataclass
 class ConCache(Proveedor):
     """Envuelve un proveedor y no vuelve a pagar una consulta ya hecha.

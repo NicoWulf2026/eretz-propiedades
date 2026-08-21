@@ -86,6 +86,17 @@ def prioridad(e: dict) -> tuple:
     )
 
 
+def volcar_directorio(dd: Path, directorio: dict, resultados: dict) -> None:
+    """Escribe el directorio con lo resuelto hasta ahora. Determinista."""
+    for cid, r in resultados.items():
+        if cid in directorio:
+            directorio[cid].update(r)
+    orden = sorted(directorio.values(), key=lambda x: x["canonical_agency_id"])
+    (dd / "agency_web_directory.jsonl").write_text(
+        "\n".join(json.dumps(x, ensure_ascii=False) for x in orden) + "\n",
+        encoding="utf-8")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", default=r"D:\INMO CAPITAL\ERETZ_AGENCY_DATA")
@@ -122,6 +133,7 @@ def main() -> int:
     estados: Counter = Counter()
     procesadas = 0
     rechazadas = 0
+    racha_rechazos = 0
     resultados: dict[str, dict] = {}
 
     for e in cola:
@@ -152,6 +164,15 @@ def main() -> int:
             }
             estados[SEGUNDA_PASADA] += 1
             procesadas += 1
+            racha_rechazos += 1
+            # Una consulta rechazada es un accidente; una racha es una cuenta
+            # sin saldo. Serper devuelve 400 -no 402- cuando se agota el free
+            # tier, y sin esto el lote muele miles de entidades sin emitir una
+            # sola consulta util.
+            if racha_rechazos >= sp.RACHA_MAXIMA_RECHAZOS:
+                print(f"\n  {racha_rechazos} rechazos seguidos: el proveedor "
+                      f"dejo de atender. Se cierra el lote.", flush=True)
+                break
             continue
         except RuntimeError as exc:
             msg = sp.redactar(str(exc))
@@ -240,6 +261,7 @@ def main() -> int:
         }
         estados[estado] += 1
         procesadas += 1
+        racha_rechazos = 0
 
         if a.prueba:
             print(f"\n  PRUEBA -> {e['nombre'][:50]}", flush=True)
@@ -250,6 +272,10 @@ def main() -> int:
             return 0
 
         if procesadas % 25 == 0:
+            # Checkpoint: si el proceso muere o hay que cortarlo, lo hecho
+            # sobrevive. Escribir recien al final costo perder una corrida
+            # entera de 2.400 entidades.
+            volcar_directorio(dd, directorio, resultados)
             print(f"    {procesadas}/{len(cola)} | consultas={interno.emitidas} "
                   f"cache={buscador.hits} | {dict(estados)}", flush=True)
 
