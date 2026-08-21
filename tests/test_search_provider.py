@@ -219,3 +219,20 @@ def test_serper_se_agota_por_http_y_por_tope():
     t2 = sp.Serper(tope=3)
     t2.emitidas = 3
     assert t2.agotado is True
+
+
+def test_una_consulta_rechazada_no_es_un_proveedor_agotado():
+    """Un unico HTTP 400 cerro una corrida con 5.500 entidades por delante."""
+    assert issubclass(sp.ConsultaInvalida, RuntimeError)
+    assert issubclass(sp.ProveedorAgotado, RuntimeError)
+    assert not issubclass(sp.ConsultaInvalida, sp.ProveedorAgotado)
+
+
+def test_el_runner_distingue_los_dos_errores():
+    import inspect, pathlib
+    src = pathlib.Path(ROOT / "scripts" / "run_search_batch.py").read_text(encoding="utf-8")
+    # la consulta invalida continua; el agotamiento corta
+    assert "except sp.ConsultaInvalida" in src
+    assert src.index("except sp.ConsultaInvalida") < src.index("except RuntimeError")
+    bloque = src[src.index("except sp.ConsultaInvalida"):src.index("except RuntimeError")]
+    assert "continue" in bloque and "break" not in bloque

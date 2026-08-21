@@ -34,6 +34,19 @@ PENDING = "SEARCH_API_PENDING"
 ERROR = "SEARCH_API_ERROR"
 
 
+class ConsultaInvalida(RuntimeError):
+    """El proveedor rechazo ESTA consulta. No dice nada del resto del lote.
+
+    Existe para separar dos cosas que no son lo mismo: una consulta que el
+    proveedor no acepta, y un proveedor que dejo de atender. Confundirlas hizo
+    que un unico HTTP 400 cerrara una corrida con 5.500 entidades por delante.
+    """
+
+
+class ProveedorAgotado(RuntimeError):
+    """Sin creditos o limitado. Aca si corresponde cerrar el lote."""
+
+
 @dataclass
 class Resultado:
     """Solo lo necesario para rankear y despues verificar. La pagina completa se
@@ -210,9 +223,11 @@ class Tavily(Proveedor):
             except urllib.error.HTTPError as e:
                 self._ultimo = time.time()
                 # 432/433 son "sin creditos" en Tavily: no se reintenta, se corta.
+                if e.code in (400, 413, 422):
+                    raise ConsultaInvalida(redactar(f"tavily rechazo la consulta (HTTP {e.code})", key)) from None
                 if e.code in (402, 429, 432, 433):
                     self.sin_creditos = True
-                    raise RuntimeError(redactar(f"tavily sin creditos o limitado (HTTP {e.code})", key)) from None
+                    raise ProveedorAgotado(redactar(f"tavily sin creditos o limitado (HTTP {e.code})", key)) from None
                 if e.code >= 500 and intento < self.reintentos:
                     time.sleep(demora); demora *= 2
                     continue
@@ -295,7 +310,9 @@ class Serper(Proveedor):
                 # 402/429 en Serper: cuota agotada o limitada. No se reintenta.
                 if e.code in (401, 402, 403, 429):
                     self.sin_creditos = True
-                    raise RuntimeError(redactar(f"serper sin creditos o limitado (HTTP {e.code})", key)) from None
+                    raise ProveedorAgotado(redactar(f"serper sin creditos o limitado (HTTP {e.code})", key)) from None
+                if e.code in (400, 413, 422):
+                    raise ConsultaInvalida(redactar(f"serper rechazo la consulta (HTTP {e.code})", key)) from None
                 if e.code >= 500 and intento < self.reintentos:
                     time.sleep(demora); demora *= 2
                     continue

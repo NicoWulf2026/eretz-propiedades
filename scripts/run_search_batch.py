@@ -121,6 +121,7 @@ def main() -> int:
 
     estados: Counter = Counter()
     procesadas = 0
+    rechazadas = 0
     resultados: dict[str, dict] = {}
 
     for e in cola:
@@ -134,6 +135,24 @@ def main() -> int:
             continue
         try:
             res = buscador.buscar(q, pais="AR", idioma="es", cantidad=8)
+        except sp.ConsultaInvalida as exc:
+            # Una consulta rechazada es un dato sobre ESA entidad, no sobre el
+            # lote. Se anota y se sigue: confundir las dos cosas hizo que un
+            # unico HTTP 400 cerrara una corrida con 5.500 entidades por delante.
+            rechazadas += 1
+            resultados[e["canonical_id"]] = {
+                "status": SEGUNDA_PASADA, "selected_domain": None,
+                "selected_office_page": None, "search_provider": a.proveedor,
+                "search_queries": [q], "search_queries_count": 1,
+                "candidate_urls": [], "scrapeability_status": None,
+                "identity_score": None, "positive_evidence": [],
+                "negative_evidence": [],
+                "reason": f"el proveedor rechazo la consulta: {sp.redactar(str(exc))}",
+                "checked_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            }
+            estados[SEGUNDA_PASADA] += 1
+            procesadas += 1
+            continue
         except RuntimeError as exc:
             msg = sp.redactar(str(exc))
             print(f"\n  proveedor detenido: {msg}", flush=True)
@@ -253,6 +272,7 @@ def main() -> int:
     print(f"  entidades buscadas:      {procesadas:,}", flush=True)
     print(f"  consultas {a.proveedor}:{' '*(14-len(a.proveedor))}{interno.emitidas:,}", flush=True)
     print(f"  cache hits:              {buscador.hits:,}", flush=True)
+    print(f"  consultas rechazadas:    {rechazadas:,}", flush=True)
     for k, v in estados.most_common():
         print(f"    {k:32} {v:6,}", flush=True)
     print(f"  pendientes restantes:    {len(restantes):,}", flush=True)
