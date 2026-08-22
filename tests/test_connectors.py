@@ -509,3 +509,139 @@ def test_el_runner_no_usa_hash_para_identidad():
     src = (ROOT / "scripts" / "run_tokko_canary.py").read_text(encoding="utf-8")
     assert "abs(hash(" not in src
     assert "id_sustituto" in src
+
+
+# =========================================================== connector WordPress
+from connectors.wordpress import WordPressConnector  # noqa: E402
+
+WP_TYPES = json.dumps({"post": {"rest_base": "posts"},
+                       "property": {"rest_base": "property"}})
+WP_ITEM = json.dumps([{
+    "id": 116338, "link": "https://wp.com.ar/property/depto-la-plata/",
+    "type": "property", "modified": "2026-08-01T10:00:00",
+    "title": {"rendered": "Departamento en alquiler en La Plata"},
+    "content": {"rendered": "<p>Depto USD 55.000 2 ambientes</p>"}}])
+
+
+def wp_conector(paginas=None, cp=None):
+    paginas = paginas or {
+        "https://wp.com.ar/wp-json/wp/v2/types": WP_TYPES,
+        "https://wp.com.ar/wp-json/wp/v2/property": WP_ITEM,
+        "https://wp.com.ar/property/": "<html></html>",
+    }
+    return WordPressConnector(descargador=DescargadorFalso(paginas), checkpoint=cp)
+
+
+def wp_fuente():
+    return B.Fuente(canonical_agency_id="wp-1", agency_name="Alfa",
+                    official_url="https://wp.com.ar/", inmobiliaria_id=99)
+
+
+def test_wordpress_prefiere_la_rest_sobre_el_html():
+    """La REST devuelve campos tipados y ahorra el parser entero: es el camino
+    mas barato y por eso se prueba primero."""
+    plan = wp_conector().discover(wp_fuente())
+    assert plan["variante"] == "WORDPRESS_REST"
+    assert plan["post_type"] == "property" and plan["soportada"] is True
+
+
+def test_wordpress_ignora_los_post_types_que_no_son_inventario():
+    plan = wp_conector().discover(wp_fuente())
+    assert "post" not in (plan.get("post_types_inmo") or [])
+
+
+def test_wordpress_sin_inventario_no_se_fuerza():
+    """46% de los WordPress no publica inventario detectable. Devolver cero en
+    silencio haria creer que la inmobiliaria no tiene propiedades."""
+    c = wp_conector({"https://wp.com.ar/wp-json/wp/v2/types": json.dumps({"post": {}}),
+                     "https://wp.com.ar/": "<html><a href='/nosotros/x'>x</a></html>"})
+    plan = c.discover(wp_fuente())
+    assert plan["soportada"] is False and plan["variante"] == "SIN_INVENTARIO"
+    assert list(c.fetch_listing(wp_fuente(), plan)) == []
+
+
+def test_wordpress_pagina_por_rest_y_corta_al_agotarse():
+    c = wp_conector()
+    f = wp_fuente()
+    avisos = list(c.fetch_listing(f, c.discover(f)))
+    assert [a["source_listing_id"] for a in avisos] == ["116338"]
+
+
+def test_wordpress_usa_el_id_de_la_plataforma_como_identidad():
+    c = wp_conector()
+    f = wp_fuente()
+    a = list(c.fetch_listing(f, c.discover(f)))[0]
+    p = c.normalize(a, f)
+    assert p.source_listing_id == "116338"
+    assert p.connector == "wordpress"
+
+
+def test_wordpress_respeta_la_convencion_de_moneda_del_pipeline():
+    """El pipeline mapea "$" a ARS en normalize_currency. Un connector con una
+    regla propia mas estricta deja precios sin moneda y crea una segunda verdad
+    sobre el mismo dato."""
+    assert B.detectar_moneda("$") == "ARS"
+    assert B.detectar_moneda("USD") == "USD"
+
+
+def test_wordpress_no_publica_cero_ambientes():
+    """Un cero suelto del texto caia junto a la etiqueta. "0 ambientes" es peor
+    que ausente: parece un dato verificado."""
+    assert WordPressConnector._ambientes("0 ambientes", r"ambientes?") is None
+    assert WordPressConnector._ambientes("3 ambientes", r"ambientes?") == 3
+
+
+def test_wordpress_descarta_logos_y_placeholders_de_las_fotos():
+    c = wp_conector({
+        "https://wp.com.ar/wp-json/wp/v2/types": WP_TYPES,
+        "https://wp.com.ar/wp-json/wp/v2/property": json.dumps([{
+            "id": 1, "link": "https://wp.com.ar/property/x/", "type": "property",
+            "title": {"rendered": "Casa USD 100.000"},
+            "content": {"rendered": '<img src="https://wp.com.ar/logo.png">'
+                                    '<img src="https://wp.com.ar/casa-1.jpg">'}}]),
+        "https://wp.com.ar/property/x/": "<html></html>"})
+    f = wp_fuente()
+    p = c.normalize(list(c.fetch_listing(f, c.discover(f)))[0], f)
+    assert all("logo" not in u for u in p.imagenes)
+
+
+def test_wordpress_produce_la_misma_representacion_normalizada():
+    """El pipeline no debe distinguir de que connector vino la propiedad."""
+    c = wp_conector()
+    f = wp_fuente()
+    p = c.normalize(list(c.fetch_listing(f, c.discover(f)))[0], f)
+    assert isinstance(p, B.PropiedadNormalizada)
+    assert p.hash_dedup and p.fingerprint
+
+
+def test_dos_connectors_distintos_no_colisionan_en_identidad():
+    """La misma URL bajo dos inmobiliarias distintas tiene que dar hashes
+    distintos, venga del connector que venga."""
+    a = B.PropiedadNormalizada(canonical_agency_id="x", source_listing_id="1",
+                               source_url="https://z.com/p/1", connector="tokko",
+                               inmobiliaria_id=10)
+    b = B.PropiedadNormalizada(canonical_agency_id="y", source_listing_id="1",
+                               source_url="https://z.com/p/1", connector="wordpress",
+                               inmobiliaria_id=20)
+    assert a.hash_dedup != b.hash_dedup
+
+
+# ------------------------------------------------------- cortesia vs concurrencia
+def test_la_cortesia_es_por_host_no_global():
+    """Un cerrojo unico para todos los hosts convierte el limite de cortesia en
+    un limite global: con 8 fuentes en paralelo el rollout pasa de horas a dias."""
+    import time as _t
+    lim = B.LimitadorDeRitmo(0.3)
+    lim.esperar("a.com")
+    t0 = _t.monotonic()
+    lim.esperar("b.com")          # otro host: no deberia esperar nada
+    assert _t.monotonic() - t0 < 0.2
+
+
+def test_el_mismo_host_si_espera():
+    import time as _t
+    lim = B.LimitadorDeRitmo(0.3)
+    lim.esperar("a.com")
+    t0 = _t.monotonic()
+    lim.esperar("a.com")
+    assert _t.monotonic() - t0 >= 0.25

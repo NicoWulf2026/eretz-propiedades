@@ -221,10 +221,23 @@ class LimitadorDeRitmo:
     def __init__(self, intervalo: float = 1.5):
         self.intervalo = intervalo
         self._ultimo: dict[str, float] = {}
-        self._lock = threading.Lock()
+        self._locks: dict[str, threading.Lock] = {}
+        self._maestro = threading.Lock()
+
+    def _lock_de(self, host: str) -> threading.Lock:
+        with self._maestro:
+            return self._locks.setdefault(host, threading.Lock())
 
     def esperar(self, host: str) -> None:
-        with self._lock:
+        """Espera lo que le falte a ESTE host, sin frenar a los demas.
+
+        Un lock unico para todos los hosts convertiria el limite de cortesia en
+        un limite global: con 8 fuentes en paralelo, cada una esperando el turno
+        de las otras, el paralelismo desaparece y el rollout completo pasaria de
+        horas a dias. Cortesia por host, concurrencia entre hosts: son cosas
+        distintas y no deben compartir cerrojo.
+        """
+        with self._lock_de(host):
             ahora = time.monotonic()
             falta = self.intervalo - (ahora - self._ultimo.get(host, 0.0))
             if falta > 0:
