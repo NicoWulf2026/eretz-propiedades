@@ -943,3 +943,110 @@ def test_century21_lee_las_coordenadas_de_la_raiz():
     assert p.latitud == -32.958 and p.longitud == -60.635
     assert p.superficie_cubierta == 34.8 and p.superficie_total == 39.7
     assert p.ciudad == "Rosario" and p.dormitorios == 1
+
+
+# ============================================================ connector generico
+from connectors.generico import GenericoConnector, RE_FICHA  # noqa: E402
+
+GEN_SITEMAP = """<?xml version="1.0"?><urlset>
+<url><loc>https://alfa.com.ar/propiedades/710944-casa-en-venta</loc></url>
+<url><loc>https://alfa.com.ar/propiedades/710945-depto-en-alquiler</loc></url>
+<url><loc>https://alfa.com.ar/propiedades/</loc></url>
+<url><loc>https://alfa.com.ar/contacto</loc></url>
+</urlset>"""
+
+GEN_FICHA = """<html><head>
+<meta property="og:title" content="Casa en Venta en Rosario">
+<script type="application/ld+json">{"@type":"Product","name":"Casa en Venta en Rosario",
+"description":"Casa amplia con parque y cochera doble en zona residencial.",
+"offers":{"@type":"Offer","price":"90000","priceCurrency":"USD"},
+"address":{"@type":"PostalAddress","streetAddress":"Mitre 123",
+"addressLocality":"Rosario","addressRegion":"Santa Fe"},
+"geo":{"@type":"GeoCoordinates","latitude":-32.9587,"longitude":-60.6930},
+"image":["https://alfa.com.ar/fotos/casa-1.jpg"]}</script>
+</head><body><p>3 dormitorios 2 banos 170 m2 cubiertos</p>
+<img src="https://alfa.com.ar/logo.png"></body></html>"""
+
+
+def gen_conector(paginas=None, cp=None):
+    paginas = paginas or {
+        "https://alfa.com.ar/sitemap.xml": GEN_SITEMAP,
+        "https://alfa.com.ar/propiedades/710944-casa-en-venta": GEN_FICHA,
+        "https://alfa.com.ar/propiedades/710945-depto-en-alquiler": GEN_FICHA,
+    }
+    return GenericoConnector(descargador=DescargadorFalso(paginas), checkpoint=cp)
+
+
+def test_generico_prefiere_el_sitemap():
+    """El indice lista las fichas y evita recorrer el sitio a ciegas."""
+    plan = gen_conector().discover(fuente())
+    assert plan["variante"] == "SITEMAP" and plan["soportada"] is True
+    assert plan["total_declarado"] == 2
+
+
+def test_generico_no_confunde_el_listado_con_una_ficha():
+    """"/propiedades/" es la pagina de listado, no una propiedad. Sin exigir un
+    id o un slug largo entraria al inventario como si lo fuera."""
+    assert not RE_FICHA.search("https://alfa.com.ar/propiedades/")
+    assert not RE_FICHA.search("https://alfa.com.ar/contacto")
+    assert RE_FICHA.search("https://alfa.com.ar/propiedades/710944-casa-en-venta")
+    assert RE_FICHA.search("https://alfa.com.ar/inmuebles/casa-tres-dormitorios-rosario")
+
+
+def test_generico_usa_schema_org_antes_que_el_texto():
+    """schema.org es un contrato publico; el texto es una convencion visual que
+    cambia con el tema del sitio."""
+    c = gen_conector()
+    f = fuente()
+    p = c.normalize(list(c.fetch_listing(f, c.discover(f)))[0], f)
+    assert p.precio == 90000 and p.moneda == "USD"
+    assert p.ciudad == "Rosario" and p.provincia == "Santa Fe"
+    assert p.direccion == "Mitre 123"
+    assert p.latitud == pytest.approx(-32.9587)
+    assert p.extra["via"] == "json-ld"
+    assert p.problemas() == []
+
+
+def test_generico_cae_al_texto_cuando_no_hay_json_ld():
+    ficha = "<html><head><title>Casa en Venta</title></head><body>USD 55.000 " \
+            "3 dormitorios 2 banos</body></html>"
+    c = gen_conector({"https://alfa.com.ar/sitemap.xml": GEN_SITEMAP,
+                      "https://alfa.com.ar/propiedades/": ficha})
+    f = fuente()
+    p = c.normalize(list(c.fetch_listing(f, c.discover(f)))[0], f)
+    assert p.precio == 55000 and p.moneda == "USD"
+    assert p.dormitorios == 3 and p.banos == 2
+
+
+def test_generico_descarta_logos():
+    c = gen_conector()
+    f = fuente()
+    p = c.normalize(list(c.fetch_listing(f, c.discover(f)))[0], f)
+    assert all("logo" not in u for u in p.imagenes)
+    assert "https://alfa.com.ar/fotos/casa-1.jpg" in p.imagenes
+
+
+def test_generico_sin_nada_no_se_fuerza():
+    """Preferimos decir "no la supimos leer" antes que devolver cero y que
+    parezca que la inmobiliaria no publica."""
+    c = gen_conector({"https://alfa.com.ar/": "<html><a href='/nosotros'>x</a></html>"})
+    f = fuente()
+    plan = c.discover(f)
+    assert plan["soportada"] is False
+    assert list(c.fetch_listing(f, plan)) == []
+
+
+def test_generico_conserva_el_id_de_la_plataforma():
+    """El id tiene que poder rastrearse hasta la ficha de origen, nunca un hash
+    inventado por nosotros."""
+    assert GenericoConnector._id_de("https://a.com/propiedades/710944-casa") == "710944"
+    assert GenericoConnector._id_de("https://a.com/inmuebles/casa-linda-rosario") == \
+        "casa-linda-rosario"
+
+
+def test_los_cuatro_connectors_cumplen_la_misma_interfaz():
+    for clase in (TokkoConnector, WordPressConnector, Century21Connector,
+                  GenericoConnector):
+        for metodo in ("discover", "fetch_listing", "normalize", "resume",
+                       "registrar", "identify_deleted_or_inactive"):
+            assert callable(getattr(clase, metodo)), (clase.__name__, metodo)
