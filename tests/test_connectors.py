@@ -793,3 +793,93 @@ def test_cada_corrida_registra_la_version_del_codigo():
     assert v == version_del_codigo()
     src = (ROOT / "scripts" / "run_rollout.py").read_text(encoding="utf-8")
     assert '"version_codigo"' in src
+
+
+# =========================================================== connector Century 21
+from connectors.century21 import Century21Connector  # noqa: E402
+
+C21_PERFIL = ('<html><a href="/v/resultados/oficina_68-revolution-s-a_local">'
+              'Ver propiedades</a></html>')
+C21_JSON = json.dumps({"totalHits": "2", "results": [
+    {"id": 373936, "encabezado": "Venta | Departamento en Rosario", "precio": 42000,
+     "moneda": "USD", "calle": "Av. Pellegrini", "colonia": "Martin",
+     "estado": "Santa Fe", "banos": 1, "fechaModificacion": "2026-08-01",
+     "fotos": {"totalFotos": 18,
+               "propiedadThumbnail": ["https://cdn.21online.lat/a/1.jpg"]}},
+    {"id": 373937, "encabezado": "Alquiler | Casa en Rosario", "precio": 500000,
+     "moneda": "ARS", "banos": 2, "fotos": {}}]})
+
+
+def c21_conector(paginas=None, cp=None):
+    paginas = paginas or {
+        "https://century21.com.ar/v/oficina/68-revolution-s-a-rosario": C21_PERFIL,
+        "https://century21.com.ar/v/resultados/oficina_68-revolution-s-a_local?json=true":
+            C21_JSON,
+    }
+    return Century21Connector(descargador=DescargadorFalso(paginas), checkpoint=cp)
+
+
+def c21_fuente():
+    return B.Fuente(canonical_agency_id="c21-68", agency_name="C21 Revolution",
+                    official_url="https://century21.com.ar/v/oficina/68-revolution-s-a-rosario",
+                    inmobiliaria_id=68)
+
+
+def test_century21_lee_el_enlace_al_inventario_de_la_ficha():
+    """El slug del perfil ("revolution-s-a-rosario-santa-fe-argentina") no es el
+    del listado ("revolution-s-a"): no se puede derivar uno del otro, hay que
+    leer el enlace que la propia ficha publica."""
+    plan = c21_conector().discover(c21_fuente())
+    assert plan["variante"] == "C21_JSON" and plan["soportada"] is True
+    assert plan["ruta"].endswith("oficina_68-revolution-s-a_local")
+    assert plan["total_declarado"] == 2
+
+
+def test_century21_usa_el_json_no_el_html():
+    """El listado renderizado en cliente son 650 KB sin un solo enlace a ficha.
+    La misma url con ?json=true devuelve el resultado completo."""
+    src = (ROOT / "connectors" / "century21.py").read_text(encoding="utf-8")
+    assert "?json=true" in src
+
+
+def test_century21_enumera_y_normaliza():
+    c = c21_conector()
+    f = c21_fuente()
+    avisos = list(c.fetch_listing(f, c.discover(f)))
+    assert [a["source_listing_id"] for a in avisos] == ["373936", "373937"]
+    p = c.normalize(avisos[0], f)
+    assert p.precio == 42000 and p.moneda == "USD" and p.operacion == "venta"
+    assert p.direccion == "Av. Pellegrini" and p.provincia == "Santa Fe"
+    assert p.imagenes == ["https://cdn.21online.lat/a/1.jpg"]
+    assert p.problemas() == []
+
+
+def test_century21_respeta_la_moneda_declarada():
+    c = c21_conector()
+    f = c21_fuente()
+    avisos = list(c.fetch_listing(f, c.discover(f)))
+    assert c.normalize(avisos[1], f).moneda == "ARS"
+
+
+def test_century21_sin_fotos_no_inventa():
+    c = c21_conector()
+    f = c21_fuente()
+    avisos = list(c.fetch_listing(f, c.discover(f)))
+    assert c.normalize(avisos[1], f).imagenes == []
+
+
+def test_century21_una_url_sin_oficina_no_se_soporta():
+    c = c21_conector({"https://century21.com.ar/acercade": "<html></html>"})
+    f = B.Fuente(canonical_agency_id="x", agency_name="x",
+                 official_url="https://century21.com.ar/acercade", inmobiliaria_id=1)
+    plan = c.discover(f)
+    assert plan["soportada"] is False
+    assert list(c.fetch_listing(f, plan)) == []
+
+
+def test_los_tres_connectors_cumplen_la_misma_interfaz():
+    """El pipeline no debe distinguir de que plataforma vino una propiedad."""
+    for clase in (TokkoConnector, WordPressConnector, Century21Connector):
+        for metodo in ("discover", "fetch_listing", "normalize", "resume",
+                       "registrar", "identify_deleted_or_inactive"):
+            assert callable(getattr(clase, metodo)), (clase.__name__, metodo)

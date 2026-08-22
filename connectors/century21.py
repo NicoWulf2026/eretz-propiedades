@@ -1,0 +1,223 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""Connector Century 21 Argentina — implementacion numero tres.
+
+La red publica en century21.com.ar sobre una plataforma llamada Viviendi, con
+un backend Elasticsearch compartido por todas las oficinas. Eso la vuelve la
+fuente mas barata de las tres: un solo conector cubre las 42 oficinas y devuelve
+JSON tipado, sin parsear una linea de HTML.
+
+Como se encontro: el listado por oficina parece vacio -650 KB de HTML sin un
+solo enlace a ficha, todo renderizado en el cliente-, asi que el conector nunca
+lo habria visto. Mirando lo que la pagina realmente pide en el navegador
+aparecio que la MISMA url con `?json=true` devuelve el resultado completo.
+
+  - directorio de oficinas: /oficinas
+  - perfil de oficina:      /v/oficina/<id>-<slug>
+  - inventario:             /v/resultados/oficina_<id>-<slug>_local
+  - JSON:                   la misma url + `?json=true`
+  - paginacion:             .../pagina_<N>?json=true, 100 por pagina
+  - total declarado:        campo `totalHits`
+
+Los parametros de query tipo `page=`, `from=` u `offset=` devuelven la primera
+pagina otra vez, con HTTP 200: la paginacion va en la RUTA. Es la misma trampa
+que Tokko, con otra forma.
+"""
+from __future__ import annotations
+
+import json
+import re
+import urllib.parse
+from typing import Any, Iterator
+
+from .base import (Bloqueado, Connector, ErrorPermanente, ErrorTransitorio,
+                   Fuente, PropiedadNormalizada, a_numero, detectar_operacion,
+                   detectar_tipo, limpiar)
+
+BASE = "https://century21.com.ar"
+POR_PAGINA = 100
+MAX_PAGINAS = 60
+
+RE_PERFIL = re.compile(r"/v/oficina/(\d+)-([a-z0-9\-]+)", re.I)
+# El enlace al inventario que la propia ficha de oficina publica. Hace falta
+# leerlo: el slug del perfil ("revolution-s-a-rosario-santa-fe-argentina") NO es
+# el del listado ("revolution-s-a"), asi que no se puede derivar uno del otro.
+RE_LISTADO = re.compile(r"/v/resultados/(oficina_\d+-[a-z0-9\-]+_local)", re.I)
+
+
+class Century21Connector(Connector):
+    nombre = "century21"
+    variantes_soportadas = ("C21_JSON",)
+
+    # ---------------------------------------------------------------- discover
+    def discover(self, fuente: Fuente) -> dict[str, Any]:
+        plan: dict[str, Any] = {"variante": "SIN_OFICINA", "soportada": False,
+                                "total_declarado": None}
+        url = fuente.official_url
+        m = RE_LISTADO.search(url)
+        if m:
+            ruta = f"{BASE}/v/resultados/{m.group(1)}"
+        else:
+            perfil = RE_PERFIL.search(url)
+            if not perfil:
+                return plan
+            plan["oficina_id"] = perfil.group(1)
+            try:
+                html = self.descargador.bajar(url)
+            except (ErrorTransitorio, ErrorPermanente, Bloqueado):
+                return plan
+            m = RE_LISTADO.search(html)
+            if not m:
+                return plan
+            ruta = f"{BASE}/v/resultados/{m.group(1)}"
+        plan["ruta"] = ruta
+
+        try:
+            datos = json.loads(self.descargador.bajar(ruta + "?json=true"))
+        except (ValueError, ErrorTransitorio, ErrorPermanente, Bloqueado):
+            return plan
+        if not isinstance(datos, dict) or not isinstance(datos.get("results"), list):
+            return plan
+
+        total = datos.get("totalHits")
+        plan.update({
+            "variante": "C21_JSON", "soportada": True,
+            "total_declarado": int(total) if str(total).isdigit() else None,
+            "primera_pagina": datos["results"],
+        })
+        return plan
+
+    # ----------------------------------------------------------- fetch_listing
+    def fetch_listing(self, fuente: Fuente, plan: dict[str, Any]) -> Iterator[dict]:
+        if not plan.get("soportada"):
+            return
+        ruta = plan["ruta"]
+        vistos: set[str] = set()
+        for pagina in range(1, MAX_PAGINAS + 1):
+            if pagina == 1:
+                items = plan.get("primera_pagina") or []
+            else:
+                try:
+                    datos = json.loads(
+                        self.descargador.bajar(f"{ruta}/pagina_{pagina}?json=true"))
+                except (ValueError, ErrorPermanente):
+                    break
+                except (ErrorTransitorio, Bloqueado):
+                    break
+                items = datos.get("results") or []
+            if not items:
+                break
+            nuevos = 0
+            for it in items:
+                lid = str(it.get("id") or "")
+                if not lid or lid in vistos:
+                    continue
+                vistos.add(lid)
+                nuevos += 1
+                yield {"source_listing_id": lid, "pagina": pagina, "json": it,
+                       "source_url": self._url_de(it, lid)}
+            if nuevos == 0 or len(items) < POR_PAGINA:
+                break
+
+    @staticmethod
+    def _url_de(it: dict, lid: str) -> str:
+        for clave in ("url", "urlDetalle", "link", "permalink"):
+            v = it.get(clave)
+            if isinstance(v, str) and v:
+                return v if v.startswith("http") else urllib.parse.urljoin(BASE, v)
+        return f"{BASE}/v/propiedad/{lid}"
+
+    # --------------------------------------------------------------- normalize
+    def normalize(self, crudo: dict, fuente: Fuente) -> PropiedadNormalizada | None:
+        it = crudo.get("json") or {}
+        lid = crudo["source_listing_id"]
+
+        # Las fotos vienen como listas dentro de `fotos`. Se toman en el orden
+        # que trae la fuente, sin reordenar: el primero suele ser la portada.
+        imagenes, vistas = [], set()
+        fotos = it.get("fotos") or {}
+        if isinstance(fotos, dict):
+            for clave in ("propiedadFoto", "propiedadThumbnail", "fotos", "urls"):
+                v = fotos.get(clave)
+                if isinstance(v, list):
+                    for u in v:
+                        if isinstance(u, str) and u.startswith("http") and u not in vistas:
+                            vistas.add(u)
+                            imagenes.append(u)
+
+        titulo = limpiar(it.get("encabezado") or it.get("titulo"))
+        operacion = detectar_operacion(
+            f"{it.get('operacion') or ''} {it.get('estadoWeb') or ''} {titulo or ''}")
+        moneda = (it.get("moneda") or "").upper().strip() or None
+        if moneda not in ("USD", "ARS", None):
+            moneda = None
+
+        # La direccion se arma solo con lo que la fuente publica. Si falta la
+        # calle no se rellena con la colonia: son cosas distintas.
+        calle = limpiar(it.get("calle"))
+        barrio = limpiar(it.get("colonia") or it.get("coloniaWeb"))
+
+        lat = lon = None
+        ubic = it.get("ubicacion") or it.get("location") or {}
+        if isinstance(ubic, dict):
+            lat = ubic.get("lat") or (ubic.get("location") or {}).get("lat")
+            lon = ubic.get("lon") or (ubic.get("location") or {}).get("lon")
+        try:
+            lat = float(lat) if lat is not None else None
+            lon = float(lon) if lon is not None else None
+        except (TypeError, ValueError):
+            lat = lon = None
+
+        extra = {k: v for k, v in {
+            "oficina_c21": it.get("afiliadoNombre"),
+            "asesor": it.get("asesorNombre"),
+            "estacionamientos": it.get("estacionamientos"),
+            "cuota_mantenimiento": it.get("cuotaMantenimiento"),
+            "exclusiva": it.get("exclusiva"),
+            "con_video": it.get("conVideo"),
+            "fecha_alta": it.get("fechaAlta"),
+            "modificado_en_fuente": it.get("fechaModificacion"),
+            "total_fotos_fuente": (fotos or {}).get("totalFotos"),
+            "estado_web": it.get("estadoWeb"),
+        }.items() if v not in (None, "", [])}
+
+        return PropiedadNormalizada(
+            canonical_agency_id=fuente.canonical_agency_id,
+            source_listing_id=lid,
+            source_url=crudo["source_url"],
+            connector=self.nombre,
+            titulo=titulo,
+            descripcion=limpiar(it.get("descripcion"))[:4000] if it.get("descripcion") else None,
+            precio=a_numero(it.get("precio")),
+            moneda=moneda,
+            operacion=operacion,
+            tipo_propiedad=detectar_tipo(f"{it.get('tipo') or ''} {titulo or ''}"),
+            direccion=calle,
+            barrio=barrio,
+            ciudad=limpiar(it.get("ciudad") or it.get("municipio")),
+            provincia=limpiar(it.get("estado") or it.get("estadoTxt")),
+            latitud=lat,
+            longitud=lon,
+            dormitorios=self._entero(it.get("recamaras") or it.get("dormitorios")),
+            banos=self._entero(it.get("banos")),
+            ambientes=self._entero(it.get("ambientes")),
+            superficie_total=a_numero(it.get("terreno") or it.get("superficieTerreno")),
+            superficie_cubierta=a_numero(it.get("construccion") or it.get("superficieConstruida")),
+            imagenes=imagenes[:40],
+            extra=extra,
+            inmobiliaria_id=fuente.inmobiliaria_id,
+            provenance={"connector": self.nombre, "official_domain": BASE,
+                        "agency_name": fuente.agency_name,
+                        "canonical_agency_id": fuente.canonical_agency_id,
+                        "source_platform": "CENTURY21_VIVIENDI",
+                        "oficina_id": crudo.get("oficina_id"),
+                        "pagina_listado": crudo.get("pagina")},
+        )
+
+    @staticmethod
+    def _entero(v: Any) -> int | None:
+        try:
+            n = int(float(v))
+        except (TypeError, ValueError):
+            return None
+        return n if 1 <= n <= 99 else None

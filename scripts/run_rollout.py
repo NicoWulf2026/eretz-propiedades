@@ -39,9 +39,11 @@ from connectors.base import (Bloqueado, Checkpoint, Descargador,  # noqa: E402
                              LimitadorDeRitmo)
 from connectors.tokko import TokkoConnector  # noqa: E402
 from connectors.wordpress import WordPressConnector  # noqa: E402
+from connectors.century21 import Century21Connector  # noqa: E402
 from scripts.run_tokko_canary import id_sustituto  # noqa: E402
 
-CONNECTORS = {"tokko": TokkoConnector, "wordpress": WordPressConnector}
+CONNECTORS = {"tokko": TokkoConnector, "wordpress": WordPressConnector,
+              "century21": Century21Connector}
 
 # Umbral conservador: por debajo de esto el inventario se considera truncado.
 # Una fuente que declara 299 y entrega 20 no puede quedar como PASS.
