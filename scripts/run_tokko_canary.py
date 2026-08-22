@@ -14,6 +14,7 @@ Dos costos distintos, tratados distinto:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import random
 import re
@@ -29,6 +30,28 @@ from connectors.base import (AUSENCIAS_PARA_BAJA, Bloqueado, Checkpoint,  # noqa
                              Descargador, ErrorPermanente, ErrorTransitorio,
                              Fuente, LimitadorDeRitmo)
 from connectors.tokko import TokkoConnector  # noqa: E402
+
+
+def id_sustituto(canonical_agency_id: str) -> int:
+    """Id numerico estable para el canary, derivado del id canonico.
+
+    En produccion este numero sale de la base. Aca hay que fabricarlo, y usar
+    hash() de Python fue un error: esta aleatorizado por proceso, asi que cada
+    corrida generaba un id distinto para la misma inmobiliaria. Como el id entra
+    en hash_dedup y en el fingerprint, la segunda corrida veia las 322
+    propiedades como modificadas y la prueba de idempotencia daba negativo por
+    una razon que no tenia nada que ver con el connector.
+    """
+    return int(hashlib.sha256(canonical_agency_id.encode()).hexdigest()[:8], 16)
+
+
+def num(valor, ancho: int = 4) -> str:
+    """Formatea para el log sin romperse con None.
+
+    `dict.get(k, "-")` no protege: si la clave existe con valor None devuelve
+    None igual, y f"{None:>4}" levanta TypeError. Eso volteo una corrida entera.
+    """
+    return f"{valor:>{ancho}}" if valor is not None else "-".rjust(ancho)
 
 
 def host_de(url: str) -> str:
@@ -183,25 +206,39 @@ def main() -> int:
         descargador=Descargador(LimitadorDeRitmo(a.intervalo)),
         checkpoint=Checkpoint(out / "checkpoint.json"))
 
+    sufijo = f"_run{a.corrida}"
+    ruta_inv = out / f"source_inventory{sufijo}.jsonl"
+    ruta_norm = out / f"normalized_sample{sufijo}.jsonl"
+    for r_ in (ruta_inv, ruta_norm):
+        r_.write_text("", encoding="utf-8")
+
     t0 = time.time()
     resultados, todas = [], []
     for i, x in enumerate(muestra, 1):
         f = Fuente(canonical_agency_id=x["canonical_agency_id"],
                    agency_name=x.get("agency_name") or "",
                    official_url=x["official_url"],
-                   inmobiliaria_id=abs(hash(x["canonical_agency_id"])) % 10_000_000,
+                   inmobiliaria_id=id_sustituto(x["canonical_agency_id"]),
                    detected_platform="TOKKO")
         r = procesar_fuente(con, f, a.max_fichas)
         props = r.pop("_props", [])
         todas.extend(props)
         resultados.append(r)
+        # Se escribe apenas termina cada fuente. Guardar solo al final ya costo
+        # una corrida entera: un error en la ultima fuente borraba el trabajo
+        # de las quince anteriores.
+        with ruta_inv.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(r, ensure_ascii=False) + "\n")
+        with ruta_norm.open("a", encoding="utf-8") as fh:
+            for pr in props:
+                fh.write(json.dumps(pr, ensure_ascii=False) + "\n")
         con.checkpoint.de(f.canonical_agency_id)["corridas"] = \
             con.checkpoint.de(f.canonical_agency_id).get("corridas", 0) + 1
         con.checkpoint.guardar()
         print(f"  [{i:2}/{len(muestra)}] {r['estado']:22} "
               f"{(r.get('agency_name') or '')[:26]:26} "
-              f"enum={r.get('enumeradas','-'):>4} norm={r.get('normalizadas','-'):>3} "
-              f"decl={r.get('total_declarado','-'):>4} {r['segundos']:>5}s", flush=True)
+              f"enum={num(r.get('enumeradas'))} norm={num(r.get('normalizadas'), 3)} "
+              f"decl={num(r.get('total_declarado'))} {r['segundos']:>5}s", flush=True)
 
     sufijo = f"_run{a.corrida}"
     (out / f"source_inventory{sufijo}.jsonl").write_text(

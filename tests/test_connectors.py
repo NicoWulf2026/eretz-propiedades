@@ -86,8 +86,11 @@ class DescargadorFalso(B.Descargador):
 
 
 def fuente(aid="ag-1", url="https://alfa.com.ar/"):
+    # No usar hash(): esta aleatorizado por proceso y volveria no reproducible
+    # todo lo que dependa del id, empezando por hash_dedup.
+    from scripts.run_tokko_canary import id_sustituto
     return B.Fuente(canonical_agency_id=aid, agency_name="Alfa Propiedades",
-                    official_url=url, inmobiliaria_id=hash(aid) % 100000)
+                    official_url=url, inmobiliaria_id=id_sustituto(aid))
 
 
 def conector(paginas=None, fallar=None, cp=None):
@@ -446,3 +449,63 @@ def test_todo_lo_extra_cabe_en_datos_extra():
     p = norm()
     assert isinstance(p.extra, dict)
     json.dumps(p.extra)  # tiene que ser serializable a jsonb
+
+
+# --------------------------------------------------------- robustez del runner
+def test_el_log_no_se_rompe_con_un_campo_vacio():
+    """Una fuente sin total declarado volteo una corrida entera de 15 fuentes:
+    dict.get(k, "-") devuelve None si la clave existe con valor None."""
+    from scripts.run_tokko_canary import num
+    assert num(None) == "   -"
+    assert num(690) == " 690"
+    assert num(None, 3) == "  -"
+
+
+def test_los_artefactos_se_escriben_por_fuente_no_al_final():
+    """Guardar solo al final ya costo perder 15 fuentes ya procesadas."""
+    src = (ROOT / "scripts" / "run_tokko_canary.py").read_text(encoding="utf-8")
+    assert 'ruta_inv.open("a"' in src and 'ruta_norm.open("a"' in src
+    i_bucle = src.index("for i, x in enumerate(muestra, 1)")
+    assert src.index('ruta_inv.open("a"') > i_bucle
+
+
+def test_una_ficha_con_acentos_se_puede_bajar():
+    """Los slugs de Tokko llevan acentos y urllib arma el pedido en ASCII: una
+    de cada cinco fichas en castellano levantaba UnicodeEncodeError, y el error
+    aparecia recien al abrir la conexion, disfrazado de falla del sitio."""
+    cruda = "https://alfa.com.ar/p/123-Casa-en-Barrio-Céntrico-Córdoba"
+    segura = B.Descargador.url_segura(cruda)
+    assert "%C3%A9" in segura and "%C3%B3" in segura
+    segura.encode("ascii")  # tiene que poder pedirse
+
+
+def test_codificar_la_url_no_cambia_la_identidad():
+    """Si la forma codificada y la legible dieran hashes distintos, la misma
+    propiedad entraria dos veces."""
+    legible = "https://alfa.com.ar/p/123-Barrio-Céntrico"
+    assert B.calcular_hash_dedup(7, legible) ==         B.calcular_hash_dedup(7, B.Descargador.url_segura(legible))
+
+
+def test_una_url_ya_codificada_no_se_codifica_dos_veces():
+    ya = "https://alfa.com.ar/p/123-Barrio-C%C3%A9ntrico"
+    assert B.Descargador.url_segura(ya) == ya
+
+
+def test_el_id_de_agencia_es_estable_entre_procesos():
+    """hash() de Python esta aleatorizado por proceso. Al entrar en hash_dedup,
+    daba una identidad distinta en cada corrida: la segunda veia las 322
+    propiedades como modificadas y la idempotencia fallaba sin que el connector
+    tuviera nada que ver."""
+    import subprocess
+    codigo = ("import sys; sys.path.insert(0, r'%s');"
+              "from scripts.run_tokko_canary import id_sustituto;"
+              "print(id_sustituto('ag-1'))" % ROOT)
+    salidas = {subprocess.run([sys.executable, "-c", codigo], capture_output=True,
+                              text=True).stdout.strip() for _ in range(2)}
+    assert len(salidas) == 1 and salidas != {""}
+
+
+def test_el_runner_no_usa_hash_para_identidad():
+    src = (ROOT / "scripts" / "run_tokko_canary.py").read_text(encoding="utf-8")
+    assert "abs(hash(" not in src
+    assert "id_sustituto" in src

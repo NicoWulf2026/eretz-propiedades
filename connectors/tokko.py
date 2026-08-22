@@ -173,7 +173,8 @@ class TokkoConnector(Connector):
                 vistos.add(pid)
                 nuevos += 1
                 yield {"source_listing_id": pid,
-                       "source_url": f"{base}/p/{pid}-{slug}",
+                       "source_url": self.descargador.url_segura(
+                           f"{base}/p/{pid}-{slug}"),
                        "pagina": pagina}
             if nuevos == 0:
                 break

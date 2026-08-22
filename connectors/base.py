@@ -248,7 +248,27 @@ class Descargador:
         self.bytes_bajados = 0
         self._lock = threading.Lock()
 
+    @staticmethod
+    def url_segura(url: str) -> str:
+        """Codifica la URL para que urllib pueda pedirla.
+
+        Los slugs de las fichas llevan acentos y enes, y urllib arma el pedido
+        en ASCII: una URL con "Centrico" acentuado levanta UnicodeEncodeError.
+        No es un caso raro -es una de cada cinco fichas en castellano-, y como
+        el error aparece recien al abrir la conexion se confunde facil con una
+        falla del sitio.
+
+        La identidad no se altera: el hash del pipeline hace unquote antes de
+        normalizar, asi que la forma codificada y la legible dan el mismo hash.
+        """
+        p = urllib.parse.urlsplit(url)
+        return urllib.parse.urlunsplit((
+            p.scheme, p.netloc,
+            urllib.parse.quote(p.path, safe="/%:@&=+$,~()!*'"),
+            urllib.parse.quote(p.query, safe="=&%+"), ""))
+
     def bajar(self, url: str) -> str:
+        url = self.url_segura(url)
         host = urllib.parse.urlparse(url).netloc.lower()
         demora = 2.0
         ultimo: Exception | None = None
