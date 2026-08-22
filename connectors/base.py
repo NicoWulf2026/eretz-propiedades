@@ -1,0 +1,529 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""Arquitectura comun de connectors de ingesta directa.
+
+Un connector traduce UNA fuente -la web oficial de una inmobiliaria- a la misma
+representacion normalizada que el resto del pipeline ya entiende. El pipeline no
+sabe que existe Tokko: Tokko es la implementacion numero uno, no el modelo.
+
+Tres decisiones que valen mas que el codigo:
+
+  - La identidad de una propiedad NO se inventa aca. Se reusa `hash_dedup` del
+    pipeline existente, que es SHA256 de "{inmobiliaria_id}|url|{url_norm}".
+    Esta acotado por inmobiliaria, asi que dos agencias no pueden colisionar por
+    construccion, y una segunda corrida produce exactamente el mismo hash.
+  - Un campo ausente es None, nunca un valor inferido. Una superficie inventada
+    contamina el dataset de una forma que no se detecta despues.
+  - Una propiedad que hoy no aparece NO es una baja. Puede ser un timeout, un
+    502 o un sitio caido. La baja necesita varias corridas coincidentes.
+"""
+from __future__ import annotations
+
+import gzip
+import hashlib
+import importlib.util
+import json
+import os
+import random
+import re
+import ssl
+import sys
+import threading
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import Any, Iterable, Iterator
+
+CONNECTOR_API_VERSION = "connector_v1"
+
+# --------------------------------------------------------------------------
+# Reuso del pipeline existente: la identidad de propiedad y los vocabularios
+# validos viven en scraper/models.py y no se duplican aca. Si el algoritmo de
+# hash cambia alla, esta capa lo hereda; una copia se desincronizaria en
+# silencio y empezaria a crear duplicados.
+# --------------------------------------------------------------------------
+RUTA_PIPELINE = Path(os.environ.get(
+    "ERETZ_PIPELINE_ROOT", r"D:\INMO CAPITAL\Inmo-Capital-main"))
+
+
+def _cargar_modelos():
+    ruta = RUTA_PIPELINE / "scraper" / "models.py"
+    if not ruta.exists():
+        return None
+    spec = importlib.util.spec_from_file_location("eretz_models", ruta)
+    mod = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(mod)
+    except Exception:
+        return None
+    return mod
+
+
+_MODELOS = _cargar_modelos()
+
+if _MODELOS is not None:
+    normalizar_url = _MODELOS._normalize_url_for_hash
+    calcular_hash_dedup = _MODELOS._compute_hash_dedup
+    TIPOS_VALIDOS = set(_MODELOS.ALLOWED_PROPERTY_TYPES)
+    MONEDAS_VALIDAS = set(_MODELOS.ALLOWED_MONEDAS)
+    OPERACIONES_VALIDAS = set(_MODELOS.ALLOWED_OPERACIONES)
+    REUSA_PIPELINE = True
+else:  # pragma: no cover - solo si el repo del pipeline no esta montado
+    REUSA_PIPELINE = False
+    TIPOS_VALIDOS = {"casa", "departamento", "terreno", "local", "oficina",
+                     "cochera", "galpon", "otro"}
+    MONEDAS_VALIDAS = {"ARS", "USD"}
+    OPERACIONES_VALIDAS = {"venta", "alquiler", "alquiler_temporario",
+                           "consultar", "venta_y_alquiler"}
+
+    def normalizar_url(url: Any) -> str:
+        return re.sub(r"^https?://(www\.)?", "", str(url or "").strip().lower()).rstrip("/")
+
+    def calcular_hash_dedup(inmobiliaria_id: Any, url: Any) -> str:
+        clave = normalizar_url(url)
+        base = f"{inmobiliaria_id}|url|{clave}" if clave else f"{inmobiliaria_id}|sin_identidad|"
+        return hashlib.sha256(base.encode()).hexdigest()[:32]
+
+
+# --------------------------------------------------------------------------
+# Representacion normalizada comun
+# --------------------------------------------------------------------------
+@dataclass
+class PropiedadNormalizada:
+    """Lo que TODO connector produce, venga de donde venga.
+
+    Los campos que el schema de ERETZ ya tiene como columna van arriba; los que
+    la fuente publica y el schema guarda en `datos_extra` van en `extra`. No se
+    agregan columnas nuevas: el pipeline actual las ignoraria.
+    """
+    # --- identidad ---
+    canonical_agency_id: str
+    source_listing_id: str
+    source_url: str
+    connector: str
+    # --- lo que el schema tiene como columna ---
+    titulo: str | None = None
+    descripcion: str | None = None
+    precio: float | None = None
+    moneda: str | None = None
+    operacion: str | None = None
+    tipo_propiedad: str | None = None
+    direccion: str | None = None
+    barrio: str | None = None
+    ciudad: str | None = None
+    provincia: str | None = None
+    latitud: float | None = None
+    longitud: float | None = None
+    dormitorios: int | None = None
+    banos: int | None = None
+    ambientes: int | None = None
+    superficie_total: float | None = None
+    superficie_cubierta: float | None = None
+    imagenes: list[str] = field(default_factory=list)
+    # --- lo que va a datos_extra ---
+    extra: dict[str, Any] = field(default_factory=dict)
+    # --- procedencia ---
+    source_status: str = "activa"
+    inmobiliaria_id: int | None = None
+    scraped_at: str = ""
+    provenance: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not self.scraped_at:
+            self.scraped_at = time.strftime("%Y-%m-%dT%H:%M:%S")
+        if self.operacion:
+            self.operacion = self.operacion.lower().strip()
+        if self.moneda:
+            self.moneda = self.moneda.upper().strip()
+
+    @property
+    def hash_dedup(self) -> str:
+        """Identidad estable. La clave de agencia entra en el hash, asi que dos
+        inmobiliarias distintas nunca colisionan aunque compartan la URL."""
+        clave = self.inmobiliaria_id if self.inmobiliaria_id is not None \
+            else self.canonical_agency_id
+        return calcular_hash_dedup(clave, self.source_url)
+
+    @property
+    def fingerprint(self) -> str:
+        """Huella del CONTENIDO, para detectar cambios sin volver a bajar todo.
+
+        Deja afuera scraped_at a proposito: si entrara, cada corrida veria
+        cambios donde no los hubo y el incremental no serviria de nada.
+        """
+        campos = {k: v for k, v in asdict(self).items()
+                  if k not in ("scraped_at", "provenance", "extra")}
+        campos["extra"] = {k: v for k, v in self.extra.items()
+                           if k not in ("raw_html_len", "fetched_at")}
+        crudo = json.dumps(campos, sort_keys=True, ensure_ascii=False, default=str)
+        return hashlib.sha256(crudo.encode()).hexdigest()[:32]
+
+    def problemas(self) -> list[str]:
+        """Chequeos de coherencia. No corrige nada: informa."""
+        p: list[str] = []
+        if not self.source_listing_id:
+            p.append("sin source_listing_id")
+        if not self.source_url or not self.source_url.startswith("http"):
+            p.append("source_url invalida")
+        if self.moneda and self.moneda not in MONEDAS_VALIDAS:
+            p.append(f"moneda fuera de vocabulario: {self.moneda}")
+        if self.operacion and self.operacion not in OPERACIONES_VALIDAS:
+            p.append(f"operacion fuera de vocabulario: {self.operacion}")
+        if self.tipo_propiedad and self.tipo_propiedad not in TIPOS_VALIDOS:
+            p.append(f"tipo fuera de vocabulario: {self.tipo_propiedad}")
+        if self.precio is not None and self.precio <= 0:
+            p.append("precio no positivo")
+        if self.precio is not None and not self.moneda:
+            p.append("precio sin moneda")
+        if self.latitud is not None and not (-56 <= self.latitud <= -21):
+            p.append("latitud fuera de Argentina")
+        if self.longitud is not None and not (-74 <= self.longitud <= -53):
+            p.append("longitud fuera de Argentina")
+        return p
+
+    def a_dict(self) -> dict[str, Any]:
+        d = asdict(self)
+        d["hash_dedup"] = self.hash_dedup
+        d["fingerprint"] = self.fingerprint
+        d["problemas"] = self.problemas()
+        return d
+
+
+# --------------------------------------------------------------------------
+# Red: limite de ritmo, reintentos y errores distinguibles
+# --------------------------------------------------------------------------
+class ErrorTransitorio(RuntimeError):
+    """Fallo que puede desaparecer solo: timeout, 5xx, corte de red.
+
+    Se separa de la ausencia real porque confundirlos es lo que convierte una
+    caida de diez minutos en cientos de propiedades dadas de baja por error.
+    """
+
+
+class ErrorPermanente(RuntimeError):
+    """404 o 410: la fuente dice explicitamente que eso ya no esta."""
+
+
+class Bloqueado(RuntimeError):
+    """403 o 429: el sitio nos esta pidiendo que paremos."""
+
+
+class LimitadorDeRitmo:
+    """Un pedido cada `intervalo` segundos por host, compartido entre hilos.
+
+    El objetivo no es maximizar velocidad sino no molestar: son webs chicas de
+    inmobiliarias, no infraestructura preparada para que la golpeen.
+    """
+
+    def __init__(self, intervalo: float = 1.5):
+        self.intervalo = intervalo
+        self._ultimo: dict[str, float] = {}
+        self._lock = threading.Lock()
+
+    def esperar(self, host: str) -> None:
+        with self._lock:
+            ahora = time.monotonic()
+            falta = self.intervalo - (ahora - self._ultimo.get(host, 0.0))
+            if falta > 0:
+                time.sleep(falta)
+                ahora = time.monotonic()
+            self._ultimo[host] = ahora
+
+
+class Descargador:
+    """Descarga cortes: identificado, con backoff y sin insistir cuando molesta."""
+
+    UA = "Mozilla/5.0 (compatible; ERETZ-PropertyBot/1.0; +contacto@eretz)"
+
+    def __init__(self, limitador: LimitadorDeRitmo | None = None,
+                 timeout: int = 25, reintentos: int = 3, limite_bytes: int = 800_000):
+        self.limitador = limitador or LimitadorDeRitmo()
+        self.timeout = timeout
+        self.reintentos = reintentos
+        self.limite_bytes = limite_bytes
+        self.pedidos = 0
+        self.bytes_bajados = 0
+        self._lock = threading.Lock()
+
+    def bajar(self, url: str) -> str:
+        host = urllib.parse.urlparse(url).netloc.lower()
+        demora = 2.0
+        ultimo: Exception | None = None
+        for intento in range(1, self.reintentos + 1):
+            self.limitador.esperar(host)
+            try:
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+                req = urllib.request.Request(url, headers={
+                    "User-Agent": self.UA, "Accept-Encoding": "gzip",
+                    "Accept": "text/html,application/xhtml+xml,application/json"})
+                with urllib.request.urlopen(req, timeout=self.timeout, context=ctx) as r:
+                    crudo = r.read(self.limite_bytes)
+                    if r.headers.get("Content-Encoding") == "gzip":
+                        try:
+                            crudo = gzip.decompress(crudo)
+                        except OSError:
+                            pass
+                    juego = "utf-8"
+                    m = re.search(r"charset=([\w-]+)", r.headers.get("Content-Type") or "", re.I)
+                    if m:
+                        juego = m.group(1)
+                    with self._lock:
+                        self.pedidos += 1
+                        self.bytes_bajados += len(crudo)
+                    return crudo.decode(juego, "ignore")
+            except urllib.error.HTTPError as e:
+                if e.code in (403, 429):
+                    raise Bloqueado(f"http {e.code}") from None
+                if e.code in (404, 410):
+                    raise ErrorPermanente(f"http {e.code}") from None
+                ultimo = ErrorTransitorio(f"http {e.code}")
+            except Exception as e:
+                ultimo = ErrorTransitorio(type(e).__name__)
+            if intento < self.reintentos:
+                # Con ruido, para no sincronizar los reintentos de varios hilos
+                # contra el mismo servidor.
+                time.sleep(demora + random.uniform(0, 0.5))
+                demora *= 2
+        raise ultimo or ErrorTransitorio("sin respuesta")
+
+
+# --------------------------------------------------------------------------
+# Checkpoint: reanudar sin volver a bajar lo ya bajado
+# --------------------------------------------------------------------------
+class Checkpoint:
+    """Estado por fuente, en disco, fuera del repo.
+
+    Guarda el fingerprint de cada propiedad para que la segunda corrida sepa
+    distinguir "cambio real" de "vuelvo a ver lo mismo".
+    """
+
+    def __init__(self, ruta: Path):
+        self.ruta = Path(ruta)
+        self.datos: dict[str, Any] = {"fuentes": {}}
+        if self.ruta.exists():
+            try:
+                self.datos = json.loads(self.ruta.read_text(encoding="utf-8"))
+            except (ValueError, OSError):
+                self.datos = {"fuentes": {}}
+
+    def de(self, agency_id: str) -> dict[str, Any]:
+        return self.datos["fuentes"].setdefault(
+            agency_id, {"vistos": {}, "corridas": 0, "ausencias": {},
+                        "ultima_pagina": 0, "completa": False})
+
+    def guardar(self) -> None:
+        self.ruta.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.ruta.with_suffix(".tmp")
+        tmp.write_text(json.dumps(self.datos, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(self.ruta)
+
+
+# Cuantas corridas seguidas sin ver una propiedad hacen falta para bajarla.
+# Una sola ausencia no alcanza: un 502 de diez minutos daria de baja el catalogo
+# entero de una inmobiliaria.
+AUSENCIAS_PARA_BAJA = 3
+
+
+def clasificar_ausencia(estado_fuente: dict, listing_id: str,
+                        fuente_respondio: bool) -> str:
+    """Que significa que una propiedad no aparezca en esta corrida.
+
+    Si la fuente entera no respondio, no significa nada: no se puede concluir
+    una baja de un sitio que no contesto.
+    """
+    if not fuente_respondio:
+        return "SIN_EVIDENCIA_FUENTE_CAIDA"
+    n = estado_fuente.get("ausencias", {}).get(listing_id, 0)
+    if n >= AUSENCIAS_PARA_BAJA:
+        return "BAJA_CONFIRMADA"
+    return "AUSENTE_PROVISORIA"
+
+
+# --------------------------------------------------------------------------
+# Interfaz
+# --------------------------------------------------------------------------
+@dataclass
+class Fuente:
+    """Una web oficial a ingerir, con la identidad de su inmobiliaria."""
+    canonical_agency_id: str
+    agency_name: str
+    official_url: str
+    inmobiliaria_id: int | None = None
+    detected_platform: str | None = None
+    extra: dict[str, Any] = field(default_factory=dict)
+
+
+class Connector:
+    """Contrato que cumple toda fuente, sea Tokko, WordPress o una API propia.
+
+    El pipeline solo conoce estos metodos. Agregar una plataforma nueva no
+    deberia tocar ni una linea fuera de su propio modulo.
+    """
+
+    nombre = "base"
+
+    def __init__(self, descargador: Descargador | None = None,
+                 checkpoint: Checkpoint | None = None):
+        self.descargador = descargador or Descargador()
+        self.checkpoint = checkpoint
+        self.errores: list[dict[str, Any]] = []
+
+    # --- ciclo de vida -----------------------------------------------------
+    def discover(self, fuente: Fuente) -> dict[str, Any]:
+        """Averigua como esta fuente publica su inventario. No baja fichas."""
+        raise NotImplementedError
+
+    def fetch_listing(self, fuente: Fuente, plan: dict[str, Any]) -> Iterator[dict]:
+        """Emite los avisos crudos, paginando hasta agotar el inventario."""
+        raise NotImplementedError
+
+    def normalize(self, crudo: dict, fuente: Fuente) -> PropiedadNormalizada | None:
+        """Traduce un aviso crudo a la representacion comun."""
+        raise NotImplementedError
+
+    def identify_deleted_or_inactive(self, fuente: Fuente, vistos_ahora: set[str],
+                                     fuente_respondio: bool) -> list[dict[str, Any]]:
+        """Que dejo de estar, y con cuanta confianza."""
+        if self.checkpoint is None:
+            return []
+        est = self.checkpoint.de(fuente.canonical_agency_id)
+        salida = []
+        for lid in list(est.get("vistos", {})):
+            if lid in vistos_ahora:
+                est.setdefault("ausencias", {}).pop(lid, None)
+                continue
+            if fuente_respondio:
+                est.setdefault("ausencias", {})[lid] = \
+                    est.get("ausencias", {}).get(lid, 0) + 1
+            salida.append({"source_listing_id": lid,
+                           "estado": clasificar_ausencia(est, lid, fuente_respondio),
+                           "ausencias_consecutivas": est.get("ausencias", {}).get(lid, 0)})
+        return salida
+
+    # --- reanudacion -------------------------------------------------------
+    def resume(self, fuente: Fuente) -> dict[str, Any]:
+        if self.checkpoint is None:
+            return {"vistos": {}, "corridas": 0}
+        return self.checkpoint.de(fuente.canonical_agency_id)
+
+    def registrar(self, fuente: Fuente, prop: PropiedadNormalizada) -> str:
+        """Anota la propiedad y dice si es NUEVA, MODIFICADA o SIN_CAMBIOS."""
+        if self.checkpoint is None:
+            return "NUEVA"
+        est = self.checkpoint.de(fuente.canonical_agency_id)
+        previo = est["vistos"].get(prop.source_listing_id)
+        est["vistos"][prop.source_listing_id] = prop.fingerprint
+        if previo is None:
+            return "NUEVA"
+        return "SIN_CAMBIOS" if previo == prop.fingerprint else "MODIFICADA"
+
+    def anotar_error(self, fuente: Fuente, etapa: str, error: Exception) -> None:
+        self.errores.append({
+            "canonical_agency_id": fuente.canonical_agency_id,
+            "official_url": fuente.official_url, "etapa": etapa,
+            "clase": type(error).__name__, "detalle": str(error)[:200],
+            "cuando": time.strftime("%Y-%m-%dT%H:%M:%S")})
+
+
+# --------------------------------------------------------------------------
+# Utilidades de normalizacion compartidas por todos los connectors
+# --------------------------------------------------------------------------
+_MONEDAS = {"usd": "USD", "u$s": "USD", "us$": "USD", "dolares": "USD",
+            "dólares": "USD", "dolar": "USD", "ars": "ARS", "$": "ARS",
+            "pesos": "ARS", "peso": "ARS"}
+
+_OPERACIONES = {"venta": "venta", "vender": "venta", "sale": "venta",
+                "alquiler": "alquiler", "alquilar": "alquiler", "rent": "alquiler",
+                "alquiler temporario": "alquiler_temporario",
+                "temporario": "alquiler_temporario", "temporal": "alquiler_temporario"}
+
+_TIPOS = {
+    "casa": "casa", "chalet": "casa", "quinta": "casa", "duplex": "casa",
+    "departamento": "departamento", "depto": "departamento", "ph": "departamento",
+    "loft": "departamento", "monoambiente": "departamento",
+    "terreno": "terreno", "lote": "terreno", "campo": "terreno", "fraccion": "terreno",
+    "local": "local", "fondo de comercio": "local",
+    "oficina": "oficina", "consultorio": "oficina",
+    "cochera": "cochera", "garage": "cochera",
+    "galpon": "galpon", "deposito": "galpon", "nave industrial": "galpon",
+}
+
+
+def limpiar(texto: Any) -> str | None:
+    if texto is None:
+        return None
+    t = re.sub(r"\s+", " ", str(texto)).strip()
+    return t or None
+
+
+def a_numero(texto: Any) -> float | None:
+    """Numero de un texto en formato argentino: 1.234.567,89 -> 1234567.89.
+
+    Devuelve None ante la duda. Un precio mal parseado es peor que uno ausente:
+    el ausente se ve, el equivocado se publica.
+    """
+    if texto is None:
+        return None
+    if isinstance(texto, (int, float)):
+        return float(texto)
+    t = re.sub(r"[^\d.,]", "", str(texto))
+    if not t:
+        return None
+    if "," in t and "." in t:
+        t = t.replace(".", "").replace(",", ".") if t.rindex(",") > t.rindex(".") \
+            else t.replace(",", "")
+    elif "," in t:
+        entero, _, dec = t.partition(",")
+        t = f"{entero}.{dec}" if len(dec) <= 2 and dec else t.replace(",", "")
+    elif t.count(".") >= 1:
+        entero, _, dec = t.rpartition(".")
+        if len(dec) == 3 or not dec:
+            t = t.replace(".", "")
+    try:
+        return float(t)
+    except ValueError:
+        return None
+
+
+def a_entero(texto: Any) -> int | None:
+    v = a_numero(texto)
+    if v is None:
+        return None
+    return int(v) if 0 <= v < 1000 else None
+
+
+def detectar_moneda(texto: Any) -> str | None:
+    if not texto:
+        return None
+    t = str(texto).lower()
+    for clave, val in _MONEDAS.items():
+        if clave in t:
+            return val
+    return None
+
+
+def detectar_operacion(texto: Any) -> str | None:
+    if not texto:
+        return None
+    t = str(texto).lower()
+    if "temporario" in t or "temporal" in t:
+        return "alquiler_temporario"
+    for clave, val in _OPERACIONES.items():
+        if clave in t:
+            return val
+    return None
+
+
+def detectar_tipo(texto: Any) -> str | None:
+    if not texto:
+        return None
+    t = re.sub(r"\s+", " ", str(texto).lower())
+    for clave, val in _TIPOS.items():
+        if re.search(rf"\b{re.escape(clave)}", t):
+            return val
+    return None
