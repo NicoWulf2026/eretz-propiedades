@@ -115,10 +115,18 @@ def host_de(url: str) -> str:
 
 
 def universo(dd: Path, plataforma: str, variantes: set[str] | None,
-             limite: int) -> list[dict]:
-    """El universo sale del mapa vigente, no de un numero fijo."""
+             limite: int, filtro_url: str = "") -> list[dict]:
+    """El universo sale del mapa vigente, no de un numero fijo.
+
+    `filtro_url` acota por dominio cuando una red vive dentro de una plataforma
+    mas amplia: las 42 oficinas de Century 21 estan clasificadas como UNKNOWN
+    junto a otras 800 fuentes que no tienen nada que ver, y correr el conector
+    sobre todas gasta miles de peticiones para que las rechace una por una.
+    """
     mapa = leer_jsonl(dd / "scrape_source_technology_map.jsonl")
     fuentes = [x for x in mapa if x["detected_platform"] == plataforma]
+    if filtro_url:
+        fuentes = [x for x in fuentes if filtro_url in (x.get("official_url") or "")]
     if variantes:
         desc = {d["canonical_agency_id"]: d
                 for d in leer_jsonl(dd / "tokko_discovery.jsonl")}
@@ -267,12 +275,13 @@ def main() -> int:
     ap.add_argument("--intervalo", type=float, default=1.5)
     ap.add_argument("--corrida", default="1")
     ap.add_argument("--observacion", action="store_true", default=True)
+    ap.add_argument("--filtro-url", default="", help="acota el universo por dominio")
     a = ap.parse_args()
     dd, out = Path(a.data_dir), Path(a.salida)
     out.mkdir(parents=True, exist_ok=True)
 
     variantes = {v for v in a.variantes.split(",") if v} or None
-    fuentes = universo(dd, a.plataforma, variantes, a.limite)
+    fuentes = universo(dd, a.plataforma, variantes, a.limite, a.filtro_url)
 
     sufijo = f"_run{a.corrida}"
     esc_inv = EscritorDurable(out / f"source_inventory{sufijo}.jsonl")

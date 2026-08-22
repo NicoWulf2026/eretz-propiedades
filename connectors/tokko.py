@@ -46,14 +46,21 @@ RE_COORD = re.compile(r"(-?[23456]\d\.\d{3,})\s*,\s*(-?[567]\d\.\d{3,})")
 def _texto_plano(html: str) -> str:
     """HTML a texto legible.
 
-    Desescapar entidades no es cosmetico: muchos temas escriben
-    "Direcci&oacute;n" y sin traducirlo la etiqueta no coincide con ninguna de
-    las conocidas, asi que el campo sale vacio sin que nada falle.
+    El orden importa: primero se desescapan las entidades y despues se quitan
+    las etiquetas, y hay que hacerlo dos veces. Muchas descripciones vienen con
+    el markup escapado dentro del propio HTML -&lt;div&gt;&lt;br&gt;-, asi que
+    limpiar primero y desescapar despues devuelve el markup al texto y lo deja
+    dentro de la descripcion publicada.
+
+    Desescapar tampoco es cosmetico en las etiquetas: varios temas escriben
+    "Direcci&oacute;n", y sin traducirlo el campo sale vacio sin que nada falle.
     """
-    t = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", html, flags=re.S | re.I)
+    t = re.sub(r"<(script|style)[^>]*>.*?</>", " ", html, flags=re.S | re.I)
+    t = unescape(t)
     t = re.sub(r"<[^>]+>", " ", t)
-    t = unescape(t).replace("\xa0", " ")
-    return re.sub(r"\s+", " ", t)
+    t = unescape(t)
+    t = re.sub(r"<[^>]+>", " ", t)
+    return re.sub(r"\s+", " ", t.replace(" ", " "))
 
 
 # Etiquetas que Tokko usa en la ficha. Sirven de tope: el valor de un campo
@@ -279,6 +286,33 @@ class TokkoConnector(Connector):
         direccion = _campo(texto, "Dirección") or _campo(texto, "Direccion")
         ubicacion = _campo(texto, "Ubicación") or _campo(texto, "Ubicacion")
 
+        # La descripcion esta en la ficha que ya se bajo: extraerla no cuesta
+        # una peticion adicional. Se corta el encabezado y el pie, que repiten
+        # el titulo y los datos de contacto en todas las fichas.
+        descripcion = None
+        # Sin minimo de largo en el patron: exigir 40 caracteres obligaba al
+        # motor a saltearse el corte mas cercano y seguir hasta el siguiente,
+        # tragandose la seccion que venia despues. El largo se valida abajo,
+        # sobre el texto ya recortado.
+        md = re.search(r"DESCRIPCI[OÓ]N\s*(.{0,4000}?)\s*"
+                       r"(?=INFORMACI[OÓ]N|SUPERFICIES|CARACTER[IÍ]STICAS|"
+                       r"Ubicaci[oó]n en el mapa|Contactanos|Contacto|Compartir|"
+                       r"Consultar|Volver a Resultados|\Z)", texto, re.S | re.I)
+        if md:
+            crudo_desc = md.group(1)
+            # El corte de respaldo (\Z) existe para las fichas donde la
+            # descripcion es lo ultimo, pero en las demas se traga lo que sigue:
+            # urls de fotos, la referencia interna, el pie. Se recorta en la
+            # primera de esas marcas antes de medir el largo, o una descripcion
+            # de dos palabras pasaria por buena solo porque arrastra un carrusel.
+            for marca in ("http", "REF.", "(REF", "Volver a", "Compartir"):
+                i = crudo_desc.find(marca)
+                if i > 0:
+                    crudo_desc = crudo_desc[:i]
+            descripcion = limpiar(crudo_desc)
+            if descripcion and (len(descripcion) < 40 or len(descripcion.split()) < 6):
+                descripcion = None
+
         extra = {k: v for k, v in {
             "expensas": expensas,
             "antiguedad": _campo(texto, "Antigüedad") or _campo(texto, "Antiguedad"),
@@ -302,7 +336,7 @@ class TokkoConnector(Connector):
             source_url=url,
             connector=self.nombre,
             titulo=titulo,
-            descripcion=None,
+            descripcion=descripcion,
             precio=precio,
             moneda=moneda,
             operacion=operacion,

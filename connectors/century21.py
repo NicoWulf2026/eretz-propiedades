@@ -121,11 +121,17 @@ class Century21Connector(Connector):
 
     @staticmethod
     def _url_de(it: dict, lid: str) -> str:
-        for clave in ("url", "urlDetalle", "link", "permalink"):
+        """La url real de la ficha, que el propio JSON publica.
+
+        Construir "/v/propiedad/<id>" a mano daba una url que no existe, y
+        source_url entra en el hash de identidad: cada propiedad habria quedado
+        registrada con una direccion inexistente, imposible de auditar despues.
+        """
+        for clave in ("urlCorrectaPropiedad", "url", "urlDetalle", "link"):
             v = it.get(clave)
             if isinstance(v, str) and v:
                 return v if v.startswith("http") else urllib.parse.urljoin(BASE, v)
-        return f"{BASE}/v/propiedad/{lid}"
+        return f"{BASE}/propiedad/{lid}"
 
     # --------------------------------------------------------------- normalize
     def normalize(self, crudo: dict, fuente: Fuente) -> PropiedadNormalizada | None:
@@ -147,7 +153,8 @@ class Century21Connector(Connector):
 
         titulo = limpiar(it.get("encabezado") or it.get("titulo"))
         operacion = detectar_operacion(
-            f"{it.get('operacion') or ''} {it.get('estadoWeb') or ''} {titulo or ''}")
+            f"{it.get('tipoOperacionTrans') or ''} {it.get('tipoOperacion') or ''} "
+            f"{titulo or ''}")
         moneda = (it.get("moneda") or "").upper().strip() or None
         if moneda not in ("USD", "ARS", None):
             moneda = None
@@ -157,16 +164,23 @@ class Century21Connector(Connector):
         calle = limpiar(it.get("calle"))
         barrio = limpiar(it.get("colonia") or it.get("coloniaWeb"))
 
-        lat = lon = None
-        ubic = it.get("ubicacion") or it.get("location") or {}
-        if isinstance(ubic, dict):
-            lat = ubic.get("lat") or (ubic.get("location") or {}).get("lat")
-            lon = ubic.get("lon") or (ubic.get("location") or {}).get("lon")
-        try:
-            lat = float(lat) if lat is not None else None
-            lon = float(lon) if lon is not None else None
-        except (TypeError, ValueError):
-            lat = lon = None
+        # lat/lon estan en la raiz del item, no anidados.
+        def _num(*claves):
+            for c in claves:
+                v = it.get(c)
+                if v in (None, ""):
+                    continue
+                try:
+                    return float(str(v).replace(",", ""))
+                except (TypeError, ValueError):
+                    continue
+            return None
+
+        lat, lon = _num("lat"), _num("lon")
+        if lat is not None and not (-56 <= lat <= -21):
+            lat = None
+        if lon is not None and not (-74 <= lon <= -53):
+            lon = None
 
         extra = {k: v for k, v in {
             "oficina_c21": it.get("afiliadoNombre"),
@@ -179,6 +193,10 @@ class Century21Connector(Connector):
             "modificado_en_fuente": it.get("fechaModificacion"),
             "total_fotos_fuente": (fotos or {}).get("totalFotos"),
             "estado_web": it.get("estadoWeb"),
+            "matricula": it.get("matricula"),
+            "mantenimiento": it.get("mantenimiento"),
+            "recorrido_virtual": it.get("recorridoVirtual"),
+            "sin_descripcion_en_listado": True,
         }.items() if v not in (None, "", [])}
 
         return PropiedadNormalizada(
@@ -191,18 +209,20 @@ class Century21Connector(Connector):
             precio=a_numero(it.get("precio")),
             moneda=moneda,
             operacion=operacion,
-            tipo_propiedad=detectar_tipo(f"{it.get('tipo') or ''} {titulo or ''}"),
+            tipo_propiedad=detectar_tipo(
+                f"{it.get('tipoPropiedadTrans') or it.get('tipoPropiedad') or ''} "
+                f"{titulo or ''}"),
             direccion=calle,
             barrio=barrio,
-            ciudad=limpiar(it.get("ciudad") or it.get("municipio")),
-            provincia=limpiar(it.get("estado") or it.get("estadoTxt")),
+            ciudad=limpiar(it.get("municipio") or it.get("municipioWeb")),
+            provincia=limpiar(it.get("estado") or it.get("estadoWeb")),
             latitud=lat,
             longitud=lon,
-            dormitorios=self._entero(it.get("recamaras") or it.get("dormitorios")),
+            dormitorios=self._entero(it.get("recamaras")),
             banos=self._entero(it.get("banos")),
-            ambientes=self._entero(it.get("ambientes")),
-            superficie_total=a_numero(it.get("terreno") or it.get("superficieTerreno")),
-            superficie_cubierta=a_numero(it.get("construccion") or it.get("superficieConstruida")),
+            ambientes=None,   # la fuente no publica ambientes; no se deduce
+            superficie_total=_num("m2T", "m2TSort"),
+            superficie_cubierta=_num("m2C", "m2CSort"),
             imagenes=imagenes[:40],
             extra=extra,
             inmobiliaria_id=fuente.inmobiliaria_id,

@@ -883,3 +883,63 @@ def test_los_tres_connectors_cumplen_la_misma_interfaz():
         for metodo in ("discover", "fetch_listing", "normalize", "resume",
                        "registrar", "identify_deleted_or_inactive"):
             assert callable(getattr(clase, metodo)), (clase.__name__, metodo)
+
+
+# ------------------------------------------- extraccion de texto y descripcion
+def test_el_markup_escapado_no_termina_dentro_de_la_descripcion():
+    """Muchas descripciones traen el markup escapado en el propio HTML. Quitar
+    etiquetas y desescapar despues devuelve ese markup al texto, y termina
+    publicado dentro de la descripcion."""
+    html = "<div>DESCRIPCION Casa linda&lt;div&gt;&lt;br&gt;&lt;/div&gt;con patio</div>"
+    t = _texto_plano(html)
+    assert "<div>" not in t and "&lt;" not in t
+    assert "Casa linda" in t and "con patio" in t
+
+
+def test_tokko_extrae_la_descripcion_de_la_ficha_que_ya_bajo():
+    """Esta en el HTML que el connector ya descarga: no cuesta una peticion."""
+    ficha = FICHA.replace("<div>(REF. AAP8636261)</div>",
+                          "<div>DESCRIPCION Oportunidad de inversion sobre calle "
+                          "Independencia, a metros del Patio Olmos, muy luminoso. "
+                          "INFORMACION BASICA</div><div>(REF. AAP8636261)</div>")
+    c = conector({"https://alfa.com.ar/": LISTADO,
+                  "https://alfa.com.ar/Propiedades": LISTADO,
+                  "https://alfa.com.ar/p/": ficha})
+    p = c.normalize({"source_listing_id": "8636261",
+                     "source_url": "https://alfa.com.ar/p/8636261-x"}, fuente())
+    assert p.descripcion and "Oportunidad de inversion" in p.descripcion
+    assert "INFORMACION" not in p.descripcion
+
+
+def test_una_descripcion_demasiado_corta_no_cuenta():
+    ficha = FICHA.replace("<div>(REF. AAP8636261)</div>", "<div>DESCRIPCION - INFORMACION</div>")
+    c = conector({"https://alfa.com.ar/": LISTADO,
+                  "https://alfa.com.ar/Propiedades": LISTADO,
+                  "https://alfa.com.ar/p/": ficha})
+    p = c.normalize({"source_listing_id": "1", "source_url": "https://alfa.com.ar/p/1-x"},
+                    fuente())
+    assert p.descripcion is None
+
+
+def test_century21_usa_la_url_que_publica_la_fuente():
+    """Construir "/v/propiedad/<id>" a mano daba una url inexistente, y
+    source_url entra en el hash de identidad: cada propiedad habria quedado
+    registrada con una direccion que no se puede abrir."""
+    it = {"id": 1, "urlCorrectaPropiedad": "/propiedad/1_venta-casa/oficina_68"}
+    assert Century21Connector._url_de(it, "1").endswith("/propiedad/1_venta-casa/oficina_68")
+
+
+def test_century21_lee_las_coordenadas_de_la_raiz():
+    c = c21_conector({
+        "https://century21.com.ar/v/oficina/68-revolution-s-a-rosario": C21_PERFIL,
+        "https://century21.com.ar/v/resultados/oficina_68-revolution-s-a_local?json=true":
+            json.dumps({"totalHits": "1", "results": [{
+                "id": 5, "encabezado": "Venta casa", "precio": 100, "moneda": "USD",
+                "lat": -32.958, "lon": -60.635, "m2C": 34.8, "m2T": 39.7,
+                "recamaras": 1, "municipio": "Rosario", "estado": "Santa Fe",
+                "urlCorrectaPropiedad": "/propiedad/5_x"}]})})
+    f = c21_fuente()
+    p = c.normalize(list(c.fetch_listing(f, c.discover(f)))[0], f)
+    assert p.latitud == -32.958 and p.longitud == -60.635
+    assert p.superficie_cubierta == 34.8 and p.superficie_total == 39.7
+    assert p.ciudad == "Rosario" and p.dormitorios == 1
