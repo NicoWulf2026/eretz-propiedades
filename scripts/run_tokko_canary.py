@@ -42,7 +42,10 @@ def id_sustituto(canonical_agency_id: str) -> int:
     propiedades como modificadas y la prueba de idempotencia daba negativo por
     una razon que no tenia nada que ver con el connector.
     """
-    return int(hashlib.sha256(canonical_agency_id.encode()).hexdigest()[:8], 16)
+    # Acotado al rango de INTEGER de PostgreSQL: la columna inmobiliaria_id es
+    # INTEGER, y sha256[:8] llega a 4.294.967.295, mas del doble del maximo.
+    # Sin el tope el insert falla recien contra la base, con el lote a medias.
+    return int(hashlib.sha256(canonical_agency_id.encode()).hexdigest()[:8], 16) % 2_000_000_000
 
 
 def num(valor, ancho: int = 4) -> str:

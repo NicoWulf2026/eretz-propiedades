@@ -745,3 +745,38 @@ def test_sin_padron_no_se_inventa_ubicacion():
                                source_url="https://alfa.com.ar/p/1", connector="t")
     c.completar_ubicacion(p, f)
     assert p.ciudad is None and p.provincia is None
+
+
+def test_el_id_de_agencia_entra_en_un_integer_de_postgres():
+    """La columna inmobiliaria_id es INTEGER y sha256[:8] llega a 4.294.967.295,
+    mas del doble del maximo. Sin tope el insert falla recien contra la base,
+    con el lote a medias."""
+    from scripts.run_tokko_canary import id_sustituto
+    for aid in ("ag-1", "ag-2", "zzz-9999", "a" * 40):
+        assert 0 <= id_sustituto(aid) <= 2_147_483_647
+
+
+def test_la_carga_rechaza_un_id_fuera_de_rango_antes_de_la_base():
+    from scripts.ingest_to_pipeline import rechazos
+    p = {"hash_dedup": "x", "inmobiliaria_id": 2_279_155_404,
+         "source_url": "https://a.com/1", "operacion": "venta"}
+    assert any("rango INTEGER" in m for m in rechazos(p))
+
+
+def test_la_carga_usa_las_columnas_del_pipeline_no_una_lista_propia():
+    from scripts.ingest_to_pipeline import RAW_COLUMNS
+    origen = (B.RUTA_PIPELINE / "scripts" / "import_captured_props_to_neon.py").read_text(
+        encoding="utf-8", errors="ignore")
+    bloque = origen[origen.index("RAW_COLUMNS = ["):origen.index("VALID_OPERATIONS")]
+    for c in RAW_COLUMNS:
+        assert f'"{c}"' in bloque, c
+
+
+def test_lo_que_no_tiene_columna_va_a_datos_extra():
+    from scripts.ingest_to_pipeline import a_fila_raw
+    fila = a_fila_raw({"hash_dedup": "h", "inmobiliaria_id": 1,
+                       "source_url": "https://a.com/1", "ambientes": 3,
+                       "extra": {"expensas": 85000}, "source_listing_id": "9"})
+    extra = json.loads(fila["datos_extra"])
+    assert extra["expensas"] == 85000 and extra["ambientes"] == 3
+    assert extra["source_listing_id"] == "9"
