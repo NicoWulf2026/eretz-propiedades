@@ -1,5 +1,104 @@
 # ERETZ Propiedades — MASTER PROGRESS
 
+**Última actualización:** 2026-08-22 — misión de INGESTA DIRECTA en curso.
+
+> Lo de más abajo (campaña Roomix, crosswalk, auditoría de webs) está cerrado y
+> se conserva como historia. Lo que sigue es el estado vivo.
+
+---
+
+# ESTADO VIVO — INGESTA DIRECTA DESDE INMOBILIARIAS
+
+## Dónde está todo
+
+| Qué | Dónde |
+|---|---|
+| Repo | `D:\INMO CAPITAL\eretz-agency` — rama `feat/roomix-agency-coverage` |
+| Pipeline ERETZ (se reusa) | `D:\INMO CAPITAL\Inmo-Capital-main` |
+| Artefactos de agencias | `D:\INMO CAPITAL\ERETZ_AGENCY_DATA\` |
+| Canary Tokko | `D:\INMO CAPITAL\TOKKO_CANARY\` |
+| Rollout controlado | `D:\INMO CAPITAL\TOKKO_ROLLOUT_CTRL\` |
+| Rollout completo | `D:\INMO CAPITAL\TOKKO_ROLLOUT_FULL\` |
+
+Los datasets no viven en el repo y no deben moverse adentro.
+
+## Universo (regenerar siempre del artefacto, no de este número)
+
+Padrón canónico 6.597 · mapa tecnológico **2.330** fuentes.
+TOKKO **920** · UNKNOWN 826 · WORDPRESS **336** · NEXTJS 87 · WASI 39 · LARAVEL 38.
+
+## Arquitectura
+
+`connectors/base.py` define la interfaz común: `discover` · `fetch_listing` ·
+`normalize` · `resume` · `registrar` · `identify_deleted_or_inactive`. Todo
+connector devuelve `PropiedadNormalizada`.
+
+**Reuso, no copia.** La identidad viene de `scraper/models.py`
+(`_compute_hash_dedup`, `_normalize_url_for_hash`) y los vocabularios `ALLOWED_*`.
+El hash incluye `inmobiliaria_id`, así que dos agencias no colisionan por
+construcción. Lo que no tiene columna va a `datos_extra JSONB`. Cero tablas nuevas.
+
+Cortesía **por host** (1 pedido / 1,5 s) y concurrencia **entre hosts**: son
+cosas distintas y no comparten cerrojo.
+
+| Connector | Estado | Variantes |
+|---|---|---|
+| `tokko` | canary PASS · rollout controlado | `TFW_ESTANDAR`, `TFW_SIN_AJAX` |
+| `wordpress` | construido · canary pendiente | `WORDPRESS_REST`, `_SITEMAP`, `_HTML` |
+
+## Ya cerrado — no rehacer
+
+Campaña Roomix · padrón canónico · directorio de webs · control de identidad en
+hosts compartidos (223 fuentes removidas por adjudicación equivocada) · mapa
+tecnológico de 2.330 · discovery Tokko (TFW_ESTANDAR 88,3 %) · canary Tokko
+(paginación 1,000; 322 NUEVA → 322 SIN_CAMBIOS; 0 duplicados; 0 fotos ajenas).
+
+## Bugs resueltos — no reintroducir (todos con test de regresión)
+
+1. `RUTAS_LISTADO` con un byte de retroceso literal: no reconocía ningún listado.
+2. Detector ciego a `href` relativos (`href="propiedades.php"`).
+3. Identidad sin traducir `canonical_name` → `nombre_original`.
+4. `UnicodeEncodeError` en slugs con acentos (19 % de las fichas).
+5. `f"{None:>4}"` volteando una corrida entera.
+6. Artefactos escritos solo al final: una excepción borraba lo ya procesado.
+7. `hash()` de Python como identidad persistente — no es estable entre procesos.
+8. Limitador de ritmo con cerrojo global: anulaba el paralelismo.
+
+## La trampa de la paginación Tokko
+
+La página lleva escrito el `$.ajax(...)` con todos los filtros y termina en `&p=`.
+Se pagina poniendo el número ahí. Inventar `?page=2` devuelve **HTTP 200 con la
+página uno otra vez**: se recogerían 20 de 299 propiedades sin un solo error.
+
+## Bloqueos externos reales
+
+| Bloqueo | Detalle | Impacto |
+|---|---|---|
+| `DB_WRITE_BLOCKED` | `INTERNAL_DB_URL` de `.env` rechaza autenticación (password vencida). Supabase, schema `internal_scraping`. | Sin canary de escritura ni carga a `propiedades_raw`. |
+| `SEARCH_API_COST` | Serper y Tavily sin créditos (400 / 432). Exa responde pero cobra **USD 0,0070/consulta**: ~6.032 entidades ≈ **USD 84**. | Búsqueda preparada, no ejecutada: requiere autorización de gasto. Sondeos: USD 0,014. |
+| `NETWORK_ACCESS_BLOCKED` | `century21.com.ar` resuelve DNS pero HTTP/HTTPS hacen timeout. | 42 oficinas no auditables desde esta red. |
+
+Ninguno detiene el resto.
+
+## Próximo paso
+
+1. Cerrar rollout controlado (2 corridas) y verificar idempotencia a escala.
+2. Rollout completo Tokko sobre todas las `TFW_ESTANDAR`.
+3. Canary WordPress → rollout.
+4. Variantes `TOKKO_FRONTEND_PROPIO`.
+
+## Reglas
+
+Solo `feat/roomix-agency-coverage`. Sin push, sin merge, sin main, sin Production.
+`git add` por rutas explícitas. Sin frontend, sin mobile. Roomix **no** es fuente
+de propiedades. Data API OFF.
+
+---
+---
+
+# HISTORIA — CAMPAÑA ROOMIX (cerrada)
+
+
 Estado vivo de la misión integral. Se actualiza al cerrar cada frente y antes
 de cualquier corte de sesión.
 
