@@ -41,6 +41,7 @@ def _load(name: str):
 aud = _load("audit_existing_webs")
 dp = _load("detect_platform")
 ident = _load("identity_scoring")
+wd = _load("agency_web_discovery")
 
 DETECTOR_VERSION = "historical_reaudit_v1"
 
@@ -131,6 +132,52 @@ def clasificar_sitio(sitio: dict, url: str) -> tuple[str, str]:
     return NO_LISTINGS, "responde y es un sitio real, pero sin inventario a la vista"
 
 
+def como_entidad(fila: dict) -> dict:
+    """Traduce una fila del directorio al contrato que espera el scorer.
+
+    El directorio guarda `canonical_name` / `city` / `province`; el scorer lee
+    `nombre_original` / `ciudad` / `provincia`. Sin esta traduccion la senal mas
+    fuerte que tenemos -el nombre- no se dispara nunca, y sitios que son
+    evidentemente de la inmobiliaria salen INSUFICIENTE.
+    """
+    return {
+        "nombre_original": fila.get("canonical_name") or fila.get("nombre_normalizado") or "",
+        "nombre_normalizado": fila.get("nombre_normalizado"),
+        "ciudad": fila.get("city"),
+        "provincia": fila.get("province"),
+        "red_franquicia": fila.get("franchise"),
+        "tipo": fila.get("tipo"),
+        "zonas_observadas": fila.get("zonas_observadas") or [],
+        "matricula": fila.get("matricula") or [],
+        "telefono": fila.get("telefono"),
+        "email": fila.get("email"),
+        "direccion": fila.get("direccion"),
+    }
+
+
+def dominio_lleva_el_nombre(url: str, nombre: str) -> bool:
+    """El dominio propio es evidencia dificil de falsear.
+
+    Que `abppropiedades.com.ar` sea de "ABP PROPIEDADES" no depende de que la
+    home mencione la ciudad: nadie registra el nombre de otra inmobiliaria.
+    """
+    host = re.sub(r"^https?://(www\.)?", "", url or "").split("/")[0].lower()
+    reg = re.sub(r"\.(com|net|org|ar|com\.ar|net\.ar|org\.ar|info|io|site)$", "", host)
+    reg = re.sub(r"[^a-z0-9]", "", reg)
+    if len(reg) < 5:
+        return False
+    toks = sorted((t for t in wd.tokens_distintivos(nombre or "") if len(t) >= 3),
+                  key=len, reverse=True)
+    if not toks:
+        return False
+    dentro = [t for t in toks if t in reg]
+    if len(dentro) >= 2:
+        return True
+    # Con un solo token corto -"abp"- exigirlo al principio del dominio evita
+    # que una coincidencia casual adentro de otra palabra cuente como prueba.
+    return bool(dentro) and reg.startswith(dentro[0])
+
+
 def necesita_identidad(fila: dict) -> bool:
     """Si la URL nunca fue confirmada como de esta inmobiliaria, hay que
     verificar identidad antes de darla por buena."""
@@ -163,12 +210,20 @@ def procesar(fila: dict) -> dict:
 
         if estado == READY and exigir_identidad:
             # Vivo no es lo mismo que suyo.
-            p = ident.puntuar(fila, sitio)
+            ent = como_entidad(fila)
+            p = ident.puntuar(ent, sitio)
             veredicto = ident.clasificar(p)
+            propio = dominio_lleva_el_nombre(sitio.get("url") or url,
+                                             ent["nombre_original"])
             ev["identity_score"] = p.total
             ev["identity_verdict"] = veredicto
+            ev["dominio_propio"] = propio
+            if propio and p.total > 0:
+                veredicto = "HIGH_CONFIDENCE"
+                ev["identity_verdict"] = veredicto
             if veredicto not in ("VERIFIED", "HIGH_CONFIDENCE"):
                 estado = UNSUPPORTED
+                ev["identity_blocked"] = True
                 ev["motivo"] = (f"el sitio publica inventario pero no se pudo confirmar "
                                 f"que sea de esta inmobiliaria ({veredicto})")
 

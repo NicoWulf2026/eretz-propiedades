@@ -230,3 +230,48 @@ def test_ningun_modulo_de_esta_fase_toca_una_search_api(modulo):
     for pago in ("tavily", "serper", "exa.ai", "s.jina.ai", "api_key",
                  "brave_search", "googleapis.com/customsearch"):
         assert pago not in src, f"{modulo} menciona {pago}"
+
+
+# --------------------------------------- identidad de la re-auditoria historica
+def test_el_scorer_recibe_el_nombre_que_el_directorio_guarda():
+    """El directorio guarda canonical_name; el scorer lee nombre_original. Sin
+    traducir, la senal mas fuerte no se dispara y sitios evidentes quedan
+    INSUFICIENTE."""
+    e = rh.como_entidad({"canonical_name": "ABP PROPIEDADES", "city": "Rosario",
+                         "province": "Santa Fe"})
+    assert e["nombre_original"] == "ABP PROPIEDADES"
+    assert e["ciudad"] == "Rosario" and e["provincia"] == "Santa Fe"
+
+
+def test_un_sitio_evidente_deja_de_salir_insuficiente():
+    html = "<h1>ABP Propiedades</h1><a href='/propiedades/venta'>ver</a> Rosario Santa Fe"
+    st = sitio(html, titulo="ABP Propiedades Rosario", url="https://www.abppropiedades.com.ar/")
+    f = {"canonical_name": "ABP PROPIEDADES", "city": "Rosario",
+         "province": "Santa Fe", "tipo": "INMOBILIARIA"}
+    p = rh.ident.puntuar(rh.como_entidad(f), st)
+    assert rh.ident.clasificar(p) in ("VERIFIED", "HIGH_CONFIDENCE")
+
+
+def test_el_dominio_con_el_nombre_propio_es_evidencia():
+    assert rh.dominio_lleva_el_nombre("https://www.abppropiedades.com.ar/", "ABP PROPIEDADES")
+    assert rh.dominio_lleva_el_nombre("https://www.lopezpropiedades.com.ar", "Lopez Propiedades")
+
+
+def test_el_dominio_de_otro_no_cuenta_como_evidencia():
+    assert not rh.dominio_lleva_el_nombre("https://estudiocalle.com.ar/",
+                                          "ABELARDO CALLE INMOBILIARIA")
+    assert not rh.dominio_lleva_el_nombre("https://alfa.com.ar", "Beta Propiedades")
+
+
+def test_una_coincidencia_casual_adentro_de_otra_palabra_no_cuenta():
+    """'abp' aparece dentro de 'grupoabpconstrucciones' por casualidad."""
+    assert not rh.dominio_lleva_el_nombre("https://grupoabpconstrucciones.com",
+                                          "ABP PROPIEDADES")
+
+
+def test_el_patron_de_listados_no_tiene_bytes_de_control():
+    """Una edicion escribio un retroceso literal donde iba \b y el detector
+    dejo de reconocer cualquier listado sin fallar."""
+    fuente = (ROOT / "scripts" / "detect_platform.py").read_bytes()
+    assert bytes([8]) not in fuente
+    assert dp.RUTAS_LISTADO.search('<a href="/propiedades/venta">x</a>')
