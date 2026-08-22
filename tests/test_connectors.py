@@ -780,3 +780,16 @@ def test_lo_que_no_tiene_columna_va_a_datos_extra():
     extra = json.loads(fila["datos_extra"])
     assert extra["expensas"] == 85000 and extra["ambientes"] == 3
     assert extra["source_listing_id"] == "9"
+
+
+def test_cada_corrida_registra_la_version_del_codigo():
+    """Editar un connector con una corrida en vuelo hace que la segunda lea
+    codigo distinto: todo sale MODIFICADA y la idempotencia parece rota cuando
+    lo unico que cambio fue el codigo. Ya paso dos veces; que quede escrito en
+    el resumen convierte un diagnostico campo por campo en una comparacion."""
+    from scripts.run_rollout import version_del_codigo
+    v = version_del_codigo()
+    assert isinstance(v, str) and len(v) == 12
+    assert v == version_del_codigo()
+    src = (ROOT / "scripts" / "run_rollout.py").read_text(encoding="utf-8")
+    assert '"version_codigo"' in src

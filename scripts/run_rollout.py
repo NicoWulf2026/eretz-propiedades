@@ -89,6 +89,25 @@ def leer_jsonl(ruta: Path) -> list[dict]:
     return salida
 
 
+def version_del_codigo() -> str:
+    """Huella del codigo que produce las propiedades.
+
+    Editar un connector mientras una corrida esta en vuelo hace que la segunda
+    lea codigo distinto: todo aparece MODIFICADA y la idempotencia parece rota
+    cuando lo unico que cambio fui yo. Ya paso dos veces y la unica pista era
+    comparar campo por campo. Ahora queda escrito en el resumen de cada corrida
+    y la diferencia salta a la vista.
+    """
+    import hashlib
+    raiz = Path(__file__).resolve().parents[1]
+    h = hashlib.sha256()
+    for ruta in sorted(list((raiz / "connectors").glob("*.py")) +
+                       [raiz / "scripts" / "run_rollout.py",
+                        raiz / "scripts" / "run_tokko_canary.py"]):
+        h.update(ruta.read_bytes())
+    return h.hexdigest()[:12]
+
+
 def host_de(url: str) -> str:
     return urllib.parse.urlparse(url).netloc.lower().replace("www.", "")
 
@@ -336,6 +355,7 @@ def main() -> int:
 
     resumen = {
         "corrida": a.corrida, "plataforma": a.plataforma, "connector": a.connector,
+        "version_codigo": version_del_codigo(),
         "fuentes_intentadas": len(inv),
         "fuentes_por_estado": dict(Counter(r["estado"] for r in inv)),
         "propiedades_declaradas": sum(r.get("total_declarado") or 0 for r in ok),
