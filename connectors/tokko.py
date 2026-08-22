@@ -157,7 +157,12 @@ class TokkoConnector(Connector):
         vistos: set[str] = set()
 
         estado = self.resume(fuente)
-        pagina = 1
+        declarado = plan.get("total_declarado")
+        # Si la fuente declara un total, se sabe cuantas paginas hacen falta y
+        # ese numero manda por encima de cualquier heuristica.
+        minimo_paginas = -(-declarado // POR_PAGINA) if declarado else 0
+
+        pagina, sin_nuevos = 1, 0
         while pagina <= MAX_PAGINAS:
             if pagina == 1:
                 html = plan.get("html_listado") or self.descargador.bajar(base + ruta)
@@ -166,8 +171,9 @@ class TokkoConnector(Connector):
             else:
                 break
 
+            hallados = RE_FICHA.findall(html)
             nuevos = 0
-            for pid, slug in RE_FICHA.findall(html):
+            for pid, slug in hallados:
                 if pid in vistos:
                     continue
                 vistos.add(pid)
@@ -176,8 +182,20 @@ class TokkoConnector(Connector):
                        "source_url": self.descargador.url_segura(
                            f"{base}/p/{pid}-{slug}"),
                        "pagina": pagina}
-            if nuevos == 0:
+
+            if not hallados:
+                # Pagina sin una sola ficha: ahi si se acabo el listado.
                 break
+            if nuevos == 0:
+                # Una pagina puede repetir la anterior sin que el listado haya
+                # terminado -Tokko reordena entre pedidos-. Cortar en la primera
+                # repeticion costaba hasta un 11% del inventario, y como el
+                # total declarado seguia sin alcanzarse el error era invisible.
+                sin_nuevos += 1
+                if sin_nuevos >= 2 and pagina >= minimo_paginas:
+                    break
+            else:
+                sin_nuevos = 0
             estado["ultima_pagina"] = pagina
             pagina += 1
         estado["completa"] = True

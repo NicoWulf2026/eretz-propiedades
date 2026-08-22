@@ -645,3 +645,32 @@ def test_el_mismo_host_si_espera():
     t0 = _t.monotonic()
     lim.esperar("a.com")
     assert _t.monotonic() - t0 >= 0.25
+
+
+def test_una_pagina_repetida_no_corta_el_listado_antes_de_tiempo():
+    """Tokko reordena entre pedidos y a veces devuelve una pagina ya vista.
+    Cortar en la primera repeticion costaba hasta un 11% del inventario, y como
+    el total declarado seguia sin alcanzarse el error era invisible."""
+    p1 = LISTADO.replace("2 Resultados", "60 Resultados")
+    p3 = p1.replace("/p/111-", "/p/333-").replace("/p/222-", "/p/444-")
+    paginas = {
+        "https://alfa.com.ar/": p1,
+        "https://alfa.com.ar/Propiedades": p1,
+        "https://alfa.com.ar/Propiedades?q=&currency=ANY&operation=&p=2": p1,   # repetida
+        "https://alfa.com.ar/Propiedades?q=&currency=ANY&operation=&p=3": p3,
+        "https://alfa.com.ar/Propiedades?q=&currency=ANY&operation=&p=4": "<html>vacio</html>",
+    }
+    c = conector(paginas)
+    f = fuente()
+    ids = [a["source_listing_id"] for a in c.fetch_listing(f, c.discover(f))]
+    assert ids == ["111", "222", "333", "444"]
+
+
+def test_una_pagina_sin_ninguna_ficha_si_termina_el_listado():
+    paginas = {"https://alfa.com.ar/": LISTADO,
+               "https://alfa.com.ar/Propiedades": LISTADO,
+               "https://alfa.com.ar/Propiedades?q=&currency=ANY&operation=&p=2":
+                   "<html>sin resultados</html>"}
+    c = conector(paginas)
+    f = fuente()
+    assert len(list(c.fetch_listing(f, c.discover(f)))) == 2
