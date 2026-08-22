@@ -107,6 +107,50 @@ def main() -> int:
               if x.get("scrapeability_status") == "SCRAPE_SOURCE_READY"
               and x.get("selected_domain")]
 
+    # --- universo consolidado -------------------------------------------------
+    # Las READY originales no son todas las fuentes validas: la re-auditoria
+    # historica rescato mas, y el control de identidad descarto varias que
+    # apuntaban al sitio de otra empresa. El mapa tiene que cubrir el universo
+    # real, no el de la primera pasada.
+    por_id = {x["canonical_agency_id"]: x for x in directorio}
+    rescatadas = 0
+    ruta_reaudit = dd / "historical_scrapeability_reaudit.jsonl"
+    if ruta_reaudit.exists():
+        ya = {x["canonical_agency_id"] for x in listas}
+        for l in ruta_reaudit.open(encoding="utf-8"):
+            if not l.strip():
+                continue
+            r = json.loads(l)
+            if r.get("new_status") != "SCRAPE_SOURCE_READY" or not r.get("url"):
+                continue
+            cid = r["inmobiliaria_id"]
+            if cid in ya:
+                continue
+            fila = dict(por_id.get(cid, {}))
+            fila.update({"canonical_agency_id": cid,
+                         "canonical_name": fila.get("canonical_name") or r.get("nombre"),
+                         "selected_domain": r["url"],
+                         "scrapeability_status": "SCRAPE_SOURCE_READY",
+                         "origen": "reauditoria_historica"})
+            listas.append(fila)
+            ya.add(cid)
+            rescatadas += 1
+
+    excluidas: set[str] = set()
+    ruta_ident = dd / "ready_identity_audit.jsonl"
+    if ruta_ident.exists():
+        for l in ruta_ident.open(encoding="utf-8"):
+            if not l.strip():
+                continue
+            r = json.loads(l)
+            if r.get("identity_status") in ("IDENTITY_WRONG_ENTITY", "IDENTITY_AMBIGUOUS"):
+                excluidas.add(r["canonical_agency_id"])
+    if excluidas:
+        listas = [x for x in listas if x["canonical_agency_id"] not in excluidas]
+
+    print(f"  universo consolidado: +{rescatadas:,} rescatadas historicas, "
+          f"-{len(excluidas):,} descartadas por identidad", flush=True)
+
     salida = dd / "scrape_source_technology_map.jsonl"
     hechas: set[str] = set()
     if salida.exists():

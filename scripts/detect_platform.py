@@ -72,10 +72,15 @@ GENERICAS = {
 
 # Rutas que suelen listar propiedades. Sirven para confirmar que el sitio
 # publica inventario y no es solo institucional.
+#
+# El separador de adelante admite la barra de una ruta absoluta pero tambien la
+# comilla de un href relativo: muchos sitios PHP escriben href="propiedades.php"
+# sin barra, y exigirla los volvia invisibles para el detector. Pedir ALGUN
+# separador sigue impidiendo que "amilicipropiedades.com" cuente como listado.
 RUTAS_LISTADO = re.compile(
-    r"/(propiedades|propiedad|inmuebles|inmueble|emprendimientos|fichas?|"
-    r"listado|listados|resultados|venta|ventas|alquiler|alquileres|buscar|"
-    r"busqueda|search|properties|operacion|destacados)\b", re.I)
+    r"""[/"'=?&.](propiedades|propiedad|inmuebles|inmueble|emprendimientos|"""
+    r"""fichas?|listado|listados|resultados|venta|ventas|alquiler|alquileres|"""
+    r"""buscar|busqueda|search|properties|operacion|destacados)\b""", re.I)
 
 # Endpoints de datos visibles en el propio HTML.
 ENDPOINTS_JSON = re.compile(
