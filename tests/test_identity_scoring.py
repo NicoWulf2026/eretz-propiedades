@@ -254,3 +254,15 @@ def test_un_aviso_de_empleo_no_es_la_web_de_la_inmobiliaria():
                    sitio("Oferta de trabajo. Agente inmobiliario. Enviá tu CV. "
                          "Postulate a esta vacante.", "Trabajo en RE/MAX Exclusivo"))
     assert p.rechazado_por_rubro and p.rubro_detectado == "empleo"
+
+
+def test_el_indice_del_propio_buscador_no_es_la_web():
+    """Exa devolvio exa.ai/library/organization/... como candidata."""
+    import importlib.util, sys as _s
+    _sp = importlib.util.spec_from_file_location("wd2", ROOT / "scripts" / "agency_web_discovery.py")
+    wd2 = importlib.util.module_from_spec(_sp); _s.modules["wd2"] = wd2; _sp.loader.exec_module(wd2)
+    for u in ("https://exa.ai/library/organization/4pwm7xb77gd",
+              "https://www.crunchbase.com/organization/alfa",
+              "https://www.zoominfo.com/c/alfa/123"):
+        assert wd2.es_portal(u), u
+    assert not wd2.es_portal("https://alfapropiedades.com.ar/")

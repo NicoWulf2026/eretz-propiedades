@@ -97,6 +97,13 @@ AGREGADORES = {
     "google.com", "maps.google.com", "goo.gl", "maps.app.goo.gl",
     "paginasamarillas.com.ar", "cylex.com.ar", "yelp.com", "linktr.ee",
     "sites.google.com", "wixsite.com", "blogspot.com", "wordpress.com",
+    # Directorios de empresas: describen a la inmobiliaria, no son suyos.
+    "crunchbase.com", "zoominfo.com", "apollo.io", "rocketreach.co",
+    "opencorporates.com", "dnb.com", "empresite.com", "informacion-empresas.co",
+    "guiaempresas.com.ar", "nosis.com", "universidad-de-empresas.com",
+    # Indices de los propios buscadores: Exa devolvio su pagina de la
+    # organizacion como si fuera la web de la inmobiliaria.
+    "exa.ai", "tavily.com", "jina.ai", "serper.dev", "perplexity.ai",
 }
 NO_OFICIALES = PORTALES | MEDIOS | EMPLEO | REDES | AGREGADORES
 

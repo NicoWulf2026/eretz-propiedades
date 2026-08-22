@@ -44,6 +44,7 @@ d = _load("eretz_dedupe")
 wd = _load("agency_web_discovery")
 sc = _load("identity_scoring")
 sp = _load("search_provider")
+pe = _load("providers_extra")
 aud = _load("audit_existing_webs")
 
 SEGUNDA_PASADA = "SEARCH_SECOND_PASS_REQUIRED"
@@ -100,7 +101,7 @@ def volcar_directorio(dd: Path, directorio: dict, resultados: dict) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", default=r"D:\INMO CAPITAL\ERETZ_AGENCY_DATA")
-    ap.add_argument("--proveedor", choices=("tavily", "serper"), default="tavily")
+    ap.add_argument("--proveedor", choices=("tavily", "serper", "exa", "jina"), default="tavily")
     ap.add_argument("--cola", default=None, help="jsonl de entrada; por defecto el de Tavily")
     ap.add_argument("--salida-cola", default=None)
     ap.add_argument("--tope", type=int, default=1450)
@@ -118,7 +119,11 @@ def main() -> int:
     cola = [e for e in pendientes if e["canonical_id"] not in ya]
     cola.sort(key=prioridad)
 
-    motor = sp.Serper(tope=a.tope) if a.proveedor == "serper" else sp.Tavily(tope=a.tope)
+    motores = {"serper": lambda: sp.Serper(tope=a.tope),
+               "tavily": lambda: sp.Tavily(tope=a.tope),
+               "exa": lambda: pe.Exa(tope=a.tope),
+               "jina": lambda: pe.Jina(tope=a.tope)}
+    motor = motores[a.proveedor]()
     buscador = sp.ConCache(motor, dd / "search_cache.jsonl")
     if not buscador.disponible():
         print(f"{motor.ENV} ausente: no se ejecuta nada.", flush=True)
@@ -305,6 +310,12 @@ def main() -> int:
     cons = getattr(interno, "creditos_consumidos", None)
     if cons:
         print(f"  creditos consumidos (informados): {cons:,}", flush=True)
+    gasto = getattr(interno, "gasto_usd", None)
+    if gasto:
+        print(f"  gasto informado por el proveedor: USD {gasto:.4f}", flush=True)
+    toks = getattr(interno, "tokens_consumidos", None)
+    if toks:
+        print(f"  tokens consumidos: {toks:,}", flush=True)
     print(f"  cola siguiente -> {salida_cola.name}", flush=True)
     return 0
 
