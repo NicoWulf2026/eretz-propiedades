@@ -166,15 +166,37 @@ class Century21Connector(Connector):
 
         # lat/lon estan en la raiz del item, no anidados.
         def _num(*claves):
+            """Numero de la fuente, tratando el cero como ausencia.
+
+            C21 devuelve 0 en m2C y m2T cuando no conoce la superficie. Grabar
+            ese cero lo convierte en una medicion: "casa de 0 m2 cubiertos"
+            parece un dato verificado y ademas dispara la incoherencia de
+            cubierta mayor que total. Un 19% del inventario entraba asi.
+            """
             for c in claves:
                 v = it.get(c)
                 if v in (None, ""):
                     continue
                 try:
-                    return float(str(v).replace(",", ""))
+                    n = float(str(v).replace(",", ""))
                 except (TypeError, ValueError):
                     continue
+                return n
             return None
+
+        def _sup(*claves):
+            """Superficie de la fuente, tratando el cero como ausencia.
+
+            C21 devuelve 0 en m2C y m2T cuando no la conoce. Grabar ese cero lo
+            convierte en una medicion: "casa de 0 m2 cubiertos" parece un dato
+            verificado y ademas dispara la incoherencia de cubierta mayor que
+            total. Un 19% del inventario entraba asi.
+
+            El filtro va aparte de _num a proposito: las coordenadas argentinas
+            son negativas y un ">0" generico las borraria todas.
+            """
+            v = _num(*claves)
+            return v if v and v > 0 else None
 
         lat, lon = _num("lat"), _num("lon")
         if lat is not None and not (-56 <= lat <= -21):
@@ -221,8 +243,8 @@ class Century21Connector(Connector):
             dormitorios=self._entero(it.get("recamaras")),
             banos=self._entero(it.get("banos")),
             ambientes=None,   # la fuente no publica ambientes; no se deduce
-            superficie_total=_num("m2T", "m2TSort"),
-            superficie_cubierta=_num("m2C", "m2CSort"),
+            superficie_total=_sup("m2T", "m2TSort"),
+            superficie_cubierta=_sup("m2C", "m2CSort"),
             imagenes=imagenes[:40],
             extra=extra,
             inmobiliaria_id=fuente.inmobiliaria_id,

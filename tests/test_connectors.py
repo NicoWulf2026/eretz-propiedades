@@ -788,9 +788,11 @@ def test_cada_corrida_registra_la_version_del_codigo():
     lo unico que cambio fue el codigo. Ya paso dos veces; que quede escrito en
     el resumen convierte un diagnostico campo por campo en una comparacion."""
     from scripts.run_rollout import version_del_codigo
-    v = version_del_codigo()
+    v = version_del_codigo("tokko")
     assert isinstance(v, str) and len(v) == 12
-    assert v == version_del_codigo()
+    assert v == version_del_codigo("tokko")
+    # Agregar un connector nuevo no puede invalidar la comparacion de los otros.
+    assert version_del_codigo("tokko") != version_del_codigo("wordpress")
     src = (ROOT / "scripts" / "run_rollout.py").read_text(encoding="utf-8")
     assert '"version_codigo"' in src
 
@@ -1053,3 +1055,35 @@ def test_los_cuatro_connectors_cumplen_la_misma_interfaz():
         for metodo in ("discover", "fetch_listing", "normalize", "resume",
                        "registrar", "identify_deleted_or_inactive"):
             assert callable(getattr(clase, metodo)), (clase.__name__, metodo)
+
+
+def test_century21_no_toma_el_cero_como_medicion():
+    """C21 devuelve 0 en m2C y m2T cuando no conoce la superficie. Grabarlo
+    convierte "no se" en "cero metros", que parece un dato verificado y ademas
+    dispara la incoherencia de cubierta mayor que total."""
+    c = c21_conector({
+        "https://century21.com.ar/v/oficina/68-revolution-s-a-rosario": C21_PERFIL,
+        "https://century21.com.ar/v/resultados/oficina_68-revolution-s-a_local?json=true":
+            json.dumps({"totalHits": "1", "results": [{
+                "id": 7, "encabezado": "Venta casa", "precio": 100, "moneda": "USD",
+                "m2C": 0, "m2T": 0, "urlCorrectaPropiedad": "/propiedad/7_x"}]})})
+    f = c21_fuente()
+    p = c.normalize(list(c.fetch_listing(f, c.discover(f)))[0], f)
+    assert p.superficie_cubierta is None and p.superficie_total is None
+    assert p.problemas() == []
+
+
+def test_century21_conserva_las_coordenadas_negativas():
+    """Argentina esta entera en latitud y longitud negativas: un filtro de
+    "mayor que cero" pensado para superficies borraria todas las coordenadas."""
+    c = c21_conector({
+        "https://century21.com.ar/v/oficina/68-revolution-s-a-rosario": C21_PERFIL,
+        "https://century21.com.ar/v/resultados/oficina_68-revolution-s-a_local?json=true":
+            json.dumps({"totalHits": "1", "results": [{
+                "id": 8, "encabezado": "Venta casa", "precio": 100, "moneda": "USD",
+                "lat": -32.958, "lon": -60.635, "m2C": 0,
+                "urlCorrectaPropiedad": "/propiedad/8_x"}]})})
+    f = c21_fuente()
+    p = c.normalize(list(c.fetch_listing(f, c.discover(f)))[0], f)
+    assert p.latitud == -32.958 and p.longitud == -60.635
+    assert p.superficie_cubierta is None

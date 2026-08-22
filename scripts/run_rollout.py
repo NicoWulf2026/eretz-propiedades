@@ -92,7 +92,7 @@ def leer_jsonl(ruta: Path) -> list[dict]:
     return salida
 
 
-def version_del_codigo() -> str:
+def version_del_codigo(connector: str) -> str:
     """Huella del codigo que produce las propiedades.
 
     Editar un connector mientras una corrida esta en vuelo hace que la segunda
@@ -103,11 +103,17 @@ def version_del_codigo() -> str:
     """
     import hashlib
     raiz = Path(__file__).resolve().parents[1]
+    # Solo el connector en uso, la base y este runner. Hashear TODOS los
+    # connectors hacia que agregar uno nuevo invalidara la comparacion de los
+    # demas, y la huella dejaba de servir para lo unico que se hizo: saber si
+    # dos corridas de la MISMA fuente vieron el mismo codigo.
+    rutas = [raiz / "connectors" / "base.py",
+             raiz / "connectors" / f"{connector}.py",
+             raiz / "scripts" / "run_rollout.py"]
     h = hashlib.sha256()
-    for ruta in sorted(list((raiz / "connectors").glob("*.py")) +
-                       [raiz / "scripts" / "run_rollout.py",
-                        raiz / "scripts" / "run_tokko_canary.py"]):
-        h.update(ruta.read_bytes())
+    for ruta in rutas:
+        if ruta.exists():
+            h.update(ruta.read_bytes())
     return h.hexdigest()[:12]
 
 
@@ -367,7 +373,7 @@ def main() -> int:
 
     resumen = {
         "corrida": a.corrida, "plataforma": a.plataforma, "connector": a.connector,
-        "version_codigo": version_del_codigo(),
+        "version_codigo": version_del_codigo(a.connector),
         "fuentes_intentadas": len(inv),
         "fuentes_por_estado": dict(Counter(r["estado"] for r in inv)),
         "propiedades_declaradas": sum(r.get("total_declarado") or 0 for r in ok),
