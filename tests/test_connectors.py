@@ -1008,8 +1008,11 @@ def test_generico_usa_schema_org_antes_que_el_texto():
 
 
 def test_generico_cae_al_texto_cuando_no_hay_json_ld():
-    ficha = "<html><head><title>Casa en Venta</title></head><body>USD 55.000 " \
-            "3 dormitorios 2 banos</body></html>"
+    # El relleno importa: una pagina de menos de 400 caracteres se descarta a
+    # proposito, porque suele ser un error servido con http 200.
+    ficha = ("<html><head><title>Casa en Venta</title></head><body>USD 55.000 "
+             "3 dormitorios 2 banos" + " descripcion de la propiedad." * 20 +
+             "</body></html>")
     c = gen_conector({"https://alfa.com.ar/sitemap.xml": GEN_SITEMAP,
                       "https://alfa.com.ar/propiedades/": ficha})
     f = fuente()
