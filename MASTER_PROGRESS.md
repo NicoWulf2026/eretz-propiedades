@@ -80,12 +80,36 @@ página uno otra vez**: se recogerían 20 de 299 propiedades sin un solo error.
 
 Ninguno detiene el resto.
 
+## Validado a escala (codigo 1abb03ef37a1)
+
+| | run 1 | run 2 |
+|---|---|---|
+| Tokko, 100 fuentes | 2.048 NUEVA | **2.048 SIN_CAMBIOS** |
+| WordPress, 20 fuentes | 120 NUEVA | **120 SIN_CAMBIOS** |
+
+Ambos reconcilian. 0 duplicados intra-fuente, 0 hash compartido entre agencias,
+0 fotos ajenas, 0 errores. El barrido multiple llevo las fuentes con enumeracion
+incompleta de 3 a 0 y recupero +1.589 propiedades sobre las mismas 100 fuentes.
+
+## Corriendo
+
+- **Tokko full rollout**: 913 fuentes, todas las fichas, modo observacion.
+  Artefactos en `TOKKO_ROLLOUT_FULL`. Log `rollout_full_run1.log`.
+
 ## Próximo paso
 
-1. Cerrar rollout controlado (2 corridas) y verificar idempotencia a escala.
-2. Rollout completo Tokko sobre todas las `TFW_ESTANDAR`.
-3. Canary WordPress → rollout.
-4. Variantes `TOKKO_FRONTEND_PROPIO`.
+1. Cerrar rollout completo Tokko y reconciliar.
+2. Segunda corrida del completo para incremental a escala.
+3. Rollout WordPress.
+4. Variantes `TOKKO_FRONTEND_PROPIO` e Inmovar.
+5. Century 21: listado por oficina en `/v/resultados/oficina_<id>-<slug>_local`,
+   renderizado en cliente; falta el endpoint XHR.
+
+## Regla aprendida
+
+**No editar connectors ni runners con una corrida en vuelo.** Paso dos veces:
+la segunda corrida lee codigo distinto, todo sale MODIFICADA y la idempotencia
+parece rota. Cada corrida graba ahora `version_codigo` en su reporte.
 
 ## Reglas
 
