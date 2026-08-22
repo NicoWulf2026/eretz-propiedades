@@ -701,25 +701,40 @@ def test_la_ubicacion_del_padron_solo_rellena_lo_vacio():
     p = B.PropiedadNormalizada(canonical_agency_id="a", source_listing_id="1",
                                source_url="https://alfa.com.ar/p/1", connector="t",
                                ciudad="Funes")
+    p.provincia = "Cordoba"
     c.completar_ubicacion(p, f)
     assert p.ciudad == "Funes"                    # la explicita gana
-    assert p.provincia == "Santa Fe"              # la vacia se completa
-    assert p.extra["provincia_origen"] == "padron_inmobiliaria"
-    assert "ciudad_origen" not in p.extra
+    assert p.provincia == "Cordoba"               # la explicita tampoco se pisa
+    assert "provincia_origen" not in p.extra
 
 
 def test_la_ubicacion_inferida_queda_marcada_como_tal():
-    """"La ciudad de la inmobiliaria" no es "la ciudad del inmueble": quien
-    consuma el dato tiene que poder distinguirlo."""
+    """La provincia de la inmobiliaria no es necesariamente la del inmueble:
+    quien consuma el dato tiene que poder distinguirlo."""
     c = conector()
     f = B.Fuente(canonical_agency_id="a", agency_name="Alfa",
                  official_url="https://alfa.com.ar/", inmobiliaria_id=1,
-                 extra={"city": "Rosario", "province": "Santa Fe"})
+                 extra={"city": "recoleta", "province": "Santa Fe"})
     p = B.PropiedadNormalizada(canonical_agency_id="a", source_listing_id="1",
                                source_url="https://alfa.com.ar/p/1", connector="t")
     c.completar_ubicacion(p, f)
-    assert p.ciudad == "Rosario"
-    assert p.extra["ciudad_confianza"] == "inferida"
+    assert p.provincia == "Santa Fe"
+    assert p.extra["provincia_confianza"] == "inferida"
+
+
+def test_la_zona_del_padron_no_se_usa_como_ciudad():
+    """El campo `city` del padron guarda barrios -"recoleta", "palermo",
+    "centro"-, no ciudades. Copiarlo llenaria el dataset de barrios disfrazados
+    de ciudades, y nadie lo notaria despues."""
+    c = conector()
+    f = B.Fuente(canonical_agency_id="a", agency_name="Alfa",
+                 official_url="https://alfa.com.ar/", inmobiliaria_id=1,
+                 extra={"city": "recoleta", "province": "Buenos Aires"})
+    p = B.PropiedadNormalizada(canonical_agency_id="a", source_listing_id="1",
+                               source_url="https://alfa.com.ar/p/1", connector="t")
+    c.completar_ubicacion(p, f)
+    assert p.ciudad is None
+    assert p.extra["zona_padron"] == "recoleta"
 
 
 def test_sin_padron_no_se_inventa_ubicacion():

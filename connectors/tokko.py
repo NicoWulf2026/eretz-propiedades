@@ -170,42 +170,50 @@ class TokkoConnector(Connector):
         # ese numero manda por encima de cualquier heuristica.
         minimo_paginas = -(-declarado // POR_PAGINA) if declarado else 0
 
-        pagina, sin_nuevos = 1, 0
-        while pagina <= MAX_PAGINAS:
-            if pagina == 1:
-                html = plan.get("html_listado") or self.descargador.bajar(base + ruta)
-            elif query:
-                html = self.descargador.bajar(base + ruta + query + str(pagina))
-            else:
-                break
-
-            hallados = RE_FICHA.findall(html)
-            nuevos = 0
-            for pid, slug in hallados:
-                if pid in vistos:
-                    continue
-                vistos.add(pid)
-                nuevos += 1
-                yield {"source_listing_id": pid,
-                       "source_url": self.descargador.url_segura(
-                           f"{base}/p/{pid}-{slug}"),
-                       "pagina": pagina}
-
-            if not hallados:
-                # Pagina sin una sola ficha: ahi si se acabo el listado.
-                break
-            if nuevos == 0:
-                # Una pagina puede repetir la anterior sin que el listado haya
-                # terminado -Tokko reordena entre pedidos-. Cortar en la primera
-                # repeticion costaba hasta un 11% del inventario, y como el
-                # total declarado seguia sin alcanzarse el error era invisible.
-                sin_nuevos += 1
-                if sin_nuevos >= 2 and pagina >= minimo_paginas:
+        # Tokko reordena el conjunto entre pedidos: dos barridos identicos
+        # devuelven subconjuntos distintos, asi que una sola pasada deja afuera
+        # entre un 6% y un 14% del inventario aunque recorra todas las paginas
+        # que el total declarado implica. Se repite el barrido mientras siga
+        # apareciendo material nuevo y el total siga sin alcanzarse.
+        MAX_BARRIDOS = 4
+        for barrido in range(1, MAX_BARRIDOS + 1):
+            antes = len(vistos)
+            pagina, sin_nuevos = 1, 0
+            while pagina <= MAX_PAGINAS:
+                if pagina == 1 and barrido == 1:
+                    html = plan.get("html_listado") or self.descargador.bajar(base + ruta)
+                elif query:
+                    html = self.descargador.bajar(base + ruta + query + str(pagina))
+                else:
                     break
-            else:
-                sin_nuevos = 0
-            estado["ultima_pagina"] = pagina
-            pagina += 1
+
+                hallados = RE_FICHA.findall(html)
+                nuevos = 0
+                for pid, slug in hallados:
+                    if pid in vistos:
+                        continue
+                    vistos.add(pid)
+                    nuevos += 1
+                    yield {"source_listing_id": pid,
+                           "source_url": self.descargador.url_segura(
+                               f"{base}/p/{pid}-{slug}"),
+                           "pagina": pagina}
+
+                if not hallados:
+                    break
+                if nuevos == 0:
+                    sin_nuevos += 1
+                    if sin_nuevos >= 2 and pagina >= minimo_paginas:
+                        break
+                else:
+                    sin_nuevos = 0
+                estado["ultima_pagina"] = pagina
+                pagina += 1
+
+            ganancia = len(vistos) - antes
+            estado["barridos"] = barrido
+            if not declarado or len(vistos) >= declarado or ganancia == 0:
+                break
         estado["completa"] = True
 
     # --------------------------------------------------------------- normalize

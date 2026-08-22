@@ -470,22 +470,30 @@ class Connector:
 
     def completar_ubicacion(self, prop: "PropiedadNormalizada",
                             fuente: Fuente) -> None:
-        """Rellena ciudad y provincia desde el padron de la inmobiliaria.
+        """Completa provincia desde el padron de la inmobiliaria.
 
-        Solo donde la ficha no dijo nada: una ubicacion explicita de la fuente
-        nunca se pisa con una inferencia. Queda anotado de donde salio, porque
-        "la ciudad de la inmobiliaria" no es lo mismo que "la ciudad del
-        inmueble" y quien consuma el dato tiene que poder distinguirlo.
+        Solo provincia. El campo `city` del padron parece ciudad y no lo es:
+        guarda zonas observadas -"centro", "recoleta", "palermo", "belgrano"-,
+        que son barrios, y ademas trae valores con acentos perdidos. Copiarlo a
+        `ciudad` llenaria el dataset de barrios disfrazados de ciudades, que es
+        peor que dejar el campo vacio porque nadie lo notaria despues.
+
+        La provincia si es un vocabulario limpio de 23 valores reales. Se
+        escribe solo donde la ficha no dijo nada -una ubicacion explicita nunca
+        se pisa con una inferencia- y queda marcada como inferida, porque la
+        provincia de la inmobiliaria no es necesariamente la del inmueble.
         """
         padron = fuente.extra or {}
-        for campo, clave in (("ciudad", "city"), ("provincia", "province")):
-            if getattr(prop, campo):
-                continue
-            valor = padron.get(clave)
-            if valor:
-                setattr(prop, campo, valor)
-                prop.extra[f"{campo}_origen"] = "padron_inmobiliaria"
-                prop.extra[f"{campo}_confianza"] = "inferida"
+        provincia = padron.get("province")
+        if provincia and not prop.provincia:
+            prop.provincia = provincia
+            prop.extra["provincia_origen"] = "padron_inmobiliaria"
+            prop.extra["provincia_confianza"] = "inferida"
+        zona = padron.get("city")
+        if zona:
+            # Se guarda como rastro, no como ubicacion: sirve para auditar de
+            # donde salio una propiedad sin contaminar los campos de ubicacion.
+            prop.extra["zona_padron"] = zona
 
     def anotar_error(self, fuente: Fuente, etapa: str, error: Exception) -> None:
         self.errores.append({
