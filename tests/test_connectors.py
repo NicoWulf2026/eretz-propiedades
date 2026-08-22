@@ -674,3 +674,59 @@ def test_una_pagina_sin_ninguna_ficha_si_termina_el_listado():
     c = conector(paginas)
     f = fuente()
     assert len(list(c.fetch_listing(f, c.discover(f)))) == 2
+
+
+# ------------------------------------------------- fotos y ubicacion por connector
+def test_solo_se_cuentan_fotos_ajenas_donde_se_pueden_verificar():
+    """La ruta del CDN de Tokko lleva el id adelante y permite comprobarlo.
+    WordPress no: las imagenes son adjuntos con nombre libre. Contar "ajenas"
+    ahi daba 3.882 falsos positivos y tapaba los casos reales."""
+    assert conector().foto_verificable() is True
+    assert wp_conector().foto_verificable() is False
+
+
+def test_tokko_reconoce_la_foto_de_su_propiedad():
+    c = conector()
+    p = norm()
+    assert c.foto_es_de(p, f"https://static.tokkobroker.com/pictures/{p.source_listing_id}_a.jpg")
+    assert not c.foto_es_de(p, "https://static.tokkobroker.com/pictures/999_a.jpg")
+
+
+def test_la_ubicacion_del_padron_solo_rellena_lo_vacio():
+    """Una ubicacion explicita de la ficha no se pisa con una inferencia."""
+    c = conector()
+    f = B.Fuente(canonical_agency_id="a", agency_name="Alfa",
+                 official_url="https://alfa.com.ar/", inmobiliaria_id=1,
+                 extra={"city": "Rosario", "province": "Santa Fe"})
+    p = B.PropiedadNormalizada(canonical_agency_id="a", source_listing_id="1",
+                               source_url="https://alfa.com.ar/p/1", connector="t",
+                               ciudad="Funes")
+    c.completar_ubicacion(p, f)
+    assert p.ciudad == "Funes"                    # la explicita gana
+    assert p.provincia == "Santa Fe"              # la vacia se completa
+    assert p.extra["provincia_origen"] == "padron_inmobiliaria"
+    assert "ciudad_origen" not in p.extra
+
+
+def test_la_ubicacion_inferida_queda_marcada_como_tal():
+    """"La ciudad de la inmobiliaria" no es "la ciudad del inmueble": quien
+    consuma el dato tiene que poder distinguirlo."""
+    c = conector()
+    f = B.Fuente(canonical_agency_id="a", agency_name="Alfa",
+                 official_url="https://alfa.com.ar/", inmobiliaria_id=1,
+                 extra={"city": "Rosario", "province": "Santa Fe"})
+    p = B.PropiedadNormalizada(canonical_agency_id="a", source_listing_id="1",
+                               source_url="https://alfa.com.ar/p/1", connector="t")
+    c.completar_ubicacion(p, f)
+    assert p.ciudad == "Rosario"
+    assert p.extra["ciudad_confianza"] == "inferida"
+
+
+def test_sin_padron_no_se_inventa_ubicacion():
+    c = conector()
+    f = B.Fuente(canonical_agency_id="a", agency_name="Alfa",
+                 official_url="https://alfa.com.ar/", inmobiliaria_id=1)
+    p = B.PropiedadNormalizada(canonical_agency_id="a", source_listing_id="1",
+                               source_url="https://alfa.com.ar/p/1", connector="t")
+    c.completar_ubicacion(p, f)
+    assert p.ciudad is None and p.provincia is None

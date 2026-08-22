@@ -137,6 +137,14 @@ class TokkoConnector(Connector):
         plan["soportada"] = plan["variante"] in self.variantes_soportadas
         return plan
 
+    def foto_verificable(self) -> bool:
+        """La ruta del CDN de Tokko lleva el id de la propiedad adelante."""
+        return True
+
+    def foto_es_de(self, prop, url: str) -> bool:
+        pid = prop.source_listing_id
+        return f"/pictures/{pid}_" in url or f"/thumbs/{pid}_" in url
+
     @staticmethod
     def _base(url: str) -> str:
         p = urllib.parse.urlparse(url)

@@ -108,6 +108,16 @@ def universo(dd: Path, plataforma: str, variantes: set[str] | None,
         # aca seria dar por perdida una fuente que nadie miro.
         sin_ver = [x for x in fuentes if x["canonical_agency_id"] not in desc]
         fuentes = conocidas + sin_ver
+    # El mapa no guarda ciudad ni provincia; el directorio de agencias si. Se
+    # unen aca para que el connector pueda completar ubicacion desde el padron
+    # cuando la ficha no la publica.
+    padron = {x["canonical_agency_id"]: x
+              for x in leer_jsonl(dd / "agency_web_directory.jsonl")}
+    for f in fuentes:
+        d = padron.get(f["canonical_agency_id"]) or {}
+        f["city"] = d.get("city")
+        f["province"] = d.get("province")
+
     fuentes.sort(key=lambda x: x["canonical_agency_id"])
     return fuentes[:limite] if limite else fuentes
 
@@ -161,6 +171,7 @@ def procesar(con, fuente: Fuente, max_fichas: int, observacion: bool) -> dict:
 
     seleccion = avisos if max_fichas <= 0 else avisos[:max_fichas]
     r["detalles_pedidos"] = len(seleccion)
+    objetos = []
     fallidos = 0
     for a in seleccion:
         try:
@@ -174,11 +185,13 @@ def procesar(con, fuente: Fuente, max_fichas: int, observacion: bool) -> dict:
         if p is None:
             fallidos += 1
             continue
+        con.completar_ubicacion(p, fuente)
         cambio = con.registrar(fuente, p)
         d = p.a_dict()
         d["_cambio"] = cambio
         d["_run"] = r["checked_at"]
         props.append(d)
+        objetos.append(p)
 
     r["detalles_obtenidos"] = len(props)
     r["detalles_fallidos"] = fallidos
@@ -205,8 +218,15 @@ def procesar(con, fuente: Fuente, max_fichas: int, observacion: bool) -> dict:
             "ambientes", "superficie_cubierta", "superficie_total", "latitud",
             "imagenes", "descripcion")}
         r["hash_unicos"] = len({p["hash_dedup"] for p in props})
-        r["fotos_ajenas"] = sum(1 for p in props for u in p["imagenes"]
-                                if f"/{p['source_listing_id']}_" not in u)
+        # Solo se cuenta donde el connector puede probarlo. En una plataforma
+        # que no permite verificarlo, el conteo daria miles de falsos positivos
+        # y taparia los casos reales de otra que si.
+        if con.foto_verificable():
+            r["fotos_ajenas"] = sum(
+                1 for p, o in zip(props, objetos) for u in p["imagenes"]
+                if not con.foto_es_de(o, u))
+        else:
+            r["fotos_verificables"] = False
         r["problemas"] = dict(Counter(q for p in props for q in p["problemas"]))
     r["estado"] = "OK" if r["enumeracion_completa"] else "ENUMERACION_INCOMPLETA"
     r["segundos"] = round(time.time() - t0, 1)
@@ -269,7 +289,8 @@ def main() -> int:
                    agency_name=x.get("agency_name") or "",
                    official_url=x["official_url"],
                    inmobiliaria_id=id_sustituto(x["canonical_agency_id"]),
-                   detected_platform=x["detected_platform"])
+                   detected_platform=x["detected_platform"],
+                   extra={"city": x.get("city"), "province": x.get("province")})
         try:
             r = procesar(con, f, a.max_fichas, a.observacion)
         except Exception as e:  # nunca tumbar el rollout por una fuente

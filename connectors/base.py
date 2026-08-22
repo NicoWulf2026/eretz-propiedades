@@ -455,6 +455,38 @@ class Connector:
             return "NUEVA"
         return "SIN_CAMBIOS" if previo == prop.fingerprint else "MODIFICADA"
 
+    def foto_verificable(self) -> bool:
+        """Si el connector puede probar que una foto es de ESTA propiedad.
+
+        Tokko puede: la ruta del CDN lleva el id de la propiedad adelante.
+        WordPress no: las imagenes son adjuntos con nombre libre. Contar
+        "fotos ajenas" en una plataforma que no permite verificarlo produce
+        miles de falsos positivos y esconde los casos reales.
+        """
+        return False
+
+    def foto_es_de(self, prop: "PropiedadNormalizada", url: str) -> bool:
+        return True
+
+    def completar_ubicacion(self, prop: "PropiedadNormalizada",
+                            fuente: Fuente) -> None:
+        """Rellena ciudad y provincia desde el padron de la inmobiliaria.
+
+        Solo donde la ficha no dijo nada: una ubicacion explicita de la fuente
+        nunca se pisa con una inferencia. Queda anotado de donde salio, porque
+        "la ciudad de la inmobiliaria" no es lo mismo que "la ciudad del
+        inmueble" y quien consuma el dato tiene que poder distinguirlo.
+        """
+        padron = fuente.extra or {}
+        for campo, clave in (("ciudad", "city"), ("provincia", "province")):
+            if getattr(prop, campo):
+                continue
+            valor = padron.get(clave)
+            if valor:
+                setattr(prop, campo, valor)
+                prop.extra[f"{campo}_origen"] = "padron_inmobiliaria"
+                prop.extra[f"{campo}_confianza"] = "inferida"
+
     def anotar_error(self, fuente: Fuente, etapa: str, error: Exception) -> None:
         self.errores.append({
             "canonical_agency_id": fuente.canonical_agency_id,
