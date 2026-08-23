@@ -1298,3 +1298,39 @@ def test_el_desempate_usa_evidencia_no_azar():
     src = (ROOT / "scripts" / "write_eligibility.py").read_text(encoding="utf-8")
     assert "aporte = Counter(" in src
     assert "-aporte[q.get(" in src
+
+
+# ------------------------------------------- resolucion de agencias pendientes
+def test_dos_oficinas_de_la_misma_red_no_son_la_misma_inmobiliaria():
+    """"Century 21 Di Girolamo" coincidia con "Century 21 MM Real Estate" por
+    compartir "century" y "21". Adjudicarle el inventario de una oficina a otra
+    es el error mas caro que puede cometer esta resolucion, y no se nota:
+    las propiedades quedan bien formadas, en la agencia equivocada."""
+    from scripts.resolve_pending_agencies import distintivos, FRANQUICIAS
+    assert distintivos("Century 21 Di Girolamo") == {"girolamo"}
+    assert distintivos("Century 21 MM Real Estate") == set()
+    assert "century" in FRANQUICIAS and "remax" in FRANQUICIAS
+
+
+def test_el_ruido_del_rubro_no_identifica_a_nadie():
+    """Sin sacarlo, "Lopez Propiedades" y "Garcia Propiedades" comparten la
+    mitad del nombre."""
+    from scripts.resolve_pending_agencies import distintivos
+    assert distintivos("Lopez Propiedades") == {"lopez"}
+    assert distintivos("Garcia Negocios Inmobiliarios") == {"garcia"}
+
+
+def test_sin_evidencia_fuerte_no_se_resuelve():
+    """Una unica candidata por parecido de nombre no alcanza: hace falta mismo
+    dominio o nombre exacto."""
+    src = (ROOT / "scripts" / "resolve_pending_agencies.py").read_text(encoding="utf-8")
+    assert 'ev & {"mismo_dominio", "nombre_exacto"}' in src
+    assert "EXISTING if fuerte else AMBIGUA" in src
+
+
+def test_ninguna_resolucion_se_aplica_sola():
+    """El script clasifica y documenta; no reasigna ninguna propiedad."""
+    src = (ROOT / "scripts" / "resolve_pending_agencies.py").read_text(encoding="utf-8")
+    assert "No escribe en la base" in src
+    for prohibido in ("INSERT", "UPDATE ", "psycopg"):
+        assert prohibido not in src
