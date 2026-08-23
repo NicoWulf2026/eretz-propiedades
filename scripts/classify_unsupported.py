@@ -130,7 +130,15 @@ def analizar(fuente: dict, d: Descargador) -> dict:
     elif ev & {"wordpress"}:
         # Estaba anotada como Tokko y es WordPress: se devuelve al mapa general
         # en vez de forzarla, que produciria un cero silencioso.
-        cat, conector = "RECLASIFICAR_WORDPRESS", "wordpress"
+        #
+        # Pero detectar la PLATAFORMA no es lo mismo que encontrar el
+        # INVENTARIO. Proponer un connector aca solo porque hay marcadores de
+        # WordPress hizo que 57 fuentes se dieran por recuperables y las 57
+        # devolvieran cero: sus paginas son institucionales, de proyectos o de
+        # colegios, y no publican fichas. Sin senal de inventario alcanzable la
+        # fuente queda sin connector y con la plataforma anotada.
+        cat = "WORDPRESS_SIN_INVENTARIO_LOCALIZADO"
+        conector = None
     elif ev & {"wasi", "inmoup", "mediacore", "inmovar"}:
         cat, conector = "RECLASIFICAR_OTRA_PLATAFORMA", None
     elif ev & {"next", "nuxt", "react"} and not out["enumerated_inventory"]:
@@ -143,7 +151,19 @@ def analizar(fuente: dict, d: Descargador) -> dict:
         cat, conector = "TOKKO_CUSTOM_SIN_RESOLVER", None
     out["clasificacion_nueva"] = cat
     out["connector_candidato"] = conector
-    out["status"] = "CON_CONECTOR" if conector else "SIN_CONECTOR"
+    out["plataforma_detectada"] = (
+        "wordpress" if "wordpress" in ev else
+        "tokko" if ev & {"tokko_cdn", "tokko_tfw", "tokko_api"} else
+        next((k for k in ("inmoclick", "wasi", "inmoup", "mediacore", "inmovar",
+                          "next", "nuxt", "react") if k in ev), None))
+    # Un connector propuesto sin inventario a la vista es una promesa que la
+    # corrida despues no cumple. Solo cuenta como recuperable si hay algo que
+    # enumerar.
+    out["status"] = ("CON_CONECTOR" if conector and out["enumerated_inventory"]
+                     else "PLATAFORMA_CONOCIDA_SIN_INVENTARIO" if conector
+                     else "SIN_CONECTOR")
+    if conector and not out["enumerated_inventory"]:
+        out["connector_candidato"] = None
     return out
 
 

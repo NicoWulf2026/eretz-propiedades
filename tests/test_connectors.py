@@ -1266,3 +1266,15 @@ def test_un_gzip_truncado_no_tumba_la_descarga():
     EOFError, que no es OSError."""
     src = (ROOT / "connectors" / "base.py").read_text(encoding="utf-8")
     assert "except (OSError, EOFError):" in src
+
+
+def test_el_censo_no_promete_un_conector_sin_inventario_a_la_vista():
+    """Detectar la PLATAFORMA no es encontrar el INVENTARIO. Proponer connector
+    solo por marcadores de WordPress hizo que 57 fuentes se dieran por
+    recuperables y las 57 devolvieran cero: eran paginas institucionales, de
+    proyectos o de colegios profesionales, sin fichas."""
+    src = (ROOT / "scripts" / "classify_unsupported.py").read_text(encoding="utf-8")
+    assert "PLATAFORMA_CONOCIDA_SIN_INVENTARIO" in src
+    bloque = src[src.index('out["status"] = ('):src.index("    return out")]
+    assert 'out["enumerated_inventory"]' in bloque
+    assert 'out["connector_candidato"] = None' in bloque
