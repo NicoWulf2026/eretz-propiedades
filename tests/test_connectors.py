@@ -1455,3 +1455,42 @@ def test_el_resumen_no_esconde_categorias():
     src = (ROOT / "scripts" / "build_platform_directory.py").read_text(encoding="utf-8")
     assert "RECONCILIACION" in src
     assert "otras " in src and "cuenta_plat.most_common()[14:]" in src
+
+
+# ------------------------------------------- formato del checkpoint
+def test_un_cambio_de_formato_no_se_disfraza_de_bajas(tmp_path):
+    """La clave de `vistos` paso de source_listing_id a hash_dedup. Comparar
+    formatos distintos hizo aparecer 19.001 propiedades como ausentes de golpe.
+    Una corrida contra un checkpoint viejo vale como linea base."""
+    ruta = tmp_path / "cp.json"
+    ruta.write_text(json.dumps({"fuentes": {"ag-1": {
+        "vistos": {"7987": "abc", "7980": "def"}, "corridas": 1,
+        "ausencias": {}, "ultima_pagina": 0, "completa": True}}}), encoding="utf-8")
+    cp = B.Checkpoint(ruta)
+    est = cp.de("ag-1")
+    assert est["linea_base"] is True
+    assert est["vistos"] == {}
+    assert est["vistos_previos_descartados"] == 2
+    c = conector(cp=cp)
+    assert c.identify_deleted_or_inactive(fuente(), set(), True) == []
+
+
+def test_un_checkpoint_del_formato_actual_si_compara(tmp_path):
+    cp = B.Checkpoint(tmp_path / "cp.json")
+    c = conector(cp=cp)
+    f = fuente()
+    p = norm()
+    c.registrar(f, p)
+    cp.guardar()
+    cp2 = B.Checkpoint(tmp_path / "cp.json")
+    assert cp2.de("ag-1").get("linea_base") is not True
+    assert conector(cp=cp2).registrar(f, norm()) == "SIN_CAMBIOS"
+
+
+def test_la_huella_del_codigo_se_fija_al_arrancar():
+    """Una corrida que empezo antes de una edicion seguia usando el codigo viejo
+    en memoria pero reportaba la huella del archivo ya editado: las dos corridas
+    parecian iguales cuando no lo eran."""
+    src = (ROOT / "scripts" / "run_rollout.py").read_text(encoding="utf-8")
+    assert "_VERSION_AL_ARRANCAR" in src
+    assert "version_del_codigo(a.connector)" in src

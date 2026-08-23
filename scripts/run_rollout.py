@@ -92,6 +92,13 @@ def leer_jsonl(ruta: Path) -> list[dict]:
     return salida
 
 
+# Se calcula al ARRANCAR, no al informar. Una corrida que empezo antes de una
+# edicion seguia leyendo el codigo viejo en memoria pero reportaba la huella del
+# archivo ya editado: las dos corridas parecian iguales cuando no lo eran, que
+# es justo lo contrario de para lo que sirve la huella.
+_VERSION_AL_ARRANCAR: dict[str, str] = {}
+
+
 def version_del_codigo(connector: str) -> str:
     """Huella del codigo que produce las propiedades.
 
@@ -110,11 +117,14 @@ def version_del_codigo(connector: str) -> str:
     rutas = [raiz / "connectors" / "base.py",
              raiz / "connectors" / f"{connector}.py",
              raiz / "scripts" / "run_rollout.py"]
+    if connector in _VERSION_AL_ARRANCAR:
+        return _VERSION_AL_ARRANCAR[connector]
     h = hashlib.sha256()
     for ruta in rutas:
         if ruta.exists():
             h.update(ruta.read_bytes())
-    return h.hexdigest()[:12]
+    _VERSION_AL_ARRANCAR[connector] = h.hexdigest()[:12]
+    return _VERSION_AL_ARRANCAR[connector]
 
 
 def host_de(url: str) -> str:
@@ -327,6 +337,8 @@ def main() -> int:
     dd, out = Path(a.data_dir), Path(a.salida)
     out.mkdir(parents=True, exist_ok=True)
 
+    # Se fija apenas arranca, antes de bajar nada.
+    version_del_codigo(a.connector)
     variantes = {v for v in a.variantes.split(",") if v} or None
     if a.censo:
         # El censo ya decidio que connector corresponde a cada fuente. Volver a

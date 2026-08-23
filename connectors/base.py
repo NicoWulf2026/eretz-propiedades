@@ -332,6 +332,13 @@ class Descargador:
 # --------------------------------------------------------------------------
 # Checkpoint: reanudar sin volver a bajar lo ya bajado
 # --------------------------------------------------------------------------
+# Version del formato del checkpoint. Cambio cuando la clave de `vistos` paso
+# de source_listing_id a hash_dedup: comparar entradas de formatos distintos no
+# da "todo cambio", da basura, y ademas hace aparecer como ausente todo lo
+# anterior. Una corrida contra un checkpoint viejo se trata como linea base.
+ESQUEMA_CHECKPOINT = 2
+
+
 class Checkpoint:
     """Estado por fuente, en disco, fuera del repo.
 
@@ -349,9 +356,21 @@ class Checkpoint:
                 self.datos = {"fuentes": {}}
 
     def de(self, agency_id: str) -> dict[str, Any]:
-        return self.datos["fuentes"].setdefault(
+        est = self.datos["fuentes"].setdefault(
             agency_id, {"vistos": {}, "corridas": 0, "ausencias": {},
-                        "ultima_pagina": 0, "completa": False})
+                        "ultima_pagina": 0, "completa": False,
+                        "esquema": ESQUEMA_CHECKPOINT})
+        if est.get("esquema") != ESQUEMA_CHECKPOINT:
+            # Las claves viejas no se pueden traducir -no guardaban la url, y el
+            # hash la necesita-, asi que se descartan y esta corrida vale como
+            # linea base. Conservarlas produciria ausencias falsas para todo el
+            # inventario anterior.
+            est["vistos_previos_descartados"] = len(est.get("vistos") or {})
+            est["vistos"] = {}
+            est["ausencias"] = {}
+            est["esquema"] = ESQUEMA_CHECKPOINT
+            est["linea_base"] = True
+        return est
 
     def guardar(self) -> None:
         self.ruta.parent.mkdir(parents=True, exist_ok=True)
@@ -434,6 +453,11 @@ class Connector:
         if self.checkpoint is None:
             return []
         est = self.checkpoint.de(fuente.canonical_agency_id)
+        if est.get("linea_base"):
+            # Primera corrida con este formato de checkpoint: no hay con que
+            # comparar, y decir que todo esta ausente seria inventar 19.000
+            # bajas que no ocurrieron.
+            return []
         salida = []
         for lid in list(est.get("vistos", {})):
             if lid in vistos_ahora:
