@@ -1405,3 +1405,30 @@ def test_el_write_set_no_puede_tener_una_url_dos_veces():
             hashes.append(d["hash_dedup"])
     assert len(urls) == len(set(urls))
     assert len(hashes) == len(set(hashes))
+
+
+# ------------------------------------------------- directorio de plataformas
+def test_el_directorio_fusiona_todas_las_corridas():
+    """Preferir la corrida mas reciente esconde lo que una corrida a medias
+    todavia no proceso: con la segunda en curso, 511 fuentes Tokko ya
+    terminadas figuraban como no intentadas."""
+    src = (ROOT / "scripts" / "build_platform_directory.py").read_text(encoding="utf-8")
+    bloque = src[src.index("inv = []"):src.index("filas = []")]
+    assert 'for corrida in ("1", "2")' in bloque
+
+
+def test_las_propiedades_no_se_cuentan_dos_veces():
+    """Sumar las dos corridas contaria cada propiedad dos veces: se usa la mas
+    completa."""
+    src = (ROOT / "scripts" / "build_platform_directory.py").read_text(encoding="utf-8")
+    assert "mejor, n = None, -1" in src
+    assert "if len(filas_p) > n:" in src
+
+
+def test_la_plataforma_se_decide_por_la_evidencia_mas_fuerte():
+    """Que un connector haya enumerado inventario vale mas que un marcador del
+    HTML: el primero es un hecho, el segundo una pista."""
+    src = (ROOT / "scripts" / "build_platform_directory.py").read_text(encoding="utf-8")
+    i_roll = src.index('"el connector enumero inventario"')
+    i_html = src.index('"marcadores del HTML"')
+    assert i_roll < i_html
