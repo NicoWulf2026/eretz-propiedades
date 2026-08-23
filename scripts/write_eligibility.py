@@ -28,6 +28,7 @@ from connectors.base import calcular_hash_dedup  # noqa: E402
 ELEGIBLE = "DB_WRITE_ELIGIBLE"
 PENDIENTE = "AGENCY_ID_PENDING"
 NO_ES_FICHA = "NO_ES_UNA_FICHA"
+CROSS_AGENCIA = "CROSS_AGENCY_DUPLICATE"
 
 # Defensa en profundidad: aunque el connector ya filtre, lo que llega a la base
 # se revisa otra vez. Las paginas que se cuelan son siempre las mismas y entran
@@ -129,6 +130,44 @@ def main() -> int:
         vistos_hash.add(q["hash_dedup"])
         q["db_write_status"] = ELEGIBLE
         elegibles.append(q)
+
+    # --- misma url reclamada por dos inmobiliarias ---------------------------
+    # El hash lleva el id de agencia, asi que dos agencias con la MISMA url dan
+    # hashes distintos y las dos entrarian a la base: dos copias del mismo
+    # inmueble bajo duenos distintos, duplicados introducidos por nosotros
+    # aunque el indice unico no los vea.
+    #
+    # No se fusiona nada. Se conserva la copia de la agencia que mas inventario
+    # aporta en ese dominio -la que mejor evidencia tiene de ser la duena- y las
+    # otras quedan documentadas para que alguien decida.
+    por_url = defaultdict(list)
+    for q in elegibles:
+        por_url[q.get("source_url")].append(q)
+    aporte = Counter(q.get("canonical_agency_id") for q in elegibles)
+    cruzadas, conservadas = [], []
+    for url, grupo in por_url.items():
+        if len({q.get("canonical_agency_id") for q in grupo}) <= 1:
+            conservadas.extend(grupo)
+            continue
+        grupo.sort(key=lambda q: (-aporte[q.get("canonical_agency_id")],
+                                  str(q.get("inmobiliaria_id"))))
+        conservadas.append(grupo[0])
+        for q in grupo[1:]:
+            cruzadas.append({**q, "db_write_status": CROSS_AGENCIA,
+                             "conservada_para": grupo[0].get("canonical_agency_id"),
+                             "url_en_disputa": url})
+    elegibles = conservadas
+    if cruzadas:
+        ruta_cross = Path(a.salida).with_name("CROSS_AGENCY_DUPLICATES.jsonl")
+        ruta_cross.write_text(
+            chr(10).join(json.dumps(q, ensure_ascii=False) for q in cruzadas),
+            encoding="utf-8")
+        hosts = Counter(re.sub(r"^https?://(www\.)?", "", q["url_en_disputa"]).split("/")[0]
+                        for q in cruzadas)
+        print(f"  {CROSS_AGENCIA:26}  {len(cruzadas):,}  (misma url, dos inmobiliarias)")
+        for k, v in hosts.most_common(5):
+            print(f"      {k:28} {v:6,}")
+        print(f"      -> {ruta_cross}")
 
     Path(a.salida).write_text(
         "\n".join(json.dumps(q, ensure_ascii=False) for q in elegibles),

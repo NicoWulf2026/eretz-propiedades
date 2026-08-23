@@ -1278,3 +1278,23 @@ def test_el_censo_no_promete_un_conector_sin_inventario_a_la_vista():
     bloque = src[src.index('out["status"] = ('):src.index("    return out")]
     assert 'out["enumerated_inventory"]' in bloque
     assert 'out["connector_candidato"] = None' in bloque
+
+
+def test_la_misma_url_bajo_dos_agencias_no_entra_dos_veces():
+    """El hash lleva el id de agencia, asi que dos agencias con la MISMA url dan
+    hashes distintos y las dos entrarian: dos copias del mismo inmueble bajo
+    duenos distintos. El indice unico no las ve porque los hashes difieren."""
+    src = (ROOT / "scripts" / "write_eligibility.py").read_text(encoding="utf-8")
+    assert "CROSS_AGENCY_DUPLICATE" in src
+    bloque = src[src.index("por_url = defaultdict"):src.index("elegibles = conservadas")]
+    assert "canonical_agency_id" in bloque and "grupo[0]" in bloque
+    # No se fusiona: la copia descartada queda documentada, no borrada.
+    assert "conservada_para" in src and "url_en_disputa" in src
+
+
+def test_el_desempate_usa_evidencia_no_azar():
+    """Se conserva la copia de la agencia que mas inventario aporta en ese
+    dominio, que es la que mejor evidencia tiene de ser la duena."""
+    src = (ROOT / "scripts" / "write_eligibility.py").read_text(encoding="utf-8")
+    assert "aporte = Counter(" in src
+    assert "-aporte[q.get(" in src
