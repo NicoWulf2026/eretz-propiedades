@@ -233,6 +233,39 @@ sitios no confirmados: **0 Wasi nuevos**, 40 sin respuesta.
 - Century 21: 40 oficinas, con soporte bilingue (`C21_CANARY`)
 - Generico: canary de 40 fuentes (`GENERICO_CANARY`)
 
+## Tests
+
+| Estado | Cantidad | Que son |
+|---|---:|---|
+| PASS | 688 | incluye 190 de connectors + Wasi |
+| PREEXISTING_ENV_FAILURE | 8 | `test_run_manifest.py`: `RuntimeError: Variables de entorno requeridas no configuradas: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY` |
+| NO COLECTABLES | 5 archivos | misma causa, falla al importar |
+
+Los 13 son ambientales y ninguno toca codigo de este frente. **No se meten
+credenciales de service_role para hacerlos pasar.**
+
+Comando: `pytest tests/ -q --ignore=tests/test_data_quality_regressions.py
+--ignore=tests/test_full_7004_coverage.py
+--ignore=tests/test_parser_detail_url_candidates.py
+--ignore=tests/test_pipeline_a_safety.py --ignore=tests/test_safe_merge.py`
+
+## Pendiente medido: `barrio` de Tokko arrastra texto de amenities
+
+Lo destapo auditar el unico MODIFICADA de la corrida 3: `barrio` paso de
+"tranquila" a "tranquila Luminoso Calefaccion F/C Pileta descubierta
+Lavanderia". Medido sobre las 91.715 propiedades de la corrida 2:
+
+- 63.130 tienen barrio (68,8%)
+- 270 traen palabras de amenities (0,43% de los que tienen; parte son falsos
+  positivos como "Balcones del Chateau", que es un barrio de verdad)
+- **3.925 tienen mas de 6 palabras (6,22%)**, con el patron "Centro Aire
+  Acondicionado individual No Amenities Si Pileta No"
+
+**NO se toca mientras corre la validacion de idempotencia.** Cambiar la
+extraccion cambia la huella de contenido, y la corrida 3 empezaria a informar
+MODIFICADA por un cambio de parser en vez de un cambio real. Se arregla despues,
+con test.
+
 ## Mapa de cobertura (2.259 webs propias)
 
 | Plataforma | Detectadas | Procesadas | Propiedades |
