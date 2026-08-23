@@ -158,7 +158,30 @@ def universo(dd: Path, plataforma: str, variantes: set[str] | None,
     return fuentes[:limite] if limite else fuentes
 
 
-def procesar(con, fuente: Fuente, max_fichas: int, observacion: bool) -> dict:
+def procesar(con, fuente: Fuente, max_fichas: int, observacion: bool,
+             respaldo=None) -> dict:
+    """Procesa una fuente; si el connector de plataforma no la reconoce, prueba
+    el de respaldo.
+
+    Una fuente que WordPress no sabe leer no es necesariamente una fuente sin
+    inventario: de las 48 que quedaron asi, 21 tienen sitemap y 28 traen JSON
+    embebido. El connector generico las lee sin saber nada de WordPress. Dar la
+    fuente por perdida porque el conector especifico no la entendio es
+    desperdiciar inventario que esta publicado y accesible.
+    """
+    r = _procesar_con(con, fuente, max_fichas, observacion)
+    if respaldo is not None and r.get("estado") in ("VARIANTE_NO_SOPORTADA",
+                                                    "ERROR_DISCOVERY"):
+        alt = _procesar_con(respaldo, fuente, max_fichas, observacion)
+        if alt.get("estado") == "OK" and alt.get("detalles_obtenidos"):
+            alt["connector"] = respaldo.nombre
+            alt["rescatada_por_respaldo"] = True
+            alt["estado_original"] = r.get("estado")
+            return alt
+    return r
+
+
+def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool) -> dict:
     t0 = time.time()
     r: dict = {"canonical_agency_id": fuente.canonical_agency_id,
                "agency_name": fuente.agency_name,
@@ -288,6 +311,8 @@ def main() -> int:
     ap.add_argument("--corrida", default="1")
     ap.add_argument("--observacion", action="store_true", default=True)
     ap.add_argument("--filtro-url", default="", help="acota el universo por dominio")
+    ap.add_argument("--respaldo", default="",
+                    help="connector a probar cuando el principal no soporta la fuente")
     a = ap.parse_args()
     dd, out = Path(a.data_dir), Path(a.salida)
     out.mkdir(parents=True, exist_ok=True)
@@ -327,6 +352,9 @@ def main() -> int:
         # Un connector por hilo, descargador propio, limitador COMPARTIDO: la
         # cortesia es del host, no del hilo.
         con = Clase(descargador=Descargador(limitador), checkpoint=checkpoint)
+        alt = (CONNECTORS[a.respaldo](descargador=Descargador(limitador),
+                                      checkpoint=checkpoint)
+               if a.respaldo else None)
         f = Fuente(canonical_agency_id=x["canonical_agency_id"],
                    agency_name=x.get("agency_name") or "",
                    official_url=x["official_url"],
@@ -334,7 +362,7 @@ def main() -> int:
                    detected_platform=x["detected_platform"],
                    extra={"city": x.get("city"), "province": x.get("province")})
         try:
-            r = procesar(con, f, a.max_fichas, a.observacion)
+            r = procesar(con, f, a.max_fichas, a.observacion, alt)
         except Exception as e:  # nunca tumbar el rollout por una fuente
             r = {"canonical_agency_id": x["canonical_agency_id"],
                  "agency_name": x.get("agency_name"), "official_url": x["official_url"],
@@ -342,6 +370,8 @@ def main() -> int:
                  "traza": traceback.format_exc()[-400:], "_props": [], "segundos": 0}
         if con.errores:
             esc_err.escribir(con.errores)
+        if alt is not None and alt.errores:
+            esc_err.escribir(alt.errores)
         return r
 
     with ThreadPoolExecutor(max_workers=a.concurrencia) as ex:
@@ -395,6 +425,7 @@ def main() -> int:
         "fuentes_enumeracion_incompleta": sum(
             1 for r in inv if r.get("enumeracion_completa") is False),
         "errores": len(leer_jsonl(out / f"errors{sufijo}.jsonl")),
+        "rescatadas_por_respaldo": sum(1 for r in inv if r.get("rescatada_por_respaldo")),
         "segundos": round(time.time() - t0, 1),
     }
     resumen["reconcilia"] = (

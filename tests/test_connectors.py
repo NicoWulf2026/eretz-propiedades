@@ -1140,3 +1140,23 @@ def test_las_ausencias_se_comparan_con_la_misma_clave(tmp_path):
     r = c.identify_deleted_or_inactive(f, set(), True)
     assert r and r[0]["hash_dedup"] == p.hash_dedup
     assert r[0]["source_listing_id"] == "1"
+
+
+# ------------------------------------------------- cadena de respaldo
+def test_una_fuente_que_el_connector_de_plataforma_no_entiende_se_reintenta():
+    """De las 48 fuentes WordPress sin inventario detectado, 21 tienen sitemap
+    y 28 traen JSON embebido: el generico las lee sin saber nada de WordPress.
+    Darlas por perdidas desperdicia inventario publicado y accesible."""
+    src = (ROOT / "scripts" / "run_rollout.py").read_text(encoding="utf-8")
+    assert "respaldo" in src
+    bloque = src[src.index("def procesar("):src.index("def _procesar_con(")]
+    assert "VARIANTE_NO_SOPORTADA" in bloque and "ERROR_DISCOVERY" in bloque
+    assert "rescatada_por_respaldo" in bloque
+
+
+def test_el_respaldo_solo_cuenta_si_realmente_trajo_propiedades():
+    """Marcar como rescatada una fuente donde el respaldo tampoco encontro nada
+    inflaria la cobertura con fuentes vacias."""
+    src = (ROOT / "scripts" / "run_rollout.py").read_text(encoding="utf-8")
+    bloque = src[src.index("def procesar("):src.index("def _procesar_con(")]
+    assert 'alt.get("detalles_obtenidos")' in bloque
