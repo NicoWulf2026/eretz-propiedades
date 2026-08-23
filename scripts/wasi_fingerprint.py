@@ -256,11 +256,20 @@ _ETIQUETAS = {
     "numero de plantas": "plantas", "estado": "estado",
 }
 # El sitio real escribe <strong>Ciudad:</strong> Merlo, pero los planes usan
-# plantillas distintas y algunos meten el valor en su propia etiqueta. Se
-# aceptan hasta tres etiquetas entre el rotulo y el valor -acotado, para no
-# terminar tomando el texto de la fila siguiente-.
-RE_PAR = re.compile(r">\s*([A-Za-zÁÉÍÓÚÜÑáéíóúüñ ]{3,26})\s*:\s*"
-                    r"(?:<[^>]*>\s*){1,3}([^<]{1,80}?)\s*<", re.S)
+# plantillas distintas y algunos meten el valor en su propia etiqueta.
+#
+# El patron ANCLA en la apertura de la etiqueta que lleva el rotulo. Empezando
+# con ">" el motor probaba desde cada ">" del documento y retrocedia sobre el
+# grupo repetido: 0,87 s por ficha de 66 KB, que a 170 fichas por fuente y 39
+# fuentes es una hora de CPU pura. Anclado baja a milisegundos y reconoce lo
+# mismo.
+_ROTULO = r"strong|b|span|dt|label|h[1-6]|td|div"
+RE_PAR = re.compile(
+    rf"<(?:{_ROTULO})[^>]{{0,150}}>\s*"
+    rf"([A-Za-zÁÉÍÓÚÜÑáéíóúüñ ]{{3,26}}?)\s*:\s*"
+    rf"</(?:{_ROTULO})>\s*"
+    rf"(?:<[^>]{{0,150}}>\s*)?"
+    rf"([^<]{{1,80}})")
 RE_PRECIO = re.compile(
     r"class=[\"'][^\"']*blq_precio[^\"']*[\"'][^>]*>(.{0,400}?)</div>", re.S | re.I)
 

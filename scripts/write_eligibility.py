@@ -49,6 +49,12 @@ RECHAZOS = [
     ("feed_o_recurso", re.compile(r"(/feed/?$|\.(xml|json|rss|pdf|jpe?g|png)$)", re.I)),
     ("solo_la_seccion", re.compile(r"/(propiedades|inmuebles|propert(y|ies)|"
                                    r"listings?|emprendimientos)/?$", re.I)),
+    # Segunda capa para Wasi. El connector filtra por forma de ficha y no emite
+    # ninguna de estas, pero con WordPress la primera capa tambien alcanzaba
+    # "en teoria" y entraron 56 paginas de busqueda igual: donde hay una sola
+    # barrera, tarde o temprano se pasa algo.
+    ("listado_wasi", re.compile(r"://[^/]+/s/[a-z0-9-]+(/[a-z0-9-]+)?/?$", re.I)),
+    ("institucional_wasi", re.compile(r"/main-[a-z0-9-]+\.html?$", re.I)),
 ]
 
 # Un id que es en realidad una query string o un texto largo no identifica nada.

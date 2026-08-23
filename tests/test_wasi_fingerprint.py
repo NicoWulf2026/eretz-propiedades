@@ -387,6 +387,51 @@ def test_mencionar_wasi_ya_no_clasifica_como_wasi():
     assert plataforma != "WASI"
 
 
+def test_leer_la_ficha_no_puede_costar_casi_un_segundo():
+    """El patron arrancaba en cada ">" del documento y retrocedia: 0,87 s por
+    ficha de 66 KB. A 170 fichas por fuente y 39 fuentes es una hora de CPU
+    pura, y en el canary se veia como si la red estuviera lenta. El margen es
+    amplio a proposito: mide el orden de magnitud, no el milisegundo."""
+    import time
+    fila = ("<li><strong>Ciudad:</strong> Merlo</li>"
+            "<li><strong>Area Construida:</strong> 84 m2</li>"
+            "<div class='x'>texto de relleno sin rotulos ni dos puntos</div>")
+    html = "<html><body>" + fila * 400 + "</body></html>"
+    assert len(html) > 40_000
+    t = time.perf_counter()
+    c = campos_de_ficha(html)
+    tardo = time.perf_counter() - t
+    assert c["ciudad"] == "Merlo" and c["superficie_cubierta"] == 84
+    assert tardo < 1.0, f"tardo {tardo:.2f}s"
+
+
+# ------------------------------------------- segunda capa de la compuerta DB
+def test_la_compuerta_deja_pasar_la_ficha_y_frena_el_listado():
+    """El connector ya filtra por forma de ficha. Esta es la segunda capa: con
+    WordPress la primera tambien alcanzaba "en teoria" y entraron 56 paginas de
+    busqueda igual."""
+    from scripts.write_eligibility import motivo_rechazo
+    for url, lid in (
+            ("https://bartuccipropiedades.com/departamento-alquiler-centro-moreno/10123642",
+             "10123642"),
+            ("https://agra.inmo.co/terreno-venta-lunlunta-maipu/9718827", "9718827")):
+        assert motivo_rechazo({"source_url": url, "source_listing_id": lid}) is None
+
+    for url, lid in (("https://x.com/s/casa/ventas", "casa"),
+                     ("https://x.com/s/ventas", "ventas"),
+                     ("https://x.com/main-contactenos.htm", "contactenos")):
+        assert motivo_rechazo({"source_url": url, "source_listing_id": lid})
+
+
+def test_la_capa_nueva_no_rompe_las_urls_de_tokko():
+    """Tokko publica /p/<id>-<slug>: la regla de listado de Wasi no puede
+    tocarla o se caerian 91.000 propiedades ya validadas."""
+    from scripts.write_eligibility import motivo_rechazo
+    assert motivo_rechazo({
+        "source_url": "https://www.abppropiedades.com.ar/p/8693171-Departamento-en-Venta",
+        "source_listing_id": "8693171"}) is None
+
+
 # ------------------------------------------------------------------- artefacto
 def test_el_censo_de_wasi_conserva_la_evidencia_de_cada_fuente():
     ruta = Path(r"D:\INMO CAPITAL\WASI_DISCOVERY.jsonl")

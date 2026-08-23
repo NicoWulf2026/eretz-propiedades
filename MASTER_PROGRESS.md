@@ -143,7 +143,7 @@ hallazgo.**
 `century21` es el mas barato con diferencia: el JSON del listado trae todos los
 campos, asi que corre a ~100.000 propiedades/hora contra ~9.500 de Tokko.
 
-## Wasi — detectado y medido, connector NO construido
+## Wasi — detectado, medido y con connector
 
 `scripts/wasi_fingerprint.py` (modulo puro, sin red) + `scripts/wasi_discovery.py`.
 
@@ -184,6 +184,34 @@ Via de extraccion, en el orden de costo del proyecto:
 Rutas: ficha `/<slug>/<id>` (el id es el "Codigo" que la ficha muestra, no hay
 que fabricar identificador), listado `/s/<tipo>/<operacion>`, paginacion
 `/search?...&page=N`.
+
+Universo medido: **39 fuentes, 3.598 propiedades unicas** (31 COMPLETE, 8
+LIKELY_COMPLETE, ninguna incompleta). Barrido de falsos negativos sobre 1.194
+sitios no confirmados: **0 Wasi nuevos**, 40 sin respuesta.
+
+### Tres trampas de Wasi, ya resueltas
+
+1. **La misma propiedad bajo dos slugs.** `/apartamento-venta-moron/5444177` en
+   el sitemap y `/departamento-venta-moron/5444177` en el listado: 184 casos en
+   3 fuentes. Como `hash_dedup` lleva la url adentro, entrar por un camino en
+   una corrida y por el otro en la siguiente crearia duplicados invisibles al
+   indice unico. `og:url` devuelve la url pedida y no sirve; el `url` del
+   JSON-LD devuelve siempre la misma. Esa es la identidad.
+2. **El total del menu es una cota superior**, no un objetivo: suma una vez por
+   operacion. Verificado en jorgeorellano.com -venta 238 + alquiler 23 +
+   permuta 2 = 263, lo declarado, mientras la union de ids da 261-.
+3. **Dos convenciones de numero en la misma pagina**: pesos a la argentina
+   ("$620.000") y dolares a la americana ("US$110,000"). Una sola convencion
+   convertia 110.000 dolares en 110.
+
+### Bugs de codigo compartido que aparecieron construyendolo
+
+- `a_numero` borraba el signo: "-34.6690485" volvia 34.6690485. Tokko no lo
+  sufrio -convierte coordenadas con float() directo, 76.008 latitudes negativas
+  y 3 positivas-, pero cualquier connector nuevo si.
+- `a_numero` pegaba los rangos: "55.000-60.000" daba 5.500.060.000.
+- El runner daba por ausente lo presente cuando el connector canonicaliza la
+  url: 33 bajas falsas en la primera corrida de una fuente.
 
 ## Corriendo
 
