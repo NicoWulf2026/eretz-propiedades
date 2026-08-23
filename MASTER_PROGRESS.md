@@ -251,6 +251,34 @@ respondiendo OK y enumeracion completa, en observacion.
 - Century 21: 40 oficinas, con soporte bilingue (`C21_CANARY`)
 - Generico: canary de 40 fuentes (`GENERICO_CANARY`)
 
+## Rescate del residual: 1.225 sin cubrir, 274 con inventario a la vista
+
+`RESIDUAL_CLASSIFIED.jsonl` clasifica las 1.225 webs propias sin cubrir por
+MECANISMO de publicacion, no por etiqueta tecnologica. Solo se propone connector
+cuando hay fichas A LA VISTA:
+
+| | fuentes |
+|---|---:|
+| CON_EVIDENCIA_DE_INVENTARIO | 274 |
+| PLATAFORMA_SIN_EVIDENCIA | 310 |
+| SIN_CONECTOR | 641 |
+
+La distincion no es teorica. Las 81 fuentes con marcadores de Tokko pero **sin**
+fichas a la vista rindieron **0 propiedades**: son TOKKO_FRONTEND_PROPIO y ni el
+connector de Tokko ni el generico las leen. Las 22 **con** evidencia rindieron
+1.683, y las 16 que funcionaron lo hicieron por el respaldo generico.
+
+### Resultado de los rescates
+
+| Rescate | Fuentes | Propiedades | Notas |
+|---|---:|---:|---|
+| `RESCATE2_wordpress` | 48 (46 OK) | **3.453** | 2 por respaldo generico |
+| `RESCATE2_tokko` | 22 (16 OK) | **1.683** | 16 por respaldo generico |
+| `RESCATE2_generico` | 204 | en curso | 25.629 fichas visibles |
+
+Todos con 0 hash compartido entre agencias, 0 fotos ajenas, 0 errores y
+reconciliando.
+
 ## Tres dominios los reclaman dos o tres agencias, y se enumeran igual
 
 En el censo del residual, `comunidadinmobiliaria.com.ar` figura con 3 agencias,
