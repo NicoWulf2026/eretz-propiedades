@@ -153,6 +153,13 @@ def universo(dd: Path, plataforma: str, variantes: set[str] | None,
         d = padron.get(f["canonical_agency_id"]) or {}
         f["city"] = d.get("city")
         f["province"] = d.get("province")
+        # El id real de la inmobiliaria en ERETZ. El crosswalk ya lo resolvio
+        # con cuidado, asi que usarlo evita rehacer ese trabajo por nombre
+        # contra la base -que es donde se cometen los errores de asociacion- y
+        # hace que el hash_dedup salga desde el principio igual al que
+        # produciria produccion.
+        eid = d.get("eretz_id")
+        f["eretz_id"] = int(eid) if str(eid).isdigit() else None
 
     fuentes.sort(key=lambda x: x["canonical_agency_id"])
     return fuentes[:limite] if limite else fuentes
@@ -358,7 +365,11 @@ def main() -> int:
         f = Fuente(canonical_agency_id=x["canonical_agency_id"],
                    agency_name=x.get("agency_name") or "",
                    official_url=x["official_url"],
-                   inmobiliaria_id=id_sustituto(x["canonical_agency_id"]),
+                   # Sin id real la propiedad no se puede asociar a nadie: se
+                   # usa el sustituto para poder medir, y la carga al pipeline
+                   # descarta despues lo que no tenga id del padron.
+                   inmobiliaria_id=(x.get("eretz_id")
+                                    or id_sustituto(x["canonical_agency_id"])),
                    detected_platform=x["detected_platform"],
                    extra={"city": x.get("city"), "province": x.get("province")})
         try:
