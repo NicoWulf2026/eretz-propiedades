@@ -181,6 +181,34 @@ def main() -> int:
         "\n".join(json.dumps(f, ensure_ascii=False) for f in filas), encoding="utf-8")
 
     print("### DIRECTORIO DE PLATAFORMAS ###")
+    # --- reconciliacion, antes de cualquier resumen -------------------------
+    # Un resumen truncado no es un detalle de presentacion: las categorias
+    # dejaban de sumar el universo y parecia que faltaban 114 agencias cuando
+    # lo que faltaba eran 21 categorias chicas que el top no imprimia.
+    total = len(filas)
+    ids = {f["canonical_agency_id"] for f in filas}
+    cuenta_plat = Counter(f["platform"] for f in filas)
+    cuenta_estado = Counter(f["connector_status"] for f in filas)
+    problemas = []
+    if len(ids) != total:
+        problemas.append(f"{total - len(ids)} filas duplicadas por agencia")
+    if sum(cuenta_plat.values()) != total:
+        problemas.append("la clasificacion por plataforma no suma el universo")
+    if sum(cuenta_estado.values()) != total:
+        problemas.append("los estados de connector no suman el universo")
+    if any(not f.get("platform") or not f.get("connector_status") for f in filas):
+        problemas.append("hay filas sin plataforma o sin estado")
+    print("  RECONCILIACION")
+    print(f"    agencias con web:      {total:,}")
+    print(f"    ids unicos:            {len(ids):,}")
+    print(f"    suma por plataforma:   {sum(cuenta_plat.values()):,} "
+          f"en {len(cuenta_plat)} categorias")
+    print(f"    suma por estado:       {sum(cuenta_estado.values()):,} "
+          f"en {len(cuenta_estado)} categorias")
+    print(f"    RECONCILIA:            {'si' if not problemas else 'NO'}")
+    for x in problemas:
+        print(f"      !! {x}")
+    print()
     print(f"  agencias con web: {len(filas):,}\n")
     print("  por plataforma:")
     for k, v in Counter(f["platform"] for f in filas).most_common(14):
@@ -189,6 +217,16 @@ def main() -> int:
         con = sum(1 for f in filas if f["platform"] == k
                   and f["connector_status"].startswith("SUPPORTED"))
         print(f"    {k:18} {v:5,} agencias  {con:5,} con connector  "
+              f"{props:7,} propiedades")
+    resto = cuenta_plat.most_common()[14:]
+    if resto:
+        claves = {k for k, _ in resto}
+        con = sum(1 for f in filas if f["platform"] in claves
+                  and f["connector_status"].startswith("SUPPORTED"))
+        props = sum(f["properties_normalized"] or 0 for f in filas
+                    if f["platform"] in claves)
+        print(f"    {'otras ' + str(len(resto)) + ' plataformas':18} "
+              f"{sum(v for _, v in resto):5,} agencias  {con:5,} con connector  "
               f"{props:7,} propiedades")
     print("\n  por estado del connector:")
     for k, v in Counter(f["connector_status"] for f in filas).most_common():

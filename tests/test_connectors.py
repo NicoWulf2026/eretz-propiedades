@@ -1432,3 +1432,26 @@ def test_la_plataforma_se_decide_por_la_evidencia_mas_fuerte():
     i_roll = src.index('"el connector enumero inventario"')
     i_html = src.index('"marcadores del HTML"')
     assert i_roll < i_html
+
+
+def test_el_directorio_reconcilia_su_propio_universo():
+    """Un resumen truncado no es un detalle de presentacion: las categorias
+    dejaban de sumar el universo y parecia que faltaban 114 agencias cuando lo
+    que faltaba eran 21 categorias chicas que el top no imprimia."""
+    ruta = Path(r"D:\INMO CAPITAL\agency_platform_directory.jsonl")
+    if not ruta.exists():
+        pytest.skip("todavia no se genero el directorio")
+    filas = [json.loads(l) for l in ruta.open(encoding="utf-8") if l.strip()]
+    total = len(filas)
+    assert total == len({f["canonical_agency_id"] for f in filas})
+    from collections import Counter as C
+    assert sum(C(f["platform"] for f in filas).values()) == total
+    assert sum(C(f["connector_status"] for f in filas).values()) == total
+    assert all(f.get("platform") and f.get("connector_status") for f in filas)
+
+
+def test_el_resumen_no_esconde_categorias():
+    """Lo que no entra en el top se agrega como "otras N", con su cuenta."""
+    src = (ROOT / "scripts" / "build_platform_directory.py").read_text(encoding="utf-8")
+    assert "RECONCILIACION" in src
+    assert "otras " in src and "cuenta_plat.most_common()[14:]" in src
