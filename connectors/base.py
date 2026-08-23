@@ -399,6 +399,12 @@ class Checkpoint:
 # entero de una inmobiliaria.
 AUSENCIAS_PARA_BAJA = 3
 
+# Cuanto tiene que pisarse la enumeracion de esta corrida con la anterior para
+# que la comparacion signifique algo. Por debajo de esto no estamos viendo bajas
+# sino dos vistas distintas del mismo sitio -tipicamente el carrusel de
+# destacados de la home, que rota-.
+SOLAPAMIENTO_MINIMO = 0.5
+
 
 def clasificar_ausencia(estado_fuente: dict, listing_id: str,
                         fuente_respondio: bool) -> str:
@@ -473,18 +479,37 @@ class Connector:
             # comparar, y decir que todo esta ausente seria inventar 19.000
             # bajas que no ocurrieron.
             return []
+
+        # Dos enumeraciones que casi no se pisan no son "todo lo anterior se
+        # dio de baja": son dos vistas distintas del mismo sitio. Pasa cuando
+        # el connector solo alcanza el carrusel de destacados de la home, que
+        # Tokko rota: pitton.net enumero 5 propiedades en la corrida 2 y otras
+        # 5 completamente distintas en la 3, sin declarar total. Contarlo como
+        # bajas daria de baja el catalogo entero de esa inmobiliaria en tres
+        # corridas, sin que se hubiera caido un solo aviso.
+        previos = set(est.get("vistos", {}))
+        comparable = True
+        if previos and fuente_respondio:
+            solapamiento = len(previos & vistos_ahora) / len(previos)
+            comparable = solapamiento >= SOLAPAMIENTO_MINIMO
+            est["ultimo_solapamiento"] = round(solapamiento, 4)
         salida = []
         for lid in list(est.get("vistos", {})):
             if lid in vistos_ahora:
                 est.setdefault("ausencias", {}).pop(lid, None)
                 continue
-            if fuente_respondio:
+            # El contador solo avanza cuando la ausencia significa algo. Si no
+            # avanza, la propiedad nunca llega a las tres corridas que hacen
+            # falta para una baja.
+            cuenta = fuente_respondio and comparable
+            if cuenta:
                 est.setdefault("ausencias", {})[lid] = \
                     est.get("ausencias", {}).get(lid, 0) + 1
             salida.append({"hash_dedup": lid,
                            "source_listing_id": est.get("ids", {}).get(lid),
-                           "estado": clasificar_ausencia(est, lid, fuente_respondio),
-                           "ausencias_consecutivas": est.get("ausencias", {}).get(lid, 0)})
+                           "estado": clasificar_ausencia(est, lid, cuenta),
+                           "ausencias_consecutivas": est.get("ausencias", {}).get(lid, 0),
+                           "enumeracion_comparable": comparable})
         return salida
 
     # --- reanudacion -------------------------------------------------------

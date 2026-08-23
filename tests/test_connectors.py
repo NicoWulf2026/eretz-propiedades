@@ -354,23 +354,35 @@ def test_un_checkpoint_corrupto_no_voltea_la_corrida(tmp_path):
 
 
 # ------------------------------------------------------------------- bajas
+def _fuente_con_inventario(cp, cuantas=10):
+    """Una fuente con inventario de verdad, a la que le falta UNA propiedad.
+
+    Antes estos tests simulaban la baja con una enumeracion vacia. Eso ya no
+    cuenta como baja, y con razon: una fuente que responde y no enumera nada es
+    mucho mas probablemente un fallo de lectura que una inmobiliaria borrando su
+    catalogo entero. Una baja real se ve con el resto del inventario en su lugar.
+    """
+    c = conector(cp=cp)
+    f = fuente()
+    cp.de("ag-1")["vistos"] = {f"h{i}": "fp" for i in range(cuantas)}
+    presentes = {f"h{i}" for i in range(cuantas)} - {"h0"}
+    return c, f, presentes
+
+
 def test_una_sola_ausencia_no_da_de_baja(tmp_path):
     """Un 502 de diez minutos daria de baja el catalogo entero de golpe."""
     cp = B.Checkpoint(tmp_path / "cp.json")
-    c = conector(cp=cp)
-    f = fuente()
-    c.registrar(f, norm())
-    r = c.identify_deleted_or_inactive(f, set(), fuente_respondio=True)
+    c, f, presentes = _fuente_con_inventario(cp)
+    r = c.identify_deleted_or_inactive(f, presentes, fuente_respondio=True)
+    assert [x["hash_dedup"] for x in r] == ["h0"]
     assert r[0]["estado"] == "AUSENTE_PROVISORIA"
 
 
 def test_recien_a_las_tres_ausencias_seguidas_se_confirma(tmp_path):
     cp = B.Checkpoint(tmp_path / "cp.json")
-    c = conector(cp=cp)
-    f = fuente()
-    c.registrar(f, norm())
+    c, f, presentes = _fuente_con_inventario(cp)
     for _ in range(B.AUSENCIAS_PARA_BAJA):
-        r = c.identify_deleted_or_inactive(f, set(), fuente_respondio=True)
+        r = c.identify_deleted_or_inactive(f, presentes, fuente_respondio=True)
     assert r[0]["estado"] == "BAJA_CONFIRMADA"
 
 
@@ -1527,6 +1539,44 @@ def test_un_dominio_propio_sigue_siendo_web_oficial():
     from scripts.reclassify_portal_profiles import clasificar
     for url in ("https://www.aagaard.com.ar/", "https://abppropiedades.com.ar"):
         assert clasificar(url)[0] == "OFFICIAL_WEB", url
+
+
+def test_dos_enumeraciones_que_no_se_pisan_no_son_cien_bajas(tmp_path):
+    """pitton.net enumero 5 propiedades en una corrida y otras 5 completamente
+    distintas en la siguiente, sin declarar total: es el carrusel de destacados
+    de la home, que Tokko rota. Contarlo como bajas daria de baja el catalogo
+    entero de esa inmobiliaria en tres corridas sin que se cayera un aviso."""
+    ck = B.Checkpoint(tmp_path / "ck.json")
+    con = B.Connector(checkpoint=ck)
+    f = B.Fuente(canonical_agency_id="a", agency_name="A",
+                 official_url="https://a.com", inmobiliaria_id=1)
+    est = ck.de("a")
+    est["vistos"] = {f"h{i}": "fp" for i in range(5)}
+
+    # Conjunto totalmente distinto: no es comparable, no cuenta.
+    aus = con.identify_deleted_or_inactive(f, {f"n{i}" for i in range(5)},
+                                           fuente_respondio=True)
+    assert len(aus) == 5
+    assert all(a["ausencias_consecutivas"] == 0 for a in aus)
+    assert all(a["enumeracion_comparable"] is False for a in aus)
+    assert all(a["estado"] == "SIN_EVIDENCIA_FUENTE_CAIDA" for a in aus)
+
+
+def test_una_baja_real_sigue_contando():
+    """El resguardo no puede tapar la baja de verdad: si el resto del
+    inventario sigue ahi, la que falta cuenta."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        ck = B.Checkpoint(Path(tmp) / "ck.json")
+        con = B.Connector(checkpoint=ck)
+        f = B.Fuente(canonical_agency_id="a", agency_name="A",
+                     official_url="https://a.com", inmobiliaria_id=1)
+        ck.de("a")["vistos"] = {f"h{i}": "fp" for i in range(10)}
+        vistos = {f"h{i}" for i in range(10)} - {"h3"}
+        aus = con.identify_deleted_or_inactive(f, vistos, fuente_respondio=True)
+        assert [a["hash_dedup"] for a in aus] == ["h3"]
+        assert aus[0]["ausencias_consecutivas"] == 1
+        assert aus[0]["enumeracion_comparable"] is True
 
 
 def test_canonicalizar_la_url_no_puede_producir_bajas_falsas():
