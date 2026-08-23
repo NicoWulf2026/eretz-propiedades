@@ -318,6 +318,9 @@ def main() -> int:
     ap.add_argument("--corrida", default="1")
     ap.add_argument("--observacion", action="store_true", default=True)
     ap.add_argument("--filtro-url", default="", help="acota el universo por dominio")
+    ap.add_argument("--censo", default="",
+                    help="JSONL del censo: procesa solo las fuentes cuyo "
+                         "connector_candidato coincide con --connector")
     ap.add_argument("--respaldo", default="",
                     help="connector a probar cuando el principal no soporta la fuente")
     a = ap.parse_args()
@@ -325,7 +328,30 @@ def main() -> int:
     out.mkdir(parents=True, exist_ok=True)
 
     variantes = {v for v in a.variantes.split(",") if v} or None
-    fuentes = universo(dd, a.plataforma, variantes, a.limite, a.filtro_url)
+    if a.censo:
+        # El censo ya decidio que connector corresponde a cada fuente. Volver a
+        # filtrar por plataforma aca las descartaria: justamente estan en el
+        # censo porque su plataforma declarada era la equivocada.
+        padron = {x["canonical_agency_id"]: x
+                  for x in leer_jsonl(dd / "agency_web_directory.jsonl")}
+        fuentes = []
+        for r in leer_jsonl(Path(a.censo)):
+            if r.get("connector_candidato") != a.connector:
+                continue
+            d = padron.get(r["canonical_agency_id"]) or {}
+            eid = r.get("eretz_id") or d.get("eretz_id")
+            fuentes.append({
+                "canonical_agency_id": r["canonical_agency_id"],
+                "agency_name": r.get("agency_name"),
+                "official_url": r["official_url"],
+                "detected_platform": r.get("clasificacion_nueva") or "CENSO",
+                "city": d.get("city"), "province": d.get("province"),
+                "eretz_id": int(eid) if str(eid).isdigit() else None,
+            })
+        if a.limite:
+            fuentes = fuentes[:a.limite]
+    else:
+        fuentes = universo(dd, a.plataforma, variantes, a.limite, a.filtro_url)
 
     sufijo = f"_run{a.corrida}"
     esc_inv = EscritorDurable(out / f"source_inventory{sufijo}.jsonl")
