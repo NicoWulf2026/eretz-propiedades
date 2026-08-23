@@ -1087,3 +1087,20 @@ def test_century21_conserva_las_coordenadas_negativas():
     p = c.normalize(list(c.fetch_listing(f, c.discover(f)))[0], f)
     assert p.latitud == -32.958 and p.longitud == -60.635
     assert p.superficie_cubierta is None
+
+
+def test_century21_reconoce_las_rutas_en_ingles():
+    """La red sirve la misma pagina en dos idiomas y cambia AMBOS segmentos:
+    /v/resultados/oficina_..._local y /v/results/office_..._local. Reconocer
+    solo uno dejaba la mitad de las oficinas afuera sin que nada fallara."""
+    from connectors.century21 import RE_LISTADO, RE_PERFIL
+    assert RE_LISTADO.search("/v/results/office_65-billion-s-a_local")
+    assert RE_LISTADO.search("/v/resultados/oficina_68-revolution-s-a_local")
+    assert RE_PERFIL.search("/v/office/65-billion-s-a-palermo")
+    assert RE_PERFIL.search("/v/oficina/64-dalera-la-plata")
+
+
+def test_century21_pagina_con_el_termino_del_idioma():
+    """En la version en ingles la paginacion es /page_N, no /pagina_N."""
+    src = (ROOT / "connectors" / "century21.py").read_text(encoding="utf-8")
+    assert '"page" if "/results/" in ruta else "pagina"' in src

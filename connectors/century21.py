@@ -38,11 +38,15 @@ BASE = "https://century21.com.ar"
 POR_PAGINA = 100
 MAX_PAGINAS = 60
 
-RE_PERFIL = re.compile(r"/v/oficina/(\d+)-([a-z0-9\-]+)", re.I)
+RE_PERFIL = re.compile(r"/v/(?:oficina|office)/(\d+)-([a-z0-9\-]+)", re.I)
 # El enlace al inventario que la propia ficha de oficina publica. Hace falta
 # leerlo: el slug del perfil ("revolution-s-a-rosario-santa-fe-argentina") NO es
 # el del listado ("revolution-s-a"), asi que no se puede derivar uno del otro.
-RE_LISTADO = re.compile(r"/v/resultados/(oficina_\d+-[a-z0-9\-]+_local)", re.I)
+# La red sirve la misma pagina en dos idiomas y cambia AMBOS segmentos:
+# /v/resultados/oficina_..._local  y  /v/results/office_..._local. Reconocer
+# solo uno dejaba fuera a la mitad de las oficinas sin que nada fallara.
+RE_LISTADO = re.compile(
+    r"/v/(?:resultados|results)/((?:oficina|office)_\d+-[a-z0-9\-]+_local)", re.I)
 
 
 class Century21Connector(Connector):
@@ -54,14 +58,23 @@ class Century21Connector(Connector):
         plan: dict[str, Any] = {"variante": "SIN_OFICINA", "soportada": False,
                                 "total_declarado": None}
         url = fuente.official_url
+        def _ruta(slug: str) -> str:
+            seccion = "results" if slug.lower().startswith("office_") else "resultados"
+            return f"{BASE}/v/{seccion}/{slug}"
+
         m = RE_LISTADO.search(url)
         if m:
-            ruta = f"{BASE}/v/resultados/{m.group(1)}"
+            ruta = _ruta(m.group(1))
         else:
+            # La url guardada puede ser el perfil de la oficina, su version en
+            # ingles (/v/office/), o directamente la ficha de UNA propiedad: a
+            # varias inmobiliarias se les adjudico un aviso suelto como si fuera
+            # su web. En los tres casos la pagina enlaza al inventario de su
+            # oficina, asi que en vez de deducir la ruta de la forma de la url
+            # se la lee del HTML. Una sola peticion cubre las tres variantes.
             perfil = RE_PERFIL.search(url)
-            if not perfil:
-                return plan
-            plan["oficina_id"] = perfil.group(1)
+            if perfil:
+                plan["oficina_id"] = perfil.group(1)
             try:
                 html = self.descargador.bajar(url)
             except (ErrorTransitorio, ErrorPermanente, Bloqueado):
@@ -69,7 +82,8 @@ class Century21Connector(Connector):
             m = RE_LISTADO.search(html)
             if not m:
                 return plan
-            ruta = f"{BASE}/v/resultados/{m.group(1)}"
+            ruta = _ruta(m.group(1))
+            plan["origen_url"] = ("perfil" if perfil else "ficha_suelta")
         plan["ruta"] = ruta
 
         try:
@@ -98,8 +112,9 @@ class Century21Connector(Connector):
                 items = plan.get("primera_pagina") or []
             else:
                 try:
-                    datos = json.loads(
-                        self.descargador.bajar(f"{ruta}/pagina_{pagina}?json=true"))
+                    sufijo = "page" if "/results/" in ruta else "pagina"
+                    datos = json.loads(self.descargador.bajar(
+                        f"{ruta}/{sufijo}_{pagina}?json=true"))
                 except (ValueError, ErrorPermanente):
                     break
                 except (ErrorTransitorio, Bloqueado):
