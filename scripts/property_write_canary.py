@@ -91,7 +91,14 @@ def main() -> int:
     a = ap.parse_args()
 
     cargar_env()
-    url = os.environ.get("SUPABASE_DATABASE_URL", "")
+    # El endpoint directo de Supabase es IPv6 por diseno. Desde una red sin IPv6
+    # utilizable el camino correcto es el pooler (Supavisor) sobre IPv4, asi que
+    # se prefiere su variable cuando existe. No se adivina host: si no esta
+    # configurada, se dice y se corta.
+    url = (os.environ.get("SUPABASE_POOLER_DATABASE_URL")
+           or os.environ.get("SUPABASE_DATABASE_URL") or "")
+    via = ("pooler" if os.environ.get("SUPABASE_POOLER_DATABASE_URL")
+           else "SUPABASE_DATABASE_URL")
     print("### CANARY DE ESCRITURA DE PROPIEDADES ###")
     print(f"  destino: {TABLA}   rol: {ROL}")
     print(f"  modo:    {'ESCRITURA (COMMIT si pasa todo)' if a.escribir else 'VALIDACION (ROLLBACK)'}")

@@ -46,6 +46,31 @@ def _texto(html: str) -> str:
     return re.sub(r"\s+", " ", unescape(t).replace("\xa0", " "))
 
 
+# La ruta de listado suele llamarse "buscar-propiedades" o "propiedades", asi
+# que la propia pagina de busqueda entra por el mismo patron que las fichas.
+# Distinguirlas necesita dos condiciones: sin query string -un filtro no es una
+# propiedad- y con un ultimo segmento que identifique algo, sea un id o un slug
+# de varias palabras.
+RE_SLUG_FICHA = re.compile(
+    r"/[^/?#]*(?:\d{3,}|[a-z0-9]+(?:-[a-z0-9]+){2,})[^/?#]*/?$", re.I)
+
+
+def _es_ficha(url: str) -> bool:
+    if "?" in url or "#" in url:
+        return False
+    return bool(RE_SLUG_FICHA.search(url))
+
+
+def _id_de(url: str) -> str:
+    """Id rastreable hasta la ficha. Nunca la query string entera: un
+    source_listing_id de 200 caracteres con filtros de busqueda adentro no
+    identifica nada y ensucia el artefacto."""
+    ruta = url.split("?")[0].rstrip("/")
+    ultimo = ruta.rsplit("/", 1)[-1]
+    m = re.search(r"(\d{3,})", ultimo)
+    return (m.group(1) if m else ultimo)[:120]
+
+
 def _rendered(valor: Any) -> str | None:
     """Los campos de WordPress vienen como {"rendered": "<p>...</p>"}."""
     if isinstance(valor, dict):
@@ -167,9 +192,11 @@ class WordPressConnector(Connector):
             for u in re.findall(r"<loc>\s*([^<\s]+)\s*</loc>", cuerpo):
                 if u in vistos or not any(f"/{t}" in u.lower() for t in TIPOS_INMO):
                     continue
+                if not _es_ficha(u):
+                    continue
                 vistos.add(u)
-                yield {"source_listing_id": u.rstrip("/").rsplit("/", 1)[-1],
-                       "source_url": u, "pagina": pagina}
+                yield {"source_listing_id": _id_de(u), "source_url": u,
+                       "pagina": pagina}
 
     def _html(self, fuente: Fuente, plan: dict[str, Any]) -> Iterator[dict]:
         base, ruta = plan["base"], plan["ruta_html"]
@@ -184,6 +211,8 @@ class WordPressConnector(Connector):
             for m in re.finditer(rf'href="({re.escape(base)}/{re.escape(ruta)}/[^"/]+/?)"', html):
                 u = m.group(1)
                 if u.rstrip("/").endswith(ruta) or u in vistos:
+                    continue
+                if not _es_ficha(u):
                     continue
                 vistos.add(u)
                 nuevos += 1

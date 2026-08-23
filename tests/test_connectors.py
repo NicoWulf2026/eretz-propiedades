@@ -1160,3 +1160,23 @@ def test_el_respaldo_solo_cuenta_si_realmente_trajo_propiedades():
     src = (ROOT / "scripts" / "run_rollout.py").read_text(encoding="utf-8")
     bloque = src[src.index("def procesar("):src.index("def _procesar_con(")]
     assert 'alt.get("detalles_obtenidos")' in bloque
+
+
+def test_wordpress_no_toma_una_busqueda_como_ficha():
+    """La ruta de listado suele llamarse "buscar-propiedades", asi que la propia
+    pagina de busqueda entra por el mismo patron que las fichas. Se colaron 56
+    urls con filtros como si fueran propiedades."""
+    from connectors.wordpress import _es_ficha
+    assert not _es_ficha("https://a.com/buscar-propiedades/?sort=newest&search_status=10")
+    assert not _es_ficha("https://a.com/propiedades/")
+    assert _es_ficha("https://a.com/propiedades/casa-tres-dormitorios-rosario")
+    assert _es_ficha("https://a.com/propiedades/12345-casa")
+
+
+def test_wordpress_no_usa_la_query_como_identificador():
+    """Un source_listing_id de 200 caracteres con filtros adentro no identifica
+    nada: hubo 100 asi."""
+    from connectors.wordpress import _id_de
+    largo = "https://a.com/p/?sort=newest&" + "x=1&" * 60
+    assert len(_id_de(largo)) <= 120
+    assert _id_de("https://a.com/propiedades/12345-casa-linda") == "12345"
