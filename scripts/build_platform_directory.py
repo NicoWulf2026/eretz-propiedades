@@ -144,7 +144,8 @@ def main() -> int:
             variante = w.get("familia")
             confianza = "alta" if w.get("confianza") == "alta" else "media"
             evidencia = w.get("motivo") or "fingerprint de Wasi"
-            declarado = declarado or w.get("declarado_menu")
+            declarado = declarado or w.get("declared_inventory")
+            enumeradas = enumeradas or w.get("enumerated_unique") or 0
         elif enumeradas and r.get("connector"):
             plataforma = {"tokko": "TOKKO", "wordpress": "WORDPRESS",
                           "century21": "CENTURY21", "generico": "SITIO_PROPIO"
@@ -276,6 +277,29 @@ def main() -> int:
         props = sum(f["properties_normalized"] or 0 for f in g)
         print(f"    {k[:18]:18} {det:6,} {proc:6,} {hecho:7,} {conp:7,} "
               f"{err:6,} {pend:6,} {props:12,}")
+
+    # --- residual: que queda afuera, con nombre y apellido -------------------
+    # "Muchos" o "pocos" no sirve para decidir el proximo connector. Se emite la
+    # lista con dominio e id para que el siguiente frente se elija sobre datos.
+    residual = [
+        {"canonical_agency_id": f["canonical_agency_id"],
+         "eretz_id": f["eretz_id"], "agency_name": f["agency_name"],
+         "domain": f["domain"], "host": f["host"], "province": f["province"],
+         "platform": f["platform"], "confidence": f["confidence"],
+         "evidence": f["evidence"], "connector_status": f["connector_status"],
+         "declared_inventory": f["declared_inventory"]}
+        for f in propias
+        if not f["connector_status"].startswith("SUPPORTED")]
+    ruta_res = Path(a.salida).with_name("RESIDUAL_UNCOVERED.jsonl")
+    ruta_res.write_text(
+        "\n".join(json.dumps(r, ensure_ascii=False) for r in residual),
+        encoding="utf-8")
+    print(f"\n  SIN COBERTURA (web propia): {len(residual):,}"
+          f"  -> {ruta_res.name}")
+    for k, v in Counter(r["platform"] for r in residual).most_common(8):
+        decl = sum(x["declared_inventory"] or 0 for x in residual
+                   if x["platform"] == k)
+        print(f"    {k[:22]:22} {v:5,}  inventario declarado conocido {decl:7,}")
 
     print()
     print(f"  agencias con web: {len(filas):,}\n")

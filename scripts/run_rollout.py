@@ -279,11 +279,20 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool) -> di
     # Una fuente que respondio mal no puede dar por ausente a nada.
     confiable = r["enumeracion_completa"] and r["estado_ok"] if "estado_ok" in r else \
         r["enumeracion_completa"]
-    # Las claves son hash_dedup, calculadas de la url enumerada: se conocen sin
+    # Las claves son hash_dedup calculadas de la url ENUMERADA: se conocen sin
     # bajar la ficha, asi que la deteccion de ausencias funciona aunque solo se
     # normalice una muestra.
+    #
+    # Pero un connector puede canonicalizar la url al normalizar, y entonces la
+    # clave que guarda el checkpoint no es la de la url enumerada. Wasi sirve la
+    # misma propiedad bajo dos slugs, y comparar una contra otra daba 33 bajas
+    # falsas en la primera corrida de una sola fuente. Se comparan las dos
+    # formas: la enumerada cubre lo que no se normalizo, la canonica cubre lo
+    # que si. Es un superconjunto de lo visto, asi que no puede tapar una baja
+    # real.
     vistos = {calcular_hash_dedup(fuente.inmobiliaria_id, a["source_url"])
               for a in avisos}
+    vistos |= {p.hash_dedup for p in objetos}
     ausentes = con.identify_deleted_or_inactive(
         fuente, vistos, fuente_respondio=bool(confiable))
     if observacion:

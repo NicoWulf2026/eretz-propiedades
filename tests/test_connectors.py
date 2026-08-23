@@ -1529,6 +1529,17 @@ def test_un_dominio_propio_sigue_siendo_web_oficial():
         assert clasificar(url)[0] == "OFFICIAL_WEB", url
 
 
+def test_canonicalizar_la_url_no_puede_producir_bajas_falsas():
+    """El runner arma el conjunto "visto ahora" con la url ENUMERADA, pero el
+    checkpoint guarda la clave de la url que devolvio normalize. Un connector
+    que canonicaliza -Wasi sirve la misma propiedad bajo dos slugs- hacia que
+    esas dos claves no coincidieran: 33 bajas falsas en la primera corrida de
+    una sola fuente. Se comparan las dos formas."""
+    src = (ROOT / "scripts" / "run_rollout.py").read_text(encoding="utf-8")
+    bloque = src[src.index("# --- ausencias"):src.index("identify_deleted_or_inactive")]
+    assert "vistos |= {p.hash_dedup for p in objetos}" in bloque
+
+
 # --------------------------------------- estabilidad de la huella de contenido
 def _prop(**kw):
     base = dict(canonical_agency_id="x", source_listing_id="1",
