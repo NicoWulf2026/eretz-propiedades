@@ -189,6 +189,24 @@ Universo medido: **39 fuentes, 3.598 propiedades unicas** (31 COMPLETE, 8
 LIKELY_COMPLETE, ninguna incompleta). Barrido de falsos negativos sobre 1.194
 sitios no confirmados: **0 Wasi nuevos**, 40 sin respuesta.
 
+### Rollout y idempotencia — CERRADO
+
+| | corrida 1 | corrida 2 |
+|---|---|---|
+| fuentes | 39/39 (36 OK + 3 falsas incompletas) | **39/39 OK** |
+| propiedades | 3.598 NUEVA | 3.596: **3.593 SIN_CAMBIOS**, 2 MODIFICADA, 1 NUEVA |
+| duplicados intra-fuente | 0 | 0 |
+| hash compartido entre agencias | 0 | 0 |
+| fotos ajenas | 0 | 0 |
+| errores | 0 | 0 |
+| reconcilia | si | si |
+
+3.598 detalles = **3.598 hashes unicos**: la regla de url canonica evito los
+duplicados de los dos slugs. Los 3 cambios de la corrida 2 se auditaron uno por
+uno y son reales -una ficha sumo `cocheras`, otra perdio `plantas`, y hubo un
+alta-. Ninguno es ruido del parser. 2 ausencias, ambas con la fuente
+respondiendo OK y enumeracion completa, en observacion.
+
 ### Tres trampas de Wasi, ya resueltas
 
 1. **La misma propiedad bajo dos slugs.** `/apartamento-venta-moron/5444177` en
