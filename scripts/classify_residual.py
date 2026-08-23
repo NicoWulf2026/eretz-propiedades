@@ -41,7 +41,11 @@ from connectors.base import (Bloqueado, Descargador, ErrorPermanente,  # noqa: E
 from connectors.generico import RE_FICHA, RE_FICHA_RAIZ  # noqa: E402
 from scripts.wasi_fingerprint import fingerprint as fp_wasi  # noqa: E402
 
-VERSION = "residual_classifier_v1"
+VERSION = "residual_classifier_v2"
+
+# Ninguna inmobiliaria del padron declara mas que esto. El maximo real
+# observado por fuente es del orden de las centenas (Tokko ~690, Wasi 303).
+TOPE_INVENTARIO = 20_000
 
 # Plataformas para las que YA existe connector, o que agrupan muchas fuentes.
 PLATAFORMAS = {
@@ -136,11 +140,19 @@ def analizar(f: dict, lim: LimitadorDeRitmo) -> dict:
     out["json_embebido"] = bool(JSON_EMBEBIDO.search(html))
     out["renderiza_cliente"] = bool(CLIENTE.search(html))
     texto = re.sub(r"<[^>]+>", " ", html)
+    # El numero declarado sirve para PRIORIZAR, asi que un valor absurdo es
+    # peor que ninguno. Sin tope entraban telefonos y precios pegados a la
+    # palabra: "54 11 6953 7580" daba 541.169.537.580 propiedades, y catorce
+    # fuentes sumaban mas inventario que todo el pais.
     m = re.search(r"(\d[\d.]*)\s*(?:Resultados|propiedades|inmuebles)", texto, re.I)
     crudo = m.group(1).replace(".", "") if m else ""
-    out["declared_inventory"] = int(crudo) if crudo.isdigit() else None
+    n = int(crudo) if crudo.isdigit() else None
+    out["declared_inventory"] = n if n and n <= TOPE_INVENTARIO else None
 
     # --- mecanismo, de mas barato a mas caro -------------------------------
+    # `connector_candidato` y `official_url` se emiten con esos nombres a
+    # proposito: es el formato que `run_rollout.py --censo` ya sabe consumir,
+    # asi que este artefacto se puede lanzar sin traducirlo a mano.
     if plataforma and conector:
         out["mecanismo"], out["connector"] = "PLATAFORMA_CONOCIDA", conector
     elif plataforma:
@@ -158,6 +170,23 @@ def analizar(f: dict, lim: LimitadorDeRitmo) -> dict:
         out["motivo"] = ("responde pero no se le vio ninguna ficha: puede ser "
                          "institucional, estar vacio o publicar de una forma "
                          "que este sondeo no reconoce")
+    # --- detectar la plataforma NO es encontrar el inventario ---------------
+    # Ya paso dos veces. Con WordPress: 57 fuentes se dieron por recuperables
+    # por tener marcadores del CMS y las 57 devolvieron cero. Con Tokko: 81
+    # fuentes tienen marcadores de Tokko y son TOKKO_FRONTEND_PROPIO, que su
+    # connector no sabe leer -y el generico tampoco-.
+    #
+    # Asi que solo se propone connector cuando hay fichas A LA VISTA. Lo demas
+    # queda anotado con su plataforma, pero sin prometer nada.
+    hay_fichas = bool(out.get("sitemap_fichas") or out.get("fichas_html"))
+    out["status"] = ("CON_EVIDENCIA_DE_INVENTARIO" if hay_fichas and out["connector"]
+                     else "PLATAFORMA_SIN_EVIDENCIA" if out["connector"]
+                     else "SIN_CONECTOR")
+    if not hay_fichas:
+        out["connector"] = None
+    out["connector_candidato"] = out["connector"]
+    out["official_url"] = url or base
+    out["clasificacion_nueva"] = out["mecanismo"]
     return out
 
 
