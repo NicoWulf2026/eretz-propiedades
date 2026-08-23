@@ -387,6 +387,19 @@ def test_mencionar_wasi_ya_no_clasifica_como_wasi():
     assert plataforma != "WASI"
 
 
+def test_la_cobertura_se_juzga_contra_una_cota_alcanzable():
+    """La suma del menu cuenta una vez por operacion, asi que una propiedad en
+    venta y en permuta figura dos veces y el total nunca se alcanza: tres
+    fuentes enteras quedaban ENUMERACION_INCOMPLETA teniendo todo su
+    inventario. La operacion mas grande si es una cota inferior real, porque
+    dentro de una operacion cada propiedad aparece una sola vez."""
+    d = inventario_declarado(WASI_COMPLETO)
+    piso = max(d["por_operacion"].values())
+    assert d["total"] == 72          # cota superior, inalcanzable si hay solapamiento
+    assert piso == 67                # cota inferior, siempre alcanzable
+    assert piso <= d["total"]
+
+
 def test_leer_la_ficha_no_puede_costar_casi_un_segundo():
     """El patron arrancaba en cada ">" del documento y retrocedia: 0,87 s por
     ficha de 66 KB. A 170 fichas por fuente y 39 fuentes es una hora de CPU

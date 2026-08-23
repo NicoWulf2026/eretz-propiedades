@@ -92,7 +92,19 @@ class WasiConnector(Connector):
             return plan
 
         decl = inventario_declarado(html)
-        plan["total_declarado"] = decl["total"]
+        # La suma del menu es una COTA SUPERIOR inalcanzable: cuenta una vez por
+        # operacion, asi que una propiedad en venta y en permuta figura dos
+        # veces. Verificado en jorgeorellano.com -venta 238 + alquiler 23 +
+        # permuta 2 = 263, lo que declara el menu, mientras los ids unicos son
+        # 261 porque las 2 de permuta estan tambien en venta-.
+        #
+        # Como objetivo de cobertura se usa la operacion mas grande, que si es
+        # una cota INFERIOR real: dentro de una operacion cada propiedad aparece
+        # una sola vez, asi que el total unico nunca puede ser menor. Con la
+        # suma como objetivo, tres fuentes enteras quedaban marcadas
+        # ENUMERACION_INCOMPLETA teniendo todo su inventario.
+        plan["total_declarado"] = max(decl["por_operacion"].values(), default=0) or None
+        plan["total_declarado_menu"] = decl["total"]
         plan["declarado_por_operacion"] = decl["por_operacion"]
 
         rutas = self._del_sitemap(base)
@@ -127,11 +139,10 @@ class WasiConnector(Connector):
             vistos.add(pid)
             yield {"source_listing_id": pid, "source_url": u, "pagina": 0}
 
-        declarado = plan.get("total_declarado") or 0
-        # El total del menu es una COTA SUPERIOR: suma una vez por operacion,
-        # asi que una propiedad publicada en venta y en permuta cuenta dos
-        # veces. Se pagina cuando falta bastante, no por no llegar al numero
-        # exacto, que a veces es inalcanzable por construccion.
+        # Para decidir SI PAGINAR se usa la cota SUPERIOR -la suma del menu-:
+        # conviene ser exhaustivo aunque ese numero sea inalcanzable. La cota
+        # inferior se usa despues, para juzgar la cobertura.
+        declarado = plan.get("total_declarado_menu") or 0
         if vistos and declarado and len(vistos) >= declarado * 0.98:
             estado["completa"] = True
             return
