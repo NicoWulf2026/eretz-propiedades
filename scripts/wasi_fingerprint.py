@@ -239,6 +239,96 @@ def es_ficha(url_o_ruta: str) -> bool:
     return bool(RE_FICHA_WASI.match(ruta))
 
 
+# --------------------------------------------------------------------------
+# Lectura de la ficha: probar que el HTML servido alcanza, sin navegador
+# --------------------------------------------------------------------------
+# La ficha trae una tabla etiquetada. NO se usa el JSON-LD para las medidas: su
+# `floorSize` es la cantidad de PLANTAS, no la superficie. En un duplex de 84 m2
+# con dos plantas, leerlo como superficie registra "2 m2" -el mismo error que
+# ya se cometio con el `m2C: 0` de Century 21, pero al reves: aca el numero es
+# plausible y por eso nadie lo notaria despues-.
+_ETIQUETAS = {
+    "pais": "pais", "region": "provincia", "ciudad": "ciudad", "zona": "barrio",
+    "codigo": "codigo", "area construida": "superficie_cubierta",
+    "area terreno": "superficie_total", "area privada": "superficie_privada",
+    "dormitorios": "dormitorios", "banos": "banos", "garaje": "cocheras",
+    "tipo de inmueble": "tipo_propiedad", "tipo de negocio": "operacion",
+    "numero de plantas": "plantas", "estado": "estado",
+}
+# El sitio real escribe <strong>Ciudad:</strong> Merlo, pero los planes usan
+# plantillas distintas y algunos meten el valor en su propia etiqueta. Se
+# aceptan hasta tres etiquetas entre el rotulo y el valor -acotado, para no
+# terminar tomando el texto de la fila siguiente-.
+RE_PAR = re.compile(r">\s*([A-Za-zÁÉÍÓÚÜÑáéíóúüñ ]{3,26})\s*:\s*"
+                    r"(?:<[^>]*>\s*){1,3}([^<]{1,80}?)\s*<", re.S)
+RE_PRECIO = re.compile(
+    r"class=[\"'][^\"']*blq_precio[^\"']*[\"'][^>]*>(.{0,400}?)</div>", re.S | re.I)
+
+
+def _sin_acentos(t: str) -> str:
+    tabla = str.maketrans("áéíóúüÁÉÍÓÚÜñÑ", "aeiouuAEIOUUnN")
+    return t.translate(tabla).strip().lower()
+
+
+def _numero(t: str) -> float | None:
+    """Un numero de la ficha, o None. Nunca 0 para una medida.
+
+    Wasi escribe 0 donde no cargaron el dato. Un "0 m2 cubiertos" no es una
+    medicion, es un campo vacio disfrazado.
+    """
+    m = re.search(r"(\d[\d.,]*)", t or "")
+    if not m:
+        return None
+    crudo = m.group(1).replace(".", "").replace(",", ".")
+    try:
+        v = float(crudo)
+    except ValueError:
+        return None
+    return v or None
+
+
+def campos_de_ficha(html: str) -> dict:
+    """Los atributos que la ficha declara, tal como los declara.
+
+    Un campo ausente queda en None: no se infiere ninguno. Devuelve tambien
+    `etiquetas_vistas` para poder auditar que se leyo y que se ignoro.
+    """
+    html = html or ""
+    out: dict = {k: None for k in set(_ETIQUETAS.values())}
+    vistas = []
+    for etiqueta, valor in RE_PAR.findall(html):
+        clave = _ETIQUETAS.get(_sin_acentos(etiqueta))
+        if not clave:
+            continue
+        vistas.append(_sin_acentos(etiqueta))
+        if clave in ("superficie_cubierta", "superficie_total",
+                     "superficie_privada", "dormitorios", "banos", "cocheras",
+                     "plantas"):
+            out[clave] = _numero(valor)
+        else:
+            out[clave] = valor.strip() or None
+
+    precio = None
+    moneda = None
+    operacion = out.get("operacion")
+    m = RE_PRECIO.search(html)
+    if m:
+        bloque = re.sub(r"<[^>]+>", " ", m.group(1))
+        precio = _numero(bloque)
+        if re.search(r"d[oó]lar|usd|u\$s", bloque, re.I):
+            moneda = "USD"
+        elif re.search(r"peso|ars|\$", bloque, re.I):
+            moneda = "ARS"
+        if not operacion:
+            if re.search(r"precio de alquiler", bloque, re.I):
+                operacion = "Alquiler"
+            elif re.search(r"precio de venta", bloque, re.I):
+                operacion = "Venta"
+    out.update({"precio": precio, "moneda": moneda, "operacion": operacion,
+                "etiquetas_vistas": sorted(set(vistas))})
+    return out
+
+
 def id_de_ficha(url_o_ruta: str) -> str | None:
     ruta = urllib.parse.urlparse(url_o_ruta or "").path or (url_o_ruta or "")
     m = RE_FICHA_WASI.match(ruta)

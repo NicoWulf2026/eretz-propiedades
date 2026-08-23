@@ -20,7 +20,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from scripts.wasi_fingerprint import (bundle_white_label, es_ficha,  # noqa: E402
+from scripts.wasi_fingerprint import (bundle_white_label, campos_de_ficha,  # noqa: E402
+                                      es_ficha,
                                       fingerprint, id_de_ficha,
                                       inventario_declarado)
 
@@ -212,6 +213,74 @@ def test_no_se_confunden_listados_ni_recursos_con_fichas():
                "/js/app.js", "/asesores", "/", "/casa-venta/123"):
         assert not es_ficha(no), no
         assert id_de_ficha(no) is None, no
+
+
+# --------------------------------------------------------- lectura de la ficha
+FICHA_WASI = """
+<html><body>
+<div class="blq_precio">Precio de venta
+  <span class="">USD 185.000<span class="type-sale"></span></span> Dolares</div>
+<h3>Detalles del inmueble :</h3>
+<div><span>Pais:</span><span>Argentina</span></div>
+<div><span>Region:</span><span>Buenos Aires</span></div>
+<div><span>Ciudad:</span><span>Merlo</span></div>
+<div><span>Zona:</span><span>San Antonio De Padua</span></div>
+<div><span>Codigo:</span><span>10094868</span></div>
+<div><span>Area Construida:</span><span>84 m&sup2;</span></div>
+<div><span>Area Terreno:</span><span>100 m&sup2;</span></div>
+<div><span>Dormitorios:</span><span>2</span></div>
+<div><span>Garaje:</span><span>1</span></div>
+<div><span>Numero de plantas:</span><span>2</span></div>
+<div><span>Tipo de inmueble:</span><span>Casa</span></div>
+<div><span>Tipo de negocio:</span><span>Venta</span></div>
+</body></html>
+"""
+
+
+def test_la_ficha_se_lee_del_html_servido():
+    """Si esto no sale, no hay via barata: habria que abrir un navegador."""
+    c = campos_de_ficha(FICHA_WASI)
+    assert c["precio"] == 185000 and c["moneda"] == "USD"
+    assert c["operacion"] == "Venta" and c["tipo_propiedad"] == "Casa"
+    assert c["codigo"] == "10094868"
+    assert c["ciudad"] == "Merlo" and c["provincia"] == "Buenos Aires"
+    assert c["barrio"] == "San Antonio De Padua"
+    assert c["superficie_cubierta"] == 84 and c["superficie_total"] == 100
+    assert c["dormitorios"] == 2 and c["cocheras"] == 1
+
+
+def test_la_cantidad_de_plantas_no_es_la_superficie():
+    """El JSON-LD de la ficha manda la cantidad de plantas en `floorSize`. En un
+    duplex de 84 m2 con dos plantas, leerlo como superficie registra "2 m2": un
+    numero plausible, y por eso nadie lo notaria despues."""
+    c = campos_de_ficha(FICHA_WASI)
+    assert c["plantas"] == 2
+    assert c["superficie_cubierta"] == 84
+    assert c["superficie_cubierta"] != c["plantas"]
+
+
+def test_un_cero_no_es_una_medicion():
+    """Wasi escribe 0 donde no cargaron el dato. Un "0 m2 cubiertos" es un campo
+    vacio disfrazado, y ya se colo una vez por esta misma via en Century 21."""
+    c = campos_de_ficha(
+        '<div><span>Area Construida:</span><span>0 m&sup2;</span></div>')
+    assert c["superficie_cubierta"] is None
+
+
+def test_un_campo_ausente_queda_en_none_y_no_se_infiere():
+    c = campos_de_ficha('<div><span>Ciudad:</span><span>Salta</span></div>')
+    assert c["ciudad"] == "Salta"
+    assert c["banos"] is None and c["superficie_cubierta"] is None
+    assert c["precio"] is None and c["moneda"] is None
+
+
+def test_la_moneda_sale_del_bloque_de_precio():
+    pesos = campos_de_ficha(
+        '<div class="blq_precio">Precio de alquiler'
+        '<span>$1.100.000</span> Pesos Argentinos</div>')
+    assert pesos["moneda"] == "ARS" and pesos["precio"] == 1100000
+    # Y sin "Tipo de negocio" la operacion todavia sale del propio bloque.
+    assert pesos["operacion"] == "Alquiler"
 
 
 # ------------------------------------- integracion con el detector de plataforma
