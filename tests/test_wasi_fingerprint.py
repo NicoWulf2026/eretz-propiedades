@@ -23,7 +23,7 @@ sys.path.insert(0, str(ROOT))
 from scripts.wasi_fingerprint import (bundle_white_label, campos_de_ficha,  # noqa: E402
                                       es_ficha,
                                       fingerprint, id_de_ficha,
-                                      inventario_declarado)
+                                      inventario_declarado, url_canonica)
 
 
 # --------------------------------------------------------------- fixtures HTML
@@ -215,6 +215,46 @@ def test_no_se_confunden_listados_ni_recursos_con_fichas():
         assert id_de_ficha(no) is None, no
 
 
+# ------------------------------------------------- identidad: la url canonica
+FICHA_DOS_SLUGS = """
+<html><head>
+<meta property="og:url" content="https://dicasoli.com.ar/apartamento-venta-moron/5444177">
+<script type="application/ld+json">
+{"@context":"http://www.schema.org","@type":"house",
+ "url":"https://dicasoli.com.ar/departamento-venta-moron/5444177"}
+</script>
+</head><body></body></html>
+"""
+
+
+def test_la_misma_propiedad_bajo_dos_slugs_entra_con_una_sola_url():
+    """El sitemap la publica como /apartamento-... y el listado como
+    /departamento-..., con el mismo id. En dicasoli.com.ar pasa en 106 de 243
+    fichas. Como `hash_dedup` lleva la url adentro, enumerar por un camino en
+    una corrida y por el otro en la siguiente crearia dos filas de la misma
+    propiedad, invisibles para el indice unico."""
+    pedida = "https://dicasoli.com.ar/apartamento-venta-moron/5444177"
+    canon = url_canonica(FICHA_DOS_SLUGS, pedida)
+    assert canon == "https://dicasoli.com.ar/departamento-venta-moron/5444177"
+    # Se entre por donde se entre, la identidad es la misma.
+    otra = "https://dicasoli.com.ar/departamento-venta-moron/5444177"
+    assert url_canonica(FICHA_DOS_SLUGS, otra) == canon
+    assert id_de_ficha(canon) == id_de_ficha(pedida) == "5444177"
+
+
+def test_og_url_no_sirve_de_canonica():
+    """Devuelve la url que uno pidio, asi que no distingue nada."""
+    assert "og:url" in FICHA_DOS_SLUGS
+    assert url_canonica(FICHA_DOS_SLUGS, "https://dicasoli.com.ar/x/1") != \
+        "https://dicasoli.com.ar/apartamento-venta-moron/5444177"
+
+
+def test_sin_canonica_declarada_se_conserva_la_pedida():
+    """Inventar una url seria peor que quedarse con la que se uso para llegar."""
+    pedida = "https://x.com/casa-venta-cordoba/10293325"
+    assert url_canonica("<html></html>", pedida) == pedida
+
+
 # --------------------------------------------------------- lectura de la ficha
 FICHA_WASI = """
 <html><body>
@@ -343,4 +383,6 @@ def test_el_censo_de_wasi_conserva_la_evidencia_de_cada_fuente():
             # error que hizo dar por recuperables 57 fuentes WordPress que
             # despues devolvieron cero.
             if f.get("connector"):
-                assert f.get("enumerables")
+                assert f.get("enumerated_unique")
+                assert f.get("enumeration_method")
+                assert f.get("coverage_status")

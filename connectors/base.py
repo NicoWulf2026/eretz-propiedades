@@ -153,11 +153,26 @@ class PropiedadNormalizada:
 
         Deja afuera scraped_at a proposito: si entrara, cada corrida veria
         cambios donde no los hubo y el incremental no serviria de nada.
+
+        Por la misma razon el ORDEN no cuenta en la descripcion ni en las
+        fotos. Tokko arma la lista de servicios sin orden fijo -"Cloaca
+        Internet" en un pedido, "Internet Cloaca" en el siguiente: mismas
+        palabras, mismo largo-, y como la descripcion entra en la huella, una
+        propiedad sin tocar volvia MODIFICADA. Fue el 2,4% de un canary; a
+        escala de 91.715 son ~2.200 cambios falsos por corrida, que dejarian a
+        MODIFICADA sin significado.
+
+        Reordenar no es un cambio. Agregar o sacar texto si, y eso se sigue
+        detectando porque cambia el conjunto de palabras.
         """
         campos = {k: v for k, v in asdict(self).items()
                   if k not in ("scraped_at", "provenance", "extra")}
         campos["extra"] = {k: v for k, v in self.extra.items()
                            if k not in ("raw_html_len", "fetched_at")}
+        if isinstance(campos.get("descripcion"), str):
+            campos["descripcion"] = " ".join(sorted(campos["descripcion"].split()))
+        if isinstance(campos.get("imagenes"), list):
+            campos["imagenes"] = sorted(str(x) for x in campos["imagenes"])
         crudo = json.dumps(campos, sort_keys=True, ensure_ascii=False, default=str)
         return hashlib.sha256(crudo.encode()).hexdigest()[:32]
 

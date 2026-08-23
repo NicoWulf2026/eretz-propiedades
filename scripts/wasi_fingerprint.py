@@ -329,6 +329,32 @@ def campos_de_ficha(html: str) -> dict:
     return out
 
 
+# La MISMA propiedad se sirve bajo dos slugs distintos con el mismo id:
+# /apartamento-venta-moron/5444177 en el sitemap y /departamento-venta-moron/
+# 5444177 en el listado. En dicasoli.com.ar pasa en 106 de 243 fichas.
+#
+# Importa porque `hash_dedup` lleva la url adentro: enumerar por sitemap una
+# corrida y por paginacion la otra produciria dos filas de la misma propiedad,
+# con hashes distintos, invisibles para el indice unico.
+#
+# `og:url` no sirve de canonica: devuelve la url que uno pidio. El `url` del
+# JSON-LD si: devuelve siempre la misma sin importar por que slug se entre.
+RE_URL_JSONLD = re.compile(
+    r'application/ld\+json[^>]*>.*?"url"\s*:\s*"([^"]+)"', re.S | re.I)
+
+
+def url_canonica(html: str, url_pedida: str) -> str:
+    """La url con la que esta propiedad debe entrar al pipeline.
+
+    Si la ficha no declara ninguna, se devuelve la pedida: inventar una seria
+    peor que quedarse con la que se uso para llegar.
+    """
+    m = RE_URL_JSONLD.search(html or "")
+    if m and es_ficha(m.group(1)):
+        return m.group(1)
+    return url_pedida
+
+
 def id_de_ficha(url_o_ruta: str) -> str | None:
     ruta = urllib.parse.urlparse(url_o_ruta or "").path or (url_o_ruta or "")
     m = RE_FICHA_WASI.match(ruta)

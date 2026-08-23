@@ -1529,6 +1529,43 @@ def test_un_dominio_propio_sigue_siendo_web_oficial():
         assert clasificar(url)[0] == "OFFICIAL_WEB", url
 
 
+# --------------------------------------- estabilidad de la huella de contenido
+def _prop(**kw):
+    base = dict(canonical_agency_id="x", source_listing_id="1",
+                source_url="https://x.com/p/1", connector="tokko", precio=100.0)
+    base.update(kw)
+    return B.PropiedadNormalizada(**base)
+
+
+def test_reordenar_la_descripcion_no_es_un_cambio():
+    """Tokko arma la lista de servicios sin orden fijo: "Cloaca Internet" en un
+    pedido y "Internet Cloaca" en el siguiente, mismas palabras y mismo largo.
+    Como la descripcion entra en la huella, una propiedad sin tocar volvia
+    MODIFICADA. Fue el 2,4% de un canary; a escala de 91.715 son ~2.200 cambios
+    falsos por corrida, y MODIFICADA deja de significar nada."""
+    a = _prop(descripcion="Cocina Cloaca Internet Calefaccion")
+    b = _prop(descripcion="Internet Calefaccion Cocina Cloaca")
+    assert a.fingerprint == b.fingerprint
+
+
+def test_reordenar_las_fotos_tampoco():
+    a = _prop(imagenes=["a.jpg", "b.jpg", "c.jpg"])
+    b = _prop(imagenes=["c.jpg", "a.jpg", "b.jpg"])
+    assert a.fingerprint == b.fingerprint
+
+
+def test_pero_agregar_o_sacar_texto_si_es_un_cambio():
+    """Si la huella se volviera ciega al contenido, el incremental dejaria de
+    detectar ediciones reales, que es lo unico para lo que existe."""
+    a = _prop(descripcion="Cocina Cloaca Internet")
+    assert a.fingerprint != _prop(descripcion="Cocina Cloaca Internet Pileta").fingerprint
+    assert a.fingerprint != _prop(descripcion="Cocina Cloaca").fingerprint
+    assert a.fingerprint != _prop(descripcion="Cocina Cloaca Internet",
+                                  precio=120.0).fingerprint
+    assert a.fingerprint != _prop(descripcion="Cocina Cloaca Internet",
+                                  imagenes=["a.jpg"]).fingerprint
+
+
 def test_el_directorio_descubre_las_corridas_en_vez_de_listarlas():
     """Estaba fijo en ("1","2"): apenas aparecio una corrida 3 el directorio
     dejo de verla en silencio, que es exactamente el error que su propio

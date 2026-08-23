@@ -246,6 +246,37 @@ def main() -> int:
     print(f"    RECONCILIA:            {'si' if not problemas else 'NO'}")
     for x in problemas:
         print(f"      !! {x}")
+    # --- que ES cada url: web propia, oficina de una red, perfil ajeno ------
+    # La cobertura se mide sobre las webs PROPIAS. Contar los perfiles en
+    # portales ajenos infla el numero con paginas de terceros.
+    cuenta_kind = Counter(f["web_kind"] for f in filas)
+    print("\n  CLASIFICACION DE LA URL")
+    for k, v in cuenta_kind.most_common():
+        print(f"    {k:26} {v:5,}  ({v/total*100:5.1f}%)")
+    propias = [f for f in filas if f["web_kind"] == "OFFICIAL_WEB"]
+    print(f"    {'AGENCIAS CON WEB PROPIA':26} {len(propias):5,}")
+
+    # --- cuadro de cobertura, solo sobre las webs propias -------------------
+    print("\n  COBERTURA POR TECNOLOGIA (solo web propia)")
+    print(f"    {'plataforma':18} {'detect':>6} {'proces':>6} {'procesa':>7} "
+          f"{'c/props':>7} {'error':>6} {'pend':>6} {'propiedades':>12}")
+    orden = Counter(f["platform"] for f in propias)
+    for k, det in orden.most_common():
+        g = [f for f in propias if f["platform"] == k]
+        # procesable: hay un connector que la puede leer, escrito o por escribir
+        proc = sum(1 for f in g if f["connector_status"] in
+                   ("SUPPORTED_STANDARD", "SUPPORTED_CUSTOM", "DETECTED_NOT_BUILT"))
+        hecho = sum(1 for f in g if f["connector_status"].startswith("SUPPORTED"))
+        conp = sum(1 for f in g if f["properties_normalized"])
+        err = sum(1 for f in g if f["connector_status"] in
+                  ("NETWORK_BLOCKED", "UNSUPPORTED_PLATFORM",
+                   "ENUMERACION_INCOMPLETA"))
+        pend = sum(1 for f in g if f["connector_status"] in
+                   ("NO_INTENTADA", "NO_INVENTORY", "UNKNOWN", "DETECTED_NOT_BUILT"))
+        props = sum(f["properties_normalized"] or 0 for f in g)
+        print(f"    {k[:18]:18} {det:6,} {proc:6,} {hecho:7,} {conp:7,} "
+              f"{err:6,} {pend:6,} {props:12,}")
+
     print()
     print(f"  agencias con web: {len(filas):,}\n")
     print("  por plataforma:")

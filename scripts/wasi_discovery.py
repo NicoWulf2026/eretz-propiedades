@@ -37,7 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from connectors.base import (Bloqueado, Descargador, ErrorPermanente,  # noqa: E402
                              ErrorTransitorio, LimitadorDeRitmo)
 from scripts.wasi_fingerprint import (es_ficha, fingerprint,  # noqa: E402
-                                      inventario_declarado)
+                                      id_de_ficha, inventario_declarado)
 
 VERSION = "wasi_discovery_v1"
 
@@ -69,7 +69,7 @@ def _bajar(d: Descargador, url: str) -> str | None:
         return None
 
 
-def analizar(f: dict, lim: LimitadorDeRitmo) -> dict:
+def analizar(f: dict, lim: LimitadorDeRitmo, limite_paginas: int = 60) -> dict:
     url = f.get("domain") or ""
     p = urllib.parse.urlparse(url)
     base = f"{p.scheme or 'https'}://{p.netloc}"
@@ -100,41 +100,121 @@ def analizar(f: dict, lim: LimitadorDeRitmo) -> dict:
 
     # --- se confirmo Wasi: ahora, se le puede leer el inventario? -----------
     decl = inventario_declarado(html)
-    out["declarado_menu"] = decl["total"]
+    out["declared_inventory"] = decl["total"]
     out["declarado_por_operacion"] = decl["por_operacion"]
 
     sm = _bajar(d, base + "/sitemap.xml") or ""
     locs = re.findall(r"<loc>\s*([^<\s]+)\s*</loc>", sm) if "<loc>" in sm else []
-    fichas_sm = [u for u in locs if es_ficha(u)]
+    rutas_sm = {urllib.parse.urlparse(u).path.rstrip("/")
+                for u in locs if es_ficha(u)}
     out["sitemap_locs"] = len(locs)
-    out["sitemap_fichas"] = len(fichas_sm)
+    out["sitemap_inventory"] = len({id_de_ficha(x) for x in rutas_sm} - {None}) or None
     out["sitemap_es_indice"] = "<sitemapindex" in sm
 
-    # Fichas visibles en el HTML servido: respaldo si el sitemap falta o miente.
-    fichas_html = {urllib.parse.urlparse(urllib.parse.urljoin(base, h)).path
+    # Fichas visibles en el HTML servido: dice si el sitio publica algo, aunque
+    # no sirva para enumerar.
+    fichas_html = {urllib.parse.urlparse(urllib.parse.urljoin(base, h)).path.rstrip("/")
                    for h in re.findall(r'href="([^"]{4,200})"', html)}
     fichas_html = {x for x in fichas_html if es_ficha(x)}
-    out["fichas_en_home"] = len(fichas_html)
+    out["fichas_en_home"] = len(fichas_html) or None
 
-    enumerables = max(len(fichas_sm), len(fichas_html))
-    out["enumerables"] = enumerables
-    if decl["total"] and len(fichas_sm):
-        out["cobertura_sitemap"] = round(len(fichas_sm) / decl["total"], 4)
+    # --- respaldo: paginar /search?page=N -----------------------------------
+    # Se pagina cuando el sitemap falta o no alcanza a lo declarado. No se
+    # pagina "por las dudas": son ~1 pedido por cada 12 fichas y el sitemap ya
+    # resolvio la mayoria.
+    rutas_pag: set[str] = set()
+    necesita_paginar = (not rutas_sm or not decl["total"]
+                        or len(rutas_sm) < decl["total"] * 0.98)
+    if necesita_paginar and (rutas_sm or fichas_html):
+        rutas_pag = _paginar(d, base, limite_paginas)
+        out["pagination_inventory"] = len({id_de_ficha(x) for x in rutas_pag} - {None}) or None
 
-    if fichas_sm:
-        out["familia"], out["connector"] = "WASI_SITEMAP", "wasi"
-        out["via_extraccion"] = "sitemap.xml enumera las fichas"
-    elif fichas_html:
-        # El sitemap no sirvio, pero el listado pagina con /search?page=N.
-        out["familia"], out["connector"] = "WASI_LISTADO_HTML", "wasi"
-        out["via_extraccion"] = "paginacion /search?page=N sobre HTML servido"
-    else:
+    # Se cuenta por ID, no por ruta. La misma propiedad se sirve bajo dos
+    # slugs -/apartamento-... y /departamento-...- con el mismo id, asi que
+    # contar rutas inflaba una fuente de 243 a 349 sin que existiera ni una
+    # propiedad de mas.
+    unicas = {id_de_ficha(x) for x in (rutas_sm | rutas_pag)} - {None}
+    out["rutas_distintas"] = len(rutas_sm | rutas_pag)
+    out["ids_con_varias_rutas"] = len(rutas_sm | rutas_pag) - len(unicas)
+    out["enumerated_unique"] = len(unicas) or None
+
+    metodo = ("sitemap+paginacion" if rutas_sm and rutas_pag else
+              "sitemap" if rutas_sm else "paginacion" if rutas_pag else None)
+    out["enumeration_method"] = metodo
+
+    d_tot, e_tot = decl["total"], len(unicas)
+    out["coverage_ratio"] = round(e_tot / d_tot, 4) if d_tot and e_tot else None
+
+    if not e_tot:
+        out["coverage_status"] = "ERROR"
         out["familia"], out["connector"] = "WASI_SIN_INVENTARIO", None
         out["via_extraccion"] = None
         out["motivo_sin_inventario"] = (
-            "es Wasi pero no se vio ninguna ficha: sitio nuevo, vacio o solo "
-            "institucional")
+            "es Wasi pero no se enumero ninguna ficha: sitio nuevo, vacio o "
+            "solo institucional")
+        return out
+
+    # El total del menu es una COTA SUPERIOR, no un objetivo: suma una vez por
+    # cada operacion, asi que una propiedad publicada en venta y en permuta
+    # cuenta dos veces. Verificado en jorgeorellano.com: venta 238 + alquiler
+    # 23 + permuta 2 = 263, exactamente lo que declara el menu, mientras la
+    # union de ids unicos da 261 -las 2 de permuta estan tambien en venta-.
+    # Medir cobertura contra ese total marcaria como incompleta una fuente que
+    # esta entera.
+    ids_sm = {id_de_ficha(x) for x in rutas_sm} - {None}
+    ids_pg = {id_de_ficha(x) for x in rutas_pag} - {None}
+    coinciden = bool(ids_sm) and bool(ids_pg) and ids_sm == ids_pg
+    out["metodos_coinciden"] = coinciden
+    out["declared_floor"] = max(decl["por_operacion"].values(), default=0) or None
+
+    if coinciden:
+        # Dos enumeraciones independientes sobre el mismo conjunto valen mas
+        # que un contador que ya sabemos que infla.
+        out["coverage_status"] = "COMPLETE"
+        out["coverage_evidence"] = ("sitemap y paginacion enumeraron el mismo "
+                                    "conjunto de ids")
+    elif not d_tot:
+        out["coverage_status"] = "NO_DECLARED_COUNT"
+    elif e_tot >= d_tot:
+        out["coverage_status"] = "COMPLETE"
+        out["coverage_evidence"] = "se enumero todo lo declarado"
+    elif out["coverage_ratio"] >= 0.95:
+        out["coverage_status"] = "LIKELY_COMPLETE"
+        out["coverage_evidence"] = (
+            f"faltan {d_tot - e_tot} contra el menu, que sobrecuenta una vez "
+            f"por operacion ({len(decl['por_operacion'])} operaciones)")
+    else:
+        out["coverage_status"] = "ENUMERACION_INCOMPLETA"
+
+    out["familia"] = ("WASI_SITEMAP" if metodo == "sitemap" else
+                      "WASI_LISTADO_HTML" if metodo == "paginacion" else
+                      "WASI_SITEMAP_MAS_PAGINACION")
+    out["connector"] = "wasi"
+    out["via_extraccion"] = metodo
     return out
+
+
+def _paginar(d: Descargador, base: str, limite: int) -> set[str]:
+    """Recorre /search?page=N hasta que deja de traer fichas nuevas.
+
+    Corta por "no aparecio nada nuevo", no por "la pagina vino vacia": Wasi
+    sigue sirviendo la ultima pagina cuando se pide una de mas, y cortar por
+    vacio daria vueltas hasta el limite.
+    """
+    vistos: set[str] = set()
+    for pg in range(1, limite + 1):
+        u = (f"{base}/search?page={pg}&for_sale=1&for_rent=1"
+             f"&for_temporary_rent=1&for_transfer=1&lax_business_type=1")
+        h = _bajar(d, u)
+        if h is None:
+            break
+        rutas = {urllib.parse.urlparse(urllib.parse.urljoin(base, x)).path.rstrip("/")
+                 for x in re.findall(r'href="([^"]{4,200})"', h)}
+        rutas = {x for x in rutas if es_ficha(x)}
+        if not rutas - vistos:
+            break
+        vistos |= rutas
+    return vistos
 
 
 def main() -> int:
@@ -153,6 +233,8 @@ def main() -> int:
     ap.add_argument("--salida", default=r"D:\INMO CAPITAL\WASI_DISCOVERY.jsonl")
     ap.add_argument("--concurrencia", type=int, default=2)
     ap.add_argument("--intervalo", type=float, default=1.5)
+    ap.add_argument("--limite-paginas", type=int, default=60,
+                    help="tope de paginas del respaldo /search?page=N")
     a = ap.parse_args()
 
     filas = leer(Path(a.directorio))
@@ -182,7 +264,8 @@ def main() -> int:
     with Path(a.salida).open("w", encoding="utf-8") as fh:
         for i in range(0, len(objetivo), 10):
             with ThreadPoolExecutor(max_workers=a.concurrencia) as ex:
-                for r in ex.map(lambda f: analizar(f, lim), objetivo[i:i + 10]):
+                for r in ex.map(lambda f: analizar(f, lim, a.limite_paginas),
+                                objetivo[i:i + 10]):
                     fh.write(json.dumps(r, ensure_ascii=False) + "\n")
                     res.append(r)
             fh.flush()
@@ -204,10 +287,18 @@ def main() -> int:
     planes = Counter(r.get("plan") for r in si if r.get("plan"))
     print(f"\n  planes contratados: {dict(planes.most_common(8))}")
     print(f"  builds distintos:   {len({r.get('build') for r in si if r.get('build')})}")
-    enum = sum(r.get("enumerables") or 0 for r in si)
-    print(f"\n  propiedades enumerables: {enum:,}")
-    print(f"  inventario declarado:    "
-          f"{sum(r.get('declarado_menu') or 0 for r in si):,}")
+    print("\n  cobertura por fuente:")
+    for k, v in Counter(r.get("coverage_status") for r in si).most_common():
+        print(f"    {str(k):26} {v:5}")
+    print("\n  metodo de enumeracion:")
+    for k, v in Counter(r.get("enumeration_method") for r in si).most_common():
+        print(f"    {str(k):26} {v:5}")
+    enum = sum(r.get("enumerated_unique") or 0 for r in si)
+    decl = sum(r.get("declared_inventory") or 0 for r in si)
+    print(f"\n  propiedades enumeradas (unicas):  {enum:,}")
+    print(f"  inventario declarado por el menu: {decl:,}")
+    if decl:
+        print(f"  cobertura global:                 {enum / decl * 100:.1f}%")
     print(f"\n  artefacto -> {a.salida}")
     return 0
 
