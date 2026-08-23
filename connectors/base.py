@@ -421,7 +421,12 @@ class Connector:
 
     def identify_deleted_or_inactive(self, fuente: Fuente, vistos_ahora: set[str],
                                      fuente_respondio: bool) -> list[dict[str, Any]]:
-        """Que dejo de estar, y con cuanta confianza."""
+        """Que dejo de estar, y con cuanta confianza.
+
+        `vistos_ahora` son hash_dedup, la misma clave con la que registra el
+        checkpoint: comparar contra ids de la fuente daria falsas ausencias
+        cada vez que dos rutas comparten numero.
+        """
         if self.checkpoint is None:
             return []
         est = self.checkpoint.de(fuente.canonical_agency_id)
@@ -433,7 +438,8 @@ class Connector:
             if fuente_respondio:
                 est.setdefault("ausencias", {})[lid] = \
                     est.get("ausencias", {}).get(lid, 0) + 1
-            salida.append({"source_listing_id": lid,
+            salida.append({"hash_dedup": lid,
+                           "source_listing_id": est.get("ids", {}).get(lid),
                            "estado": clasificar_ausencia(est, lid, fuente_respondio),
                            "ausencias_consecutivas": est.get("ausencias", {}).get(lid, 0)})
         return salida
@@ -445,12 +451,22 @@ class Connector:
         return self.checkpoint.de(fuente.canonical_agency_id)
 
     def registrar(self, fuente: Fuente, prop: PropiedadNormalizada) -> str:
-        """Anota la propiedad y dice si es NUEVA, MODIFICADA o SIN_CAMBIOS."""
+        """Anota la propiedad y dice si es NUEVA, MODIFICADA o SIN_CAMBIOS.
+
+        La clave es `hash_dedup`, no `source_listing_id`. El id de la fuente
+        sirve para rastrear la ficha de origen, pero no siempre es unico: en los
+        sitios propios se deriva de la url y dos rutas distintas pueden dar el
+        mismo numero. Con esa clave el checkpoint pisaba una propiedad con otra
+        y la corrida siguiente las reportaba como modificadas sin que nada
+        hubiera cambiado.
+        """
         if self.checkpoint is None:
             return "NUEVA"
         est = self.checkpoint.de(fuente.canonical_agency_id)
-        previo = est["vistos"].get(prop.source_listing_id)
-        est["vistos"][prop.source_listing_id] = prop.fingerprint
+        clave = prop.hash_dedup
+        previo = est["vistos"].get(clave)
+        est["vistos"][clave] = prop.fingerprint
+        est.setdefault("ids", {})[clave] = prop.source_listing_id
         if previo is None:
             return "NUEVA"
         return "SIN_CAMBIOS" if previo == prop.fingerprint else "MODIFICADA"

@@ -1104,3 +1104,39 @@ def test_century21_pagina_con_el_termino_del_idioma():
     """En la version en ingles la paginacion es /page_N, no /pagina_N."""
     src = (ROOT / "connectors" / "century21.py").read_text(encoding="utf-8")
     assert '"page" if "/results/" in ruta else "pagina"' in src
+
+
+# --------------------------------------------- identidad del checkpoint
+def test_el_checkpoint_se_lleva_por_hash_no_por_id_de_la_fuente(tmp_path):
+    """El id de la fuente sirve para rastrear la ficha, pero no siempre es
+    unico: en los sitios propios se deriva de la url y dos rutas distintas
+    pueden dar el mismo numero. Con esa clave el checkpoint pisaba una propiedad
+    con otra y la corrida siguiente las reportaba modificadas sin motivo."""
+    cp = B.Checkpoint(tmp_path / "cp.json")
+    c = conector(cp=cp)
+    f = fuente()
+    a = B.PropiedadNormalizada(canonical_agency_id="ag-1", source_listing_id="1795",
+                               source_url="https://alfa.com.ar/p/palermo-1795",
+                               connector="generico", inmobiliaria_id=7, precio=100)
+    b = B.PropiedadNormalizada(canonical_agency_id="ag-1", source_listing_id="1795",
+                               source_url="https://alfa.com.ar/p/villa-mitre-1795",
+                               connector="generico", inmobiliaria_id=7, precio=200)
+    assert a.source_listing_id == b.source_listing_id
+    assert a.hash_dedup != b.hash_dedup
+    assert c.registrar(f, a) == "NUEVA"
+    assert c.registrar(f, b) == "NUEVA"      # dos propiedades, no una modificada
+    assert c.registrar(f, a) == "SIN_CAMBIOS"
+
+
+def test_las_ausencias_se_comparan_con_la_misma_clave(tmp_path):
+    cp = B.Checkpoint(tmp_path / "cp.json")
+    c = conector(cp=cp)
+    f = fuente()
+    p = B.PropiedadNormalizada(canonical_agency_id="ag-1", source_listing_id="1",
+                               source_url="https://alfa.com.ar/p/1",
+                               connector="t", inmobiliaria_id=7)
+    c.registrar(f, p)
+    assert c.identify_deleted_or_inactive(f, {p.hash_dedup}, True) == []
+    r = c.identify_deleted_or_inactive(f, set(), True)
+    assert r and r[0]["hash_dedup"] == p.hash_dedup
+    assert r[0]["source_listing_id"] == "1"

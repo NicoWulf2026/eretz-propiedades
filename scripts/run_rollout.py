@@ -36,7 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from connectors.base import (Bloqueado, Checkpoint, Descargador,  # noqa: E402
                              ErrorPermanente, ErrorTransitorio, Fuente,
-                             LimitadorDeRitmo)
+                             LimitadorDeRitmo, calcular_hash_dedup)
 from connectors.tokko import TokkoConnector  # noqa: E402
 from connectors.wordpress import WordPressConnector  # noqa: E402
 from connectors.century21 import Century21Connector  # noqa: E402
@@ -237,8 +237,13 @@ def procesar(con, fuente: Fuente, max_fichas: int, observacion: bool) -> dict:
     # Una fuente que respondio mal no puede dar por ausente a nada.
     confiable = r["enumeracion_completa"] and r["estado_ok"] if "estado_ok" in r else \
         r["enumeracion_completa"]
+    # Las claves son hash_dedup, calculadas de la url enumerada: se conocen sin
+    # bajar la ficha, asi que la deteccion de ausencias funciona aunque solo se
+    # normalice una muestra.
+    vistos = {calcular_hash_dedup(fuente.inmobiliaria_id, a["source_url"])
+              for a in avisos}
     ausentes = con.identify_deleted_or_inactive(
-        fuente, set(ids), fuente_respondio=bool(confiable))
+        fuente, vistos, fuente_respondio=bool(confiable))
     if observacion:
         for x in ausentes:
             x["estado"] = "POTENTIAL_INACTIVE"
