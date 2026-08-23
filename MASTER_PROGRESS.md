@@ -114,10 +114,41 @@ Todo en modo observacion: las ausencias se anotan, nada se desactiva.
 
 ## Herramientas
 
-- `scripts/run_rollout.py` — runner paralelo, agnostico de plataforma
-- `scripts/quality_audit.py` — separa cobertura de coherencia
-- `scripts/mission_report.py` — informe consolidado A-H
-- `scripts/ingest_to_pipeline.py` — carga a propiedades_raw, dry run por defecto
+| Script | Para que |
+|---|---|
+| `scripts/run_rollout.py` | runner paralelo, agnostico de plataforma |
+| `scripts/classify_unsupported.py` | censo de fuentes que ningun connector leyo |
+| `scripts/write_eligibility.py` | compuerta antes de la base + manifiesto pendientes |
+| `scripts/property_write_canary.py` | 13 validaciones antes de escribir |
+| `scripts/ingest_to_pipeline.py` | carga a propiedades_raw, dry run por defecto |
+| `scripts/quality_audit.py` | cobertura vs coherencia |
+| `scripts/mission_report.py` | informe consolidado |
+
+## Comandos exactos de reanudacion
+
+Todos son **reanudables**: releen el artefacto y saltan lo ya procesado. Nunca
+empiezan de cero.
+
+```bash
+cd "D:/INMO CAPITAL/eretz-agency"
+
+# Tokko completo (913 fuentes)
+python scripts/run_rollout.py --salida "D:/INMO CAPITAL/TOKKO_ROLLOUT_FULL"   --max-fichas 0 --concurrencia 8 --corrida 1
+
+# WordPress completo (336)
+python scripts/run_rollout.py --salida "D:/INMO CAPITAL/WP_ROLLOUT_FULL"   --connector wordpress --plataforma WORDPRESS --variantes ""   --max-fichas 0 --concurrencia 4 --corrida 1
+
+# Rescate de las no soportadas, por connector
+python scripts/run_rollout.py --salida "D:/INMO CAPITAL/RESCATE_wordpress"   --connector wordpress --censo "D:/INMO CAPITAL/UNSUPPORTED_CENSUS.jsonl"   --respaldo generico --max-fichas 0 --concurrencia 3 --corrida 1
+
+# Segunda corrida (idempotencia): mismo comando con --corrida 2
+
+# Compuerta antes de escribir
+python scripts/write_eligibility.py --entradas <properties_run1.jsonl ...>
+
+# Canary de escritura (valida y hace ROLLBACK; --escribir para confirmar)
+python scripts/property_write_canary.py --entrada "D:/INMO CAPITAL/DB_WRITE_ELIGIBLE.jsonl" --limite 50
+```
 
 ## Regla aprendida
 
