@@ -1,14 +1,3 @@
-def test_el_desempate_usa_evidencia_no_azar():
-    """La copia que sobrevive es la de la agencia que la ficha identifica como
-    publicante. La regla anterior conservaba la de mayor inventario, que le da
-    el aviso a la agencia mas grande sin mirar de quien es."""
-    gate = (ROOT / "scripts" / "write_eligibility.py").read_text(encoding="utf-8")
-    assert "aporte = Counter(" not in gate
-    resolver = (ROOT / "scripts" / "resolve_cross_agency.py").read_text(encoding="utf-8")
-    assert "def dueno_por_ficha" in resolver
-    assert "CLEAR_OWNER" in resolver
-
-
 # -*- coding: utf-8 -*-
 """Tests de la arquitectura de connectors y del connector Tokko.
 
@@ -1304,11 +1293,14 @@ def test_la_misma_url_bajo_dos_agencias_no_entra_dos_veces():
 
 
 def test_el_desempate_usa_evidencia_no_azar():
-    """Se conserva la copia de la agencia que mas inventario aporta en ese
-    dominio, que es la que mejor evidencia tiene de ser la duena."""
-    src = (ROOT / "scripts" / "write_eligibility.py").read_text(encoding="utf-8")
-    assert "aporte = Counter(" in src
-    assert "-aporte[q.get(" in src
+    """La copia que sobrevive es la de la agencia que la ficha identifica como
+    publicante. La regla anterior conservaba la de mayor inventario, que le da
+    el aviso a la agencia mas grande sin mirar de quien es."""
+    gate = (ROOT / "scripts" / "write_eligibility.py").read_text(encoding="utf-8")
+    assert "aporte = Counter(" not in gate
+    resolver = (ROOT / "scripts" / "resolve_cross_agency.py").read_text(encoding="utf-8")
+    assert "def dueno_por_ficha" in resolver
+    assert "CLEAR_OWNER" in resolver
 
 
 # ------------------------------------------- resolucion de agencias pendientes
