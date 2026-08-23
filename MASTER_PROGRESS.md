@@ -233,6 +233,36 @@ sitios no confirmados: **0 Wasi nuevos**, 40 sin respuesta.
 - Century 21: 40 oficinas, con soporte bilingue (`C21_CANARY`)
 - Generico: canary de 40 fuentes (`GENERICO_CANARY`)
 
+## Tres dominios los reclaman dos o tres agencias, y se enumeran igual
+
+En el censo del residual, `comunidadinmobiliaria.com.ar` figura con 3 agencias,
+`alquenia.com` con 3 y `bustamantepropiedades.com` con 2. Eso hace que el mismo
+sitio se baje varias veces: **4.595 fichas de trabajo duplicado**, y como los
+dos workers caen sobre el mismo host se serializan por la cortesia de 1,5 s, lo
+que vuelve esas fuentes muy lentas.
+
+Se podria deduplicar el censo por dominio y ahorrar esas horas. **No se hace**:
+sacar una agencia del censo le borra el claim, y la regla del proyecto es que
+ningun claim se destruye. La adjudicacion es de `resolve_cross_agency.py`, que
+decide con la evidencia de cada aviso. Se paga la red para no perder evidencia.
+
+## Tokko no devuelve 404 cuando saca una ficha: sirve la home
+
+Auditada la primera ausencia de la corrida 3 (`8084887`, Clerissi). La fuente
+respondio OK, enumero 38/38 con cobertura 1,0, y falta exactamente esa. Pero al
+pedir su url la ficha **responde 200 con 74 KB**: es la home institucional de la
+inmobiliaria -sin fotos de la propiedad, sin el codigo, titulo generico-.
+
+Consecuencia operativa: **la unica senal fiable de baja es la enumeracion del
+listado**. Cualquier logica que confirme "sigue viva" pidiendo la ficha daria
+siempre que si, y no se detectaria ninguna baja. Tambien significa que si una
+url retirada llegara a enumerarse -por un sitemap viejo, por ejemplo- el parser
+produciria una propiedad con el nombre de la inmobiliaria por titulo y sin
+precio.
+
+La regla actual ya hace lo correcto: la ausencia se juzga por el listado, hacen
+falta 3 corridas consecutivas y nada se desactiva.
+
 ## Tests
 
 | Estado | Cantidad | Que son |
