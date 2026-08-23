@@ -44,6 +44,15 @@ RE_FICHA = re.compile(
     r"propert(?:y|ies)|listing[s]?|aviso[s]?|venta|alquiler)/"
     r"(?:[^/?#]*?(?:\d{3,}|[a-z0-9]+(?:-[a-z0-9]+){2,}))/?$", re.I)
 
+# Muchos frontends propios cuelgan la ficha de la RAIZ, sin seccion:
+# /8471-venta-casa-3-ambientes-en-adrogue. Ni el patron de Tokko ni el de arriba
+# la ven. Para que un id suelto en la raiz no arrastre cualquier pagina, se
+# exige que el slug diga de que se trata.
+RE_FICHA_RAIZ = re.compile(
+    r"^/(\d{3,})-[a-z0-9-]*(venta|alquiler|casa|departamento|depto|terreno|"
+    r"lote|ph|local|oficina|galpon|campo|cochera|quinta|duplex|chalet)"
+    r"[a-z0-9-]*/?$", re.I)
+
 RE_LOC = re.compile(r"<loc>\s*([^<\s]+)\s*</loc>", re.I)
 RE_LD = re.compile(r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>', re.S | re.I)
 RE_IMG = re.compile(r'https?://[^\s"\'<>]+?\.(?:jpe?g|png|webp)', re.I)
@@ -95,7 +104,9 @@ class GenericoConnector(Connector):
             if "<" not in cuerpo:
                 continue
             locs = RE_LOC.findall(cuerpo)
-            fichas += [u for u in locs if RE_FICHA.search(u)]
+            fichas += [u for u in locs
+                       if RE_FICHA.search(u)
+                       or RE_FICHA_RAIZ.search(urllib.parse.urlparse(u).path)]
             indices += [u for u in locs if u.lower().endswith((".xml", ".xml.gz"))]
             if fichas or indices:
                 break
@@ -144,7 +155,8 @@ class GenericoConnector(Connector):
             u = urllib.parse.urljoin(base, m.group(1))
             if urllib.parse.urlparse(u).netloc.lower().replace("www.", "") != host:
                 continue
-            if not RE_FICHA.search(u):
+            ruta = urllib.parse.urlparse(u).path
+            if not (RE_FICHA.search(u) or RE_FICHA_RAIZ.search(ruta)):
                 continue
             c = u.split("#")[0].rstrip("/")
             if c not in vistas:

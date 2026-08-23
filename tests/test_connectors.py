@@ -1226,3 +1226,22 @@ def test_sin_eretz_id_la_propiedad_no_llega_a_la_base():
     assert "AGENCY_ID_PENDING" in src
     assert "eretz_id" in src
     assert "calcular_hash_dedup(real" in src
+
+
+def test_generico_reconoce_la_ficha_colgada_de_la_raiz():
+    """Muchos frontends propios no usan seccion: /8471-venta-casa-3-ambientes-
+    en-adrogue. Ni el patron de Tokko ni el de seccion la ven, y la fuente
+    quedaba en cero declarando 583 propiedades."""
+    from connectors.generico import RE_FICHA_RAIZ
+    assert RE_FICHA_RAIZ.search("/8471-venta-casa-3-ambientes-en-adrogue")
+    assert RE_FICHA_RAIZ.search("/12345-alquiler-departamento-2-ambientes")
+    assert RE_FICHA_RAIZ.search("/9911-venta-terreno-en-saint-thomas")
+
+
+def test_un_numero_suelto_en_la_raiz_no_es_una_ficha():
+    """Sin exigir que el slug diga de que se trata, cualquier ruta con un id
+    entraria al inventario."""
+    from connectors.generico import RE_FICHA_RAIZ
+    assert not RE_FICHA_RAIZ.search("/12345-nuestra-empresa")
+    assert not RE_FICHA_RAIZ.search("/2026-balance-anual")
+    assert not RE_FICHA_RAIZ.search("/venta-casa-adrogue")
