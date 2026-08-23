@@ -91,19 +91,33 @@ Ambos reconcilian. 0 duplicados intra-fuente, 0 hash compartido entre agencias,
 0 fotos ajenas, 0 errores. El barrido multiple llevo las fuentes con enumeracion
 incompleta de 3 a 0 y recupero +1.589 propiedades sobre las mismas 100 fuentes.
 
+## Connectors (4 construidos)
+
+| Connector | Cubre | Validacion | Costo por propiedad |
+|---|---|---|---|
+| `tokko` | 920 fuentes | idempotencia 2.048→2.048 SIN_CAMBIOS | 1 pedido por ficha |
+| `wordpress` | 336 fuentes | idempotencia 120→120 SIN_CAMBIOS | REST + ficha |
+| `century21` | 40 oficinas | idempotencia 3.039→3.039 SIN_CAMBIOS | **0 pedidos por ficha** |
+| `generico` | sitios propios (826 UNKNOWN) | canary en curso | 1 pedido por ficha |
+
+`century21` es el mas barato con diferencia: el JSON del listado trae todos los
+campos, asi que corre a ~100.000 propiedades/hora contra ~9.500 de Tokko.
+
 ## Corriendo
 
-- **Tokko full rollout**: 913 fuentes, todas las fichas, modo observacion.
-  Artefactos en `TOKKO_ROLLOUT_FULL`. Log `rollout_full_run1.log`.
+- Tokko full rollout: 913 fuentes, todas las fichas (`TOKKO_ROLLOUT_FULL`)
+- WordPress full rollout: 336 fuentes (`WP_ROLLOUT_FULL`)
+- Century 21: 40 oficinas, con soporte bilingue (`C21_CANARY`)
+- Generico: canary de 40 fuentes (`GENERICO_CANARY`)
 
-## Próximo paso
+Todo en modo observacion: las ausencias se anotan, nada se desactiva.
 
-1. Cerrar rollout completo Tokko y reconciliar.
-2. Segunda corrida del completo para incremental a escala.
-3. Rollout WordPress.
-4. Variantes `TOKKO_FRONTEND_PROPIO` e Inmovar.
-5. Century 21: listado por oficina en `/v/resultados/oficina_<id>-<slug>_local`,
-   renderizado en cliente; falta el endpoint XHR.
+## Herramientas
+
+- `scripts/run_rollout.py` — runner paralelo, agnostico de plataforma
+- `scripts/quality_audit.py` — separa cobertura de coherencia
+- `scripts/mission_report.py` — informe consolidado A-H
+- `scripts/ingest_to_pipeline.py` — carga a propiedades_raw, dry run por defecto
 
 ## Regla aprendida
 
