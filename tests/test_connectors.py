@@ -1,3 +1,14 @@
+def test_el_desempate_usa_evidencia_no_azar():
+    """La copia que sobrevive es la de la agencia que la ficha identifica como
+    publicante. La regla anterior conservaba la de mayor inventario, que le da
+    el aviso a la agencia mas grande sin mirar de quien es."""
+    gate = (ROOT / "scripts" / "write_eligibility.py").read_text(encoding="utf-8")
+    assert "aporte = Counter(" not in gate
+    resolver = (ROOT / "scripts" / "resolve_cross_agency.py").read_text(encoding="utf-8")
+    assert "def dueno_por_ficha" in resolver
+    assert "CLEAR_OWNER" in resolver
+
+
 # -*- coding: utf-8 -*-
 """Tests de la arquitectura de connectors y del connector Tokko.
 
@@ -1286,10 +1297,10 @@ def test_la_misma_url_bajo_dos_agencias_no_entra_dos_veces():
     duenos distintos. El indice unico no las ve porque los hashes difieren."""
     src = (ROOT / "scripts" / "write_eligibility.py").read_text(encoding="utf-8")
     assert "CROSS_AGENCY_DUPLICATE" in src
-    bloque = src[src.index("por_url = defaultdict"):src.index("elegibles = conservadas")]
-    assert "canonical_agency_id" in bloque and "grupo[0]" in bloque
+    bloque = src[src.index("cruzadas, conservadas"):src.index("elegibles = conservadas")]
+    assert "canonical_agency_id" in bloque
     # No se fusiona: la copia descartada queda documentada, no borrada.
-    assert "conservada_para" in src and "url_en_disputa" in src
+    assert "adjudicada_a" in src and "url_en_disputa" in src
 
 
 def test_el_desempate_usa_evidencia_no_azar():
