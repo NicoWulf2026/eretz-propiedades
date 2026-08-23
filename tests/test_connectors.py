@@ -1526,6 +1526,25 @@ def test_un_dominio_propio_sigue_siendo_web_oficial():
         assert clasificar(url)[0] == "OFFICIAL_WEB", url
 
 
+def test_regenerar_el_directorio_no_borra_la_reclasificacion():
+    """El directorio se reconstruye fila por fila desde cero. Si la
+    clasificacion de la url no se recalcula ahi, la regeneracion siguiente la
+    pierde en silencio y "agencias con web propia" vuelve de 2.259 a 2.596,
+    contando paginas de terceros como cobertura."""
+    import importlib.util
+    ruta = ROOT / "scripts" / "build_platform_directory.py"
+    spec = importlib.util.spec_from_file_location("build_platform_directory", ruta)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    assert hasattr(mod, "clasificar_web")
+    assert mod.clasificar_web("https://www.todoprops.com/x")[0] == \
+        "EXTERNAL_PORTAL_PROFILE"
+    assert mod.clasificar_web("https://bartuccipropiedades.com")[0] == "OFFICIAL_WEB"
+    # Y la fila que arma tiene que llevar el campo, no solo saber calcularlo.
+    assert '"web_kind": tipo_web' in ruta.read_text(encoding="utf-8")
+
+
 def test_la_reclasificacion_conserva_la_evidencia():
     """No se borran: son evidencia de que la inmobiliaria existe y opera, y
     sirven para buscar su sitio propio mas adelante."""

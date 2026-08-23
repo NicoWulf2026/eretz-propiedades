@@ -19,11 +19,42 @@ pagas y no descarga propiedades.
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
+import sys
+from pathlib import Path
 from typing import Iterable
 
-DETECTOR_VERSION = "platform_detector_v1"
+DETECTOR_VERSION = "platform_detector_v2"
+
+
+def _cargar_fingerprint_wasi():
+    """El fingerprint de Wasi vive aparte porque combina senales, no es un regex.
+
+    Se carga defensivamente: a este modulo lo cargan por ruta varios scripts,
+    sin la raiz del repo en sys.path, y una falla de import aca dejaria sin
+    clasificar el universo entero y no solo Wasi.
+    """
+    try:
+        from scripts.wasi_fingerprint import fingerprint
+        return fingerprint
+    except ImportError:
+        pass
+    ruta = Path(__file__).resolve().parent / "wasi_fingerprint.py"
+    if not ruta.exists():
+        return None
+    try:
+        spec = importlib.util.spec_from_file_location("wasi_fingerprint", ruta)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules.setdefault("wasi_fingerprint", mod)
+        spec.loader.exec_module(mod)
+        return mod.fingerprint
+    except Exception:
+        return None
+
+
+_fingerprint_wasi = _cargar_fingerprint_wasi()
 
 # Estrategias, de mas barata a mas cara.
 API_DIRECT = "API_DIRECT"
@@ -45,7 +76,10 @@ PLATAFORMAS_INMO = {
     "SIINCO": (r"siinco\.com|siincoweb", CUSTOM_CONNECTOR),
     "INMOUP": (r"inmoup\.com\.ar", API_DIRECT),
     "REDINMOBILIARIA": (r"redinmobiliaria\.com", CUSTOM_CONNECTOR),
-    "WASI": (r"wasi\.co|wasiapp", API_DIRECT),
+    # WASI no esta aca: se resuelve con `_fingerprint_wasi`, que combina
+    # senales. El regex `wasi\.co|wasiapp` tomaba por cliente a cualquier
+    # pagina que apenas enlazara la plataforma, y se le escapaba cualquier
+    # sitio que borrara la marca -que es justo lo que hace un white-label-.
     "EASYBROKER": (r"easybroker\.com", API_DIRECT),
     "PROPPIT": (r"proppit\.com", CUSTOM_CONNECTOR),
     "INMOBIQ": (r"inmobiq\.com", CUSTOM_CONNECTOR),
@@ -97,10 +131,23 @@ def detectar_plataforma(sitio: dict) -> tuple[str | None, str | None, float]:
     Las plataformas inmobiliarias se buscan ANTES que los CMS genericos: un
     Tokko montado sobre WordPress se scrapea por Tokko, no por WordPress, y
     detectar el CMS primero mandaria al conector equivocado.
+
+    Wasi va primero de todo, y por la misma razon llevada un paso mas: su
+    white-label corre sobre Laravel, asi que el detector generico lo etiqueta
+    LARAVEL -que es el framework de abajo, no la forma en que publica- y lo
+    manda a parsear HTML a ciegas teniendo un sitemap completo al lado.
     """
     blob = _texto(sitio)
     if not blob.strip():
         return None, None, 0.0
+
+    if _fingerprint_wasi is not None:
+        fp = _fingerprint_wasi(blob, sitio.get("url") or "")
+        if fp["es_wasi"]:
+            # SITEMAP y no API_DIRECT: Wasi tiene API, pero pide id_company y
+            # wasi_token, que el sitio publico no expone. Prometer una API que
+            # despues pide credenciales manda al connector a una puerta cerrada.
+            return "WASI", SITEMAP, 0.95 if fp["confianza"] == "alta" else 0.8
 
     for nombre, (patron, estrategia) in PLATAFORMAS_INMO.items():
         if re.search(patron, blob, re.I):

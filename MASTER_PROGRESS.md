@@ -91,6 +91,31 @@ Ambos reconcilian. 0 duplicados intra-fuente, 0 hash compartido entre agencias,
 0 fotos ajenas, 0 errores. El barrido multiple llevo las fuentes con enumeracion
 incompleta de 3 a 0 y recupero +1.589 propiedades sobre las mismas 100 fuentes.
 
+### La corrida 2 de Tokko NO es la prueba de idempotencia
+
+Termino 913/913 con 91.715 propiedades y reconcilia, pero informa
+`NUEVA: 91.715` y `potential_inactive: 91.367`. Ninguno de los dos numeros
+significa lo que parece: **arranco 08-23 04:01 y el fix del formato de
+checkpoint entro 08-23 07:44**, casi cuatro horas despues. Corrio sin el.
+
+Se ve en el propio artefacto: `TOKKO_ROLLOUT_FULL/checkpoint.json` tiene 807
+fuentes, ninguna con `esquema` ni `linea_base`, y sus `vistos` mezclan claves
+numericas -de la corrida 1, formato viejo- con hashes de 32 -de la corrida 2-.
+Al comparar hash contra id numerico nada coincide: todo figura NUEVA y todo el
+inventario anterior figura ausente.
+
+Los datos extraidos si sirven. Lo que no existe todavia es la prueba de
+idempotencia de Tokko a escala completa. Para tenerla hay dos caminos:
+
+- correr una 3 y una 4 (la 3 resetea a linea base, la 4 compara): dos corridas
+  de ~7 h;
+- o migrar el checkpoint una sola vez -tirar las claves numericas y las
+  `ausencias` viejas, sellar `esquema: 2`- y que la corrida 3 sea la prueba.
+
+La migracion no esta hecha ni escrita: toca estado vivo y la decision es del
+usuario. **No usar el `NUEVA: 91.715` de la corrida 2 como si fuera un
+hallazgo.**
+
 ## Connectors (4 construidos)
 
 | Connector | Cubre | Validacion | Costo por propiedad |
@@ -103,10 +128,55 @@ incompleta de 3 a 0 y recupero +1.589 propiedades sobre las mismas 100 fuentes.
 `century21` es el mas barato con diferencia: el JSON del listado trae todos los
 campos, asi que corre a ~100.000 propiedades/hora contra ~9.500 de Tokko.
 
+## Wasi — detectado y medido, connector NO construido
+
+`scripts/wasi_fingerprint.py` (modulo puro, sin red) + `scripts/wasi_discovery.py`.
+
+La deteccion **no puede mirar el hostname**: Wasi es white-label y la
+inmobiliaria pone su dominio y su marca. Se combinan senales por peso: una
+FUERTE confirma, dos MEDIAS confirman, las DEBILES nunca alcanzan solas.
+
+| Fuerte | Por que |
+|---|---|
+| `meta name=author` = Wasi.co | lo firma la plataforma |
+| `meta name=Designer` = wasi.co | idem |
+| `images.wasi.co/(inmuebles\|empresas)/` | CDN de fotos, con su ruta |
+| `image.wasi.co/eyJ...` | manipulador de imagenes |
+| **`bundle_white_label`** | `/js/v1/<plan>/global.min.js?v<build>` + un hermano con **el mismo build**. No dice "wasi" en ninguna parte: es la que sobrevive a que borren la marca |
+
+Validacion: **39/39** positivos, las cinco senales fuertes en los 39.
+**0 falsos positivos** en el control negativo, y ahi no disparo ninguna senal
+fuerte ni media -solo debiles-, asi que ningun sitio quedo a una senal del
+error.
+
+Las 36 fuentes LARAVEL **no** son Wasi (0/36), aunque el white-label de Wasi
+corra sobre Laravel: framework de abajo != forma de publicar.
+
+Via de extraccion, en el orden de costo del proyecto:
+
+1. API/JSON — **no**: `api.wasi.co` pide `id_company` + `wasi_token`, que el
+   sitio publico no expone. Por eso la estrategia es `SITEMAP` y no
+   `API_DIRECT`, que era lo que decia el detector viejo.
+2. endpoint interno — no: el front es Laravel server-side.
+3. JSON embebido — JSON-LD por ficha, pero **incompleto**: no trae precio,
+   operacion ni superficie, y su `floorSize` es la cantidad de PLANTAS. Leerlo
+   como superficie registraria "2 m2" para un duplex de 84.
+4. **HTML servido — si**: `/sitemap.xml` enumera las fichas y la ficha trae una
+   tabla etiquetada (Area Construida, Dormitorios, Banos, Tipo de negocio...).
+   Verificado: sitemap 171 = paginacion exhaustiva 171 en el mismo sitio.
+5. navegador — no hace falta.
+
+Rutas: ficha `/<slug>/<id>` (el id es el "Codigo" que la ficha muestra, no hay
+que fabricar identificador), listado `/s/<tipo>/<operacion>`, paginacion
+`/search?...&page=N`.
+
 ## Corriendo
 
-- Tokko full rollout: 913 fuentes, todas las fichas (`TOKKO_ROLLOUT_FULL`)
-- WordPress full rollout: 336 fuentes (`WP_ROLLOUT_FULL`)
+- Tokko corrida 2: **TERMINADA** 913/913, 91.715 propiedades (ver arriba: no
+  vale como prueba de idempotencia)
+- WordPress corrida 3: en curso (`WP_ROLLOUT_FULL`) — esta si arranco con el
+  fix del checkpoint, asi que es la comparacion valida
+- Rescate Next.js: **TERMINADO** 27/27, 1.614 propiedades (`RESCATE_nextjs`)
 - Century 21: 40 oficinas, con soporte bilingue (`C21_CANARY`)
 - Generico: canary de 40 fuentes (`GENERICO_CANARY`)
 
@@ -123,6 +193,8 @@ Todo en modo observacion: las ausencias se anotan, nada se desactiva.
 | `scripts/ingest_to_pipeline.py` | carga a propiedades_raw, dry run por defecto |
 | `scripts/quality_audit.py` | cobertura vs coherencia |
 | `scripts/mission_report.py` | informe consolidado |
+| `scripts/wasi_fingerprint.py` | senales de Wasi por peso; modulo puro, testeable |
+| `scripts/wasi_discovery.py` | aplica el fingerprint al universo y mide extraccion |
 
 ## Comandos exactos de reanudacion
 
@@ -142,6 +214,10 @@ python scripts/run_rollout.py --salida "D:/INMO CAPITAL/WP_ROLLOUT_FULL"   --con
 python scripts/run_rollout.py --salida "D:/INMO CAPITAL/RESCATE_wordpress"   --connector wordpress --censo "D:/INMO CAPITAL/UNSUPPORTED_CENSUS.jsonl"   --respaldo generico --max-fichas 0 --concurrencia 3 --corrida 1
 
 # Segunda corrida (idempotencia): mismo comando con --corrida 2
+
+# Fingerprint de Wasi: las ya marcadas, o todo el universo sin confirmar
+python scripts/wasi_discovery.py --plataforma WASI --salida "D:/INMO CAPITAL/WASI_DISCOVERY.jsonl" --concurrencia 2
+python scripts/wasi_discovery.py --plataforma TODAS --solo-no-confirmadas --salida "D:/INMO CAPITAL/WASI_SWEEP.jsonl" --concurrencia 2
 
 # Compuerta antes de escribir
 python scripts/write_eligibility.py --entradas <properties_run1.jsonl ...>

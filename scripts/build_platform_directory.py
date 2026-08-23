@@ -26,7 +26,16 @@ import time
 from collections import Counter, defaultdict
 from pathlib import Path
 
-VERSION = "platform_directory_v1"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+VERSION = "platform_directory_v2"
+
+# La clasificacion de la url -web propia, oficina de una red, perfil en un
+# portal ajeno- se recalcula aca. No se hereda del archivo anterior: este script
+# reconstruye cada fila desde cero, asi que sin recalcularla la regeneracion
+# siguiente borraba en silencio las 337 reclasificaciones y "agencias con web
+# propia" volvia de 2.259 a 2.596, contando paginas de terceros como cobertura.
+from scripts.reclassify_portal_profiles import clasificar as clasificar_web  # noqa: E402
 
 ROLLOUTS = [
     ("TOKKO_ROLLOUT_FULL", "tokko"),
@@ -72,6 +81,8 @@ def main() -> int:
             for m in leer(dd / "scrape_source_technology_map.jsonl")}
     censo = {c["canonical_agency_id"]: c
              for c in leer(raiz / "UNSUPPORTED_CENSUS.jsonl")}
+    wasi = {w["canonical_agency_id"]: w
+            for w in leer(raiz / "WASI_DISCOVERY.jsonl") if w.get("es_wasi")}
 
     # Resultado real por fuente, con el connector que lo consiguio.
     resultado: dict[str, dict] = {}
@@ -118,7 +129,17 @@ def main() -> int:
         declarado = r.get("total_declarado") or c.get("declared_inventory")
 
         # --- plataforma, por evidencia mas fuerte primero -------------------
-        if enumeradas and r.get("connector"):
+        w = wasi.get(cid) or {}
+        if w.get("es_wasi"):
+            # El fingerprint de Wasi pide el HTML servido y combina senales:
+            # es evidencia mas fuerte que los marcadores del mapa, que a estos
+            # sitios los etiquetaba LARAVEL -el framework de abajo- o UNKNOWN.
+            plataforma = "WASI"
+            variante = w.get("familia")
+            confianza = "alta" if w.get("confianza") == "alta" else "media"
+            evidencia = w.get("motivo") or "fingerprint de Wasi"
+            declarado = declarado or w.get("declarado_menu")
+        elif enumeradas and r.get("connector"):
             plataforma = {"tokko": "TOKKO", "wordpress": "WORDPRESS",
                           "century21": "CENTURY21", "generico": "SITIO_PROPIO"
                           }.get(r["connector"], r["connector"].upper())
@@ -138,7 +159,13 @@ def main() -> int:
 
         # --- estado del connector -------------------------------------------
         estado = r.get("estado")
-        if estado == "OK" and enumeradas:
+        if w.get("es_wasi"):
+            # Detectada y con via de extraccion probada, pero todavia sin
+            # connector escrito: no se cuenta como soportada.
+            cs = ("DETECTED_NOT_BUILT" if w.get("connector")
+                  else "NO_INVENTORY" if w.get("familia") == "WASI_SIN_INVENTARIO"
+                  else "UNKNOWN")
+        elif estado == "OK" and enumeradas:
             cs = "SUPPORTED_STANDARD" if variante in (
                 "TFW_ESTANDAR", "WORDPRESS_REST", "C21_JSON") else "SUPPORTED_CUSTOM"
         elif estado == "ENUMERACION_INCOMPLETA":
@@ -155,6 +182,7 @@ def main() -> int:
             cs = "UNKNOWN"
 
         eid = d.get("eretz_id")
+        tipo_web, motivo_web = clasificar_web(dominio)
         filas.append({
             "canonical_agency_id": cid,
             "eretz_id": int(eid) if str(eid).isdigit() else None,
@@ -162,6 +190,10 @@ def main() -> int:
             "domain": dominio,
             "host": host(dominio),
             "province": d.get("province"),
+            # Que ES esa url. Es una pregunta distinta de que tecnologia usa: un
+            # dominio propio corriendo sobre Wasi sigue siendo web oficial.
+            "web_kind": tipo_web,
+            "web_kind_reason": motivo_web or None,
             "platform": plataforma,
             "variant": variante,
             "confidence": confianza,
