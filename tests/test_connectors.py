@@ -1413,8 +1413,11 @@ def test_el_directorio_fusiona_todas_las_corridas():
     todavia no proceso: con la segunda en curso, 511 fuentes Tokko ya
     terminadas figuraban como no intentadas."""
     src = (ROOT / "scripts" / "build_platform_directory.py").read_text(encoding="utf-8")
-    bloque = src[src.index("inv = []"):src.index("filas = []")]
-    assert 'for corrida in ("1", "2")' in bloque
+    bloque = src[src.index("corridas = sorted"):src.index("filas = []")]
+    # Se recorren todas las corridas, y la que gana es la que trajo inventario,
+    # no la ultima.
+    assert "for corrida in corridas" in bloque
+    assert 'previo.get("enumeradas", 0) >= (r.get("enumeradas") or 0)' in bloque
 
 
 def test_las_propiedades_no_se_cuentan_dos_veces():
@@ -1524,6 +1527,15 @@ def test_un_dominio_propio_sigue_siendo_web_oficial():
     from scripts.reclassify_portal_profiles import clasificar
     for url in ("https://www.aagaard.com.ar/", "https://abppropiedades.com.ar"):
         assert clasificar(url)[0] == "OFFICIAL_WEB", url
+
+
+def test_el_directorio_descubre_las_corridas_en_vez_de_listarlas():
+    """Estaba fijo en ("1","2"): apenas aparecio una corrida 3 el directorio
+    dejo de verla en silencio, que es exactamente el error que su propio
+    comentario dice evitar."""
+    src = (ROOT / "scripts" / "build_platform_directory.py").read_text(encoding="utf-8")
+    assert 'for corrida in ("1", "2")' not in src
+    assert 'base.glob("source_inventory_run*.jsonl")' in src
 
 
 def test_regenerar_el_directorio_no_borra_la_reclasificacion():

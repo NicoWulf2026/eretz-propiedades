@@ -45,6 +45,7 @@ ROLLOUTS = [
     ("RESCATE_generico", "generico"),
     ("RESCATE_tokko", "tokko"),
     ("RESCATE_wordpress", "wordpress"),
+    ("RESCATE_nextjs", "generico"),
 ]
 
 
@@ -93,8 +94,13 @@ def main() -> int:
         # esconde lo que una corrida a medias todavia no proceso: con la segunda
         # corrida en curso, 511 fuentes Tokko ya terminadas figuraban como no
         # intentadas.
+        # Las corridas se descubren, no se listan: estaba fijo en ("1","2") y
+        # apenas aparecio una corrida 3 el directorio dejo de verla en silencio,
+        # que es el mismo error que el comentario de arriba dice evitar.
+        corridas = sorted(p.name.rsplit("run", 1)[1].split(".")[0]
+                          for p in base.glob("source_inventory_run*.jsonl"))
         inv = []
-        for corrida in ("1", "2"):
+        for corrida in corridas:
             inv += leer(base / f"source_inventory_run{corrida}.jsonl")
         for r in inv:
             cid = r.get("canonical_agency_id")
@@ -106,7 +112,7 @@ def main() -> int:
         # Para el conteo de propiedades se usa UNA sola corrida -la mas
         # completa-: sumar las dos contaria cada propiedad dos veces.
         mejor, n = None, -1
-        for corrida in ("1", "2"):
+        for corrida in corridas:
             props = base / f"properties_run{corrida}.jsonl"
             if props.exists():
                 filas_p = leer(props)
