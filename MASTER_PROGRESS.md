@@ -91,7 +91,30 @@ Ambos reconcilian. 0 duplicados intra-fuente, 0 hash compartido entre agencias,
 0 fotos ajenas, 0 errores. El barrido multiple llevo las fuentes con enumeracion
 incompleta de 3 a 0 y recupero +1.589 propiedades sobre las mismas 100 fuentes.
 
-### Idempotencia de Tokko — resuelto, corrida 3 en curso
+### Idempotencia de Tokko — VALIDADA a escala completa (corrida 3)
+
+| | corrida 2 (invalida) | corrida 3 (valida) |
+|---|---|---|
+| fuentes | 913/913 | 913/913, 798 OK |
+| propiedades | 91.715 | 91.659 |
+| SIN_CAMBIOS | 0 | **91.503 (99,83%)** |
+| NUEVA | 91.715 | 99 |
+| MODIFICADA | 0 | 57 |
+| potential_inactive | 91.367 | 100 |
+| duplicados intra-fuente | 0 | 0 |
+| hash compartido entre agencias | 0 | 0 |
+| reconcilia | si | si |
+
+Auditado por categoria:
+
+- **99 de 99 NUEVA** no estaban en la corrida 2: altas reales.
+- **57 MODIFICADA, ninguna falsa.** Cambios en `extra` (23), fotos (21),
+  descripcion (19), precio (10). La unica descripcion que solo estaba
+  reordenada pertenecia a una ficha que ademas cambio precio y moneda, asi que
+  el reordenamiento no aporto a la huella.
+- **100 ausencias**: con el resguardo de comparabilidad, 87 cuentan y 13 no.
+
+### Idempotencia de Tokko — como se arreglo
 
 El baseline se reconstruyo con `scripts/rebuild_checkpoint_baseline.py` desde
 `properties_run2.jsonl`, verificando 500/500 hashes por recalculo. Canary de 6
