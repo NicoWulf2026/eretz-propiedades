@@ -299,7 +299,11 @@ class Descargador:
                     if r.headers.get("Content-Encoding") == "gzip":
                         try:
                             crudo = gzip.decompress(crudo)
-                        except OSError:
+                        except (OSError, EOFError):
+                            # Un gzip truncado -pasa cuando se corta la lectura
+                            # por el limite de bytes- levanta EOFError, que no
+                            # es OSError. Sin atraparlo, la excepcion sube y se
+                            # lleva la fuente entera.
                             pass
                     juego = "utf-8"
                     m = re.search(r"charset=([\w-]+)", r.headers.get("Content-Type") or "", re.I)

@@ -1245,3 +1245,24 @@ def test_un_numero_suelto_en_la_raiz_no_es_una_ficha():
     assert not RE_FICHA_RAIZ.search("/12345-nuestra-empresa")
     assert not RE_FICHA_RAIZ.search("/2026-balance-anual")
     assert not RE_FICHA_RAIZ.search("/venta-casa-adrogue")
+
+
+def test_un_404_al_paginar_es_el_final_no_un_fallo():
+    """Varias fuentes devuelven 404 al pedir una pagina que ya no existe, en vez
+    de una pagina vacia. Sin atraparlo, la excepcion subia y se perdian TODAS
+    las propiedades ya enumeradas de esa inmobiliaria: paso con tres."""
+    paginas = {"https://alfa.com.ar/": LISTADO,
+               "https://alfa.com.ar/Propiedades": LISTADO}
+    fallar = {"https://alfa.com.ar/Propiedades?q=&currency=ANY&operation=&p=2":
+              B.ErrorPermanente("http 404")}
+    c = conector(paginas, fallar)
+    f = fuente()
+    ids = [a["source_listing_id"] for a in c.fetch_listing(f, c.discover(f))]
+    assert ids == ["111", "222"]          # lo enumerado se conserva
+
+
+def test_un_gzip_truncado_no_tumba_la_descarga():
+    """El limite de bytes puede cortar un gzip a la mitad, y decompress levanta
+    EOFError, que no es OSError."""
+    src = (ROOT / "connectors" / "base.py").read_text(encoding="utf-8")
+    assert "except (OSError, EOFError):" in src

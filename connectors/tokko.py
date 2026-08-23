@@ -187,11 +187,22 @@ class TokkoConnector(Connector):
             antes = len(vistos)
             pagina, sin_nuevos = 1, 0
             while pagina <= MAX_PAGINAS:
-                if pagina == 1 and barrido == 1:
-                    html = plan.get("html_listado") or self.descargador.bajar(base + ruta)
-                elif query:
-                    html = self.descargador.bajar(base + ruta + query + str(pagina))
-                else:
+                try:
+                    if pagina == 1 and barrido == 1:
+                        html = (plan.get("html_listado")
+                                or self.descargador.bajar(base + ruta))
+                    elif query:
+                        html = self.descargador.bajar(base + ruta + query + str(pagina))
+                    else:
+                        break
+                except ErrorPermanente:
+                    # Varias fuentes devuelven 404 al pedir una pagina que ya no
+                    # existe, en vez de una pagina vacia. Es el final del
+                    # listado, no un fallo: sin atraparlo aca la excepcion subia
+                    # y se perdian TODAS las propiedades ya enumeradas de esa
+                    # inmobiliaria.
+                    break
+                except (ErrorTransitorio, Bloqueado):
                     break
 
                 hallados = RE_FICHA.findall(html)
