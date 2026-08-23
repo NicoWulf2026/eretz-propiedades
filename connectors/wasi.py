@@ -246,8 +246,17 @@ class WasiConnector(Connector):
                 "cocheras": c.get("cocheras"),
                 "pais": c.get("pais"),
                 "url_enumerada": pedida if pedida != url else None,
-                "plan_wasi": None,
             }.items() if v is not None},
+            # La resolucion de conflictos entre inmobiliarias lee
+            # `provenance.agency_name` para saber quien publica un aviso. Sin
+            # esto, cualquier url reclamada por dos agencias quedaria
+            # AMBIGUOUS teniendo la respuesta al lado.
+            provenance={"connector": self.nombre,
+                        "official_domain": self._base(fuente.official_url),
+                        "agency_name": fuente.agency_name,
+                        "canonical_agency_id": fuente.canonical_agency_id,
+                        "source_platform": "WASI",
+                        "pagina_listado": crudo.get("pagina")},
         )
 
     # ------------------------------------------------------------- ubicacion

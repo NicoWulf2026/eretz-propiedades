@@ -74,7 +74,7 @@ página uno otra vez**: se recogerían 20 de 299 propiedades sin un solo error.
 
 | Bloqueo | Detalle | Impacto |
 |---|---|---|
-| `DB_WRITE_BLOCKED` | `INTERNAL_DB_URL` de `.env` rechaza autenticación (password vencida). Supabase, schema `internal_scraping`. | Sin canary de escritura ni carga a `propiedades_raw`. |
+| `PROPERTY_WRITE_CREDENTIAL_PENDING` | Verificado 2026-08-23: `SUPABASE_POOLER_DATABASE_URL` no existe en `.env` ni en el entorno. `SUPABASE_DATABASE_URL` resuelve **solo IPv6**, y desde esta red **la conexión SÍ llega**: el servidor contesta `FATAL: password authentication failed`. O sea el bloqueo es la credencial, no la red — lo anterior decía "IPv6 inalcanzable" y era incorrecto. | Sin canary de escritura ni carga a `propiedades_raw`. Todo lo demás sigue. |
 | `SEARCH_API_COST` | Serper y Tavily sin créditos (400 / 432). Exa responde pero cobra **USD 0,0070/consulta**: ~6.032 entidades ≈ **USD 84**. | Búsqueda preparada, no ejecutada: requiere autorización de gasto. Sondeos: USD 0,014. |
 | `NETWORK_ACCESS_BLOCKED` | `century21.com.ar` resuelve DNS pero HTTP/HTTPS hacen timeout. | 42 oficinas no auditables desde esta red. |
 
@@ -215,13 +215,40 @@ sitios no confirmados: **0 Wasi nuevos**, 40 sin respuesta.
 
 ## Corriendo
 
-- Tokko corrida 2: **TERMINADA** 913/913, 91.715 propiedades (ver arriba: no
-  vale como prueba de idempotencia)
-- WordPress corrida 3: en curso (`WP_ROLLOUT_FULL`) — esta si arranco con el
-  fix del checkpoint, asi que es la comparacion valida
-- Rescate Next.js: **TERMINADO** 27/27, 1.614 propiedades (`RESCATE_nextjs`)
+- **Tokko corrida 3 — VALIDACION DE IDEMPOTENCIA, en curso.** 913 fuentes sobre
+  el baseline reconstruido. A 103/913: 99,97% SIN_CAMBIOS, 0 ausencias.
+  Lanzada aislada con `Start-Process` (una consola compartida ya mato una
+  corrida antes). Log: `TOKKO_ROLLOUT_FULL/run3_idempotency.log`.
+- **Clasificacion del residual, en curso.** 1.225 webs propias sin cubrir,
+  `RESIDUAL_CLASSIFIED.jsonl`.
+- Wasi: canary de 5 fuentes; despues rollout completo de las 39.
+- Tokko corrida 2: TERMINADA 913/913, 91.715 propiedades. Datos utiles; su
+  idempotencia NO vale (ver arriba).
+- WordPress corrida 3: **TERMINADA** 336/336, 18.567 propiedades. Fue el reset
+  de linea base -todo NUEVA pero `potential_inactive: 0`, o sea el fix evito
+  ~19.000 bajas falsas-. La prueba de idempotencia de WordPress es la corrida
+  4, que todavia no se corrio.
+- Rescate Next.js: **TERMINADO** 27/27, 1.614 propiedades (`RESCATE_nextjs`),
+  ya incorporado al directorio: 12 fuentes con inventario, ahora SITIO_PROPIO.
 - Century 21: 40 oficinas, con soporte bilingue (`C21_CANARY`)
 - Generico: canary de 40 fuentes (`GENERICO_CANARY`)
+
+## Mapa de cobertura (2.259 webs propias)
+
+| Plataforma | Detectadas | Procesadas | Propiedades |
+|---|---:|---:|---:|
+| TOKKO | 861 | 800 | 91.623 |
+| UNKNOWN | 728 | 0 | 0 |
+| WORDPRESS | 291 | 186 | 19.002 |
+| SIN_CLASIFICAR | 130 | 0 | 0 |
+| SITIO_PROPIO | 50 | 48 | 3.243 |
+| WASI | 39 | 0 (connector recien construido) | 3.598 enumerables |
+| LARAVEL | 36 | 0 | 0 |
+| NEXTJS | 32 | 0 | 0 |
+| resto | ~92 | 0 | 0 |
+
+**Sin cobertura: 1.225 webs propias** (`RESIDUAL_UNCOVERED.jsonl`), de las
+cuales 1.142 respondieron al sondeo y 40 no.
 
 Todo en modo observacion: las ausencias se anotan, nada se desactiva.
 
