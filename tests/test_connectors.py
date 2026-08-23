@@ -1494,3 +1494,47 @@ def test_la_huella_del_codigo_se_fija_al_arrancar():
     src = (ROOT / "scripts" / "run_rollout.py").read_text(encoding="utf-8")
     assert "_VERSION_AL_ARRANCAR" in src
     assert "version_del_codigo(a.connector)" in src
+
+
+# ----------------------------------------- web propia vs perfil en un portal
+def test_un_perfil_en_un_portal_no_es_la_web_de_la_inmobiliaria():
+    """Contar fichas de todoprops o exhibidores de construex como web oficial
+    infla "agencias con web" con paginas de terceros, y despues alguien lee ese
+    numero como cobertura."""
+    from scripts.reclassify_portal_profiles import clasificar
+    for url in ("https://www.todoprops.com/inmobiliarias/inmobiliaria/alvarez",
+                "https://www.construex.com.ar/exhibidores/atenea",
+                "https://www.realestate.com.au/international/ar/lafinur",
+                "https://www.zonaprop.com.ar/inmobiliarias/alfa",
+                "https://www.facebook.com/alfapropiedades"):
+        tipo, _ = clasificar(url)
+        assert tipo == "EXTERNAL_PORTAL_PROFILE", url
+
+
+def test_la_pagina_de_la_oficina_en_su_red_no_es_un_portal_ajeno():
+    """Century 21 o RE/MAX son la casa de la oficina dentro de su franquicia:
+    no es un dominio propio, pero tampoco un marketplace de terceros."""
+    from scripts.reclassify_portal_profiles import clasificar
+    for url in ("https://century21.com.ar/v/oficina/68-revolution",
+                "https://remax-urbana.com.ar/propiedades/1"):
+        assert clasificar(url)[0] == "OFFICIAL_OFFICE_PAGE", url
+
+
+def test_un_dominio_propio_sigue_siendo_web_oficial():
+    from scripts.reclassify_portal_profiles import clasificar
+    for url in ("https://www.aagaard.com.ar/", "https://abppropiedades.com.ar"):
+        assert clasificar(url)[0] == "OFFICIAL_WEB", url
+
+
+def test_la_reclasificacion_conserva_la_evidencia():
+    """No se borran: son evidencia de que la inmobiliaria existe y opera, y
+    sirven para buscar su sitio propio mas adelante."""
+    ruta = Path(r"D:\INMO CAPITAL\PORTAL_RECLASSIFICATION.jsonl")
+    if not ruta.exists():
+        pytest.skip("todavia no se genero")
+    filas = [json.loads(l) for l in ruta.open(encoding="utf-8") if l.strip()]
+    assert filas
+    for f in filas[:20]:
+        assert f["url"] and f["host"] and f["motivo"]
+        assert f["clasificacion_nueva"] in ("EXTERNAL_PORTAL_PROFILE",
+                                            "OFFICIAL_OFFICE_PAGE")
