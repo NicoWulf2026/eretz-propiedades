@@ -91,6 +91,21 @@ Ambos reconcilian. 0 duplicados intra-fuente, 0 hash compartido entre agencias,
 0 fotos ajenas, 0 errores. El barrido multiple llevo las fuentes con enumeracion
 incompleta de 3 a 0 y recupero +1.589 propiedades sobre las mismas 100 fuentes.
 
+### Idempotencia de Tokko — resuelto, corrida 3 en curso
+
+El baseline se reconstruyo con `scripts/rebuild_checkpoint_baseline.py` desde
+`properties_run2.jsonl`, verificando 500/500 hashes por recalculo. Canary de 6
+fuentes: **123/123 SIN_CAMBIOS**, 0 MODIFICADA, 0 potential_inactive.
+
+Hicieron falta DOS arreglos, y el segundo solo se vio despues del primero:
+
+1. el checkpoint mezclaba claves de dos formatos (abajo);
+2. la huella de contenido no era estable. Tokko arma la lista de servicios sin
+   orden fijo -"Cloaca Internet" / "Internet Cloaca"-, y como la descripcion
+   entra en la huella, una propiedad sin tocar volvia MODIFICADA. Era el 2,4%:
+   ~2.200 cambios falsos por corrida a escala completa. La huella ahora ignora
+   el orden de la descripcion y de las fotos.
+
 ### La corrida 2 de Tokko NO es la prueba de idempotencia
 
 Termino 913/913 con 91.715 propiedades y reconcilia, pero informa

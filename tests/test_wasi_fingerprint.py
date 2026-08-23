@@ -314,6 +314,26 @@ def test_un_campo_ausente_queda_en_none_y_no_se_infiere():
     assert c["precio"] is None and c["moneda"] is None
 
 
+def test_los_dolares_se_escriben_a_la_americana_y_los_pesos_a_la_argentina():
+    """La misma pagina usa las dos convenciones: "$620.000" para pesos y
+    "US$110,000" para dolares. Aplicar una sola convertia 110.000 dolares en
+    110: un precio bien formado y equivocado por tres ordenes de magnitud."""
+    usd = campos_de_ficha(
+        '<div class="blq_precio">Precio de venta'
+        '<span class="">US$110,000</span> Dolares Americanos</div>')
+    assert usd["precio"] == 110000 and usd["moneda"] == "USD"
+
+    ars = campos_de_ficha(
+        '<div class="blq_precio">Precio de venta'
+        '<span class="">$620.000</span> Pesos Argentinos</div>')
+    assert ars["precio"] == 620000 and ars["moneda"] == "ARS"
+
+    # Y un decimal de verdad sigue siendo un decimal.
+    dec = campos_de_ficha(
+        '<div class="blq_precio">Precio de venta<span>US$1,250,000.50</span></div>')
+    assert dec["precio"] == 1250000.50
+
+
 def test_la_moneda_sale_del_bloque_de_precio():
     pesos = campos_de_ficha(
         '<div class="blq_precio">Precio de alquiler'

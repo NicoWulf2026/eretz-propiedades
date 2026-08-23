@@ -598,12 +598,25 @@ def a_numero(texto: Any) -> float | None:
 
     Devuelve None ante la duda. Un precio mal parseado es peor que uno ausente:
     el ausente se ve, el equivocado se publica.
+
+    El signo se conserva cuando el menos ABRE el texto. Se perdia: el filtro de
+    caracteres se llevaba el "-" y "-34.6690485" volvia 34.6690485, una
+    latitud del hemisferio norte. Tokko no lo sufrio porque convierte sus
+    coordenadas con float() directo, pero el connector de Wasi si, y lo delato
+    su propio chequeo de coherencia. Exigir que el menos abra el texto evita
+    volver negativo un rango como "55.000-60.000".
     """
     if texto is None:
         return None
     if isinstance(texto, (int, float)):
         return float(texto)
-    t = re.sub(r"[^\d.,]", "", str(texto))
+    crudo = str(texto).strip()
+    negativo = crudo.startswith("-")
+    # Un rango no es un numero. "55.000-60.000" perdia el guion y se pegaba en
+    # 5.500.060.000: un precio absurdo pero bien formado, que se publica igual.
+    if re.search(r"\d\s*[-–a]\s*\d", crudo[1:] if negativo else crudo):
+        return None
+    t = re.sub(r"[^\d.,]", "", crudo)
     if not t:
         return None
     if "," in t and "." in t:
@@ -617,9 +630,10 @@ def a_numero(texto: Any) -> float | None:
         if len(dec) == 3 or not dec:
             t = t.replace(".", "")
     try:
-        return float(t)
+        v = float(t)
     except ValueError:
         return None
+    return -v if negativo else v
 
 
 def a_entero(texto: Any) -> int | None:

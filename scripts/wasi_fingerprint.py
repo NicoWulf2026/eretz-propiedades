@@ -275,13 +275,32 @@ def _numero(t: str) -> float | None:
 
     Wasi escribe 0 donde no cargaron el dato. Un "0 m2 cubiertos" no es una
     medicion, es un campo vacio disfrazado.
+
+    Cual separador es de miles se decide por la FORMA del numero, no por la
+    moneda: la misma pagina escribe los pesos a la argentina -"$620.000"- y los
+    dolares a la americana -"US$110,000"-. Aplicar una sola convencion
+    convertia 110.000 dolares en 110, un precio bien formado y equivocado por
+    tres ordenes de magnitud.
     """
     m = re.search(r"(\d[\d.,]*)", t or "")
     if not m:
         return None
-    crudo = m.group(1).replace(".", "").replace(",", ".")
+    s = m.group(1).rstrip(".,")
+    if "," in s and "." in s:
+        # El separador que aparece mas a la derecha es el decimal.
+        decimal = "," if s.rindex(",") > s.rindex(".") else "."
+        miles = "." if decimal == "," else ","
+        s = s.replace(miles, "").replace(decimal, ".")
+    elif "," in s or "." in s:
+        sep = "," if "," in s else "."
+        partes = s.split(sep)
+        # Grupos de exactamente tres cifras: es separador de miles.
+        if len(partes) > 1 and all(len(p) == 3 for p in partes[1:]):
+            s = s.replace(sep, "")
+        else:
+            s = s.replace(sep, ".")
     try:
-        v = float(crudo)
+        v = float(s)
     except ValueError:
         return None
     return v or None
