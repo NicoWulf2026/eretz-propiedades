@@ -90,6 +90,9 @@ def main() -> int:
     ap.add_argument("--entradas", nargs="+", required=True)
     ap.add_argument("--data-dir", default=r"D:\INMO CAPITAL\ERETZ_AGENCY_DATA")
     ap.add_argument("--salida", default=r"D:\INMO CAPITAL\DB_WRITE_ELIGIBLE.jsonl")
+    ap.add_argument("--resolucion", default="",
+                    help="CROSS_AGENCY_RESOLUTION.jsonl; sin el, ningun "
+                         "conflicto cross-agency se libera")
     a = ap.parse_args()
 
     padron = {}
@@ -143,30 +146,47 @@ def main() -> int:
     por_url = defaultdict(list)
     for q in elegibles:
         por_url[q.get("source_url")].append(q)
-    aporte = Counter(q.get("canonical_agency_id") for q in elegibles)
+
+    # La adjudicacion NO se decide aca por tamano de inventario: eso le daba el
+    # aviso a la agencia mas grande sin mirar de quien era. La decide
+    # resolve_cross_agency.py con la evidencia de cada ficha, y aca solo se
+    # aplica. Sin ese archivo, ningun conflicto se libera.
+    resolucion = {}
+    ruta_res = Path(a.resolucion) if a.resolucion else         Path(a.salida).with_name("CROSS_AGENCY_RESOLUTION.jsonl")
+    for r in leer(ruta_res):
+        resolucion[r.get("source_url")] = r
+
     cruzadas, conservadas = [], []
     for url, grupo in por_url.items():
         if len({q.get("canonical_agency_id") for q in grupo}) <= 1:
             conservadas.extend(grupo)
             continue
-        grupo.sort(key=lambda q: (-aporte[q.get("canonical_agency_id")],
-                                  str(q.get("inmobiliaria_id"))))
-        conservadas.append(grupo[0])
-        for q in grupo[1:]:
-            cruzadas.append({**q, "db_write_status": CROSS_AGENCIA,
-                             "conservada_para": grupo[0].get("canonical_agency_id"),
-                             "url_en_disputa": url})
+        r = resolucion.get(url) or {}
+        dueno = r.get("canonical_owner") if r.get("liberable") else None
+        for q in grupo:
+            if dueno and q.get("canonical_agency_id") == dueno:
+                q["cross_agency"] = {"categoria": r.get("categoria"),
+                                     "motivo": r.get("motivo"),
+                                     "reclamantes": [c.get("canonical_agency_id")
+                                                     for c in r.get("reclamantes") or []]}
+                conservadas.append(q)
+            else:
+                cruzadas.append({**q,
+                                 "db_write_status": CROSS_AGENCIA,
+                                 "categoria_conflicto": r.get("categoria") or "SIN_RESOLVER",
+                                 "motivo_conflicto": r.get("motivo") or
+                                 "conflicto todavia sin clasificar",
+                                 "adjudicada_a": dueno,
+                                 "url_en_disputa": url})
     elegibles = conservadas
     if cruzadas:
         ruta_cross = Path(a.salida).with_name("CROSS_AGENCY_DUPLICATES.jsonl")
         ruta_cross.write_text(
             chr(10).join(json.dumps(q, ensure_ascii=False) for q in cruzadas),
             encoding="utf-8")
-        hosts = Counter(re.sub(r"^https?://(www\.)?", "", q["url_en_disputa"]).split("/")[0]
-                        for q in cruzadas)
         print(f"  {CROSS_AGENCIA:26}  {len(cruzadas):,}  (misma url, dos inmobiliarias)")
-        for k, v in hosts.most_common(5):
-            print(f"      {k:28} {v:6,}")
+        for k, v in Counter(q["categoria_conflicto"] for q in cruzadas).most_common():
+            print(f"      {k:34} {v:6,}")
         print(f"      -> {ruta_cross}")
 
     Path(a.salida).write_text(

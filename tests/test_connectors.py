@@ -1334,3 +1334,71 @@ def test_ninguna_resolucion_se_aplica_sola():
     assert "No escribe en la base" in src
     for prohibido in ("INSERT", "UPDATE ", "psycopg"):
         assert prohibido not in src
+
+
+# --------------------------------------------- conflictos entre inmobiliarias
+def test_la_adjudicacion_no_se_decide_por_tamano_de_inventario():
+    """Adjudicar por cantidad le da el aviso a la agencia mas grande sin mirar
+    de quien es. La decide la evidencia de cada ficha."""
+    gate = (ROOT / "scripts" / "write_eligibility.py").read_text(encoding="utf-8")
+    assert "aporte = Counter(" not in gate
+    assert "CROSS_AGENCY_RESOLUTION" in gate
+    assert 'r.get("liberable")' in gate
+
+
+def test_sin_archivo_de_resolucion_no_se_libera_ningun_conflicto():
+    gate = (ROOT / "scripts" / "write_eligibility.py").read_text(encoding="utf-8")
+    bloque = gate[gate.index("resolucion = {}"):gate.index("cruzadas, conservadas")]
+    assert "leer(ruta_res)" in bloque       # si no existe, queda vacio
+
+
+def test_la_ficha_identifica_a_su_oficina_en_century21():
+    """En Century 21 el nombre de la oficina viene en `asesor` -"CENTURY 21
+    Franchi"- mientras `oficina_c21` trae el nombre de pila del agente. Mirar un
+    solo campo dejaba 389 conflictos sin resolver teniendo la respuesta al lado."""
+    from scripts.resolve_cross_agency import dueno_por_ficha
+    claims = [
+        {"provenance": {"agency_name": "C21 Franchi"},
+         "extra": {"oficina_c21": "Facundo", "asesor": "CENTURY 21 Franchi"}},
+        {"provenance": {"agency_name": "Contacto c21"},
+         "extra": {"oficina_c21": "Facundo", "asesor": "CENTURY 21 Franchi"}},
+    ]
+    dueno, motivo = dueno_por_ficha(claims, "https://century21.com.ar/propiedad/1_x/oficina_133-franchi")
+    assert dueno is not None
+    assert dueno["provenance"]["agency_name"] == "C21 Franchi"
+
+
+def test_sin_evidencia_de_dueno_no_se_adjudica():
+    from scripts.resolve_cross_agency import dueno_por_ficha
+    claims = [{"provenance": {"agency_name": "Alfa Propiedades"}, "extra": {}},
+              {"provenance": {"agency_name": "Beta Propiedades"}, "extra": {}}]
+    dueno, _ = dueno_por_ficha(claims, "https://alquenia.com/p/1")
+    assert dueno is None
+
+
+def test_una_agencia_duplicada_en_el_padron_no_se_libera_sola():
+    """Saber que dos fichas son la misma empresa no dice cual conserva ERETZ, y
+    elegir mal deja el inventario colgando de un id que despues se unifica."""
+    src = (ROOT / "scripts" / "resolve_cross_agency.py").read_text(encoding="utf-8")
+    assert '"liberable": categoria == CLARO' in src
+    assert "AGENCY_DUPLICATE_RESOLUTION_MANIFEST" in src
+
+
+def test_ningun_claim_se_borra():
+    """Los reclamos secundarios se documentan con su evidencia, no se pierden."""
+    src = (ROOT / "scripts" / "write_eligibility.py").read_text(encoding="utf-8")
+    assert "categoria_conflicto" in src and "adjudicada_a" in src
+
+
+def test_el_write_set_no_puede_tener_una_url_dos_veces():
+    ruta = Path(r"D:\INMO CAPITAL\DB_WRITE_ELIGIBLE.jsonl")
+    if not ruta.exists():
+        pytest.skip("todavia no se genero el write set")
+    urls, hashes = [], []
+    for l in ruta.open(encoding="utf-8"):
+        if l.strip():
+            d = json.loads(l)
+            urls.append(d["source_url"])
+            hashes.append(d["hash_dedup"])
+    assert len(urls) == len(set(urls))
+    assert len(hashes) == len(set(hashes))
