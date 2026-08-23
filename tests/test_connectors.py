@@ -1180,3 +1180,49 @@ def test_wordpress_no_usa_la_query_como_identificador():
     largo = "https://a.com/p/?sort=newest&" + "x=1&" * 60
     assert len(_id_de(largo)) <= 120
     assert _id_de("https://a.com/propiedades/12345-casa-linda") == "12345"
+
+
+# ------------------------------------------- compuerta de escritura a la base
+def test_la_compuerta_rechaza_todo_lo_que_no_es_una_ficha():
+    """Segunda capa: aunque el connector filtre, lo que llega a la base se
+    revisa otra vez. Las paginas que se cuelan son siempre las mismas y entran
+    porque comparten la ruta con las fichas."""
+    from scripts.write_eligibility import motivo_rechazo
+    casos = [
+        ("https://a.com/buscar-propiedades/?sort=newest", "query_string"),
+        ("https://a.com/propiedades/page/3/", "paginacion"),
+        ("https://a.com/category/casas/", "categoria_o_tag"),
+        ("https://a.com/tag/rosario/", "categoria_o_tag"),
+        ("https://a.com/2026/08/", "archivo_por_fecha"),
+        ("https://a.com/nosotros/", "institucional"),
+        ("https://a.com/feed/", "feed_o_recurso"),
+        ("https://a.com/propiedades/", "solo_la_seccion"),
+        ("https://a.com/busqueda/casas", "busqueda"),
+    ]
+    for url, esperado in casos:
+        p = {"source_url": url, "source_listing_id": "123"}
+        assert motivo_rechazo(p) == esperado, (url, motivo_rechazo(p))
+
+
+def test_la_compuerta_deja_pasar_una_ficha_de_verdad():
+    from scripts.write_eligibility import motivo_rechazo
+    assert motivo_rechazo({"source_url": "https://a.com/propiedades/12345-casa",
+                           "source_listing_id": "12345"}) is None
+
+
+def test_un_id_derivado_de_una_query_no_pasa():
+    """Hubo 57 propiedades con la query string entera como identificador."""
+    from scripts.write_eligibility import motivo_rechazo
+    p = {"source_url": "https://a.com/propiedades/casa-linda-rosario",
+         "source_listing_id": "?sort=newest&search_status=10&search_city="}
+    assert motivo_rechazo(p) == "id_derivado_de_query"
+
+
+def test_sin_eretz_id_la_propiedad_no_llega_a_la_base():
+    """Un id sintetico produciria filas que no pertenecen a ninguna
+    inmobiliaria existente, y eso no se nota al insertar: aparece al unir las
+    tablas, mucho despues."""
+    src = (ROOT / "scripts" / "write_eligibility.py").read_text(encoding="utf-8")
+    assert "AGENCY_ID_PENDING" in src
+    assert "eretz_id" in src
+    assert "calcular_hash_dedup(real" in src

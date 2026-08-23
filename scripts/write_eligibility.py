@@ -17,8 +17,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -29,10 +30,43 @@ PENDIENTE = "AGENCY_ID_PENDING"
 NO_ES_FICHA = "NO_ES_UNA_FICHA"
 
 # Defensa en profundidad: aunque el connector ya filtre, lo que llega a la base
-# se revisa otra vez. Una pagina de busqueda con filtros no es una propiedad, y
-# entra facil porque la ruta de listado se llama igual que las fichas.
-import re as _re
-_BUSQUEDA = _re.compile(r"/(buscar|busqueda|search|filtrar|filtro|resultados?)", _re.I)
+# se revisa otra vez. Las paginas que se cuelan son siempre las mismas y entran
+# porque comparten la ruta con las fichas: el listado se llama "propiedades" y
+# la busqueda "buscar-propiedades".
+RECHAZOS = [
+    ("query_string", re.compile(r"[?#]")),
+    ("busqueda", re.compile(r"/(buscar|busqueda|search|filtrar|filtro|"
+                            r"resultados?|results?)(/|$|-)", re.I)),
+    ("paginacion", re.compile(r"/(page|pagina|pag)[/_-]?\d+/?$", re.I)),
+    ("categoria_o_tag", re.compile(r"/(category|categoria|categorias|tag|tags|"
+                                   r"etiqueta|etiquetas|rubro)(/|$)", re.I)),
+    ("archivo_por_fecha", re.compile(r"/\d{4}/\d{2}(/\d{2})?/?$")),
+    ("institucional", re.compile(r"/(nosotros|about|quienes[-_]somos|contacto|"
+                                 r"contact|servicios|tasacion|blog|noticias|"
+                                 r"novedades|privacidad|terminos|login|admin|"
+                                 r"sucursales|equipo|staff|faq)(/|$)", re.I)),
+    ("feed_o_recurso", re.compile(r"(/feed/?$|\.(xml|json|rss|pdf|jpe?g|png)$)", re.I)),
+    ("solo_la_seccion", re.compile(r"/(propiedades|inmuebles|propert(y|ies)|"
+                                   r"listings?|emprendimientos)/?$", re.I)),
+]
+
+# Un id que es en realidad una query string o un texto largo no identifica nada.
+LARGO_MAXIMO_ID = 120
+
+
+def motivo_rechazo(p: dict) -> str | None:
+    url = p.get("source_url") or ""
+    if not url.startswith("http"):
+        return "url_invalida"
+    lid = str(p.get("source_listing_id") or "")
+    if not lid:
+        return "sin_source_listing_id"
+    if len(lid) > LARGO_MAXIMO_ID or "=" in lid or "&" in lid:
+        return "id_derivado_de_query"
+    for nombre, patron in RECHAZOS:
+        if patron.search(url):
+            return nombre
+    return None
 
 
 def leer(ruta: Path) -> list[dict]:
@@ -73,9 +107,9 @@ def main() -> int:
     elegibles, pendientes, descartadas = [], [], []
     vistos_hash = set()
     for p in props:
-        url = p.get("source_url") or ""
-        if "?" in url or _BUSQUEDA.search(url):
-            descartadas.append(p)
+        motivo = motivo_rechazo(p)
+        if motivo:
+            descartadas.append({**p, "motivo_rechazo": motivo})
             continue
         real = padron.get(p.get("canonical_agency_id"))
         if real is None:
@@ -106,6 +140,9 @@ def main() -> int:
     print(f"  {ELEGIBLE:24}    {len(elegibles):,}  ({len(elegibles)/n*100:.1f}%)")
     print(f"  {PENDIENTE:24}    {len(pendientes):,}  ({len(pendientes)/n*100:.1f}%)")
     print(f"  {NO_ES_FICHA:24}    {len(descartadas):,}  ({len(descartadas)/n*100:.1f}%)")
+    if descartadas:
+        for k, v in Counter(x["motivo_rechazo"] for x in descartadas).most_common():
+            print(f"      {k:26} {v:6,}")
     print(f"\n  agencias elegibles:         "
           f"{len({q['canonical_agency_id'] for q in elegibles}):,}")
     print(f"  agencias sin eretz_id:      "
@@ -116,6 +153,42 @@ def main() -> int:
           f"{dict(Counter(q.get('connector') for q in elegibles))}")
     print(f"  por connector (pendientes): "
           f"{dict(Counter(p.get('connector') for p in pendientes))}")
+
+    # --- manifiesto de agencias sin id real ---------------------------------
+    # No se inventa ningun id. Se documenta que falta y por que, para que quien
+    # pueda resolverlo tenga todo a mano.
+    por_agencia = defaultdict(list)
+    for x in pendientes:
+        por_agencia[x.get("canonical_agency_id")].append(x)
+    manifiesto = []
+    for cid, g in sorted(por_agencia.items(), key=lambda t: -len(t[1])):
+        prov = g[0].get("provenance") or {}
+        manifiesto.append({
+            "canonical_agency_id": cid,
+            "agency_name": prov.get("agency_name"),
+            "official_domain": prov.get("official_domain"),
+            "connector": g[0].get("connector"),
+            "propiedades_descubiertas": len(g),
+            "estado": PENDIENTE,
+            "motivo": ("la entidad no tiene eretz_id en el crosswalk canonico: "
+                       "esta en el padron de Roomix pero no se pudo enlazar con "
+                       "una inmobiliaria de ERETZ"),
+            "evidencia_disponible": {
+                "urls_de_ejemplo": [x.get("source_url") for x in g[:3]],
+                "plataforma": prov.get("source_platform"),
+            },
+        })
+    ruta_man = Path(a.salida).with_name("AGENCY_ID_PENDING_MANIFEST.jsonl")
+    ruta_man.write_text(
+        chr(10).join(json.dumps(m, ensure_ascii=False) for m in manifiesto),
+        encoding="utf-8")
+
+    print()
+    print(f"  agencias en {PENDIENTE}: {len(manifiesto)}")
+    for m in manifiesto[:10]:
+        print(f"    {(m['agency_name'] or '?')[:36]:36} "
+              f"{m['propiedades_descubiertas']:5,} props  {m['connector']}")
+    print(f"  manifiesto -> {ruta_man}")
     print(f"\n  artefacto -> {a.salida}")
     return 0
 
