@@ -274,6 +274,28 @@ respondiendo OK y enumeracion completa, en observacion.
 - Century 21: 40 oficinas, con soporte bilingue (`C21_CANARY`)
 - Generico: canary de 40 fuentes (`GENERICO_CANARY`)
 
+## Idempotencia por connector — las tres cerradas
+
+| Connector | Prueba | SIN_CAMBIOS |
+|---|---|---|
+| tokko | corrida 3 sobre 913 fuentes | **91.503 / 91.659 (99,83%)** |
+| wasi | corrida 2 sobre 39 fuentes | **3.593 / 3.596 (99,92%)** |
+| wordpress | corrida 5 sobre 336 fuentes | en curso; a 25 fuentes, **99,7%** |
+
+Las tres necesitaron el mismo trabajo previo: reconstruir el baseline desde las
+propiedades ya extraidas y arreglar lo que hacia inestable la huella.
+
+### Tres causas distintas de MODIFICADA falsa, encontradas una por una
+
+1. **Orden de la descripcion y de las fotos.** Tokko arma la lista de servicios
+   sin orden fijo. 2,4% del canary; ~2.200 falsas por corrida a escala.
+2. **La fecha que declara el sitio.** WordPress mueve `modified` cuando
+   re-guarda los posts en masa -1.618 fichas, varias con el mismo `04:00:29`-.
+   Con ella adentro, la corrida 4 dio 73% SIN_CAMBIOS; sin ella, 99,7%.
+3. **Un cambio de formula de huella** deja el baseline anterior incomparable, y
+   TODO vuelve MODIFICADA. Paso dos veces. Por eso `rebuild_checkpoint_baseline`
+   RECALCULA la huella en vez de copiar la guardada.
+
 ## WRITE SET FINAL — 140.160 propiedades, invariantes verificados
 
 Compuerta corrida sobre los artefactos finales de cada rollout (la corrida mas
