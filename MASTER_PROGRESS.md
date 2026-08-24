@@ -274,6 +274,43 @@ respondiendo OK y enumeracion completa, en observacion.
 - Century 21: 40 oficinas, con soporte bilingue (`C21_CANARY`)
 - Generico: canary de 40 fuentes (`GENERICO_CANARY`)
 
+## WRITE SET FINAL — 140.160 propiedades, invariantes verificados
+
+Compuerta corrida sobre los artefactos finales de cada rollout (la corrida mas
+RECIENTE valida, no la mas grande: Tokko run2 tiene 56 filas mas que run3 pero
+incluye propiedades que ya no estan).
+
+| | |
+|---|---:|
+| propiedades analizadas | 154.188 |
+| **DB_WRITE_ELIGIBLE** | **140.160** (90,9%) |
+| hash_dedup unicos | 140.160 |
+| urls unicas | 140.160 |
+| urls con dos inmobiliarias | 0 |
+| filas sin eretz_id real | 0 |
+| inmobiliarias | 1.233 |
+| AGENCY_ID_PENDING | 3.777 (44 agencias) |
+| NO_ES_UNA_FICHA | 13 |
+| retenidas por conflicto cross-agency | 10.142 |
+
+Por connector: tokko 89.407, generico 21.488, wordpress 20.958, century21
+4.935, wasi 3.372.
+
+**APTO PARA ESCRIBIR: si.** Lo unico que falta es la credencial.
+
+### Conflictos cross-agency
+
+4.613 urls disputadas, 10.531 claims. Se liberaron los 389 CLEAR_OWNER; quedan
+retenidos 6.406 SAME_AGENCY, 2.187 AMBIGUOUS y 1.160 SHARED_FRANCHISE. Tres
+dominios los reclaman dos agencias del padron, y uno solo explica casi todo:
+`bustamantepropiedades.com` con **3.137 urls** en conflicto.
+
+### Agencias sin eretz_id (44)
+
+27 NEW_AGENCY_REQUIRED (2.684 propiedades), 16 AMBIGUOUS (924), 1
+EXISTING_RESOLVED con evidencia fuerte -De Bernardis Propiedades -> eretz_id
+1430, mismo dominio, 169 propiedades-. Ninguna se aplica sola.
+
 ## Rescate del residual: 1.225 sin cubrir, 274 con inventario a la vista
 
 `RESIDUAL_CLASSIFIED.jsonl` clasifica las 1.225 webs propias sin cubrir por
