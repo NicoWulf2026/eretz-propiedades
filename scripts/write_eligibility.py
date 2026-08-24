@@ -19,6 +19,7 @@ import argparse
 import json
 import re
 import sys
+import urllib.parse
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -60,6 +61,11 @@ RECHAZOS = [
 # Un id que es en realidad una query string o un texto largo no identifica nada.
 LARGO_MAXIMO_ID = 120
 
+# Una ficha termina identificando UNA propiedad: el ultimo tramo de la ruta
+# lleva un numero largo. Sirve para no confundir la pagina de resultados con la
+# ficha que cuelga de ella.
+RE_TERMINA_EN_ID = re.compile(r"/[^/]*\d{4,}[^/]*/?$")
+
 
 def motivo_rechazo(p: dict) -> str | None:
     url = p.get("source_url") or ""
@@ -70,9 +76,19 @@ def motivo_rechazo(p: dict) -> str | None:
         return "sin_source_listing_id"
     if len(lid) > LARGO_MAXIMO_ID or "=" in lid or "&" in lid:
         return "id_derivado_de_query"
+    ruta = urllib.parse.urlparse(url).path
     for nombre, patron in RECHAZOS:
-        if patron.search(url):
-            return nombre
+        if not patron.search(url):
+            continue
+        # "busqueda" no es lo mismo cuando la ficha CUELGA del buscador.
+        # laroccapropiedades.com publica cada propiedad en
+        # /busqueda/ver/8693745-2/: la regla le rechazaba 88 fichas reales
+        # -verificado: esa url sirve "Mario Bravo al 600", una direccion-.
+        # Se sigue rechazando /buscar-propiedades/ y /busqueda/casas/, que no
+        # identifican ninguna propiedad.
+        if nombre == "busqueda" and RE_TERMINA_EN_ID.search(ruta):
+            continue
+        return nombre
     return None
 
 

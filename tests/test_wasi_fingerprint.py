@@ -436,6 +436,29 @@ def test_la_compuerta_deja_pasar_la_ficha_y_frena_el_listado():
         assert motivo_rechazo({"source_url": url, "source_listing_id": lid})
 
 
+def test_una_ficha_que_cuelga_del_buscador_no_es_una_busqueda():
+    """laroccapropiedades.com publica cada propiedad en
+    /busqueda/ver/8693745-2/. La regla rechazaba 88 fichas reales -verificado:
+    esa url sirve "Mario Bravo al 600", una direccion-. Lo que identifica a la
+    ficha es que la ruta termina en un id largo."""
+    from scripts.write_eligibility import motivo_rechazo
+    assert motivo_rechazo({
+        "source_url": "https://www.laroccapropiedades.com/busqueda/ver/8693745-2/",
+        "source_listing_id": "8693745"}) is None
+
+
+def test_pero_la_pagina_de_resultados_se_sigue_frenando():
+    """El resguardo no puede aflojarse: fueron 56 paginas de busqueda las que
+    entraron por WordPress la vez anterior."""
+    from scripts.write_eligibility import motivo_rechazo
+    for url, lid in (("https://x.com/buscar-propiedades/", "buscar"),
+                     ("https://x.com/busqueda/casas-en-venta/", "casas"),
+                     ("https://x.com/search/results/page-2/", "2"),
+                     ("https://x.com/buscar/", "buscar")):
+        assert motivo_rechazo({"source_url": url,
+                               "source_listing_id": lid}) == "busqueda", url
+
+
 def test_la_capa_nueva_no_rompe_las_urls_de_tokko():
     """Tokko publica /p/<id>-<slug>: la regla de listado de Wasi no puede
     tocarla o se caerian 91.000 propiedades ya validadas."""
