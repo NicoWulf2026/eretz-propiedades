@@ -274,6 +274,46 @@ respondiendo OK y enumeracion completa, en observacion.
 - Century 21: 40 oficinas, con soporte bilingue (`C21_CANARY`)
 - Generico: canary de 40 fuentes (`GENERICO_CANARY`)
 
+## Fotos: dos problemas distintos, los dos medidos
+
+### 1. Imagenes de la PAGINA, no de la propiedad
+
+El chinche del mapa, el icono del telefono, el boton de Pinterest y el banner de
+"Agenda un cafe" salian en todas las fichas del sitio.
+
+| Connector | Referencias | De la pagina | |
+|---|---:|---:|---:|
+| wordpress | 581.329 | **91.519** | 15,7% |
+| generico | 533.008 | 28.724 | 5,4% |
+| wasi | 67.635 | 974 | 1,4% |
+| tokko | 2.228.095 | 0 | 0,0% |
+| century21 | 50.508 | 0 | 0,0% |
+
+Tokko y Century 21 dan cero porque sus connectors ya verifican que la foto sea
+de la propiedad por el id en la ruta del CDN.
+
+La senal es estructural: si una url aparece en la mitad o mas del catalogo de
+una inmobiliaria, no es de ninguna de sus propiedades. La distribucion no deja
+lugar a dudas: **397.375 urls aparecen en UNA sola propiedad** y solo 758 en la
+mitad o mas.
+
+Consecuencia incomoda: 600 propiedades de WordPress y 2.746 del generico quedan
+sin ninguna foto. No perdieron nada; todas sus "fotos" eran iconos.
+
+### 2. Variantes de tamano de WordPress
+
+WordPress genera una copia por cada tamano que usa el tema: la misma imagen como
+`-120x72`, `-224x140`, `-768x1024` y sin sufijo. **El 30% de las "fotos" eran
+variantes**: 146.876 entradas de mas en 9.672 propiedades, mas de la mitad del
+catalogo. Una propiedad que figuraba con 40 fotos solia tener diez.
+
+Se queda la mas grande de cada imagen. Tokko y el generico no usan variantes -0
+casos en 2.228.095 y 504.284 fotos-.
+
+Las dos cosas se aplicaron tambien a los artefactos ya extraidos, sin volver a
+bajar nada: `scripts/apply_page_image_filter.py`. El original no se pisa y cada
+url descartada queda en `*.imagenes_descartadas.jsonl`.
+
 ## Version de huella y artefactos autoritativos
 
 `HUELLA_VERSION = 4` en `connectors/base.py`. La version viaja en el checkpoint
