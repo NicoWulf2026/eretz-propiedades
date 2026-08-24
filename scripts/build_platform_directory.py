@@ -46,6 +46,13 @@ ROLLOUTS = [
     ("RESCATE_tokko", "tokko"),
     ("RESCATE_wordpress", "wordpress"),
     ("RESCATE_nextjs", "generico"),
+    ("WASI_ROLLOUT_FULL", "wasi"),
+    # Segunda tanda de rescates, sobre el censo del residual: solo fuentes con
+    # fichas a la vista. Las que solo tenian marcadores de plataforma no entran
+    # -las 81 de Tokko sin evidencia devolvieron cero-.
+    ("RESCATE2_wordpress", "wordpress"),
+    ("RESCATE2_tokko", "generico"),
+    ("RESCATE2_generico", "generico"),
 ]
 
 
@@ -166,9 +173,11 @@ def main() -> int:
 
         # --- estado del connector -------------------------------------------
         estado = r.get("estado")
-        if w.get("es_wasi"):
-            # Detectada y con via de extraccion probada, pero todavia sin
-            # connector escrito: no se cuenta como soportada.
+        if w.get("es_wasi") and not (estado == "OK" and enumeradas):
+            # Detectada y con via de extraccion medida, pero sin corrida que lo
+            # confirme. Cuando el rollout SI enumero, manda el rollout: si no,
+            # una fuente con 3.598 propiedades extraidas seguiria figurando
+            # como "detectada pero sin connector".
             cs = ("DETECTED_NOT_BUILT" if w.get("connector")
                   else "NO_INVENTORY" if w.get("familia") == "WASI_SIN_INVENTARIO"
                   else "UNKNOWN")
