@@ -1667,6 +1667,29 @@ def test_una_foto_compartida_por_pocas_propiedades_se_conserva():
     assert "fachada.jpg" in objs[0].imagenes
 
 
+def test_una_foto_es_una_foto_no_cuatro():
+    """WordPress genera una copia por cada tamano que usa el tema. El 30% de las
+    "fotos" eran variantes de la misma imagen: 146.876 entradas de mas en 9.672
+    propiedades. Una que figuraba con 40 fotos solia tener diez."""
+    from connectors.wordpress import _sin_variantes_de_tamano as colapsar
+    urls = ["https://x.com/a-120x72.jpg", "https://x.com/a-768x1024.jpg",
+            "https://x.com/a.jpg", "https://x.com/b-224x140.png",
+            "https://x.com/b-800x600.png", "https://x.com/c.webp"]
+    r = colapsar(urls)
+    assert r == ["https://x.com/a.jpg",        # la original gana sobre cualquier tamano
+                 "https://x.com/b-800x600.png",  # sin original, la mas grande
+                 "https://x.com/c.webp"]
+
+
+def test_colapsar_variantes_no_toca_fotos_distintas():
+    """Tokko y el generico no usan variantes: el patron no puede tocarlos."""
+    from connectors.wordpress import _sin_variantes_de_tamano as colapsar
+    urls = ["https://static.tokkobroker.com/pictures/8636261_abc.jpg",
+            "https://static.tokkobroker.com/pictures/8636261_def.jpg",
+            "https://x.com/casa-2026.jpg"]
+    assert colapsar(urls) == urls
+
+
 def test_el_recorte_de_fotos_elige_siempre_las_mismas():
     """El 47% de las propiedades de WordPress llegan al tope de 40 y la fuente
     no devuelve la cola en el mismo orden: el subconjunto elegido cambiaba entre

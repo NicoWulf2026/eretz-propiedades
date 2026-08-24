@@ -33,6 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from connectors.base import HUELLA_VERSION, PropiedadNormalizada  # noqa: E402
 from scripts.run_rollout import (FRACCION_COMPARTIDA,  # noqa: E402
                                  MINIMO_PARA_JUZGAR)
+from connectors.wordpress import _sin_variantes_de_tamano  # noqa: E402
 
 import dataclasses  # noqa: E402
 
@@ -79,6 +80,9 @@ def main() -> int:
                     help="por defecto, el mismo nombre con .imagenes_descartadas.jsonl")
     ap.add_argument("--aplicar", action="store_true",
                     help="sin esto solo mide; no escribe la copia limpia")
+    ap.add_argument("--colapsar-variantes", action="store_true",
+                    help="junta las variantes de tamano de WordPress "
+                         "(-120x72, -768x1024) en una sola foto")
     a = ap.parse_args()
 
     ent = Path(a.entrada)
@@ -95,6 +99,7 @@ def main() -> int:
     print(f"  inmobiliarias con imagenes de pagina: {len(compartidas):,}")
 
     total = quitadas = filas = sin_fotos_antes = sin_fotos_despues = 0
+    variantes = 0
     detalle: Counter = Counter()
     escritas = []
     for p in leer(ent):
@@ -111,6 +116,11 @@ def main() -> int:
                     detalle[u] += 1
             quitadas += len(imgs) - len(nuevas)
             p["imagenes"] = nuevas
+        if a.colapsar_variantes:
+            imgs2 = p.get("imagenes") or []
+            juntas = _sin_variantes_de_tamano(imgs2)
+            variantes += len(imgs2) - len(juntas)
+            p["imagenes"] = juntas
         if not p.get("imagenes"):
             sin_fotos_despues += 1
         if a.aplicar:
@@ -128,6 +138,8 @@ def main() -> int:
     print(f"  referencias de imagen:       {total:,}")
     print(f"  descartadas:                 {quitadas:,}  ({quitadas/max(total,1)*100:.1f}%)")
     print(f"  urls distintas descartadas:  {len(detalle):,}")
+    if a.colapsar_variantes:
+        print(f"  variantes de tamano juntadas: {variantes:,}")
     print(f"  propiedades sin fotos antes: {sin_fotos_antes:,}")
     print(f"  propiedades sin fotos despues: {sin_fotos_despues:,}")
     if detalle:

@@ -72,6 +72,38 @@ def _id_de(url: str) -> str:
     return (m.group(1) if m else ultimo)[:120]
 
 
+# WordPress genera una copia de cada foto por cada tamano que usa el tema:
+# la misma imagen aparece como -120x72, -224x140, -768x1024 y sin sufijo.
+RE_TAMANO = re.compile(r"-(\d{2,4})x(\d{2,4})(?=\.[a-z]{3,4}$)", re.I)
+
+
+def _sin_variantes_de_tamano(urls: list[str]) -> list[str]:
+    """Una foto es una foto, no cuatro.
+
+    El 30% de las "fotos" de WordPress eran variantes de tamano de la misma
+    imagen: 146.876 entradas de mas en 9.672 propiedades, mas de la mitad del
+    catalogo. Una propiedad que figuraba con 40 fotos solia tener diez.
+
+    Se queda la version mas grande de cada imagen, que es la que sirve para
+    mostrar: la original sin sufijo si esta, y si no la de mayor superficie. El
+    orden de aparicion se respeta, asi que la principal sigue siendo la primera.
+    """
+    mejor: dict[str, tuple[int, str]] = {}
+    orden: list[str] = []
+    for u in urls:
+        base = RE_TAMANO.sub("", u)
+        m = RE_TAMANO.search(u)
+        # Sin sufijo es la original: gana siempre.
+        area = 0 if m is None else int(m.group(1)) * int(m.group(2))
+        prioridad = float("inf") if m is None else area
+        if base not in mejor:
+            orden.append(base)
+            mejor[base] = (prioridad, u)
+        elif prioridad > mejor[base][0]:
+            mejor[base] = (prioridad, u)
+    return [mejor[b][1] for b in orden]
+
+
 def _rendered(valor: Any) -> str | None:
     """Los campos de WordPress vienen como {"rendered": "<p>...</p>"}."""
     if isinstance(valor, dict):
@@ -334,7 +366,7 @@ class WordPressConnector(Connector):
             ambientes=self._ambientes(texto, r"ambientes?"),
             superficie_total=a_numero(self._campo(texto, r"superficie total|terreno")),
             superficie_cubierta=a_numero(self._campo(texto, r"cubierta|construidos?")),
-            imagenes=recorte_estable_de_imagenes(limpias, 40),
+            imagenes=recorte_estable_de_imagenes(_sin_variantes_de_tamano(limpias), 40),
             extra={k: v for k, v in {
                 "post_type": crudo.get("rest", {}).get("type") if crudo.get("rest") else None,
                 "modificado_en_fuente": fecha,
