@@ -28,7 +28,8 @@ from typing import Any, Iterator
 
 from .base import (Bloqueado, Connector, ErrorPermanente, ErrorTransitorio,
                    Fuente, PropiedadNormalizada, a_entero, a_numero,
-                   detectar_moneda, detectar_operacion, detectar_tipo, limpiar)
+                   detectar_moneda, detectar_operacion, detectar_tipo, limpiar,
+                   recorte_estable_de_imagenes)
 
 TIPOS_INMO = ("property", "properties", "propiedad", "propiedades", "inmueble",
               "inmuebles", "listing", "listings", "estate", "houzez_property",
@@ -333,7 +334,7 @@ class WordPressConnector(Connector):
             ambientes=self._ambientes(texto, r"ambientes?"),
             superficie_total=a_numero(self._campo(texto, r"superficie total|terreno")),
             superficie_cubierta=a_numero(self._campo(texto, r"cubierta|construidos?")),
-            imagenes=limpias[:40],
+            imagenes=recorte_estable_de_imagenes(limpias, 40),
             extra={k: v for k, v in {
                 "post_type": crudo.get("rest", {}).get("type") if crudo.get("rest") else None,
                 "modificado_en_fuente": fecha,

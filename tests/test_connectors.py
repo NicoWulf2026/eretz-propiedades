@@ -1667,6 +1667,26 @@ def test_una_foto_compartida_por_pocas_propiedades_se_conserva():
     assert "fachada.jpg" in objs[0].imagenes
 
 
+def test_el_recorte_de_fotos_elige_siempre_las_mismas():
+    """El 47% de las propiedades de WordPress llegan al tope de 40 y la fuente
+    no devuelve la cola en el mismo orden: el subconjunto elegido cambiaba entre
+    corridas y se leia como cambio de fotos. La primera si es estable -99,9%- y
+    se respeta como principal."""
+    urls = [f"foto{i:02}.jpg" for i in range(50)]
+    a = B.recorte_estable_de_imagenes(urls, 40)
+    # La misma lista en otro orden (salvo la principal) da el MISMO recorte.
+    revuelto = [urls[0]] + list(reversed(urls[1:]))
+    b = B.recorte_estable_de_imagenes(revuelto, 40)
+    assert a == b
+    assert len(a) == 40
+    assert a[0] == "foto00.jpg"
+
+
+def test_si_no_llega_al_tope_no_se_toca_el_orden():
+    urls = ["principal.jpg", "z.jpg", "a.jpg"]
+    assert B.recorte_estable_de_imagenes(urls, 40) == urls
+
+
 def test_el_filtro_corre_antes_de_calcular_la_huella():
     """Si corriera despues, el checkpoint compararia contra una version de la
     propiedad que no existe en el artefacto."""

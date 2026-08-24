@@ -656,6 +656,25 @@ _TIPOS = {
 }
 
 
+def recorte_estable_de_imagenes(urls: list[str], tope: int) -> list[str]:
+    """Recorta la lista de fotos eligiendo SIEMPRE las mismas.
+
+    El 47% de las propiedades de WordPress llegan al tope de 40, y la fuente no
+    devuelve la cola siempre en el mismo orden: el subconjunto elegido cambiaba
+    entre corridas y se leia como que la propiedad habia cambiado de fotos -335
+    casos en una sola corrida-.
+
+    La primera SI es estable -se mantiene igual en el 99,9% de los casos-, asi
+    que es la principal y se respeta. El resto se ordena antes de recortar, que
+    es lo unico que vuelve reproducible la seleccion.
+    """
+    if not urls or len(urls) <= tope:
+        return list(urls or [])
+    principal = urls[0]
+    resto = sorted(u for u in dict.fromkeys(urls[1:]) if u != principal)
+    return [principal] + resto[:tope - 1]
+
+
 def limpiar(texto: Any) -> str | None:
     if texto is None:
         return None
