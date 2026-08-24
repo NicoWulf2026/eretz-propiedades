@@ -1710,9 +1710,32 @@ def test_cambiar_la_formula_de_la_huella_no_es_un_cambio_comercial(tmp_path):
 
     # Alguien cambia la formula: la huella guardada quedo con la version vieja.
     cp.de("ag-1")["huella_version"] = B.HUELLA_VERSION - 1
-    assert c.registrar(f, p) == B.BASELINE_INCOMPATIBLE
+    c2 = conector(cp=cp)          # corrida nueva: connector nuevo
+    assert c2.registrar(f, p) == B.BASELINE_INCOMPATIBLE
     # Y la corrida siguiente vuelve a comparar de verdad.
-    assert c.registrar(f, p) == "SIN_CAMBIOS"
+    assert conector(cp=cp).registrar(f, p) == "SIN_CAMBIOS"
+
+
+def test_la_incompatibilidad_vale_para_TODA_la_fuente(tmp_path):
+    """Se decide una vez por fuente. Leyendola del checkpoint en cada propiedad,
+    la primera lo sella con la version nueva y las demas ya lo ven al dia: una
+    corrida real informo 1 BASELINE_INCOMPATIBLE y 372 MODIFICADA cuando las 373
+    eran el mismo cambio de version."""
+    cp = B.Checkpoint(tmp_path / "cp.json")
+    f = fuente()
+    est = cp.de("ag-1")
+    est["huella_version"] = B.HUELLA_VERSION - 1
+    est["vistos"] = {f"h{i}": "vieja" for i in range(5)}
+
+    c = conector(cp=cp)
+    salidas = []
+    for i in range(5):
+        p = norm()
+        # Cada propiedad con su propia clave, como en una fuente real.
+        object.__setattr__(p, "source_url", f"https://x.com/p/{i}")
+        est["vistos"][p.hash_dedup] = "vieja"
+        salidas.append(c.registrar(f, p))
+    assert set(salidas) == {B.BASELINE_INCOMPATIBLE}, salidas
 
 
 def test_la_huella_viaja_con_su_version_en_el_artefacto():

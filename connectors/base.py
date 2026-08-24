@@ -483,6 +483,9 @@ class Connector:
         self.descargador = descargador or Descargador()
         self.checkpoint = checkpoint
         self.errores: list[dict[str, Any]] = []
+        # Si el baseline de cada fuente es comparable con la version de huella
+        # de hoy. Se decide una vez por fuente, no una vez por propiedad.
+        self._version_evaluada: dict[str, bool] = {}
 
     # --- ciclo de vida -----------------------------------------------------
     def discover(self, fuente: Fuente) -> dict[str, Any]:
@@ -570,15 +573,26 @@ class Connector:
         if self.checkpoint is None:
             return "NUEVA"
         est = self.checkpoint.de(fuente.canonical_agency_id)
-        version_previa = est.get("huella_version")
+        # La incompatibilidad se decide UNA vez por fuente y se recuerda en
+        # memoria. Leerla del checkpoint en cada propiedad no funciona: la
+        # primera lo sella con la version nueva y las demas ya lo ven al dia,
+        # asi que una corrida informaba 1 BASELINE_INCOMPATIBLE y 372
+        # MODIFICADA cuando las 373 eran el mismo cambio de version.
+        cid = fuente.canonical_agency_id
+        if cid not in self._version_evaluada:
+            previa = est.get("huella_version")
+            self._version_evaluada[cid] = (previa is not None
+                                           and previa != HUELLA_VERSION)
+            est["huella_version"] = HUELLA_VERSION
+        incompatible = self._version_evaluada[cid]
+
         clave = prop.hash_dedup
         previo = est["vistos"].get(clave)
         est["vistos"][clave] = prop.fingerprint
         est.setdefault("ids", {})[clave] = prop.source_listing_id
-        est["huella_version"] = HUELLA_VERSION
         if previo is None:
             return "NUEVA"
-        if version_previa is not None and version_previa != HUELLA_VERSION:
+        if incompatible:
             # La huella queda actualizada arriba, asi que la corrida siguiente
             # ya compara contra la formula nueva y esto no se repite.
             return BASELINE_INCOMPATIBLE
