@@ -216,7 +216,10 @@ class WasiConnector(Connector):
         imagenes, vistas = [], set()
         for u in RE_FOTO.findall(html):
             limpio = u.split("?")[0]
-            if "/empresas/" in limpio:      # el logo de la inmobiliaria
+            # El CDN separa por carpeta lo que no es la propiedad: /empresas/
+            # es el logo, /perfiles/ la foto del asesor y /publicidad/ un
+            # banner. Aparecian hasta en 261 fichas de la misma inmobiliaria.
+            if any(x in limpio for x in ("/empresas/", "/perfiles/", "/publicidad/")):
                 continue
             if limpio not in vistas:
                 vistas.add(limpio)

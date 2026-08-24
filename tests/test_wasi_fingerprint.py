@@ -418,6 +418,15 @@ def test_leer_la_ficha_no_puede_costar_casi_un_segundo():
     assert tardo < 1.0, f"tardo {tardo:.2f}s"
 
 
+def test_la_foto_del_asesor_no_es_la_foto_de_la_propiedad():
+    """El CDN de Wasi separa por carpeta lo que no es la propiedad: /empresas/
+    es el logo, /perfiles/ la foto del asesor y /publicidad/ un banner. Una sola
+    foto de perfil aparecia en 261 fichas de la misma inmobiliaria."""
+    fuente = (ROOT / "connectors" / "wasi.py").read_text(encoding="utf-8")
+    for carpeta in ("/empresas/", "/perfiles/", "/publicidad/"):
+        assert carpeta in fuente, carpeta
+
+
 # ------------------------------------------- segunda capa de la compuerta DB
 def test_la_compuerta_deja_pasar_la_ficha_y_frena_el_listado():
     """El connector ya filtra por forma de ficha. Esta es la segunda capa: con
