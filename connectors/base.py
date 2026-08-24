@@ -47,6 +47,24 @@ CONNECTOR_API_VERSION = "connector_v1"
 # significar "cambio algo" y pasa a significar "el sitio corrio su tarea nocturna".
 NO_SON_CONTENIDO = ("raw_html_len", "fetched_at", "modificado_en_fuente")
 
+# Version de la FORMULA de la huella. Se sube cada vez que cambia que entra o
+# como entra: excluir un campo, ordenar una lista, normalizar un valor.
+#
+# Existe porque el mismo error se cometio dos veces. Al cambiar la formula, la
+# huella guardada en el checkpoint deja de ser comparable y TODO el inventario
+# vuelve MODIFICADA -499 de 500 en una muestra- sin que haya cambiado una letra.
+# Con la version adentro, esa corrida se informa como BASELINE_INCOMPATIBLE en
+# vez de inventar una ola de cambios comerciales, y la siguiente ya compara bien.
+#
+#   1  formula original
+#   2  se ignora el ORDEN de descripcion y fotos
+#   3  se ignora `modificado_en_fuente`
+HUELLA_VERSION = 3
+
+# Lo que devuelve `registrar` cuando la huella guardada se calculo con otra
+# formula: no se puede afirmar que cambio ni que no cambio.
+BASELINE_INCOMPATIBLE = "BASELINE_INCOMPATIBLE"
+
 # --------------------------------------------------------------------------
 # Reuso del pipeline existente: la identidad de propiedad y los vocabularios
 # validos viven en scraper/models.py y no se duplican aca. Si el algoritmo de
@@ -211,6 +229,9 @@ class PropiedadNormalizada:
         d = asdict(self)
         d["hash_dedup"] = self.hash_dedup
         d["fingerprint"] = self.fingerprint
+        # Queda en el artefacto para que una comparacion futura pueda distinguir
+        # "cambio el contenido" de "cambio la formula de la huella".
+        d["fingerprint_version"] = HUELLA_VERSION
         d["problemas"] = self.problemas()
         return d
 
@@ -382,7 +403,8 @@ class Checkpoint:
         est = self.datos["fuentes"].setdefault(
             agency_id, {"vistos": {}, "corridas": 0, "ausencias": {},
                         "ultima_pagina": 0, "completa": False,
-                        "esquema": ESQUEMA_CHECKPOINT})
+                        "esquema": ESQUEMA_CHECKPOINT,
+                        "huella_version": HUELLA_VERSION})
         if est.get("esquema") != ESQUEMA_CHECKPOINT:
             # Las claves viejas no se pueden traducir -no guardaban la url, y el
             # hash la necesita-, asi que se descartan y esta corrida vale como
@@ -535,16 +557,27 @@ class Connector:
         mismo numero. Con esa clave el checkpoint pisaba una propiedad con otra
         y la corrida siguiente las reportaba como modificadas sin que nada
         hubiera cambiado.
+
+        Si la huella guardada se calculo con OTRA formula, no se puede afirmar
+        que cambio ni que no cambio: se devuelve BASELINE_INCOMPATIBLE. Sin eso,
+        cambiar la formula pinta el inventario entero de MODIFICADA -499 de 500
+        en una muestra real- y esa ola falsa se lee como cambio comercial.
         """
         if self.checkpoint is None:
             return "NUEVA"
         est = self.checkpoint.de(fuente.canonical_agency_id)
+        version_previa = est.get("huella_version")
         clave = prop.hash_dedup
         previo = est["vistos"].get(clave)
         est["vistos"][clave] = prop.fingerprint
         est.setdefault("ids", {})[clave] = prop.source_listing_id
+        est["huella_version"] = HUELLA_VERSION
         if previo is None:
             return "NUEVA"
+        if version_previa is not None and version_previa != HUELLA_VERSION:
+            # La huella queda actualizada arriba, asi que la corrida siguiente
+            # ya compara contra la formula nueva y esto no se repite.
+            return BASELINE_INCOMPATIBLE
         return "SIN_CAMBIOS" if previo == prop.fingerprint else "MODIFICADA"
 
     def foto_verificable(self) -> bool:

@@ -1627,6 +1627,32 @@ def test_reordenar_la_descripcion_no_es_un_cambio():
     assert a.fingerprint == b.fingerprint
 
 
+def test_cambiar_la_formula_de_la_huella_no_es_un_cambio_comercial(tmp_path):
+    """Paso dos veces: al cambiar que entra en la huella, el checkpoint anterior
+    deja de ser comparable y TODO vuelve MODIFICADA -499 de 500 en una muestra
+    real- sin que cambiara una letra. Con la version adentro esa corrida se
+    informa como incompatible y la siguiente ya compara bien."""
+    cp = B.Checkpoint(tmp_path / "cp.json")
+    c = conector(cp=cp)
+    f = fuente()
+    p = norm()
+    assert c.registrar(f, p) == "NUEVA"
+    assert c.registrar(f, p) == "SIN_CAMBIOS"
+
+    # Alguien cambia la formula: la huella guardada quedo con la version vieja.
+    cp.de("ag-1")["huella_version"] = B.HUELLA_VERSION - 1
+    assert c.registrar(f, p) == B.BASELINE_INCOMPATIBLE
+    # Y la corrida siguiente vuelve a comparar de verdad.
+    assert c.registrar(f, p) == "SIN_CAMBIOS"
+
+
+def test_la_huella_viaja_con_su_version_en_el_artefacto():
+    """Sin la version guardada, una comparacion futura no puede distinguir
+    "cambio el contenido" de "cambio la formula"."""
+    d = norm().a_dict()
+    assert d["fingerprint_version"] == B.HUELLA_VERSION
+
+
 def test_la_fecha_que_declara_el_sitio_no_es_contenido():
     """WordPress mueve `modified` cuando re-guarda los posts en masa: 1.618
     propiedades cambiaron esa fecha entre dos corridas -varias con el mismo

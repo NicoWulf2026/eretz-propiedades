@@ -44,8 +44,9 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from connectors.base import (ESQUEMA_CHECKPOINT, REUSA_PIPELINE,  # noqa: E402
-                             PropiedadNormalizada, calcular_hash_dedup)
+from connectors.base import (ESQUEMA_CHECKPOINT, HUELLA_VERSION,  # noqa: E402
+                             REUSA_PIPELINE, PropiedadNormalizada,
+                             calcular_hash_dedup)
 
 # Campos que la propiedad normalizada tiene como tales. El artefacto trae
 # ademas hash_dedup, fingerprint, problemas y las marcas de la corrida.
@@ -236,6 +237,11 @@ def main() -> int:
             "ultima_pagina": 0,
             "completa": False,
             "esquema": ESQUEMA_CHECKPOINT,
+            # Las huellas se recalcularon recien con la formula vigente, asi
+            # que el baseline queda sellado con SU version: si manana cambia la
+            # formula, la corrida lo informa en vez de fingir una ola de
+            # cambios comerciales.
+            "huella_version": HUELLA_VERSION,
             # Deliberadamente SIN linea_base: este baseline si es comparable, y
             # marcarlo obligaria a gastar una corrida entera en volver a
             # establecerlo.
