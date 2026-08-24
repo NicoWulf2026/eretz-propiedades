@@ -274,6 +274,40 @@ respondiendo OK y enumeracion completa, en observacion.
 - Century 21: 40 oficinas, con soporte bilingue (`C21_CANARY`)
 - Generico: canary de 40 fuentes (`GENERICO_CANARY`)
 
+## Version de huella y artefactos autoritativos
+
+`HUELLA_VERSION = 4` en `connectors/base.py`. La version viaja en el checkpoint
+(`huella_version` por fuente) y en cada propiedad (`fingerprint_version`), y
+cuando no coincide la corrida informa `BASELINE_INCOMPATIBLE` en vez de una ola
+falsa de MODIFICADA.
+
+  1  formula original
+  2  se ignora el ORDEN de descripcion y fotos
+  3  se ignora `modificado_en_fuente`
+  4  se descartan las imagenes de la PAGINA
+
+**Todos los baselines productivos estan sellados en v4.**
+
+### Artefacto autoritativo por plataforma
+
+| Rollout | Archivo | Propiedades |
+|---|---|---:|
+| Tokko | `TOKKO_ROLLOUT_FULL/properties_run3.jsonl` | 91.659 |
+| WordPress | `WP_ROLLOUT_FULL/properties_run5.limpio.jsonl` | 18.474 |
+| Wasi | `WASI_ROLLOUT_FULL/properties_run2.limpio.jsonl` | 3.596 |
+| Century 21 | `C21_CANARY/properties_run2.jsonl` | 5.497 |
+| Rescate generico 2 | `RESCATE2_generico/properties_run1.limpio.jsonl` | 26.390 |
+| Rescate wordpress 2 | `RESCATE2_wordpress/properties_run1.jsonl` | 3.453 |
+| Rescate tokko 2 | `RESCATE2_tokko/properties_run1.jsonl` | 1.683 |
+| Rescate nextjs | `RESCATE_nextjs/properties_run1.jsonl` | 1.614 |
+| Rescate generico 1 | `RESCATE_generico/properties_run1.jsonl` | 1.442 |
+| Canary generico | `GENERICO_CANARY/properties_run2.jsonl` | 230 |
+| Rescate tokko 1 | `RESCATE_tokko/properties_run1.jsonl` | 57 |
+
+Los `.limpio.jsonl` son los mismos artefactos con las imagenes de la pagina
+sacadas. **El original no se pisa**, y cada url descartada queda en
+`*.imagenes_descartadas.jsonl` con en cuantas propiedades aparecia.
+
 ## Idempotencia por connector — las tres cerradas
 
 | Connector | Prueba | SIN_CAMBIOS |
@@ -304,19 +338,23 @@ incluye propiedades que ya no estan).
 
 | | |
 |---|---:|
-| propiedades analizadas | 154.188 |
-| **DB_WRITE_ELIGIBLE** | **140.160** (90,9%) |
-| hash_dedup unicos | 140.160 |
-| urls unicas | 140.160 |
+| propiedades analizadas | 154.099 |
+| **DB_WRITE_ELIGIBLE** | **140.063** (90,9%) |
+| hash_dedup unicos | 140.063 |
+| urls unicas | 140.063 |
 | urls con dos inmobiliarias | 0 |
 | filas sin eretz_id real | 0 |
-| inmobiliarias | 1.233 |
+| inmobiliarias | 1.230 |
 | AGENCY_ID_PENDING | 3.777 (44 agencias) |
 | NO_ES_UNA_FICHA | 13 |
 | retenidas por conflicto cross-agency | 10.142 |
 
-Por connector: tokko 89.407, generico 21.488, wordpress 20.958, century21
+Por connector: tokko 89.407, generico 21.488, wordpress 20.861, century21
 4.935, wasi 3.372.
+
+3.273.756 fotos, 21.105 propiedades sin ninguna. Calidad: 3,61% con alguna
+incoherencia (era 4,12% antes de los arreglos de coordenadas e imagenes), 0
+hashes repetidos, 0 hashes compartidos entre agencias, 0 urls repetidas.
 
 **APTO PARA ESCRIBIR: si.** Lo unico que falta es la credencial.
 
