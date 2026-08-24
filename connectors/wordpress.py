@@ -301,8 +301,13 @@ class WordPressConnector(Connector):
             vistas.add(u)
             limpias.append(u)
 
+        # El signo NO es opcional. Argentina esta entera en el hemisferio sur y
+        # oeste, asi que todas sus coordenadas son negativas; con el menos
+        # opcional el patron tomaba pares como "50.774, 50.7708" -que no son
+        # coordenadas de nada- y ubicaba 752 propiedades fuera del pais.
         lat = lon = None
-        mc = re.search(r'(-?[23456]\d\.\d{3,})[",\s]+(-?[567]\d\.\d{3,})', str(item or html))
+        mc = re.search(r'(-[23456]\d\.\d{3,})[",\s]+(-[567]\d\.\d{3,})',
+                       str(item or html))
         if mc:
             lat, lon = float(mc.group(1)), float(mc.group(2))
 

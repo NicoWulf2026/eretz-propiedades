@@ -1541,6 +1541,24 @@ def test_un_dominio_propio_sigue_siendo_web_oficial():
         assert clasificar(url)[0] == "OFFICIAL_WEB", url
 
 
+def test_una_coordenada_sin_signo_no_es_argentina():
+    """Argentina esta entera en el hemisferio sur y oeste. Con el menos
+    opcional, el patron de WordPress tomaba pares como "50.774, 50.7708" -que
+    no son coordenadas de nada- y ubicaba 752 propiedades fuera del pais."""
+    fuente = (ROOT / "connectors" / "wordpress.py").read_text(encoding="utf-8")
+    assert r"(-?[23456]\d\.\d{3,})" not in fuente
+    assert r"(-[23456]\d\.\d{3,})" in fuente
+
+    import re as _re
+    patron = _re.compile(r"(-[23456]\d\.\d{3,})[\",\s]+(-[567]\d\.\d{3,})")
+    assert patron.search('"-34.6037","-58.3816"')
+    assert patron.search("-31.4201, -64.1888")
+    assert not patron.search("50.774, 50.7708")
+    assert not patron.search('"34.6037","58.3816"')
+    # Y el par que ubicaba propiedades en Polonia deja de tomarse.
+    assert not patron.search('"lat":"50.774","lng":"50.7708"')
+
+
 def test_dos_enumeraciones_que_no_se_pisan_no_son_cien_bajas(tmp_path):
     """pitton.net enumero 5 propiedades en una corrida y otras 5 completamente
     distintas en la siguiente, sin declarar total: es el carrusel de destacados
