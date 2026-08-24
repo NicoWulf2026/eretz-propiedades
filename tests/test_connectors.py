@@ -1627,6 +1627,19 @@ def test_reordenar_la_descripcion_no_es_un_cambio():
     assert a.fingerprint == b.fingerprint
 
 
+def test_la_fecha_que_declara_el_sitio_no_es_contenido():
+    """WordPress mueve `modified` cuando re-guarda los posts en masa: 1.618
+    propiedades cambiaron esa fecha entre dos corridas -varias con el mismo
+    04:00:29, o sea un cron- sin que cambiara una letra del aviso. Con ella
+    adentro, MODIFICADA pasa a significar "el sitio corrio su tarea nocturna"."""
+    a = _prop(extra={"modificado_en_fuente": "2026-08-21T01:02:18", "cocheras": 1})
+    b = _prop(extra={"modificado_en_fuente": "2026-08-24T04:00:29", "cocheras": 1})
+    assert a.fingerprint == b.fingerprint
+    # Pero un dato de verdad dentro de `extra` si cuenta.
+    c = _prop(extra={"modificado_en_fuente": "2026-08-21T01:02:18", "cocheras": 2})
+    assert a.fingerprint != c.fingerprint
+
+
 def test_reordenar_las_fotos_tampoco():
     a = _prop(imagenes=["a.jpg", "b.jpg", "c.jpg"])
     b = _prop(imagenes=["c.jpg", "a.jpg", "b.jpg"])

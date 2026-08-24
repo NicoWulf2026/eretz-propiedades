@@ -39,6 +39,14 @@ from typing import Any, Iterable, Iterator
 
 CONNECTOR_API_VERSION = "connector_v1"
 
+# Claves de `extra` que NO son contenido y por lo tanto no entran en la huella.
+# `modificado_en_fuente` es la fecha que declara el propio sitio, y WordPress la
+# mueve cuando re-guarda los posts en masa: 1.618 propiedades cambiaron esa
+# fecha entre dos corridas -varias con el mismo 04:00:29, o sea un cron- sin que
+# cambiara una sola letra del aviso. Con ella adentro, MODIFICADA deja de
+# significar "cambio algo" y pasa a significar "el sitio corrio su tarea nocturna".
+NO_SON_CONTENIDO = ("raw_html_len", "fetched_at", "modificado_en_fuente")
+
 # --------------------------------------------------------------------------
 # Reuso del pipeline existente: la identidad de propiedad y los vocabularios
 # validos viven en scraper/models.py y no se duplican aca. Si el algoritmo de
@@ -168,7 +176,7 @@ class PropiedadNormalizada:
         campos = {k: v for k, v in asdict(self).items()
                   if k not in ("scraped_at", "provenance", "extra")}
         campos["extra"] = {k: v for k, v in self.extra.items()
-                           if k not in ("raw_html_len", "fetched_at")}
+                           if k not in NO_SON_CONTENIDO}
         if isinstance(campos.get("descripcion"), str):
             campos["descripcion"] = " ".join(sorted(campos["descripcion"].split()))
         if isinstance(campos.get("imagenes"), list):
