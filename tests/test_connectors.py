@@ -1627,6 +1627,55 @@ def test_reordenar_la_descripcion_no_es_un_cambio():
     assert a.fingerprint == b.fingerprint
 
 
+# --------------------------------- fotos de la pagina vs fotos de la propiedad
+def _con_fotos(i, imgs):
+    return B.PropiedadNormalizada(
+        canonical_agency_id="a", source_listing_id=str(i),
+        source_url=f"https://a.com/p/{i}", connector="t", imagenes=imgs)
+
+
+def test_el_icono_del_telefono_no_es_una_foto_de_la_propiedad():
+    """El chinche del mapa, el icono del telefono y el boton de Pinterest salen
+    en todas las fichas del sitio. Medido sobre las 18.474 propiedades de
+    WordPress: 91.836 referencias de imagen -el 15,8%- eran esto. Ademas hacian
+    ruido en el incremental, porque el sitio las rota y cada rotacion se leia
+    como que la propiedad habia cambiado de fotos."""
+    from scripts.run_rollout import descartar_imagenes_compartidas
+    objs = [_con_fotos(i, [f"foto{i}.jpg", "https://a.com/ico-tel.png",
+                           "https://pinterest.com/pin/create/button/"])
+            for i in range(10)]
+    assert descartar_imagenes_compartidas(objs) == 20
+    assert objs[0].imagenes == ["foto0.jpg"]
+
+
+def test_no_se_juzga_a_una_agencia_con_pocas_propiedades():
+    """Con tres avisos del mismo edificio, la fachada compartida no es un
+    icono."""
+    from scripts.run_rollout import descartar_imagenes_compartidas
+    objs = [_con_fotos(i, [f"f{i}.jpg", "https://a.com/comun.png"]) for i in range(5)]
+    assert descartar_imagenes_compartidas(objs) == 0
+    assert objs[0].imagenes == ["f0.jpg", "https://a.com/comun.png"]
+
+
+def test_una_foto_compartida_por_pocas_propiedades_se_conserva():
+    """Tres departamentos del mismo edificio pueden compartir la fachada. El
+    umbral es la mitad del catalogo, no cualquier repeticion."""
+    from scripts.run_rollout import descartar_imagenes_compartidas
+    objs = [_con_fotos(i, [f"f{i}.jpg"] + (["fachada.jpg"] if i < 3 else []))
+            for i in range(10)]
+    assert descartar_imagenes_compartidas(objs) == 0
+    assert "fachada.jpg" in objs[0].imagenes
+
+
+def test_el_filtro_corre_antes_de_calcular_la_huella():
+    """Si corriera despues, el checkpoint compararia contra una version de la
+    propiedad que no existe en el artefacto."""
+    src = (ROOT / "scripts" / "run_rollout.py").read_text(encoding="utf-8")
+    i_filtro = src.index("descartar_imagenes_compartidas(objetos)")
+    i_registrar = src.index("cambio = con.registrar(fuente, p)")
+    assert i_filtro < i_registrar
+
+
 def test_cambiar_la_formula_de_la_huella_no_es_un_cambio_comercial(tmp_path):
     """Paso dos veces: al cambiar que entra en la huella, el checkpoint anterior
     deja de ser comparable y TODO vuelve MODIFICADA -499 de 500 en una muestra

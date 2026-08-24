@@ -177,6 +177,44 @@ def universo(dd: Path, plataforma: str, variantes: set[str] | None,
     return fuentes[:limite] if limite else fuentes
 
 
+# Una imagen que aparece en la mitad o mas del catalogo de una inmobiliaria no
+# es la foto de ninguna de sus propiedades.
+MINIMO_PARA_JUZGAR = 8
+FRACCION_COMPARTIDA = 0.5
+
+
+def descartar_imagenes_compartidas(objetos: list) -> int:
+    """Saca de cada propiedad las imagenes que son de la PAGINA, no del aviso.
+
+    El chinche del mapa, el icono del telefono, el boton de Pinterest y el
+    banner de "Agenda un cafe" salen en todas las fichas del sitio. Medido sobre
+    las 18.474 propiedades de WordPress: 91.836 referencias de imagen, el 15,8%
+    del total, eran esto. Ademas de ensuciar el dataset hacian ruido en el
+    incremental, porque el sitio las rota y cada rotacion se leia como que la
+    propiedad habia cambiado de fotos.
+
+    La senal es estructural y no depende del nombre del archivo: si la misma url
+    esta en la mitad o mas de las propiedades de esa inmobiliaria, no es de
+    ninguna. Se exige un minimo de propiedades para no castigar a una agencia
+    con tres avisos del mismo edificio.
+    """
+    if len(objetos) < MINIMO_PARA_JUZGAR:
+        return 0
+    veces: Counter = Counter()
+    for p in objetos:
+        veces.update(set(p.imagenes or []))
+    tope = max(MINIMO_PARA_JUZGAR // 2, len(objetos) * FRACCION_COMPARTIDA)
+    compartidas = {u for u, n in veces.items() if n >= tope}
+    if not compartidas:
+        return 0
+    descartadas = 0
+    for p in objetos:
+        antes = len(p.imagenes or [])
+        p.imagenes = [u for u in (p.imagenes or []) if u not in compartidas]
+        descartadas += antes - len(p.imagenes)
+    return descartadas
+
+
 def procesar(con, fuente: Fuente, max_fichas: int, observacion: bool,
              respaldo=None) -> dict:
     """Procesa una fuente; si el connector de plataforma no la reconoce, prueba
@@ -264,12 +302,19 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool) -> di
             fallidos += 1
             continue
         con.completar_ubicacion(p, fuente)
+        objetos.append(p)
+
+    # El filtro va ANTES de registrar: la huella tiene que calcularse sobre lo
+    # que efectivamente se guarda, o el checkpoint quedaria comparando contra
+    # una version de la propiedad que no existe en el artefacto.
+    r["imagenes_compartidas_descartadas"] = descartar_imagenes_compartidas(objetos)
+
+    for p in objetos:
         cambio = con.registrar(fuente, p)
         d = p.a_dict()
         d["_cambio"] = cambio
         d["_run"] = r["checked_at"]
         props.append(d)
-        objetos.append(p)
 
     r["detalles_obtenidos"] = len(props)
     r["detalles_fallidos"] = fallidos
@@ -482,6 +527,8 @@ def main() -> int:
         "duplicados_intra_fuente": len(props) - len({p["hash_dedup"] for p in props}),
         "hash_compartido_entre_agencias": sum(1 for v in por_hash.values() if len(v) > 1),
         "fotos_ajenas": sum(r.get("fotos_ajenas", 0) for r in inv),
+        "imagenes_de_la_pagina_descartadas": sum(
+            r.get("imagenes_compartidas_descartadas", 0) for r in inv),
         "fuentes_enumeracion_incompleta": sum(
             1 for r in inv if r.get("enumeracion_completa") is False),
         "errores": len(leer_jsonl(out / f"errors{sufijo}.jsonl")),
