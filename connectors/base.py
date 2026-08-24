@@ -47,8 +47,9 @@ CONNECTOR_API_VERSION = "connector_v1"
 # significar "cambio algo" y pasa a significar "el sitio corrio su tarea nocturna".
 NO_SON_CONTENIDO = ("raw_html_len", "fetched_at", "modificado_en_fuente")
 
-# Version de la FORMULA de la huella. Se sube cada vez que cambia que entra o
-# como entra: excluir un campo, ordenar una lista, normalizar un valor.
+# Version de lo que se COMPARA. Se sube cada vez que cambia que entra en la
+# huella o que se guarda: excluir un campo, ordenar una lista, normalizar un
+# valor, o filtrar datos que antes se guardaban.
 #
 # Existe porque el mismo error se cometio dos veces. Al cambiar la formula, la
 # huella guardada en el checkpoint deja de ser comparable y TODO el inventario
@@ -59,7 +60,10 @@ NO_SON_CONTENIDO = ("raw_html_len", "fetched_at", "modificado_en_fuente")
 #   1  formula original
 #   2  se ignora el ORDEN de descripcion y fotos
 #   3  se ignora `modificado_en_fuente`
-HUELLA_VERSION = 3
+#   4  se descartan las imagenes de la PAGINA: las que aparecen en la mitad o
+#      mas del catalogo de la inmobiliaria y por lo tanto no son de ninguna
+#      propiedad -iconos, botones, banners: el 15,8% de las referencias-
+HUELLA_VERSION = 4
 
 # Lo que devuelve `registrar` cuando la huella guardada se calculo con otra
 # formula: no se puede afirmar que cambio ni que no cambio.
