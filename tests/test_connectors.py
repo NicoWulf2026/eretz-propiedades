@@ -1433,11 +1433,28 @@ def test_el_directorio_fusiona_todas_las_corridas():
 
 
 def test_las_propiedades_no_se_cuentan_dos_veces():
-    """Sumar las dos corridas contaria cada propiedad dos veces: se usa la mas
-    completa."""
+    """Sumar todas las corridas contaria cada propiedad varias veces. Se usa una
+    sola, y la MAS RECIENTE: con "la mas grande", WordPress quedaba contando su
+    corrida 1 -19.019 filas- en vez de la 6, y la 1 es mas grande justamente
+    porque esta peor: incluye propiedades que ya no existen y fotos que eran
+    iconos de la pagina."""
     src = (ROOT / "scripts" / "build_platform_directory.py").read_text(encoding="utf-8")
-    assert "mejor, n = None, -1" in src
-    assert "if len(filas_p) > n:" in src
+    bloque = src[src.index("mejor = None"):src.index("props_por_agencia[")]
+    assert "reverse=True" in bloque      # de la corrida mas alta hacia abajo
+    assert "break" in bloque             # y se queda con la primera que exista
+    assert "if len(filas_p) > n:" not in src
+
+
+def test_la_corrida_mas_reciente_gana_a_la_mas_grande():
+    import importlib.util
+    ruta = ROOT / "scripts" / "build_platform_directory.py"
+    spec = importlib.util.spec_from_file_location("bpd_orden", ruta)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    orden = sorted(["1", "2", "3", "4", "5", "6", "5.limpio"],
+                   key=lambda c: [int(x) if x.isdigit() else x
+                                  for x in c.split(".")][:1], reverse=True)
+    assert orden[0] == "6"
 
 
 def test_la_plataforma_se_decide_por_la_evidencia_mas_fuerte():
