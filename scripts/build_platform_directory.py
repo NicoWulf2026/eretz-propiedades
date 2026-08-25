@@ -116,15 +116,19 @@ def main() -> int:
             if previo and previo.get("enumeradas", 0) >= (r.get("enumeradas") or 0):
                 continue
             resultado[cid] = {**r, "connector": r.get("connector") or connector}
-        # Para el conteo de propiedades se usa UNA sola corrida -la mas
-        # completa-: sumar las dos contaria cada propiedad dos veces.
-        mejor, n = None, -1
-        for corrida in corridas:
+        # Para el conteo de propiedades se usa UNA sola corrida: sumar todas
+        # contaria cada propiedad varias veces. Y se usa la MAS RECIENTE, no la
+        # mas grande. Con "la mas grande", WordPress quedaba contando su corrida
+        # 1 -19.019 filas- en vez de la 6, que es la autoritativa: la 1 incluye
+        # propiedades que ya no existen y fotos que eran iconos de la pagina.
+        mejor = None
+        for corrida in sorted(corridas, key=lambda c: [int(x) if x.isdigit() else x
+                                                       for x in c.split(".")][:1],
+                              reverse=True):
             props = base / f"properties_run{corrida}.jsonl"
             if props.exists():
-                filas_p = leer(props)
-                if len(filas_p) > n:
-                    mejor, n = filas_p, len(filas_p)
+                mejor = leer(props)
+                break
         for p in (mejor or []):
             props_por_agencia[p.get("canonical_agency_id")] += 1
 
