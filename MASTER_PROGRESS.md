@@ -333,7 +333,7 @@ falsa de MODIFICADA.
 | Rollout | Archivo | Propiedades |
 |---|---|---:|
 | Tokko | `TOKKO_ROLLOUT_FULL/properties_run3.jsonl` | 91.659 |
-| WordPress | `WP_ROLLOUT_FULL/properties_run5.limpio.jsonl` | 18.474 |
+| WordPress | `WP_ROLLOUT_FULL/properties_run6.jsonl` | 18.505 |
 | Wasi | `WASI_ROLLOUT_FULL/properties_run2.limpio.jsonl` | 3.596 |
 | Century 21 | `C21_CANARY/properties_run2.jsonl` | 5.497 |
 | Rescate generico 2 | `RESCATE2_generico/properties_run1.limpio.jsonl` | 26.390 |
@@ -378,21 +378,21 @@ incluye propiedades que ya no estan).
 
 | | |
 |---|---:|
-| propiedades analizadas | 154.099 |
-| **DB_WRITE_ELIGIBLE** | **140.063** (90,9%) |
-| hash_dedup unicos | 140.063 |
-| urls unicas | 140.063 |
+| propiedades analizadas | 154.126 |
+| **DB_WRITE_ELIGIBLE** | **140.092** (90,9%) |
+| hash_dedup unicos | 140.092 |
+| urls unicas | 140.092 |
 | urls con dos inmobiliarias | 0 |
 | filas sin eretz_id real | 0 |
 | inmobiliarias | 1.230 |
-| AGENCY_ID_PENDING | 3.777 (44 agencias) |
+| AGENCY_ID_PENDING | 3.783 (44 agencias) |
 | NO_ES_UNA_FICHA | 13 |
 | retenidas por conflicto cross-agency | 10.142 |
 
-Por connector: tokko 89.407, generico 21.488, wordpress 20.861, century21
+Por connector: tokko 89.407, generico 21.488, wordpress 20.890, century21
 4.935, wasi 3.372.
 
-3.273.756 fotos, 21.105 propiedades sin ninguna. Calidad: 3,61% con alguna
+3.158.909 fotos, 21.090 propiedades sin ninguna. Calidad: 3,61% con alguna
 incoherencia (era 4,12% antes de los arreglos de coordenadas e imagenes), 0
 hashes repetidos, 0 hashes compartidos entre agencias, 0 urls repetidas.
 
