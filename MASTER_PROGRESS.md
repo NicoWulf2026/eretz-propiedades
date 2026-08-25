@@ -274,6 +274,48 @@ respondiendo OK y enumeracion completa, en observacion.
 - Century 21: 40 oficinas, con soporte bilingue (`C21_CANARY`)
 - Generico: canary de 40 fuentes (`GENERICO_CANARY`)
 
+## Las 496 "sin inventario": 190 si publicaban
+
+El sondeo anterior probaba seis rutas fijas, asi que "no publica inventario"
+podia significar "no lo encontre". De las 496, solo 5 eran sitios vacios.
+
+`scripts/discover_ficha_shapes.py` no clasifica: agrupa las urls internas por
+FORMA -reemplazando numeros y slugs por marcadores- y cuenta cuantas comparten
+cada una. Doscientas urls hermanas son inventario, lo reconozca o no el patron
+escrito hoy.
+
+| | fuentes | urls |
+|---|---:|---:|
+| **INVENTARIO_RECUPERABLE** | **190** | **9.128** |
+| SIN_FORMA_REPETIDA | 256 | 0 |
+| WEB_NO_INMOBILIARIA | 23 | 37.347 |
+| FORMA_AMBIGUA | 21 | 768 |
+| INACCESIBLE | 6 | 0 |
+
+El bruto era 47.243 urls. **La cifra honesta es 9.128**: `laguiaonline.com.ar`
+-un directorio de comercios- aportaba 34.565 el solo, y con `barilocheweb`
+sumaban 36.221. Entre las 23 hay tambien un portal de autos, notas
+periodisticas y un sitio uruguayo. Eso es un dato para el padron: son webs
+asignadas a inmobiliarias que no son webs de inmobiliarias.
+
+### Un cuarto white-label: pixelinmobiliario
+
+96 de las 190 publican en `/ad/<slug>` y **son una sola plataforma**. Se nota
+antes de mirar el HTML: 54 de esos sitios declaraban exactamente 18 fichas y 22
+exactamente 27. Conteos identicos en dominios independientes no son inventario,
+son una plantilla.
+
+Confirmado en el HTML: comparten el MISMO id de Google Analytics
+(`UA-178873657-1`), el mismo id de ShareThis y el mismo juego de scripts.
+Ninguno de los tres es de la inmobiliaria.
+
+No hizo falta un connector nuevo. Faltaban dos cosas en el generico: `ad` no
+estaba en la lista de secciones -es "aviso"- y la paginacion no probaba `?page=N`
+en la RAIZ, que es donde pagina esta plataforma. Sin eso solo se veian las 18
+fichas de la portada: abinmobiliaria.com.ar tiene 46.
+
+Resultado: 190 fuentes, 95 OK, **3.390 propiedades**, 0 duplicados, reconcilia.
+
 ## Fotos: dos problemas distintos, los dos medidos
 
 ### 1. Imagenes de la PAGINA, no de la propiedad
@@ -378,18 +420,18 @@ incluye propiedades que ya no estan).
 
 | | |
 |---|---:|
-| propiedades analizadas | 154.126 |
-| **DB_WRITE_ELIGIBLE** | **140.092** (90,9%) |
-| hash_dedup unicos | 140.092 |
-| urls unicas | 140.092 |
+| propiedades analizadas | 157.516 |
+| **DB_WRITE_ELIGIBLE** | **143.337** (91,0%) |
+| hash_dedup unicos | 143.337 |
+| urls unicas | 143.337 |
 | urls con dos inmobiliarias | 0 |
 | filas sin eretz_id real | 0 |
 | inmobiliarias | 1.230 |
-| AGENCY_ID_PENDING | 3.783 (44 agencias) |
+| AGENCY_ID_PENDING | 3.928 (50 agencias) |
 | NO_ES_UNA_FICHA | 13 |
 | retenidas por conflicto cross-agency | 10.142 |
 
-Por connector: tokko 89.407, generico 21.488, wordpress 20.890, century21
+Por connector: tokko 89.407, generico 24.733, wordpress 20.890, century21
 4.935, wasi 3.372.
 
 3.158.909 fotos, 21.090 propiedades sin ninguna. Calidad: 3,61% con alguna
