@@ -53,6 +53,9 @@ ROLLOUTS = [
     ("RESCATE2_wordpress", "wordpress"),
     ("RESCATE2_tokko", "generico"),
     ("RESCATE2_generico", "generico"),
+    # Tercera tanda: fuentes cuya FORMA de url de ficha se descubrio
+    # midiendo, no adivinando.
+    ("RESCATE3_shapes", "generico"),
 ]
 
 
