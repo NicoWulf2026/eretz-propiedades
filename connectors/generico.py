@@ -39,9 +39,13 @@ SITEMAPS = ("/sitemap.xml", "/sitemap_index.xml", "/wp-sitemap.xml",
 # Una URL de ficha lleva la seccion Y algo que la identifica: un id numerico o
 # un slug largo. Sin ese segundo requisito, "/propiedades/" -la pagina de
 # listado- entraria como si fuera una propiedad.
+# `ad` es "aviso", y lo usa una plataforma entera: 97 inmobiliarias publican en
+# /ad/<slug> y las 97 figuraban como "no publica inventario" solo porque esa
+# seccion no estaba en la lista. El prefijo de seccion mantiene el patron
+# acotado: no se afloja nada para las demas.
 RE_FICHA = re.compile(
     r"/(?:propiedad(?:es)?|inmueble[s]?|emprendimiento[s]?|ficha[s]?|"
-    r"propert(?:y|ies)|listing[s]?|aviso[s]?|venta|alquiler)/"
+    r"propert(?:y|ies)|listing[s]?|aviso[s]?|anuncio[s]?|ad|venta|alquiler)/"
     r"(?:[^/?#]*?(?:\d{3,}|[a-z0-9]+(?:-[a-z0-9]+){2,}))/?$", re.I)
 
 # Muchos frontends propios cuelgan la ficha de la RAIZ, sin seccion:
@@ -186,7 +190,11 @@ class GenericoConnector(Connector):
 
         # Paginacion por convencion: /page/N y ?page=N son las dos formas que
         # cubren casi todo. Se corta apenas una no aporta fichas nuevas.
-        for patron in ("{b}/propiedades/page/{n}/", "{b}/propiedades?page={n}"):
+        # La RAIZ tambien puede ser el listado. Una plataforma entera pagina
+        # asi -abinmobiliaria.com.ar?page=2- y sin este patron el connector solo
+        # veia las 18 fichas de la portada: la fuente tenia 46.
+        for patron in ("{b}/propiedades/page/{n}/", "{b}/propiedades?page={n}",
+                       "{b}?page={n}"):
             sin_nuevas = 0
             for n in range(2, 60):
                 try:

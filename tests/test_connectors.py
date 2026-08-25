@@ -1684,6 +1684,32 @@ def test_una_foto_compartida_por_pocas_propiedades_se_conserva():
     assert "fachada.jpg" in objs[0].imagenes
 
 
+# ------------------------------- formas de ficha que no sabiamos reconocer
+def test_ad_es_aviso_y_lo_usa_una_plataforma_entera():
+    """97 inmobiliarias publican en /ad/<slug> y las 97 figuraban como "no
+    publica inventario" solo porque esa seccion no estaba en la lista. Comparten
+    hasta el mismo id de Analytics: es un white-label."""
+    from connectors.generico import RE_FICHA
+    assert RE_FICHA.search("https://x.com/ad/se-alquila-amplia-casa-en-barrio-el-bosque")
+    assert RE_FICHA.search("https://x.com/ad/dpto-2-amb-centro")
+
+
+def test_el_prefijo_de_seccion_mantiene_el_patron_acotado():
+    """Agregar `ad` no puede arrastrar cualquier pagina que empiece con esas
+    letras."""
+    from connectors.generico import RE_FICHA
+    for u in ("https://x.com/ad/", "https://x.com/adhesion",
+              "https://x.com/administracion/contacto"):
+        assert not RE_FICHA.search(u), u
+
+
+def test_la_raiz_tambien_puede_ser_el_listado():
+    """Una plataforma entera pagina con ?page=N en la raiz. Sin ese patron el
+    connector solo veia las 18 fichas de la portada: la fuente tenia 46."""
+    src = (ROOT / "connectors" / "generico.py").read_text(encoding="utf-8")
+    assert '"{b}?page={n}"' in src
+
+
 def test_una_foto_es_una_foto_no_cuatro():
     """WordPress genera una copia por cada tamano que usa el tema. El 30% de las
     "fotos" eran variantes de la misma imagen: 146.876 entradas de mas en 9.672
