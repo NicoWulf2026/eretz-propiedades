@@ -266,3 +266,49 @@ def test_el_indice_del_propio_buscador_no_es_la_web():
               "https://www.zoominfo.com/c/alfa/123"):
         assert wd2.es_portal(u), u
     assert not wd2.es_portal("https://alfapropiedades.com.ar/")
+
+
+# --------------------------------------------------------------------------
+# Una ficha en el sitio propio no es una nota ajena
+#
+# La forma de la URL no alcanza para decidirlo. Una ficha de propiedad en el
+# dominio PROPIO de la inmobiliaria tiene la misma forma que un articulo:
+# /p/8093032-Departamento-en-venta-centro. Rechazarla costaba 44 de cada 363
+# entidades de la primera tanda, casi todas su sitio propio.
+# --------------------------------------------------------------------------
+
+def test_ficha_en_dominio_propio_no_es_articulo():
+    from scripts.identity_scoring import es_articulo
+    assert not es_articulo(
+        "https://www.acinpropiedades.com.ar/p/8093032-Departamento-en-venta",
+        "ACIN Propiedades")
+    assert not es_articulo(
+        "https://agra.com.ar/inmuebles/venta-departamento-cordoba-centro-x",
+        "AGRA, Inmobiliaria Urbana y Rural")
+
+
+def test_nota_de_un_tercero_sigue_siendo_articulo():
+    """Un diario que escribe sobre la inmobiliaria no publica en un dominio que
+    se llama como ella."""
+    from scripts.identity_scoring import es_articulo
+    assert es_articulo(
+        "https://lanacion.com.ar/propiedades/quien-es-lopez-propiedades-nid1-a-b",
+        "Lopez Propiedades")
+    assert es_articulo("https://diario.com/2026/03/nota-sobre-la-inmobiliaria",
+                       "Lopez Propiedades")
+
+
+def test_sin_nombre_la_forma_sigue_decidiendo():
+    """Compatibilidad: quien llame sin nombre conserva el comportamiento viejo."""
+    from scripts.identity_scoring import es_articulo
+    assert es_articulo("https://x.com/p/8093032-Departamento-en-venta-centro")
+
+
+def test_el_dominio_lleva_el_nombre_solo_con_tokens_distintivos():
+    """"Propiedades" e "Inmobiliaria" las comparte medio rubro: si alcanzaran,
+    cualquier dominio del rubro pasaria por propio."""
+    from scripts.identity_scoring import dominio_lleva_el_nombre
+    assert dominio_lleva_el_nombre("https://acinpropiedades.com.ar/x",
+                                   "ACIN Propiedades")
+    assert not dominio_lleva_el_nombre("https://otraspropiedades.com.ar/x",
+                                       "ACIN Propiedades")

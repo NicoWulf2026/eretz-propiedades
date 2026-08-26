@@ -190,8 +190,36 @@ def detectar_otro_rubro(texto: str, nombre_entidad: str = "") -> str | None:
 ARTICULO = re.compile(r"^/[^/]+/[^/]*-[^/]*-[^/]*-[^/]*-", re.I)
 
 
-def es_articulo(url: str) -> bool:
-    """La URL tiene forma de nota, no de home de inmobiliaria."""
+def dominio_lleva_el_nombre(url: str, nombre: str) -> bool:
+    """El dominio contiene el nombre distintivo de la entidad.
+
+    `acinpropiedades.com.ar` para "ACIN Propiedades". Un tercero que escribe una
+    nota sobre una inmobiliaria no publica en un dominio que se llama como ella.
+    """
+    from urllib.parse import urlsplit
+    host = urlsplit(url if "://" in url else "https://" + url).netloc.lower()
+    plano = re.sub(r"[^a-z0-9]", "", d.strip_accents(host))
+    wd = _load("agency_web_discovery")
+    for t in wd.tokens_distintivos(nombre or ""):
+        t = re.sub(r"[^a-z0-9]", "", d.strip_accents(t.lower()))
+        if len(t) >= 4 and t in plano:
+            return True
+    return False
+
+
+def es_articulo(url: str, nombre: str = "") -> bool:
+    """La URL tiene forma de nota, no de home de inmobiliaria.
+
+    La forma sola no alcanza para decidirlo, y creer que si costaba caro: una
+    ficha de propiedad en el sitio PROPIO de la inmobiliaria tiene exactamente
+    esa forma -acinpropiedades.com.ar/p/8093032-Departamento-en-venta-...- y se
+    estaba rechazando como si fuera un articulo ajeno. Eran 44 de 363 en la
+    primera tanda, casi todas el sitio propio de la entidad.
+
+    Lo que decide no es la profundidad de la ruta sino de quien es el dominio.
+    """
+    if nombre and dominio_lleva_el_nombre(url, nombre):
+        return False
     from urllib.parse import urlsplit
     camino = urlsplit(url if "://" in url else "https://" + url).path
     if ARTICULO.match(camino):
@@ -212,7 +240,7 @@ def puntuar(entidad: dict, sitio: dict) -> Puntaje:
 
     # --- rechazo: el sitio es una nota SOBRE la inmobiliaria ---
     url = sitio.get("url") or ""
-    if url and es_articulo(url):
+    if url and es_articulo(url, entidad.get("nombre_original") or ""):
         p.negativas.append(Señal("es_una_nota", PENAS["es_una_nota"],
                                  "la URL tiene forma de articulo, no de sitio propio"))
         p.total = PENAS["es_una_nota"]
