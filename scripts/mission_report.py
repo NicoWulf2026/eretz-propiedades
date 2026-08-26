@@ -36,6 +36,22 @@ CORRIDAS = {
 }
 
 
+def corridas_de(base: Path, prefijo: str) -> list[str]:
+    """Las corridas que existen, no las que alguien supuso que iban a existir.
+
+    Estaba fijo en ("1", "2"): el informe mostraba la corrida 2 de Tokko -la
+    anterior al arreglo del checkpoint, con todo marcado NUEVA- y escondia la 3,
+    que es la que cerro con 99,83% sin cambios. El numero que el informe
+    mostraba decia lo contrario de lo que habia pasado.
+    """
+    salida = []
+    for ruta in base.glob(f"{prefijo}run*"):
+        n = ruta.name.split("run", 1)[1].split(".")[0]
+        if n.isdigit():
+            salida.append(n)
+    return sorted(set(salida), key=int)
+
+
 def leer(ruta: Path) -> list[dict]:
     if not ruta.exists():
         return []
@@ -99,7 +115,7 @@ def main() -> int:
         if not base.exists():
             continue
         print(f"\n  {etiqueta}  [{carpeta}]")
-        for corrida in ("1", "2"):
+        for corrida in corridas_de(base, "quality_report_"):
             q = base / f"quality_report_run{corrida}.json"
             if not q.exists():
                 continue
@@ -113,11 +129,16 @@ def main() -> int:
             print(f"          estados={r.get('fuentes_por_estado')}")
             print(f"          cambios={cambios}  errores={r.get('errores',0)}  "
                   f"potential_inactive={r.get('potential_inactive',0)}")
-        # las propiedades de la corrida mas reciente disponible
-        for corrida in ("2", "1"):
+        # Las propiedades de la corrida mas reciente, que no es la mas grande:
+        # la primera corrida de WordPress tenia 19.019 filas y la sexta 18.505,
+        # y la autoritativa es la sexta -la primera incluye propiedades que ya
+        # no existen y fotos que eran iconos de la pagina-.
+        for corrida in reversed(corridas_de(base, "properties_")):
             p = base / f"properties_run{corrida}.jsonl"
-            if p.exists():
-                todas_props.extend(leer(p))
+            corregida = p.with_name(p.name.replace(".jsonl", ".coherente.jsonl"))
+            elegida = corregida if corregida.exists() else p
+            if elegida.exists():
+                todas_props.extend(leer(elegida))
                 break
 
     if not todas_props:
@@ -184,7 +205,7 @@ def main() -> int:
     print("=" * 70)
     total_aus = 0
     for etiqueta, (carpeta, _) in CORRIDAS.items():
-        for corrida in ("1", "2"):
+        for corrida in corridas_de(raiz / carpeta, "absences_"):
             aus = leer(raiz / carpeta / f"absences_run{corrida}.jsonl")
             if aus:
                 total_aus += len(aus)

@@ -2233,3 +2233,27 @@ def test_la_agencia_duplicada_se_sugiere_sin_decidir():
     from scripts.resolve_cross_agency import LIBERABLES, SAME_AGENCY
     assert SAME_AGENCY in LIBERABLES        # solo con confianza alta explicita
     assert "liberable" in src
+
+
+def test_el_informe_muestra_las_corridas_que_existen():
+    """Estaba fijo en ("1", "2"): mostraba la corrida 2 de Tokko -la anterior al
+    arreglo del checkpoint, con las 91.715 marcadas NUEVA- y escondia la 3, que
+    cerro con 99,83% sin cambios. El informe decia lo contrario de lo que
+    habia pasado."""
+    from scripts.mission_report import corridas_de
+
+    src = (ROOT / "scripts" / "mission_report.py").read_text(encoding="utf-8")
+    assert 'for corrida in ("1", "2")' not in src
+
+    base = ROOT / "tests" / "fixtures" / "_corridas"
+    base.mkdir(parents=True, exist_ok=True)
+    for n in ("1", "2", "10"):
+        (base / f"quality_report_run{n}.json").write_text("{}", encoding="utf-8")
+    (base / "quality_report_runsmoke.json").write_text("{}", encoding="utf-8")
+    try:
+        # Orden numerico, no alfabetico: la 10 va despues de la 2.
+        assert corridas_de(base, "quality_report_") == ["1", "2", "10"]
+    finally:
+        for f in base.glob("quality_report_run*"):
+            f.unlink()
+        base.rmdir()
