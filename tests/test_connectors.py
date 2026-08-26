@@ -2132,33 +2132,6 @@ def test_la_variante_de_tamano_se_sigue_descartando():
     assert identidad_de_imagen("https://alfa.com/f/a.jpg?w=640") ==         identidad_de_imagen("https://alfa.com/f/a.jpg?w=320")
 
 
-def test_no_puede_haber_mas_dormitorios_que_ambientes():
-    """1.437 propiedades del corpus generico lo declaraban. Un dormitorio ES un
-    ambiente: los numeros venian de las "propiedades relacionadas" al pie."""
-    campos = {"dormitorios": 5, "ambientes": 1, "tipo_propiedad": "departamento"}
-    fuera = GenericoConnector._atributos_coherentes(campos, "")
-    # No se elige uno: no hay forma de saber cual vino de la ficha.
-    assert campos["dormitorios"] is None and campos["ambientes"] is None
-    assert "dormitorios>ambientes" in fuera["atributos_descartados"]
-
-
-def test_un_lote_no_tiene_dormitorios():
-    campos = {"tipo_propiedad": "terreno", "dormitorios": 5, "banos": 2,
-              "ambientes": 6, "superficie_cubierta": 90.0,
-              "superficie_total": 600.0}
-    fuera = GenericoConnector._atributos_coherentes(campos, "")
-    assert campos["dormitorios"] is None and campos["superficie_cubierta"] is None
-    assert campos["superficie_total"] == 600.0      # esa si es de un lote
-    assert "dormitorios_en_un_terreno" in fuera["atributos_descartados"]
-
-
-def test_los_atributos_de_una_ficha_normal_no_se_tocan():
-    campos = {"dormitorios": 3, "ambientes": 4, "tipo_propiedad": "casa",
-              "banos": 2, "superficie_cubierta": 120.0}
-    assert GenericoConnector._atributos_coherentes(campos, "") == {}
-    assert campos["dormitorios"] == 3 and campos["ambientes"] == 4
-
-
 def test_un_numero_sin_moneda_no_se_publica_como_precio():
     """Entre pesos y dolares hay un factor de mil. 868 propiedades traian el
     numero sin moneda desde schema.org."""
@@ -2175,15 +2148,6 @@ def test_un_numero_sin_moneda_no_se_publica_como_precio():
     # No se pierde: queda el numero para quien pueda resolver la moneda.
     assert p.extra["precio_sin_moneda"] == 150000
     assert "precio sin moneda" not in p.problemas()
-
-
-def test_lo_cubierto_no_puede_superar_lo_total():
-    campos = {"superficie_cubierta": 400.0, "superficie_total": 120.0,
-              "tipo_propiedad": "casa"}
-    fuera = GenericoConnector._atributos_coherentes(campos, "")
-    assert campos["superficie_cubierta"] is None
-    assert campos["superficie_total"] is None
-    assert "cubierta>total" in fuera["atributos_descartados"]
 
 
 def test_las_guardas_se_pueden_aplicar_a_lo_ya_extraido():
@@ -2229,3 +2193,28 @@ def test_un_rotulo_explicito_de_operacion_manda():
     """"Operacion: Venta" no se puede confundir con el menu, este donde este."""
     f = GenericoConnector._operacion_en_la_ficha
     assert f("Ventas Alquileres Contacto. Ficha. Operacion: Venta. 100 m2") == "venta"
+
+
+def test_el_connector_aplica_la_aritmetica_de_inmuebles():
+    """Las reglas viven en connectors/coherencia.py y se prueban ahi enteras.
+    Esto fija que el camino del connector las use: una regla que existe pero no
+    se aplica es peor que no tenerla, porque parece que esta cubierto."""
+    ficha = ("<html><head><title>Lote en venta</title></head><body>"
+             "<p>Lote en venta USD 60.000. Terreno de 800 m2. "
+             "5 dormitorios 2 banos 4 ambientes 90 m2 cubiertos.</p>"
+             '<img src="https://alfa.com.ar/f/1.jpg">'
+             '<img src="https://alfa.com.ar/f/2.jpg">'
+             '<img src="https://alfa.com.ar/f/3.jpg">'
+             + "descripcion del lote. " * 30 + "</body></html>")
+    sitemap = ("<urlset><url><loc>https://alfa.com.ar/propiedades/"
+               "710944-lote-en-venta</loc></url></urlset>")
+    c = gen_conector({"https://alfa.com.ar/sitemap.xml": sitemap,
+                      "https://alfa.com.ar/propiedades/": ficha})
+    f = fuente()
+    p = c.normalize(list(c.fetch_listing(f, c.discover(f)))[0], f)
+    assert p.tipo_propiedad == "terreno"
+    # Un lote no tiene dormitorios ni superficie cubierta: esos numeros salieron
+    # de otra ficha de la misma pagina.
+    assert p.dormitorios is None and p.banos is None
+    assert p.superficie_cubierta is None
+    assert "en_un_terreno" in p.extra["atributos_descartados"]

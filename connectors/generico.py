@@ -29,6 +29,7 @@ import urllib.parse
 from html import unescape
 from typing import Any, Iterator
 
+from .coherencia import revisar
 from .base import (Bloqueado, Connector, ErrorPermanente, ErrorTransitorio,
                    Fuente, PropiedadNormalizada, a_numero, detectar_moneda,
                    detectar_operacion, detectar_tipo, identidad_de_imagen,
@@ -92,8 +93,11 @@ def patron_de_forma(forma: str) -> "re.Pattern | None":
 RE_LOC = re.compile(r"<loc>\s*([^<\s]+)\s*</loc>", re.I)
 RE_LD = re.compile(r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>', re.S | re.I)
 RE_IMG = re.compile(r'https?://[^\s"\'<>]+?\.(?:jpe?g|png|webp)', re.I)
-RE_COORD = re.compile(r'"?(?:latitude|lat)"?\s*[:=]\s*"?(-?[23456]\d\.\d{3,})"?'
-                      r'.{0,80}?"?(?:longitude|lng|lon)"?\s*[:=]\s*"?(-?[567]\d\.\d{3,})"?',
+# El menos NO es opcional. Argentina esta entera en el hemisferio sur y
+# oeste, y con el signo opcional el patron de WordPress tomo pares como
+# "50.774, 50.7708" y ubico 752 propiedades fuera del pais.
+RE_COORD = re.compile(r'"?(?:latitude|lat)"?\s*[:=]\s*"?(-[23456]\d\.\d{3,})"?'
+                      r'.{0,80}?"?(?:longitude|lng|lon)"?\s*[:=]\s*"?(-[567]\d\.\d{3,})"?',
                       re.S | re.I)
 
 # Evidencia de que una pagina publica UNA propiedad. Se usa solo sobre las urls
@@ -390,6 +394,10 @@ class GenericoConnector(Connector):
                 lat, lon = float(m.group(1)), float(m.group(2))
 
         campos = {
+            "latitud": lat,
+            "longitud": lon,
+            "precio": precio,
+            "moneda": moneda,
             "operacion": (detectar_operacion(f"{titulo or ''} {url}")
                           or self._operacion_en_la_ficha(texto)),
             # El tipo tambien puede estar solo en el cuerpo. Se mira el
@@ -406,15 +414,18 @@ class GenericoConnector(Connector):
             "superficie_cubierta": (datos.get("sup_cubierta")
                                     or self._sup(texto, r"cubiert|construid")),
         }
-        descartados = self._atributos_coherentes(campos, texto)
+        # La aritmetica de inmuebles vive en un modulo aparte: la comparten el
+        # connector y la correccion de lo ya extraido, y asi no pueden divergir.
+        fuera = revisar(campos)
+        lat, lon = campos["latitud"], campos["longitud"]
+        precio, moneda = campos["precio"], campos["moneda"]
+        descartados = ({"atributos_descartados": ",".join(fuera)} if fuera else {})
 
         # Un numero sin moneda no es un precio: entre pesos y dolares hay un
         # factor de mil. Se guarda el numero aparte para no perder el dato, y
         # el campo queda vacio en vez de publicar un valor que puede estar mil
         # veces equivocado.
         precio_sin_moneda = None
-        if precio is not None and precio <= 0:
-            precio, moneda = None, None       # cero no es un precio
         if precio is not None and not moneda:
             precio_sin_moneda, precio = precio, None
 
@@ -483,41 +494,6 @@ class GenericoConnector(Connector):
                 continue          # es el nombre de la inmobiliaria, no la ficha
             return c
         return next((c for c in candidatos if c), None)
-
-    @staticmethod
-    def _atributos_coherentes(datos: dict, texto: str) -> dict:
-        """Descarta los atributos que la pagina no puede estar diciendo.
-
-        El texto del que se leen es la pagina entera, y muchas fichas traen
-        "propiedades relacionadas" al pie: de ahi salen "5 dormitorios" en un
-        LOTE EN ESQUINA y "2 dormitorios" en un MONOAMBIENTE. 1.437 propiedades
-        del corpus generico -el 4,9%- declaraban mas dormitorios que ambientes,
-        que es imposible: un dormitorio ES un ambiente.
-
-        Cuando dos valores se contradicen no se elige uno: no hay forma de
-        saber cual vino de la ficha y cual del vecino. Se van los dos y queda
-        anotado por que.
-        """
-        fuera = []
-        dorm, amb = datos.get("dormitorios"), datos.get("ambientes")
-        if dorm and amb and dorm > amb:
-            datos["dormitorios"] = datos["ambientes"] = None
-            fuera.append("dormitorios>ambientes")
-        cub, tot = datos.get("superficie_cubierta"), datos.get("superficie_total")
-        if cub and tot and cub > tot:
-            # Lo cubierto es parte de lo total. Si lo supera, uno de los dos
-            # numeros es de otra ficha.
-            datos["superficie_cubierta"] = datos["superficie_total"] = None
-            fuera.append("cubierta>total")
-        if datos.get("tipo_propiedad") == "terreno":
-            # Un lote no tiene dormitorios ni superficie cubierta. Si figuran,
-            # son de otra ficha de la misma pagina.
-            for campo in ("dormitorios", "banos", "ambientes",
-                          "superficie_cubierta"):
-                if datos.get(campo):
-                    datos[campo] = None
-                    fuera.append(f"{campo}_en_un_terreno")
-        return {"atributos_descartados": ",".join(fuera)} if fuera else {}
 
     @staticmethod
     def _operacion_en_la_ficha(texto: str) -> str | None:
