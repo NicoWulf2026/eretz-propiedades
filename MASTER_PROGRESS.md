@@ -601,8 +601,19 @@ python scripts/run_rollout.py --salida "D:/INMO CAPITAL/RESCATE_wordpress"   --c
 python scripts/wasi_discovery.py --plataforma WASI --salida "D:/INMO CAPITAL/WASI_DISCOVERY.jsonl" --concurrencia 2
 python scripts/wasi_discovery.py --plataforma TODAS --solo-no-confirmadas --salida "D:/INMO CAPITAL/WASI_SWEEP.jsonl" --concurrencia 2
 
-# Compuerta antes de escribir
-python scripts/write_eligibility.py --entradas <properties_run1.jsonl ...>
+# Guardas de coherencia sobre lo ya extraido (escribe *.coherente.jsonl)
+python scripts/apply_quality_guards.py --entradas <properties_run*.jsonl ...>
+
+# Compuerta antes de escribir: SIEMPRE con los archivos corregidos
+python scripts/write_eligibility.py --entradas   "D:/INMO CAPITAL/TOKKO_ROLLOUT_FULL/properties_run3.coherente.jsonl"   "D:/INMO CAPITAL/WP_ROLLOUT_FULL/properties_run6.coherente.jsonl"   "D:/INMO CAPITAL/WASI_ROLLOUT_FULL/properties_run2.limpio.coherente.jsonl"   "D:/INMO CAPITAL/C21_CANARY/properties_run2.coherente.jsonl"   "D:/INMO CAPITAL/RESCATE2_generico/properties_run1.limpio.coherente.jsonl"   "D:/INMO CAPITAL/RESCATE2_tokko/properties_run1.coherente.jsonl"   "D:/INMO CAPITAL/RESCATE2_wordpress/properties_run1.coherente.jsonl"   "D:/INMO CAPITAL/RESCATE3_shapes/properties_run1.coherente.jsonl"   "D:/INMO CAPITAL/RESCATE_generico/properties_run1.coherente.jsonl"   "D:/INMO CAPITAL/RESCATE_nextjs/properties_run1.coherente.jsonl"   "D:/INMO CAPITAL/FORMAS_ROLLOUT/properties_run1.jsonl"
+
+# Formas verificadas por fuente (158) y residual nunca intentado (463)
+python scripts/build_shape_census.py --verificado   "D:/INMO CAPITAL/ROOT_SHAPES_VERIFIED.jsonl" "D:/INMO CAPITAL/SHAPES_2_VERIFIED.jsonl"
+python scripts/run_rollout.py --connector generico   --censo "D:/INMO CAPITAL/CENSO_FORMAS.jsonl" --concurrencia 8 --corrida 1   --salida "D:/INMO CAPITAL/FORMAS_ROLLOUT"
+python scripts/build_residual_census.py --estados   "NO_INTENTADA,UNSUPPORTED_PLATFORM,UNKNOWN,ENUMERACION_INCOMPLETA,NO_INVENTORY"   --excluir "D:/INMO CAPITAL/CENSO_FORMAS.jsonl"   "D:/INMO CAPITAL/SHAPES_2_CANDIDATAS.jsonl"   --salida "D:/INMO CAPITAL/CENSO_RESIDUAL_GENERICO.jsonl"
+
+# Cadencia de relectura
+python scripts/plan_recrawl.py
 
 # Canary de escritura (valida y hace ROLLBACK; --escribir para confirmar)
 python scripts/property_write_canary.py --entrada "D:/INMO CAPITAL/DB_WRITE_ELIGIBLE.jsonl" --limite 50
