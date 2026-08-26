@@ -677,6 +677,37 @@ La compuerta de escritura lo mira: lo leido en un portal no se escribe, porque
 le atribuiria a una inmobiliaria el inventario de las otras 35. La pagina de la
 oficina dentro de su propia red si es suya y si entra.
 
+## El ciclo que cierra la cobertura
+
+El mismo mecanismo, tres vueltas, cada una alimentada por lo que la anterior
+no pudo leer:
+
+```
+correr el generico  ->  las que devuelven SIN_INVENTARIO
+     |                          |
+     |                   descubrir FORMAS de sus urls internas
+     |                          |
+     |                   verificar bajando 3 fichas de cada sitio
+     |                          |
+     +--------------------  censar y correr con la forma de ESA fuente
+```
+
+| vuelta | fuentes miradas | con forma | verificadas | habilitadas |
+|---|---:|---:|---:|---:|
+| 1 (residual clasificado) | 496 | 190 | 95 | 58 |
+| 2 (nunca sondeadas) | 460 | 283 | 198 | 100 |
+| 3 (residual del generico) | 441 | 48 | 44 | 6 |
+
+El rendimiento cae vuelta a vuelta -58, 100, 6- y eso es informacion, no
+fracaso: la tercera vuelta mira lo que ya sobrevivio a dos filtros. Cuando el
+descubrimiento devuelve 355 de 441 sin una forma repetida, lo que dice es que
+esos sitios no publican un catalogo enlazado, no que falte un connector.
+
+Y el residual del generico -453 fuentes con web propia que nunca habia
+intentado nadie- devolvio 12 con inventario y 613 propiedades. Correrlo costo
+25 minutos y convirtio 453 "no sabemos" en 441 "no publica catalogo" y 12
+inmobiliarias mas.
+
 ## Lo que el rastro de descartes encontro
 
 Guardar cada url descartada con su evidencia -precio, schema, operacion en el
