@@ -2218,3 +2218,18 @@ def test_el_connector_aplica_la_aritmetica_de_inmuebles():
     assert p.dormitorios is None and p.banos is None
     assert p.superficie_cubierta is None
     assert "en_un_terreno" in p.extra["atributos_descartados"]
+
+
+def test_la_agencia_duplicada_se_sugiere_sin_decidir():
+    """El id mas bajo es una convencion, no evidencia. En uno de los tres casos
+    la ficha mas antigua es la que NO tiene dominio verificado: presentarla como
+    "la canonica" invita a colgar 3.137 propiedades del registro equivocado."""
+    src = (ROOT / "scripts" / "resolve_cross_agency.py").read_text(encoding="utf-8")
+    assert "canonical_candidate" not in src      # el nombre sonaba a veredicto
+    assert "candidata_por_antiguedad" in src
+    assert "criterio_de_la_candidata" in src
+    assert "fichas_con_web_verificada" in src
+    # Y ninguna de estas categorias vuelve al write set por si sola.
+    from scripts.resolve_cross_agency import LIBERABLES, SAME_AGENCY
+    assert SAME_AGENCY in LIBERABLES        # solo con confianza alta explicita
+    assert "liberable" in src

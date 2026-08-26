@@ -228,9 +228,21 @@ def main() -> int:
             "ids_implicados": info["ids"], "dominio": info["dominio"],
             "fichas": fichas, "urls_en_conflicto": len(urls),
             "evidencia": ["mismo dominio", "mismas palabras distintivas del nombre"],
-            "canonical_candidate": min(
+            # Sugerencia, no decision. El id mas bajo es la ficha mas antigua
+            # del padron, que es una convencion, no evidencia: en uno de los
+            # tres casos la ficha mas antigua es justamente la que NO tiene
+            # dominio verificado. Por eso viaja al lado la otra senal, y el
+            # criterio queda escrito para que nadie lo tome por un veredicto.
+            "candidata_por_antiguedad": min(
                 (f for f in fichas if str(f.get("eretz_id")).isdigit()),
                 key=lambda f: int(f["eretz_id"]), default=None),
+            "criterio_de_la_candidata": "eretz_id mas bajo = ficha mas antigua "
+                                        "del padron. Es una convencion, no "
+                                        "evidencia de cual conserva ERETZ",
+            "fichas_con_web_verificada": [
+                f for f in fichas
+                if f.get("dominio") and "HIGH_CONFIDENCE" in str(f.get("estado_web"))
+                or f.get("dominio") and "VERIFIED" in str(f.get("estado_web"))],
             "confidence": "alta para que son la misma empresa; la canonica "
                           "requiere confirmar cual ficha conserva ERETZ",
             "accion_propuesta": ("unificar en el padron antes de ingerir: hasta "
