@@ -677,6 +677,31 @@ La compuerta de escritura lo mira: lo leido en un portal no se escribe, porque
 le atribuiria a una inmobiliaria el inventario de las otras 35. La pagina de la
 oficina dentro de su propia red si es suya y si entra.
 
+## Lo que el rastro de descartes encontro
+
+Guardar cada url descartada con su evidencia -precio, schema, operacion en el
+texto, cantidad de fotos- costo veinte lineas y encontro tres defectos que
+ninguna prueba unitaria hubiera encontrado, porque los tres se veian como
+"esa fuente publica poco":
+
+1. **Fotos detras de un proxy.** Un sitio sirve sus 12 fotos por
+   `/api/img?u=<foto>`. Quitar la query -correcto para descartar variantes de
+   tamano- las dejaba en una sola: `/api/img`.
+2. **Fotos con ruta relativa.** El extractor solo miraba urls absolutas. Una
+   fuente perdio 268 fichas reales porque el guardian las veia sin una foto.
+3. **El guardian pedia mas que su propia calibracion.** La forma se verifico
+   con "precio Y (operacion O atributos)" y el guardian exigia la operacion
+   siempre: 21 fichas de 31 en una sola fuente, con precio, titulo y 190
+   fotos.
+
+Una url descartada en silencio es indistinguible de una que nunca existio.
+
+Lo que queda descartado -403 en 158 fuentes- esta anotado con su evidencia:
+242 son fichas sin precio ni schema.org y 161 tienen menos de tres fotos. Se
+midio la alternativa de aceptar por galeria grande en vez de precio: sube los
+falsos positivos del 3,4% al 11,5% para ganar 0,2% de fichas buenas. No se
+cambio.
+
 ## Aritmetica de inmuebles
 
 `connectors/coherencia.py`. No es validacion de formato: un dormitorio ES un
