@@ -412,6 +412,8 @@ class GenericoConnector(Connector):
         # el campo queda vacio en vez de publicar un valor que puede estar mil
         # veces equivocado.
         precio_sin_moneda = None
+        if precio is not None and precio <= 0:
+            precio, moneda = None, None       # cero no es un precio
         if precio is not None and not moneda:
             precio_sin_moneda, precio = precio, None
 
@@ -471,6 +473,12 @@ class GenericoConnector(Connector):
         if dorm and amb and dorm > amb:
             datos["dormitorios"] = datos["ambientes"] = None
             fuera.append("dormitorios>ambientes")
+        cub, tot = datos.get("superficie_cubierta"), datos.get("superficie_total")
+        if cub and tot and cub > tot:
+            # Lo cubierto es parte de lo total. Si lo supera, uno de los dos
+            # numeros es de otra ficha.
+            datos["superficie_cubierta"] = datos["superficie_total"] = None
+            fuera.append("cubierta>total")
         if datos.get("tipo_propiedad") == "terreno":
             # Un lote no tiene dormitorios ni superficie cubierta. Si figuran,
             # son de otra ficha de la misma pagina.

@@ -2175,3 +2175,12 @@ def test_un_numero_sin_moneda_no_se_publica_como_precio():
     # No se pierde: queda el numero para quien pueda resolver la moneda.
     assert p.extra["precio_sin_moneda"] == 150000
     assert "precio sin moneda" not in p.problemas()
+
+
+def test_lo_cubierto_no_puede_superar_lo_total():
+    campos = {"superficie_cubierta": 400.0, "superficie_total": 120.0,
+              "tipo_propiedad": "casa"}
+    fuera = GenericoConnector._atributos_coherentes(campos, "")
+    assert campos["superficie_cubierta"] is None
+    assert campos["superficie_total"] is None
+    assert "cubierta>total" in fuera["atributos_descartados"]
