@@ -2130,3 +2130,48 @@ def test_la_variante_de_tamano_se_sigue_descartando():
     /a.jpg?w=320 son la misma foto."""
     from connectors.base import identidad_de_imagen
     assert identidad_de_imagen("https://alfa.com/f/a.jpg?w=640") ==         identidad_de_imagen("https://alfa.com/f/a.jpg?w=320")
+
+
+def test_no_puede_haber_mas_dormitorios_que_ambientes():
+    """1.437 propiedades del corpus generico lo declaraban. Un dormitorio ES un
+    ambiente: los numeros venian de las "propiedades relacionadas" al pie."""
+    campos = {"dormitorios": 5, "ambientes": 1, "tipo_propiedad": "departamento"}
+    fuera = GenericoConnector._atributos_coherentes(campos, "")
+    # No se elige uno: no hay forma de saber cual vino de la ficha.
+    assert campos["dormitorios"] is None and campos["ambientes"] is None
+    assert "dormitorios>ambientes" in fuera["atributos_descartados"]
+
+
+def test_un_lote_no_tiene_dormitorios():
+    campos = {"tipo_propiedad": "terreno", "dormitorios": 5, "banos": 2,
+              "ambientes": 6, "superficie_cubierta": 90.0,
+              "superficie_total": 600.0}
+    fuera = GenericoConnector._atributos_coherentes(campos, "")
+    assert campos["dormitorios"] is None and campos["superficie_cubierta"] is None
+    assert campos["superficie_total"] == 600.0      # esa si es de un lote
+    assert "dormitorios_en_un_terreno" in fuera["atributos_descartados"]
+
+
+def test_los_atributos_de_una_ficha_normal_no_se_tocan():
+    campos = {"dormitorios": 3, "ambientes": 4, "tipo_propiedad": "casa",
+              "banos": 2, "superficie_cubierta": 120.0}
+    assert GenericoConnector._atributos_coherentes(campos, "") == {}
+    assert campos["dormitorios"] == 3 and campos["ambientes"] == 4
+
+
+def test_un_numero_sin_moneda_no_se_publica_como_precio():
+    """Entre pesos y dolares hay un factor de mil. 868 propiedades traian el
+    numero sin moneda desde schema.org."""
+    ficha = ("<html><head><title>Casa</title>"
+             '<script type="application/ld+json">{"@type":"House",'
+             '"name":"Casa en venta","offers":{"price":"150000"}}</script>'
+             "</head><body><p>Casa en venta en el centro.</p>"
+             + "descripcion. " * 40 + "</body></html>")
+    c = gen_conector({"https://alfa.com.ar/sitemap.xml": GEN_SITEMAP,
+                      "https://alfa.com.ar/propiedades/": ficha})
+    f = fuente()
+    p = c.normalize(list(c.fetch_listing(f, c.discover(f)))[0], f)
+    assert p.precio is None
+    # No se pierde: queda el numero para quien pueda resolver la moneda.
+    assert p.extra["precio_sin_moneda"] == 150000
+    assert "precio sin moneda" not in p.problemas()

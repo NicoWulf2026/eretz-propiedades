@@ -392,6 +392,29 @@ class GenericoConnector(Connector):
             if m:
                 lat, lon = float(m.group(1)), float(m.group(2))
 
+        campos = {
+            "operacion": (detectar_operacion(f"{titulo or ''} {url}")
+                          or self._operacion_en_la_ficha(texto)),
+            "tipo_propiedad": detectar_tipo(f"{titulo or ''} {url}"),
+            "dormitorios": self._cuenta(texto, r"dormitorios?|habitaciones?",
+                                        datos.get("dorm")),
+            "banos": self._cuenta(texto, r"ba[nñ]os?", datos.get("banos")),
+            "ambientes": self._cuenta(texto, r"ambientes?", None),
+            "superficie_total": (datos.get("sup_total")
+                                 or self._sup(texto, r"total|terreno")),
+            "superficie_cubierta": (datos.get("sup_cubierta")
+                                    or self._sup(texto, r"cubiert|construid")),
+        }
+        descartados = self._atributos_coherentes(campos, texto)
+
+        # Un numero sin moneda no es un precio: entre pesos y dolares hay un
+        # factor de mil. Se guarda el numero aparte para no perder el dato, y
+        # el campo queda vacio en vez de publicar un valor que puede estar mil
+        # veces equivocado.
+        precio_sin_moneda = None
+        if precio is not None and not moneda:
+            precio_sin_moneda, precio = precio, None
+
         return PropiedadNormalizada(
             canonical_agency_id=fuente.canonical_agency_id,
             source_listing_id=str(crudo["source_listing_id"]),
@@ -401,23 +424,24 @@ class GenericoConnector(Connector):
             descripcion=(descripcion or "")[:4000] or None,
             precio=precio,
             moneda=moneda,
-            operacion=(detectar_operacion(f"{titulo or ''} {url}")
-                       or self._operacion_en_la_ficha(texto)),
-            tipo_propiedad=detectar_tipo(f"{titulo or ''} {url}"),
+            operacion=campos["operacion"],
+            tipo_propiedad=campos["tipo_propiedad"],
             direccion=datos.get("direccion"),
             barrio=None,
             ciudad=datos.get("ciudad"),
             provincia=datos.get("provincia"),
             latitud=lat,
             longitud=lon,
-            dormitorios=self._cuenta(texto, r"dormitorios?|habitaciones?", datos.get("dorm")),
-            banos=self._cuenta(texto, r"ba[nñ]os?", datos.get("banos")),
-            ambientes=self._cuenta(texto, r"ambientes?", None),
-            superficie_total=datos.get("sup_total") or self._sup(texto, r"total|terreno"),
-            superficie_cubierta=datos.get("sup_cubierta") or self._sup(texto, r"cubiert|construid"),
+            dormitorios=campos["dormitorios"],
+            banos=campos["banos"],
+            ambientes=campos["ambientes"],
+            superficie_total=campos["superficie_total"],
+            superficie_cubierta=campos["superficie_cubierta"],
             imagenes=imagenes[:40],
             extra={k: v for k, v in {"via": datos.get("via") or "html",
-                                     "tipo_ld": datos.get("tipo_ld")}.items() if v},
+                                     "tipo_ld": datos.get("tipo_ld"),
+                                     "precio_sin_moneda": precio_sin_moneda,
+                                     **descartados}.items() if v},
             inmobiliaria_id=fuente.inmobiliaria_id,
             provenance={"connector": self.nombre,
                         "official_domain": f"{urllib.parse.urlparse(url).scheme}://"
@@ -427,6 +451,35 @@ class GenericoConnector(Connector):
                         "source_platform": "SITIO_PROPIO",
                         "pagina_listado": crudo.get("pagina")},
         )
+
+    @staticmethod
+    def _atributos_coherentes(datos: dict, texto: str) -> dict:
+        """Descarta los atributos que la pagina no puede estar diciendo.
+
+        El texto del que se leen es la pagina entera, y muchas fichas traen
+        "propiedades relacionadas" al pie: de ahi salen "5 dormitorios" en un
+        LOTE EN ESQUINA y "2 dormitorios" en un MONOAMBIENTE. 1.437 propiedades
+        del corpus generico -el 4,9%- declaraban mas dormitorios que ambientes,
+        que es imposible: un dormitorio ES un ambiente.
+
+        Cuando dos valores se contradicen no se elige uno: no hay forma de
+        saber cual vino de la ficha y cual del vecino. Se van los dos y queda
+        anotado por que.
+        """
+        fuera = []
+        dorm, amb = datos.get("dormitorios"), datos.get("ambientes")
+        if dorm and amb and dorm > amb:
+            datos["dormitorios"] = datos["ambientes"] = None
+            fuera.append("dormitorios>ambientes")
+        if datos.get("tipo_propiedad") == "terreno":
+            # Un lote no tiene dormitorios ni superficie cubierta. Si figuran,
+            # son de otra ficha de la misma pagina.
+            for campo in ("dormitorios", "banos", "ambientes",
+                          "superficie_cubierta"):
+                if datos.get(campo):
+                    datos[campo] = None
+                    fuera.append(f"{campo}_en_un_terreno")
+        return {"atributos_descartados": ",".join(fuera)} if fuera else {}
 
     @staticmethod
     def _operacion_en_la_ficha(texto: str) -> str | None:
