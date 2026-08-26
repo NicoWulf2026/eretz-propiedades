@@ -608,6 +608,78 @@ python scripts/write_eligibility.py --entradas <properties_run1.jsonl ...>
 python scripts/property_write_canary.py --entrada "D:/INMO CAPITAL/DB_WRITE_ELIGIBLE.jsonl" --limite 50
 ```
 
+## Formas de ficha verificadas por fuente
+
+158 sitios publican sus fichas en formas que el patron global no toma
+-`/p-1749_departamento`, `/site/properties/8406/casa-en-venta`- y quedaban
+afuera **a proposito**: ese patron gobierna 2.258 fuentes, y aflojarlo para que
+entren estos mete listados, paginas institucionales y notas del blog en el
+inventario de todas.
+
+El camino largo, en cambio, es por fuente:
+
+1. `discover_ficha_shapes.py` agrupa las urls internas del sitio por FORMA
+   (`/p-1749_x` -> `/<slug-con-id>`) y cuenta hermanas.
+2. `verify_root_shapes.py` baja tres fichas de esa forma y mira si ahi hay
+   propiedades: precio con moneda, operacion o atributos, fotos.
+3. `build_shape_census.py` convierte el veredicto en censo.
+4. El generico usa esa forma **solo para esa fuente**.
+
+Y dos guardas, porque una forma acotada sigue siendo una forma:
+
+- **En el detalle**: lo que entro por la forma tiene que mostrar una propiedad.
+  Medido sobre las 844 paginas bajadas para verificar, acepta el 98,0% de las
+  que vienen de una forma confirmada y el 3,4% de las que vienen de una
+  descartada. Lo descartado queda con su evidencia en `shape_rejects_run<N>`:
+  descartar en silencio hace indistinguible una url que no era ficha de una que
+  el guardian tiro por error, y las dos primeras versiones del guardian tiraron
+  fichas reales.
+- **En el censo**: no entra el host que el padron le atribuye a varias
+  inmobiliarias.
+
+Quinta marca blanca encontrada por la forma, no por el nombre: 34 fuentes
+publican en `/site/properties/<num>/<slug>`, 11 en el dominio del proveedor y
+23 en dominio propio. No necesito un connector nuevo: necesitaba la forma.
+
+## Web propia, perfil de portal, y lo que no es ninguna de las dos
+
+La lista de portales por nombre se equivocaba en las dos direcciones: metia a
+kitepropcrm -que da un host por inmobiliaria: es web propia alojada- y dejaba
+afuera a inmoup.com.ar, que figura como web oficial de 52 inmobiliarias.
+
+La senal estructural se cuenta: **cuantas inmobiliarias cuelgan del mismo
+host**. Tres o mas, no es la web propia de ninguna. Dos, hay que mirar los
+nombres: suele ser el mismo negocio cargado dos veces, y cuando no se parecen
+queda `AMBIGUOUS_WEB_ATTRIBUTION` -una de las dos es la duena y desde afuera no
+se sabe cual-. Y 23 urls llevan a una guia de rubros, un diario de la zona o una
+pagina de vehiculos: `NOT_A_REAL_ESTATE_WEB`, comprobado mirando que publican.
+
+| web_kind | agencias |
+|---|---:|
+| OFFICIAL_WEB | 2.090 |
+| EXTERNAL_PORTAL_PROFILE | 384 |
+| OFFICIAL_OFFICE_PAGE | 79 |
+| NOT_A_REAL_ESTATE_WEB | 23 |
+| AMBIGUOUS_WEB_ATTRIBUTION | 20 |
+
+La compuerta de escritura lo mira: lo leido en un portal no se escribe, porque
+le atribuiria a una inmobiliaria el inventario de las otras 35. La pagina de la
+oficina dentro de su propia red si es suya y si entra.
+
+## Cada cuanto volver a cada fuente
+
+`plan_recrawl.py`. Entre la corrida 2 y la 3 de Tokko, 91.503 de 91.659
+propiedades estaban iguales: recorrer todo todos los dias gasta el 99,8% del
+trabajo en confirmar que nada cambio. La cadencia sale de lo que cada fuente
+hizo en su ultima corrida, entre 1 y 14 dias: **37.336 fichas/dia en vez de
+154.225, un 76% menos**, sin perder de vista a ninguna.
+
+La fuente que estuvo caida vuelve manana. La que no supimos leer no se arregla
+volviendo 365 veces al ano -lo que falta es un connector-, y esas 334 estaban
+pidiendo lectura diaria.
+
+El plan no corre nada: dice a quien volver y cuando.
+
 ## Regla aprendida
 
 **No editar connectors ni runners con una corrida en vuelo.** Paso dos veces:
