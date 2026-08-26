@@ -31,22 +31,11 @@ from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from connectors.generico import GenericoConnector  # noqa: E402
-
-CAMPOS = ("dormitorios", "ambientes", "banos", "superficie_cubierta",
-          "superficie_total", "tipo_propiedad")
+from connectors.coherencia import revisar  # noqa: E402
 
 
 def corregir(p: dict) -> tuple[dict, list[str]]:
-    campos = {k: p.get(k) for k in CAMPOS}
-    fuera = GenericoConnector._atributos_coherentes(campos, "")
-    motivos = []
-    if fuera:
-        p.update(campos)
-        motivos += fuera["atributos_descartados"].split(",")
-    if p.get("precio") is not None and p["precio"] <= 0:
-        p["precio"], p["moneda"] = None, None
-        motivos.append("precio_no_positivo")
+    motivos = revisar(p)
     if p.get("precio") is not None and not p.get("moneda"):
         extra = p.get("extra") or {}
         extra["precio_sin_moneda"] = p["precio"]
