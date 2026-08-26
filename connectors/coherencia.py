@@ -19,6 +19,7 @@ Modulo puro: no baja nada, no toca la base, y se puede probar entero.
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 # Argentina entera cae adentro de este rectangulo. Una coordenada afuera no es
@@ -26,6 +27,14 @@ from typing import Any
 # poner la propiedad en el mapa donde no esta es peor que no ponerla.
 LAT_MIN, LAT_MAX = -56.0, -21.0
 LON_MIN, LON_MAX = -74.0, -53.0
+
+# Lo que aparece entre las imagenes de una ficha y no es una foto de la
+# propiedad: el logo de la inmobiliaria, el cartel de "sin imagen" que el
+# sitio pone cuando no hay fotos, y la miniatura de YouTube del video del
+# tour, que es el poster del video y no una foto.
+NO_ES_FOTO = re.compile(
+    r"(logo|placeholder|avatar|icon|sprite|banner|whatsapp|favicon"
+    r"|no[-_]?imagen|sin[-_]?imagen|no[-_]?image|nofoto|img\.youtube\.com)", re.I)
 
 SUPERFICIES = ("superficie_total", "superficie_cubierta")
 ATRIBUTOS_DE_VIVIENDA = ("dormitorios", "banos", "ambientes",
@@ -71,6 +80,14 @@ def revisar(p: dict) -> list[str]:
             # El par se va junto: media coordenada no ubica nada.
             p["latitud"] = p["longitud"] = None
             fuera.append("coordenada_fuera_de_argentina")
+
+    fotos = p.get("imagenes")
+    if isinstance(fotos, list):
+        limpias = [u for u in fotos if isinstance(u, str)
+                   and not NO_ES_FOTO.search(u)]
+        if len(limpias) != len(fotos):
+            p["imagenes"] = limpias
+            fuera.append("imagenes_que_no_son_fotos")
 
     precio = _num(p.get("precio"))
     if precio is not None and precio <= 0:

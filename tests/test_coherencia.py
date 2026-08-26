@@ -77,3 +77,20 @@ def test_un_campo_que_no_esta_no_inventa_un_problema():
     assert revisar({"dormitorios": None, "ambientes": None}) == []
     # Un texto donde deberia haber un numero no rompe la revision.
     assert revisar({"superficie_total": "a consultar"}) == []
+
+
+def test_el_cartel_de_sin_imagen_no_es_una_foto():
+    """Y la miniatura de YouTube es el poster del video del tour, no una foto
+    de la propiedad."""
+    p = {"imagenes": ["https://a.com/f/1.jpg",
+                      "https://a.com/images/no-imagen.png",
+                      "https://img.youtube.com/vi/x/hqdefault.jpg",
+                      "https://a.com/img/logo.png"]}
+    assert "imagenes_que_no_son_fotos" in revisar(p)
+    assert p["imagenes"] == ["https://a.com/f/1.jpg"]
+
+
+def test_una_galeria_limpia_no_se_toca():
+    p = {"imagenes": ["https://a.com/f/1.jpg", "https://a.com/f/2.webp"]}
+    assert revisar(p) == []
+    assert len(p["imagenes"]) == 2
