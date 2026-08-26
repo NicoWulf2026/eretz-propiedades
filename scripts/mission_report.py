@@ -26,6 +26,13 @@ CORRIDAS = {
     "WORDPRESS (canary)": ("WP_CANARY", "wordpress"),
     "CENTURY 21 (canary)": ("C21_CANARY", "century21"),
     "GENERICO (canary)": ("GENERICO_CANARY", "generico"),
+    "WASI (rollout completo)": ("WASI_ROLLOUT_FULL", "wasi"),
+    "RESCATE 2 (generico)": ("RESCATE2_generico", "generico"),
+    "RESCATE 2 (tokko)": ("RESCATE2_tokko", "generico"),
+    "RESCATE 2 (wordpress)": ("RESCATE2_wordpress", "wordpress"),
+    "RESCATE 3 (formas descubiertas)": ("RESCATE3_shapes", "generico"),
+    "FORMAS VERIFICADAS (por fuente)": ("FORMAS_ROLLOUT", "generico"),
+    "RESIDUAL (generico)": ("RESIDUAL_ROLLOUT", "generico"),
 }
 
 
