@@ -2287,3 +2287,15 @@ def test_una_foto_no_se_cuenta_dos_veces_por_venir_de_dos_atributos():
     html = ('<img src="/f/1.jpg" data-src="/f/1.jpg">'
             '<img src="https://alfa.com.ar/f/1.jpg">')
     assert GenericoConnector._imagenes_de(html, "https://alfa.com.ar/p/1") ==         ["https://alfa.com.ar/f/1.jpg"]
+
+
+def test_la_cobertura_se_mide_por_url_no_por_id_de_la_fuente():
+    """La identidad con la que se guarda una propiedad es su URL. `_id_de`
+    deriva el id de la ruta y dos fichas distintas pueden dar el mismo numero:
+    una fuente que entrego sus 400 fichas figuraba con 50% de cobertura y
+    quedaba ENUMERACION_INCOMPLETA con el inventario entero en la mano."""
+    src = (ROOT / "scripts" / "run_rollout.py").read_text(encoding="utf-8")
+    assert 'r["cobertura"] = round(len(urls) / declarado, 4)' in src
+    assert 'urls = {a["source_url"] for a in avisos}' in src
+    # El conteo de ids se sigue informando: sirve para ver colisiones.
+    assert 'r["ids_unicos"] = len(set(ids))' in src

@@ -274,12 +274,20 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool) -> di
                 "segundos": round(time.time() - t0, 1), "_props": props}
 
     ids = [a["source_listing_id"] for a in avisos]
+    # La identidad con la que se guarda una propiedad es su URL, no el id
+    # que el sitio le pone: `_id_de` lo deriva de la ruta y dos fichas
+    # distintas pueden dar el mismo numero. Midiendo la cobertura por ids,
+    # una fuente que entrego sus 400 fichas figuraba con 50% -200 ids
+    # unicos- y quedaba marcada ENUMERACION_INCOMPLETA con el inventario
+    # entero en la mano.
+    urls = {a["source_url"] for a in avisos}
     r["enumeradas"] = len(ids)
     r["ids_unicos"] = len(set(ids))
-    r["duplicados_en_listado"] = len(ids) - len(set(ids))
+    r["urls_unicas"] = len(urls)
+    r["duplicados_en_listado"] = len(ids) - len(urls)
     r["paginas"] = max((a["pagina"] for a in avisos), default=0)
     declarado = plan.get("total_declarado")
-    r["cobertura"] = round(len(set(ids)) / declarado, 4) if declarado else None
+    r["cobertura"] = round(len(urls) / declarado, 4) if declarado else None
     # Sin total declarado la paginacion se da por agotada cuando una pagina no
     # trae ids nuevos; con total declarado, la comparacion manda.
     r["enumeracion_completa"] = (r["cobertura"] is None or
