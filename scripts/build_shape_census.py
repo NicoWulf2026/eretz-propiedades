@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import urllib.parse
 from collections import Counter
@@ -26,6 +27,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from connectors.generico import patron_de_forma  # noqa: E402
+
+
+# Una forma cuyo camino dice lo que hace: filtrar, buscar, contar clicks. La
+# verificacion no las distingue de una ficha porque una pagina filtrada por
+# ciudad tambien trae precios, operacion y fotos -de varias propiedades a la
+# vez-. El nombre de la ruta es la evidencia de que no identifica UNA.
+NO_ES_FICHA_POR_LA_RUTA = re.compile(
+    r"(filtro|filtrar|aplicarfiltro|buscar|busqueda|search|listado|listar|"
+    r"banners?|track|resultados?|pagina|categoria)", re.I)
 
 
 def leer(ruta: Path) -> list[dict]:
@@ -90,6 +100,9 @@ def main() -> int:
                 motivos[r.get("veredicto") or "SIN_VEREDICTO"] += 1
                 continue
             forma = r.get("forma") or ""
+            if NO_ES_FICHA_POR_LA_RUTA.search(forma):
+                motivos["LA_RUTA_DICE_QUE_NO_ES_FICHA"] += 1
+                continue
             if patron_de_forma(forma) is None:
                 # La forma existe pero no se puede traducir a un patron
                 # acotado. Se deja afuera antes que habilitar algo que no se
