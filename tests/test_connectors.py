@@ -2058,3 +2058,19 @@ def test_la_ficha_sin_precio_pero_declarada_en_schema_org_entra():
     props = [c.normalize(x, f) for x in c.fetch_listing(f, c.discover(f))]
     vivas = [p for p in props if p is not None]
     assert len(vivas) == 1 and vivas[0].precio is None
+
+
+def test_la_operacion_se_lee_del_cuerpo_cuando_el_titulo_no_la_dice():
+    """Un tercio de las fichas de sitios propios titula "Departamento 2
+    ambientes" y nada mas."""
+    f = GenericoConnector._operacion_en_la_ficha
+    assert f("Departamento 2 ambientes en venta en Palermo") == "venta"
+    assert f("Casa en alquiler temporario en Pinamar") == "alquiler_temporario"
+
+
+def test_si_la_ficha_habla_de_las_dos_operaciones_no_se_elige_ninguna():
+    """El menu de la pagina dice "Ventas | Alquileres" en las dos. Elegir una
+    seria inventar la mitad de las veces."""
+    f = GenericoConnector._operacion_en_la_ficha
+    assert f("Ventas Alquileres Tasaciones Contacto Casa 3 ambientes") is None
+    assert f("Casa 3 ambientes con patio") is None

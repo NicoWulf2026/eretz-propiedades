@@ -396,7 +396,8 @@ class GenericoConnector(Connector):
             descripcion=(descripcion or "")[:4000] or None,
             precio=precio,
             moneda=moneda,
-            operacion=detectar_operacion(f"{titulo or ''} {url}"),
+            operacion=(detectar_operacion(f"{titulo or ''} {url}")
+                       or self._operacion_en_la_ficha(texto)),
             tipo_propiedad=detectar_tipo(f"{titulo or ''} {url}"),
             direccion=datos.get("direccion"),
             barrio=None,
@@ -421,6 +422,25 @@ class GenericoConnector(Connector):
                         "source_platform": "SITIO_PROPIO",
                         "pagina_listado": crudo.get("pagina")},
         )
+
+    @staticmethod
+    def _operacion_en_la_ficha(texto: str) -> str | None:
+        """La operacion cuando el titulo y la url no la dicen.
+
+        Un tercio de las fichas de sitios propios titulan "Departamento 2
+        ambientes" y nada mas. El cuerpo si lo dice, pero el menu de la pagina
+        tambien -"Ventas | Alquileres"-, asi que solo se acepta cuando aparece
+        UNA de las dos operaciones en el arranque de la ficha. Si aparecen las
+        dos, la pagina no esta diciendo cual es: se deja vacio antes que elegir.
+        """
+        arranque = (texto or "")[:600].lower()
+        venta = bool(re.search(r"\b(en venta|se vende|venta)\b", arranque))
+        alquiler = bool(re.search(r"\b(en alquiler|se alquila|alquiler)\b", arranque))
+        if venta == alquiler:
+            return None
+        if alquiler and re.search(r"\b(temporario|temporal)\b", arranque):
+            return "alquiler_temporario"
+        return "venta" if venta else "alquiler"
 
     @staticmethod
     def _confirma_ficha(html: str, texto: str, precio, imagenes: list,
