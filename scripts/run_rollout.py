@@ -408,6 +408,27 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
     else:
         r["estado"] = ("OK" if r["enumeracion_completa"]
                        else "ENUMERACION_INCOMPLETA")
+    # Una enumeracion incompleta tiene que decir POR QUE lo esta. Deducirlo
+    # despues, mirando numeros sueltos, es como se termina tratando igual a una
+    # fuente que corto por falta de tiempo y a una que entrega la mitad de lo
+    # que declara: la primera se reintenta, la segunda hay que investigarla.
+    if not r.get("enumeracion_completa", True):
+        if r.get("presupuesto_agotado"):
+            r["motivo_incompleta"] = "se acabo el presupuesto de tiempo"
+        elif r.get("total_declarado"):
+            r["motivo_incompleta"] = (
+                "el sitio declara %s avisos y la paginacion entrego %s"
+                % (r.get("total_declarado"), r.get("urls_unicas")))
+        else:
+            r["motivo_incompleta"] = ("la paginacion se agoto sin traer ids "
+                                      "nuevos y el sitio no declara un total")
+        r["evidencia_incompleta"] = {
+            "declarado": r.get("total_declarado"),
+            "enumerado": r.get("urls_unicas"),
+            "cobertura": r.get("cobertura"),
+            "paginas_recorridas": r.get("paginas"),
+            "cobertura_minima_exigida": COBERTURA_MINIMA,
+        }
     r["segundos"] = round(time.time() - t0, 1)
     return {**r, "_props": props}
 
