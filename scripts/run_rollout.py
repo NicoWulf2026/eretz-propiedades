@@ -52,6 +52,20 @@ CONNECTORS = {"tokko": TokkoConnector, "wordpress": WordPressConnector,
 # Una fuente que declara 299 y entrega 20 no puede quedar como PASS.
 COBERTURA_MINIMA = 0.98
 
+# Cuanto puede tardar UNA fuente antes de que se le corte el detalle.
+#
+# Un host que acepta la conexion y despues no contesta cuesta 75 segundos por
+# ficha -25 de espera, tres intentos- sin devolver nada. Una fuente de 47
+# fichas asi retiene un worker durante una hora, y con la paginacion a ciegas
+# -tres patrones por hasta 58 paginas- el peor caso son tres horas y media.
+# Una corrida de 158 fuentes cerro 157 en dos horas y se quedo esperando a esa
+# una.
+#
+# El presupuesto no descarta la fuente: corta el detalle, guarda lo que ya
+# obtuvo y lo deja anotado. La corrida siguiente la vuelve a intentar, que es
+# lo que corresponde con algo que puede haber sido pasajero.
+PRESUPUESTO_POR_FUENTE = 1800
+
 
 class EscritorDurable:
     """Append seguro a JSONL desde varios hilos.
@@ -216,7 +230,7 @@ def descartar_imagenes_compartidas(objetos: list) -> int:
 
 
 def procesar(con, fuente: Fuente, max_fichas: int, observacion: bool,
-             respaldo=None) -> dict:
+             respaldo=None, presupuesto: float = PRESUPUESTO_POR_FUENTE) -> dict:
     """Procesa una fuente; si el connector de plataforma no la reconoce, prueba
     el de respaldo.
 
@@ -297,7 +311,13 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool) -> di
     r["detalles_pedidos"] = len(seleccion)
     objetos = []
     fallidos = 0
+    limite = t0 + presupuesto if presupuesto else None
     for a in seleccion:
+        if limite and time.time() > limite:
+            r["presupuesto_agotado"] = True
+            r["detalles_sin_pedir"] = (len(seleccion) - len(objetos)
+                                       - fallidos)
+            break
         try:
             p = con.normalize(a, fuente)
         except Bloqueado:
@@ -337,6 +357,9 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool) -> di
     # Una fuente que respondio mal no puede dar por ausente a nada.
     confiable = r["enumeracion_completa"] and r["estado_ok"] if "estado_ok" in r else \
         r["enumeracion_completa"]
+    # Y una fuente a la que se le corto el detalle tampoco: no la
+    # terminamos de mirar, asi que no sabemos que dejo de estar.
+    confiable = confiable and not r.get("presupuesto_agotado")
     # Las claves son hash_dedup calculadas de la url ENUMERADA: se conocen sin
     # bajar la ficha, asi que la deteccion de ausencias funciona aunque solo se
     # normalice una muestra.
@@ -378,7 +401,11 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool) -> di
         else:
             r["fotos_verificables"] = False
         r["problemas"] = dict(Counter(q for p in props for q in p["problemas"]))
-    r["estado"] = "OK" if r["enumeracion_completa"] else "ENUMERACION_INCOMPLETA"
+    if r.get("presupuesto_agotado"):
+        r["estado"] = "PRESUPUESTO_AGOTADO"
+    else:
+        r["estado"] = ("OK" if r["enumeracion_completa"]
+                       else "ENUMERACION_INCOMPLETA")
     r["segundos"] = round(time.time() - t0, 1)
     return {**r, "_props": props}
 
@@ -560,9 +587,16 @@ def main() -> int:
         "rescatadas_por_respaldo": sum(1 for r in inv if r.get("rescatada_por_respaldo")),
         "segundos": round(time.time() - t0, 1),
     }
+    # Lo que el presupuesto de tiempo no llego a pedir entra en la cuenta: si
+    # no, cortar una fuente lenta haria fallar la reconciliacion de la corrida
+    # entera y el numero dejaria de significar lo que dice.
+    resumen["detalles_sin_pedir"] = sum(r.get("detalles_sin_pedir", 0)
+                                        for r in inv)
+    resumen["fuentes_sin_presupuesto"] = sum(
+        1 for r in inv if r.get("presupuesto_agotado"))
     resumen["reconcilia"] = (
         resumen["detalles_obtenidos"] + resumen["detalles_fallidos"]
-        == resumen["detalles_pedidos"]
+        + resumen["detalles_sin_pedir"] == resumen["detalles_pedidos"]
         and resumen["propiedades_escritas"] == resumen["detalles_obtenidos"])
     if ok:
         campos = defaultdict(list)

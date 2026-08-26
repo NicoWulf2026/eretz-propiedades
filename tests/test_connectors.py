@@ -2325,3 +2325,20 @@ def test_la_compuerta_escribe_linea_por_linea(tmp_path):
 
     escribir_jsonl(destino, [{"a": 1}, {"b": 2}])
     assert destino.read_text(encoding="utf-8").count(chr(10)) == 2
+
+
+def test_una_fuente_lenta_no_retiene_la_corrida_entera():
+    """Un host que acepta la conexion y no contesta cuesta 75 segundos por ficha
+    sin devolver nada. Una corrida de 158 fuentes cerro 157 en dos horas y se
+    quedo esperando a esa una."""
+    src = (ROOT / "scripts" / "run_rollout.py").read_text(encoding="utf-8")
+    assert "PRESUPUESTO_POR_FUENTE" in src
+    assert 'r["estado"] = "PRESUPUESTO_AGOTADO"' in src
+
+    # Lo que no se llego a pedir entra en la reconciliacion: si no, cortar una
+    # fuente lenta haria fallar la cuenta de la corrida entera.
+    assert 'resumen["detalles_sin_pedir"]' in src
+    assert '+ resumen["detalles_sin_pedir"] == resumen["detalles_pedidos"]' in src
+
+    # Y una fuente cortada no da por ausente a nada: no la terminamos de mirar.
+    assert 'confiable = confiable and not r.get("presupuesto_agotado")' in src
