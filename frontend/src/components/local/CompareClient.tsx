@@ -64,7 +64,7 @@ export function CompareClient({ embedded = false }: { embedded?: boolean }) {
           <Link className="primary-button" href="/propiedades">Explorar propiedades</Link>
         </div>
       ) : loading ? (
-        <p className="text-sm u-text-muted">Cargando comparación…</p>
+        <div className="compare-loading" role="status" aria-label="Cargando comparación"><span className="skeleton" /><span className="skeleton" /><span className="skeleton" /></div>
       ) : error ? (
         <p className="text-sm u-text-muted">No pudimos cargar la comparación. Reintentá en unos minutos.</p>
       ) : properties.length === 0 ? (

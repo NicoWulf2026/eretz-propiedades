@@ -50,7 +50,7 @@ export function FavoritesClient({ view = "all", embedded = false }: { view?: "al
             <Link className="primary-button" href="/propiedades">Explorar propiedades</Link>
           </div>
         ) : loading ? (
-          <p className="mt-4 text-sm u-text-muted">Cargando favoritos…</p>
+          <div className="local-list-skeleton mt-4" role="status" aria-label="Cargando propiedades guardadas">{Array.from({ length: 3 }, (_, index) => <span key={index} className="skeleton" />)}</div>
         ) : error ? (
           <p className="mt-4 text-sm u-text-muted">No pudimos cargar tus favoritos. Reintentá en unos minutos.</p>
         ) : (
