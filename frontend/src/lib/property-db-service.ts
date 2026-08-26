@@ -530,7 +530,7 @@ const directoryCountUncached = async (query: string): Promise<RealEstateSummary[
   if (!databaseUrl()) return [];
   const clean = query.trim().slice(0, 60).replace(/[(),.*%]/g, " ").trim();
   const params: unknown[] = [];
-  const nameFilter = clean ? `WHERE i.nombre ILIKE ${addParam(params, `%${clean}%`)}` : "";
+  const searchFilter = clean ? `WHERE (i.nombre ILIKE ${addParam(params, `%${clean}%`)} OR p.ciudad ILIKE $1 OR p.provincia ILIKE $1)` : "";
   const limitParam = addParam(params, 60);
   try {
     const rows = await readOnly((sql) => sql.unsafe<DirectoryRow[]>(
@@ -540,7 +540,7 @@ const directoryCountUncached = async (query: string): Promise<RealEstateSummary[
          mode() WITHIN GROUP (ORDER BY p.provincia) AS provincia
        FROM public.inmobiliarias_main i
        JOIN public.propiedades p ON p.inmobiliaria_id = i.id
-       ${nameFilter}
+       ${searchFilter}
        GROUP BY i.id, i.nombre, i.web, i.verificada
        HAVING count(p.id) > 0
        ORDER BY count(p.id) DESC, i.nombre ASC
@@ -647,7 +647,7 @@ const agentDirectoryUncached = async (query: string, limit: number): Promise<Age
   if (!databaseUrl()) return [];
   const clean = query.trim().slice(0, 60).replace(/[(),.*%]/g, " ").trim();
   const params: unknown[] = [];
-  const nameFilter = clean ? `AND p.agente_nombre ILIKE ${addParam(params, `%${clean}%`)}` : "";
+  const searchFilter = clean ? `AND (p.agente_nombre ILIKE ${addParam(params, `%${clean}%`)} OR p.ciudad ILIKE $1 OR p.provincia ILIKE $1)` : "";
   const limitParam = addParam(params, limit);
   try {
     const rows = await readOnly((sql) => sql.unsafe<AgentRow[]>(
@@ -656,7 +656,7 @@ const agentDirectoryUncached = async (query: string, limit: number): Promise<Age
          mode() WITHIN GROUP (ORDER BY p.provincia) AS provincia,
          mode() WITHIN GROUP (ORDER BY p.agente_telefono) AS telefono
        FROM public.propiedades p
-       WHERE p.agente_nombre IS NOT NULL AND btrim(p.agente_nombre) <> '' ${nameFilter}
+       WHERE p.agente_nombre IS NOT NULL AND btrim(p.agente_nombre) <> '' ${searchFilter}
        GROUP BY p.agente_nombre
        HAVING count(*) > 0
        ORDER BY count(*) DESC, p.agente_nombre ASC

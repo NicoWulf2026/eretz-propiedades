@@ -22,17 +22,20 @@ export default async function Page({ searchParams }: { searchParams: Promise<Sea
   return (
     <SiteShell>
       <div className="container py-8">
-        <header className="mb-6">
+        <header className="professional-directory-header">
+          <div>
+          <p className="eyebrow">Profesionales inmobiliarios</p>
           <h1 className="page-title">Inmobiliarias</h1>
           <p className="page-subtitle">
-            Todas las inmobiliarias con publicaciones en el catálogo. ERETZ es un agregador
-            independiente: los datos provienen de las publicaciones originales.
+            Encontrá quién publica, dónde trabaja y cuántas propiedades ofrece.
           </p>
+          </div>
+          <Link href="/agentes" className="secondary-button">Ver agentes</Link>
         </header>
 
         <form action="/inmobiliarias" className="mb-6 flex max-w-xl gap-2" role="search">
-          <label className="sr-only" htmlFor="dir-q">Buscar inmobiliaria por nombre</label>
-          <input id="dir-q" name="q" type="search" defaultValue={query} placeholder="Buscar por nombre" maxLength={60} className="field-input flex-1 rounded-lg border u-border-strong px-3 py-2" />
+          <label className="sr-only" htmlFor="dir-q">Buscar inmobiliaria por nombre o ubicación</label>
+          <input id="dir-q" name="q" type="search" defaultValue={query} placeholder="Nombre, ciudad o provincia" maxLength={60} className="field-input flex-1 rounded-lg border u-border-strong px-3 py-2" />
           <button type="submit" className="primary-button">Buscar</button>
         </form>
 
@@ -53,7 +56,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Sea
                   <span className="entity-body">
                     <span className="entity-name">
                       {agency.name}
-                      {agency.verified ? <span className="entity-verified">Verificada</span> : null}
+                      {agency.verified ? <span className="entity-verified" title="Identidad verificada por ERETZ">✓ Verificada</span> : null}
                     </span>
                     {agency.city || agency.province ? (
                       <span className="entity-meta">{[agency.city, agency.province].filter(Boolean).join(", ")}</span>

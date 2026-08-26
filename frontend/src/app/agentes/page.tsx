@@ -22,16 +22,20 @@ export default async function Page({ searchParams }: { searchParams: Promise<Sea
   return (
     <SiteShell>
       <div className="container py-8">
-        <header className="mb-6">
+        <header className="professional-directory-header">
+          <div>
+          <p className="eyebrow">Profesionales inmobiliarios</p>
           <h1 className="page-title">Agentes</h1>
           <p className="page-subtitle">
-            Agentes que figuran en las publicaciones del catálogo. Sólo se muestran los que tienen datos reales.
+            Personas identificadas en publicaciones reales del catálogo de ERETZ.
           </p>
+          </div>
+          <Link href="/inmobiliarias" className="secondary-button">Ver inmobiliarias</Link>
         </header>
 
         <form action="/agentes" className="mb-6 flex max-w-xl gap-2" role="search">
-          <label className="sr-only" htmlFor="ag-q">Buscar agente por nombre</label>
-          <input id="ag-q" name="q" type="search" defaultValue={query} placeholder="Buscar por nombre" maxLength={60} className="flex-1 rounded-lg border u-border-strong px-3 py-2" />
+          <label className="sr-only" htmlFor="ag-q">Buscar agente por nombre o ubicación</label>
+          <input id="ag-q" name="q" type="search" defaultValue={query} placeholder="Nombre, ciudad o provincia" maxLength={60} className="field-input flex-1 rounded-lg border u-border-strong px-3 py-2" />
           <button type="submit" className="primary-button">Buscar</button>
         </form>
 

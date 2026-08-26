@@ -36,12 +36,14 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
           <span aria-current="page">{agency.name}</span>
         </nav>
 
-        <header className="mt-6 rounded-2xl border u-border u-surface p-6">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
+        <header className="professional-profile-hero">
+          <div className="professional-cover" aria-hidden="true" />
+          <div className="professional-profile-main">
+            <span aria-hidden="true" className="professional-profile-mark">{agency.name.trim().charAt(0).toUpperCase()}</span>
+            <div className="professional-profile-copy">
               <h1 className="page-title page-title-inline">
                 {agency.name}
-                {agency.verified ? <span className="rounded-full bg-[color:rgba(255,255,255,.06)] px-2.5 py-1 text-xs font-bold text-[color:var(--accent-soft)]">Verificada</span> : null}
+                {agency.verified ? <span className="entity-verified">✓ Verificada</span> : null}
               </h1>
               {agency.city || agency.province ? (
                 <p className="page-subtitle">{[agency.city, agency.province].filter(Boolean).join(", ")}</p>
@@ -50,16 +52,16 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
                 {agency.listingsCount.toLocaleString("es-AR")} {agency.listingsCount === 1 ? "publicación" : "publicaciones"}
               </p>
             </div>
-            <div className="flex flex-col gap-2 text-sm">
+            <div className="professional-contact-actions">
+              {agency.phone ? <a href={`tel:${agency.phone}`} className="primary-button text-center">Llamar</a> : agency.email ? <a href={`mailto:${agency.email}`} className="primary-button text-center">Enviar email</a> : null}
               {agency.website ? <a href={agency.website} target="_blank" rel="noopener noreferrer nofollow" className="secondary-button text-center">Sitio web</a> : null}
-              {agency.phone ? <a href={`tel:${agency.phone}`} className="secondary-button text-center">Teléfono</a> : null}
-              {agency.email ? <a href={`mailto:${agency.email}`} className="secondary-button text-center">Email</a> : null}
+              {agency.phone && agency.email ? <a href={`mailto:${agency.email}`} className="secondary-button text-center">Email</a> : null}
             </div>
           </div>
           {!agency.verified ? (
             <div className="mt-5 rounded-xl border u-border u-surface-sunken p-4 text-sm u-text-muted">
               <p className="font-semibold u-text">¿Sos responsable de esta inmobiliaria?</p>
-              <p className="mt-1">Este perfil es público y se genera con datos de las publicaciones. Podés reclamarlo para gestionarlo.</p>
+              <p className="mt-1">Este perfil se arma con información disponible en sus publicaciones. Podés reclamarlo para acreditar su gestión.</p>
               <Link href={`/inmobiliaria/${agency.slug}/reclamar`} className="primary-button mt-3 inline-flex">Reclamar este perfil</Link>
             </div>
           ) : null}
