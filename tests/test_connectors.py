@@ -1684,6 +1684,36 @@ def test_una_foto_compartida_por_pocas_propiedades_se_conserva():
     assert "fachada.jpg" in objs[0].imagenes
 
 
+# --------------------------- una forma de raiz: ficha o pagina editorial
+def _pagina(cuerpo, fotos=5, extra=""):
+    return f"<html>{extra}<body>{'<img src=\"a.jpg\">' * fotos}<p>{cuerpo}</p></body></html>"
+
+
+def test_una_ficha_de_raiz_se_reconoce_por_lo_que_publica():
+    """La forma de la url no alcanza: /casa-en-venta-2026 puede ser una ficha o
+    una nota sobre el mercado. Lo que decide es el precio con moneda, la
+    operacion o los atributos, y las fotos."""
+    from scripts.verify_root_shapes import es_ficha, evidencia_de_ficha
+    html = _pagina("Casa en venta USD 185.000 - 3 dormitorios, 2 banos, 180 m2",
+                   extra='<script type="application/ld+json">{"@type":"House"}</script>')
+    assert es_ficha(evidencia_de_ficha(html))
+
+
+def test_una_nota_sobre_el_mercado_no_es_una_ficha():
+    """Las notas hablan de venta, alquiler y dormitorios: por eso se exige el
+    precio con moneda, y se respeta que la pagina se declare articulo."""
+    from scripts.verify_root_shapes import es_ficha, evidencia_de_ficha
+    nota = _pagina("El mercado de venta de departamentos subio 12% en 2026",
+                   extra='<meta property="og:type" content="article">')
+    assert not es_ficha(evidencia_de_ficha(nota))
+
+
+def test_una_pagina_de_seccion_tampoco():
+    from scripts.verify_root_shapes import es_ficha, evidencia_de_ficha
+    seccion = _pagina("Propiedades en venta. Ver mas", fotos=8)
+    assert not es_ficha(evidencia_de_ficha(seccion))
+
+
 # ------------------------------- formas de ficha que no sabiamos reconocer
 def test_ad_es_aviso_y_lo_usa_una_plataforma_entera():
     """97 inmobiliarias publican en /ad/<slug> y las 97 figuraban como "no
