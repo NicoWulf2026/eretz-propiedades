@@ -92,3 +92,73 @@ def test_la_fila_lleva_lo_que_la_proxima_mision_necesita():
                   "ready_for_scraping", "manifest_version"):
         assert campo in f, campo
     assert f["franchise"] == "RE/MAX"
+
+
+def test_un_perfil_en_un_portal_no_es_una_fuente():
+    """choza.ai figura como web oficial de 42 agencias. Leerlo le atribuiria a
+    una el inventario de las otras 41.
+
+    El write gate ya lo rechazaba aguas abajo, pero entre marcarla lista aca y
+    que el gate la descarte hay una corrida entera golpeando un portal ajeno."""
+    f = fila("ag-1", base(), {"official_web_status": "OFFICIAL_WEB_VERIFIED",
+                              "discovered_domain": "https://choza.ai/property/34237",
+                              "scrapeability_status": "SCRAPE_SOURCE_READY"}, {},
+             "EXTERNAL_PORTAL_PROFILE", 42)
+    assert f["ready_for_scraping"] is False
+    assert f["perfil_en_portal_ajeno"] is True
+
+
+def test_el_portal_deja_a_la_agencia_pendiente_de_busqueda():
+    """Su web propia no se descarto: nunca se encontro. Vuelve a la cola."""
+    f = fila("ag-1", base(), {"official_web_status": "OFFICIAL_WEB_VERIFIED",
+                              "discovered_domain": "https://choza.ai/property/1",
+                              "scrapeability_status": "SCRAPE_SOURCE_READY"}, {},
+             "EXTERNAL_PORTAL_PROFILE", 42)
+    assert f["needs_external_search"] is True
+
+
+def test_un_host_compartido_por_muchas_es_portal_aunque_nadie_lo_clasifique():
+    """Los portales nuevos no estan en ninguna lista de nombres. Se cuentan las
+    agencias que cuelgan del host, que es lo que no se puede falsificar."""
+    f = fila("ag-1", base(), {"official_web_status": "OFFICIAL_WEB_VERIFIED",
+                              "discovered_domain": "https://portalnuevo.com/x",
+                              "scrapeability_status": "SCRAPE_SOURCE_READY"}, {},
+             None, 9)
+    assert f["ready_for_scraping"] is False
+    assert f["perfil_en_portal_ajeno"] is True
+
+
+def test_dos_agencias_en_un_host_no_alcanzan_para_llamarlo_portal():
+    """Dos oficinas de la misma firma comparten dominio y eso es normal."""
+    f = fila("ag-1", base(), {"official_web_status": "OFFICIAL_WEB_VERIFIED",
+                              "discovered_domain": "https://alfa.com.ar",
+                              "scrapeability_status": "SCRAPE_SOURCE_READY"}, {},
+             "OFFICIAL_WEB", 2)
+    assert f["ready_for_scraping"] is True
+    assert f["perfil_en_portal_ajeno"] is False
+
+
+def test_la_pagina_de_la_oficina_en_su_propia_red_si_es_suya():
+    """century21.com.ar/oficina/X es de esa oficina. No cae en la regla."""
+    f = fila("ag-1", base(), {"official_web_status": "OFFICIAL_WEB_VERIFIED",
+                              "discovered_domain": "https://century21.com.ar/oficina/33",
+                              "scrapeability_status": "SCRAPE_SOURCE_READY"}, {},
+             "OFFICIAL_OFFICE_PAGE", 2)
+    assert f["ready_for_scraping"] is True
+
+
+def test_una_web_que_no_es_del_rubro_tampoco_es_fuente():
+    f = fila("ag-1", base(), {"official_web_status": "OFFICIAL_WEB_VERIFIED",
+                              "discovered_domain": "https://tiendaderopa.com",
+                              "scrapeability_status": "SCRAPE_SOURCE_READY"}, {},
+             "NOT_A_REAL_ESTATE_WEB", 1)
+    assert f["ready_for_scraping"] is False
+
+
+def test_sin_informacion_de_plataforma_se_comporta_como_antes():
+    """La firma vieja tiene que seguir andando: los 8 tests anteriores la usan."""
+    f = fila("ag-1", base(), {"official_web_status": "OFFICIAL_WEB_VERIFIED",
+                              "discovered_domain": "https://alfa.com.ar",
+                              "scrapeability_status": "SCRAPE_SOURCE_READY"}, {})
+    assert f["ready_for_scraping"] is True
+    assert f["perfil_en_portal_ajeno"] is False

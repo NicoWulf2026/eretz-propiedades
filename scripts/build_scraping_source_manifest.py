@@ -39,6 +39,26 @@ PENDIENTE_BUSQUEDA = {"SEARCH_API_PENDING", "SEARCH_SECOND_PASS_REQUIRED",
 
 LISTO = "SCRAPE_SOURCE_READY"
 
+# Un perfil en un portal no es la web de la inmobiliaria, y su catalogo no es su
+# inventario. choza.ai figura como web oficial de 42 agencias distintas: leerlo
+# le atribuiria a una el inventario de las otras 41.
+#
+# El write gate ya rechazaba esto aguas abajo, pero el manifest las marcaba
+# `ready_for_scraping` igual, y entre marcarla lista y que el gate la descarte
+# hay una corrida entera desperdiciada golpeando un portal ajeno.
+NO_SON_WEB_PROPIA = {"EXTERNAL_PORTAL_PROFILE", "AMBIGUOUS_WEB_ATTRIBUTION",
+                     "NOT_A_REAL_ESTATE_WEB"}
+
+# Cuantas agencias distintas tienen que colgar del mismo host para considerarlo
+# un portal aunque nadie lo haya clasificado. Se cuenta, no se lee una lista de
+# nombres: los portales nuevos no estan en ninguna lista.
+AGENCIAS_PARA_SER_PORTAL = 3
+
+
+def host_de(url):
+    import re
+    return re.sub(r"^https?://(www\\.)?", "", url or "").split("/")[0].lower()
+
 
 def leer(ruta: Path) -> list[dict]:
     if not ruta.exists():
@@ -54,13 +74,19 @@ def leer(ruta: Path) -> list[dict]:
     return out
 
 
-def fila(cid: str, base: dict, res: dict | None, ent: dict) -> dict:
+def fila(cid: str, base: dict, res: dict | None, ent: dict,
+         web_kind: str | None = None, agencias_en_host: int = 1) -> dict:
     """Una fila del manifest. `res` es lo resuelto en esta mision, si lo hubo."""
     r = res or {}
     estado = r.get("official_web_status") or base.get("status")
     dominio = r.get("discovered_domain") or (
         base.get("selected_domain") if not res else None)
     oficina = r.get("official_office_page") or base.get("selected_office_page")
+
+    # Dos formas de descubrir que ese sitio no es suyo: que alguien ya lo haya
+    # clasificado, o que el host aloje a media docena de inmobiliarias mas.
+    es_portal = (web_kind in NO_SON_WEB_PROPIA
+                 or agencias_en_host >= AGENCIAS_PARA_SER_PORTAL)
 
     return {
         "canonical_agency_id": cid,
@@ -93,13 +119,16 @@ def fila(cid: str, base: dict, res: dict | None, ent: dict) -> dict:
         "search_provider": base.get("search_provider"),
         "search_queries_count": base.get("search_queries_count"),
         # Falta buscar no es lo mismo que no existe.
-        "needs_external_search": bool(
+        "needs_external_search": bool((
             r.get("needs_external_search")
-            if res else estado in PENDIENTE_BUSQUEDA),
+            if res else estado in PENDIENTE_BUSQUEDA) or es_portal),
         "ready_for_scraping": bool(
-            estado in CON_WEB and dominio
+            not es_portal and estado in CON_WEB and dominio
             and (r.get("scrapeability_status") or base.get("scrapeability_status"))
             == LISTO),
+        "web_kind": web_kind,
+        "agencias_en_el_host": agencias_en_host,
+        "perfil_en_portal_ajeno": es_portal,
         "manifest_version": MANIFEST_VERSION,
     }
 
@@ -107,6 +136,8 @@ def fila(cid: str, base: dict, res: dict | None, ent: dict) -> dict:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", default=r"D:\INMO CAPITAL\ERETZ_AGENCY_DATA")
+    ap.add_argument("--plataformas",
+                    default=r"D:\INMO CAPITAL\agency_platform_directory.jsonl")
     ap.add_argument("--salida",
                     default=r"D:\INMO CAPITAL\SCRAPING_SOURCE_MANIFEST.jsonl")
     a = ap.parse_args()
@@ -118,7 +149,26 @@ def main() -> int:
            for x in leer(dd / "web_identity_resolved.jsonl")
            if x.get("canonical_agency_id")}
 
-    filas = [fila(cid, base, res.get(cid), ents.get(cid) or {})
+    plataformas = {x.get("canonical_agency_id"): x
+                   for x in leer(Path(a.plataformas))}
+
+    # Cuantas agencias distintas cuelgan de cada host. Es la deteccion
+    # estructural de portal: no depende de conocer el nombre de cada uno.
+    from collections import defaultdict as _dd
+    agencias_por_host = _dd(set)
+    for cid, base in awd.items():
+        r = res.get(cid) or {}
+        d = r.get("discovered_domain") or base.get("selected_domain")
+        if d:
+            agencias_por_host[host_de(d)].add(cid)
+
+    def cuantas(cid):
+        r = res.get(cid) or {}
+        d = r.get("discovered_domain") or (awd.get(cid) or {}).get("selected_domain")
+        return len(agencias_por_host[host_de(d)]) if d else 1
+
+    filas = [fila(cid, base, res.get(cid), ents.get(cid) or {},
+                  (plataformas.get(cid) or {}).get("web_kind"), cuantas(cid))
              for cid, base in sorted(awd.items())]
 
     salida = Path(a.salida)

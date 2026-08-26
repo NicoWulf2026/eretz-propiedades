@@ -7,6 +7,150 @@
 
 ---
 
+# PUNTO DE REANUDACIÓN — leer esto primero
+
+**Sesión:** 2026-08-26 · misión de cierre de scraping + reconciliación final.
+
+| Qué | Valor |
+|---|---|
+| Rama | `feat/roomix-agency-coverage` |
+| Último commit | `528256c200` |
+| Push / merge / Production | **no**, y no corresponde |
+| Universo analizado | **174.955** (suma de las 13 entradas) |
+| Write set | **163.061** |
+| Reconciliación | cierra: ninguna propiedad sin categoría |
+
+## La regla que más caro salió: el universo de entradas
+
+El universo **no se arma a mano en la línea de comandos**. Vive en
+`scripts/input_universe.py` y el write gate lo usa por defecto.
+
+El comando documentado omitía `FORMAS3_ROLLOUT` y `RESIDUAL_ROLLOUT`. Reanudar
+con él producía un write set **791 propiedades más chico y ni una línea de
+error**: `write_eligibility` no tiene cómo saber que le falta un archivo que
+nadie le pasó. Ahora hay guard: si a `--entradas` le faltan las obligatorias,
+corta antes de procesar.
+
+```bash
+python scripts/write_eligibility.py
+```
+
+Sin argumentos usa las 13 entradas canónicas. Para verificar la igualdad:
+
+```bash
+python -m pytest tests/test_input_universe.py -q
+```
+
+## Cadena de regeneración, en orden
+
+Cada paso lee lo que el anterior dejó. Saltear uno deja artefactos de dos
+generaciones distintas mezclados.
+
+```bash
+python scripts/resolve_padron_duplicates.py --aplicar
+python scripts/resolve_cross_agency.py
+python scripts/write_eligibility.py
+python scripts/mission_report.py
+```
+
+`mission_report.py` termina con veredicto y **sale con código 1 si alguna
+invariante no cierra**. Es el chequeo de que la cadena quedó consistente.
+
+## Invariantes que tienen que valer
+
+```
+TOTAL_ANALIZADAS == suma de categorías exclusivas
+DB_WRITE_ELIGIBLE == HASHES_UNICOS == URLS_UNICAS
+MULTI_AGENCY_URLS_IN_WRITE_SET == 0
+corridas sin origen identificado == 0
+```
+
+## Categorías exclusivas del universo
+
+| Categoría | Artefacto |
+|---|---|
+| `DB_WRITE_ELIGIBLE` | `DB_WRITE_ELIGIBLE.jsonl` |
+| `CROSS_AGENCY_PENDING` | `CROSS_AGENCY_DUPLICATES.jsonl` |
+| `WEB_NO_PROPIA` | `WEB_NO_PROPIA.jsonl` |
+| `AGENCY_ID_PENDING` | `AGENCY_ID_PENDING_MANIFEST.jsonl` |
+| `DUPLICADO_EN_ENTRADA` | `DUPLICADO_EN_ENTRADA.jsonl` |
+| `NO_ES_UNA_FICHA` | `NO_ES_UNA_FICHA.jsonl` |
+
+`DUPLICADO_EN_ENTRADA` no existía: el descarte por hash repetido usaba un
+`continue` pelado y 428 propiedades se caían del recuento sin quedar en ninguna
+parte. No fallaba nada; simplemente el write set era más chico.
+
+## Duplicados del padrón: cerrados
+
+`SAME_AGENCY_DUPLICATED_IN_ERETZ` quedó en **0**. Los tres casos se resolvieron
+con la misma evidencia: **el sitio se presenta solo**.
+
+| Sitio | Dueño | Desplazada | Qué lo decidió |
+|---|---|---|---|
+| `bustamantepropiedades.com` | 1028 | 651 | el sitio nombra Tigre/Nordelta |
+| `salernoinmobiliaria.com` | 6334 | 3535 | título, dirección en Córdoba, tel. 351 |
+| `zaratepropiedades.com` | 6849 | 2587 | nombra San Isidro y Recoleta |
+
+A la desplazada **no** se le concluye ausencia de web: lo único demostrado es
+que ese sitio no era suyo. Queda `SEARCH_API_PENDING` con
+`domain_mal_atribuido` conservado.
+
+Dos homónimas dan la misma señal que una empresa duplicada. Por eso el
+clasificador consulta la evidencia verificada del directorio de plataformas
+antes que el parecido del nombre.
+
+## Backlog de scraping
+
+```bash
+python scripts/build_backlog_census.py
+python scripts/run_rollout.py --connector <conn> --censo "D:/INMO CAPITAL/CENSO_BACKLOG.jsonl"     --concurrencia 8 --corrida 1 --salida "D:/INMO CAPITAL/BACKLOG_<conn>"
+```
+
+El backlog es `fuentes listas` − `fuentes que ya aportaron inventario`. Contar
+pendientes sobre un censo viejo mide el universo de otro momento.
+
+**Cualquier rollout nuevo que produzca propiedades hay que agregarlo a
+`input_universe.py` junto con el total esperado en
+`tests/test_input_universe.py`.** Si no, el universo deja de cerrar.
+
+## Bloqueos externos — acción humana exacta
+
+| Blocker | Afecta | Qué lo desbloquea |
+|---|---|---|
+| Sin proveedor de búsqueda | 3.708 entidades `SEARCH_API_PENDING` | `BRAVE_SEARCH_API_KEY` |
+| Sin credencial de escritura | todo el write set | `ERETZ_PREVIEW_RO_URL` con usuario `eretz_preview_ro` |
+
+`SEARCH_API_PENDING` **no** es `NOT_FOUND`. Que falte proveedor no demuestra
+que la inmobiliaria no tenga web.
+
+El canary entraba como `postgres`. Fallaba por contraseña vencida, no por
+diseño: el día que alguien la renovara habría escrito como superusuario y el
+`SET LOCAL ROLE` habría sido decorativo. Ahora exige `eretz_preview_ro` y
+rechaza a los privilegiados por el usuario que viaja en la URL, no por el
+nombre de la variable.
+
+```bash
+python scripts/property_write_canary.py --entrada "D:/INMO CAPITAL/DB_WRITE_ELIGIBLE.jsonl" --limite 50
+```
+
+Valida y hace ROLLBACK. `--escribir` sólo cuando exista la credencial correcta.
+
+## Tests que no se pueden debilitar
+
+| Archivo | Cuida |
+|---|---|
+| `test_input_universe.py` | que no falte un rollout |
+| `test_mission_report.py` | que el informe cuente el universo real |
+| `test_cross_agency_misatribucion.py` | que el apellido no decida |
+| `test_padron_duplicates.py` | que no se adjudique sin evidencia |
+| `test_canary_credencial.py` | que no se entre como superusuario |
+
+13 tests fallan por entorno en este worktree: falta `SUPABASE_URL` y
+`SUPABASE_SERVICE_ROLE_KEY`. Son `ENVIRONMENT_DEPENDENT`, no se arreglan
+metiendo secretos ni deshabilitándolos.
+
+---
+
 # ESTADO VIVO — INGESTA DIRECTA DESDE INMOBILIARIAS
 
 ## Dónde está todo
