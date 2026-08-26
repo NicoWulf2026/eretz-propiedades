@@ -65,14 +65,13 @@ export function ContactActions({ property, canonical }: { property: Property; ca
             <textarea value={freeText} onChange={(e) => setFreeText(e.target.value)} maxLength={400} rows={2} placeholder="Agregá algo más (opcional)" className="mt-1 w-full rounded-lg border u-border-strong p-2 text-sm" />
           </label>
           <p className="mt-1 text-xs u-text-faint">Se arma un mensaje sólo con lo que elijas. Vos lo revisás antes de enviarlo.</p>
-        </fieldset>
+      </fieldset>
       ) : null}
-      <div className="mt-5 grid gap-2">
+      <div className="detail-contact-actions">
         {whatsappHref && <a className="primary-button justify-center" href={whatsappHref} target="_blank" rel="noopener noreferrer" onClick={() => track("whatsapp_clicked", { property_id: property.id })}>Consultar por WhatsApp</a>}
-        {telephone && <a className="secondary-button justify-center" href={telephone} onClick={() => track("phone_clicked", { property_id: property.id })}>Llamar por teléfono</a>}
-        {contact?.email && <a className="secondary-button justify-center" href={emailHref} onClick={() => track("email_clicked", { property_id: property.id })}>Enviar correo</a>}
+        {telephone && <a className={`${whatsappHref ? "secondary-button" : "primary-button"} justify-center`} href={telephone} onClick={() => track("phone_clicked", { property_id: property.id })}>Llamar por teléfono</a>}
+        {contact?.email && <a className={`${whatsappHref || telephone ? "secondary-button" : "primary-button"} justify-center`} href={emailHref} onClick={() => track("email_clicked", { property_id: property.id })}>Enviar correo</a>}
         {contact?.website && <a className="secondary-button justify-center" href={contact.website} target="_blank" rel="noopener noreferrer">Sitio del publicador ↗</a>}
-        {property.sourceUrl && <a className="secondary-button justify-center" href={property.sourceUrl} target="_blank" rel="noopener noreferrer" onClick={() => track("original_listing_clicked", { property_id: property.id })}>Ver publicación original ↗</a>}
       </div>
       {!whatsappHref && !telephone && !contact?.email && !contact?.website && !property.sourceUrl && <p className="mt-4 rounded-xl u-warn-surface p-3 text-sm u-warn-text">Esta publicación no incluye un contacto público válido.</p>}
       <div className="mt-5 flex flex-wrap gap-3 border-t u-border pt-4">

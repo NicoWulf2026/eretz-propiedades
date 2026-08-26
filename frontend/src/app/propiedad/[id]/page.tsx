@@ -1,43 +1,61 @@
 import type { Metadata } from "next";
-import { siteUrl } from "@/lib/site-url";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { SiteShell } from "@/components/layout/SiteShell";
 import { PropertyMap } from "@/components/map/PropertyMap";
-import { ContactActions } from "@/components/property/ContactActions";
 import { CollectionPicker } from "@/components/property/CollectionPicker";
+import { ContactActions } from "@/components/property/ContactActions";
+import { PriceTag } from "@/components/property/PriceTag";
 import { PropertyCard } from "@/components/property/PropertyCard";
+import { PropertyDetailActions } from "@/components/property/PropertyDetailActions";
+import { PropertyDetailFacts } from "@/components/property/PropertyDetailFacts";
 import { PropertyGallery } from "@/components/property/PropertyGallery";
 import { RecentViewTracker } from "@/components/property/RecentViewTracker";
 import { ReportButton } from "@/components/property/ReportButton";
-import { PriceTag } from "@/components/property/PriceTag";
-import { availabilityLabel, formatDate, operationLabels, propertyLocation, propertyPrice, propertySpecs, typeLabels } from "@/lib/property-presenter";
-import { getOtherPublications, getPriceHistory, getPropertyById, getRelatedProperties } from "@/lib/property-service";
-import { parsePropertyFilters, type SearchParams } from "@/lib/property-query";
-import { entitySlug } from "@/lib/slug";
 import { locationConfidenceDescription, locationConfidenceLabel } from "@/lib/geo-confidence";
+import { propertyDetailGroups, propertyDetailTitle, propertyReturnContext, publicationMatchConfidence } from "@/lib/property-detail";
+import { availabilityLabel, formatDate, operationLabels, propertyLocation, propertyPrice, propertySpecs, typeLabels } from "@/lib/property-presenter";
+import { parsePropertyFilters, type SearchParams } from "@/lib/property-query";
+import { getOtherPublications, getPriceHistory, getPropertyById, getRelatedProperties } from "@/lib/property-service";
+import { siteUrl } from "@/lib/site-url";
+import { entitySlug } from "@/lib/slug";
+import type { PropertySummary } from "@/types/property";
 
+const money = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 });
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
   const property = await getPropertyById(id);
   if (!property) notFound();
-  const description = `${typeLabels[property.propertyType]} en ${operationLabels[property.operation]}. ${propertyLocation(property)}. ${propertyPrice(property)}.`;
+  const title = propertyDetailTitle(property);
+  const description = `${typeLabels[property.propertyType]} en ${operationLabels[property.operation].toLowerCase()}. ${propertyLocation(property)}. ${propertyPrice(property)}.`;
   const canonical = `${siteUrl}/propiedad/${property.id}`;
   return {
-    title: property.title,
+    title,
     description,
     alternates: { canonical },
-    openGraph: { title: property.title, description, url: canonical, type: "article", images: property.images[0] ? [{ url: property.images[0] }] : [{ url: `${siteUrl}/opengraph-image` }] },
-    twitter: { card: "summary_large_image", title: property.title, description },
+    openGraph: { title, description, url: canonical, type: "article", images: property.images[0] ? [{ url: property.images[0] }] : [{ url: `${siteUrl}/opengraph-image` }] },
+    twitter: { card: "summary_large_image", title, description },
   };
+}
+
+function PublicationGroup({ title, description, properties, returnTo }: { title: string; description: string; properties: PropertySummary[]; returnTo: string }) {
+  if (!properties.length) return null;
+  return (
+    <section className="publication-match-group">
+      <div><h3>{title}</h3><p>{description}</p></div>
+      <div className="detail-related-grid">
+        {properties.map((item) => <PropertyCard key={item.id} property={item} returnTo={returnTo} variant="grid" />)}
+      </div>
+    </section>
+  );
 }
 
 export default async function PropertyPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<SearchParams> }) {
   const { id } = await params;
   const query = await searchParams;
   const returnCandidate = Array.isArray(query.volver) ? query.volver[0] : query.volver;
-  const returnTo = returnCandidate?.startsWith("/") && !returnCandidate.startsWith("//") ? returnCandidate.slice(0, 1600) : "/";
+  const returnTo = returnCandidate?.startsWith("/") && !returnCandidate.startsWith("//") ? returnCandidate.slice(0, 1600) : "/propiedades";
   const property = await getPropertyById(id);
   if (!property) notFound();
   const [related, otherPublications, priceHistory] = await Promise.all([
@@ -46,70 +64,139 @@ export default async function PropertyPage({ params, searchParams }: { params: P
     getPriceHistory(id),
   ]);
   const canonical = `${siteUrl}/propiedad/${property.id}`;
+  const title = propertyDetailTitle(property);
   const updated = formatDate(property.updatedAt);
-  const specs = propertySpecs(property);
+  const published = formatDate(property.publishedAt);
+  const specs = propertySpecs(property).slice(0, 5);
+  const factGroups = propertyDetailGroups(property);
+  const returnContext = propertyReturnContext(returnTo);
+  const areaForPrice = property.totalArea ?? property.coveredArea;
+  const pricePerSquareMeter = property.price && property.currency && areaForPrice
+    ? `${property.currency} ${money.format(property.price / areaForPrice)} por m²`
+    : null;
+  const highConfidencePublications: PropertySummary[] = [];
+  const limitedConfidencePublications: PropertySummary[] = [];
+  for (const item of otherPublications) {
+    if (publicationMatchConfidence(property, item) === "HIGH_CONFIDENCE") highConfidencePublications.push(item);
+    else limitedConfidencePublications.push(item);
+  }
   const jsonLd = {
-    "@context": "https://schema.org",
-    "@type": "RealEstateListing",
-    name: property.title,
-    url: canonical,
-    description: property.description ?? undefined,
-    image: property.images,
-    dateModified: property.updatedAt ?? undefined,
+    "@context": "https://schema.org", "@type": "RealEstateListing", name: title, url: canonical,
+    description: property.description ?? undefined, image: property.images, dateModified: property.updatedAt ?? undefined,
     offers: property.price && property.currency ? { "@type": "Offer", price: property.price, priceCurrency: property.currency, availability: "https://schema.org/InStock" } : undefined,
     address: { "@type": "PostalAddress", addressLocality: property.city ?? undefined, addressRegion: property.province ?? undefined, addressCountry: property.country ?? "AR" },
   };
+
   return (
     <SiteShell>
-      <RecentViewTracker id={property.id} title={property.title} price={propertyPrice(property)} />
+      <RecentViewTracker id={property.id} title={title} price={propertyPrice(property)} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />
-      <div className="container py-8">
-        <nav aria-label="Migas de pan" className="flex flex-wrap items-center gap-2 text-sm u-text-muted"><Link href={returnTo} scroll={false} className="font-bold text-[color:var(--accent-soft)]">← Volver a resultados</Link><span aria-hidden="true">/</span><span aria-current="page">{typeLabels[property.propertyType]}</span></nav>
-        <header id="resumen" className="mt-6 scroll-mt-24">
-          <div className="flex flex-wrap gap-2"><span className="pill">{operationLabels[property.operation]}</span><span className="pill pill-light">{typeLabels[property.propertyType]}</span>{property.mortgageEligible && <span className="pill pill-pick">Apto crédito</span>}{availabilityLabel(property.status) ? <span className="pill pill-light" title="La disponibilidad de esta publicación no está confirmada en el último relevamiento.">{availabilityLabel(property.status)}</span> : null}</div>
-          <h1 className="mt-5 max-w-4xl text-[1.875rem] font-black leading-[2.25rem] tracking-[-0.02em] text-[color:var(--ink)]">{property.title}</h1>
-          <div className="mt-4 flex flex-wrap items-end justify-between gap-3"><div><PriceTag property={property} className="detail-price" /><p className="mt-2 text-sm u-text-muted">{propertyLocation(property)}</p>{property.publisher ? <p className="mt-2 text-sm font-bold text-[color:var(--ink)]">Publicado por {property.publisher.name}</p> : null}</div><div className="text-right">{updated && <p className="text-xs u-text-muted">Actualizado el {updated}</p>}<p className="mt-1 text-xs u-text-muted">ID ERETZ {property.id}</p></div></div>
-        </header>
-        {/* La galeria ocupa el ancho completo del contenedor, no la columna de
-            contenido: en la referencia el mosaico 1+4 usa las dos mitades del
-            contenedor y el cuerpo con su sidebar empieza debajo. */}
-        <div className="mt-8">
-          <PropertyGallery images={property.images} title={property.title} />
-        </div>
-        <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1.6fr)_minmax(320px,.7fr)]">
-          <div className="min-w-0 space-y-8">
-            <nav aria-label="Secciones de la propiedad" className="ficha-section-nav">
-          <a href="#resumen">Resumen</a>
-          <a href="#descripcion">Descripción</a>
-          <a href="#caracteristicas">Características</a>
-          {property.amenities.length > 0 ? <a href="#servicios">Servicios</a> : null}
-          <a href="#ubicacion">Ubicación</a>
-          <a href="#publicador">Publicador</a>
-          <a href="#aviso">Información del aviso</a>
+      <main className="detail-page container">
+        <nav aria-label="Volver al contexto de búsqueda" className="detail-return">
+          <Link href={returnTo} scroll={false}>← Volver a resultados</Link>
+          {returnContext ? <span>{returnContext}</span> : null}
         </nav>
-            <section id="caracteristicas" className="detail-panel scroll-mt-24"><h2>Características</h2>{specs.length ? <ul className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">{specs.map((spec) => <li key={spec} className="rounded-xl bg-[color:rgba(255,255,255,.06)] p-3 text-sm font-bold text-[color:var(--ink)]">{spec}</li>)}</ul> : <p className="mt-3 u-text-muted">Características no informadas.</p>}<div className="mt-4 grid gap-2 text-sm u-text-muted sm:grid-cols-2">{property.toilettes ? <p>{property.toilettes} toilette{property.toilettes > 1 ? "s" : ""}</p> : null}{property.age ? <p>Antigüedad: {property.age} años</p> : null}{property.floor ? <p>Piso: {property.floor}</p> : null}{property.landArea ? <p>Terreno: {Intl.NumberFormat("es-AR").format(property.landArea)} m²</p> : null}{property.expenses && property.expensesCurrency ? <p>Expensas: {property.expensesCurrency} {Intl.NumberFormat("es-AR").format(property.expenses)}</p> : null}</div></section>
-            <section id="descripcion" className="detail-panel scroll-mt-24"><h2>Descripción</h2><p className="mt-4 whitespace-pre-line text-base leading-7 u-text-muted">{property.description ?? "Descripción no disponible"}</p></section>
-            {property.amenities.length > 0 && <section id="servicios" className="detail-panel scroll-mt-24"><h2>Servicios y amenities</h2><ul className="mt-4 flex flex-wrap gap-2">{property.amenities.map((amenity) => <li className="rounded-full u-surface-sunken px-3 py-2 text-sm u-text-muted" key={amenity}>{amenity}</li>)}</ul></section>}
-            <section id="ubicacion" className="detail-panel scroll-mt-24">
-              <div className="flex flex-wrap items-center gap-2"><h2>Ubicación</h2><span className={`location-confidence-badge is-${property.locationConfidence}`}>{locationConfidenceLabel(property.locationConfidence)}</span></div>
-              <p className="mt-3 u-text-muted">{property.address ? `${property.address}, ` : ""}{propertyLocation(property)}</p>
-              {property.locationConfidence !== "high" ? <p className="mt-2 text-sm u-text-muted">{locationConfidenceDescription(property.locationConfidence)}</p> : null}
-              <p className="mt-2 text-xs leading-5 u-text-faint">ERETZ muestra la ubicación con el nivel de precisión disponible en la publicación original y sus datos asociados.</p>
-              {property.locationConfidence === "none" ? (
-                <div className="location-unavailable mt-5" role="status">Esta propiedad sigue disponible en los resultados, pero no tiene un punto utilizable para mostrar en el mapa.</div>
-              ) : (
-                <div className="mt-5 h-[420px] overflow-hidden rounded-2xl"><PropertyMap properties={[property]} filters={parsePropertyFilters({})} label="Ubicación de la propiedad" returnTo={returnTo} /></div>
-              )}
-            </section>
-            <section id="publicador" className="detail-panel scroll-mt-24"><h2>Publicado por</h2>{property.publisher ? <p className="mt-3 u-text-muted">{property.publisher.id ? <Link href={`/inmobiliaria/${entitySlug(property.publisher.id, property.publisher.name)}`} className="font-bold text-[color:var(--accent-soft)] underline-offset-2 hover:underline">{property.publisher.name}</Link> : property.publisher.name}{property.publisher.verified ? " · Verificada" : ""}</p> : <p className="mt-3 u-text-muted">Publicador no especificado.</p>}{property.publisher?.id ? <p className="mt-2 text-sm"><Link href={`/inmobiliaria/${entitySlug(property.publisher.id, property.publisher.name)}`} className="inline-action font-bold text-[color:var(--accent-soft)]">Ver todas sus propiedades →</Link></p> : null}<p className="mt-2 text-sm u-text-faint">Los datos de contacto están en el panel lateral.</p></section>
-            <section id="aviso" className="detail-panel scroll-mt-24"><h2>Información del aviso</h2><div className="mt-3 grid gap-2 text-sm u-text-muted sm:grid-cols-2"><p>Operación: {operationLabels[property.operation]}</p><p>Precio: {propertyPrice(property)}</p>{updated ? <p>Actualizado el {updated}</p> : null}<p>ID ERETZ: {property.id}</p></div>{property.sourceUrl ? <p className="mt-3 text-sm"><a className="inline-action font-bold text-[color:var(--accent-soft)]" href={property.sourceUrl} target="_blank" rel="noopener noreferrer nofollow">Ver aviso original</a></p> : null}<p className="mt-3 text-xs leading-5 u-text-faint"><strong>Información de terceros.</strong> El precio, la disponibilidad y las características pueden cambiar. Confirmá con el responsable de la publicación.</p><div className="mt-4"><ReportButton propertyId={property.id} /></div></section>
+
+        <PropertyGallery images={property.images} title={title} />
+
+        <div className="detail-overview-grid">
+          <header id="resumen" className="detail-overview scroll-mt-24">
+            <div className="detail-kickers">
+              <span>{operationLabels[property.operation]}</span>
+              <span>{typeLabels[property.propertyType]}</span>
+              {availabilityLabel(property.status) ? <span>{availabilityLabel(property.status)}</span> : null}
+            </div>
+            <h1>{title}</h1>
+            <PriceTag property={property} className="detail-price" />
+            <div className="detail-price-meta">
+              {property.expenses && property.expensesCurrency ? <span>Expensas {property.expensesCurrency} {money.format(property.expenses)}</span> : null}
+              {pricePerSquareMeter ? <span>{pricePerSquareMeter}</span> : null}
+            </div>
+            <p className="detail-location">{propertyLocation(property)}</p>
+            {specs.length ? <ul className="detail-specs" aria-label="Características principales">{specs.map((spec) => <li key={spec}>{spec}</li>)}</ul> : null}
+            <PropertyDetailActions property={property} canonical={canonical} />
+          </header>
+          <div id="contacto" className="detail-contact-column scroll-mt-24">
+            <ContactActions property={property} canonical={canonical} />
+            <CollectionPicker propertyId={property.id} />
           </div>
-          <div id="contacto" className="min-w-0 scroll-mt-24 lg:sticky lg:top-24 lg:self-start"><ContactActions property={property} canonical={canonical} /><div className="mt-3"><CollectionPicker propertyId={property.id} /></div><div className="detail-disclaimer mt-4"><strong>Información de terceros.</strong> El precio, la disponibilidad y las características pueden cambiar. Confirmá los datos con el responsable de la publicación. ERETZ no responde por errores del aviso original.</div></div>
         </div>
-        {priceHistory.length > 1 && <section className="mt-16"><p className="eyebrow">Transparencia</p><h2 className="section-title">Historial de precio</h2><ul className="mt-4 divide-y divide-slate-100 rounded-xl border u-border">{priceHistory.map((point, i) => <li key={i} className="flex items-center justify-between gap-3 p-3 text-sm"><span className="font-bold text-[color:var(--ink)]">{point.currency ? `${point.currency} ` : ""}{point.price.toLocaleString("es-AR")}</span><time className="u-text-muted" dateTime={point.at}>{formatDate(point.at)}</time></li>)}</ul></section>}
-        {otherPublications.length > 0 && <section className="mt-16"><p className="eyebrow">Misma dirección</p><h2 className="section-title">Otras publicaciones de esta propiedad</h2><p className="mt-2 text-sm u-text-muted">Avisos en la misma dirección; pueden ser la misma propiedad publicada por distintas fuentes.</p><div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{otherPublications.map((item) => <PropertyCard key={item.id} property={item} returnTo={returnTo} />)}</div></section>}
-        {related.length > 0 && <section className="mt-16"><p className="eyebrow">También puede interesarte</p><h2 className="section-title">Propiedades relacionadas</h2><p className="mt-2 text-sm u-text-muted">Selección por ubicación, tipo y operación; no es una recomendación de IA.</p><div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">{related.map((item) => <PropertyCard key={item.id} property={item} returnTo={returnTo} />)}</div></section>}
-      </div>
+
+        <div className="detail-body-grid">
+          <div className="detail-content">
+            <nav aria-label="Secciones de la propiedad" className="ficha-section-nav">
+              <a href="#caracteristicas">Características</a>
+              {property.description ? <a href="#descripcion">Descripción</a> : null}
+              {property.amenities.length ? <a href="#servicios">Servicios</a> : null}
+              <a href="#ubicacion">Ubicación</a>
+              {property.publisher || property.agentName ? <a href="#publicador">Publicador</a> : null}
+              <a href="#transparencia">Transparencia</a>
+            </nav>
+            <PropertyDetailFacts groups={factGroups} />
+            {property.description ? <section id="descripcion" className="detail-panel scroll-mt-24"><h2>Descripción</h2><p className="detail-description">{property.description}</p></section> : null}
+            {property.amenities.length ? <section id="servicios" className="detail-panel scroll-mt-24"><h2>Servicios y amenities</h2><ul className="detail-amenities">{property.amenities.map((amenity) => <li key={amenity}>{amenity}</li>)}</ul></section> : null}
+            <section id="ubicacion" className="detail-panel scroll-mt-24">
+              <div className="detail-section-heading"><h2>Ubicación</h2><span className={`location-confidence-badge is-${property.locationConfidence}`}>{locationConfidenceLabel(property.locationConfidence)}</span></div>
+              <p className="detail-description">{property.address ? `${property.address}, ` : ""}{propertyLocation(property)}</p>
+              {property.locationConfidence !== "high" ? <p className="detail-location-note">{locationConfidenceDescription(property.locationConfidence)}</p> : null}
+              <p className="detail-fineprint">La ubicación depende de la precisión disponible en la publicación original.</p>
+              {property.locationConfidence === "none" ? <div className="location-unavailable" role="status">Esta propiedad no tiene una ubicación utilizable en el mapa.</div> : <div className="detail-map"><PropertyMap properties={[property]} filters={parsePropertyFilters({})} label="Ubicación de la propiedad" returnTo={returnTo} /></div>}
+            </section>
+            {property.publisher || property.agentName ? (
+              <section id="publicador" className="detail-panel scroll-mt-24">
+                <p className="eyebrow">Quién publica</p><h2>{property.publisher?.name ?? property.agentName}</h2>
+                {property.publisher?.verified ? <p className="detail-verified">Identidad verificada en ERETZ</p> : null}
+                {property.agentName && property.agentName !== property.publisher?.name ? <p className="detail-description">Agente: {property.agentName}</p> : null}
+                {property.publisher?.id ? <Link href={`/inmobiliaria/${entitySlug(property.publisher.id, property.publisher.name)}`} className="inline-action">Ver perfil y publicaciones →</Link> : null}
+              </section>
+            ) : null}
+            <section id="transparencia" className="detail-panel detail-transparency scroll-mt-24">
+              <h2>Información de la publicación</h2>
+              <dl>
+                <div><dt>ID ERETZ</dt><dd>{property.id}</dd></div>
+                {updated ? <div><dt>Actualización</dt><dd>{updated}</dd></div> : null}
+                {published ? <div><dt>Publicación</dt><dd>{published}</dd></div> : null}
+                <div><dt>Disponibilidad</dt><dd>{availabilityLabel(property.status) ?? "Confirmada en el último relevamiento"}</dd></div>
+              </dl>
+              <div className="detail-transparency-actions">
+                {property.sourceUrl ? <a href={property.sourceUrl} target="_blank" rel="noopener noreferrer nofollow">Ver publicación original ↗</a> : null}
+                <ReportButton propertyId={property.id} />
+                <Link href={`/baja-o-correccion?propiedad=${encodeURIComponent(property.id)}`}>Solicitar corrección</Link>
+              </div>
+              <p>La información proviene de terceros y puede cambiar. Confirmala con quien publicó el aviso.</p>
+            </section>
+          </div>
+        </div>
+
+        {priceHistory.length > 1 ? (
+          <section className="detail-lower-section" aria-labelledby="price-history-heading">
+            <p className="eyebrow">Transparencia</p><h2 id="price-history-heading" className="section-title">Historial de precio</h2>
+            <div className="price-history-summary">
+              <p><span>Precio inicial</span><strong>{priceHistory[0].currency ? `${priceHistory[0].currency} ` : ""}{money.format(priceHistory[0].price)}</strong></p>
+              <p><span>Precio actual</span><strong>{priceHistory.at(-1)?.currency ? `${priceHistory.at(-1)?.currency} ` : ""}{money.format(priceHistory.at(-1)?.price ?? 0)}</strong></p>
+              <p><span>Cambios registrados</span><strong>{priceHistory.length - 1}</strong></p>
+            </div>
+            <ol className="price-history-list">{priceHistory.map((point, index) => <li key={`${point.at}-${index}`}><time dateTime={point.at}>{formatDate(point.at)}</time><strong>{point.currency ? `${point.currency} ` : ""}{money.format(point.price)}</strong></li>)}</ol>
+          </section>
+        ) : null}
+
+        {otherPublications.length ? (
+          <section className="detail-lower-section" aria-labelledby="other-publications-heading">
+            <p className="eyebrow">Publicaciones relacionadas</p><h2 id="other-publications-heading" className="section-title">Avisos que podrían corresponder a esta propiedad</h2>
+            <p className="section-intro">La coincidencia se calcula con señales disponibles; no afirmamos que dos avisos sean la misma propiedad sin evidencia suficiente.</p>
+            <PublicationGroup title="Alta confianza" description="Varias señales coinciden de forma consistente." properties={highConfidencePublications} returnTo={returnTo} />
+            <PublicationGroup title="Confianza limitada" description="Comparten algunas señales, pero necesitás confirmar la relación con cada publicador." properties={limitedConfidencePublications} returnTo={returnTo} />
+          </section>
+        ) : null}
+
+        {related.length ? (
+          <section className="detail-lower-section" aria-labelledby="related-heading">
+            <p className="eyebrow">También puede interesarte</p><h2 id="related-heading" className="section-title">Propiedades similares</h2>
+            <p className="section-intro">Coinciden por ubicación, tipo y operación. El orden es neutral.</p>
+            <div className="detail-related-grid is-four">{related.map((item) => <PropertyCard key={item.id} property={item} returnTo={returnTo} variant="grid" />)}</div>
+          </section>
+        ) : null}
+      </main>
     </SiteShell>
   );
 }

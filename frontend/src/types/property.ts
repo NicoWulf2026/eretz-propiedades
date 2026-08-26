@@ -218,7 +218,7 @@ export type Property = {
   createdAt: string | null;
   updatedAt: string | null;
   status: PropertyStatus;
-  mortgageEligible: boolean;
+  mortgageEligible: boolean | null;
   quality: QualitySignals;
 };
 

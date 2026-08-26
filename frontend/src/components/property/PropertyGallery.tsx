@@ -78,28 +78,34 @@ export function PropertyGallery({ images, title }: { images: string[]; title: st
             ))}
           </div>
         )}
-      </div>
-      <div className="surface overflow-hidden">
-        {images.length > 1 && (
-          <div className="ficha-gallery-thumbs flex gap-2 overflow-x-auto p-3" aria-label="Miniaturas de la galería">
-            {images.map((src, index) => (
-              <button key={src} type="button" className={`h-16 w-24 shrink-0 overflow-hidden rounded-lg border-2 ${index === selected ? "border-[color:var(--accent)]" : "border-transparent"}`} onClick={() => setSelected(index)} aria-label={`Ver imagen ${index + 1}`}>
-                <PropertyImage src={src} alt="" />
-              </button>
-            ))}
-          </div>
-        )}
+        {images.length > 1 ? (
+          <button
+            type="button"
+            className="ficha-gallery-open"
+            onClick={() => { setSelected(0); setModal(true); }}
+          >
+            Ver todas las fotos <span aria-hidden="true">·</span> {images.length}
+          </button>
+        ) : null}
       </div>
       {modal && image && (
-        <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Galería ampliada" className="fixed inset-0 z-[2000] grid place-items-center bg-black/90 p-4" onClick={() => setModal(false)}>
+        <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Galería de fotos" className="gallery-dialog" onClick={() => setModal(false)}>
           <button type="button" className="gallery-close absolute right-4 top-4 grid size-12 place-items-center rounded-full text-2xl" onClick={() => setModal(false)} aria-label="Cerrar galería">×</button>
-          <div className="h-[82vh] w-full max-w-6xl" onClick={(event) => event.stopPropagation()}>
+          <p className="gallery-counter" aria-live="polite">Foto {selected + 1} de {images.length}</p>
+          <div className="gallery-stage" onClick={(event) => event.stopPropagation()}>
             <PropertyImage src={image} alt={`${title}, imagen ampliada`} />
           </div>
           {images.length > 1 && (
-            <div className="absolute inset-x-4 bottom-4 flex justify-center gap-3">
-              <button className="secondary-button" type="button" onClick={() => setSelected((selected - 1 + images.length) % images.length)} aria-label="Ver imagen anterior">← Anterior</button>
-              <button className="secondary-button" type="button" onClick={() => setSelected((selected + 1) % images.length)} aria-label="Ver imagen siguiente">Siguiente →</button>
+            <div className="gallery-navigation" onClick={(event) => event.stopPropagation()}>
+              <button className="secondary-button" type="button" onClick={() => setSelected((selected - 1 + images.length) % images.length)} aria-label="Ver foto anterior">← Anterior</button>
+              <div className="gallery-modal-thumbs" aria-label="Elegir foto">
+                {images.map((src, index) => (
+                  <button key={`${src}-${index}`} type="button" className={index === selected ? "is-current" : ""} onClick={() => setSelected(index)} aria-label={`Ver foto ${index + 1}`} aria-current={index === selected ? "true" : undefined}>
+                    <PropertyImage src={src} alt="" />
+                  </button>
+                ))}
+              </div>
+              <button className="secondary-button" type="button" onClick={() => setSelected((selected + 1) % images.length)} aria-label="Ver foto siguiente">Siguiente →</button>
             </div>
           )}
         </div>

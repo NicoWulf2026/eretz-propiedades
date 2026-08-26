@@ -190,7 +190,7 @@ export function mapSupabasePropertyToProperty(item: SupabaseProperty, pointStats
     createdAt: item.created_at,
     updatedAt: item.updated_at,
     status: normalizeStatus(item.estado),
-    mortgageEligible: item.apto_credito === true,
+    mortgageEligible: item.apto_credito == null ? null : item.apto_credito === true,
     quality,
   };
 }

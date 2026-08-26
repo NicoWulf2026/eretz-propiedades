@@ -11,6 +11,8 @@ export function describeSearch(filters: PropertyFilters): string {
   if (filters.propertyType) parts.push(typeLabels[filters.propertyType]);
   const place = [filters.neighborhood, filters.city, filters.province].find(Boolean);
   if (place) parts.push(`en ${place}`);
+  if (filters.minBedrooms != null) parts.push(`${filters.minBedrooms}+ dormitorios`);
+  else if (filters.minRooms != null) parts.push(`${filters.minRooms}+ ambientes`);
   const cur = filters.currency ? `${filters.currency} ` : "";
   const min = filters.minPrice != null ? `${cur}${filters.minPrice.toLocaleString("es-AR")}` : null;
   const max = filters.maxPrice != null ? `${cur}${filters.maxPrice.toLocaleString("es-AR")}` : null;
