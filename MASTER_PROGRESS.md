@@ -779,6 +779,10 @@ uno incorrecto se publica.
 | generico (29.780) | 7,01% | 0,00% |
 | Tokko (91.659) | 0,48% | 0,00% |
 
+Sobre el write set completo -159.858 propiedades- la auditoria de
+coherencia cierra en **0,01%**: 22 propiedades, todas por una imagen que
+parece un marcador de posicion.
+
 `apply_quality_guards.py` lo aplica a lo ya extraido sin volver a bajar nada
 -los defectos son de lectura, no de la fuente- y escribe al lado, con sufijo
 `.coherente.jsonl`. **Antes de la proxima corrida sobre esas fuentes hay que
