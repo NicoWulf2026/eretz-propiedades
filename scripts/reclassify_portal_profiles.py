@@ -63,7 +63,16 @@ REDES = re.compile(
 
 
 def host(u: str) -> str:
-    return re.sub(r"^https?://", "", u or "").split("/")[0].lower()
+    """El host, sin www.
+
+    Sin normalizarlo, "www.bustamantepropiedades.com" y
+    "bustamantepropiedades.com" se cuentan como dos sitios distintos y el
+    dominio compartido por dos inmobiliarias no se ve. Son tres casos, pero
+    uno de ellos son las 3.137 propiedades en disputa mas grandes que tiene
+    el proyecto.
+    """
+    h = re.sub(r"^https?://", "", u or "").split("/")[0].lower()
+    return re.sub(r"^www\.", "", h)
 
 
 def agencias_por_host(filas: list[dict]) -> dict[str, list[str]]:

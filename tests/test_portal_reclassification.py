@@ -142,3 +142,16 @@ def test_lo_que_se_vio_en_el_sitio_manda_sobre_el_dominio():
 def test_esas_webs_tampoco_se_escriben():
     from scripts.write_eligibility import NO_SON_WEB_PROPIA
     assert "NOT_A_REAL_ESTATE_WEB" in NO_SON_WEB_PROPIA
+
+
+def test_www_no_convierte_un_host_en_dos():
+    """Sin normalizarlo, "www.bustamantepropiedades.com" y
+    "bustamantepropiedades.com" se cuentan como dos sitios y el dominio
+    compartido no se ve. Son tres casos, y uno son las 3.137 propiedades en
+    disputa mas grandes del proyecto."""
+    filas = directorio(("A", "https://www.alquenia.com/a"),
+                       ("B", "https://alquenia.com/b"),
+                       ("C", "http://WWW.Alquenia.com/c"))
+    por_host = agencias_por_host(filas)
+    assert list(por_host) == ["alquenia.com"]
+    assert clasificar(filas[0]["domain"], por_host, "A")[0] == PERFIL_PORTAL
