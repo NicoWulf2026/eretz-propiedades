@@ -74,6 +74,10 @@ def main() -> int:
     ap.add_argument("--raiz", default=r"D:\INMO CAPITAL")
     ap.add_argument("--data-dir", default=r"D:\INMO CAPITAL\ERETZ_AGENCY_DATA")
     ap.add_argument("--salida", default=r"D:\INMO CAPITAL\CENSO_BACKLOG.jsonl")
+    ap.add_argument("--salida-generico",
+                    default=r"D:\INMO CAPITAL\CENSO_BACKLOG_GENERICO.jsonl",
+                    help="el mismo backlog, todo por generico: es la caida "
+                         "cuando el connector de plataforma no reconocio el sitio")
     a = ap.parse_args()
     raiz, dd = Path(a.raiz), Path(a.data_dir)
 
@@ -121,6 +125,19 @@ def main() -> int:
             fh.write(json.dumps(f, ensure_ascii=False) + "\n")
     tmp.replace(salida)
 
+    # Caida a generico. Un connector de plataforma que no reconoce el sitio no
+    # prueba que el sitio no tenga inventario: prueba que esa plataforma no era.
+    # Probar sitemap, JSON embebido y HTML cuesta un pedido; escribir un
+    # connector nuevo cuesta un dia.
+    gen = Path(a.salida_generico)
+    tmpg = gen.with_suffix(gen.suffix + ".tmp")
+    with tmpg.open("w", encoding="utf-8") as fh:
+        for f in filas:
+            fh.write(json.dumps({**f, "connector_candidato": "generico",
+                                 "connector_original": f["connector_candidato"]},
+                                ensure_ascii=False) + chr(10))
+    tmpg.replace(gen)
+
     print("### BACKLOG DE SCRAPING ###")
     print("  fuentes listas para leer:      %d" % len(listas))
     print("  ya aportaron inventario:       %d"
@@ -137,6 +154,7 @@ def main() -> int:
         print("    %-28s %5d" % (k, v))
     print()
     print("  artefacto -> %s" % salida)
+    print("  caida a generico -> %s" % gen)
     return 0
 
 

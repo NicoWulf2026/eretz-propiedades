@@ -240,10 +240,11 @@ def procesar(con, fuente: Fuente, max_fichas: int, observacion: bool,
     fuente por perdida porque el conector especifico no la entendio es
     desperdiciar inventario que esta publicado y accesible.
     """
-    r = _procesar_con(con, fuente, max_fichas, observacion)
+    r = _procesar_con(con, fuente, max_fichas, observacion, presupuesto)
     if respaldo is not None and r.get("estado") in ("VARIANTE_NO_SOPORTADA",
                                                     "ERROR_DISCOVERY"):
-        alt = _procesar_con(respaldo, fuente, max_fichas, observacion)
+        alt = _procesar_con(respaldo, fuente, max_fichas, observacion,
+                            presupuesto)
         if alt.get("estado") == "OK" and alt.get("detalles_obtenidos"):
             alt["connector"] = respaldo.nombre
             alt["rescatada_por_respaldo"] = True
@@ -252,7 +253,8 @@ def procesar(con, fuente: Fuente, max_fichas: int, observacion: bool,
     return r
 
 
-def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool) -> dict:
+def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
+                  presupuesto: float = PRESUPUESTO_POR_FUENTE) -> dict:
     t0 = time.time()
     r: dict = {"canonical_agency_id": fuente.canonical_agency_id,
                "agency_name": fuente.agency_name,
