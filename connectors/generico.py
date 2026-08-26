@@ -115,6 +115,15 @@ RE_EDITORIAL = re.compile(r'"@type"\s*:\s*"?(Article|NewsArticle|BlogPosting)|'
 FOTOS_MINIMAS = 3
 
 
+# `src` con ruta relativa, y los atributos con los que los sitios difieren la
+# carga. La url se resuelve contra la de la ficha.
+RE_IMG_ATRIBUTO = re.compile(
+    r"<img[^>]{0,400}?\s(?:data-src|data-lazy-src|data-original|src)="
+    r"\"([^\"]{4,400})\"", re.I)
+RE_EXTENSION = re.compile(r"\.(?:jpe?g|png|webp|avif)(?:$|[?#])", re.I)
+RE_NO_ES_FOTO = re.compile(r"(logo|placeholder|avatar|icon|sprite|banner"
+                           r"|whatsapp|favicon)", re.I)
+
 MAX_SITEMAPS = 25
 MAX_FICHAS = 4000
 
@@ -354,10 +363,9 @@ class GenericoConnector(Connector):
                 precio = a_numero(m.group(2))
 
         imagenes, vistas = [], set()
-        for u in (datos.get("imagenes") or []) + RE_IMG.findall(html):
-            u = identidad_de_imagen(u)
-            if u in vistas or re.search(r"(logo|placeholder|avatar|icon|sprite|banner)",
-                                        u, re.I):
+        for u in (datos.get("imagenes") or []) + self._imagenes_de(html, url):
+            u = identidad_de_imagen(urllib.parse.urljoin(url, u))
+            if u in vistas or RE_NO_ES_FOTO.search(u):
                 continue
             vistas.add(u)
             imagenes.append(u)
@@ -465,6 +473,32 @@ class GenericoConnector(Connector):
                         "source_platform": "SITIO_PROPIO",
                         "pagina_listado": crudo.get("pagina")},
         )
+
+    @staticmethod
+    def _imagenes_de(html: str, url: str) -> list[str]:
+        """Las fotos de la ficha, esten escritas como esten.
+
+        Mirar solo urls absolutas dejaba en cero a los sitios que sirven
+        sus fotos con ruta relativa -<img src="/imagenes/494/IMG.jpg">-, que
+        son muchos. Una fuente perdio 268 fichas reales por eso: el guardian
+        las veia sin una sola foto, y las que si entraban entraban sin
+        galeria.
+        """
+        crudas = list(RE_IMG.findall(html or ""))
+        for m in RE_IMG_ATRIBUTO.finditer(html or ""):
+            crudas.append(m.group(1).split()[0] if m.group(1).strip() else "")
+        salida, vistas = [], set()
+        for u in crudas:
+            if not u:
+                continue
+            u = identidad_de_imagen(urllib.parse.urljoin(url, unescape(u.strip())))
+            if not RE_EXTENSION.search(u):
+                continue
+            if u in vistas or RE_NO_ES_FOTO.search(u):
+                continue
+            vistas.add(u)
+            salida.append(u)
+        return salida
 
     @staticmethod
     def _titulo_de_la_ficha(html: str, datos: dict, fuente: Fuente) -> str | None:

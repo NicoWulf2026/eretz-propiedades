@@ -1917,8 +1917,14 @@ def test_la_reclasificacion_conserva_la_evidencia():
     assert filas
     for f in filas[:20]:
         assert f["url"] and f["host"] and f["motivo"]
+        # Cuatro maneras de no ser la web propia de esa inmobiliaria, y
+        # cada una con su motivo escrito: portal, pagina de la oficina en
+        # su red, sitio que no publica inmuebles, y url que dos
+        # inmobiliarias distintas reclaman.
         assert f["clasificacion_nueva"] in ("EXTERNAL_PORTAL_PROFILE",
-                                            "OFFICIAL_OFFICE_PAGE")
+                                            "OFFICIAL_OFFICE_PAGE",
+                                            "NOT_A_REAL_ESTATE_WEB",
+                                            "AMBIGUOUS_WEB_ATTRIBUTION")
 
 
 # --------------------------------------------------------------------------
@@ -2257,3 +2263,27 @@ def test_el_informe_muestra_las_corridas_que_existen():
         for f in base.glob("quality_report_run*"):
             f.unlink()
         base.rmdir()
+
+
+def test_las_fotos_con_ruta_relativa_tambien_son_fotos():
+    """Mirar solo urls absolutas dejaba en cero a los sitios que sirven sus
+    fotos con ruta relativa. Una fuente perdio 268 fichas reales por eso: el
+    guardian las veia sin una sola foto."""
+    html = ('<img id="logomain" src="/assets/img/logo-conti.svg">'
+            '<img src="/imagenes/494/a.jpg" loading="lazy">'
+            '<img data-src="/imagenes/494/b.jpg">'
+            '<img src="https://cdn.com/c.webp">')
+    fotos = GenericoConnector._imagenes_de(
+        html, "https://contipropiedades.com.ar/propiedad/494/chalet")
+    assert "https://contipropiedades.com.ar/imagenes/494/a.jpg" in fotos
+    assert "https://contipropiedades.com.ar/imagenes/494/b.jpg" in fotos
+    assert "https://cdn.com/c.webp" in fotos
+    # El logo no es una foto de la propiedad.
+    assert not any("logo" in f for f in fotos)
+    assert len(fotos) == 3
+
+
+def test_una_foto_no_se_cuenta_dos_veces_por_venir_de_dos_atributos():
+    html = ('<img src="/f/1.jpg" data-src="/f/1.jpg">'
+            '<img src="https://alfa.com.ar/f/1.jpg">')
+    assert GenericoConnector._imagenes_de(html, "https://alfa.com.ar/p/1") ==         ["https://alfa.com.ar/f/1.jpg"]
