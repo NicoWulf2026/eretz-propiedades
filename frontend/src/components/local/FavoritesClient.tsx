@@ -16,7 +16,7 @@ import {
 } from "@/lib/local-store";
 import { useLocalValue } from "@/lib/use-local-store";
 
-export function FavoritesClient() {
+export function FavoritesClient({ view = "all", embedded = false }: { view?: "all" | "favorites" | "history" | "searches"; embedded?: boolean }) {
   const favorites = useLocalValue(getFavorites, []);
   const hidden = useLocalValue(getHidden, []);
   const compare = useLocalValue(getCompare, []);
@@ -25,15 +25,15 @@ export function FavoritesClient() {
   const { properties, loading, error } = usePropertiesByIds(favorites);
 
   return (
-    <div className="container py-8">
-      <header className="mb-6">
+    <div className={embedded ? "" : "container py-8"}>
+      {!embedded ? <header className="mb-6">
         <h1 className="page-title">Mi actividad</h1>
         <p className="page-subtitle">
           Tus favoritos, comparación, propiedades vistas y ocultas se guardan en este dispositivo.
         </p>
-      </header>
+      </header> : null}
 
-      <section aria-labelledby="fav-heading" className="mb-10">
+      {view === "all" || view === "favorites" ? <section aria-labelledby="fav-heading" className="mb-10">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 id="fav-heading" className="section-heading">
             Favoritos {favorites.length ? <span className="u-text-faint">({favorites.length})</span> : null}
@@ -65,9 +65,9 @@ export function FavoritesClient() {
             ) : null}
           </div>
         )}
-      </section>
+      </section> : null}
 
-      {recent.length ? (
+      {(view === "all" || view === "history") && recent.length ? (
         <section aria-labelledby="recent-heading" className="mb-10">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 id="recent-heading" className="section-heading">Vistas recientemente</h2>
@@ -84,9 +84,9 @@ export function FavoritesClient() {
             ))}
           </ul>
         </section>
-      ) : null}
+      ) : view === "history" ? <div className="state-panel"><span aria-hidden="true">◷</span><h2>Todavía no hay historial</h2><p>Las propiedades que abras van a aparecer acá, en orden reciente.</p><Link className="primary-button" href="/propiedades">Explorar propiedades</Link></div> : null}
 
-      {searches.length ? (
+      {(view === "all" || view === "searches") && searches.length ? (
         <section aria-labelledby="searches-heading" className="mb-10">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 id="searches-heading" className="section-heading">Búsquedas recientes</h2>
@@ -108,9 +108,9 @@ export function FavoritesClient() {
             ))}
           </ul>
         </section>
-      ) : null}
+      ) : view === "searches" ? <div className="state-panel"><span aria-hidden="true">⌕</span><h2>Todavía no hay búsquedas</h2><p>Las búsquedas que realices se guardan en este dispositivo para retomarlas más tarde.</p><Link className="primary-button" href="/propiedades">Empezar una búsqueda</Link></div> : null}
 
-      {hidden.length ? (
+      {(view === "all" || view === "history") && hidden.length ? (
         <section aria-labelledby="hidden-heading">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 id="hidden-heading" className="section-heading">

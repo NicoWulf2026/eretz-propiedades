@@ -14,9 +14,9 @@ const professionalItems: NavItem[] = [
 ];
 
 const personalItems: NavItem[] = [
-  { label: "Favoritos", href: "/favoritos" },
-  { label: "Colecciones", href: "/colecciones" },
-  { label: "Comparar", href: "/comparar" },
+  { label: "Abrir Mi ERETZ", href: "/mi-eretz" },
+  { label: "Guardadas", href: "/mi-eretz?seccion=guardadas" },
+  { label: "Comparar", href: "/mi-eretz?seccion=comparar" },
 ];
 
 const menuItems: NavItem[] = [

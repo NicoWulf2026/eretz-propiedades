@@ -33,7 +33,7 @@ function CollectionProperties({ ids, onRemove }: { ids: string[]; onRemove: (id:
   );
 }
 
-export function CollectionsClient() {
+export function CollectionsClient({ embedded = false }: { embedded?: boolean }) {
   const collections = useLocalValue(getCollections, []);
   const favorites = useLocalValue(getFavorites, []);
   const [selected, setSelected] = useState<string | null>(null);
@@ -44,14 +44,14 @@ export function CollectionsClient() {
   const openCollection = collections.find((c) => c.id === selected) ?? null;
 
   return (
-    <div className="container py-8">
-      <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
+    <div className={embedded ? "" : "container py-8"}>
+      {!embedded ? <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="page-title">Colecciones</h1>
           <p className="page-subtitle">Organizá propiedades en listas con nombre. Se guardan en este dispositivo, sin cuenta.</p>
         </div>
         <Link href="/favoritos" className="secondary-button">Mi actividad</Link>
-      </header>
+      </header> : null}
 
       <form
         className="mb-6 flex max-w-xl gap-2"

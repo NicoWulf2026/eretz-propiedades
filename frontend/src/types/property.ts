@@ -283,6 +283,7 @@ export type PropertySummary = Pick<
   | "id" | "agencyId" | "publisher" | "title" | "price" | "currency"
   | "propertyType" | "rawPropertyType" | "operation" | "rooms" | "bedrooms"
   | "bathrooms" | "garages" | "totalArea" | "coveredArea" | "address"
+  | "toilettes" | "landArea" | "expenses" | "expensesCurrency"
   | "neighborhood" | "city" | "province" | "country" | "latitude" | "longitude"
   | "locationConfidence"
   | "images" | "publishedAt" | "updatedAt" | "status" | "mortgageEligible"
