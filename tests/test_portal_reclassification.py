@@ -105,3 +105,22 @@ def test_el_directorio_se_reconstruye_con_la_senal_estructural():
     # estructural no se evalua.
     assert any("por_host" in l for l in fuente.splitlines()
                if "dominio, por_host" in l)
+
+
+def test_la_compuerta_de_escritura_mira_de_quien_es_la_web():
+    """Lo leido en un portal no se escribe: le atribuiria a una inmobiliaria el
+    inventario de las otras 35 que cuelgan del mismo host."""
+    from scripts.write_eligibility import NO_SON_WEB_PROPIA, WEB_AJENA
+
+    assert "EXTERNAL_PORTAL_PROFILE" in NO_SON_WEB_PROPIA
+    assert "AMBIGUOUS_WEB_ATTRIBUTION" in NO_SON_WEB_PROPIA
+    # La pagina de la oficina dentro de su red SI es suya.
+    assert "OFFICIAL_OFFICE_PAGE" not in NO_SON_WEB_PROPIA
+    assert "OFFICIAL_WEB" not in NO_SON_WEB_PROPIA
+    assert WEB_AJENA == "WEB_NO_PROPIA"
+
+    fuente = (Path(__file__).resolve().parents[1] / "scripts"
+              / "write_eligibility.py").read_text(encoding="utf-8")
+    # Y la clasificacion tiene que leerse del directorio, no adivinarse.
+    assert "directorio_plataformas" in fuente
+    assert "web_kind" in fuente
