@@ -756,6 +756,41 @@ def detectar_moneda(texto: Any) -> str | None:
     return None
 
 
+# Parametros con los que un proxy de imagenes lleva la foto REAL adentro de la
+# query. Son cuatro nombres y los usa media web moderna: /api/img?u=...,
+# /_next/image?url=..., /cdn-cgi/image/...?src=...
+PROXY_DE_IMAGEN = ("u", "url", "src", "image", "img")
+
+
+def identidad_de_imagen(u: str) -> str:
+    """La imagen que una url representa, no la url con la que se pide.
+
+    Un sitio servia sus 12 fotos por un proxy propio -/api/img?u=<foto>- y
+    quitar la query, que es lo correcto para descartar variantes de tamano,
+    dejaba las 12 reducidas a "/api/img": la ficha parecia tener una sola foto
+    y el guardian la descartaba entera. Adentro de la query estaba la foto de
+    verdad.
+    """
+    if "?" not in u:
+        return u
+    base, _, consulta = u.partition("?")
+    try:
+        campos = urllib.parse.parse_qs(consulta)
+    except ValueError:
+        return base
+    for clave in PROXY_DE_IMAGEN:
+        for valor in campos.get(clave, []):
+            adentro = urllib.parse.unquote(valor)
+            if not re.search(r"\.(?:jpe?g|png|webp|avif)", adentro, re.I):
+                continue
+            if adentro.startswith("http"):
+                return identidad_de_imagen(adentro)
+            if adentro.startswith("/"):
+                # Next.js pasa la foto como ruta: /_next/image?url=%2Ffotos%2Fa.jpg
+                return urllib.parse.urljoin(base, adentro)
+    return base
+
+
 def detectar_operacion(texto: Any) -> str | None:
     if not texto:
         return None

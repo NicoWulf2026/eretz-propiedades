@@ -31,7 +31,8 @@ from typing import Any, Iterator
 
 from .base import (Bloqueado, Connector, ErrorPermanente, ErrorTransitorio,
                    Fuente, PropiedadNormalizada, a_numero, detectar_moneda,
-                   detectar_operacion, detectar_tipo, limpiar)
+                   detectar_operacion, detectar_tipo, identidad_de_imagen,
+                   limpiar)
 
 SITEMAPS = ("/sitemap.xml", "/sitemap_index.xml", "/wp-sitemap.xml",
             "/sitemap-index.xml", "/sitemapindex.xml")
@@ -353,7 +354,7 @@ class GenericoConnector(Connector):
 
         imagenes, vistas = [], set()
         for u in (datos.get("imagenes") or []) + RE_IMG.findall(html):
-            u = u.split("?")[0]
+            u = identidad_de_imagen(u)
             if u in vistas or re.search(r"(logo|placeholder|avatar|icon|sprite|banner)",
                                         u, re.I):
                 continue

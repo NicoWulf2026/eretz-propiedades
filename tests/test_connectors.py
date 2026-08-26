@@ -2103,3 +2103,30 @@ def test_un_atributo_suelto_no_alcanza():
     assert not GenericoConnector._confirma_ficha(
         "<html>x</html>", "Analisis de la superficie construida en 2026",
         1000.0, ["a", "b", "c"])
+
+
+def test_las_fotos_detras_de_un_proxy_no_son_todas_la_misma():
+    """Un sitio servia sus 12 fotos por /api/img?u=<foto>. Quitar la query
+    -que es lo correcto para descartar variantes de tamano- las dejaba
+    reducidas a "/api/img": la ficha parecia tener una sola foto."""
+    from connectors.base import identidad_de_imagen
+
+    a = identidad_de_imagen(
+        "https://alfa.com/api/img?u=https%3A%2F%2Fcdn.com%2Fp%2F1.jpg")
+    b = identidad_de_imagen(
+        "https://alfa.com/api/img?u=https%3A%2F%2Fcdn.com%2Fp%2F2.jpg")
+    assert a == "https://cdn.com/p/1.jpg" and b == "https://cdn.com/p/2.jpg"
+    assert a != b
+
+
+def test_next_pasa_la_foto_como_ruta():
+    from connectors.base import identidad_de_imagen
+    assert identidad_de_imagen(
+        "https://alfa.com/_next/image?url=%2Ffotos%2Fa.jpg&w=640") ==         "https://alfa.com/fotos/a.jpg"
+
+
+def test_la_variante_de_tamano_se_sigue_descartando():
+    """El motivo original de quitar la query no cambia: /a.jpg?w=640 y
+    /a.jpg?w=320 son la misma foto."""
+    from connectors.base import identidad_de_imagen
+    assert identidad_de_imagen("https://alfa.com/f/a.jpg?w=640") ==         identidad_de_imagen("https://alfa.com/f/a.jpg?w=320")
