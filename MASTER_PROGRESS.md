@@ -666,6 +666,33 @@ La compuerta de escritura lo mira: lo leido en un portal no se escribe, porque
 le atribuiria a una inmobiliaria el inventario de las otras 35. La pagina de la
 oficina dentro de su propia red si es suya y si entra.
 
+## Aritmetica de inmuebles
+
+`connectors/coherencia.py`. No es validacion de formato: un dormitorio ES un
+ambiente, lo cubierto es parte de lo total, un lote no tiene banos, cero metros
+no es una superficie y Nueva York no queda en Argentina. Cuando los numeros
+dicen otra cosa, alguno vino de las "propiedades relacionadas" al pie de la
+misma ficha.
+
+Cuando dos valores se contradicen **se van los dos**: no hay forma de saber
+cual salio de la ficha y cual del vecino, y un dato ausente se ve mientras que
+uno incorrecto se publica.
+
+| corpus | antes | despues |
+|---|---:|---:|
+| WordPress (18.505) | 10,08% | 0,03% |
+| generico (29.780) | 7,01% | 0,00% |
+| Tokko (91.659) | 0,48% | 0,00% |
+
+`apply_quality_guards.py` lo aplica a lo ya extraido sin volver a bajar nada
+-los defectos son de lectura, no de la fuente- y escribe al lado, con sufijo
+`.coherente.jsonl`. **Antes de la proxima corrida sobre esas fuentes hay que
+reconstruir el baseline desde el archivo corregido**, o la corrida siguiente lee
+nuestra correccion como un cambio de la inmobiliaria.
+
+El mismo modulo lo usa el connector generico, asi que las dos rutas no pueden
+divergir.
+
 ## Cada cuanto volver a cada fuente
 
 `plan_recrawl.py`. Entre la corrida 2 y la 3 de Tokko, 91.503 de 91.659
