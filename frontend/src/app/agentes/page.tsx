@@ -51,7 +51,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Sea
           <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {agents.map((agent) => (
               <li key={agent.slug}>
-                <Link href={`/agente/${agent.slug}`} className="focus-ring entity-card">
+                <Link href={`/agente/${agent.slug}`} prefetch={false} className="focus-ring entity-card">
                   <span aria-hidden="true" className="entity-monogram">{agent.name.trim().charAt(0).toUpperCase()}</span>
                   <span className="entity-body">
                     <span className="entity-name">{agent.name}</span>

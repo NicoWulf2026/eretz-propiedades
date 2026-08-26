@@ -83,6 +83,7 @@ export const PropertyCard = memo(function PropertyCard({
       />
       <Link
         href={detailHref}
+        prefetch={false}
         className="focus-ring block"
         aria-label={accessibleName}
         onClick={() => {
