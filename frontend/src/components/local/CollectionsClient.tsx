@@ -50,7 +50,7 @@ export function CollectionsClient({ embedded = false }: { embedded?: boolean }) 
           <h1 className="page-title">Colecciones</h1>
           <p className="page-subtitle">Organizá propiedades en listas con nombre. Se guardan en este dispositivo, sin cuenta.</p>
         </div>
-        <Link href="/favoritos" className="secondary-button">Mi actividad</Link>
+        <Link href="/mi-eretz" className="secondary-button">Mi ERETZ</Link>
       </header> : null}
 
       <form
@@ -65,8 +65,8 @@ export function CollectionsClient({ embedded = false }: { embedded?: boolean }) 
       {/* Favoritos como colección compatible (no se pierde) */}
       <section className="mb-6 rounded-xl border u-border u-surface-sunken p-4">
         <div className="flex items-center justify-between gap-3">
-          <p className="font-bold text-[color:var(--ink)]">Favoritos <span className="u-text-faint">({favorites.length})</span></p>
-          <Link href="/favoritos" className="text-sm font-bold text-[color:var(--accent-soft)]">Ver favoritos →</Link>
+          <p className="font-bold text-[color:var(--ink)]">Guardadas <span className="u-text-faint">({favorites.length})</span></p>
+          <Link href="/mi-eretz?seccion=guardadas" className="text-sm font-bold text-[color:var(--accent-soft)]">Ver guardadas →</Link>
         </div>
       </section>
 

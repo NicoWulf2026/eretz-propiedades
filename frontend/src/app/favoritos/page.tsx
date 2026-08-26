@@ -3,7 +3,7 @@ import { SiteShell } from "@/components/layout/SiteShell";
 import { FavoritesClient } from "@/components/local/FavoritesClient";
 
 export const metadata: Metadata = {
-  title: "Mi actividad",
+  title: "Propiedades guardadas",
   robots: { index: false, follow: false },
 };
 

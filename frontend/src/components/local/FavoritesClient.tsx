@@ -29,14 +29,14 @@ export function FavoritesClient({ view = "all", embedded = false }: { view?: "al
       {!embedded ? <header className="mb-6">
         <h1 className="page-title">Mi actividad</h1>
         <p className="page-subtitle">
-          Tus favoritos, comparación, propiedades vistas y ocultas se guardan en este dispositivo.
+          Tus propiedades guardadas, comparaciones e historial quedan en este dispositivo.
         </p>
       </header> : null}
 
       {view === "all" || view === "favorites" ? <section aria-labelledby="fav-heading" className="mb-10">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 id="fav-heading" className="section-heading">
-            Favoritos {favorites.length ? <span className="u-text-faint">({favorites.length})</span> : null}
+            Propiedades guardadas {favorites.length ? <span className="u-text-faint">({favorites.length})</span> : null}
           </h2>
           {compare.length ? (
             <Link href="/comparar" className="primary-button">Comparar ({compare.length})</Link>
@@ -45,8 +45,8 @@ export function FavoritesClient({ view = "all", embedded = false }: { view?: "al
         {favorites.length === 0 ? (
           <div className="state-panel mt-4">
             <span aria-hidden="true">★</span>
-            <h2>Todavía no guardaste favoritos</h2>
-            <p>Tocá la estrella en cualquier propiedad para guardarla acá. No hace falta crear una cuenta.</p>
+            <h2>Todavía no guardaste propiedades</h2>
+            <p>Usá Guardar en cualquier propiedad para encontrarla acá más tarde. No hace falta crear una cuenta.</p>
             <Link className="primary-button" href="/propiedades">Explorar propiedades</Link>
           </div>
         ) : loading ? (
