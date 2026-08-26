@@ -322,6 +322,7 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool) -> di
     # una pagina que no era ficha no es una fuente que respondio mal, y sin
     # esta cuenta las dos cosas se leen igual en el resumen.
     r["descartadas_por_forma"] = getattr(con, "descartadas_por_forma", 0)
+    r["_descartes"] = getattr(con, "descartes", None) or []
     r["cambios"] = dict(Counter(p["_cambio"] for p in props))
 
     # --- ausencias, solo si la enumeracion merece confianza -----------------
@@ -434,6 +435,9 @@ def main() -> int:
     esc_props = EscritorDurable(out / f"properties{sufijo}.jsonl")
     esc_aus = EscritorDurable(out / f"absences{sufijo}.jsonl")
     esc_err = EscritorDurable(out / f"errors{sufijo}.jsonl")
+    # Lo que el guardian de forma no acepto como ficha, con la evidencia de por
+    # que. Sirve para auditar el guardian sin volver a bajar nada.
+    esc_desc = EscritorDurable(out / f"shape_rejects{sufijo}.jsonl")
 
     # Reanudacion: lo ya procesado en ESTA corrida no se repite.
     hechas = {r["canonical_agency_id"]
@@ -494,7 +498,10 @@ def main() -> int:
             r = fut.result()
             props = r.pop("_props", [])
             ausentes = r.pop("_ausentes", [])
+            descartes = r.pop("_descartes", [])
             esc_props.escribir(props)
+            if descartes:
+                esc_desc.escribir(descartes)
             if ausentes:
                 esc_aus.escribir([{**x, "canonical_agency_id": r["canonical_agency_id"]}
                                   for x in ausentes])

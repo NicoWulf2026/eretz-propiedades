@@ -1540,7 +1540,7 @@ def test_un_perfil_en_un_portal_no_es_la_web_de_la_inmobiliaria():
                 "https://www.realestate.com.au/international/ar/lafinur",
                 "https://www.zonaprop.com.ar/inmobiliarias/alfa",
                 "https://www.facebook.com/alfapropiedades"):
-        tipo, _ = clasificar(url)
+        tipo, _ = clasificar(url, {}, "Alfa Propiedades")
         assert tipo == "EXTERNAL_PORTAL_PROFILE", url
 
 
@@ -1550,13 +1550,13 @@ def test_la_pagina_de_la_oficina_en_su_red_no_es_un_portal_ajeno():
     from scripts.reclassify_portal_profiles import clasificar
     for url in ("https://century21.com.ar/v/oficina/68-revolution",
                 "https://remax-urbana.com.ar/propiedades/1"):
-        assert clasificar(url)[0] == "OFFICIAL_OFFICE_PAGE", url
+        assert clasificar(url, {}, "Alfa Propiedades")[0] == "OFFICIAL_OFFICE_PAGE", url
 
 
 def test_un_dominio_propio_sigue_siendo_web_oficial():
     from scripts.reclassify_portal_profiles import clasificar
     for url in ("https://www.aagaard.com.ar/", "https://abppropiedades.com.ar"):
-        assert clasificar(url)[0] == "OFFICIAL_WEB", url
+        assert clasificar(url, {}, "Alfa Propiedades")[0] == "OFFICIAL_WEB", url
 
 
 def test_una_coordenada_sin_signo_no_es_argentina():
@@ -1894,11 +1894,17 @@ def test_regenerar_el_directorio_no_borra_la_reclasificacion():
     spec.loader.exec_module(mod)
 
     assert hasattr(mod, "clasificar_web")
-    assert mod.clasificar_web("https://www.todoprops.com/x")[0] == \
+    assert mod.clasificar_web("https://www.todoprops.com/x", {}, "Alfa")[0] == \
         "EXTERNAL_PORTAL_PROFILE"
-    assert mod.clasificar_web("https://bartuccipropiedades.com")[0] == "OFFICIAL_WEB"
+    assert mod.clasificar_web("https://bartuccipropiedades.com", {}, "Alfa")[0] == "OFFICIAL_WEB"
     # Y la fila que arma tiene que llevar el campo, no solo saber calcularlo.
-    assert '"web_kind": tipo_web' in ruta.read_text(encoding="utf-8")
+    fuente = ruta.read_text(encoding="utf-8")
+    assert '"web_kind": tipo_web' in fuente
+    # Y tiene que clasificar CON el contexto: llamar con la url sola
+    # apaga la senal estructural y los perfiles de portal vuelven a
+    # contar como web propia, que es lo que este test impide.
+    assert "agencias_por_host" in fuente
+    assert "dominio, por_host" in fuente
 
 
 def test_la_reclasificacion_conserva_la_evidencia():

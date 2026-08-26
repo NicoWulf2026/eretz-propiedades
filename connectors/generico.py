@@ -359,6 +359,23 @@ class GenericoConnector(Connector):
         if crudo.get("por_forma") and not self._confirma_ficha(
                 html, texto, precio, imagenes, datos.get("tipo_ld")):
             self.descartadas_por_forma = getattr(self, "descartadas_por_forma", 0) + 1
+            # Se guarda cual y con que evidencia. Una url descartada en silencio
+            # es indistinguible de una que nunca existio, y si el guardian se
+            # equivoca no queda forma de darse cuenta.
+            if not hasattr(self, "descartes"):
+                self.descartes: list[dict] = []
+            if len(self.descartes) < 500:
+                self.descartes.append({
+                    "canonical_agency_id": fuente.canonical_agency_id,
+                    "source_url": url,
+                    "patron_ficha": (fuente.extra or {}).get("patron_ficha"),
+                    "precio": precio,
+                    "tipo_ld": datos.get("tipo_ld"),
+                    "operacion_en_texto": bool(RE_OPERACION_TXT.search(texto or "")),
+                    "fotos": len(imagenes),
+                    "editorial": bool(RE_EDITORIAL.search(html or "")),
+                    "titulo": (titulo or "")[:120],
+                })
             # Entro por la forma y la pagina no muestra una propiedad. Se
             # descarta en silencio: no es un error de la fuente ni del
             # connector, es la forma alcanzando una pagina que no era ficha.
