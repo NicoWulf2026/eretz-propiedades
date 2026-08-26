@@ -104,6 +104,23 @@ def motivo_rechazo(p: dict) -> str | None:
     return None
 
 
+def escribir_jsonl(ruta: Path, filas) -> None:
+    """Una linea por vez, y a un temporal.
+
+    Armar el artefacto entero como un solo string murio con MemoryError:
+    143.000 propiedades son 740 MB y el join los construye completos en
+    memoria antes de escribir el primer byte. Peor todavia, el fallo dejo el
+    artefacto anterior en CERO, porque write_text ya lo habia truncado. Por
+    eso ademas se escribe al lado y recien al final se reemplaza: un fallo a
+    la mitad no puede destruir lo que ya estaba.
+    """
+    tmp = ruta.with_suffix(ruta.suffix + ".tmp")
+    with tmp.open("w", encoding="utf-8") as fh:
+        for f in filas:
+            fh.write(json.dumps(f, ensure_ascii=False) + "\n")
+    tmp.replace(ruta)
+
+
 def leer(ruta: Path) -> list[dict]:
     if not ruta.exists():
         return []
@@ -228,17 +245,13 @@ def main() -> int:
     elegibles = conservadas
     if cruzadas:
         ruta_cross = Path(a.salida).with_name("CROSS_AGENCY_DUPLICATES.jsonl")
-        ruta_cross.write_text(
-            chr(10).join(json.dumps(q, ensure_ascii=False) for q in cruzadas),
-            encoding="utf-8")
+        escribir_jsonl(ruta_cross, cruzadas)
         print(f"  {CROSS_AGENCIA:26}  {len(cruzadas):,}  (misma url, dos inmobiliarias)")
         for k, v in Counter(q["categoria_conflicto"] for q in cruzadas).most_common():
             print(f"      {k:34} {v:6,}")
         print(f"      -> {ruta_cross}")
 
-    Path(a.salida).write_text(
-        "\n".join(json.dumps(q, ensure_ascii=False) for q in elegibles),
-        encoding="utf-8")
+    escribir_jsonl(Path(a.salida), elegibles)
 
     n = len(props)
     print("### ELEGIBILIDAD PARA ESCRITURA EN propiedades_raw ###")
@@ -249,9 +262,7 @@ def main() -> int:
     print(f"  {WEB_AJENA:24}    {len(ajenas):,}  ({len(ajenas)/n*100:.1f}%)")
     if ajenas:
         ruta_ajenas = Path(a.salida).with_name("WEB_NO_PROPIA.jsonl")
-        ruta_ajenas.write_text(
-            chr(10).join(json.dumps(q, ensure_ascii=False) for q in ajenas),
-            encoding="utf-8")
+        escribir_jsonl(ruta_ajenas, ajenas)
         for k, v in Counter(q["web_kind"] for q in ajenas).most_common():
             print(f"      {k:26} {v:6,}")
         print(f"      -> {ruta_ajenas}")
@@ -294,9 +305,7 @@ def main() -> int:
             },
         })
     ruta_man = Path(a.salida).with_name("AGENCY_ID_PENDING_MANIFEST.jsonl")
-    ruta_man.write_text(
-        chr(10).join(json.dumps(m, ensure_ascii=False) for m in manifiesto),
-        encoding="utf-8")
+    escribir_jsonl(ruta_man, manifiesto)
 
     print()
     print(f"  agencias en {PENDIENTE}: {len(manifiesto)}")

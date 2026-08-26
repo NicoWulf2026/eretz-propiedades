@@ -2299,3 +2299,29 @@ def test_la_cobertura_se_mide_por_url_no_por_id_de_la_fuente():
     assert 'urls = {a["source_url"] for a in avisos}' in src
     # El conteo de ids se sigue informando: sirve para ver colisiones.
     assert 'r["ids_unicos"] = len(set(ids))' in src
+
+
+def test_la_compuerta_escribe_linea_por_linea(tmp_path):
+    """Armar el artefacto entero como un solo string murio con MemoryError:
+    143.000 propiedades son 740 MB. Y el fallo dejo el artefacto anterior en
+    cero, porque write_text ya lo habia truncado antes de fallar."""
+    from scripts.write_eligibility import escribir_jsonl
+
+    src = (ROOT / "scripts" / "write_eligibility.py").read_text(encoding="utf-8")
+    assert ".write_text(" not in src
+
+    destino = tmp_path / "salida.jsonl"
+    destino.write_text("lo que ya estaba" + chr(10), encoding="utf-8")
+
+    def filas_que_fallan():
+        yield {"a": 1}
+        raise RuntimeError("se corto a la mitad")
+
+    with pytest.raises(RuntimeError):
+        escribir_jsonl(destino, filas_que_fallan())
+    # El archivo viejo sigue entero: se escribe a un temporal y recien al
+    # terminar se reemplaza.
+    assert destino.read_text(encoding="utf-8") == "lo que ya estaba" + chr(10)
+
+    escribir_jsonl(destino, [{"a": 1}, {"b": 2}])
+    assert destino.read_text(encoding="utf-8").count(chr(10)) == 2
