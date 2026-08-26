@@ -328,10 +328,7 @@ class GenericoConnector(Connector):
         texto = _texto(html)
         datos = self._de_json_ld(html)
 
-        titulo = datos.get("titulo")
-        if not titulo:
-            m = re.search(r'<meta[^>]+property="og:title"[^>]+content="([^"]{1,200})"', html)
-            titulo = limpiar(unescape(m.group(1))) if m else None
+        titulo = self._titulo_de_la_ficha(html, datos, fuente)
         if not titulo:
             m = re.search(r"<title[^>]*>(.{1,200}?)</title>", html, re.S | re.I)
             titulo = limpiar(unescape(m.group(1))) if m else None
@@ -395,7 +392,11 @@ class GenericoConnector(Connector):
         campos = {
             "operacion": (detectar_operacion(f"{titulo or ''} {url}")
                           or self._operacion_en_la_ficha(texto)),
-            "tipo_propiedad": detectar_tipo(f"{titulo or ''} {url}"),
+            # El tipo tambien puede estar solo en el cuerpo. Se mira el
+            # arranque de la ficha: mas abajo empiezan las "propiedades
+            # relacionadas" y el tipo del vecino no es el de esta.
+            "tipo_propiedad": (detectar_tipo(f"{titulo or ''} {url}")
+                               or detectar_tipo(texto[:300])),
             "dormitorios": self._cuenta(texto, r"dormitorios?|habitaciones?",
                                         datos.get("dorm")),
             "banos": self._cuenta(texto, r"ba[nñ]os?", datos.get("banos")),
@@ -455,6 +456,35 @@ class GenericoConnector(Connector):
         )
 
     @staticmethod
+    def _titulo_de_la_ficha(html: str, datos: dict, fuente: Fuente) -> str | None:
+        """El titulo de la propiedad, no el de la inmobiliaria.
+
+        Varios sitios ponen el mismo og:title en todas sus paginas -"Altura
+        Propiedades"- y con eso el tipo de propiedad queda en blanco: no hay de
+        donde leerlo. El h1 de la ficha, en cambio, dice "Local en Belgrano".
+
+        Se prueban las fuentes en orden y se descarta la que sea solamente el
+        nombre de la inmobiliaria.
+        """
+        candidatos = [datos.get("titulo")]
+        for patron in (r'<meta[^>]+property="og:title"[^>]+content="([^"]{1,200})"',
+                       r"<h1[^>]*>(.{3,200}?)</h1>",
+                       r"<title[^>]*>(.{1,200}?)</title>"):
+            m = re.search(patron, html, re.S | re.I)
+            if m:
+                candidatos.append(limpiar(unescape(re.sub(r"<[^>]+>", " ", m.group(1)))))
+
+        agencia = (fuente.agency_name or "").lower().strip()
+        for c in candidatos:
+            if not c:
+                continue
+            limpio = re.split(r"\s*[|–—]\s*", c)[0].strip()
+            if agencia and limpio.lower() in (agencia, agencia.replace("  ", " ")):
+                continue          # es el nombre de la inmobiliaria, no la ficha
+            return c
+        return next((c for c in candidatos if c), None)
+
+    @staticmethod
     def _atributos_coherentes(datos: dict, texto: str) -> dict:
         """Descarta los atributos que la pagina no puede estar diciendo.
 
@@ -499,6 +529,13 @@ class GenericoConnector(Connector):
         UNA de las dos operaciones en el arranque de la ficha. Si aparecen las
         dos, la pagina no esta diciendo cual es: se deja vacio antes que elegir.
         """
+        # Un rotulo explicito manda, este donde este: "Operacion: Venta" no se
+        # puede confundir con el menu.
+        rotulo = re.search(r"operaci[oó]n\s*:?\s*(venta|alquiler|"
+                           r"alquiler temporario)", texto or "", re.I)
+        if rotulo:
+            return rotulo.group(1).lower().replace(" ", "_")
+
         arranque = (texto or "")[:600].lower()
         venta = bool(re.search(r"\b(en venta|se vende|venta)\b", arranque))
         alquiler = bool(re.search(r"\b(en alquiler|se alquila|alquiler)\b", arranque))

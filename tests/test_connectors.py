@@ -2205,3 +2205,27 @@ def test_una_propiedad_sana_no_se_toca_al_corregir():
             "precio": 120000, "moneda": "USD", "extra": {"via": "json-ld"}}
     p, motivos = corregir(dict(sana))
     assert motivos == [] and p == sana
+
+
+def test_el_titulo_de_la_ficha_no_es_el_de_la_inmobiliaria():
+    """Varios sitios ponen el mismo og:title en todas sus paginas -"Altura
+    Propiedades"- y con eso el tipo de propiedad queda en blanco: no hay de
+    donde leerlo."""
+    f = fuente()
+    f.agency_name = "Altura Propiedades"
+    html = ('<html><head><meta property="og:title" content="Altura Propiedades">'
+            "</head><body><h1>Local en Belgrano</h1></body></html>")
+    assert GenericoConnector._titulo_de_la_ficha(html, {}, f) == "Local en Belgrano"
+
+
+def test_schema_org_sigue_ganando_para_el_titulo():
+    f = fuente()
+    html = '<html><head><meta property="og:title" content="Otra cosa"></head></html>'
+    assert GenericoConnector._titulo_de_la_ficha(
+        html, {"titulo": "Casa en Rosario"}, f) == "Casa en Rosario"
+
+
+def test_un_rotulo_explicito_de_operacion_manda():
+    """"Operacion: Venta" no se puede confundir con el menu, este donde este."""
+    f = GenericoConnector._operacion_en_la_ficha
+    assert f("Ventas Alquileres Contacto. Ficha. Operacion: Venta. 100 m2") == "venta"
