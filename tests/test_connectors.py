@@ -2184,3 +2184,24 @@ def test_lo_cubierto_no_puede_superar_lo_total():
     assert campos["superficie_cubierta"] is None
     assert campos["superficie_total"] is None
     assert "cubierta>total" in fuera["atributos_descartados"]
+
+
+def test_las_guardas_se_pueden_aplicar_a_lo_ya_extraido():
+    """Los defectos son de lectura, no de la fuente: volver a recorrer 1.400
+    sitios para arreglar un campo seria absurdo."""
+    from scripts.apply_quality_guards import corregir
+
+    p, motivos = corregir({"dormitorios": 5, "ambientes": 1,
+                           "tipo_propiedad": "departamento",
+                           "precio": 150000, "moneda": None, "extra": {}})
+    assert p["dormitorios"] is None and p["ambientes"] is None
+    assert p["precio"] is None and p["extra"]["precio_sin_moneda"] == 150000
+    assert "dormitorios>ambientes" in motivos and "precio_sin_moneda" in motivos
+
+
+def test_una_propiedad_sana_no_se_toca_al_corregir():
+    from scripts.apply_quality_guards import corregir
+    sana = {"dormitorios": 3, "ambientes": 4, "tipo_propiedad": "casa",
+            "precio": 120000, "moneda": "USD", "extra": {"via": "json-ld"}}
+    p, motivos = corregir(dict(sana))
+    assert motivos == [] and p == sana
