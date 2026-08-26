@@ -78,3 +78,30 @@ def test_los_nombres_se_comparan_por_lo_que_distinguen():
     # "Propiedades" e "Inmobiliaria" las comparte media Argentina: no acercan.
     assert not mismo_negocio("Barrera Propiedades", "CASAS Inmobiliaria")
     assert not mismo_negocio("Emir Elhelou Estudio", "LOGROS Servicios Inmobiliarios")
+
+
+def test_clasificar_exige_el_contexto_para_poder_contar():
+    """El bug que esto impide: regenerar el directorio llamando con la url sola.
+
+    La senal estructural no se evaluaba y 52 perfiles de portal volvian a
+    figurar como web propia, en silencio.
+    """
+    import pytest
+    with pytest.raises(TypeError):
+        clasificar("https://alquenia.com/a")
+
+
+def test_el_directorio_se_reconstruye_con_la_senal_estructural():
+    import inspect
+
+    from scripts import build_platform_directory as b
+
+    fuente = inspect.getsource(b)
+    assert "agencias_por_host" in fuente
+    llamada = [l for l in fuente.splitlines() if "clasificar_web(" in l
+               and "import" not in l]
+    assert llamada, "el directorio ya no clasifica la web de cada agencia"
+    # La llamada tiene que llevar el contexto; con la url sola, la senal
+    # estructural no se evalua.
+    assert any("por_host" in l for l in fuente.splitlines()
+               if "dominio, por_host" in l)

@@ -35,7 +35,8 @@ VERSION = "platform_directory_v2"
 # reconstruye cada fila desde cero, asi que sin recalcularla la regeneracion
 # siguiente borraba en silencio las 337 reclasificaciones y "agencias con web
 # propia" volvia de 2.259 a 2.596, contando paginas de terceros como cobertura.
-from scripts.reclassify_portal_profiles import clasificar as clasificar_web  # noqa: E402
+from scripts.reclassify_portal_profiles import (agencias_por_host,  # noqa: E402
+                                                clasificar as clasificar_web)
 
 ROLLOUTS = [
     ("TOKKO_ROLLOUT_FULL", "tokko"),
@@ -56,6 +57,9 @@ ROLLOUTS = [
     # Tercera tanda: fuentes cuya FORMA de url de ficha se descubrio
     # midiendo, no adivinando.
     ("RESCATE3_shapes", "generico"),
+    # Cuarta: fuentes cuya forma de ficha se verifico bajando fichas de cada
+    # sitio, y que el generico enumera con la forma de ESA fuente.
+    ("FORMAS_ROLLOUT", "generico"),
 ]
 
 
@@ -135,6 +139,22 @@ def main() -> int:
         for p in (mejor or []):
             props_por_agencia[p.get("canonical_agency_id")] += 1
 
+    # Que url le corresponde a cada agencia, resuelta ANTES de clasificar. La
+    # senal que distingue una web propia de un perfil en un portal es cuantas
+    # inmobiliarias comparten el host, y para contarlas hay que tener las urls
+    # de todas: en el bucle de abajo, la primera fila se clasificaria sin saber
+    # que otras 51 cuelgan del mismo dominio.
+    urls = {}
+    for cid, d in directorio.items():
+        m = mapa.get(cid) or {}
+        r = resultado.get(cid) or {}
+        dom = (r.get("official_url") or m.get("official_url")
+               or d.get("selected_domain") or d.get("current_eretz_web"))
+        if dom:
+            urls[cid] = {"domain": dom, "canonical_agency_id": cid,
+                         "agency_name": d.get("canonical_name") or cid}
+    por_host = agencias_por_host(list(urls.values()))
+
     filas = []
     for cid, d in directorio.items():
         m = mapa.get(cid) or {}
@@ -205,7 +225,8 @@ def main() -> int:
             cs = "UNKNOWN"
 
         eid = d.get("eretz_id")
-        tipo_web, motivo_web = clasificar_web(dominio)
+        tipo_web, motivo_web = clasificar_web(
+            dominio, por_host, d.get("canonical_name") or cid)
         filas.append({
             "canonical_agency_id": cid,
             "eretz_id": int(eid) if str(eid).isdigit() else None,

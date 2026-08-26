@@ -126,8 +126,15 @@ def mismo_negocio(a: str, b: str) -> bool:
     return difflib.SequenceMatcher(None, x, y).ratio() >= PARECIDO_MINIMO
 
 
-def clasificar(url: str, por_host: dict | None = None,
-               nombre: str = "") -> tuple[str, str]:
+def clasificar(url: str, por_host: dict, nombre: str) -> tuple[str, str]:
+    """Que ES esa url para esa inmobiliaria.
+
+    `por_host` y `nombre` son obligatorios a proposito. Cuando eran opcionales,
+    build_platform_directory.py llamaba con la url sola y la senal estructural
+    no se evaluaba nunca: la regeneracion del directorio devolvia en silencio a
+    52 perfiles de portal la condicion de web propia. Sin valor por defecto, el
+    que olvide pasarlos falla en el acto.
+    """
     h = host(url)
     if PORTALES.match(h):
         return PERFIL_PORTAL, f"{h} es un portal, directorio o red social"
