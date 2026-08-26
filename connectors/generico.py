@@ -29,7 +29,7 @@ import urllib.parse
 from html import unescape
 from typing import Any, Iterator
 
-from .coherencia import revisar
+from .coherencia import NO_ES_FOTO, revisar
 from .base import (Bloqueado, Connector, ErrorPermanente, ErrorTransitorio,
                    Fuente, PropiedadNormalizada, a_numero, detectar_moneda,
                    detectar_operacion, detectar_tipo, identidad_de_imagen,
@@ -121,8 +121,9 @@ RE_IMG_ATRIBUTO = re.compile(
     r"<img[^>]{0,400}?\s(?:data-src|data-lazy-src|data-original|src)="
     r"\"([^\"]{4,400})\"", re.I)
 RE_EXTENSION = re.compile(r"\.(?:jpe?g|png|webp|avif)(?:$|[?#])", re.I)
-RE_NO_ES_FOTO = re.compile(r"(logo|placeholder|avatar|icon|sprite|banner"
-                           r"|whatsapp|favicon)", re.I)
+# El filtro vive en el modulo compartido: la extraccion y la correccion de lo
+# ya extraido tienen que descartar exactamente lo mismo.
+RE_NO_ES_FOTO = NO_ES_FOTO
 
 MAX_SITEMAPS = 25
 MAX_FICHAS = 4000
