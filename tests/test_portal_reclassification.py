@@ -16,8 +16,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts.reclassify_portal_profiles import (AMBIGUA, OFICIAL,  # noqa: E402
-                                                OFICINA_RED, PERFIL_PORTAL,
+from scripts.reclassify_portal_profiles import (AMBIGUA, NO_INMOBILIARIA,  # noqa: E402
+                                                OFICIAL, OFICINA_RED,
+                                                PERFIL_PORTAL,
                                                 agencias_por_host, clasificar,
                                                 mismo_negocio)
 
@@ -124,3 +125,20 @@ def test_la_compuerta_de_escritura_mira_de_quien_es_la_web():
     # Y la clasificacion tiene que leerse del directorio, no adivinarse.
     assert "directorio_plataformas" in fuente
     assert "web_kind" in fuente
+
+
+def test_lo_que_se_vio_en_el_sitio_manda_sobre_el_dominio():
+    """23 urls del padron llevan a una guia de rubros, a un diario de la zona o
+    a una pagina de vehiculos. Que el dominio parezca propio no cambia lo que
+    ahi se publica."""
+    filas = directorio(("A", "https://laguiaonline.com.ar/businesses/alfa"))
+    por_host = agencias_por_host(filas)
+    tipo, motivo = clasificar(filas[0]["domain"], por_host, "A",
+                              {"motivo": "la forma dominante /businesses/<slug> "
+                                         "publica otra cosa"})
+    assert tipo == NO_INMOBILIARIA and "publica otra cosa" in motivo
+
+
+def test_esas_webs_tampoco_se_escriben():
+    from scripts.write_eligibility import NO_SON_WEB_PROPIA
+    assert "NOT_A_REAL_ESTATE_WEB" in NO_SON_WEB_PROPIA

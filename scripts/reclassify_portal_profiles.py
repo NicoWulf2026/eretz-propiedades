@@ -35,6 +35,11 @@ from pathlib import Path
 VERSION = "portal_reclass_v1"
 
 OFICIAL = "OFFICIAL_WEB"
+# Ni web propia ni perfil de portal: una guia de rubros, un diario de la zona o
+# una pagina de vehiculos. Se comprobo mirando QUE publica esa forma de url, no
+# adivinando por el dominio. No se borra ninguna: son la evidencia de que la
+# url que el padron tiene cargada no lleva a la inmobiliaria.
+NO_INMOBILIARIA = "NOT_A_REAL_ESTATE_WEB"
 OFICINA_RED = "OFFICIAL_OFFICE_PAGE"
 PERFIL_PORTAL = "EXTERNAL_PORTAL_PROFILE"
 
@@ -126,7 +131,8 @@ def mismo_negocio(a: str, b: str) -> bool:
     return difflib.SequenceMatcher(None, x, y).ratio() >= PARECIDO_MINIMO
 
 
-def clasificar(url: str, por_host: dict, nombre: str) -> tuple[str, str]:
+def clasificar(url: str, por_host: dict, nombre: str,
+               observado: dict | None = None) -> tuple[str, str]:
     """Que ES esa url para esa inmobiliaria.
 
     `por_host` y `nombre` son obligatorios a proposito. Cuando eran opcionales,
@@ -136,6 +142,9 @@ def clasificar(url: str, por_host: dict, nombre: str) -> tuple[str, str]:
     que olvide pasarlos falla en el acto.
     """
     h = host(url)
+    # Lo que se vio en el sitio manda sobre cualquier regla sobre el dominio.
+    if observado:
+        return NO_INMOBILIARIA, observado.get("motivo") or "el sitio no publica inmuebles"
     if PORTALES.match(h):
         return PERFIL_PORTAL, f"{h} es un portal, directorio o red social"
     if REDES.match(h):
@@ -182,16 +191,25 @@ def main() -> int:
     ap.add_argument("--directorio",
                     default=r"D:\INMO CAPITAL\agency_platform_directory.jsonl")
     ap.add_argument("--salida", default=r"D:\INMO CAPITAL\PORTAL_RECLASSIFICATION.jsonl")
+    ap.add_argument("--no-inmobiliarias",
+                    default=r"D:\INMO CAPITAL\RESIDUAL_SHAPES_FINAL.jsonl",
+                    help="artefacto con las webs que se comprobo que no "
+                         "publican inmuebles")
     ap.add_argument("--aplicar", action="store_true",
                     help="sin esto solo informa, no reescribe el directorio")
     a = ap.parse_args()
 
     filas = leer(Path(a.directorio))
     por_host = agencias_por_host(filas)
+    observadas = {}
+    for x in leer(Path(a.no_inmobiliarias)):
+        if x.get("estado_final") == "WEB_NO_INMOBILIARIA":
+            observadas[x["canonical_agency_id"]] = x
     cambios = []
     for f in filas:
         tipo, motivo = clasificar(f.get("domain") or "", por_host,
-                                  f.get("agency_name") or f["canonical_agency_id"])
+                                  f.get("agency_name") or f["canonical_agency_id"],
+                                  observadas.get(f["canonical_agency_id"]))
         anterior = f.get("web_kind")
         f["web_kind"] = tipo
         # El motivo viaja con la clasificacion. Sin el, el directorio dice que

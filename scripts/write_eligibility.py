@@ -38,7 +38,10 @@ WEB_AJENA = "WEB_NO_PROPIA"
 #
 # La pagina de la oficina DENTRO de su propia red -century21.com.ar/oficina/X-
 # si es suya, y no cae aca.
-NO_SON_WEB_PROPIA = {"EXTERNAL_PORTAL_PROFILE", "AMBIGUOUS_WEB_ATTRIBUTION"}
+NO_SON_WEB_PROPIA = {"EXTERNAL_PORTAL_PROFILE", "AMBIGUOUS_WEB_ATTRIBUTION",
+                     # Una guia de rubros o un diario de la zona. Se
+                     # comprobo mirando que publica el sitio.
+                     "NOT_A_REAL_ESTATE_WEB"}
 
 # Defensa en profundidad: aunque el connector ya filtre, lo que llega a la base
 # se revisa otra vez. Las paginas que se cuelan son siempre las mismas y entran
