@@ -39,6 +39,52 @@ from connectors.base import RUTA_PIPELINE  # noqa: E402
 from scripts.ingest_to_pipeline import RAW_COLUMNS, a_fila_raw, rechazos  # noqa: E402
 
 ROL = "eretz_direct_property_writer"
+
+# El unico usuario con el que se entra. El rol de escritura se asume DESPUES,
+# con SET LOCAL, y solo durante la transaccion.
+USUARIO_ESPERADO = "eretz_preview_ro"
+
+# En orden de preferencia. El pooler primero porque el endpoint directo de
+# Supabase es IPv6 por diseno y desde una red sin IPv6 utilizable no resuelve.
+VARIABLES_RO = ("ERETZ_PREVIEW_RO_POOLER_URL", "ERETZ_PREVIEW_RO_URL",
+                "SUPABASE_PREVIEW_RO_URL")
+
+# Usuarios con los que NO se entra, aunque la variable exista y funcione.
+# Entrar como superusuario para "probar rapido" saltea exactamente la
+# restriccion que el rol minimo existe para imponer, y una vez que funciona
+# nadie vuelve a cablearlo bien.
+PROHIBIDOS = ("postgres", "service_role", "neondb_owner", "supabase_admin")
+
+
+def usuario_de(url):
+    m = re.match(r"^[a-z+]+://([^:/@]+)", url or "")
+    return (m.group(1) if m else "").lower()
+
+
+def elegir_credencial():
+    """La credencial de solo lectura, o nada. Nunca el superusuario.
+
+    Devuelve (url, explicacion). No imprime la url: lleva la contrasena.
+    """
+    for v in VARIABLES_RO:
+        u = os.environ.get(v)
+        if u:
+            quien = usuario_de(u)
+            if quien in PROHIBIDOS:
+                return "", ("%s existe pero entra como %r, que esta prohibido"
+                            % (v, quien))
+            return u, "%s (usuario %s)" % (v, quien or "?")
+    # Lo que haya quedado configurado de antes solo sirve si NO es superusuario.
+    for v in ("SUPABASE_POOLER_DATABASE_URL", "SUPABASE_DATABASE_URL"):
+        u = os.environ.get(v)
+        if not u:
+            continue
+        quien = usuario_de(u)
+        if quien in PROHIBIDOS:
+            return "", ("%s entra como %r: no se usa para saltear la "
+                        "restriccion de privilegio minimo" % (v, quien))
+        return u, "%s (usuario %s)" % (v, quien or "?")
+    return "", "ninguna variable de credencial configurada"
 TABLA = "internal_scraping.propiedades_raw"
 SECUENCIA = "internal_scraping.propiedades_raw_id_seq"
 
@@ -95,15 +141,18 @@ def main() -> int:
     # utilizable el camino correcto es el pooler (Supavisor) sobre IPv4, asi que
     # se prefiere su variable cuando existe. No se adivina host: si no esta
     # configurada, se dice y se corta.
-    url = (os.environ.get("SUPABASE_POOLER_DATABASE_URL")
-           or os.environ.get("SUPABASE_DATABASE_URL") or "")
-    via = ("pooler" if os.environ.get("SUPABASE_POOLER_DATABASE_URL")
-           else "SUPABASE_DATABASE_URL")
+    url, via = elegir_credencial()
     print("### CANARY DE ESCRITURA DE PROPIEDADES ###")
     print(f"  destino: {TABLA}   rol: {ROL}")
     print(f"  modo:    {'ESCRITURA (COMMIT si pasa todo)' if a.escribir else 'VALIDACION (ROLLBACK)'}")
+    print("  credencial: %s" % via)
     if not url:
-        print("\n  [1] SUPABASE_DATABASE_URL ausente -> no se puede continuar.")
+        print("")
+        print("  [1] DB_CREDENTIAL_PENDING: no hay credencial de escritura "
+              "utilizable.")
+        print("      Se necesita %s apuntando al usuario %s."
+              % (VARIABLES_RO[1], USUARIO_ESPERADO))
+        print("      El canary queda listo: en cuanto exista, corre sin cambios.")
         return 2
     try:
         import psycopg

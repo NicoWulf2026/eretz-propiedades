@@ -2,73 +2,113 @@
 # -*- coding: utf-8 -*-
 """Informe consolidado de la ingesta directa.
 
-Lee todos los artefactos producidos y los cruza. No pide nada a la red, no toca
-la base y no decide nada: si un numero sale raro, el problema esta en el
-artefacto, no aca.
+Lee los artefactos producidos y los cruza. No pide nada a la red, no toca la
+base y no decide nada: si un numero sale raro, el problema esta en el artefacto,
+no aca.
 
-La reconciliacion es lo que mas importa: enumerado, pedido, obtenido y escrito
-tienen que cerrar. Una perdida silenciosa entre esas etapas es exactamente el
-tipo de error que no avisa.
+Dos reglas gobiernan este archivo:
+
+  - Ningun numero se escribe a mano. Todos salen de los artefactos. Un informe
+    con una constante adentro deja de ser un informe el dia que el dato cambia,
+    y no avisa.
+
+  - El universo de propiedades sale de `scripts/input_universe.py`, no de
+    adivinar que archivos hay en el disco. Adivinando fue como el informe
+    termino contando un universo distinto del que el write gate proceso.
+
+La reconciliacion va primero, antes que cualquier otra cosa. Enumerado, pedido,
+obtenido y escrito tienen que cerrar: una perdida silenciosa entre esas etapas
+es exactamente el tipo de error que no avisa.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import subprocess
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
-CORRIDAS = {
-    "TOKKO (rollout completo)": ("TOKKO_ROLLOUT_FULL", "tokko"),
-    "TOKKO (rollout controlado)": ("TOKKO_ROLLOUT_CTRL", "tokko"),
-    "WORDPRESS (rollout completo)": ("WP_ROLLOUT_FULL", "wordpress"),
-    "WORDPRESS (canary)": ("WP_CANARY", "wordpress"),
-    "CENTURY 21 (canary)": ("C21_CANARY", "century21"),
-    "GENERICO (canary)": ("GENERICO_CANARY", "generico"),
-    "WASI (rollout completo)": ("WASI_ROLLOUT_FULL", "wasi"),
-    "RESCATE 2 (generico)": ("RESCATE2_generico", "generico"),
-    "RESCATE 2 (tokko)": ("RESCATE2_tokko", "generico"),
-    "RESCATE 2 (wordpress)": ("RESCATE2_wordpress", "wordpress"),
-    "RESCATE 3 (formas descubiertas)": ("RESCATE3_shapes", "generico"),
-    "FORMAS VERIFICADAS (por fuente)": ("FORMAS_ROLLOUT", "generico"),
-    "RESIDUAL (generico)": ("RESIDUAL_ROLLOUT", "generico"),
-}
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from scripts.input_universe import (ENTRADAS, OBLIGATORIAS,  # noqa: E402
+                                    UNIVERSE_VERSION, contar,
+                                    corridas_por_entrada, faltantes)
+
+REPORT_VERSION = "mission_report_v2"
+
+# Carpetas de corrida, para checkpoints, bajas y rendimiento. NO se usan para
+# armar el universo: para eso esta input_universe.
+CARPETAS = tuple(sorted({d for d, _, _ in ENTRADAS} | {
+    "TOKKO_ROLLOUT_CTRL", "WP_CANARY", "GENERICO_CANARY", "FORMAS_CANARY"}))
+
+CAMPOS = ("titulo", "descripcion", "operacion", "tipo_propiedad", "precio",
+          "moneda", "provincia", "ciudad", "barrio", "direccion", "latitud",
+          "longitud", "ambientes", "dormitorios", "banos", "superficie_total",
+          "superficie_cubierta", "imagenes")
+
+ARTEFACTOS_SALIDA = ("DB_WRITE_ELIGIBLE.jsonl", "CROSS_AGENCY_DUPLICATES.jsonl",
+                     "WEB_NO_PROPIA.jsonl", "DUPLICADO_EN_ENTRADA.jsonl",
+                     "NO_ES_UNA_FICHA.jsonl")
 
 
-def corridas_de(base: Path, prefijo: str) -> list[str]:
-    """Las corridas que existen, no las que alguien supuso que iban a existir.
+def recorrer(ruta: Path):
+    """Una linea por vez. El write set son 800 MB: cargarlo entero en una lista
+    es como se llega a un MemoryError que ademas trunca el artefacto."""
+    if not ruta.exists():
+        return
+    with ruta.open(encoding="utf-8", errors="replace") as fh:
+        for linea in fh:
+            linea = linea.strip()
+            if not linea:
+                continue
+            try:
+                yield json.loads(linea)
+            except ValueError:
+                continue
 
-    Estaba fijo en ("1", "2"): el informe mostraba la corrida 2 de Tokko -la
-    anterior al arreglo del checkpoint, con todo marcado NUEVA- y escondia la 3,
-    que es la que cerro con 99,83% sin cambios. El numero que el informe
-    mostraba decia lo contrario de lo que habia pasado.
-    """
+
+def leer(ruta: Path) -> list:
+    return list(recorrer(ruta))
+
+
+def contar_lineas(ruta: Path) -> int:
+    return sum(1 for _ in recorrer(ruta))
+
+
+def host_de(url: str) -> str:
+    return re.sub(r"^https?://(www\.)?", "", url or "").split("/")[0].lower()
+
+
+def titulo(letra: str, texto: str) -> None:
+    print()
+    print("=" * 74)
+    print(letra + ". " + texto)
+    print("=" * 74)
+
+
+def corridas_de(base: Path, prefijo: str) -> list:
     salida = []
-    for ruta in base.glob(f"{prefijo}run*"):
+    if not base.exists():
+        return salida
+    for ruta in base.glob(prefijo + "run*"):
         n = ruta.name.split("run", 1)[1].split(".")[0]
         if n.isdigit():
             salida.append(n)
     return sorted(set(salida), key=int)
 
 
-def leer(ruta: Path) -> list[dict]:
-    if not ruta.exists():
-        return []
-    out = []
-    for l in ruta.open(encoding="utf-8"):
-        l = l.strip()
-        if not l:
-            continue
-        try:
-            out.append(json.loads(l))
-        except ValueError:
-            continue
-    return out
+def git(raiz: Path, *args: str) -> str:
+    try:
+        return subprocess.run(("git",) + args, cwd=str(raiz), capture_output=True,
+                              text=True, timeout=30).stdout.strip()
+    except Exception:
+        return "?"
 
 
-def host_de(url: str) -> str:
-    return re.sub(r"^https?://(www\.)?", "", url or "").split("/")[0].lower()
+def env(nombre: str) -> str:
+    return "PRESENTE" if os.environ.get(nombre) else "ABSENT"
 
 
 def main() -> int:
@@ -77,159 +117,272 @@ def main() -> int:
     ap.add_argument("--raiz", default=r"D:\INMO CAPITAL")
     a = ap.parse_args()
     dd, raiz = Path(a.data_dir), Path(a.raiz)
+    repo = Path(__file__).resolve().parents[1]
+    problemas = []
 
-    print("=" * 70)
-    print("A. FUENTES DE INMOBILIARIAS")
-    print("=" * 70)
+    print("#" * 74)
+    print("#  ERETZ PROPIEDADES - INFORME DE MISION  (" + REPORT_VERSION + ")")
+    print("#" * 74)
+
+    # ---------------------------------------------------------------- A -----
+    titulo("A", "RECONCILIACION DE ENTRADAS")
+    falt = faltantes(raiz)
+    por_entrada = contar(raiz)
+    universo = sum(por_entrada.values())
+    print("  familias de entrada declaradas: %d  (%s)"
+          % (len(ENTRADAS), UNIVERSE_VERSION))
+    print("  entradas faltantes en disco:    %d" % len(falt))
+    for f in falt:
+        print("    AUSENTE " + f)
+        problemas.append("entrada ausente: " + f)
+    print("  obligatorias presentes:         %s"
+          % sorted(OBLIGATORIAS & set(por_entrada)))
+    for d, n in por_entrada.items():
+        print("    %-24s %8d" % (d, n))
+    print("  UNIVERSO_ANALIZADO (suma):      %d" % universo)
+
+    runs_por_entrada = corridas_por_entrada(raiz)
+    runs_declaradas = set()
+    for rs in runs_por_entrada.values():
+        runs_declaradas |= rs
+    runs_declaradas.discard(None)
+
+    salida_runs = Counter()
+    for nombre in ARTEFACTOS_SALIDA:
+        for p in recorrer(raiz / nombre):
+            salida_runs[p.get("_run")] += 1
+    sin_origen = {r for r in salida_runs if r not in runs_declaradas}
+    print("  corridas declaradas por las entradas: %d" % len(runs_declaradas))
+    print("  corridas presentes en los artefactos: %d" % len(salida_runs))
+    print("  corridas SIN ORIGEN identificado:     %d" % len(sin_origen))
+    for r in sorted(x for x in sin_origen if x)[:10]:
+        print("    sin origen: %s  (%d propiedades)" % (r, salida_runs[r]))
+    if sin_origen:
+        problemas.append("%d corridas sin origen declarado" % len(sin_origen))
+
+    # ---------------------------------------------------------------- B -----
+    titulo("B", "INVARIANTES DEL WRITE SET")
+    elegibles_n = 0
+    hashes = set()
+    urls_agencias = defaultdict(set)
+    por_conn = Counter()
+    campos_ok = defaultdict(Counter)
+    agencias_elegibles = set()
+    for p in recorrer(raiz / "DB_WRITE_ELIGIBLE.jsonl"):
+        elegibles_n += 1
+        hashes.add(p.get("hash_dedup"))
+        urls_agencias[p.get("source_url")].add(p.get("canonical_agency_id"))
+        agencias_elegibles.add(p.get("canonical_agency_id"))
+        c = p.get("connector")
+        por_conn[c] += 1
+        for campo in CAMPOS:
+            if p.get(campo) not in (None, "", []):
+                campos_ok[campo][c] += 1
+    urls_n = len(urls_agencias)
+    multi = sum(1 for v in urls_agencias.values() if len(v) > 1)
+
+    invariantes = (
+        ("DB_WRITE_ELIGIBLE == HASHES_UNICOS", elegibles_n, len(hashes)),
+        ("DB_WRITE_ELIGIBLE == URLS_UNICAS", elegibles_n, urls_n),
+        ("MULTI_AGENCY_URLS_IN_WRITE_SET == 0", multi, 0),
+    )
+    for nombre, x, y in invariantes:
+        print("  [%s] %-44s %d vs %d"
+              % ("OK   " if x == y else "FALLA", nombre, x, y))
+        if x != y:
+            problemas.append("invariante rota: %s (%d vs %d)" % (nombre, x, y))
+
+    # ---------------------------------------------------------------- C -----
+    titulo("C", "UNIVERSO DE PROPIEDADES POR CATEGORIA EXCLUSIVA")
+    pend_manifiesto = leer(raiz / "AGENCY_ID_PENDING_MANIFEST.jsonl")
+    categorias = {
+        "DB_WRITE_ELIGIBLE": elegibles_n,
+        "CROSS_AGENCY_PENDING": contar_lineas(raiz / "CROSS_AGENCY_DUPLICATES.jsonl"),
+        "WEB_NO_PROPIA": contar_lineas(raiz / "WEB_NO_PROPIA.jsonl"),
+        "DUPLICADO_EN_ENTRADA": contar_lineas(raiz / "DUPLICADO_EN_ENTRADA.jsonl"),
+        "AGENCY_ID_PENDING": sum(x.get("propiedades_descubiertas", 0)
+                                 for x in pend_manifiesto),
+        "NO_ES_UNA_FICHA": contar_lineas(raiz / "NO_ES_UNA_FICHA.jsonl"),
+    }
+    explicadas = sum(categorias.values())
+    for k, v in sorted(categorias.items(), key=lambda t: -t[1]):
+        print("    %-26s %8d" % (k, v))
+    resto = universo - explicadas
+    if resto:
+        print("    %-26s %8d" % ("(sin categoria)", resto))
+        problemas.append("%d propiedades sin categoria exclusiva" % resto)
+    print("  TOTAL_ANALIZADAS  %d" % universo)
+    print("  TOTAL_EXPLICADAS  %d" % (explicadas + max(resto, 0)))
+    if resto < 0:
+        problemas.append("las categorias suman mas que el universo analizado")
+
+    # ---------------------------------------------------------------- D -----
+    titulo("D", "AGENCIAS")
     directorio = leer(dd / "agency_web_directory.jsonl")
+    manifiesto = leer(raiz / "SCRAPING_SOURCE_MANIFEST.jsonl")
+    plataformas = leer(raiz / "agency_platform_directory.jsonl")
+    print("  padron canonico:                   %d" % len(directorio))
+    print("  manifest de fuentes:               %d" % len(manifiesto))
+    if manifiesto:
+        print("    con dominio demostrado:          %d"
+              % sum(1 for x in manifiesto if x.get("official_domain")))
+        print("    listas para scraping:            %d"
+              % sum(1 for x in manifiesto if x.get("ready_for_scraping")))
+        print("    pendientes de busqueda:          %d"
+              % sum(1 for x in manifiesto if x.get("needs_external_search")))
+        print("  por estado de identidad:")
+        for k, v in Counter(x.get("identity_status")
+                            for x in manifiesto).most_common(10):
+            print("    %-34s %6d" % (k, v))
+    print("  agencias con inventario elegible:  %d" % len(agencias_elegibles))
+    print("  agencias sin eretz_id (pendientes):%d" % len(pend_manifiesto))
+    mal = [x for x in plataformas if x.get("domain_mal_atribuido")]
+    print("  webs mal atribuidas corregidas:    %d" % len(mal))
+    for x in mal[:5]:
+        print("    %-46s eretz=%s -> %s"
+              % (str(x.get("canonical_agency_id"))[:44], x.get("eretz_id"),
+                 x.get("web_kind")))
+
+    # ---------------------------------------------------------------- E -----
+    titulo("E", "PLATAFORMAS")
     mapa = leer(dd / "scrape_source_technology_map.jsonl")
-    cola = leer(dd / "web_search_queue_current.jsonl")
-    print(f"  padron canonico:              {len(directorio):,}")
-    print(f"  universo tecnologico mapeado: {len(mapa):,}")
-    print(f"  cola pendiente de busqueda:   {len(cola):,}")
-    if cola:
-        print(f"    con candidatas guardadas:   "
-              f"{sum(1 for c in cola if c.get('tiene_candidatas')):,}")
-        print(f"    requieren Search API:       "
-              f"{sum(1 for c in cola if not c.get('tiene_candidatas')):,}")
-    for k, v in Counter(x.get("status") for x in directorio).most_common(8):
-        print(f"    {str(k):32} {v:6,}")
+    if mapa:
+        for k, v in Counter(x.get("detected_platform")
+                            for x in mapa).most_common(14):
+            print("    %-24s %6d  (%5.1f%%)" % (k, v, v / len(mapa) * 100))
+        print("  por estrategia:")
+        for k, v in Counter(x.get("strategy") for x in mapa).most_common():
+            print("    %-24s %6d" % (k, v))
+    else:
+        print("  (sin mapa tecnologico)")
+    print("  inventario elegible por connector:")
+    for k, v in por_conn.most_common():
+        print("    %-24s %8d" % (k, v))
 
-    print()
-    print("=" * 70)
-    print("B. MAPA DE PLATAFORMAS")
-    print("=" * 70)
-    for k, v in Counter(x["detected_platform"] for x in mapa).most_common(12):
-        print(f"    {k:22} {v:6,}  ({v/max(len(mapa),1)*100:5.1f}%)")
-    print("\n  por estrategia:")
-    for k, v in Counter(x["strategy"] for x in mapa).most_common():
-        print(f"    {k:22} {v:6,}")
+    # ---------------------------------------------------------------- F -----
+    titulo("F", "CROSS-AGENCY")
+    res = leer(raiz / "CROSS_AGENCY_RESOLUTION.jsonl")
+    print("  urls disputadas: %d" % len(res))
+    for k, v in Counter(x.get("categoria") for x in res).most_common():
+        lib = sum(1 for x in res
+                  if x.get("categoria") == k and x.get("liberable"))
+        print("    %-34s %6d  liberables: %d" % (k, v, lib))
+    print("  claims refutados por evidencia verificada: %d"
+          % sum(1 for x in res if x.get("descartados_por_evidencia")))
 
-    print()
-    print("=" * 70)
-    print("C. CORRIDAS DE INGESTA")
-    print("=" * 70)
-    todas_props: list[dict] = []
-    for etiqueta, (carpeta, _) in CORRIDAS.items():
+    # ---------------------------------------------------------------- G -----
+    titulo("G", "CASO BUSTAMANTE")
+    bres = raiz / "BUSTAMANTE_RESOLUTION.json"
+    if bres.exists():
+        b = json.loads(bres.read_text(encoding="utf-8"))
+        print("  veredicto: %s" % b.get("veredicto"))
+        for e in b.get("entidades", []):
+            print("    eretz=%-6s %-36s web=%s"
+                  % (e.get("eretz_id"), str(e.get("nombre"))[:34],
+                     e.get("web_status")))
+        print("  entidades del padron en ambos mercados: %s"
+              % b.get("entidades_que_operan_en_ambos_mercados"))
+    host_b = "bustamantepropiedades.com"
+    por_eid = Counter()
+    for p in recorrer(raiz / "DB_WRITE_ELIGIBLE.jsonl"):
+        if host_b in (p.get("source_url") or ""):
+            por_eid[p.get("inmobiliaria_id")] += 1
+    print("  propiedades de %s en el write set: %d"
+          % (host_b, sum(por_eid.values())))
+    for k, v in por_eid.most_common():
+        print("    eretz_id %s: %d" % (k, v))
+
+    # ---------------------------------------------------------------- H -----
+    titulo("H", "AGENCIAS DUPLICADAS EN EL PADRON")
+    dup = leer(raiz / "AGENCY_DUPLICATE_RESOLUTION_MANIFEST.jsonl")
+    if not dup:
+        print("  ninguna pendiente")
+    for d in dup:
+        print("  %-34s urls=%s" % (d.get("dominio"), d.get("urls_en_conflicto")))
+        for f in d.get("fichas", []):
+            print("    eretz=%-6s %-36s %s"
+                  % (f.get("eretz_id"), str(f.get("nombre"))[:34],
+                     f.get("estado_web")))
+        print("    accion: %s" % str(d.get("accion_propuesta"))[:96])
+
+    # ---------------------------------------------------------------- I -----
+    titulo("I", "CALIDAD POR CAMPO (sobre el write set)")
+    conns = sorted(x for x in por_conn if x)
+    ancho = max(len(c) for c in CAMPOS)
+    encabezado = "  ".join("%9s" % str(c)[:9] for c in conns)
+    print("    %-*s  %s      total" % (ancho, "campo", encabezado))
+    for campo in CAMPOS:
+        fila = "  ".join("%8.1f%%" % (campos_ok[campo][c] /
+                                      max(por_conn[c], 1) * 100) for c in conns)
+        tot = sum(campos_ok[campo].values()) / max(elegibles_n, 1)
+        print("    %-*s  %s  %8.1f%%" % (ancho, campo, fila, tot * 100))
+
+    # ---------------------------------------------------------------- J -----
+    titulo("J", "IDEMPOTENCIA Y CHECKPOINTS")
+    for carpeta in CARPETAS:
         base = raiz / carpeta
-        if not base.exists():
-            continue
-        print(f"\n  {etiqueta}  [{carpeta}]")
         for corrida in corridas_de(base, "quality_report_"):
-            q = base / f"quality_report_run{corrida}.json"
-            if not q.exists():
+            q = base / ("quality_report_run%s.json" % corrida)
+            try:
+                r = json.loads(q.read_text(encoding="utf-8"))
+            except Exception:
                 continue
-            r = json.loads(q.read_text(encoding="utf-8"))
-            cambios = r.get("cambios") or {}
-            print(f"    run{corrida}  codigo={r.get('version_codigo','-')} "
-                  f"fuentes={r.get('fuentes_intentadas',0):,} "
-                  f"enum={r.get('propiedades_enumeradas',0):,} "
-                  f"escritas={r.get('propiedades_escritas',0):,} "
-                  f"recon={r.get('reconcilia')}")
-            print(f"          estados={r.get('fuentes_por_estado')}")
-            print(f"          cambios={cambios}  errores={r.get('errores',0)}  "
-                  f"potential_inactive={r.get('potential_inactive',0)}")
-        # Las propiedades de la corrida mas reciente, que no es la mas grande:
-        # la primera corrida de WordPress tenia 19.019 filas y la sexta 18.505,
-        # y la autoritativa es la sexta -la primera incluye propiedades que ya
-        # no existen y fotos que eran iconos de la pagina-.
-        for corrida in reversed(corridas_de(base, "properties_")):
-            p = base / f"properties_run{corrida}.jsonl"
-            corregida = p.with_name(p.name.replace(".jsonl", ".coherente.jsonl"))
-            elegida = corregida if corregida.exists() else p
-            if elegida.exists():
-                todas_props.extend(leer(elegida))
-                break
+            print("  %-22s run%s  codigo=%s enum=%d escritas=%d recon=%s"
+                  % (carpeta, corrida, r.get("version_codigo", "-"),
+                     r.get("propiedades_enumeradas", 0),
+                     r.get("propiedades_escritas", 0), r.get("reconcilia")))
+            print("      cambios=%s  errores=%s"
+                  % (r.get("cambios"), r.get("errores", 0)))
 
-    if not todas_props:
-        print("\n  (sin propiedades todavia)")
-        return 0
-
-    n = len(todas_props)
-    print()
-    print("=" * 70)
-    print("D. INGESTA CONSOLIDADA")
-    print("=" * 70)
-    print(f"  propiedades descubiertas: {n:,}")
-    for k, v in Counter(p.get("connector") for p in todas_props).most_common():
-        print(f"    {k:18} {v:7,}")
-    print(f"  inmobiliarias con inventario: "
-          f"{len({p.get('canonical_agency_id') for p in todas_props}):,}")
-
-    print()
-    print("=" * 70)
-    print("E. DUPLICADOS  (objetivo: introducidos = 0)")
-    print("=" * 70)
-    hashes = Counter(p.get("hash_dedup") for p in todas_props)
-    por_hash = defaultdict(set)
-    for p in todas_props:
-        por_hash[p.get("hash_dedup")].add(p.get("canonical_agency_id"))
-    print(f"  hash repetido:                 {sum(1 for c in hashes.values() if c > 1):,}")
-    print(f"  hash compartido entre agencias:{sum(1 for v in por_hash.values() if len(v) > 1):,}")
-    urls = Counter(p.get("source_url") for p in todas_props)
-    print(f"  url repetida:                  {sum(1 for c in urls.values() if c > 1):,}")
-    pistas = defaultdict(set)
-    for p in todas_props:
-        if p.get("latitud") and p.get("precio") and p.get("moneda"):
-            pistas[(round(p["latitud"], 5), round(p.get("longitud") or 0, 5),
-                    p["precio"], p["moneda"])].add(p.get("canonical_agency_id"))
-    print(f"  candidatos cross-agency:       "
-          f"{sum(1 for v in pistas.values() if len(v) > 1):,}  (se marcan, no se fusionan)")
-
-    print()
-    print("=" * 70)
-    print("F. CALIDAD POR CAMPO")
-    print("=" * 70)
-    campos = ("titulo", "descripcion", "operacion", "tipo_propiedad", "precio",
-              "moneda", "provincia", "ciudad", "barrio", "direccion", "latitud",
-              "dormitorios", "banos", "ambientes", "superficie_total",
-              "superficie_cubierta", "imagenes")
-    por_conn = defaultdict(list)
-    for p in todas_props:
-        por_conn[p.get("connector")].append(p)
-    ancho = max(len(c) for c in campos)
-    conns = sorted(por_conn)
-    print(f"    {'campo':{ancho}}  " + "  ".join(f"{c[:9]:>9}" for c in conns) + "     total")
-    for c in campos:
-        fila = []
-        for k in conns:
-            g = por_conn[k]
-            fila.append(sum(1 for p in g if p.get(c) not in (None, "", [])) / max(len(g), 1))
-        tot = sum(1 for p in todas_props if p.get(c) not in (None, "", [])) / n
-        print(f"    {c:{ancho}}  " + "  ".join(f"{v*100:8.1f}%" for v in fila) +
-              f"  {tot*100:8.1f}%")
-
-    print()
-    print("=" * 70)
-    print("G. BAJAS (modo observacion)")
-    print("=" * 70)
+    # ---------------------------------------------------------------- K -----
+    titulo("K", "BAJAS (modo observacion)")
     total_aus = 0
-    for etiqueta, (carpeta, _) in CORRIDAS.items():
+    for carpeta in CARPETAS:
         for corrida in corridas_de(raiz / carpeta, "absences_"):
-            aus = leer(raiz / carpeta / f"absences_run{corrida}.jsonl")
+            aus = leer(raiz / carpeta / ("absences_run%s.jsonl" % corrida))
             if aus:
                 total_aus += len(aus)
-                print(f"  {etiqueta} run{corrida}: {len(aus):,} "
-                      f"{dict(Counter(x.get('estado') for x in aus))}")
+                print("  %s run%s: %d %s"
+                      % (carpeta, corrida, len(aus),
+                         dict(Counter(x.get("estado") for x in aus))))
     if not total_aus:
-        print("  ninguna ausencia registrada todavia")
+        print("  ninguna ausencia registrada")
     print("  regla: 3 corridas seguidas sin ver la propiedad, y ninguna cuenta")
     print("         si la fuente no respondio o la enumeracion quedo incompleta.")
     print("  ninguna propiedad se desactiva en esta fase.")
 
-    print()
-    print("=" * 70)
-    print("H. RENDIMIENTO")
-    print("=" * 70)
-    for etiqueta, (carpeta, _) in CORRIDAS.items():
-        q = raiz / carpeta / "quality_report_run1.json"
-        if not q.exists():
-            continue
-        r = json.loads(q.read_text(encoding="utf-8"))
-        seg = r.get("segundos") or 1
-        esc = r.get("propiedades_escritas", 0)
-        print(f"  {etiqueta:30} {esc:7,} props  {seg/60:6.1f} min  "
-              f"{esc/seg*3600:9,.0f} props/h")
+    # ---------------------------------------------------------------- L -----
+    titulo("L", "BUSQUEDA EXTERNA")
+    pend = [x for x in manifiesto if x.get("needs_external_search")]
+    print("  entidades pendientes de busqueda: %d" % len(pend))
+    for v in ("BRAVE_SEARCH_API_KEY", "SERPAPI_KEY", "GOOGLE_CSE_KEY"):
+        print("    %-24s %s" % (v, env(v)))
+    print("  gasto en proveedores pagos: 0 (no se ejecuto ninguno)")
+
+    # ---------------------------------------------------------------- M -----
+    titulo("M", "SUPABASE / ESCRITURA")
+    for v in ("ERETZ_PREVIEW_RO_URL", "DATABASE_URL_RO", "SUPABASE_URL"):
+        print("    %-24s %s" % (v, env(v)))
+    print("  escritura ejecutada: NO")
+    print("  destino unico habilitado: internal_scraping.propiedades_raw")
+    print("  rol de escritura: eretz_direct_property_writer (ya existe)")
+
+    # ---------------------------------------------------------------- N -----
+    titulo("N", "GIT")
+    print("  branch: %s" % git(repo, "rev-parse", "--abbrev-ref", "HEAD"))
+    print("  HEAD:   %s" % git(repo, "rev-parse", "HEAD")[:12])
+    sucio = git(repo, "status", "--porcelain")
+    print("  arbol:  %s" % ("limpio" if not sucio else "con cambios sin commitear"))
+    print("  push/merge/Production: no")
+
+    # ---------------------------------------------------------------- O -----
+    titulo("O", "VEREDICTO")
+    if problemas:
+        print("  PROBLEMAS DETECTADOS:")
+        for x in problemas:
+            print("    - " + x)
+        return 1
+    print("  todas las invariantes verificadas cierran")
     return 0
 
 

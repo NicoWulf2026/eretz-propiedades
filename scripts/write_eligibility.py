@@ -25,12 +25,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from connectors.base import calcular_hash_dedup  # noqa: E402
+from scripts.input_universe import (OBLIGATORIAS, UNIVERSE_VERSION,  # noqa: E402
+                                    rutas)
 
 ELEGIBLE = "DB_WRITE_ELIGIBLE"
 PENDIENTE = "AGENCY_ID_PENDING"
 NO_ES_FICHA = "NO_ES_UNA_FICHA"
 CROSS_AGENCIA = "CROSS_AGENCY_DUPLICATE"
 WEB_AJENA = "WEB_NO_PROPIA"
+DUPLICADA = "DUPLICADO_EN_ENTRADA"
 
 # Un perfil en un portal no es la web de la inmobiliaria, y su catalogo no es su
 # inventario: choza.ai figura como web oficial de 36 agencias distintas. Escribir
@@ -138,7 +141,9 @@ def leer(ruta: Path) -> list[dict]:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--entradas", nargs="+", required=True)
+    ap.add_argument("--entradas", nargs="*", default=None,
+                    help="por defecto, el universo canonico de "
+                         "scripts/input_universe.py")
     ap.add_argument("--data-dir", default=r"D:\INMO CAPITAL\ERETZ_AGENCY_DATA")
     ap.add_argument("--salida", default=r"D:\INMO CAPITAL\DB_WRITE_ELIGIBLE.jsonl")
     ap.add_argument("--directorio-plataformas",
@@ -162,6 +167,23 @@ def main() -> int:
         tipo_de_web[d["canonical_agency_id"]] = d.get("web_kind")
 
     props: list[dict] = []
+    # El universo no se arma a mano en la linea de comandos. Se armaba asi, y
+    # una lista a la que le faltaban dos rollouts produjo un write set 791
+    # propiedades mas chico sin una sola linea de error: write_eligibility no
+    # tiene como saber que le falta un archivo que nadie le paso.
+    if not a.entradas:
+        a.entradas = [str(x) for x in rutas()]
+        print(f"universo canonico: {len(a.entradas)} entradas "
+              f"({UNIVERSE_VERSION})")
+    else:
+        dados = {Path(e).parent.name for e in a.entradas}
+        faltan = OBLIGATORIAS - dados
+        if faltan:
+            print("ERROR: faltan entradas obligatorias del universo: "
+                  + ", ".join(sorted(faltan)))
+            print("Omitirlas no da error mas adelante, da menos propiedades.")
+            return 2
+
     for e in a.entradas:
         props.extend(leer(Path(e)))
     if not props:
@@ -169,6 +191,7 @@ def main() -> int:
         return 1
 
     elegibles, pendientes, descartadas, ajenas = [], [], [], []
+    duplicadas = []
     vistos_hash = set()
     for p in props:
         kind = tipo_de_web.get(p.get("canonical_agency_id"))
@@ -193,6 +216,12 @@ def main() -> int:
             # Dos urls que normalizan igual son la misma propiedad. Escribir las
             # dos no crearia un duplicado -el indice unico lo impide- pero haria
             # que la reconciliacion no cierre.
+            #
+            # Descartarlas con un `continue` pelado tampoco cerraba: 428
+            # propiedades desaparecian del recuento sin quedar en ninguna
+            # categoria, que es la perdida silenciosa que este artefacto existe
+            # para no tener. Se van a un balde propio, contadas y guardadas.
+            duplicadas.append({**q, "db_write_status": DUPLICADA})
             continue
         vistos_hash.add(q["hash_dedup"])
         q["db_write_status"] = ELEGIBLE
@@ -260,6 +289,12 @@ def main() -> int:
     print(f"  {PENDIENTE:24}    {len(pendientes):,}  ({len(pendientes)/n*100:.1f}%)")
     print(f"  {NO_ES_FICHA:24}    {len(descartadas):,}  ({len(descartadas)/n*100:.1f}%)")
     print(f"  {WEB_AJENA:24}    {len(ajenas):,}  ({len(ajenas)/n*100:.1f}%)")
+    print(f"  {DUPLICADA:24}    {len(duplicadas):,}  "
+          f"({len(duplicadas)/n*100:.1f}%)")
+    if duplicadas:
+        ruta_dup = Path(a.salida).with_name("DUPLICADO_EN_ENTRADA.jsonl")
+        escribir_jsonl(ruta_dup, duplicadas)
+        print(f"      -> {ruta_dup}")
     if ajenas:
         ruta_ajenas = Path(a.salida).with_name("WEB_NO_PROPIA.jsonl")
         escribir_jsonl(ruta_ajenas, ajenas)
@@ -267,8 +302,28 @@ def main() -> int:
             print(f"      {k:26} {v:6,}")
         print(f"      -> {ruta_ajenas}")
     if descartadas:
+        ruta_desc = Path(a.salida).with_name("NO_ES_UNA_FICHA.jsonl")
+        escribir_jsonl(ruta_desc, [{**x, "db_write_status": NO_ES_FICHA}
+                                   for x in descartadas])
+        print(f"      -> {ruta_desc}")
         for k, v in Counter(x["motivo_rechazo"] for x in descartadas).most_common():
             print(f"      {k:26} {v:6,}")
+    # --- reconciliacion ------------------------------------------------------
+    # Cada propiedad analizada tiene que estar en exactamente una categoria.
+    # No es una formalidad: las 428 que se perdian por el descarte de hashes
+    # repetidos no daban ningun error, solo un write set mas chico.
+    baldes = {ELEGIBLE: len(elegibles), CROSS_AGENCIA: len(cruzadas),
+              PENDIENTE: len(pendientes), NO_ES_FICHA: len(descartadas),
+              WEB_AJENA: len(ajenas), DUPLICADA: len(duplicadas)}
+    suma = sum(baldes.values())
+    print(f"\n  RECONCILIACION  analizadas={n:,}  suma={suma:,}")
+    if suma != n:
+        print(f"  *** NO CIERRA: {n - suma:+,} sin categoria ***")
+        for k, v in baldes.items():
+            print(f"      {k:28} {v:7,}")
+        return 2
+    print("  cierra: ninguna propiedad quedo sin explicacion")
+
     print(f"\n  agencias elegibles:         "
           f"{len({q['canonical_agency_id'] for q in elegibles}):,}")
     print(f"  agencias sin eretz_id:      "
