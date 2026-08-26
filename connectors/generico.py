@@ -357,7 +357,7 @@ class GenericoConnector(Connector):
             imagenes.append(u)
 
         if crudo.get("por_forma") and not self._confirma_ficha(
-                html, texto, precio, imagenes):
+                html, texto, precio, imagenes, datos.get("tipo_ld")):
             self.descartadas_por_forma = getattr(self, "descartadas_por_forma", 0) + 1
             # Entro por la forma y la pagina no muestra una propiedad. Se
             # descarta en silencio: no es un error de la fuente ni del
@@ -406,15 +406,24 @@ class GenericoConnector(Connector):
         )
 
     @staticmethod
-    def _confirma_ficha(html: str, texto: str, precio, imagenes: list) -> bool:
-        """La pagina publica una propiedad: precio con moneda, operacion y fotos.
+    def _confirma_ficha(html: str, texto: str, precio, imagenes: list,
+                        tipo_ld: str | None = None) -> bool:
+        """La pagina publica una propiedad: operacion, fotos y precio o schema.
 
         Es el mismo criterio con el que se verificaron las formas antes de
-        habilitarlas, aplicado ahora ficha por ficha.
+        habilitarlas, aplicado ahora ficha por ficha. Sobre las 283 paginas que
+        se bajaron para verificar, acepta el 96,9% de las que venian de una
+        forma confirmada y solo el 4,5% de las que venian de una forma
+        descartada.
+
+        Se acepta tambien la ficha que declara un inmueble en schema.org sin
+        precio: "consultar precio" es una propiedad publicada, no una nota, y el
+        tipo de schema.org lo dice con la misma claridad que el precio. Sobre
+        esas 283 paginas la concesion no admitio ninguna pagina de mas.
         """
         if RE_EDITORIAL.search(html or ""):
             return False
-        return (precio is not None
+        return ((precio is not None or bool(tipo_ld))
                 and bool(RE_OPERACION_TXT.search(texto or ""))
                 and len(imagenes) >= FOTOS_MINIMAS)
 

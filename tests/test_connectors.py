@@ -2026,3 +2026,29 @@ def test_la_ficha_del_patron_global_no_pasa_por_el_guardian():
     crudos = list(c.fetch_listing(f, c.discover(f)))
     assert crudos and not any(x["por_forma"] for x in crudos)
     assert c.normalize(crudos[0], f) is not None
+
+
+def test_la_ficha_sin_precio_pero_declarada_en_schema_org_entra():
+    """"Consultar precio" es una propiedad publicada, no una nota.
+
+    Una fuente entera perdia 21 de 31 fichas por pedir precio: publica el valor
+    a consultar y declara el inmueble en schema.org, que lo dice con la misma
+    claridad.
+    """
+    ficha = ("<html><head><title>Casa en venta</title>"
+             '<script type="application/ld+json">{"@type":"House",'
+             '"name":"Casa en venta en Hurlingham"}</script></head><body>'
+             "<p>Casa en venta, consultar precio. 3 dormitorios, 2 banos.</p>"
+             '<img src="https://alfa.com.ar/f/1.jpg">'
+             '<img src="https://alfa.com.ar/f/2.jpg">'
+             '<img src="https://alfa.com.ar/f/3.jpg">'
+             + "texto de la ficha. " * 30 + "</body></html>")
+    c = gen_conector({"https://alfa.com.ar/": HOME_FORMA,
+                      "https://alfa.com.ar/p-1749_departamento-interno-de-2-dormitorios":
+                          ficha,
+                      "https://alfa.com.ar/p-1748_casa-con-patio-en-el-centro":
+                          NOTA_FORMA})
+    f = fuente_con_forma("/<slug-con-id>")
+    props = [c.normalize(x, f) for x in c.fetch_listing(f, c.discover(f))]
+    vivas = [p for p in props if p is not None]
+    assert len(vivas) == 1 and vivas[0].precio is None
