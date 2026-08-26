@@ -57,12 +57,54 @@ RE_FICHA_RAIZ = re.compile(
     r"lote|ph|local|oficina|galpon|campo|cochera|quinta|duplex|chalet)"
     r"[a-z0-9-]*/?$", re.I)
 
+# Traduccion de la FORMA descubierta de una fuente a un patron de ruta.
+# La forma la produjo el descubrimiento (/p-1749_departamento -> /<slug-con-id>)
+# y la verificacion bajo tres fichas de ese sitio para confirmar que esa forma
+# publica propiedades y no notas. Traducirla aca deja el patron global intacto:
+# se habilita la forma de ESA fuente, no de las 2.258 restantes.
+FORMA_A_REGEX = {
+    "<num>": r"\d+",
+    "<slug>": r"[a-z0-9]+(?:-[a-z0-9]+){2,}",
+    "<slug-con-id>": r"[a-z0-9][a-z0-9_.-]*\d{3,}[a-z0-9_.-]*",
+    "<otro>": r"[^/]+",
+}
+
+
+def patron_de_forma(forma: str) -> "re.Pattern | None":
+    """El patron de ruta de una forma verificada. None si no se puede traducir."""
+    if not forma or not forma.startswith("/"):
+        return None
+    tramos = [t for t in forma.split("/") if t]
+    if not tramos:
+        return None
+    partes = []
+    for t in tramos:
+        if t in FORMA_A_REGEX:
+            partes.append(FORMA_A_REGEX[t])
+        elif re.fullmatch(r"[a-z0-9-]{1,24}", t, re.I):
+            partes.append(re.escape(t.lower()))
+        else:
+            return None            # forma que no se entiende: no se habilita
+    return re.compile("^/" + "/".join(partes) + "/?$", re.I)
+
+
 RE_LOC = re.compile(r"<loc>\s*([^<\s]+)\s*</loc>", re.I)
 RE_LD = re.compile(r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>', re.S | re.I)
 RE_IMG = re.compile(r'https?://[^\s"\'<>]+?\.(?:jpe?g|png|webp)', re.I)
 RE_COORD = re.compile(r'"?(?:latitude|lat)"?\s*[:=]\s*"?(-?[23456]\d\.\d{3,})"?'
                       r'.{0,80}?"?(?:longitude|lng|lon)"?\s*[:=]\s*"?(-?[567]\d\.\d{3,})"?',
                       re.S | re.I)
+
+# Evidencia de que una pagina publica UNA propiedad. Se usa solo sobre las urls
+# que entraron por la forma verificada de su fuente: la forma dice donde mirar,
+# la pagina dice si hay una propiedad. Una nota del blog habla de venta y de
+# dormitorios, pero no suele traer un precio con moneda al lado.
+RE_OPERACION_TXT = re.compile(r"\b(en venta|en alquiler|venta|alquiler|se vende|"
+                              r"se alquila)\b", re.I)
+RE_EDITORIAL = re.compile(r'"@type"\s*:\s*"?(Article|NewsArticle|BlogPosting)|'
+                          r'property="og:type"\s+content="article"', re.I)
+FOTOS_MINIMAS = 3
+
 
 MAX_SITEMAPS = 25
 MAX_FICHAS = 4000
@@ -91,12 +133,18 @@ class GenericoConnector(Connector):
     nombre = "generico"
     variantes_soportadas = ("SITEMAP", "LISTADO_HTML")
 
+    @staticmethod
+    def _patron_de(fuente: Fuente) -> "re.Pattern | None":
+        return patron_de_forma((fuente.extra or {}).get("patron_ficha") or "")
+
     # ---------------------------------------------------------------- discover
     def discover(self, fuente: Fuente) -> dict[str, Any]:
         p = urllib.parse.urlparse(fuente.official_url)
         base = f"{p.scheme}://{p.netloc}"
         plan: dict[str, Any] = {"base": base, "variante": "SIN_INVENTARIO",
                                 "soportada": False, "total_declarado": None}
+
+        propia = self._patron_de(fuente)
 
         # --- 1. sitemap ----------------------------------------------------
         indices, fichas = [], []
@@ -108,9 +156,7 @@ class GenericoConnector(Connector):
             if "<" not in cuerpo:
                 continue
             locs = RE_LOC.findall(cuerpo)
-            fichas += [u for u in locs
-                       if RE_FICHA.search(u)
-                       or RE_FICHA_RAIZ.search(urllib.parse.urlparse(u).path)]
+            fichas += [u for u in locs if self._es_ficha_url(u, propia)]
             indices += [u for u in locs if u.lower().endswith((".xml", ".xml.gz"))]
             if fichas or indices:
                 break
@@ -124,7 +170,8 @@ class GenericoConnector(Connector):
                 cuerpo = self.descargador.bajar(sub)
             except (ErrorTransitorio, ErrorPermanente, Bloqueado):
                 continue
-            fichas += [u for u in RE_LOC.findall(cuerpo) if RE_FICHA.search(u)]
+            fichas += [u for u in RE_LOC.findall(cuerpo)
+                       if self._es_ficha_url(u, propia)]
             if len(fichas) >= MAX_FICHAS:
                 break
 
@@ -145,14 +192,42 @@ class GenericoConnector(Connector):
             html = self.descargador.bajar(fuente.official_url)
         except (ErrorTransitorio, ErrorPermanente, Bloqueado):
             return plan
-        enlaces = self._fichas_en(html, base)
+        enlaces = self._fichas_en(html, base, propia)
         if enlaces:
             plan.update({"variante": "LISTADO_HTML", "soportada": True,
                          "fichas_home": enlaces, "html_home": html})
         return plan
 
     @staticmethod
-    def _fichas_en(html: str, base: str) -> list[str]:
+    def _es_ficha_url(u: str, propia: "re.Pattern | None" = None) -> bool:
+        ruta = urllib.parse.urlparse(u).path
+        return bool(RE_FICHA.search(u) or RE_FICHA_RAIZ.search(ruta)
+                    or (propia is not None and propia.match(ruta)))
+
+    @staticmethod
+    def _solo_por_forma(u: str, propia: "re.Pattern | None") -> bool:
+        """La url entro unicamente por la forma verificada de esta fuente.
+
+        Se anota para que el detalle la compruebe: una forma de raiz amplia
+        -/<slug>- tambien alcanza /quienes-somos, y una pagina institucional no
+        puede terminar publicada como propiedad.
+        """
+        if propia is None:
+            return False
+        ruta = urllib.parse.urlparse(u).path
+        return bool(propia.match(ruta)) and not (RE_FICHA.search(u)
+                                                 or RE_FICHA_RAIZ.search(ruta))
+
+    @staticmethod
+    def _fichas_en(html: str, base: str, extra: "re.Pattern | None" = None) -> list[str]:
+        """Los enlaces a fichas del HTML.
+
+        `extra` es la forma verificada de ESTA fuente. Existe para no tener que
+        aflojar el patron global: 65 sitios publican sus fichas en la raiz y se
+        comprobo una por una -bajando tres paginas de cada uno- que traen precio
+        con moneda, operacion y fotos. Habilitar esa forma para ellos no afloja
+        nada para los otros 2.258.
+        """
         host = urllib.parse.urlparse(base).netloc.lower().replace("www.", "")
         salida, vistas = [], set()
         for m in re.finditer(r'href="([^"]{4,300})"', html or ""):
@@ -160,7 +235,8 @@ class GenericoConnector(Connector):
             if urllib.parse.urlparse(u).netloc.lower().replace("www.", "") != host:
                 continue
             ruta = urllib.parse.urlparse(u).path
-            if not (RE_FICHA.search(u) or RE_FICHA_RAIZ.search(ruta)):
+            if not (RE_FICHA.search(u) or RE_FICHA_RAIZ.search(ruta)
+                    or (extra is not None and extra.match(ruta))):
                 continue
             c = u.split("#")[0].rstrip("/")
             if c not in vistas:
@@ -172,10 +248,12 @@ class GenericoConnector(Connector):
     def fetch_listing(self, fuente: Fuente, plan: dict[str, Any]) -> Iterator[dict]:
         if not plan.get("soportada"):
             return
+        propia = self._patron_de(fuente)
         if plan["variante"] == "SITEMAP":
             for i, u in enumerate(plan["fichas"], 1):
                 yield {"source_listing_id": self._id_de(u), "source_url": u,
-                       "pagina": 1 + i // 100}
+                       "pagina": 1 + i // 100,
+                       "por_forma": self._solo_por_forma(u, propia)}
             return
 
         base = plan["base"]
@@ -186,7 +264,8 @@ class GenericoConnector(Connector):
             if c in vistas:
                 continue
             vistas.add(c)
-            yield {"source_listing_id": self._id_de(u), "source_url": u, "pagina": 1}
+            yield {"source_listing_id": self._id_de(u), "source_url": u, "pagina": 1,
+                   "por_forma": self._solo_por_forma(u, propia)}
 
         # Paginacion por convencion: /page/N y ?page=N son las dos formas que
         # cubren casi todo. Se corta apenas una no aporta fichas nuevas.
@@ -202,14 +281,14 @@ class GenericoConnector(Connector):
                 except (ErrorTransitorio, ErrorPermanente, Bloqueado):
                     break
                 nuevas = 0
-                for u in self._fichas_en(html, base):
+                for u in self._fichas_en(html, base, propia):
                     c = u.rstrip("/")
                     if c in vistas:
                         continue
                     vistas.add(c)
                     nuevas += 1
                     yield {"source_listing_id": self._id_de(u), "source_url": u,
-                           "pagina": n}
+                           "pagina": n, "por_forma": self._solo_por_forma(u, propia)}
                 if nuevas == 0:
                     sin_nuevas += 1
                     if sin_nuevas >= 2:
@@ -277,6 +356,14 @@ class GenericoConnector(Connector):
             vistas.add(u)
             imagenes.append(u)
 
+        if crudo.get("por_forma") and not self._confirma_ficha(
+                html, texto, precio, imagenes):
+            self.descartadas_por_forma = getattr(self, "descartadas_por_forma", 0) + 1
+            # Entro por la forma y la pagina no muestra una propiedad. Se
+            # descarta en silencio: no es un error de la fuente ni del
+            # connector, es la forma alcanzando una pagina que no era ficha.
+            return None
+
         lat, lon = datos.get("lat"), datos.get("lon")
         if lat is None:
             m = RE_COORD.search(html)
@@ -317,6 +404,19 @@ class GenericoConnector(Connector):
                         "source_platform": "SITIO_PROPIO",
                         "pagina_listado": crudo.get("pagina")},
         )
+
+    @staticmethod
+    def _confirma_ficha(html: str, texto: str, precio, imagenes: list) -> bool:
+        """La pagina publica una propiedad: precio con moneda, operacion y fotos.
+
+        Es el mismo criterio con el que se verificaron las formas antes de
+        habilitarlas, aplicado ahora ficha por ficha.
+        """
+        if RE_EDITORIAL.search(html or ""):
+            return False
+        return (precio is not None
+                and bool(RE_OPERACION_TXT.search(texto or ""))
+                and len(imagenes) >= FOTOS_MINIMAS)
 
     # --------------------------------------------------------------- schema.org
     @staticmethod

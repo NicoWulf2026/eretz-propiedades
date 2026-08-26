@@ -960,7 +960,8 @@ def test_century21_lee_las_coordenadas_de_la_raiz():
 
 
 # ============================================================ connector generico
-from connectors.generico import GenericoConnector, RE_FICHA  # noqa: E402
+from connectors.generico import (GenericoConnector, RE_FICHA,  # noqa: E402
+                                 patron_de_forma)
 
 GEN_SITEMAP = """<?xml version="1.0"?><urlset>
 <url><loc>https://alfa.com.ar/propiedades/710944-casa-en-venta</loc></url>
@@ -1912,3 +1913,116 @@ def test_la_reclasificacion_conserva_la_evidencia():
         assert f["url"] and f["host"] and f["motivo"]
         assert f["clasificacion_nueva"] in ("EXTERNAL_PORTAL_PROFILE",
                                             "OFFICIAL_OFFICE_PAGE")
+
+
+# --------------------------------------------------------------------------
+# Forma de ficha verificada por fuente
+#
+# 65 sitios publican sus fichas en la raiz -/p-1749_departamento- y quedaron
+# afuera a proposito: aflojar el patron global para tomarlos metia tambien
+# /propiedades-en-venta-2026 y cualquier nota con un ano en el slug, en las
+# 2.258 fuentes. La forma se verifico sitio por sitio y se habilita sitio por
+# sitio.
+# --------------------------------------------------------------------------
+
+FICHA_FORMA = ("<html><head><title>Casa en venta</title></head><body>"
+               "<p>Casa en venta USD 120.000 - 3 dormitorios, 2 banos, "
+               "170 m2 cubiertos.</p>"
+               '<img src="https://alfa.com.ar/f/1.jpg">'
+               '<img src="https://alfa.com.ar/f/2.jpg">'
+               '<img src="https://alfa.com.ar/f/3.jpg">'
+               + "texto de la ficha. " * 30 + "</body></html>")
+
+NOTA_FORMA = ("<html><head><title>Como invertir en 2026</title>"
+              '<meta property="og:type" content="article">'
+              "</head><body><p>El mercado de venta y alquiler de departamentos "
+              "de 3 dormitorios en 2026.</p>"
+              '<img src="https://alfa.com.ar/n/1.jpg">'
+              '<img src="https://alfa.com.ar/n/2.jpg">'
+              '<img src="https://alfa.com.ar/n/3.jpg">'
+              + "cuerpo de la nota. " * 30 + "</body></html>")
+
+HOME_FORMA = ("<html><body>"
+              '<a href="/p-1749_departamento-interno-de-2-dormitorios">uno</a>'
+              '<a href="/p-1748_casa-con-patio-en-el-centro">dos</a>'
+              '<a href="/quienes-somos">nosotros</a>'
+              '<a href="/blog/como-invertir-en-2026">nota</a>'
+              "</body></html>")
+
+
+def fuente_con_forma(forma):
+    f = fuente()
+    f.extra = {"patron_ficha": forma}
+    return f
+
+
+def test_forma_se_traduce_a_un_patron_acotado():
+    """La forma dice donde estan las fichas de ESE sitio, no de todos."""
+    p = patron_de_forma("/<slug-con-id>")
+    assert p.match("/p-1749_departamento-interno")
+    assert not p.match("/quienes-somos")
+    assert not p.match("/p-1749_departamento/otra")
+
+
+def test_forma_con_tramos_literales_y_variables():
+    p = patron_de_forma("/propiedad/detalle/<num>/<slug>")
+    assert p.match("/propiedad/detalle/812/casa-en-venta-lomas")
+    assert not p.match("/propiedad/detalle/casa-en-venta-lomas")
+    assert not p.match("/noticias/detalle/812/casa-en-venta-lomas")
+
+
+def test_forma_que_no_se_entiende_no_se_habilita():
+    """Antes de habilitar algo que no se sabe que va a alcanzar, no se habilita."""
+    assert patron_de_forma("") is None
+    assert patron_de_forma("propiedades/<num>") is None
+    assert patron_de_forma("/<forma rara con espacios>") is None
+
+
+def test_la_forma_no_afloja_el_patron_global():
+    """Habilitarla para una fuente no la habilita para las otras 2.258."""
+    c = gen_conector({"https://alfa.com.ar/": HOME_FORMA})
+    plan = c.discover(fuente())                      # sin forma declarada
+    assert plan.get("soportada") is False
+    assert RE_FICHA.search("/p-1749_departamento-interno-de-2-dormitorios") is None
+
+
+def test_la_forma_habilita_solo_a_su_fuente():
+    c = gen_conector({"https://alfa.com.ar/": HOME_FORMA})
+    f = fuente_con_forma("/<slug-con-id>")
+    plan = c.discover(f)
+    assert plan["variante"] == "LISTADO_HTML"
+    rutas = {u.split("alfa.com.ar")[1] for u in plan["fichas_home"]}
+    assert "/p-1749_departamento-interno-de-2-dormitorios" in rutas
+    assert "/quienes-somos" not in rutas
+    assert "/blog/como-invertir-en-2026" not in rutas
+
+
+def test_la_url_que_entro_por_la_forma_se_comprueba_en_el_detalle():
+    """La forma dice donde mirar; la pagina dice si hay una propiedad.
+
+    /<slug> tambien alcanza /quienes-somos, y una pagina institucional no puede
+    terminar publicada como propiedad.
+    """
+    paginas = {"https://alfa.com.ar/": HOME_FORMA,
+               "https://alfa.com.ar/p-1749_departamento-interno-de-2-dormitorios":
+                   FICHA_FORMA,
+               "https://alfa.com.ar/p-1748_casa-con-patio-en-el-centro": NOTA_FORMA}
+    c = gen_conector(paginas)
+    f = fuente_con_forma("/<slug-con-id>")
+    crudos = list(c.fetch_listing(f, c.discover(f)))
+    assert len(crudos) == 2 and all(x["por_forma"] for x in crudos)
+    props = [c.normalize(x, f) for x in crudos]
+    assert sum(p is not None for p in props) == 1
+    viva = next(p for p in props if p is not None)
+    assert viva.precio == 120000 and viva.moneda == "USD"
+
+
+def test_la_ficha_del_patron_global_no_pasa_por_el_guardian():
+    """Solo se comprueba lo que entro por la forma. Lo que ya entraba por el
+    patron global sigue entrando igual: el guardian no puede cambiar el
+    resultado de las corridas anteriores."""
+    c = gen_conector()
+    f = fuente_con_forma("/<slug-con-id>")
+    crudos = list(c.fetch_listing(f, c.discover(f)))
+    assert crudos and not any(x["por_forma"] for x in crudos)
+    assert c.normalize(crudos[0], f) is not None

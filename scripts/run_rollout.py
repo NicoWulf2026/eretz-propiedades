@@ -318,6 +318,10 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool) -> di
 
     r["detalles_obtenidos"] = len(props)
     r["detalles_fallidos"] = fallidos
+    # Cuantas descarto el guardian de forma. Separarlo de los fallos importa:
+    # una pagina que no era ficha no es una fuente que respondio mal, y sin
+    # esta cuenta las dos cosas se leen igual en el resumen.
+    r["descartadas_por_forma"] = getattr(con, "descartadas_por_forma", 0)
     r["cambios"] = dict(Counter(p["_cambio"] for p in props))
 
     # --- ausencias, solo si la enumeracion merece confianza -----------------
@@ -415,6 +419,10 @@ def main() -> int:
                 "detected_platform": r.get("clasificacion_nueva") or "CENSO",
                 "city": d.get("city"), "province": d.get("province"),
                 "eretz_id": int(eid) if str(eid).isdigit() else None,
+                # Forma de ficha verificada PARA ESTA FUENTE. Se pasa por el
+                # censo en vez de aflojar el patron global: la evidencia se
+                # comprobo en este sitio, no en los otros 2.258.
+                "patron_ficha": r.get("patron_ficha"),
             })
         if a.limite:
             fuentes = fuentes[:a.limite]
@@ -465,7 +473,8 @@ def main() -> int:
                    inmobiliaria_id=(x.get("eretz_id")
                                     or id_sustituto(x["canonical_agency_id"])),
                    detected_platform=x["detected_platform"],
-                   extra={"city": x.get("city"), "province": x.get("province")})
+                   extra={"city": x.get("city"), "province": x.get("province"),
+                          "patron_ficha": x.get("patron_ficha")})
         try:
             r = procesar(con, f, a.max_fichas, a.observacion, alt)
         except Exception as e:  # nunca tumbar el rollout por una fuente
@@ -521,6 +530,7 @@ def main() -> int:
         "detalles_pedidos": sum(r.get("detalles_pedidos", 0) for r in inv),
         "detalles_obtenidos": sum(r.get("detalles_obtenidos", 0) for r in inv),
         "detalles_fallidos": sum(r.get("detalles_fallidos", 0) for r in inv),
+        "descartadas_por_forma": sum(r.get("descartadas_por_forma", 0) for r in inv),
         "propiedades_escritas": len(props),
         "cambios": dict(Counter(p["_cambio"] for p in props)),
         "potential_inactive": len(leer_jsonl(out / f"absences{sufijo}.jsonl")),
