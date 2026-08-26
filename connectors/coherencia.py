@@ -48,6 +48,23 @@ def _num(v: Any) -> float | None:
         return None
 
 
+# Un precio escrito con un solo digito repetido -111.111.111- es el relleno
+# que pone el sitio cuando no quiere publicar el valor. Solo se descarta si
+# ademas es absurdo para un inmueble: "USD 99.999" es un precio de venta
+# perfectamente normal y no se toca. Hay 17 asi en 150.000 propiedades, y
+# una de ellas es un dos ambientes a 1.111 millones de dolares.
+RELLENO_USD = 10_000_000
+RELLENO_ARS = 1_000_000_000
+
+
+def _es_relleno(precio: float, moneda: Any) -> bool:
+    digitos = str(int(precio))
+    if len(digitos) < 6 or len(set(digitos)) != 1:
+        return False
+    tope = RELLENO_ARS if str(moneda).upper() == "ARS" else RELLENO_USD
+    return precio >= tope
+
+
 def revisar(p: dict) -> list[str]:
     """Corrige `p` en el lugar y devuelve que se descarto y por que."""
     fuera: list[str] = []
@@ -89,6 +106,10 @@ def revisar(p: dict) -> list[str]:
             p["imagenes"] = limpias
             fuera.append("imagenes_que_no_son_fotos")
 
+    precio = _num(p.get("precio"))
+    if precio is not None and _es_relleno(precio, p.get("moneda")):
+        p["precio"] = p["moneda"] = None
+        fuera.append("precio_de_relleno")
     precio = _num(p.get("precio"))
     if precio is not None and precio <= 0:
         p["precio"] = p["moneda"] = None

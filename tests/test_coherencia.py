@@ -94,3 +94,26 @@ def test_una_galeria_limpia_no_se_toca():
     p = {"imagenes": ["https://a.com/f/1.jpg", "https://a.com/f/2.webp"]}
     assert revisar(p) == []
     assert len(p["imagenes"]) == 2
+
+
+def test_el_precio_de_relleno_no_es_un_precio():
+    """Un dos ambientes a 1.111 millones de dolares. El sitio escribe un digito
+    repetido cuando no quiere publicar el valor."""
+    p = {"precio": 1111111111, "moneda": "USD"}
+    assert "precio_de_relleno" in revisar(p)
+    assert p["precio"] is None and p["moneda"] is None
+
+
+def test_un_precio_de_marketing_no_es_relleno():
+    """"USD 99.999" es un precio de venta perfectamente normal, y 1.111.111
+    tambien puede serlo. Solo se descarta el que ademas es absurdo."""
+    for precio in (99999, 999999, 1111111, 11111):
+        p = {"precio": precio, "moneda": "USD"}
+        assert revisar(p) == [], precio
+        assert p["precio"] == precio
+
+
+def test_en_pesos_el_umbral_es_otro():
+    """Mil millones de pesos si puede ser un precio; mil millones de dolares no."""
+    p = {"precio": 111111111, "moneda": "ARS"}
+    assert revisar(p) == [] and p["precio"] == 111111111
