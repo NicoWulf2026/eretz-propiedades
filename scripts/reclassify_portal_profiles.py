@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import difflib
 import re
 import sys
 import time
@@ -44,7 +45,7 @@ PORTALES = re.compile(
     r"zonaprop|argenprop|properati|inmuebles24|mercadolibre|articulo\.mercadolibre|"
     r"realestate\.com\.au|construex|todoprops|inmobusqueda|miguiaargentina|"
     r"near-place|mapaprop|proppies|liderprop|inmoclick|choza\.ai|indice-inmobiliario|"
-    r"mercadoprop|emis\.com|kitepropcrm|yably|aspenbienesraices|"
+    r"mercadoprop|emis\.com|yably|aspenbienesraices|"
     r"paginasamarillas|cylex|opendi|infoisinfo|guiaempresas|"
     r"facebook|instagram|linkedin|twitter|x\.com|youtube|linktr\.ee|"
     r"colegioinmobiliario|martilleros|cpicordoba|cir\.org)", re.I)
@@ -60,12 +61,90 @@ def host(u: str) -> str:
     return re.sub(r"^https?://", "", u or "").split("/")[0].lower()
 
 
-def clasificar(url: str) -> tuple[str, str]:
+def agencias_por_host(filas: list[dict]) -> dict[str, list[str]]:
+    """Cuantas inmobiliarias distintas cuelgan de cada host.
+
+    Es la senal que no depende de conocer el nombre del portal. Un portal
+    aloja a muchas inmobiliarias en UN host -choza.ai figura como web de 36-;
+    un SaaS marca blanca le da a cada una el suyo -kitepropcrm.com tiene 10
+    hosts para 10 inmobiliarias-. La diferencia es estructural y se puede
+    contar, y contarla es lo que evita tener que mantener una lista de nombres
+    que siempre va a estar incompleta.
+
+    kitepropcrm estaba en la lista de portales por su nombre y por eso 10 webs
+    propias figuraban como perfiles ajenos. La cuenta lo desmiente.
+    """
+    c: dict[str, list[str]] = {}
+    for f in filas:
+        h = host(f.get("domain") or "")
+        if h:
+            c.setdefault(h, []).append(f.get("agency_name") or f["canonical_agency_id"])
+    return c
+
+
+# Dos inmobiliarias en un host no significan lo mismo que veinte. Con veinte es
+# un portal; con dos suele ser el MISMO negocio cargado dos veces en el padron
+# -"De Bernardis Propiedades" y "FABIANA DE BERNARDIS GESTION INMOBILIARIA"
+# comparten sitio porque son la misma inmobiliaria-. Declarar portal a ese sitio
+# le quitaria la web propia a quien si la tiene.
+MUCHAS_AGENCIAS = 3
+PARECIDO_MINIMO = 0.6
+AMBIGUA = "AMBIGUOUS_WEB_ATTRIBUTION"
+
+
+# Palabras que aparecen en media Argentina inmobiliaria y no distinguen a nadie.
+# Compararlas hace que dos nombres se parezcan por lo que tienen en comun con
+# todos los demas.
+GENERICAS = {"propiedades", "propiedad", "inmobiliaria", "inmobiliarias",
+             "inmobiliario", "inmobiliarios", "negocios", "gestion", "servicios",
+             "bienes", "raices", "estudio", "grupo", "consultora", "desarrollos",
+             "real", "estate", "sa", "srl", "sas", "y", "de", "del", "la", "el",
+             "&", "-", "ii", "i"}
+
+
+def distintivas(nombre: str) -> set[str]:
+    palabras = re.split(r"[^0-9a-zA-Zaeiouunc]+", (nombre or "").lower())
+    return {p for p in palabras if p and p not in GENERICAS and len(p) > 2}
+
+
+def mismo_negocio(a: str, b: str) -> bool:
+    """Dos nombres que describen a la misma inmobiliaria.
+
+    Decide por las palabras que DISTINGUEN: "De Bernardis Propiedades" y
+    "FABIANA DE BERNARDIS GESTION INMOBILIARIA" son la misma inmobiliaria
+    cargada dos veces, y comparten "bernardis"; "Arquitectura Inmobiliaria" y
+    "Urbano Rosario" no comparten ninguna.
+    """
+    x, y = (a or "").lower().strip(), (b or "").lower().strip()
+    if not x or not y:
+        return False
+    if x in y or y in x:
+        return True
+    dx, dy = distintivas(x), distintivas(y)
+    if dx and dy and (dx <= dy or dy <= dx or len(dx & dy) >= 1):
+        return True
+    return difflib.SequenceMatcher(None, x, y).ratio() >= PARECIDO_MINIMO
+
+
+def clasificar(url: str, por_host: dict | None = None,
+               nombre: str = "") -> tuple[str, str]:
     h = host(url)
     if PORTALES.match(h):
         return PERFIL_PORTAL, f"{h} es un portal, directorio o red social"
     if REDES.match(h):
         return OFICINA_RED, f"{h} es el sitio de la red, no un dominio propio"
+    vecinos = [n for n in (por_host or {}).get(h, []) if n != nombre]
+    n = len(vecinos) + 1
+    if n >= MUCHAS_AGENCIAS:
+        return PERFIL_PORTAL, (f"{h} figura como web de {n} inmobiliarias "
+                               f"distintas: no es el dominio propio de ninguna")
+    if vecinos and not mismo_negocio(nombre, vecinos[0]):
+        # Una de las dos es la duena y la otra tiene la url mal cargada, y desde
+        # afuera no se puede saber cual. Ingerirla le atribuiria a una el
+        # inventario de la otra, asi que queda marcada y sin ingerir.
+        return AMBIGUA, (f"{h} figura como web de dos inmobiliarias sin relacion "
+                         f"aparente ({nombre} y {vecinos[0]}): no se puede "
+                         f"decidir de quien es")
     return OFICIAL, ""
 
 
@@ -101,11 +180,16 @@ def main() -> int:
     a = ap.parse_args()
 
     filas = leer(Path(a.directorio))
+    por_host = agencias_por_host(filas)
     cambios = []
     for f in filas:
-        tipo, motivo = clasificar(f.get("domain") or "")
+        tipo, motivo = clasificar(f.get("domain") or "", por_host,
+                                  f.get("agency_name") or f["canonical_agency_id"])
         anterior = f.get("web_kind")
         f["web_kind"] = tipo
+        # El motivo viaja con la clasificacion. Sin el, el directorio dice que
+        # algo no es web propia y no dice por que, que es la mitad util.
+        f["web_kind_reason"] = motivo or None
         if tipo != OFICIAL:
             cambios.append({
                 "canonical_agency_id": f["canonical_agency_id"],

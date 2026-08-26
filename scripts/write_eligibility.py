@@ -30,6 +30,15 @@ ELEGIBLE = "DB_WRITE_ELIGIBLE"
 PENDIENTE = "AGENCY_ID_PENDING"
 NO_ES_FICHA = "NO_ES_UNA_FICHA"
 CROSS_AGENCIA = "CROSS_AGENCY_DUPLICATE"
+WEB_AJENA = "WEB_NO_PROPIA"
+
+# Un perfil en un portal no es la web de la inmobiliaria, y su catalogo no es su
+# inventario: choza.ai figura como web oficial de 36 agencias distintas. Escribir
+# lo que se lee ahi le atribuye a una el inventario de las otras 35.
+#
+# La pagina de la oficina DENTRO de su propia red -century21.com.ar/oficina/X-
+# si es suya, y no cae aca.
+NO_SON_WEB_PROPIA = {"EXTERNAL_PORTAL_PROFILE", "AMBIGUOUS_WEB_ATTRIBUTION"}
 
 # Defensa en profundidad: aunque el connector ya filtre, lo que llega a la base
 # se revisa otra vez. Las paginas que se cuelan son siempre las mismas y entran
@@ -112,6 +121,8 @@ def main() -> int:
     ap.add_argument("--entradas", nargs="+", required=True)
     ap.add_argument("--data-dir", default=r"D:\INMO CAPITAL\ERETZ_AGENCY_DATA")
     ap.add_argument("--salida", default=r"D:\INMO CAPITAL\DB_WRITE_ELIGIBLE.jsonl")
+    ap.add_argument("--directorio-plataformas",
+                    default=r"D:\INMO CAPITAL\agency_platform_directory.jsonl")
     ap.add_argument("--resolucion", default="",
                     help="CROSS_AGENCY_RESOLUTION.jsonl; sin el, ningun "
                          "conflicto cross-agency se libera")
@@ -123,6 +134,13 @@ def main() -> int:
         if str(eid).isdigit():
             padron[d["canonical_agency_id"]] = int(eid)
 
+    # Clasificacion de la web de cada agencia. La produce
+    # reclassify_portal_profiles.py contando cuantas inmobiliarias cuelgan del
+    # mismo host, sin depender de conocer el nombre de cada portal.
+    tipo_de_web = {}
+    for d in leer(Path(a.directorio_plataformas)):
+        tipo_de_web[d["canonical_agency_id"]] = d.get("web_kind")
+
     props: list[dict] = []
     for e in a.entradas:
         props.extend(leer(Path(e)))
@@ -130,9 +148,13 @@ def main() -> int:
         print("sin propiedades")
         return 1
 
-    elegibles, pendientes, descartadas = [], [], []
+    elegibles, pendientes, descartadas, ajenas = [], [], [], []
     vistos_hash = set()
     for p in props:
+        kind = tipo_de_web.get(p.get("canonical_agency_id"))
+        if kind in NO_SON_WEB_PROPIA:
+            ajenas.append({**p, "db_write_status": WEB_AJENA, "web_kind": kind})
+            continue
         motivo = motivo_rechazo(p)
         if motivo:
             descartadas.append({**p, "motivo_rechazo": motivo})
@@ -221,6 +243,15 @@ def main() -> int:
     print(f"  {ELEGIBLE:24}    {len(elegibles):,}  ({len(elegibles)/n*100:.1f}%)")
     print(f"  {PENDIENTE:24}    {len(pendientes):,}  ({len(pendientes)/n*100:.1f}%)")
     print(f"  {NO_ES_FICHA:24}    {len(descartadas):,}  ({len(descartadas)/n*100:.1f}%)")
+    print(f"  {WEB_AJENA:24}    {len(ajenas):,}  ({len(ajenas)/n*100:.1f}%)")
+    if ajenas:
+        ruta_ajenas = Path(a.salida).with_name("WEB_NO_PROPIA.jsonl")
+        ruta_ajenas.write_text(
+            chr(10).join(json.dumps(q, ensure_ascii=False) for q in ajenas),
+            encoding="utf-8")
+        for k, v in Counter(q["web_kind"] for q in ajenas).most_common():
+            print(f"      {k:26} {v:6,}")
+        print(f"      -> {ruta_ajenas}")
     if descartadas:
         for k, v in Counter(x["motivo_rechazo"] for x in descartadas).most_common():
             print(f"      {k:26} {v:6,}")
