@@ -66,6 +66,26 @@ def host(u: str) -> str:
     return re.sub(r"^https?://(www\.)?", "", u or "").split("/")[0].lower()
 
 
+def dueno_por_misatribucion(agencias: dict, descartados: set) -> tuple[dict | None, str]:
+    """Quien queda cuando a los demas ya se les probo que el sitio no era suyo.
+
+    El clasificador deduce "misma empresa duplicada" del apellido compartido en
+    el mismo dominio, y ese es justamente el caso en que el apellido engaña: dos
+    inmobiliarias homonimas en mercados que no se tocan dan la misma señal que
+    una empresa cargada dos veces.
+
+    Cuando una investigacion del padron ya dictamino que ESE sitio no era de un
+    reclamante -y lo dejo asentado en el directorio de plataformas- ese
+    reclamante deja de disputar. Si queda uno solo, el aviso tiene dueno.
+    """
+    if not descartados or len(agencias) != 1:
+        return None, ""
+    unico = next(iter(agencias.values()))
+    return unico, ("se probo que el sitio no pertenece a "
+                   + ", ".join(sorted(descartados))
+                   + "; queda un unico reclamante")
+
+
 def leer(ruta: Path) -> list[dict]:
     if not ruta.exists():
         return []
@@ -122,6 +142,8 @@ def main() -> int:
     ap.add_argument("--eligible", default=r"D:\INMO CAPITAL\DB_WRITE_ELIGIBLE.jsonl")
     ap.add_argument("--cross", default=r"D:\INMO CAPITAL\CROSS_AGENCY_DUPLICATES.jsonl")
     ap.add_argument("--data-dir", default=r"D:\INMO CAPITAL\ERETZ_AGENCY_DATA")
+    ap.add_argument("--directorio-plataformas",
+                    default=r"D:\INMO CAPITAL\agency_platform_directory.jsonl")
     ap.add_argument("--salida", default=r"D:\INMO CAPITAL")
     a = ap.parse_args()
     out = Path(a.salida)
@@ -130,6 +152,15 @@ def main() -> int:
     cruzadas = leer(Path(a.cross))
     directorio = {d["canonical_agency_id"]: d
                   for d in leer(Path(a.data_dir) / "agency_web_directory.jsonl")}
+
+    # Sitios que una investigacion del padron probo que NO son de quien los
+    # reclamaba. Es evidencia verificada a mano, no una heuristica: por eso
+    # puede desempatar lo que el parecido del nombre deja empatado.
+    no_dueno = set()
+    for d in leer(Path(a.directorio_plataformas)):
+        mal = d.get("domain_mal_atribuido")
+        if mal and d.get("canonical_agency_id"):
+            no_dueno.add((d["canonical_agency_id"], host(mal)))
 
     por_url = defaultdict(list)
     for p in elegibles + cruzadas:
@@ -152,12 +183,22 @@ def main() -> int:
     for url, claims in disputadas.items():
         h = host(url)
         agencias = {c.get("canonical_agency_id"): c for c in claims}
+        descartados = {cid for cid in agencias if (cid, h) in no_dueno}
+        if descartados and len(agencias) - len(descartados) == 1:
+            claims = [c for c in claims
+                      if c.get("canonical_agency_id") not in descartados]
+            agencias = {cid: c for cid, c in agencias.items()
+                        if cid not in descartados}
+        else:
+            descartados = set()
         nombres = {cid: (c.get("provenance") or {}).get("agency_name") or ""
                    for cid, c in agencias.items()}
         n_host = len(agencias_por_host[h])
 
         # 1. La ficha nombra a su oficina.
-        dueno, motivo = dueno_por_ficha(claims, url)
+        dueno, motivo = dueno_por_misatribucion(agencias, descartados)
+        if dueno is None:
+            dueno, motivo = dueno_por_ficha(claims, url)
         if dueno is not None:
             categoria, confianza = CLARO, "alta"
         else:
@@ -200,6 +241,7 @@ def main() -> int:
             # SAME_AGENCY no se libera sola: saber que son la misma empresa no
             # dice cual de las dos fichas conserva ERETZ, y elegir mal deja el
             # inventario colgando de un id que despues se unifica o se borra.
+            "descartados_por_evidencia": sorted(descartados),
             "liberable": categoria == CLARO and confianza == "alta",
             "checked_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         })
