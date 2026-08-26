@@ -66,7 +66,7 @@ export function CompareClient({ embedded = false }: { embedded?: boolean }) {
       ) : loading ? (
         <div className="compare-loading" role="status" aria-label="Cargando comparación"><span className="skeleton" /><span className="skeleton" /><span className="skeleton" /></div>
       ) : error ? (
-        <p className="text-sm u-text-muted">No pudimos cargar la comparación. Reintentá en unos minutos.</p>
+        <p role="alert" className="text-sm u-text-muted">No pudimos cargar la comparación. Reintentá en unos minutos.</p>
       ) : properties.length === 0 ? (
         <p className="rounded-xl border u-border u-surface-sunken p-6 text-sm u-text-muted">
           Las propiedades seleccionadas ya no están disponibles.

@@ -52,7 +52,7 @@ export function FavoritesClient({ view = "all", embedded = false }: { view?: "al
         ) : loading ? (
           <div className="local-list-skeleton mt-4" role="status" aria-label="Cargando propiedades guardadas">{Array.from({ length: 3 }, (_, index) => <span key={index} className="skeleton" />)}</div>
         ) : error ? (
-          <p className="mt-4 text-sm u-text-muted">No pudimos cargar tus favoritos. Reintentá en unos minutos.</p>
+          <p role="alert" className="mt-4 text-sm u-text-muted">No pudimos cargar tus favoritos. Reintentá en unos minutos.</p>
         ) : (
           <div className="mt-4 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {properties.map((p) => (

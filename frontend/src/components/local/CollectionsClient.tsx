@@ -19,7 +19,7 @@ function CollectionProperties({ ids, onRemove }: { ids: string[]; onRemove: (id:
   const { properties, loading, error } = usePropertiesByIds(ids);
   if (ids.length === 0) return <p className="mt-3 text-sm u-text-muted">Esta colección está vacía. Agregá propiedades desde su ficha.</p>;
   if (loading) return <div className="local-list-skeleton mt-4" role="status" aria-label="Cargando colección">{Array.from({ length: 3 }, (_, index) => <span key={index} className="skeleton" />)}</div>;
-  if (error) return <p className="mt-3 text-sm u-text-muted">No pudimos cargar estas propiedades.</p>;
+  if (error) return <p role="alert" className="mt-3 text-sm u-text-muted">No pudimos cargar estas propiedades.</p>;
   return (
     <div className="mt-4 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
       {properties.map((p) => (
