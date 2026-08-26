@@ -101,6 +101,10 @@ RE_COORD = re.compile(r'"?(?:latitude|lat)"?\s*[:=]\s*"?(-?[23456]\d\.\d{3,})"?'
 # dormitorios, pero no suele traer un precio con moneda al lado.
 RE_OPERACION_TXT = re.compile(r"\b(en venta|en alquiler|venta|alquiler|se vende|"
                               r"se alquila)\b", re.I)
+# Lo que describe un inmueble y no una nota. Se piden DOS distintos:
+# "superficie" sola aparece en cualquier texto sobre el mercado.
+RE_ATRIBUTOS_TXT = re.compile(r"\b(dormitorio|ambiente|ba[nñ]o|superficie|"
+                              r"m2|m²|cubierta|cochera|antig[uü]edad)", re.I)
 RE_EDITORIAL = re.compile(r'"@type"\s*:\s*"?(Article|NewsArticle|BlogPosting)|'
                           r'property="og:type"\s+content="article"', re.I)
 FOTOS_MINIMAS = 3
@@ -448,7 +452,15 @@ class GenericoConnector(Connector):
         """La pagina publica una propiedad: operacion, fotos y precio o schema.
 
         Es el mismo criterio con el que se verificaron las formas antes de
-        habilitarlas, aplicado ahora ficha por ficha. Sobre las 283 paginas que
+        habilitarlas, aplicado ahora ficha por ficha: precio o schema, Y
+        operacion o dos atributos, Y fotos.
+
+        Pedir la operacion SIEMPRE costo 21 fichas reales de una sola
+        fuente -"Casa en 2 plantas con piscina", 210.000 dolares, 190
+        fotos- que publican la operacion en un rotulo que no queda en el
+        texto. Dos atributos alcanzan para saber que la pagina describe
+        un inmueble, y asi lo decia la regla con la que se verificaron
+        las 283 paginas. Sobre las 283 paginas que
         se bajaron para verificar, acepta el 96,9% de las que venian de una
         forma confirmada y solo el 4,5% de las que venian de una forma
         descartada.
@@ -460,8 +472,10 @@ class GenericoConnector(Connector):
         """
         if RE_EDITORIAL.search(html or ""):
             return False
-        return ((precio is not None or bool(tipo_ld))
-                and bool(RE_OPERACION_TXT.search(texto or ""))
+        t = texto or ""
+        describe = (bool(RE_OPERACION_TXT.search(t))
+                    or len({x.lower() for x in RE_ATRIBUTOS_TXT.findall(t)}) >= 2)
+        return ((precio is not None or bool(tipo_ld)) and describe
                 and len(imagenes) >= FOTOS_MINIMAS)
 
     # --------------------------------------------------------------- schema.org

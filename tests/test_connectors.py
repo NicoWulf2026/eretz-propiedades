@@ -2074,3 +2074,32 @@ def test_si_la_ficha_habla_de_las_dos_operaciones_no_se_elige_ninguna():
     f = GenericoConnector._operacion_en_la_ficha
     assert f("Ventas Alquileres Tasaciones Contacto Casa 3 ambientes") is None
     assert f("Casa 3 ambientes con patio") is None
+
+
+def test_la_ficha_que_no_dice_la_operacion_en_el_texto_igual_entra():
+    """21 fichas reales de una fuente -"Casa en 2 plantas con piscina",
+    210.000 dolares, 190 fotos- se perdian porque la operacion esta en un
+    rotulo que no queda en el texto. Dos atributos describen un inmueble."""
+    ficha = ("<html><head><title>Casa en 2 plantas</title></head><body>"
+             "<p>Casa en 2 plantas con piscina. USD 210.000. "
+             "3 dormitorios, 2 banos, 170 m2 cubiertos.</p>"
+             + '<img src="https://alfa.com.ar/f/1.jpg">' * 1
+             + '<img src="https://alfa.com.ar/f/2.jpg">'
+             + '<img src="https://alfa.com.ar/f/3.jpg">'
+             + "descripcion. " * 40 + "</body></html>")
+    c = gen_conector({"https://alfa.com.ar/": HOME_FORMA,
+                      "https://alfa.com.ar/p-1749_departamento-interno-de-2-dormitorios":
+                          ficha,
+                      "https://alfa.com.ar/p-1748_casa-con-patio-en-el-centro":
+                          NOTA_FORMA})
+    f = fuente_con_forma("/<slug-con-id>")
+    vivas = [p for p in (c.normalize(x, f) for x in c.fetch_listing(f, c.discover(f)))
+             if p is not None]
+    assert len(vivas) == 1 and vivas[0].precio == 210000
+
+
+def test_un_atributo_suelto_no_alcanza():
+    """"Superficie" sola aparece en cualquier texto sobre el mercado."""
+    assert not GenericoConnector._confirma_ficha(
+        "<html>x</html>", "Analisis de la superficie construida en 2026",
+        1000.0, ["a", "b", "c"])
