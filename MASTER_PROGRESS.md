@@ -545,6 +545,34 @@ extraccion cambia la huella de contenido, y la corrida 3 empezaria a informar
 MODIFICADA por un cambio de parser en vez de un cambio real. Se arregla despues,
 con test.
 
+## Estado del write set
+
+```
+propiedades analizadas   174.955
+DB_WRITE_ELIGIBLE        159.858   (91,4%)
+AGENCY_ID_PENDING          4.442   (2,5%)  59 inmobiliarias sin id real
+WEB_NO_PROPIA              2.927   (1,7%)  perfiles de portal
+CROSS_AGENCY_DUPLICATE     7.283   (4,2%)  misma url, dos inmobiliarias
+NO_ES_UNA_FICHA               17
+```
+
+Las cuatro invariantes cierran exactas:
+
+```
+159.858 filas = 159.858 hashes unicos = 159.858 urls unicas
+0 propiedades sin eretz_id real
+0 urls reclamadas por dos inmobiliarias
+1.493 inmobiliarias
+```
+
+De los 7.283 conflictos cross-agency, 6.406 son **una sola inmobiliaria
+cargada dos veces en el padron** -Bustamante, con 3.137 propiedades en
+disputa-. No se libera ninguno: saber que son la misma empresa no dice cual de
+las dos fichas conserva ERETZ, y elegir mal deja 3.137 propiedades colgando de
+un id que despues se unifica o se borra. Es un problema del padron y se
+resuelve alla; el manifiesto tiene las dos fichas, cual es mas antigua y cual
+tiene el dominio verificado.
+
 ## Mapa de cobertura (2.259 webs propias)
 
 | Plataforma | Detectadas | Procesadas | Propiedades |
