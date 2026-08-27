@@ -25,11 +25,14 @@ from scripts.input_universe import (ENTRADAS, OBLIGATORIAS,  # noqa: E402
 # El universo analizado que produjo el write gate. Si cambia a proposito -un
 # rollout nuevo- se actualiza aca junto con la lista, y el cambio queda a la
 # vista en el diff en vez de aparecer como un numero distinto en un informe.
-UNIVERSO_ESPERADO = 174_955
+UNIVERSO_ESPERADO = 181_492
 
 # El conteo viejo, de cuando faltaban dos rollouts. Ningun artefacto puede
 # volver a este numero sin que alguien lo note.
 UNIVERSO_INCOMPLETO = 174_164
+
+# El universo antes de reanudar el backlog. Tampoco puede volver a este.
+UNIVERSO_SIN_BACKLOG = 174_955
 
 
 def test_las_dos_que_se_habian_perdido_estan_declaradas():
@@ -61,11 +64,13 @@ def test_la_suma_de_las_entradas_es_el_universo_analizado():
         "actualizar ENTRADAS y este numero juntos." % (total, UNIVERSO_ESPERADO))
 
 
-def test_el_universo_no_volvio_al_conteo_incompleto():
+def test_el_universo_no_volvio_a_ningun_conteo_viejo():
     total = sum(contar().values())
     assert total != UNIVERSO_INCOMPLETO, (
         "el universo volvio al conteo al que le faltaban FORMAS3_ROLLOUT y "
         "RESIDUAL_ROLLOUT")
+    assert total != UNIVERSO_SIN_BACKLOG, (
+        "el universo volvio al conteo previo a reanudar el backlog")
 
 
 def test_las_dos_recuperadas_aportan_propiedades_reales():
@@ -74,6 +79,8 @@ def test_las_dos_recuperadas_aportan_propiedades_reales():
     assert c["FORMAS3_ROLLOUT"] > 0
     assert c["RESIDUAL_ROLLOUT"] > 0
     assert c["FORMAS3_ROLLOUT"] + c["RESIDUAL_ROLLOUT"] == 791
+    # Y la que se sumo al reanudar el backlog.
+    assert c["BACKLOG_generico"] == 6537
 
 
 def test_cada_entrada_declara_sus_corridas():
