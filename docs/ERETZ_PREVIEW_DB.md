@@ -54,43 +54,52 @@ Dos decisiones sobre esos parámetros:
 No hay ningún secreto en ese archivo: la autorización vive en el flujo OAuth,
 no en el repositorio.
 
-### Completar la autorización
+### Estado: autorizado
 
-Requiere una sesión interactiva. Desde una terminal, en este worktree:
+El conector oficial de Supabase quedó autorizado desde la app de Claude el
+2026-08-27, por OAuth y sin PAT manual. El `.mcp.json` del repositorio sigue
+siendo la ruta alternativa para una sesión de terminal; no hizo falta.
 
-```bash
-claude
-```
+Con ese acceso se ejecutó el reconocimiento de sólo lectura que está más abajo.
+No se creó, modificó ni borró nada.
 
-y dentro, `/mcp` → seleccionar **supabase** → autorizar en el navegador.
+## Topología: ninguna opción cuesta cero
 
-## Topología: segundo proyecto, no branching
+**Corrección (2026-08-27, verificada por MCP).** Una versión anterior de este
+documento recomendaba "segundo proyecto Free, cuesta cero". Ese consejo se
+apoyaba en un supuesto sobre el plan que resultó falso, y se corrige acá.
 
-La preferencia inicial era branching. Los números la invierten.
+La organización `hztfazrsktpwgipbmtwb` está en **plan Pro**, no Free. Consultado
+el costo por la API, no por deducción:
 
 | | Branching | Segundo proyecto |
 | --- | --- | --- |
-| Plan | **Pro, US$25/mes** | Free |
-| Costo por unidad | **US$0,01344 por branch por hora** (~US$9,7/mes si queda encendido) | — |
-| Disponible en Free | **no** | sí, hasta **2 proyectos activos** por organización |
-| Aislamiento | branch dentro del mismo proyecto | **proyecto separado**: otro `project_ref`, otro host |
-| Datos iniciales | ninguno; se siembra | ninguno; se siembra |
+| Costo consultado | **US$0,01344 por hora** mientras existe | **US$10/mes recurrente** |
+| Equivalente mensual | ~US$9,7 si queda encendido; **~US$0,32/día** si se usa y se borra | US$10/mes hasta que se borre |
+| Aislamiento | branch dentro del mismo proyecto | proyecto separado: otro `project_ref`, otro host |
+| Se pausa por inactividad | no | no (en Pro) |
+| Recursos | equivalentes a producción | equivalentes a producción |
 
-**Recomendación: segundo proyecto.** Cuesta cero, y da *más* aislamiento que un
-branch —es otro proyecto entero, no una rama del que tiene el dato real—, que
-es exactamente lo que este trabajo necesita.
+En Free existe el límite de 2 proyectos activos y ese segundo proyecto sí sería
+gratuito, pero **esta organización no está en Free**, así que ese camino no
+aplica sin bajar de plan.
 
-Dos advertencias honestas sobre el plan Free, porque afectan el trabajo:
+Consecuencia directa: la condición del encargo —*"antes de cualquier creación
+confirmá que el segundo proyecto realmente cuesta USD 0"*— **no se cumple**, y
+por eso no se creó nada. Hace falta una autorización de costo explícita.
 
-1. Los proyectos gratuitos **se pausan por inactividad**. Para benchmarks
-   sostenidos hay que contar con reactivarlos.
-2. Los recursos del Free son menores que los de producción. Los tiempos
-   absolutos **no serán comparables** con los de la base real; lo que sí es
-   comparable, y es lo que importa acá, son los planes de ejecución y la
-   mejora relativa antes/después.
+**Recomendación, si se autoriza: branching.** Se invierte respecto de la
+recomendación anterior, y por una razón concreta: un branch se borra cuando el
+trabajo termina y deja de facturar, mientras que un segundo proyecto sigue
+costando US$10/mes hasta que alguien se acuerde de borrarlo. Para un uso
+acotado —bootstrap, ACL, gate, índices, benchmarks— el branch sale bastante
+menos de un dólar. Además corre con recursos equivalentes a producción, así que
+los tiempos absolutos **sí son comparables**, cosa que el Free no daba.
 
-Si más adelante se quiere medir con recursos equivalentes, ahí sí conviene
-discutir Pro. Hoy no hace falta.
+La contra honesta del branch: es una rama del proyecto que tiene el dato real,
+no un proyecto aparte. El aislamiento es menor. Por eso la guarda de destino
+(`db-target-guard.mjs`) sigue siendo obligatoria y no opcional: es lo que
+impide que una migración se aplique al `project_ref` equivocado.
 
 ## El esquema base no está en el repositorio
 
@@ -127,6 +136,93 @@ El paso 4 del orden de abajo cambia: antes de aplicar migraciones hay que
 **capturar la baseline del esquema desde el proyecto actual**, con acceso de sólo
 lectura, y versionarla sanitizada. Recién después el bootstrap es reproducible.
 
+## Línea base medida sobre producción (sólo lectura)
+
+Todo lo de esta sección se obtuvo con `SELECT` y `EXPLAIN`. Ninguna sentencia
+modificó nada. Sirve como referencia contra la cual comparar la Preview.
+
+### Entorno
+
+| | |
+| --- | --- |
+| Proyecto | `pggrvzyixyjkhfknpurg` ("inmolink"), us-east-1 |
+| PostgreSQL | 17.6.1.084, ACTIVE_HEALTHY |
+| Branches existentes | 0 |
+| Extensiones | postgis 3.3.7, pg_trgm 1.6, vector 0.8.0, pg_stat_statements 1.11 |
+| Disponibles sin instalar | `hypopg`, `index_advisor` — **no se instalaron**: sería DDL sobre producción |
+
+### Volumen
+
+| | |
+| --- | --- |
+| `propiedades` | **257.073** filas (coincide con la auditoría) |
+| con `estado='activa'` | 256.290 — el **99,7%** |
+| con coordenadas | 65.033 — el 25,3% |
+| Tamaño | 643 MB tabla + 142 MB índices |
+
+### El camino de conteo
+
+`EXPLAIN (ANALYZE, BUFFERS)` sobre lo que hace el frontend hoy:
+
+```
+Seq Scan on propiedades  (actual rows=256290 loops=1)
+  Filter: (estado = 'activa'::text)
+  Rows Removed by Filter: 783
+  Buffers: shared hit=5777 read=41389
+Execution Time: 1999.562 ms
+```
+
+Tres lecturas, y la tercera es la que cambia el plan de trabajo:
+
+1. **2,0 s son sólo de base.** El resto de los ~20 s documentados está en
+   transferir 256.290 filas a Node y filtrarlas ahí.
+2. **Lee de disco, no de caché**: 41.389 buffers leídos contra 5.777
+   acertados. Son ~368 MB por conteo.
+3. **Un índice sobre `estado` no puede arreglar esto, y ya existe.**
+   `idx_propiedades_estado` está creado y tiene 1.219 usos, pero el planner lo
+   descarta con razón: cuando el filtro deja pasar el 99,7% de las filas, el
+   Seq Scan es la opción correcta. Cualquier propuesta de "indexar `estado`"
+   está descartada por medición, no por opinión.
+
+### Los diez índices existentes
+
+`propiedades` ya tiene 10 índices, 142 MB. Los dos menos usados son candidatos
+a revisión —`idx_propiedades_precio_usd` (14 MB, 20 usos) y
+`idx_propiedades_unique_inmobiliaria_url_normalizada` (40 MB, 42 usos)—, aunque
+el segundo probablemente exista por su restricción de unicidad y no por
+lecturas, así que **no se toca sin confirmar eso primero**.
+
+### PostGIS está instalado y la tabla no lo usa
+
+`propiedades` **no tiene ninguna columna `geometry` ni `geography`**. Las
+coordenadas son numéricos sueltos con un btree parcial sobre
+`(latitud, longitud)`.
+
+Importa por dos motivos:
+
+- un btree sobre dos columnas independientes sirve poco para consultas por
+  bounding box o radio, que es lo que pide un mapa;
+- PostGIS carga el **P0 de ACL** —`anon` y `authenticated` con
+  INSERT/UPDATE/DELETE/TRUNCATE sobre `spatial_ref_sys`, `geography_columns` y
+  `geometry_columns`, confirmado vigente hoy: 24 de 24 privilegios— sin que la
+  tabla principal obtenga nada a cambio.
+
+No se propone desinstalar PostGIS: puede haber otras tablas que sí lo usen. Se
+deja anotado para decidirlo con datos en la Preview.
+
+### Lo que dice `pg_stat_statements`
+
+Las consultas más lentas de la base **no son del frontend**: son auditorías del
+pipeline de scraping, con medias de 27 a 91 segundos y picos de hasta 432 s.
+Ruido para este trabajo, pero vale saber que existen antes de leer cualquier
+métrica agregada de la base y atribuirla a la web.
+
+### Advisors de Supabase
+
+Sin hallazgos nuevos. Confirman lo ya documentado: 25 tablas con RLS activo y
+sin policy —casi todas backups, y sin policy el efecto es denegar todo— y las 3
+extensiones en `public`. Nada de esto sube de prioridad.
+
 ## Qué está preparado y espera
 
 Todo lo siguiente está escrito, testeado donde corresponde, y se ejecuta sin
@@ -144,7 +240,9 @@ rediseño en cuanto exista el `project_ref` de Preview:
 
 ## Orden de ejecución, cuando haya acceso
 
-1. Crear el proyecto de Preview y anotar su `project_ref`.
+0. **Autorizar el costo.** Ninguna de las dos opciones es gratuita en el plan
+   actual. Sin esta decisión el paso 1 no se ejecuta.
+1. Crear el branch (o el proyecto) de Preview y anotar su `project_ref`.
 2. Agregar `project_ref` al `.mcp.json` y quitar `read_only`.
 3. Declarar el destino: `ERETZ_DB_TARGET_EXPECT=<ref-preview>` y
    `ERETZ_DB_PRODUCTION_REF=pggrvzyixyjkhfknpurg`. La guarda rechaza el
