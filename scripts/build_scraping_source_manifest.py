@@ -57,7 +57,7 @@ AGENCIAS_PARA_SER_PORTAL = 3
 
 def host_de(url):
     import re
-    return re.sub(r"^https?://(www\\.)?", "", url or "").split("/")[0].lower()
+    return re.sub(r"^https?://(www\.)?", "", url or "").split("/")[0].lower()
 
 
 def leer(ruta: Path) -> list[dict]:
@@ -75,7 +75,8 @@ def leer(ruta: Path) -> list[dict]:
 
 
 def fila(cid: str, base: dict, res: dict | None, ent: dict,
-         web_kind: str | None = None, agencias_en_host: int = 1) -> dict:
+         web_kind: str | None = None, agencias_en_host: int = 1,
+         dominio_refutado: str | None = None) -> dict:
     """Una fila del manifest. `res` es lo resuelto en esta mision, si lo hubo."""
     r = res or {}
     estado = r.get("official_web_status") or base.get("status")
@@ -85,6 +86,16 @@ def fila(cid: str, base: dict, res: dict | None, ent: dict,
 
     # Dos formas de descubrir que ese sitio no es suyo: que alguien ya lo haya
     # clasificado, o que el host aloje a media docena de inmobiliarias mas.
+    # Una investigacion del padron ya probo que ESE sitio no era suyo. La
+    # correccion se habia aplicado al directorio de plataformas, pero el
+    # dominio seguia viniendo del directorio de identidad: la entidad volvia a
+    # la cola de scraping con la url ajena y se la leia otra vez.
+    refutado = bool(dominio_refutado and dominio
+                    and host_de(dominio) == host_de(dominio_refutado))
+    if refutado:
+        estado = "SEARCH_API_PENDING"
+        oficina = None
+        dominio = None
     es_portal = (web_kind in NO_SON_WEB_PROPIA
                  or agencias_en_host >= AGENCIAS_PARA_SER_PORTAL)
 
@@ -121,7 +132,7 @@ def fila(cid: str, base: dict, res: dict | None, ent: dict,
         # Falta buscar no es lo mismo que no existe.
         "needs_external_search": bool((
             r.get("needs_external_search")
-            if res else estado in PENDIENTE_BUSQUEDA) or es_portal),
+            if res else estado in PENDIENTE_BUSQUEDA) or es_portal or refutado),
         "ready_for_scraping": bool(
             not es_portal and estado in CON_WEB and dominio
             and (r.get("scrapeability_status") or base.get("scrapeability_status"))
@@ -129,6 +140,7 @@ def fila(cid: str, base: dict, res: dict | None, ent: dict,
         "web_kind": web_kind,
         "agencias_en_el_host": agencias_en_host,
         "perfil_en_portal_ajeno": es_portal,
+        "dominio_refutado": dominio_refutado if refutado else None,
         "manifest_version": MANIFEST_VERSION,
     }
 
@@ -168,7 +180,8 @@ def main() -> int:
         return len(agencias_por_host[host_de(d)]) if d else 1
 
     filas = [fila(cid, base, res.get(cid), ents.get(cid) or {},
-                  (plataformas.get(cid) or {}).get("web_kind"), cuantas(cid))
+                  (plataformas.get(cid) or {}).get("web_kind"), cuantas(cid),
+                  (plataformas.get(cid) or {}).get("domain_mal_atribuido"))
              for cid, base in sorted(awd.items())]
 
     salida = Path(a.salida)

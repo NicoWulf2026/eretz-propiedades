@@ -34,6 +34,7 @@ NO_ES_FICHA = "NO_ES_UNA_FICHA"
 CROSS_AGENCIA = "CROSS_AGENCY_DUPLICATE"
 WEB_AJENA = "WEB_NO_PROPIA"
 DUPLICADA = "DUPLICADO_EN_ENTRADA"
+SITIO_AJENO = "SITIO_PROBADO_AJENO"
 
 # Un perfil en un portal no es la web de la inmobiliaria, y su catalogo no es su
 # inventario: choza.ai figura como web oficial de 36 agencias distintas. Escribir
@@ -80,6 +81,10 @@ LARGO_MAXIMO_ID = 120
 # lleva un numero largo. Sirve para no confundir la pagina de resultados con la
 # ficha que cuelga de ella.
 RE_TERMINA_EN_ID = re.compile(r"/[^/]*\d{4,}[^/]*/?$")
+
+
+def _host(u):
+    return re.sub(r"^https?://(www[.])?", "", u or "").split("/")[0].lower()
 
 
 def motivo_rechazo(p: dict) -> str | None:
@@ -163,6 +168,16 @@ def main() -> int:
     # reclassify_portal_profiles.py contando cuantas inmobiliarias cuelgan del
     # mismo host, sin depender de conocer el nombre de cada portal.
     tipo_de_web = {}
+
+    # Sitios que una investigacion del padron probo que NO son de quien los
+    # reclamaba. La correccion vivia solo en el directorio de plataformas y la
+    # entidad seguia scrapeando la url ajena: 5 propiedades de otra
+    # inmobiliaria entraron al write set bajo su id.
+    no_dueno = set()
+    for d in leer(Path(a.directorio_plataformas)):
+        mal = d.get("domain_mal_atribuido")
+        if mal and d.get("canonical_agency_id"):
+            no_dueno.add((d["canonical_agency_id"], _host(mal)))
     for d in leer(Path(a.directorio_plataformas)):
         tipo_de_web[d["canonical_agency_id"]] = d.get("web_kind")
 
@@ -197,6 +212,10 @@ def main() -> int:
         kind = tipo_de_web.get(p.get("canonical_agency_id"))
         if kind in NO_SON_WEB_PROPIA:
             ajenas.append({**p, "db_write_status": WEB_AJENA, "web_kind": kind})
+            continue
+        if (p.get("canonical_agency_id"), _host(p.get("source_url"))) in no_dueno:
+            ajenas.append({**p, "db_write_status": SITIO_AJENO,
+                           "web_kind": SITIO_AJENO})
             continue
         motivo = motivo_rechazo(p)
         if motivo:

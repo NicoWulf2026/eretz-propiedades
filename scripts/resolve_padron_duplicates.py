@@ -291,8 +291,25 @@ def main() -> int:
                                  (awd.get(dueno["stable_id"]) or {}).get("eretz_id"),
                                  dueno.get("nombre_original")))
 
-    Path(a.salida).write_text(
-        json.dumps({"casos": informes, "resolution_version": VERSION,
+    # Un caso resuelto sale del manifiesto de pendientes, asi que la corrida
+    # siguiente ya no lo ve. Si el artefacto se sobrescribe, la decision y su
+    # evidencia desaparecen: queda el efecto -la url corregida- sin el registro
+    # de por que. Se conservan los casos anteriores y se pisan solo los que
+    # esta corrida volvio a mirar.
+    salida = Path(a.salida)
+    previos = {}
+    if salida.exists():
+        try:
+            for c in json.loads(salida.read_text(encoding="utf-8")).get("casos", []):
+                previos[c.get("host")] = c
+        except ValueError:
+            pass
+    for c in informes:
+        previos[c["host"]] = c
+    salida.write_text(
+        json.dumps({"casos": sorted(previos.values(), key=lambda c: c["host"]),
+                    "resueltos_en_esta_corrida": [c["host"] for c in informes],
+                    "resolution_version": VERSION,
                     "checked_at": time.strftime("%Y-%m-%dT%H:%M:%S")},
                    ensure_ascii=False, indent=2), encoding="utf-8")
 

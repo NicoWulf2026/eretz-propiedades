@@ -162,3 +162,41 @@ def test_sin_informacion_de_plataforma_se_comporta_como_antes():
                               "scrapeability_status": "SCRAPE_SOURCE_READY"}, {})
     assert f["ready_for_scraping"] is True
     assert f["perfil_en_portal_ajeno"] is False
+
+
+def test_un_dominio_probado_ajeno_no_vuelve_a_la_cola():
+    """La correccion de Bustamante se aplico al directorio de plataformas, pero
+    el dominio seguia viniendo del directorio de identidad. La entidad volvia a
+    quedar `ready_for_scraping` con la url ajena, se la scrapeaba otra vez, y 5
+    propiedades de otra inmobiliaria entraron al write set bajo su id.
+
+    Quitarle el sitio no prueba que no tenga web propia: vuelve a la cola de
+    busqueda, no a una conclusion."""
+    f = fila("ag-651", base(), {"official_web_status": "OFFICIAL_WEB_HIGH_CONFIDENCE",
+                                "discovered_domain": "https://bustamantepropiedades.com/",
+                                "scrapeability_status": "SCRAPE_SOURCE_READY"}, {},
+             "SEARCH_API_PENDING", 1,
+             "https://www.bustamantepropiedades.com/")
+    assert f["ready_for_scraping"] is False
+    assert f["official_domain"] is None
+    assert f["needs_external_search"] is True
+    assert f["identity_status"] == "SEARCH_API_PENDING"
+
+
+def test_el_host_refutado_se_compara_normalizado():
+    """El sitio aparece con www en un artefacto y sin www en el otro."""
+    f = fila("ag-1", base(), {"official_web_status": "OFFICIAL_WEB_VERIFIED",
+                              "discovered_domain": "https://www.alfa.com.ar/p/1-casa",
+                              "scrapeability_status": "SCRAPE_SOURCE_READY"}, {},
+             None, 1, "https://alfa.com.ar/")
+    assert f["official_domain"] is None
+
+
+def test_una_refutacion_sobre_otro_host_no_toca_este_dominio():
+    """Que se le haya quitado un sitio no la deja sin ninguno."""
+    f = fila("ag-1", base(), {"official_web_status": "OFFICIAL_WEB_VERIFIED",
+                              "discovered_domain": "https://alfa.com.ar",
+                              "scrapeability_status": "SCRAPE_SOURCE_READY"}, {},
+             "OFFICIAL_WEB", 1, "https://otrositio.com/")
+    assert f["official_domain"] == "https://alfa.com.ar"
+    assert f["ready_for_scraping"] is True
