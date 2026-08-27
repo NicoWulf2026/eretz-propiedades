@@ -9,15 +9,15 @@
 
 # PUNTO DE REANUDACIÓN — leer esto primero
 
-**Sesión:** 2026-08-26 · misión de cierre de scraping + reconciliación final.
+**Sesión:** 2026-08-26 · cierre de scraping + reconciliación final. **Completa.**
 
 | Qué | Valor |
 |---|---|
 | Rama | `feat/roomix-agency-coverage` |
-| Último commit | `528256c200` |
+| Último commit | `6ea4d711da` |
 | Push / merge / Production | **no**, y no corresponde |
-| Universo analizado | **174.955** (suma de las 13 entradas) |
-| Write set | **163.061** |
+| Universo analizado | **187.936** (suma de las 18 entradas) |
+| Write set | **172.207** |
 | Reconciliación | cierra: ninguna propiedad sin categoría |
 
 ## La regla que más caro salió: el universo de entradas
@@ -35,7 +35,7 @@ corta antes de procesar.
 python scripts/write_eligibility.py
 ```
 
-Sin argumentos usa las 13 entradas canónicas. Para verificar la igualdad:
+Sin argumentos usa las 18 entradas canónicas. Para verificar la igualdad:
 
 ```bash
 python -m pytest tests/test_input_universe.py -q
@@ -112,6 +112,49 @@ pendientes sobre un censo viejo mide el universo de otro momento.
 **Cualquier rollout nuevo que produzca propiedades hay que agregarlo a
 `input_universe.py` junto con el total esperado en
 `tests/test_input_universe.py`.** Si no, el universo deja de cerrar.
+
+
+## Lo que esta misión sumó
+
+| | antes | después |
+|---|---|---|
+| Universo analizado | 174.955 | **187.936** |
+| Write set | 159.858 | **172.207** |
+| Fuentes con inventario | 1.285 | **1.480** |
+| `SAME_AGENCY_DUPLICATED_IN_ERETZ` | 66 | **9** (un caso, bloqueado por credencial) |
+
+Seis defectos que **no daban error**, sólo menos datos:
+
+1. El universo de entradas vivía en tres lugares distintos y el comando
+   documentado omitía dos rollouts: −791 propiedades, sin una línea de error.
+2. El descarte por hash repetido usaba un `continue` pelado: 428 propiedades
+   fuera de todo recuento.
+3. `mission_report` armaba el universo adivinando carpetas: describía un
+   universo que nunca existió.
+4. El canary entraba como `postgres`. Fallaba por contraseña vencida, no por
+   diseño.
+5. 528 "fuentes listas" apuntaban a un portal ajeno.
+6. `_procesar_con()` leía `presupuesto` sin recibirlo. **Reventaba sólo en las
+   fuentes que funcionaban** — las que no, salían antes por otra rama. Una
+   corrida entera terminaba sin errores, con cero propiedades y reconciliando.
+
+## Idempotencia — medida, no supuesta
+
+`RECUPERACION_tokko` corrida 2, mismo esquema de checkpoint y mismo código:
+
+```
+SIN_CAMBIOS 5.933 · MODIFICADA 50 · NUEVA 3 · potential_inactive 0
+```
+
+99,1% sin cambios. El baseline se reconstruyó **desde el archivo corregido**:
+desde el original, las guardas de coherencia vuelven como MODIFICADA y
+contaminan justo lo que se está midiendo.
+
+## Bajas
+
+1.565 ausencias comparables, **0 se desactivarían**, racha máxima 1. Las
+110.368 de las corridas 2 de Tokko y WordPress quedan excluidas: se anotaron
+con la clave vieja del checkpoint y no se pueden cruzar con nada de hoy.
 
 ## Bloqueos externos — acción humana exacta
 
