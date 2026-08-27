@@ -65,6 +65,82 @@ CLIENTE = re.compile(r"__NEXT_DATA__|/_next/|__NUXT__|/_nuxt/|data-reactroot|"
 JSON_EMBEBIDO = re.compile(r"application/ld\+json|window\.__INITIAL_STATE__|"
                            r"__NEXT_DATA__", re.I)
 
+# Que la etiqueta este no significa que adentro haya inventario. Casi todo sitio
+# moderno trae un bloque application/ld+json con el marcado de la organizacion
+# -RealEstateAgent, WebSite, LocalBusiness- y ninguna propiedad. Clasificar eso
+# como JSON_EMBEBIDO promete un mecanismo que no existe: la fuente se manda a
+# una corrida que no puede encontrar nada, y de paso figura como recuperable.
+#
+# Estos son los tipos que SI describen un inmueble publicado.
+TIPOS_DE_FICHA = ("realestatelisting", "singlefamilyresidence", "apartment",
+                  "house", "residence", "accommodation", "offer", "product",
+                  "place")
+
+# Tipos que describen a la inmobiliaria o al sitio, no a lo que publica.
+TIPOS_DE_LA_CASA = ("realestateagent", "localbusiness", "organization",
+                    "website", "webpage", "breadcrumblist", "searchaction",
+                    "person", "logo", "imageobject")
+
+
+# Lo que hay pegado a un numero para que ese numero NO sea un inventario.
+ANTES_NO_ES_INVENTARIO = re.compile(
+    r"(\+\s*$|\d\s*$|[(]\s*$|"
+    r"(?:tel|telefono|cel|celular|whatsapp|wsp|movil|fax|cuit|cuil|"
+    r"matricula|mat\.|cmcpsi|cucicba)\W{0,12}$)", re.I)
+
+
+def _inventario_declarado(texto: str):
+    """Cuantas propiedades dice publicar, cuando de verdad lo dice.
+
+    El numero sirve para priorizar, asi que uno inventado es peor que ninguno.
+    Dos formas de equivocarse que aparecieron en fuentes reales:
+
+      "+54 9 294 469 7556"        -> 7.556 propiedades
+      "+500 Propiedades gestionadas" -> 500, pero es una frase de marketing,
+                                        no un contador de listado
+
+    El primero es un telefono partido; el segundo, un "mas de 500" que no dice
+    cuantas hay publicadas hoy. Los dos se reconocen por lo que tienen delante:
+    un signo mas, otro digito, o una palabra de contacto.
+    """
+    for m in re.finditer(r"(\d[\d.]*)\s*(?:Resultados|propiedades|inmuebles)",
+                         texto or "", re.I):
+        if ANTES_NO_ES_INVENTARIO.search((texto or "")[max(0, m.start() - 40):m.start()]):
+            continue
+        crudo = m.group(1).replace(".", "")
+        if not crudo.isdigit():
+            continue
+        n = int(crudo)
+        if n and n <= TOPE_INVENTARIO:
+            return n
+    return None
+
+
+def _json_con_fichas(html: str) -> bool:
+    """Si el JSON embebido describe inmuebles, no a la inmobiliaria."""
+    encontrados = 0
+    for m in re.finditer(r"<script[^>]*application/ld\+json[^>]*>(.*?)</script>",
+                         html or "", re.S | re.I):
+        try:
+            obj = json.loads(m.group(1).strip())
+        except Exception:
+            continue
+        pila = [obj]
+        while pila:
+            x = pila.pop()
+            if isinstance(x, list):
+                pila.extend(x)
+            elif isinstance(x, dict):
+                t = x.get("@type")
+                for t in (t if isinstance(t, list) else [t]):
+                    if isinstance(t, str) and t.lower() in TIPOS_DE_FICHA:
+                        encontrados += 1
+                pila.extend(v for v in x.values()
+                            if isinstance(v, (list, dict)))
+    # Uno solo puede ser la ficha destacada de la portada; dos o mas ya es un
+    # listado.
+    return encontrados >= 2
+
 RUTAS = ("/propiedades", "/inmuebles", "/venta", "/propiedades-en-venta",
          "/emprendimientos", "/buscar")
 
@@ -137,17 +213,16 @@ def analizar(f: dict, lim: LimitadorDeRitmo) -> dict:
             out["ruta_listado"] = ruta
     out["fichas_html"] = len(fichas)
 
-    out["json_embebido"] = bool(JSON_EMBEBIDO.search(html))
+    out["json_embebido"] = bool(JSON_EMBEBIDO.search(html)) and _json_con_fichas(html)
+    out["json_solo_de_la_casa"] = (bool(JSON_EMBEBIDO.search(html))
+                                   and not out["json_embebido"])
     out["renderiza_cliente"] = bool(CLIENTE.search(html))
     texto = re.sub(r"<[^>]+>", " ", html)
     # El numero declarado sirve para PRIORIZAR, asi que un valor absurdo es
     # peor que ninguno. Sin tope entraban telefonos y precios pegados a la
     # palabra: "54 11 6953 7580" daba 541.169.537.580 propiedades, y catorce
     # fuentes sumaban mas inventario que todo el pais.
-    m = re.search(r"(\d[\d.]*)\s*(?:Resultados|propiedades|inmuebles)", texto, re.I)
-    crudo = m.group(1).replace(".", "") if m else ""
-    n = int(crudo) if crudo.isdigit() else None
-    out["declared_inventory"] = n if n and n <= TOPE_INVENTARIO else None
+    out["declared_inventory"] = _inventario_declarado(texto)
 
     # --- mecanismo, de mas barato a mas caro -------------------------------
     # `connector_candidato` y `official_url` se emiten con esos nombres a
