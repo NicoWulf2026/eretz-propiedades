@@ -116,8 +116,11 @@ def test_los_dos_casos_quedaron_resueltos_con_evidencia():
         pytest.skip("todavia no se genero la resolucion")
     d = json.loads(RESOLUCION.read_text(encoding="utf-8"))
     por_host = {c["host"]: c for c in d["casos"]}
+    # El registro acumula: un caso resuelto sale del manifiesto de pendientes y
+    # la corrida siguiente ya no lo ve, pero la decision no se borra.
     assert {"salernoinmobiliaria.com", "zaratepropiedades.com"} <= set(por_host)
-    for host, caso in por_host.items():
+    for host in ("salernoinmobiliaria.com", "zaratepropiedades.com"):
+        caso = por_host[host]
         assert caso["veredicto"] == DEMOSTRADO, host
         assert caso["dueno"] and caso["dueno"]["eretz_id"], host
         assert caso["sin_derecho_sobre_el_sitio"], host

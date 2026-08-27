@@ -14,10 +14,10 @@
 | Qué | Valor |
 |---|---|
 | Rama | `feat/roomix-agency-coverage` |
-| Último commit | `6ea4d711da` |
+| Último commit | `c6460b4837` |
 | Push / merge / Production | **no**, y no corresponde |
 | Universo analizado | **187.936** (suma de las 18 entradas) |
-| Write set | **172.207** |
+| Write set | **172.202** |
 | Reconciliación | cierra: ninguna propiedad sin categoría |
 
 ## La regla que más caro salió: el universo de entradas
@@ -99,6 +99,25 @@ Dos homónimas dan la misma señal que una empresa duplicada. Por eso el
 clasificador consulta la evidencia verificada del directorio de plataformas
 antes que el parecido del nombre.
 
+
+## Una correccion que vive en un solo artefacto no es una correccion
+
+La de Bustamante se aplicó al directorio de plataformas. El manifest toma el
+dominio del directorio de **identidad**, que seguía teniendo
+`bustamantepropiedades.com` para 651. Volvió a quedar lista para scraping con
+la url ajena, se la leyó otra vez, y 5 propiedades de otra inmobiliaria
+entraron al write set bajo su id.
+
+Ahora la refutación se aplica en tres puntos: el manifest deja de ofrecer el
+dominio, el write gate rechaza el par (agencia, host) con estado
+`SITIO_PROBADO_AJENO`, y la resolución de duplicados conserva el histórico en
+vez de pisarlo.
+
+Escondido detrás: `re.sub(r"^https?://(www\.)?", ...)` — doble backslash en un
+raw string, no coincide nunca. `host_de` jamás quitó el `www`, así que la
+detección estructural de portales contaba `www.x.com` y `x.com` como hosts
+distintos. Los otros once lugares del repo que normalizan host son correctos.
+
 ## Backlog de scraping
 
 ```bash
@@ -119,7 +138,7 @@ pendientes sobre un censo viejo mide el universo de otro momento.
 | | antes | después |
 |---|---|---|
 | Universo analizado | 174.955 | **187.936** |
-| Write set | 159.858 | **172.207** |
+| Write set | 159.858 | **172.202** |
 | Fuentes con inventario | 1.285 | **1.480** |
 | `SAME_AGENCY_DUPLICATED_IN_ERETZ` | 66 | **9** (un caso, bloqueado por credencial) |
 

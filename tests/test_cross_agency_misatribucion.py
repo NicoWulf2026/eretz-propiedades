@@ -67,18 +67,59 @@ def test_el_host_se_compara_normalizado():
     assert host("https://bustamantepropiedades.com/") == DOMINIO
 
 
-def test_las_3137_dejaron_de_estar_retenidas():
-    if not RESOLUCION.exists():
-        import pytest
-        pytest.skip("todavia no se regenero la resolucion")
-    filas = [json.loads(l) for l in RESOLUCION.open(encoding="utf-8")
-             if DOMINIO in l]
-    assert filas, "el dominio tiene que seguir apareciendo en la resolucion"
-    assert all(f["categoria"] == CLARO for f in filas)
-    assert all(f["liberable"] for f in filas)
-    # Adjudicadas a la que opera en Tigre/Nordelta, que es la que el sitio nombra.
-    assert {f["eretz_id_owner"] for f in filas} == {1028}
-    # Y el reclamante refutado queda asentado, no borrado.
-    assert all(f["descartados_por_evidencia"] == ["roomix:bustamante inmobiliaria"]
-               for f in filas)
-    assert not any(f["categoria"] == SAME_AGENCY for f in filas)
+def test_las_3137_quedaron_del_lado_correcto():
+    """Lo que importa no es en que etapa se resuelve, sino donde terminan.
+
+    Al principio se resolvian en la etapa cross-agency: las dos fichas
+    reclamaban las mismas urls y el desempate las adjudicaba a 1028. Despues el
+    write gate paso a rechazar antes toda propiedad cuyo par (agencia, host)
+    figura como atribucion refutada, asi que las copias de 651 ya no llegan a
+    disputar nada. Es mas preciso: no estan en disputa, ya se sabe de quien no
+    son.
+
+    Por eso este test mira el write set y no la resolucion intermedia. La
+    garantia es la misma y no depende de por donde pase.
+    """
+    import json as _json
+    ws = Path(r"D:\INMO CAPITAL\DB_WRITE_ELIGIBLE.jsonl")
+    if not ws.exists():
+        pytest.skip("todavia no se genero el write set")
+    por_id = {}
+    with ws.open(encoding="utf-8", errors="replace") as fh:
+        for linea in fh:
+            if DOMINIO not in linea:
+                continue
+            r = _json.loads(linea)
+            por_id[r.get("inmobiliaria_id")] = por_id.get(r.get("inmobiliaria_id"), 0) + 1
+    assert por_id == {1028: 3137}, por_id
+
+
+def test_a_la_desplazada_no_le_queda_ni_una():
+    """651 no tiene que aparecer con ninguna propiedad de ese sitio, ni una."""
+    import json as _json
+    ws = Path(r"D:\INMO CAPITAL\DB_WRITE_ELIGIBLE.jsonl")
+    if not ws.exists():
+        pytest.skip("todavia no se genero el write set")
+    with ws.open(encoding="utf-8", errors="replace") as fh:
+        for linea in fh:
+            if DOMINIO in linea:
+                r = _json.loads(linea)
+                assert r.get("canonical_agency_id") != "roomix:bustamante inmobiliaria"
+
+
+def test_lo_rechazado_queda_documentado_con_su_motivo():
+    """No se descarta en silencio: queda con estado propio y su agencia."""
+    import json as _json
+    ruta = Path(r"D:\INMO CAPITAL\WEB_NO_PROPIA.jsonl")
+    if not ruta.exists():
+        pytest.skip("todavia no se genero el artefacto")
+    n = 0
+    with ruta.open(encoding="utf-8", errors="replace") as fh:
+        for linea in fh:
+            if DOMINIO not in linea:
+                continue
+            r = _json.loads(linea)
+            if r.get("canonical_agency_id") == "roomix:bustamante inmobiliaria":
+                assert r.get("db_write_status") == "SITIO_PROBADO_AJENO"
+                n += 1
+    assert n > 0, "las copias refutadas tienen que quedar registradas"
