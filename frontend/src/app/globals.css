@@ -2613,7 +2613,7 @@ nav[aria-label="Paginación"] { padding-block: .5rem 1.5rem; }
 .detail-fact-groups h3 { margin-block-end: .5rem; color: var(--ink-2); font-size: var(--text-sm); font-weight: 700; }
 .detail-fact-groups dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
 .detail-fact-groups dl > div { border-radius: var(--radius-sm); background: var(--surface-2); padding: .75rem; }
-.detail-fact-groups dt { color: var(--ink-4); font-size: var(--text-xs); }
+.detail-fact-groups dt { color: var(--ink-3); font-size: var(--text-xs); }
 .detail-fact-groups dd { margin-block-start: .15rem; color: var(--ink); font-size: var(--text-sm); font-weight: 700; }
 .detail-amenities { display: flex; flex-wrap: wrap; gap: .5rem; margin-block-start: 1rem; }
 .detail-amenities li { border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--surface-2); padding: .4rem .7rem; color: var(--ink-2); font-size: var(--text-sm); }
