@@ -23,6 +23,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.resolve_cross_agency import (CLARO, SAME_AGENCY,  # noqa: E402
