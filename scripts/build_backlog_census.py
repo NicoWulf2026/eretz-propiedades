@@ -54,6 +54,33 @@ def leer(ruta: Path):
                 continue
 
 
+def base_de_descubrimiento(url: str) -> str:
+    """La raiz del sitio, no la ficha que quedo guardada como "web oficial".
+
+    La identidad de varias fuentes se demostro mirando una ficha concreta
+    -acinpropiedades.com.ar/p/8093032-Departamento-...- y esa url quedo como su
+    dominio. Sirve para probar de quien es el sitio; no sirve como punto de
+    partida para descubrir el listado, porque el connector arranca desde ahi y
+    no encuentra nada. De 623 fuentes que fallaron, 68 tenian una ficha por
+    base.
+
+    Se normaliza solo cuando la ruta tiene profundidad de ficha. La pagina de
+    una oficina dentro de su propia red -century21.com.ar/oficina/33- SI es su
+    punto de partida y no se toca.
+    """
+    import re
+    m = re.match(r"^(https?)://([^/]+)(/.*)?$", url or "")
+    if not m:
+        return url
+    esquema, host, camino = m.group(1), m.group(2), m.group(3) or "/"
+    if re.search(r"/oficina[_/-]", camino, re.I):
+        return url
+    partes = [x for x in camino.split("/") if x]
+    if len(partes) < 2:
+        return url
+    return "%s://%s" % (esquema, host)
+
+
 def connector_de(tec: dict) -> tuple:
     """(connector, por_que). Sin mapa, generico: probar es barato."""
     if not tec:
@@ -104,7 +131,8 @@ def main() -> int:
         filas.append({
             "canonical_agency_id": cid,
             "agency_name": r.get("canonical_name"),
-            "official_url": r.get("official_domain"),
+            "official_url": base_de_descubrimiento(r.get("official_domain")),
+            "url_de_identidad": r.get("official_domain"),
             "connector_candidato": conn,
             "clasificacion_nueva": "BACKLOG_SIN_INVENTARIO",
             "eretz_id": r.get("eretz_id"),
