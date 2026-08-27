@@ -22,6 +22,9 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from scripts.input_universe import rutas  # noqa: E402
+
 CENSUS_VERSION = "backlog_census_v1"
 
 # Que connector sabe leer cada plataforma. Lo que no figura va a generico.
@@ -113,9 +116,32 @@ def main() -> int:
         if r.get("ready_for_scraping") and r.get("official_domain"):
             listas[r["canonical_agency_id"]] = r
 
+    # "Ya la leimos" no es lo mismo que "sus propiedades entraron al write
+    # set". Una agencia cuyas propiedades fueron todas a CROSS_AGENCY_DUPLICATES
+    # -porque otra reclama las mismas urls- no tiene ni una fila elegible, y
+    # mirando solo el write set parece no haberse leido nunca. Volvia al backlog
+    # en cada ronda y se la scrapeaba de nuevo, indefinidamente: cuatro lecturas
+    # del mismo sitio en dos rondas, y cero propiedades nuevas las dos veces.
+    #
+    # La pregunta es si la fuente ya se leyo, y eso se responde con las entradas
+    # del universo, que son exactamente lo que se leyo.
     con_inventario = set()
-    for p in leer(raiz / "DB_WRITE_ELIGIBLE.jsonl"):
-        con_inventario.add(p.get("canonical_agency_id"))
+    for ruta in rutas(raiz):
+        for p in leer(ruta):
+            cid = p.get("canonical_agency_id")
+            if cid:
+                con_inventario.add(cid)
+
+    # Y lo que se intento aunque no diera nada. Un connector que ya se probo
+    # sobre esta fuente y no reconocio el sitio no va a reconocerlo la proxima:
+    # reintentarlo es repetir el mismo pedido esperando otro resultado, y el
+    # pedido lo paga el sitio de la inmobiliaria.
+    intentos = set()
+    for inv in sorted(raiz.glob("*/source_inventory_run*.jsonl")):
+        for r in leer(inv):
+            cid, conn = r.get("canonical_agency_id"), r.get("connector")
+            if cid and conn:
+                intentos.add((cid, conn))
 
     tec = {}
     for t in leer(dd / "scrape_source_technology_map.jsonl"):
@@ -123,11 +149,14 @@ def main() -> int:
         if cid:
             tec[cid] = t
 
-    filas = []
+    filas, ya_intentadas = [], 0
     for cid, r in sorted(listas.items()):
         if cid in con_inventario:
             continue
         conn, porque = connector_de(tec.get(cid))
+        if (cid, conn) in intentos:
+            ya_intentadas += 1
+            continue
         filas.append({
             "canonical_agency_id": cid,
             "agency_name": r.get("canonical_name"),
@@ -168,9 +197,10 @@ def main() -> int:
 
     print("### BACKLOG DE SCRAPING ###")
     print("  fuentes listas para leer:      %d" % len(listas))
-    print("  ya aportaron inventario:       %d"
+    print("  ya leidas en alguna corrida:   %d"
           % len(listas.keys() & con_inventario))
-    print("  BACKLOG (listas sin leer):     %d" % len(filas))
+    print("  ya intentadas con ese connector:%d" % ya_intentadas)
+    print("  BACKLOG (nunca probadas asi):  %d" % len(filas))
     print()
     print("  por connector:")
     for k, v in Counter(f["connector_candidato"] for f in filas).most_common():
