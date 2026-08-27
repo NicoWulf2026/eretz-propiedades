@@ -14,9 +14,9 @@
 | Qué | Valor |
 |---|---|
 | Rama | `feat/roomix-agency-coverage` |
-| Último commit | `c6460b4837` |
+| Último commit | `b13fa37438` |
 | Push / merge / Production | **no**, y no corresponde |
-| Universo analizado | **187.936** (suma de las 18 entradas) |
+| Universo analizado | **189.159** (suma de las 20 entradas) |
 | Write set | **172.202** |
 | Reconciliación | cierra: ninguna propiedad sin categoría |
 
@@ -35,7 +35,7 @@ corta antes de procesar.
 python scripts/write_eligibility.py
 ```
 
-Sin argumentos usa las 18 entradas canónicas. Para verificar la igualdad:
+Sin argumentos usa las 20 entradas canónicas. Para verificar la igualdad:
 
 ```bash
 python -m pytest tests/test_input_universe.py -q
@@ -174,6 +174,56 @@ contaminan justo lo que se está midiendo.
 1.565 ausencias comparables, **0 se desactivarían**, racha máxima 1. Las
 110.368 de las corridas 2 de Tokko y WordPress quedan excluidas: se anotaron
 con la clave vieja del checkpoint y no se pueden cruzar con nada de hoy.
+
+
+## El backlog está en cero, y el bucle que lo mantenía vivo, cerrado
+
+El backlog definía "ya tiene inventario" como *aparece en `DB_WRITE_ELIGIBLE`*.
+Una agencia cuyas propiedades fueron todas a `CROSS_AGENCY_DUPLICATES` no tiene
+ni una fila elegible, así que parecía no haberse leído nunca y **volvía en cada
+ronda**. `grupoplatino.com.ar` quedó scrapeado cuatro veces, y las dos rondas
+produjeron cero propiedades nuevas.
+
+Dos criterios distintos, y la diferencia importa:
+
+- *"¿ya la leímos?"* se responde con **las entradas del universo**, que son lo
+  que se leyó — no con el write set, que es lo que sobrevivió;
+- una fuente ya intentada con ese connector **no se reintenta**. El pedido lo
+  paga el sitio de la inmobiliaria.
+
+```
+backlog  605 -> 547 -> 1
+```
+
+De 2.010 listas: 1.463 leídas, 546 intentadas sin éxito, 1 nunca probada (se
+corrió: `VARIANTE_NO_SOPORTADA`, cero propiedades).
+
+## Idempotencia por connector
+
+| connector | comparables | SIN_CAMBIOS |
+|---|---|---|
+| tokko | 5.986 propiedades / 99 fuentes | **99,1%** |
+| generico | 1.371 propiedades / 25 fuentes | **90,3%** |
+
+La del genérico es **parcial**: el censo se estrechó entre corridas, así que la
+segunda leyó 605 de las 740 fuentes originales. Por eso **`BACKLOG_generico`
+sigue apuntando a `run1`**: adoptar `run2` perdería las 5.155 propiedades de las
+89 fuentes que no volvió a visitar.
+
+El 9% modificado del genérico es casi todo diferencias en la lista de imágenes,
+no de contenido.
+
+## Un caso que conviene no volver a discutir
+
+BTS Propiedades entregó 13 fichas en una corrida y 3 en la siguiente. El
+solapamiento dio 23%, la enumeración quedó **no comparable**, y el contador de
+ausencias de sus 10 faltantes se quedó en **cero**: ninguna podía llegar a baja.
+Eso funcionaba.
+
+Lo que engañaba era el renglón: en observación se reescribían todas las
+ausencias como `POTENTIAL_INACTIVE`. Ahora conserva
+`SIN_EVIDENCIA_ENUMERACION_NO_COMPARABLE`. Un artefacto que dice de más es un
+problema aunque el código haga lo correcto.
 
 ## Bloqueos externos — acción humana exacta
 
