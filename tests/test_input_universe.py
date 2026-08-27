@@ -25,7 +25,7 @@ from scripts.input_universe import (ENTRADAS, OBLIGATORIAS,  # noqa: E402
 # El universo analizado que produjo el write gate. Si cambia a proposito -un
 # rollout nuevo- se actualiza aca junto con la lista, y el cambio queda a la
 # vista en el diff en vez de aparecer como un numero distinto en un informe.
-UNIVERSO_ESPERADO = 187_933
+UNIVERSO_ESPERADO = 187_936
 
 # El conteo viejo, de cuando faltaban dos rollouts. Ningun artefacto puede
 # volver a este numero sin que alguien lo note.
@@ -87,7 +87,7 @@ def test_las_dos_recuperadas_aportan_propiedades_reales():
     # Y la que se sumo al reanudar el backlog.
     assert c["BACKLOG_generico"] == 6537
     # Y las que se recuperaron reclasificando por mecanismo.
-    assert c["RECUPERACION_tokko"] == 5983
+    assert c["RECUPERACION_tokko"] == 5986
 
 
 def test_cada_entrada_declara_sus_corridas():

@@ -47,7 +47,7 @@ ENTRADAS = (
     ("FORMAS3_ROLLOUT",     "properties_run1.coherente.jsonl",        "generico"),
     ("RESIDUAL_ROLLOUT",    "properties_run1.coherente.jsonl",        "generico"),
     ("BACKLOG_generico",    "properties_run1.coherente.jsonl",        "generico"),
-    ("RECUPERACION_tokko",     "properties_run1.coherente.jsonl",     "tokko"),
+    ("RECUPERACION_tokko",     "properties_run2.coherente.jsonl",     "tokko"),
     ("RECUPERACION_wordpress", "properties_run1.coherente.jsonl",     "wordpress"),
     ("RECUPERACION_generico",  "properties_run1.coherente.jsonl",     "generico"),
     ("RECUPERACION_wasi",      "properties_run1.coherente.jsonl",     "wasi"),
