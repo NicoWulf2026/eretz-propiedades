@@ -92,6 +92,41 @@ Dos advertencias honestas sobre el plan Free, porque afectan el trabajo:
 Si más adelante se quiere medir con recursos equivalentes, ahí sí conviene
 discutir Pro. Hoy no hace falta.
 
+## El esquema base no está en el repositorio
+
+Hallazgo al preparar el bootstrap, y cambia el orden de trabajo.
+
+`public.propiedades` —la tabla que lee todo el frontend— **no está definida en
+ningún archivo del repositorio**. Las migraciones de `supabase/migrations/` son
+incrementales y dan por sentado que ya existe. `MIGRATION_ORDER.md` remite a una
+*"sanitized schema baseline captured by the definitive audit"*, y esa baseline
+tampoco está versionada.
+
+Consecuencia concreta: **hoy no se puede levantar un entorno desde cero con lo
+que hay en Git**, ni siquiera con MCP autorizado y un proyecto Preview creado.
+
+Lo que NO se hizo, a propósito: escribir ese `CREATE TABLE` a partir de las
+columnas que el código consulta. Serían tipos, nulabilidad, defaults, claves e
+índices adivinados, y una base *parecida* es peor que no tener base — los
+benchmarks medirían otra cosa y nadie lo notaría.
+
+Lo que sí se hizo: `frontend/scripts/db-schema-contract.mjs` declara el
+**contrato** —qué relaciones y columnas necesita la aplicación— derivado de lo
+que el código realmente consulta, con un verificador de sólo lectura. Sirve para
+comprobar que una Preview recién creada sirve *antes* de invertir horas en
+cargarla, y para detectar deriva entre entornos.
+
+Dos tests lo mantienen honesto: uno falla si el SQL de la aplicación menciona una
+columna que el contrato no declara —la deriva silenciosa que dejaría de
+protegernos sin que nada falle—, y otro falla si el contrato declara columnas que
+nadie usa, porque un contrato inflado rechaza bases que servirían.
+
+### El orden real, entonces
+
+El paso 4 del orden de abajo cambia: antes de aplicar migraciones hay que
+**capturar la baseline del esquema desde el proyecto actual**, con acceso de sólo
+lectura, y versionarla sanitizada. Recién después el bootstrap es reproducible.
+
 ## Qué está preparado y espera
 
 Todo lo siguiente está escrito, testeado donde corresponde, y se ejecuta sin
