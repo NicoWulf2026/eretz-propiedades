@@ -150,6 +150,51 @@ Escriben un `warn` en el log. **No ocultan nada ni cambian nada.**
 | `REVIEW_ALTO` | > 25% | Una de cada cuatro a revisión hace la cola impracticable |
 | `RAZON_DOMINANTE` | > 50% | Un solo código marcando la mitad casi siempre es un bug de regla |
 
+## Cómo recoger la medición real
+
+Es el paso que falta, y necesita una sola cosa que no está en el repositorio:
+poner la variable en el entorno de **Preview** de Vercel.
+
+**Por qué es seguro hacerlo ahí:** Preview ya lee la base real en sólo lectura,
+y el modo sombra no escribe nada ni cambia la respuesta. Encenderlo no oculta
+propiedades, no reordena, y no toca producción.
+
+1. En Vercel, entorno **Preview** (no Production):
+
+   ```
+   ERETZ_DOMAIN_SHADOW_MODE=true
+   ```
+
+   Si el volumen de logs molesta, `ERETZ_DOMAIN_SHADOW_SAMPLE=0.25`. Con 24
+   propiedades por listado no debería hacer falta.
+
+2. Redesplegar el Preview y navegar: listado con y sin filtros, un par de
+   fichas, el mapa, un perfil de inmobiliaria y uno de agente. Cada carga deja
+   una línea.
+
+3. En los logs de Vercel, filtrar por `domain_shadow_summary`.
+
+4. Para responder las preguntas abiertas, sumar entre líneas:
+
+   | Pregunta | Campos |
+   | --- | --- |
+   | ¿Las reglas son demasiado agresivas? | `mod_review` / `evaluadas` |
+   | ¿Qué las dispara? | `razon_1` … `razon_8` |
+   | ¿La mediana baja de `media` es regla o catálogo? | `dim_media` contra `dim_completeness` |
+   | ¿Cuánto cuesta medir? | `domain_shadow_ms` contra `db_ms` en la línea de `http_request` |
+   | ¿Cuánto del catálogo no declara origen? | `origen_UNKNOWN` |
+
+5. Para investigar un código concreto, los ids de ejemplo van en `razon_N`
+   (formato `CODIGO:conteo:id,id,id`) y abren directo en `/propiedad/<id>`.
+
+6. **Al terminar, quitar la variable.** El modo sombra no está pensado para
+   quedar encendido: su costo es bajo pero no nulo, y su valor es una medición,
+   no un monitoreo continuo.
+
+Lo que NO hay que hacer: activarlo en Production. No porque sea peligroso —es
+igual de inocuo—, sino porque la medición de Preview alcanza y producción no
+necesita el ruido.
+
 ## Estado de la medición
 
 **No se midió sobre el catálogo real.** Este entorno no tiene credenciales de

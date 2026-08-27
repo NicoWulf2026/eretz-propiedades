@@ -9,6 +9,7 @@ import { getPreviewQualityGate } from "@/lib/preview-quality-gate";
 import { parsePropertyFilters } from "@/lib/property-query";
 import { recomendar, type CandidatoRelacionado } from "@/domain/recommendations";
 import { ejecutarShadow } from "@/lib/shadow/run";
+import { medirEnRequest } from "@/lib/observability/request-timings";
 import { addParam, buildCursorClause, buildWhere, normalizeSearch, sortSpec, type CursorPayload } from "@/lib/property-sql";
 import { entitySlug, slugify } from "@/lib/slug";
 import type {
@@ -129,19 +130,27 @@ function isRetryableConnectionError(error: unknown) {
   return ["CONNECTION_CLOSED", "CONNECT_TIMEOUT", "ECONNRESET", "ETIMEDOUT", "57P01", "57P02", "57P03"].includes(code);
 }
 
+// Único punto por el que pasa toda consulta a la base, así que es el único
+// lugar donde hay que medir. El reintento queda DENTRO de la medición: si una
+// request tardó cuatro segundos porque se reconectó, ese costo es real y
+// dejarlo afuera lo volvería invisible.
+//
+// Fuera de una request —tests, scripts— `medirEnRequest` no registra nada.
 async function readOnly<T>(work: (sql: Sql) => Promise<T>) {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const sql = db();
-    if (!sql) throw new Error("ERETZ database is not configured");
-    try {
-      return await sql.begin("read only", async (transaction) => work(transaction as unknown as Sql));
-    } catch (error) {
-      if (attempt > 0 || !isRetryableConnectionError(error)) throw error;
-      if (client === sql) client = null;
-      await sql.end({ timeout: 0 }).catch(() => undefined);
+  return medirEnRequest("db", async () => {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const sql = db();
+      if (!sql) throw new Error("ERETZ database is not configured");
+      try {
+        return await sql.begin("read only", async (transaction) => work(transaction as unknown as Sql));
+      } catch (error) {
+        if (attempt > 0 || !isRetryableConnectionError(error)) throw error;
+        if (client === sql) client = null;
+        await sql.end({ timeout: 0 }).catch(() => undefined);
+      }
     }
-  }
-  throw new Error("ERETZ database connection could not be recovered");
+    throw new Error("ERETZ database connection could not be recovered");
+  });
 }
 
 const projection = `

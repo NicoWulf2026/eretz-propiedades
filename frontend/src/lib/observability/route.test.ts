@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { _setEscritor } from "@/lib/observability/logger";
 import { withObservability } from "@/lib/observability/route";
+import { medirEnRequest } from "@/lib/observability/request-timings";
 
 async function correr(handler: Parameters<typeof withObservability>[1], url = "https://x/api/t?q=Palermo&op=venta") {
   const lineas: string[] = [];
@@ -115,5 +116,60 @@ describe("observabilidad de rutas", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("x-request-id")).toBeTruthy();
     expect(res.headers.get("cache-control")).toBe("private");
+  });
+});
+
+describe("sub-tiempos de la request", () => {
+  it("surface el tiempo de base en la misma línea, sin agregar otra", async () => {
+    // `db_ms` junto a `durationMs` es lo que separa una request lenta por la
+    // base de una lenta por otra cosa.
+    const { logs } = await correr(async () => {
+      await medirEnRequest("db", async () => undefined);
+      return new Response("{}", { status: 200 });
+    });
+    expect(logs).toHaveLength(1);
+    expect(typeof logs[0].db_ms).toBe("number");
+    expect(logs[0].db_n).toBe(1);
+  });
+
+  it("acumula varias consultas de la misma request", async () => {
+    const { logs } = await correr(async () => {
+      await medirEnRequest("db", async () => undefined);
+      await medirEnRequest("db", async () => undefined);
+      return new Response("{}", { status: 200 });
+    });
+    expect(logs[0].db_n).toBe(2);
+  });
+
+  it("no agrega campos cuando el handler no midió nada", async () => {
+    const { logs } = await correr(() => new Response("{}", { status: 200 }));
+    expect(logs[0]).not.toHaveProperty("db_ms");
+  });
+
+  it("registra el tiempo aunque el handler falle", async () => {
+    // Una consulta lenta que después revienta es la que hay que ver.
+    const { logs } = await correr(async () => {
+      await medirEnRequest("db", async () => undefined);
+      throw new Error("explotó");
+    });
+    expect(logs[0].status).toBe(500);
+    expect(logs[0].db_n).toBe(1);
+  });
+
+  it("dos requests concurrentes no se mezclan los tiempos", async () => {
+    const lenta = correr(async () => {
+      await medirEnRequest("db", async () => {
+        await new Promise((r) => setTimeout(r, 20));
+      });
+      return new Response("{}", { status: 200 });
+    });
+    const rapida = correr(async () => {
+      await medirEnRequest("db", async () => undefined);
+      return new Response("{}", { status: 200 });
+    });
+    const [a, b] = await Promise.all([lenta, rapida]);
+    expect(a.logs[0].db_n).toBe(1);
+    expect(b.logs[0].db_n).toBe(1);
+    expect(a.logs[0].db_ms as number).toBeGreaterThan(b.logs[0].db_ms as number);
   });
 });

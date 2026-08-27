@@ -8,6 +8,7 @@ import {
   requestIdDe,
   type Outcome,
 } from "@/lib/observability/logger";
+import { camposDeTiempos, crearAcumulador, ejecutarEn } from "@/lib/observability/request-timings";
 
 // Envuelve un handler de ruta para que toda request deje exactamente una línea
 // de log y toda respuesta lleve su `x-request-id`.
@@ -39,8 +40,13 @@ export function withObservability(route: string, handler: Handler): Handler {
     let errorMessage: string | undefined;
     let respuesta: Response;
 
+    // Contexto de sub-tiempos para esta request. La capa de datos registra
+    // dentro sin recibir nada por parámetro: `readOnly` es el único punto por
+    // el que pasan las consultas, y desde ahí llama a `registrarTiempo`.
+    const tiempos = crearAcumulador();
+
     try {
-      respuesta = await handler(request);
+      respuesta = await ejecutarEn(tiempos, () => handler(request));
       status = respuesta.status;
       outcome = outcomeDe(status);
     } catch (error) {
@@ -63,6 +69,10 @@ export function withObservability(route: string, handler: Handler): Handler {
       status,
       outcome,
       durationMs: Date.now() - inicio,
+      // `db_ms` junto a `durationMs` es lo que permite separar una request
+      // lenta por la base de una lenta por otra cosa. `db_n` distingue una
+      // consulta pesada de varias que se acumulan.
+      ...camposDeTiempos(tiempos),
       paramKeys,
       paramCount,
       ...(errorName ? { errorName } : {}),
