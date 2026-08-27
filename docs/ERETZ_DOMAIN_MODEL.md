@@ -198,6 +198,67 @@ puede publicar, en vez de una opinión en un documento que envejece. Los dos
 bloqueos, medidos sobre producción: no existe resolución de propiedad física, y
 sólo el 25,3% de las publicaciones tiene coordenadas (65.033 de 257.073).
 
+## Moderación: la misma señal, distinta acción según el origen
+
+`domain/moderation.ts`. Es la decisión que más consecuencias tiene de todo lo
+construido, y no estaba en el encargo.
+
+Rechazar una carga **manual** cuesta un minuto de quien la hizo: ve el error, lo
+corrige, reenvía. Rechazar una **scrapeada** esconde una propiedad que existe y
+está publicada en el sitio de su inmobiliaria — bloquearla no la hace
+desaparecer, sólo hace que ERETZ no la tenga, y nadie se entera de lo que falta.
+Con 257.073 publicaciones, un criterio apenas estricto de más borra miles de
+propiedades reales.
+
+Por eso el mismo conjunto de señales da `REJECT` en manual y `REVIEW` en
+scrapeado. Los tests verifican que las señales sean **idénticas** y que sólo
+cambie la acción.
+
+**`REVIEW` muestra.** Significa "que alguien la mire", no "que no se vea". Si
+ocultara, cualquier señal media sacaría publicaciones reales del catálogo sin
+que nadie lo note. Lo único que oculta es `REJECT`.
+
+## El score no es ranking
+
+`domain/quality-score.ts`. Regla absoluta, y escrita en el módulo:
+
+1. Ordenar por él premiaría a quien tiene **mejor CMS**, no mejor propiedad. Una
+   inmobiliaria chica con fotos de celular quedaría siempre última aunque su
+   departamento sea el que la persona busca.
+2. Convertiría el score en un objetivo: aparecen descripciones infladas y campos
+   rellenados para subir, y deja de medir calidad para medir quién entendió la
+   fórmula.
+
+Sirve para operaciones, moderación, priorizar correcciones y detectar fuentes
+que scrapean mal. `QUALITY ≠ POPULARITY ≠ RANKING`.
+
+## Personalización sin código
+
+`domain/miniportal.ts`. La forma obvia de dejar personalizar es aceptar CSS, y
+no se hace: CSS arbitrario permite exfiltración por selectores de atributo,
+superposición de elementos falsos sobre los reales, y `url()` que filtra a un
+tercero quién visitó qué.
+
+Cerrado en tres niveles: plantilla de una lista, colores en `#rrggbb` estricto
+—no hay forma de colar `red; background: url(//espia)`—, secciones como unión
+discriminada que se ordena.
+
+`normalizarConfig` **nunca falla y nunca devuelve null**. Hay miles de
+inmobiliarias y ninguna configuró nada: si la página dependiera de que exista
+config, el 100% se vería roto. Normalizar es para *renderizar* y no puede
+fallar; validar es para *guardar* y tiene que poder decir que no.
+
+## Alertas: tres resultados, no dos
+
+`domain/alerts.ts`. Los filtros se aplican en SQL. Reimplementarlos en
+JavaScript crea dos implementaciones de la misma regla que van a divergir, y la
+divergencia en una alerta es **silenciosa**: la persona no recibe avisos que
+esperaba.
+
+Por eso el emparejador declara qué sabe evaluar y qué no, y lo no evaluable
+devuelve `INDETERMINADO` — nunca `false`. Decir "no coincide" cuando no se sabe
+es exactamente lo que produce alertas que nunca llegan.
+
 ## Qué NO se expone
 
 Cumpliendo la regla de no crear UI falsa:
@@ -210,3 +271,33 @@ Cumpliendo la regla de no crear UI falsa:
 | `sync.ts` | no conectado | sin nube no hay con qué fusionar |
 | `finance.ts` | sin UI | la lógica está lista; la UI es trabajo aparte |
 | `market.ts` | sin páginas | el diagnóstico dice que los datos no alcanzan |
+| `miniportal.ts` | sin editor | un panel que aparenta guardar sin persistencia |
+| `moderation.ts` | no cableado | decide qué se muestra; cablearlo cambia el catálogo |
+| `quality-score.ts` | no expuesto | y nunca para ordenar resultados |
+| `alerts.ts` | nada se envía | sin cuentas no hay a quién avisarle |
+| `seo.ts` | no activado | Preview sigue `noindex`; el primer chequeo es producción |
+| `health.ts` | sin endpoint | un `/health` público dice cuándo el sistema está débil |
+| `reports.ts` | sin persistencia | la UI no debe sugerir un expediente que no existe |
+
+## Sobre el barrel de dominio
+
+No hay `domain/index.ts`, y es una decisión, no un olvido.
+
+Hoy un solo archivo fuera de `domain/` importa del dominio
+(`lib/property-db-service.ts`, para las relacionadas). Un barrel con dieciocho
+módulos para un consumidor no ahorra nada y trae dos costos reales: convierte
+cualquier import en una carga de todo el dominio, y habilita ciclos que hoy son
+imposibles porque cada módulo declara exactamente de qué depende.
+
+Se agrega cuando los imports estén efectivamente dispersos, no antes.
+
+## Auditoría de tipos
+
+Una sola colisión real, ya resuelta: `ClaimStatus` existía a la vez en
+`types/property.ts` —el formato del endpoint, en minúsculas— y en
+`domain/claim.ts`, con otros miembros. Dos tipos con el mismo nombre y distinto
+contenido es el error que se descubre tarde: alguien importa el que no era y el
+compilador no se queja, porque los dos son uniones de string.
+
+El del endpoint pasó a llamarse `ClaimIntakeStatus`. Sus **valores no
+cambiaron**: son los que ya tiene la columna `perfil_claims.estado`.

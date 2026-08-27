@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { insertSignal, persistenceRequired } from "@/lib/db-writer";
 import { realEstateExists } from "@/lib/property-service";
-import type { ClaimStatus } from "@/types/property";
+import type { ClaimIntakeStatus } from "@/types/property";
 import { withObservability } from "@/lib/observability/route";
 import { CUOTA_RECLAMOS, revisarAbuso } from "@/lib/abuse/guard";
 
@@ -86,7 +86,7 @@ async function handlePOST(request: Request) {
   }
 
   // Sin teléfono ni rol el reclamo entra con menos señales de confianza.
-  const status: ClaimStatus = telefono && rol ? "pending" : "needs_review";
+  const status: ClaimIntakeStatus = telefono && rol ? "pending" : "needs_review";
 
   // Persiste como señal en public.perfil_claims vía el rol writer dedicado (si
   // está configurado). Nunca auto-aprueba ni modifica el perfil. Si no hay writer

@@ -305,7 +305,17 @@ export type RealEstateProfile = RealEstateSummary & {
   email: string | null;
 };
 
-export type ClaimStatus = "pending" | "approved" | "rejected" | "needs_review";
+// Estado con el que un reclamo entra por `/api/claims`, y que se escribe en
+// `public.perfil_claims.estado`. Los valores en minúscula son el formato que ya
+// tiene esa columna: se conservan tal cual.
+//
+// Se llamaba `ClaimStatus`, igual que el estado del modelo de dominio
+// (`domain/claim.ts`), que tiene otros miembros y otra caja. Dos tipos con el
+// mismo nombre y distinto contenido es el error que se descubre tarde: alguien
+// importa el que no era y el compilador no se queja, porque los dos son uniones
+// de string. El del dominio es el canónico; éste es el formato de entrada del
+// endpoint tal como existe hoy.
+export type ClaimIntakeStatus = "pending" | "approved" | "rejected" | "needs_review";
 
 export type AgentSummary = {
   slug: string;

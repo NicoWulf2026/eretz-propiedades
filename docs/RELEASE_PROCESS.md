@@ -8,6 +8,33 @@ dependencias de severidad alta, un set de migraciones aditivo revisado, un plan
 de recuperación, ningún error de scraper interno sin resolver, y aprobación
 humana explícita para cambios de producción.
 
+## 0. Lista de verificación
+
+Se completa entera antes de proponer nada. Cada punto es verificable: si alguno
+no se puede responder con un comando o con un valor concreto, no está listo.
+
+| # | Verificación | Cómo se comprueba |
+| --- | --- | --- |
+| 1 | Working tree limpio | `git status --short` sin salida |
+| 2 | Rama al día con su remoto | `git rev-list --left-right --count origin/<rama>...HEAD` = `0 0` |
+| 3 | SHA de release anotado | `git rev-parse HEAD` |
+| 4 | **SHA de rollback anotado** | el commit desplegado ANTERIOR, anotado *antes* de desplegar |
+| 5 | Tests, lint y typecheck en verde | sección 1 |
+| 6 | Build limpio | `npm run build` |
+| 7 | Sin dependencias vulnerables de severidad alta | `npm audit --omit=dev` |
+| 8 | Preview `noindex` | `robots()` devuelve `disallow: /`; hay tests que lo fijan |
+| 9 | Variables de entorno presentes en el destino | ninguna vacía; ninguna con prefijo `NEXT_PUBLIC_` que contenga un secreto |
+| 10 | Cero secretos en el diff | escaneo del diff completo, no sólo de los archivos nuevos |
+| 11 | Versión y fingerprint del Quality Gate | anotados; si cambian, cambia lo que se ve |
+| 12 | Cero requests browser-side a Supabase Data API | pestaña de red en el Preview |
+| 13 | **¿El release incluye cambios de base?** | si la respuesta es sí, ver la sección 6 |
+| 14 | Autorización humana explícita para producción | por escrito, de una persona, para *este* SHA |
+
+El punto 4 se anota **antes** y no después: en el momento en que hace falta un
+rollback, nadie tiene la calma para averiguar cuál era el commit bueno.
+
+El punto 13 hoy tiene una única respuesta admisible: **no**.
+
 ## 1. Antes de proponer un release
 
 Se corren en el worktree, sobre el commit exacto que se va a desplegar:
@@ -64,6 +91,34 @@ incluyó una migración, ver el punto siguiente antes de dar el incidente por
 cerrado.
 
 ## 6. Rollback de base
+
+> **Hoy: `DEFERRED_DB_EXECUTION`.** No se aplican migraciones, ni índices, ni
+> cambios de ACL sobre la base real, porque no existe un entorno donde ensayar
+> el rollback antes. La regla *"el rollback se ensaya antes"* no se puede
+> cumplir, así que el cambio no se hace. Lo de abajo queda vigente como
+> procedimiento para cuando ese entorno exista.
+
+### Preview de aplicación ≠ staging de base
+
+Es la confusión que originó este bloqueo, y conviene dejarla escrita porque no
+es obvia:
+
+| | Qué aísla | Qué NO aísla |
+| --- | --- | --- |
+| **Vercel Preview** | el despliegue de la aplicación: código, variables, dominio | **la base**: apunta al mismo PostgreSQL con las 257.073 publicaciones reales |
+| **Staging de base** | la base entera: otro `project_ref`, otro host | — no existe — |
+
+`eretz_preview_ro` es un **rol de sólo lectura dentro de la base real**, no otra
+base. Su propio rollback lo dice: `revoke connect on database postgres`.
+
+Consecuencia práctica: alguien que lea "Preview" en un runbook y ejecute una
+migración estaría tocando el dato real convencido de lo contrario. Por eso
+existe `frontend/scripts/db-target-guard.mjs`, y por eso rechaza el `project_ref`
+de producción **aunque alguien lo declare como esperado**.
+
+Ver [ERETZ_PREVIEW_DB.md](ERETZ_PREVIEW_DB.md) para el detalle y los costos.
+
+### Procedimiento, cuando haya dónde ensayarlo
 
 Toda migración entra con su rollback al lado, y el par vive junto:
 
