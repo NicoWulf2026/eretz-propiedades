@@ -2,6 +2,31 @@
 
 Fecha: 2026-08-27
 
+> ## Estado: `DEFERRED_DB_EXECUTION`
+>
+> **La Preview DB no se crea.** Decisión tomada el 2026-08-27, después de
+> comprobar por API que ninguna de las dos opciones cuesta USD 0 en el plan
+> actual: un segundo proyecto son US$10/mes y un branch US$0,01344/hora.
+>
+> Estrategia vigente: **`PATH_B_NO_ADDITIONAL_INFRA_COST`**. Se sigue
+> construyendo producto y queda congelado todo cambio que sería irresponsable
+> probar directamente sobre la base real.
+>
+> Lo que eso significa en concreto:
+>
+> - no se ejecuta DDL, ni migraciones, ni `CREATE INDEX` sobre la base real;
+> - no se aplica el P0 de ACL todavía, aunque esté listo y verificado;
+> - no se aplica `eretz_gate` todavía;
+> - no se corren benchmarks contra producción.
+>
+> **Nada de lo preparado se borra.** Todo el trabajo listado en "Qué está
+> preparado y espera" queda como `READY_FOR_FUTURE_DB_EXECUTION` y se ejecuta
+> sin rediseño el día que exista un entorno donde probarlo.
+>
+> El resto del documento se conserva porque sigue siendo la investigación
+> válida —incluida la línea base medida sobre producción, que es lo que hará
+> comparables las mediciones futuras—. Lo que cambió es cuándo se ejecuta.
+
 ## El problema que resuelve
 
 Hoy **Vercel Preview ≠ Database Preview**. Existe un solo proyecto Supabase
