@@ -379,8 +379,20 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
     ausentes = con.identify_deleted_or_inactive(
         fuente, vistos, fuente_respondio=bool(confiable))
     if observacion:
+        # En observacion nada se desactiva, pero la etiqueta tiene que seguir
+        # diciendo la verdad. Pisar TODAS con POTENTIAL_INACTIVE borraba la
+        # distincion entre "no la vimos, y eso significa algo" y "no la vimos, y
+        # eso no significa nada": BTS entrego 3 de sus 13 fichas y sus 10
+        # faltantes salieron como candidatas a baja, cuando el propio pipeline
+        # ya habia decidido que esa enumeracion no era comparable -23% de
+        # solapamiento- y no habia avanzado ni un contador.
+        #
+        # El contador estaba bien. Lo que enganaba era el renglon.
         for x in ausentes:
-            x["estado"] = "POTENTIAL_INACTIVE"
+            if x.get("enumeracion_comparable"):
+                x["estado"] = "POTENTIAL_INACTIVE"
+            else:
+                x["estado"] = "SIN_EVIDENCIA_ENUMERACION_NO_COMPARABLE"
     r["ausentes"] = len(ausentes)
     r["_ausentes"] = ausentes
 
