@@ -39,7 +39,13 @@ export const PropertyCard = memo(function PropertyCard({
   onCommit?: (id: string) => void;
 }) {
   const specs = propertySpecs(property);
-  const date = formatDate(property.publishedAt ?? property.updatedAt);
+  // La etiqueta sigue al campo, no al revés. Hoy `fecha_publicacion` tiene 0%
+  // de cobertura, así que esto siempre cae en `updatedAt` y dice "Actualizada",
+  // que es cierto. El día que se pueble, mostrar una fecha de publicación
+  // rotulada "Actualizada" sería decir algo falso sin que nadie tocara nada.
+  const dateSource = property.publishedAt ?? property.updatedAt;
+  const dateLabel = property.publishedAt ? "Publicada" : "Actualizada";
+  const date = formatDate(dateSource);
   const grid = variant === "grid";
   const detailHref = `/propiedad/${property.id}?volver=${encodeURIComponent(returnTo)}`;
   const availability = availabilityLabel(property.status);
@@ -138,7 +144,7 @@ export const PropertyCard = memo(function PropertyCard({
           {visibleSpecs.length ? <div className="card-specs">{visibleSpecs.map((spec) => <span key={spec}>{spec}</span>)}</div> : null}
           {property.publisher ? <p className="card-publisher">{property.publisher.name}{property.publisher.verified ? " · Verificada" : ""}</p> : null}
           {availability ? <p className="card-availability" title="La disponibilidad de esta publicación no está confirmada en el último relevamiento.">{availability}</p> : null}
-          {grid && date ? <time className="card-date" dateTime={property.publishedAt ?? property.updatedAt ?? undefined}>Actualizada {date}</time> : null}
+          {grid && date ? <time className="card-date" dateTime={dateSource ?? undefined}>{dateLabel} {date}</time> : null}
         </div>
       </Link>
     </article>

@@ -77,4 +77,21 @@ describe("PropertyCard", () => {
     fireEvent.click(screen.getByRole("link", { name: /Ver casa en Centro, Córdoba/ }));
     expect(onCommit).toHaveBeenCalledWith("123");
   });
+
+  it("rotula la fecha segun el campo que realmente tiene", () => {
+    // `fecha_publicacion` tiene 0% de cobertura, asi que hoy la card siempre
+    // cae en `updated_at` y dice "Actualizada", que es cierto. El dia que se
+    // pueble, mostrar una fecha de publicacion rotulada "Actualizada" seria
+    // decir algo falso sin que nadie tocara nada.
+    const sinPublicacion = { ...completeRow, fecha_publicacion: null };
+    const { unmount } = render(
+      <PropertyCard property={mapSupabasePropertyToProperty(sinPublicacion)} variant="grid" />,
+    );
+    expect(document.querySelector(".card-date")?.textContent).toMatch(/^Actualizada /);
+    unmount();
+
+    const conPublicacion = { ...completeRow, fecha_publicacion: "2026-03-15T00:00:00Z" };
+    render(<PropertyCard property={mapSupabasePropertyToProperty(conPublicacion)} variant="grid" />);
+    expect(document.querySelector(".card-date")?.textContent).toMatch(/^Publicada /);
+  });
 });
