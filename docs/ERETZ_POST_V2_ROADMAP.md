@@ -4,6 +4,25 @@ Fecha de corte: 2026-08-27
 
 Escala de esfuerzo relativa: XS, S, M, L, XL. No representa días ni fechas comprometidas.
 
+> **Estrategia vigente: `PATH_B_NO_ADDITIONAL_INFRA_COST`.**
+>
+> No se crea base de Preview ni branch pago. Todo lo que exige modificar
+> experimentalmente la base real está congelado como `DEFERRED_DB_EXECUTION` y
+> **no se marcó como resuelto**: los objetivos P0 1, 3 y 4 de la tabla de abajo
+> siguen abiertos exactamente igual que antes.
+>
+> Lo que sí avanzó es el trabajo que no necesita base: modelo de dominio,
+> moderación y puntaje explicables, mini-portales, geografía, históricos,
+> recomendaciones, alertas, analítica profesional, SEO, legal, observabilidad y
+> expedientes de reporte. Todo puro, testeado, y **sin exponer UI que no
+> funcione**.
+>
+> Ver [ERETZ_DOMAIN_MODEL.md](ERETZ_DOMAIN_MODEL.md),
+> [ERETZ_CAPABILITY_MATRIX.md](ERETZ_CAPABILITY_MATRIX.md) y
+> [LEGAL_REVIEW_REQUIRED.md](LEGAL_REVIEW_REQUIRED.md).
+>
+> El avance de producto **no mueve** el veredicto de beta pública: sigue en NO.
+
 ## Principios invariables
 
 - Explorar propiedades no requiere cuenta.
