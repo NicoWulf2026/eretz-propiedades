@@ -2,6 +2,46 @@
 
 **Última actualización:** 2026-08-22 — misión de INGESTA DIRECTA en curso.
 
+> **Checkpoint 2026-08-27 — reconciliación Supabase cerrada, escritura bloqueada.**
+>
+> Se revalidaron desde cero las 172.201 filas del artefacto transferido y se
+> conciliaron una por una contra el estado vivo de Supabase. La clasificación
+> es exhaustiva y suma exactamente 172.201:
+>
+> | Categoría | Filas |
+> | --- | ---: |
+> | `EXISTS_UNCHANGED` | 0 |
+> | `EXISTS_CHANGED` / `UPDATE_PENDING` | 25.360 |
+> | `TRULY_NEW` / `INSERT` candidato | 118.359 |
+> | `DUPLICATE_OR_CONFLICT` / `HOLD` | 15.159 |
+> | `AGENCY_ID_UNRESOLVED` / `HOLD` | 13.323 |
+> | `INVALID_OR_REJECTED` | 0 |
+>
+> El write set tiene 172.201 hashes y URLs fuente exactas únicas, pero sólo
+> 171.050 URLs normalizadas: 1.151 grupos cross-agency. Red Inmobiliaria,
+> COSA Propiedades e Inmobiliaria Fotheringham tienen dueño claro; la
+> contraparte insegura se retiene, no se reatribuye silenciosamente.
+>
+> **No se ejecutó canary ni carga.** Falta en este entorno una credencial
+> efectiva de mínimo privilegio. La conexión del conector es administrativa y
+> no se usó como sustituto. `eretz_direct_property_writer` continúa `NOLOGIN`,
+> sin `UPDATE`/`DELETE`, con sólo `SELECT, INSERT` en raw. Data API continúa
+> apagada (HTTP 503 con clave anon manejada sólo en memoria).
+>
+> Estado vivo sin deriva: `public.propiedades=257.073`,
+> `internal_scraping.propiedades_raw=97.948`, staging `97.948`, inmobiliarias
+> `7.004`. Cambios remotos, `DELETE`, push, merge, main, Production y frontend:
+> **cero**.
+>
+> Las 65 agencias pendientes terminaron en 2 resueltas (843 propiedades a
+> regenerar), 3 ambiguas (215 retenidas) y 60 sin evidencia suficiente (7.153
+> retenidas). Las 4.272 búsquedas externas quedaron 100% clasificadas sin gasto:
+> 11 páginas oficiales de oficina, 570 perfiles externos, 44 inactivas, 699
+> ambiguas y 2.948 todavía `SEARCH_PENDING`; `NOT_FOUND=0`.
+>
+> Artefactos auditables fuera de Git:
+> `D:\INMO CAPITAL\ERETZ_SUPABASE_RECONCILIATION_20260827`.
+
 > Lo de más abajo (campaña Roomix, crosswalk, auditoría de webs) está cerrado y
 > se conserva como historia. Lo que sigue es el estado vivo.
 
