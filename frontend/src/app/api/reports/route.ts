@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { insertSignal, persistenceRequired } from "@/lib/db-writer";
 import { withObservability } from "@/lib/observability/route";
+import { CUOTA_REPORTES, revisarAbuso } from "@/lib/abuse/guard";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,24 @@ async function handlePOST(request: Request) {
   }
   if (email && !EMAIL.test(email)) {
     return NextResponse.json({ error: "El email no es válido." }, { status: 422 });
+  }
+
+  // Recién acá, con la entrada ya validada: no se gasta cuota en un cuerpo
+  // malformado, y la huella se calcula sobre el contenido ya limpio.
+  const veredicto = revisarAbuso(request, {
+    endpoint: "reports",
+    limite: CUOTA_REPORTES.limite,
+    ventanaMs: CUOTA_REPORTES.ventanaMs,
+    huella: [propiedadId, motivo, detalle],
+    dedupeMs: CUOTA_REPORTES.dedupeMs,
+  });
+  if (veredicto.tipo === "limitado") return veredicto.respuesta;
+  if (veredicto.tipo === "duplicado") {
+    // El mismo reporte otra vez no es un error de quien lo manda -un doble
+    // clic, un reintento- y no tiene sentido guardarlo dos veces. Se acusa
+    // recibo igual: decirle "duplicado" a alguien que reporta un problema real
+    // suena a que no se le dio curso.
+    return NextResponse.json({ status: "received", motivo, persisted: false, deduplicated: true });
   }
 
   // Persiste como señal (estado 'nuevo') vía el rol writer dedicado si está

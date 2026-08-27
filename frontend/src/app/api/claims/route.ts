@@ -3,6 +3,7 @@ import { insertSignal, persistenceRequired } from "@/lib/db-writer";
 import { realEstateExists } from "@/lib/property-service";
 import type { ClaimStatus } from "@/types/property";
 import { withObservability } from "@/lib/observability/route";
+import { CUOTA_RECLAMOS, revisarAbuso } from "@/lib/abuse/guard";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +52,22 @@ async function handlePOST(request: Request) {
 
   if (!/^\d+$/.test(entidadId) || nombre.length < 2 || !EMAIL.test(email)) {
     return NextResponse.json({ error: "Completá nombre y un email válido." }, { status: 422 });
+  }
+
+  // Antes de consultar la base: un reclamo repetido no debe costar una query,
+  // y la cuota se gasta sólo con una entrada ya validada.
+  const veredicto = revisarAbuso(request, {
+    endpoint: "claims",
+    limite: CUOTA_RECLAMOS.limite,
+    ventanaMs: CUOTA_RECLAMOS.ventanaMs,
+    huella: [tipo, entidadId, email],
+    dedupeMs: CUOTA_RECLAMOS.dedupeMs,
+  });
+  if (veredicto.tipo === "limitado") return veredicto.respuesta;
+  if (veredicto.tipo === "duplicado") {
+    // Reclamar dos veces el mismo perfil con el mismo email no abre un segundo
+    // expediente. Se responde como la primera vez: sigue pendiente.
+    return NextResponse.json({ status: "pending", tipo, persisted: false, deduplicated: true });
   }
 
   // El perfil reclamado tiene que existir. Sin esta comprobación cualquier id
