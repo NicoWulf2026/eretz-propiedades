@@ -325,6 +325,51 @@ reporta un problema real suena a que no se le dio curso. Y la guarda corre
 **después** de validar, porque si un 422 gastara cuota bastaría con mandar basura
 para dejar sin servicio a quien reporta de verdad desde la misma red.
 
+## Credenciales de base: qué existe y qué no (2026-08-27)
+
+El bloque de hardening y performance quedó **detenido antes de ejecutar nada**.
+El motivo no es una decisión de criterio sino una comprobación:
+
+**No existe una base de datos de Preview separada.** `eretz_preview_ro` es un
+**rol** dentro de la única base del proyecto `pggrvzyixyjkhfknpurg` —el rollback
+del rol dice `revoke connect on database postgres from eretz_preview_ro`— y ese
+proyecto es el que contiene las 257.073 publicaciones y las 7.004 inmobiliarias
+reales. "Preview" en esta arquitectura es un **entorno de despliegue de Vercel**
+que se conecta de sólo lectura a esa misma base, no una copia.
+
+Evidencia recogida:
+
+| Comprobación | Resultado |
+| --- | --- |
+| Project refs distintos en el repo | uno solo: `pggrvzyixyjkhfknpurg` |
+| `supabase/config.toml` | `project_id = "eretz-propiedades"`, `major_version = 17` |
+| `frontend/.env.local` | sin ninguna URL de base (sólo `VERCEL_OIDC_TOKEN`) |
+| Variables de DB en el entorno | ninguna |
+| `vercel env ls preview` | `SUPABASE_DATABASE_URL` y `ERETZ_WRITE_DATABASE_URL` existen, marcadas **Sensitive** |
+| `vercel env pull` de esas dos | 11 caracteres, sin `@`: Vercel no descifra las Sensitive |
+| Único DSN en disco | usuario `postgres` (superusuario), contraseña ya probada vencida |
+
+De ahí que no haya camino: la credencial de Preview **no se puede recuperar por
+diseño**, y la única que existe es la del superusuario sobre la base real, que
+además no debe usarse para saltear la restricción de privilegio mínimo.
+
+`major_version = 17` confirma, de paso, el punto 1 de la revisión anterior:
+`MAINTAIN` es válido en este cluster.
+
+### Qué haría falta para desbloquearlo
+
+Una de estas dos, y son decisiones distintas:
+
+1. **Una credencial con privilegio suficiente** para el DDL —crear objetos en un
+   schema privado, y `REVOKE` sobre los objetos PostGIS— disponible como
+   variable de entorno local. Aplicaría sobre la base real, con su rollback.
+2. **Una base de Preview de verdad**: un proyecto Supabase aparte con una copia
+   del esquema, donde probar sin tocar el dato real. Es más trabajo y es lo que
+   la palabra "Preview" promete.
+
+La segunda es la que corresponde si se quiere ensayar rollbacks e índices sin
+riesgo. La primera alcanza para el P0 de ACL, que es acotado y reversible.
+
 ## Beta readiness
 
 ### Beta privada — YES WITH CONDITIONS
