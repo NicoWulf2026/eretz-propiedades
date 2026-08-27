@@ -228,8 +228,25 @@ def analizar(f: dict, lim: LimitadorDeRitmo) -> dict:
     # `connector_candidato` y `official_url` se emiten con esos nombres a
     # proposito: es el formato que `run_rollout.py --censo` ya sabe consumir,
     # asi que este artefacto se puede lanzar sin traducirlo a mano.
-    if plataforma and conector:
+    # Reconocer la plataforma no es lo mismo que poder leer el inventario.
+    # remax-vita.com.ar trae wp-content y remax-costa trae Tokko, y las dos
+    # tienen CERO enlaces con forma de ficha: el listado no esta donde el
+    # connector lo busca. Las dos se corrieron con su connector y las dos
+    # dieron VARIANTE_NO_SOPORTADA.
+    #
+    # Etiquetarlas PLATAFORMA_CONOCIDA prometia 11.444 propiedades recuperables
+    # que ningun connector existente puede alcanzar. Es el mismo error que
+    # JSON_EMBEBIDO: una etiqueta que promete un mecanismo en vez de describir
+    # lo que se vio.
+    hay_inventario_visible = bool(fichas or fichas_sm)
+    if plataforma and conector and hay_inventario_visible:
         out["mecanismo"], out["connector"] = "PLATAFORMA_CONOCIDA", conector
+    elif plataforma and conector:
+        out["mecanismo"], out["connector"] = ("PLATAFORMA_CONOCIDA_SIN_LISTADO",
+                                              None)
+        out["motivo"] = ("se reconoce %s pero no se le vio ningun enlace de "
+                         "ficha ni en el HTML ni en el sitemap: el listado no "
+                         "esta donde el connector lo busca" % plataforma)
     elif plataforma:
         out["mecanismo"], out["connector"] = "PLATAFORMA_SIN_CONNECTOR", None
     elif fichas_sm:

@@ -103,3 +103,61 @@ def test_un_json_roto_no_rompe_la_clasificacion():
     assert not _json_con_fichas(ld("{esto no es json"))
     assert not _json_con_fichas("")
     assert not _json_con_fichas("<html>sin script</html>")
+
+
+# --- reconocer la plataforma no es poder leerla ------------------------------
+
+def clasificar(plataforma=None, conector=None, fichas=0, fichas_sm=0):
+    """La decision de mecanismo, aislada tal como la toma el clasificador."""
+    hay = bool(fichas or fichas_sm)
+    if plataforma and conector and hay:
+        return "PLATAFORMA_CONOCIDA", conector
+    if plataforma and conector:
+        return "PLATAFORMA_CONOCIDA_SIN_LISTADO", None
+    if plataforma:
+        return "PLATAFORMA_SIN_CONNECTOR", None
+    if fichas_sm:
+        return "SITEMAP_CON_FICHAS", "generico"
+    if fichas:
+        return "LISTADO_SERVIDO", "generico"
+    return "SIN_INVENTARIO", None
+
+
+def test_una_plataforma_sin_una_sola_ficha_a_la_vista_no_es_recuperable():
+    """remax-vita.com.ar trae wp-content y cero enlaces de ficha; propexclusivas
+    trae Tokko y tampoco. Las dos se corrieron con su connector y las dos
+    dieron VARIANTE_NO_SOPORTADA.
+
+    Llamarlas PLATAFORMA_CONOCIDA prometia 11.277 propiedades que ningun
+    connector existente alcanza."""
+    mecanismo, conector = clasificar(plataforma="WORDPRESS", conector="wordpress")
+    assert mecanismo == "PLATAFORMA_CONOCIDA_SIN_LISTADO"
+    assert conector is None, "no se manda a una corrida que no puede encontrar nada"
+
+
+def test_la_plataforma_con_fichas_a_la_vista_si_va_a_su_connector():
+    assert clasificar(plataforma="TOKKO", conector="tokko",
+                      fichas=12) == ("PLATAFORMA_CONOCIDA", "tokko")
+
+
+def test_el_sitemap_tambien_alcanza_como_evidencia():
+    assert clasificar(plataforma="WORDPRESS", conector="wordpress",
+                      fichas_sm=40)[0] == "PLATAFORMA_CONOCIDA"
+
+
+def test_sin_connector_propio_sigue_siendo_otra_cosa():
+    """Que no tengamos connector es distinto de que no se vea el inventario."""
+    assert clasificar(plataforma="JOOMLA")[0] == "PLATAFORMA_SIN_CONNECTOR"
+
+
+def test_el_orden_no_tapa_el_camino_barato():
+    """Sin plataforma reconocida, el sitemap y el HTML siguen mandando."""
+    assert clasificar(fichas_sm=10)[0] == "SITEMAP_CON_FICHAS"
+    assert clasificar(fichas=10)[0] == "LISTADO_SERVIDO"
+
+
+def test_el_clasificador_real_usa_la_misma_condicion():
+    src = (Path(__file__).resolve().parents[1] / "scripts"
+           / "classify_residual.py").read_text(encoding="utf-8")
+    assert "hay_inventario_visible = bool(fichas or fichas_sm)" in src
+    assert "PLATAFORMA_CONOCIDA_SIN_LISTADO" in src
