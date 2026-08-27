@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { parsePropertyFilters } from "@/lib/property-query";
 import { searchMap } from "@/lib/property-service";
+import { withObservability } from "@/lib/observability/route";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request) {
+async function handleGET(request: Request) {
   const url = new URL(request.url);
   const filters = parsePropertyFilters(Object.fromEntries(url.searchParams.entries()));
   if (!filters.viewport) {
@@ -20,3 +21,4 @@ export async function GET(request: Request) {
   }
 }
 
+export const GET = withObservability("/api/properties/map", handleGET);

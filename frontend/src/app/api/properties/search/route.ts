@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { parsePropertyFilters } from "@/lib/property-query";
 import { searchProperties } from "@/lib/property-service";
+import { withObservability } from "@/lib/observability/route";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request) {
+async function handleGET(request: Request) {
   const url = new URL(request.url);
   const filters = parsePropertyFilters(Object.fromEntries(url.searchParams.entries()));
   try {
@@ -16,3 +17,5 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "No pudimos consultar las propiedades." }, { status: 503 });
   }
 }
+
+export const GET = withObservability("/api/properties/search", handleGET);

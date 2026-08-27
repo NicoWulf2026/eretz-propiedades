@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { insertSignal, persistenceRequired } from "@/lib/db-writer";
 import { realEstateExists } from "@/lib/property-service";
 import type { ClaimStatus } from "@/types/property";
+import { withObservability } from "@/lib/observability/route";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +27,7 @@ function clean(value: unknown, max: number): string {
   return typeof value === "string" ? value.replace(/[<>]/g, "").trim().slice(0, max) : "";
 }
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   let body: ClaimInput;
   try {
     body = (await request.json()) as ClaimInput;
@@ -82,3 +83,5 @@ export async function POST(request: Request) {
   }
   return NextResponse.json({ status, tipo, persisted });
 }
+
+export const POST = withObservability("/api/claims", handlePOST);

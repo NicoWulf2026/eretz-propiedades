@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { searchSuggestions } from "@/lib/property-service";
+import { withObservability } from "@/lib/observability/route";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request) {
+async function handleGET(request: Request) {
   const query = new URL(request.url).searchParams.get("q")?.replace(/[<>]/g, "").trim().slice(0, 60) ?? "";
   if (query.length < 2) return NextResponse.json({ suggestions: [] });
   try {
@@ -16,3 +17,4 @@ export async function GET(request: Request) {
   }
 }
 
+export const GET = withObservability("/api/properties/suggestions", handleGET);
