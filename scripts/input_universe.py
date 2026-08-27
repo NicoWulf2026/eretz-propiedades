@@ -28,7 +28,7 @@ RAIZ = Path(r"D:\INMO CAPITAL")
 
 # Version del universo. Subirla cuando la lista cambie a proposito, para que un
 # artefacto viejo no se confunda con uno nuevo.
-UNIVERSE_VERSION = "input_universe_v3"
+UNIVERSE_VERSION = "input_universe_v4"
 
 # Se usa SIEMPRE el archivo corregido (.coherente / .limpio.coherente) cuando
 # existe: es el que paso por las guardas de aritmetica de inmuebles.
@@ -51,6 +51,8 @@ ENTRADAS = (
     ("RECUPERACION_wordpress", "properties_run1.coherente.jsonl",     "wordpress"),
     ("RECUPERACION_generico",  "properties_run1.coherente.jsonl",     "generico"),
     ("RECUPERACION_wasi",      "properties_run1.coherente.jsonl",     "wasi"),
+    ("RECUPERACION2_wordpress", "properties_run1.coherente.jsonl",   "wordpress"),
+    ("RECUPERACION2_generico",  "properties_run1.coherente.jsonl",   "generico"),
 )
 
 # Las que no pueden faltar nunca mas, por nombre. No es decorativo: son

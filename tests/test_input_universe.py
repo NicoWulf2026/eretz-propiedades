@@ -25,7 +25,7 @@ from scripts.input_universe import (ENTRADAS, OBLIGATORIAS,  # noqa: E402
 # El universo analizado que produjo el write gate. Si cambia a proposito -un
 # rollout nuevo- se actualiza aca junto con la lista, y el cambio queda a la
 # vista en el diff en vez de aparecer como un numero distinto en un informe.
-UNIVERSO_ESPERADO = 187_936
+UNIVERSO_ESPERADO = 189_159
 
 # El conteo viejo, de cuando faltaban dos rollouts. Ningun artefacto puede
 # volver a este numero sin que alguien lo note.
@@ -36,6 +36,9 @@ UNIVERSO_SIN_BACKLOG = 174_955
 
 # Y el de antes de recuperar las fuentes mal clasificadas.
 UNIVERSO_SIN_RECUPERACION = 181_492
+
+# Y el previo a la segunda ronda, con el clasificador ya corregido.
+UNIVERSO_SIN_RECUPERACION2 = 187_936
 
 
 def test_las_dos_que_se_habian_perdido_estan_declaradas():
@@ -76,6 +79,8 @@ def test_el_universo_no_volvio_a_ningun_conteo_viejo():
         "el universo volvio al conteo previo a reanudar el backlog")
     assert total != UNIVERSO_SIN_RECUPERACION, (
         "el universo volvio al conteo previo a la recuperacion por mecanismo")
+    assert total != UNIVERSO_SIN_RECUPERACION2, (
+        "el universo volvio al conteo previo a la segunda ronda")
 
 
 def test_las_dos_recuperadas_aportan_propiedades_reales():
