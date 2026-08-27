@@ -253,6 +253,78 @@ Falta para beta:
 
 La primera mejora sin proveedor debe ser un logger estructurado server-only con allowlist, redacción, duración, ruta y outcome. No se implementó en esta ejecución porque modifica todas las rutas críticas y merece un bloque probado propio.
 
+## Revisión de la propuesta P0 (2026-08-27, ejecución posterior)
+
+La propuesta y su rollback fueron revisados línea por línea. **No se ejecutaron**:
+son un cambio remoto de base y requieren autorización explícita.
+
+El SQL está bien construido: transacción, preflight que aborta si falta un objeto
+o un rol, revoca **sólo** privilegios de escritura dejando `SELECT` intacto, y
+valida dentro de la misma transacción, de modo que si algún privilegio efectivo
+sobrevive, revierte en vez de dejar el trabajo a medias.
+
+Cuatro observaciones, ninguna bloqueante:
+
+1. **`MAINTAIN` existe desde PostgreSQL 17.** La evidencia de la ACL lo confirma
+   —la `m` de `arwdDxtm` es exactamente ese privilegio— así que el cluster es 17+.
+   Pero conviene saber que, en un cluster anterior, el `REVOKE` fallaría al
+   **parsear**, antes de que el preflight llegue a correr. El fallo es seguro
+   (no se aplica nada), pero el mensaje no diría lo que pasa.
+
+2. **La validación usa `has_table_privilege`, que mide privilegio efectivo**, no
+   la ACL literal: incluye lo que llega por `PUBLIC` o por pertenencia a otro
+   rol. Es la comprobación correcta —es más estricta que el `REVOKE`— pero
+   implica que si `PUBLIC` ganara escritura en el futuro, el script revocaría
+   bien y aun así revertiría. Quien opere debe leer ese error como "hay otra
+   fuente de privilegio", no como "el revoke falló".
+
+3. **El rollback restaura los privilegios, no el otorgante.** Los grants
+   originales figuran como `arwdDxtm/supabase_admin`. Si el rollback corre como
+   `postgres`, la ACL queda equivalente en privilegios pero no idéntica en
+   texto. No cambia el efecto; sí cambia lo que se ve al comparar.
+
+4. **El rollback reabre la exposición P0**, que es su trabajo. Conviene que
+   quien lo ejecute lo sepa antes y no después.
+
+### Verificación de sólo lectura
+
+Se agregó `supabase/proposals/20260827_public_postgis_acl_verify.sql`. No cambia
+nada y corre con `eretz_preview_ro`. Responde tres preguntas sin depender de la
+memoria de nadie: si la exposición sigue ahí, si se cerró, y si volvió. Incluye
+la versión del servidor (por el punto 1), el origen del privilegio —grant directo
+frente a herencia, que son dos problemas distintos y se arreglan distinto— y el
+inventario de `SECURITY DEFINER` públicos, que queda medido aunque esta propuesta
+no lo toque.
+
+## Observabilidad y antiabuso implementados
+
+Dos de los pendientes que este documento marcaba dejaron de estarlo. Los dos son
+código de aplicación: **no se tocó la base ni se contrató ningún proveedor**.
+
+**Logs estructurados con request ID.** Una línea JSON por request a stdout —lo que
+Vercel ya recolecta— en las 7 rutas de API. El caso que cierra es concreto:
+`/api/properties/counts` hacía `catch { return 503 }`, así que desde afuera un
+timeout de la base, una credencial vencida y un bug de parseo se veían igual. Y
+cuando alguien reportaba "me tira error al buscar" no había forma de encontrar
+esa request entre las demás; ahora el id viaja en la respuesta y se puede citar.
+
+Dos reglas sobre qué se escribe: ningún valor de entrada —los filtros son texto
+que tipeó una persona— sino los nombres de los parámetros; y todo pasa por un
+redactor, sin confiar en quien llama, porque un error de `postgres` trae la
+cadena de conexión completa con usuario y contraseña dentro del mensaje.
+
+**Freno de abuso en reportes y reclamos.** Tasa por endpoint y deduplicación por
+contenido. Con un límite que conviene no perder de vista: el estado vive en
+memoria del proceso, y en Vercel cada instancia tiene la suya. Es un badén, no un
+control distribuido: frena el bucle trivial y no frena a quien rote origen. Para
+beta pública hace falta un almacén compartido, y por eso el estado está detrás de
+una interfaz en vez de desparramado por las rutas.
+
+Un duplicado responde `received`, no "duplicado": decirle eso a alguien que
+reporta un problema real suena a que no se le dio curso. Y la guarda corre
+**después** de validar, porque si un 422 gastara cuota bastaría con mandar basura
+para dejar sin servicio a quien reporta de verdad desde la misma red.
+
 ## Beta readiness
 
 ### Beta privada — YES WITH CONDITIONS
