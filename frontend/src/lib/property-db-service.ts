@@ -7,6 +7,7 @@ import { propertyLocation } from "@/lib/property-presenter";
 import { clusterMapMarkers } from "@/lib/map-points";
 import { getPreviewQualityGate } from "@/lib/preview-quality-gate";
 import { parsePropertyFilters } from "@/lib/property-query";
+import { recomendar, type CandidatoRelacionado } from "@/domain/recommendations";
 import { addParam, buildCursorClause, buildWhere, normalizeSearch, sortSpec, type CursorPayload } from "@/lib/property-sql";
 import { entitySlug, slugify } from "@/lib/slug";
 import type {
@@ -779,7 +780,44 @@ export async function getRelatedProperties(property: Property): Promise<Property
     provincia: property.province ?? undefined,
   });
   const result = await searchProperties(filters);
-  return result.properties.filter((item) => item.id !== property.id).slice(0, 4);
+  const candidatos = result.properties.filter((item) => item.id !== property.id);
+
+  // El filtro de arriba acota bien el universo pero no lo ORDENA: tomar los
+  // primeros cuatro le mostraba a un departamento de Rosario otros cuatro de
+  // una localidad a 300 km. Se puntúa lo YA traído —sin consultas nuevas ni
+  // latencia extra— para que primero aparezca lo del mismo barrio y de precio
+  // parecido.
+  //
+  // `minimo: 0` conserva la cantidad actual a propósito: aplicar el umbral
+  // podría dejar la sección vacía, y eso es un cambio de UI que se decide
+  // aparte. Acá se toma sólo la mejora de orden, que no puede regresionar nada.
+  const ordenadas = recomendar(
+    comoCandidatoRelacionado(property),
+    candidatos.map(comoCandidatoRelacionado),
+    { limite: 4, minimo: 0 },
+  );
+
+  const porId = new Map(candidatos.map((item) => [String(item.id), item]));
+  return ordenadas
+    .map((r) => porId.get(r.id))
+    .filter((item): item is PropertySummary => item !== undefined);
+}
+
+/** Adapta la forma de presentación a la que espera el puntuador del dominio. */
+function comoCandidatoRelacionado(p: Property | PropertySummary): CandidatoRelacionado {
+  return {
+    id: String(p.id),
+    operation: p.operation ?? null,
+    propertyType: p.propertyType ?? null,
+    province: p.province ?? null,
+    city: p.city ?? null,
+    neighborhood: p.neighborhood ?? null,
+    price: p.price ?? null,
+    currency: p.currency ?? null,
+    bedrooms: p.bedrooms ?? null,
+    rooms: p.rooms ?? null,
+    totalArea: p.totalArea ?? null,
+  };
 }
 
 function clusterMapProperties(valid: ClassifiedMapCandidate[], zoom: number): MapSearchResponse["points"] {
