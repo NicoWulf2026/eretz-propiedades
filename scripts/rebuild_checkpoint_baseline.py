@@ -139,6 +139,14 @@ def main() -> int:
     base = Path(a.rollout)
     ckpt = base / "checkpoint.json"
     props = base / f"properties_run{a.corrida}.jsonl"
+    # Si las guardas de coherencia corrigieron algo, el baseline tiene que
+    # salir del archivo corregido. Desde el original, la corrida siguiente lee
+    # nuestra propia correccion como un cambio que hizo la inmobiliaria: una
+    # superficie que arreglamos nosotros vuelve como MODIFICADA y contamina la
+    # medicion de idempotencia, que es exactamente lo que se estaba midiendo.
+    corregido = props.with_name(props.name.replace(".jsonl", ".coherente.jsonl"))
+    if corregido.exists():
+        props = corregido
 
     print("### RECONSTRUCCION DEL BASELINE ###")
     print(f"  rollout:  {base}")
