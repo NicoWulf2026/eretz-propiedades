@@ -54,8 +54,22 @@ import type { AgentId, BranchId, ListingId, OrganizationId, PropertyEntityId, Us
  * Determina qué ejes de estado tienen sentido y qué se puede editar. Es el
  * discriminante más importante del modelo.
  */
-export const LISTING_ORIGINS = ["SCRAPED", "MANUAL", "IMPORTED", "API"] as const;
+export const LISTING_ORIGINS = ["SCRAPED", "MANUAL", "IMPORTED", "API", "UNKNOWN"] as const;
 export type ListingOrigin = (typeof LISTING_ORIGINS)[number];
+
+/**
+ * `UNKNOWN` se agregó al enfrentar el modelo con datos reales.
+ *
+ * El origen no viaja en `Property`: vive en la fila cruda (`fuente_extraccion`,
+ * `cms_origen`). Cuando ninguno de los dos está, no sabemos de dónde vino esa
+ * publicación, y las dos salidas fáciles son malas: asumir `SCRAPED` es
+ * inventar un hecho —además del que casi siempre acierta, que es peor, porque
+ * vuelve invisible al que no—, y omitir la evaluación deja un hueco en la
+ * medición justo donde el dato es más pobre.
+ *
+ * Al no ser `MANUAL` ni `API`, cae por construcción en la rama conservadora de
+ * la moderación: revisar, no bloquear. Es la respuesta correcta ante la duda.
+ */
 
 /**
  * ¿El origen implica que alguien publicó deliberadamente EN ERETZ?

@@ -8,6 +8,7 @@ import { clusterMapMarkers } from "@/lib/map-points";
 import { getPreviewQualityGate } from "@/lib/preview-quality-gate";
 import { parsePropertyFilters } from "@/lib/property-query";
 import { recomendar, type CandidatoRelacionado } from "@/domain/recommendations";
+import { ejecutarShadow } from "@/lib/shadow/run";
 import { addParam, buildCursorClause, buildWhere, normalizeSearch, sortSpec, type CursorPayload } from "@/lib/property-sql";
 import { entitySlug, slugify } from "@/lib/slug";
 import type {
@@ -280,10 +281,24 @@ async function getPointStats(
 
 async function mapRowsToProperties<T extends SupabaseProperty>(rows: T[]) {
   const stats = await getPointStats(rows);
-  return rows.map((row) => mapSupabasePropertyToProperty(
+  const properties = rows.map((row) => mapSupabasePropertyToProperty(
     row,
     stats.get(coordinateKey(row.latitud, row.longitud)),
   ));
+
+  // Modo sombra. Único punto de integración: todo lo que se convierte en
+  // `Property` pasa por acá, así que no hace falta cablearlo en cards, ficha,
+  // mapa ni perfiles, y no puede evaluarse dos veces lo mismo.
+  //
+  // `ejecutarShadow` no devuelve nada y `properties` se retorna intacto: no hay
+  // forma de que la evaluación cambie lo que se responde. Con la flag apagada
+  // sale por una comparación de strings, antes de recorrer el lote.
+  ejecutarShadow(
+    properties.map((property, i) => ({ property, item: rows[i] })),
+    "mapRowsToProperties",
+  );
+
+  return properties;
 }
 
 async function mapRowsToSummaries<T extends SupabaseProperty>(rows: T[]) {
