@@ -2834,3 +2834,94 @@ nav[aria-label="Paginación"] { padding-block: .5rem 1.5rem; }
   border-radius: 999px;
   padding: .18rem .55rem;
 }
+
+/* === Wizard de publicación (interno, tras flag) ========================== */
+/* Sobre .field, .check y los botones existentes. Lo nuevo es la disposición. */
+
+.pub-page { padding-block: 2.5rem 4rem; }
+.pub-page-header { max-width: 62ch; margin-bottom: 2rem; }
+.pub-page-header h1 { margin: .25rem 0 .6rem; }
+.pub-page-lede { color: var(--ink-3); line-height: 1.6; }
+
+.pub-wizard { display: grid; gap: 1.5rem; max-width: 62rem; }
+
+.pub-steps { display: flex; flex-wrap: wrap; gap: .3rem 1.1rem; list-style: none; margin: 0; padding: 0; }
+/* --ink-3 y no --ink-4: sobre el lienzo (--canvas) el cuarto nivel de tinta
+   da 4,36:1, apenas por debajo del 4,5:1 de AA. Sirve sobre blanco, no sobre
+   el fondo de página. */
+.pub-steps li { display: flex; align-items: center; gap: .45rem; font-size: var(--text-xs); color: var(--ink-3); }
+.pub-step-number {
+  display: grid; place-items: center; width: 1.55rem; height: 1.55rem;
+  border-radius: 999px; border: 1px solid var(--line-strong);
+  font-weight: 650; font-size: .72rem; background: var(--surface-1);
+}
+.pub-steps li.is-current { color: var(--navy-900); font-weight: 650; }
+.pub-steps li.is-current .pub-step-number { border-color: var(--navy-700); background: var(--navy-700); color: #fff; }
+.pub-steps li.is-done { color: var(--ink-3); }
+.pub-steps li.is-done .pub-step-number { border-color: var(--navy-700); color: var(--navy-700); }
+
+.pub-panel {
+  padding: 1.6rem 1.7rem 1.7rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+  box-shadow: var(--shadow-sm);
+}
+.pub-panel-header { margin-bottom: 1.35rem; }
+.pub-panel-header h2 { margin: 0 0 .3rem; font-size: 1.3rem; }
+.pub-panel-header p { margin: 0; color: var(--ink-3); font-size: var(--text-sm); line-height: 1.5; }
+.pub-panel-body:focus { outline: none; }
+.pub-panel-body:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 4px; border-radius: var(--radius-sm); }
+
+.pub-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 1.1rem 1.2rem; }
+.pub-grid-single { display: grid; gap: 1.1rem; grid-column: 1 / -1; }
+.pub-fieldset { border: 0; padding: 0; margin: 0; grid-column: 1 / -1; }
+.pub-fieldset legend { font-size: var(--text-xs); font-weight: 600; color: var(--ink-2); padding: 0; margin-bottom: .4rem; }
+.pub-options { display: flex; flex-wrap: wrap; gap: .2rem 1.5rem; }
+
+.pub-actions { display: flex; flex-wrap: wrap; gap: .7rem; margin-top: 1.6rem; }
+.pub-help { font-size: var(--text-xs); line-height: 1.4; color: var(--ink-3); }
+.pub-error { font-size: var(--text-xs); font-weight: 600; color: #a3242a; margin: 0; }
+.pub-local-note { margin: 0; font-size: var(--text-xs); color: var(--ink-3); }
+
+.pub-restore {
+  padding: 1.5rem 1.6rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+}
+.pub-restore h2 { margin: 0 0 .5rem; font-size: 1.15rem; }
+.pub-restore p { margin: 0; color: var(--ink-3); font-size: var(--text-sm); line-height: 1.55; }
+
+/* Fotos */
+.pub-rejected { margin: 0; padding: .8rem 1rem .8rem 2rem; border-radius: var(--radius-sm); background: #fdf2f2; color: #7a1c21; font-size: var(--text-sm); }
+.pub-images { list-style: none; margin: 0; padding: 0; display: grid; gap: .6rem; }
+.pub-image { display: grid; grid-template-columns: 4.5rem 1fr auto; align-items: center; gap: .8rem; padding: .5rem; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-2); }
+.pub-image img { width: 4.5rem; height: 3.4rem; object-fit: cover; border-radius: 4px; display: block; }
+.pub-image-name { font-size: var(--text-sm); color: var(--ink-2); overflow-wrap: anywhere; }
+.pub-image-actions { display: flex; gap: .25rem; }
+
+/* Revisión */
+.pub-review { display: grid; gap: 1.4rem; }
+.pub-blockers, .pub-suggestions { padding: 1rem 1.15rem; border-radius: var(--radius-sm); }
+.pub-blockers { background: #fdf2f2; border: 1px solid #f0c9cb; }
+.pub-blockers h3 { margin: 0 0 .5rem; font-size: 1rem; color: #7a1c21; }
+.pub-suggestions { background: var(--gold-100); border: 1px solid #e6d5aa; }
+.pub-suggestions h3 { margin: 0 0 .2rem; font-size: 1rem; color: #7a5c18; }
+.pub-suggestions-note { margin: 0 0 .5rem; font-size: var(--text-xs); color: #7a5c18; }
+.pub-blockers ul, .pub-suggestions ul { margin: 0; padding-left: 1.15rem; display: grid; gap: .35rem; font-size: var(--text-sm); line-height: 1.5; }
+
+.pub-link { background: none; border: 0; padding: 0 0 0 .5rem; color: var(--accent); font-size: inherit; text-decoration: underline; text-underline-offset: 2px; }
+
+.pub-summary { margin: 0; display: grid; gap: .1rem; }
+.pub-summary-row { display: grid; grid-template-columns: 11rem 1fr; gap: 1rem; padding: .55rem 0; border-bottom: 1px solid var(--line); font-size: var(--text-sm); }
+.pub-summary-row dt { color: var(--ink-3); }
+.pub-summary-row dd { margin: 0; color: var(--ink); }
+
+.pub-submit-state { padding: 1.1rem 1.2rem; border-radius: var(--radius-sm); background: var(--surface-3); }
+.pub-ready { margin: 0 0 .3rem; color: var(--navy-900); }
+.pub-ready-note, .pub-not-ready { margin: 0; font-size: var(--text-sm); line-height: 1.55; color: var(--ink-2); }
+
+@media (max-width: 760px) {
+  .pub-summary-row { grid-template-columns: 1fr; gap: .1rem; }
+}
