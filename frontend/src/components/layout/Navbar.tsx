@@ -20,6 +20,7 @@ const personalItems: NavItem[] = [
 ];
 
 const menuItems: NavItem[] = [
+  { label: "Calculadoras", href: "/calculadoras" },
   { label: "Contacto", href: "/contacto" },
   { label: "Términos", href: "/terminos" },
   { label: "Privacidad", href: "/privacidad" },
