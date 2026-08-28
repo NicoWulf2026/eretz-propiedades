@@ -797,7 +797,7 @@ export async function getPriceHistory(id: string): Promise<PriceHistoryPoint[]> 
   }
 }
 
-export async function getRelatedProperties(property: Property): Promise<PropertySummary[]> {
+export async function getRelatedProperties(property: Property): Promise<RelacionadaConMotivos[]> {
   const filters = parsePropertyFilters({
     operacion: property.operation,
     tipo: property.propertyType,
@@ -823,9 +823,20 @@ export async function getRelatedProperties(property: Property): Promise<Property
 
   const porId = new Map(candidatos.map((item) => [String(item.id), item]));
   return ordenadas
-    .map((r) => porId.get(r.id))
-    .filter((item): item is PropertySummary => item !== undefined);
+    .map((r) => {
+      const property = porId.get(r.id);
+      if (!property) return null;
+      // Las razones viajan con la propiedad para poder mostrar "Similar
+      // porque…". Son las etiquetas legibles del scorer, NO su puntaje: el
+      // número interno no le dice nada a quien mira y sugeriría un orden
+      // comercial que no existe.
+      return { property, reasons: r.reasons.map((razon) => razon.label) };
+    })
+    .filter((x): x is RelacionadaConMotivos => x !== null);
 }
+
+/** Una propiedad relacionada con los motivos por los que se parece. */
+export type RelacionadaConMotivos = { property: PropertySummary; reasons: string[] };
 
 /** Adapta la forma de presentación a la que espera el puntuador del dominio. */
 function comoCandidatoRelacionado(p: Property | PropertySummary): CandidatoRelacionado {

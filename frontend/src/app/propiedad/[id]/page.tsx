@@ -193,7 +193,21 @@ export default async function PropertyPage({ params, searchParams }: { params: P
           <section className="detail-lower-section" aria-labelledby="related-heading">
             <p className="eyebrow">También puede interesarte</p><h2 id="related-heading" className="section-title">Propiedades similares</h2>
             <p className="section-intro">Coinciden por ubicación, tipo y operación. El orden es neutral.</p>
-            <div className="detail-related-grid is-four">{related.map((item) => <PropertyCard key={item.id} property={item} returnTo={returnTo} variant="grid" />)}</div>
+            <div className="detail-related-grid is-four">
+              {related.map(({ property: item, reasons }) => (
+                <div key={item.id} className="related-item">
+                  <PropertyCard property={item} returnTo={returnTo} variant="grid" />
+                  {/* Por qué se parece, en palabras. Nunca el puntaje: un
+                      número interno no le dice nada a quien mira y sugeriría un
+                      orden comercial que no existe. */}
+                  {reasons.length ? (
+                    <ul className="related-reasons">
+                      {reasons.slice(0, 3).map((motivo) => <li key={motivo}>{motivo}</li>)}
+                    </ul>
+                  ) : null}
+                </div>
+              ))}
+            </div>
           </section>
         ) : null}
       </main>

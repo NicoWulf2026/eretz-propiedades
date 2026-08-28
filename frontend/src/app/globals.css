@@ -2816,3 +2816,16 @@ nav[aria-label="Paginación"] { padding-block: .5rem 1.5rem; }
   .calc-layout { grid-template-columns: minmax(0, 1fr); }
   .calc-output { position: static; }
 }
+
+/* Motivos de una propiedad relacionada. Van bajo la card, discretos: explican
+   por qué aparece sin competir con la propiedad en sí. */
+.related-item { display: grid; gap: .5rem; align-content: start; }
+.related-reasons { display: flex; flex-wrap: wrap; gap: .3rem; list-style: none; margin: 0; padding: 0; }
+.related-reasons li {
+  font-size: var(--text-xs);
+  line-height: 1.3;
+  color: var(--ink-3);
+  background: var(--surface-3);
+  border-radius: 999px;
+  padding: .18rem .55rem;
+}

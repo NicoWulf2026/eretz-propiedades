@@ -216,3 +216,36 @@ describe("selección", () => {
     expect(recomendar(BASE, c)).toEqual(recomendar(BASE, c));
   });
 });
+
+describe("lo que se muestra son palabras, no el puntaje", () => {
+  it("las etiquetas nunca contienen el número interno", () => {
+    // Es lo que la ficha renderiza. Un puntaje visible no le dice nada a quien
+    // mira y sugeriría un orden comercial que no existe.
+    for (const r of recomendar(BASE, [cand("a"), cand("b", { neighborhood: "Fisherton" })], { minimo: 0 })) {
+      for (const razon of r.reasons) {
+        expect(razon.label).not.toMatch(/\d+[.,]\d+/);
+        expect(razon.label).not.toContain(String(r.score));
+      }
+    }
+  });
+
+  it("toda etiqueta es texto legible en castellano", () => {
+    const [primera] = recomendar(BASE, [cand("a")], { minimo: 0 });
+    const etiquetas = primera.reasons.map((x) => x.label);
+    expect(etiquetas).toContain("el mismo barrio");
+    expect(etiquetas).toContain("precio similar");
+    // Ninguna es un código interno.
+    for (const e of etiquetas) expect(e).not.toMatch(/^[A-Z_]+$/);
+  });
+
+  it("una relacionada sin nada en común no inventa un motivo", () => {
+    // Con `minimo: 0` puede aparecer igual, y en ese caso la ficha no muestra
+    // ninguna etiqueta en vez de inventar una.
+    const ajena = cand("z", {
+      neighborhood: "X", city: "Y", province: "Z",
+      price: null, bedrooms: null, totalArea: null, propertyType: "campo",
+    });
+    const [r] = recomendar(BASE, [ajena], { minimo: 0 });
+    expect(r.reasons).toEqual([]);
+  });
+});
