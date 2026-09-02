@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
 import time
 import traceback
@@ -40,6 +41,46 @@ TERMINAL = {
     "CERTIFIED_COMPLETE", "CERTIFIED_BEST_AVAILABLE", "BLOCKED_EXTERNAL",
     "IDENTITY_PENDING", "NO_INVENTORY_CONFIRMED",
 }
+
+
+CERROJO = "AGENCY_CERTIFICATION_RUNNER.lock"
+# El latido se refresca al terminar cada inmobiliaria. Sobre 74 corridas
+# medidas, la mas larga tardo 927 s, asi que un latido de mas de una hora
+# significa que ese proceso ya no esta: es cuatro veces el peor caso observado,
+# no un numero elegido de la nada.
+LATIDO_VENCIDO = 3600.0
+
+
+def latir(ruta: Path, canonical_id: str | None) -> None:
+    ruta.write_text(json.dumps({
+        "pid": os.getpid(),
+        "heartbeat": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "heartbeat_epoch": time.time(),
+        "current_agency": canonical_id,
+    }, ensure_ascii=False), encoding="utf-8")
+
+
+def tomar_cerrojo(output: Path) -> Path:
+    """Impide dos runners sobre el mismo checkpoint.
+
+    Dos procesos escribiendo el mismo progreso se pisan el cursor y le vuelven
+    a pedir a las mismas fuentes el mismo inventario: rompe la recuperabilidad
+    y golpea sitios ajenos al doble del ritmo que acordamos con ellos.
+    """
+    ruta = output / CERROJO
+    if ruta.exists():
+        try:
+            previo = json.loads(ruta.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            previo = {}
+        edad = time.time() - float(previo.get("heartbeat_epoch") or 0)
+        if edad < LATIDO_VENCIDO:
+            raise SystemExit(
+                f"Ya hay un runner activo (pid {previo.get('pid')}, ultimo "
+                f"latido hace {edad:.0f}s, en {previo.get('current_agency')}). "
+                f"Si comprobaste que murio, borra {ruta}.")
+    latir(ruta, None)
+    return ruta
 
 
 def runner_error(output: Path, canonical_id: str,
@@ -229,6 +270,9 @@ def main() -> int:
     parser.add_argument("--budget", type=float, default=1800.0)
     parser.add_argument("--max-listings", type=int, default=0)
     parser.add_argument("--continue-after-fix", action="store_true")
+    parser.add_argument("--limit", type=int, default=0,
+                        help="cuantas inmobiliarias procesar en esta corrida "
+                             "(0 = hasta agotar la cola)")
     args = parser.parse_args()
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
@@ -252,6 +296,8 @@ def main() -> int:
             "reason": "connector code fingerprint changed",
             "mode": mode_name, "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S")})
     pending = [key for key in queue if not current(key)]
+    if args.limit > 0:
+        pending = pending[:args.limit]
     progress_path = output / "AGENCY_CERTIFICATION_PROGRESS.json"
     previous_progress: dict[str, Any] = {}
     if progress_path.exists():
@@ -271,8 +317,10 @@ def main() -> int:
         current_count=sum(current(key) for key in queue),
         started_at=started_at, global_cursor=global_cursor,
         last_terminal_agency=last_terminal))
+    cerrojo = tomar_cerrojo(output)
     stopped_on: str | None = None
     for index, canonical_id in enumerate(pending, 1):
+        latir(cerrojo, canonical_id)
         write_json(progress_path, progress_payload(
             mode=mode_name, universe=len(catalog), queue=queue,
             pending=pending[index - 1:],
@@ -330,6 +378,7 @@ def main() -> int:
             stopped_on = canonical_id
             break
     render_summary(output, len(catalog), existing, mode_name, stopped_on)
+    cerrojo.unlink(missing_ok=True)
     return 2 if stopped_on else 0
 
 

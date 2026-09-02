@@ -286,6 +286,40 @@ def test_a_blocked_source_is_not_hit_again_with_another_connector() -> None:
         "tokko", {"estado": "BLOQUEADA", "_props": []})
 
 
+def test_two_runners_cannot_share_a_checkpoint(tmp_path) -> None:
+    """Dos procesos escribiendo el mismo progreso se pisan el cursor y le
+    vuelven a pedir a las mismas fuentes el mismo inventario: rompe la
+    recuperabilidad y golpea sitios ajenos al doble del ritmo acordado."""
+    import pytest
+
+    cerrojo = certification_queue.tomar_cerrojo(tmp_path)
+    assert cerrojo.exists()
+    with pytest.raises(SystemExit) as fallo:
+        certification_queue.tomar_cerrojo(tmp_path)
+    assert "runner activo" in str(fallo.value)
+
+
+def test_a_dead_runner_does_not_block_the_queue_forever(tmp_path) -> None:
+    """Si el proceso murio sin soltar el cerrojo, la cola no puede quedar
+    trabada para siempre. El latido vencido es cuatro veces la corrida mas
+    larga observada, no un numero elegido de la nada."""
+    cerrojo = certification_queue.tomar_cerrojo(tmp_path)
+    viejo = json.loads(cerrojo.read_text(encoding="utf-8"))
+    viejo["heartbeat_epoch"] -= certification_queue.LATIDO_VENCIDO + 1
+    cerrojo.write_text(json.dumps(viejo), encoding="utf-8")
+
+    # No levanta: el latido vencido lo declara muerto.
+    certification_queue.tomar_cerrojo(tmp_path)
+
+
+def test_the_lock_says_which_agency_was_in_flight(tmp_path) -> None:
+    """Sin saber en cual quedo, reanudar obliga a adivinar."""
+    cerrojo = certification_queue.tomar_cerrojo(tmp_path)
+    certification_queue.latir(cerrojo, "roomix:alfa")
+    assert json.loads(cerrojo.read_text(encoding="utf-8"))["current_agency"] == (
+        "roomix:alfa")
+
+
 def test_ready_queue_only_includes_resolved_identities(monkeypatch) -> None:
     """Certificar una fuente cuya identidad no resuelve gasta dos corridas en
     vivo contra un sitio de terceros para producir inventario que despues no
