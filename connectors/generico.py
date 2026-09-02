@@ -2280,6 +2280,18 @@ class GenericoConnector(Connector):
             rf'(\d{{1,2}})\b', marcado, re.I)
         if rotulo and 1 <= int(rotulo.group(1)) <= 99:
             return int(rotulo.group(1))
+        # La forma general de una fila de atributos, sin depender del nombre
+        # de la clase: un elemento que contiene SOLO el rotulo, seguido de otro
+        # que contiene SOLO el numero. Aqui no hay ambiguedad -la estructura
+        # dice que valor pertenece a que rotulo-, mientras que sobre el texto
+        # aplanado "Ambientes 3 Dormitorios 2" y "3 dormitorios 2 baños" se ven
+        # iguales y elegir mal corre todos los valores un lugar.
+        celda = r"(?:span|div|dd|dt|td|li|p|b|strong)"
+        rotulo = re.search(
+            rf"<{celda}[^>]*>\s*(?:{etiqueta})\s*</{celda}>\s*"
+            rf"<{celda}[^>]*>\s*(\d{{1,2}})\s*</{celda}>", marcado, re.I)
+        if rotulo and 1 <= int(rotulo.group(1)) <= 99:
+            return int(rotulo.group(1))
         return GenericoConnector._cuenta(texto, etiqueta, previo)
 
     @staticmethod

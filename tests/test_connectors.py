@@ -1229,28 +1229,41 @@ def test_el_markup_escapado_no_termina_dentro_de_la_descripcion():
     assert "Casa linda" in t and "con patio" in t
 
 
-TABLA_ATRIBUTOS = ("Tipo Casa Operacion En venta Precio USD 66.000 "
-                   "Superficie total 196 m2 Ambientes 3 Dormitorios 2 "
-                   "Banos 2 Cocheras 1")
+FILA_ATRIBUTO = (
+    '<div class="flex items-center justify-between p-3">'
+    '<span class="text-neutral-600 text-sm">{rotulo}</span>'
+    '<span class="font-medium text-neutral-800">{valor}</span></div>')
+FICHA_TABULADA = (
+    FILA_ATRIBUTO.format(rotulo="Superficie total", valor="196")
+    + FILA_ATRIBUTO.format(rotulo="Ambientes", valor="3")
+    + FILA_ATRIBUTO.format(rotulo="Dormitorios", valor="2")
+    + FILA_ATRIBUTO.format(rotulo="Banos", valor="2")
+    + FILA_ATRIBUTO.format(rotulo="Cocheras", valor="1"))
+TEXTO_TABULADO = "Superficie total 196 m2 Ambientes 3 Dormitorios 2 Banos 2 Cocheras 1"
 
 
-def test_los_atributos_tabulados_se_leen_del_numero_que_sigue_al_rotulo():
+def test_los_atributos_tabulados_se_leen_de_la_estructura():
     """Regresion de `roomix:analia requena propiedades`.
 
-    Su ficha publica "Ambientes 3 Dormitorios 2 Banos 2", sin dos puntos. Se
-    buscaba el numero ANTES del rotulo, asi que `ambientes` quedaba sin leer en
-    141 fichas con el dato a la vista, y peor: `dormitorios` tomaba el 3 de
-    ambientes. No es un campo vacio, es el valor del campo vecino.
+    Su ficha publica los atributos como filas ``<span>rotulo</span>
+    <span>valor</span>``, sin dos puntos. Sobre el texto aplanado eso es
+    indistinguible de la prosa "3 dormitorios 2 banos", donde el numero va
+    ANTES; la estructura, en cambio, dice sin ambiguedad que valor pertenece a
+    que rotulo.
     """
     from connectors.generico import GenericoConnector as G
 
-    assert G._cuenta(TABLA_ATRIBUTOS, r"ambientes?", None) == 3
-    assert G._cuenta(TABLA_ATRIBUTOS, r"dormitorios?|habitaciones?", None) == 2
-    assert G._cuenta(TABLA_ATRIBUTOS, r"ba[nñ]os?|toilettes?", None) == 2
+    def leer(etiqueta):
+        return G._cuenta_de_ficha(FICHA_TABULADA, TEXTO_TABULADO, etiqueta, None)
+
+    assert leer(r"ambientes?") == 3
+    assert leer(r"dormitorios?|habitaciones?") == 2
+    assert leer(r"ba[nñ]os?|toilettes?") == 2
+    assert leer(r"cocheras?") == 1
 
 
-def test_en_prosa_el_numero_sigue_yendo_antes_del_rotulo():
-    """"3 dormitorios 2 banos" es prosa: leerlo como tabla le daria 2
+def test_en_prosa_el_numero_va_antes_del_rotulo():
+    """"3 dormitorios 2 banos" es prosa. Leerlo como tabla daria 2
     dormitorios, que es el numero del campo siguiente."""
     from connectors.generico import GenericoConnector as G
 
@@ -1259,8 +1272,9 @@ def test_en_prosa_el_numero_sigue_yendo_antes_del_rotulo():
     assert G._cuenta(prosa, r"ba[nñ]os?|toilettes?", None) == 2
 
 
-def test_el_rotulo_con_dos_puntos_manda_sobre_los_dos_formatos():
-    """Sin ambiguedad posible no hace falta adivinar el formato."""
+def test_el_rotulo_con_dos_puntos_manda_sobre_la_prosa():
+    """Con dos puntos no hay nada que adivinar, y buscar el numero antes del
+    rotulo tomaba el 5 de ambientes como dormitorios."""
     from connectors.generico import GenericoConnector as G
 
     con_signo = "bano sauna Ambientes: 5 Dormitorios: 4 Banos: 5"
@@ -1269,19 +1283,12 @@ def test_el_rotulo_con_dos_puntos_manda_sobre_los_dos_formatos():
 
 
 def test_una_unidad_pegada_a_un_numero_no_es_una_cantidad():
-    """"196 m2 Ambientes" no son 2 ambientes: el 2 es parte de la unidad."""
+    """"196 m2 Ambientes" no son 2 ambientes: el 2 es parte de la unidad. Sin
+    estructura que lo aclare, el campo queda vacio en vez de llenarse con el
+    numero de al lado."""
     from connectors.generico import GenericoConnector as G
 
-    assert G._cuenta("Superficie 196 m2 Ambientes 3", r"ambientes?", None) == 3
-
-
-def test_el_formato_se_decide_con_toda_la_ficha_no_con_un_campo():
-    """Un solo rotulo no distingue los dos formatos; equivocarse corre todos
-    los valores un lugar."""
-    from connectors.generico import GenericoConnector as G
-
-    assert G._es_tabla_de_atributos(TABLA_ATRIBUTOS) is True
-    assert G._es_tabla_de_atributos("3 dormitorios 2 banos") is False
+    assert G._cuenta("Superficie 196 m2 Ambientes 3", r"ambientes?", None) != 2
 
 
 def test_el_sitemap_no_aporta_fichas_de_otro_host():
