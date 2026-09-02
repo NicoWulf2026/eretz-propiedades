@@ -737,12 +737,16 @@ class Connector:
         # "Caseros" en 11 avisos del Gran Buenos Aires, y la unica Caseros del
         # catalogo esta en Entre Rios, a 238 km. Afirmarla los habria mandado a
         # otra provincia.
-        if not desde_barrio:
-            # La fuente publico una ciudad y no la afirmamos: sea porque la
-            # coordenada la desmiente, porque hay varias candidatas o porque no
-            # es una localidad sino un barrio, el valor se validó y se rechazo.
-            # Es distinto de no haberlo podido leer, y la certificacion lo
-            # trata distinto: uno bloquea y el otro no.
+        # No afirmar una ciudad es distinto de no haberla podido leer, y la
+        # certificacion los trata distinto: uno bloquea y el otro no.
+        #
+        # Se marca cuando la fuente publico una ciudad y la vaciamos, y tambien
+        # cuando el texto venia en `barrio` pero la evidencia lo desmiente o lo
+        # deja ambiguo: ahi la pagina si nombra una localidad y nos negamos a
+        # afirmarla. Un barrio que simplemente no esta en el catalogo no marca
+        # nada, porque no habia ninguna ciudad publicada que rechazar.
+        if not desde_barrio or resolucion.certeza in (GEO_CONTRADICHA,
+                                                      GEO_AMBIGUA):
             Connector._marcar_descartado(prop, "ciudad")
 
         if desde_barrio:
