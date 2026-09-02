@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from scripts.agency_certifier import (
     classify_field,
     collapse_ratio,
@@ -189,6 +191,63 @@ def test_queue_does_not_repeat_current_identity_terminal_results(monkeypatch) ->
         "status": "CERTIFIED_COMPLETE", "connector": "generico",
         "connector_version": "fingerprint-current",
     }, record)
+
+
+def test_ready_queue_only_includes_resolved_identities(monkeypatch) -> None:
+    """Certificar una fuente cuya identidad no resuelve gasta dos corridas en
+    vivo contra un sitio de terceros para producir inventario que despues no
+    se puede asociar a ninguna inmobiliaria real."""
+    catalog = {
+        "roomix:resuelta": {"identity": "READY"},
+        "roomix:pendiente": {"identity": "IDENTITY_PENDING"},
+        "roomix:bloqueada": {"identity": "BLOCKED_EXTERNAL"},
+    }
+    monkeypatch.setattr(
+        certification_queue, "resolve_identity",
+        lambda record, key: {"identity_status": record["identity"]})
+    assert certification_queue.ready_queue(catalog) == ["roomix:resuelta"]
+
+
+def test_runner_failure_never_closes_an_agency(tmp_path) -> None:
+    """Un crash del runner no es evidencia sobre la inmobiliaria.
+
+    No prueba que no publique ni que su sitio este roto. Guardarlo como estado
+    terminal escribiria un problema nuestro como un hecho sobre la fuente, y
+    la cola no volveria a intentarla nunca.
+    """
+    try:
+        raise TimeoutError("la fuente no respondio")
+    except TimeoutError as error:
+        result = certification_queue.runner_error(tmp_path, "roomix:x", error)
+
+    assert result["status"] == "RUNNER_ERROR"
+    assert result["status"] not in certification_queue.TERMINAL
+    assert not certification_queue.is_current_result(
+        result, {"platform": {}, "source": {"detected_platform": "UNKNOWN"}})
+
+    # El traceback queda en el log de errores, no en el rollup de resultados.
+    assert "traceback" not in result
+    registrado = [json.loads(line) for line
+                  in (tmp_path / "AGENCY_RUNNER_ERRORS.jsonl").read_text(
+                      encoding="utf-8").splitlines() if line.strip()]
+    assert len(registrado) == 1
+    assert registrado[0]["reasons"] == ["TimeoutError: la fuente no respondio"]
+    assert "TimeoutError" in registrado[0]["traceback"]
+
+
+def test_runner_failure_result_survives_the_rollups(tmp_path) -> None:
+    """El resultado de error viaja por las mismas agregaciones que un cierre
+    normal: si no tuviera la forma esperada, el manejo del fallo seria el que
+    tumbaria la corrida."""
+    try:
+        raise ValueError("fuente rota")
+    except ValueError as error:
+        result = certification_queue.runner_error(tmp_path, "roomix:x", error)
+    certification_queue.update_rollups(tmp_path, result)
+    filas = [json.loads(line) for line
+             in (tmp_path / "AGENCY_CERTIFICATION_RESULTS.jsonl").read_text(
+                 encoding="utf-8").splitlines() if line.strip()]
+    assert [f["status"] for f in filas] == ["RUNNER_ERROR"]
 
 
 def test_mapaprop_change_does_not_invalidate_php_strategy() -> None:

@@ -11,6 +11,7 @@ import hashlib
 import json
 import sys
 import time
+import traceback
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
@@ -39,6 +40,25 @@ TERMINAL = {
     "CERTIFIED_COMPLETE", "CERTIFIED_BEST_AVAILABLE", "BLOCKED_EXTERNAL",
     "IDENTITY_PENDING", "NO_INVENTORY_CONFIRMED",
 }
+
+
+def runner_error(output: Path, canonical_id: str,
+                 error: BaseException) -> dict[str, Any]:
+    """Convierte un fallo del runner en un resultado NO terminal.
+
+    Un crash no dice nada sobre la inmobiliaria: no prueba que no publique, ni
+    que su sitio este roto. Guardarlo como estado terminal convertiria un
+    problema nuestro en un hecho sobre la fuente, que es exactamente la clase
+    de dato que despues no se distingue de uno real. Al quedar fuera de
+    TERMINAL, la fuente vuelve sola a la cola en la proxima corrida.
+    """
+    detalle = {"canonical_agency_id": canonical_id, "status": "RUNNER_ERROR",
+               "reasons": [f"{type(error).__name__}: {error}"],
+               "traceback": traceback.format_exc(),
+               "checked_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+    append_jsonl(output / "AGENCY_RUNNER_ERRORS.jsonl", detalle)
+    return {clave: valor for clave, valor in detalle.items()
+            if clave != "traceback"}
 
 
 def queue_fingerprint(queue: list[str], mode: str) -> str:
@@ -152,6 +172,20 @@ def pilot_queue(catalog: dict[str, dict[str, Any]], limit: int) -> list[str]:
     return selected
 
 
+def ready_queue(catalog: dict[str, dict[str, Any]]) -> list[str]:
+    """Solo las fuentes cuya identidad ya resuelve a una inmobiliaria real.
+
+    Certificar una fuente cuya identidad no resuelve gasta dos corridas en vivo
+    contra un sitio de terceros para producir inventario que despues no se
+    puede asociar a ninguna fila de `main`. Sobre el universo actual son 753
+    de 6.597: el resto espera a que se decida que hacer con las inmobiliarias
+    descubiertas y todavia no promovidas.
+    """
+    return [canonical_id for canonical_id in sorted(catalog)
+            if resolve_identity(catalog[canonical_id],
+                                canonical_id)["identity_status"] == "READY"]
+
+
 def full_queue(catalog: dict[str, dict[str, Any]]) -> list[str]:
     return sorted(catalog)
 
@@ -184,6 +218,8 @@ def main() -> int:
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--pilot", type=int, metavar="N")
     mode.add_argument("--full", action="store_true")
+    mode.add_argument("--ready", action="store_true",
+                      help="solo inmobiliarias con identidad resuelta")
     parser.add_argument("--v2-dir", default=r"D:\INMO CAPITAL\ERETZ_SUPABASE_RECONCILIATION_V2_20260827")
     parser.add_argument("--data-dir", default=r"D:\INMO CAPITAL\ERETZ_AGENCY_DATA")
     parser.add_argument("--platform-directory", default=r"D:\INMO CAPITAL\agency_platform_directory.jsonl")
@@ -198,8 +234,12 @@ def main() -> int:
     output.mkdir(parents=True, exist_ok=True)
     catalog = load_catalog(Path(args.v2_dir), Path(args.data_dir),
                            Path(args.platform_directory))
-    queue = pilot_queue(catalog, args.pilot) if args.pilot else full_queue(catalog)
-    mode_name = f"pilot-{args.pilot}" if args.pilot else "full"
+    if args.pilot:
+        queue, mode_name = pilot_queue(catalog, args.pilot), f"pilot-{args.pilot}"
+    elif args.ready:
+        queue, mode_name = ready_queue(catalog), "ready"
+    else:
+        queue, mode_name = full_queue(catalog), "full"
     existing = latest_results(output)
     def current(key: str) -> bool:
         return is_current_result(existing.get(key, {}), catalog[key])
@@ -240,8 +280,14 @@ def main() -> int:
             started_at=started_at, global_cursor=global_cursor,
             last_terminal_agency=last_terminal,
             current_agency=canonical_id, current_phase="CERTIFY"))
-        result = certify(canonical_id, catalog, output, Path(args.preingestion_db),
-                         args.interval, args.max_listings, args.budget)
+        try:
+            result = certify(canonical_id, catalog, output,
+                             Path(args.preingestion_db), args.interval,
+                             args.max_listings, args.budget)
+        except KeyboardInterrupt:
+            raise
+        except Exception as error:  # noqa: BLE001 - una fuente no tumba la cola
+            result = runner_error(output, canonical_id, error)
         update_rollups(output, result)
         append_jsonl(output / "AGENCY_MASTER_PROGRESS.jsonl", {
             "canonical_agency_id": canonical_id, "status": result["status"],
@@ -265,6 +311,15 @@ def main() -> int:
             last_terminal_agency=last_terminal,
             current_agency=(canonical_id if phase != "READY" else None),
             current_phase=phase)
+        if result["status"] in {"NEEDS_FIX", "RUNNER_ERROR"}:
+            # Cola de triage: con --continue-after-fix los defectos dejaban de
+            # detener la corrida y tambien dejaban de ser visibles.
+            append_jsonl(output / "AGENCY_DEFECT_QUEUE.jsonl", {
+                "canonical_agency_id": canonical_id,
+                "status": result["status"],
+                "reasons": result.get("reasons", []),
+                "position": index, "queue_size": len(queue),
+                "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S")})
         checkpoint.update({"attempted_in_this_run": index,
                            "last_agency": canonical_id,
                            "last_status": result["status"]})

@@ -118,6 +118,9 @@ def build_agency_manifest(
     web = {row.get("canonical_agency_id"): row for row in read_jsonl(web_directory_path)}
     platform = {row.get("canonical_agency_id"): row for row in read_jsonl(platform_path)}
     live_main = load_main_backup(main_backup_path)
+    main_por_nombre: dict[str, list[str]] = {}
+    for ident, fila in live_main.items():
+        main_por_nombre.setdefault(norm(fila.get("nombre")), []).append(str(ident))
     manifest: list[dict[str, Any]] = []
 
     for source in crosswalk:
@@ -163,9 +166,27 @@ def build_agency_manifest(
                 status = AMBIGUOUS
                 method = "MAIN_IDENTITY_NOT_EXACT"
         elif table == "staging":
-            status = NOT_FOUND
-            method = "STAGING_NAMESPACE_NOT_A_MAIN_FK"
-            evidence["promotion_check"] = "0/4920 candidates linked by main.staging_id_origen"
+            # Esto afirmaba "0/4920 candidates linked by
+            # main.staging_id_origen": un literal congelado de una medicion
+            # hecha una sola vez. Si el enlace se poblara, el texto seguiria
+            # diciendo cero, y 4.953 inmobiliarias quedarian declaradas
+            # irresolubles apoyadas en una afirmacion que ya nadie comprueba.
+            # Se verifica por registro contra el backup de main que esta
+            # funcion ya tiene cargado.
+            homonimas = main_por_nombre.get(norm(agency_name), [])
+            evidence["main_name_matches"] = len(homonimas)
+            if homonimas:
+                # Existe una inmobiliaria en main con ese nombre pero sin FK
+                # declarada. Elegir una seria inventar la identidad; queda
+                # ambigua para que la decida evidencia adicional.
+                status = AMBIGUOUS
+                method = "STAGING_NAME_COLLIDES_WITH_MAIN"
+                evidence["main_candidates"] = homonimas[:5]
+            else:
+                status = NOT_FOUND
+                method = "STAGING_NAMESPACE_NOT_A_MAIN_FK"
+                evidence["promotion_check"] = (
+                    "sin contraparte en main por nombre normalizado")
         elif source.get("crosswalk") == "AMBIGUOUS":
             status = AMBIGUOUS
             method = "CROSSWALK_AMBIGUOUS"

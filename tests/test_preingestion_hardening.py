@@ -60,6 +60,65 @@ def test_numeric_source_id_never_becomes_foreign_main_id(tmp_path: Path) -> None
     assert manifest[0]["resolution_method"] == "STAGING_NAMESPACE_NOT_A_MAIN_FK"
 
 
+def test_staging_evidence_is_measured_not_asserted(tmp_path: Path) -> None:
+    """La evidencia decia "0/4920 candidates linked by main.staging_id_origen".
+
+    Era un literal congelado de una medicion hecha una sola vez: si el enlace
+    se poblara, el texto seguiria diciendo cero y 4.953 inmobiliarias
+    quedarian declaradas irresolubles apoyadas en algo que nadie comprueba.
+    """
+    crosswalk = tmp_path / "crosswalk.jsonl"
+    web = tmp_path / "web.jsonl"
+    platform = tmp_path / "platform.jsonl"
+    main = tmp_path / "main.csv"
+    write_jsonl(crosswalk, [{
+        "stable_id": "roomix:mizrahi real estate",
+        "nombre_original": "Mizrahi Real Estate",
+        "crosswalk": "HIGH_CONFIDENCE_EXISTING",
+        "crosswalk_candidato": {"tabla": "staging", "id": "3080",
+                                "nombre": "Mizrahi Real Estate"},
+    }])
+    write_jsonl(web, [])
+    write_jsonl(platform, [])
+    write_main(main, [{"id": "3080", "nombre": "Otra Inmobiliaria"}])
+
+    manifest, _ = build_agency_manifest(crosswalk, web, platform, main)
+
+    assert manifest[0]["resolution_method"] == "STAGING_NAMESPACE_NOT_A_MAIN_FK"
+    assert manifest[0]["evidence"]["main_name_matches"] == 0
+    assert "0/4920" not in json.dumps(manifest[0]["evidence"])
+
+
+def test_staging_name_present_in_main_is_never_closed_as_not_found(
+        tmp_path: Path) -> None:
+    """Si el nombre existe en main pero sin FK declarada, no se puede afirmar
+    que la inmobiliaria no este: elegir una seria inventar la identidad, y
+    cerrarla como NOT_FOUND seria descartar una coincidencia real."""
+    crosswalk = tmp_path / "crosswalk.jsonl"
+    web = tmp_path / "web.jsonl"
+    platform = tmp_path / "platform.jsonl"
+    main = tmp_path / "main.csv"
+    write_jsonl(crosswalk, [{
+        "stable_id": "roomix:pastori propiedades",
+        "nombre_original": "Pastori Propiedades",
+        "crosswalk": "HIGH_CONFIDENCE_EXISTING",
+        "crosswalk_candidato": {"tabla": "staging", "id": "9999",
+                                "nombre": "Pastori Propiedades"},
+    }])
+    write_jsonl(web, [])
+    write_jsonl(platform, [])
+    write_main(main, [{"id": "4242", "nombre": "PASTORI PROPIEDADES"}])
+
+    manifest, mapping = build_agency_manifest(crosswalk, web, platform, main)
+
+    assert manifest[0]["resolution_status"] == AMBIGUOUS
+    assert manifest[0]["resolution_method"] == "STAGING_NAME_COLLIDES_WITH_MAIN"
+    assert manifest[0]["evidence"]["main_candidates"] == ["4242"]
+    # Ambigua nunca se convierte en una asociacion escrita.
+    assert manifest[0]["eretz_id"] is None
+    assert mapping == {}
+
+
 def test_two_canonical_agencies_cannot_silently_share_eretz_id(tmp_path: Path) -> None:
     crosswalk = tmp_path / "crosswalk.jsonl"
     web = tmp_path / "web.jsonl"
@@ -227,5 +286,11 @@ def test_ambiguous_agency_mapping_fails_closed_to_hold(tmp_path: Path, monkeypat
             "tipo_propiedad": "departamento",
         },
     )
+    # La fixture pone en main una fila homonima de la candidata de staging.
+    # Coincidir de nombre no prueba que sean la misma inmobiliaria, asi que la
+    # clasificacion queda ambigua en vez de cerrarse; lo que el test protege
+    # es que nada de eso se convierta en una asociacion escrita.
     assert summary["status_counts"] == {"AGENCY_ID_UNRESOLVED": 1}
-    assert summary["agency_mappings"]["not_found"] == 1
+    assert summary["agency_mappings"]["ambiguous"] == 1
+    assert summary["agency_mappings"]["resolved"] == 0
+    assert summary["database_writes"] == 0
