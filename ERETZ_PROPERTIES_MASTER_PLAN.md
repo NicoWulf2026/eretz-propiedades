@@ -1,110 +1,67 @@
 # ERETZ — Plan maestro del sistema de propiedades
 
-Documento vivo. Cubre el dominio completo de propiedades: descubrimiento de
-inmobiliarias, adquisición de datos, calidad, experiencia pública, operación
-diaria y observabilidad.
+Panel de control del dominio de propiedades: descubrimiento de inmobiliarias,
+adquisición de datos, calidad, experiencia pública, operación y observabilidad.
 
 Última actualización: 2026-09-02.
 
 ---
 
-## 1. Principios que gobiernan las decisiones
+## 1. Principios
 
-Estos no son preferencias de estilo. Cada uno viene de un error real, y su
-violación produce datos que después no se pueden distinguir de los buenos.
+Cada uno viene de un error real. Violarlos produce datos que después no se
+pueden distinguir de los buenos.
 
-1. **La ausencia de información nunca se convierte en afirmación.** Un campo
-   que la fuente no publica queda `None`, nunca en cero ni inferido. Los
-   estados posibles son `EXTRACTED`, `SOURCE_NOT_PROVIDED`,
-   `REJECTED_BY_VALIDATION` y `EXTRACTION_FAILED`, y son distintos entre sí.
-2. **`NEEDS_FIX` nunca es un cierre.** Los estados terminales válidos son
+1. **La ausencia nunca se convierte en afirmación.** Un campo que la fuente no
+   publica queda `None`, nunca en cero ni inferido. `EXTRACTED`,
+   `SOURCE_NOT_PROVIDED`, `REJECTED_BY_VALIDATION` y `EXTRACTION_FAILED` son
+   estados distintos.
+2. **`NEEDS_FIX` nunca es un cierre.** Terminales válidos:
    `CERTIFIED_COMPLETE`, `CERTIFIED_BEST_AVAILABLE`, `NO_INVENTORY_CONFIRMED`,
-   `BLOCKED_EXTERNAL`, `IDENTITY_PENDING` e `INACTIVE`.
-3. **Cero inventario se demuestra, no se supone.** La regla
-   `LOW_INVENTORY_0_11` obliga a revisión exhaustiva entre 0 y 11 propiedades.
-   Un cero sin prueba es un hueco de cobertura disfrazado de hecho comercial.
-4. **No declarar terminado algo porque no hubo excepción.** La falta de error
-   no es evidencia de corrección.
-5. **La identidad no se inventa en el connector.** Se reusa `hash_dedup` del
+   `BLOCKED_EXTERNAL`, `IDENTITY_PENDING`, `INACTIVE`.
+3. **Cero inventario se demuestra.** `LOW_INVENTORY_0_11` obliga a revisión
+   exhaustiva entre 0 y 11. Un cero sin prueba es un hueco de cobertura
+   disfrazado de hecho comercial.
+4. **La falta de excepción no es evidencia de corrección.**
+5. **La identidad no se inventa en el connector.** Se reusa el `hash_dedup` del
    pipeline: `SHA256("{inmobiliaria_id}|url|{url_normalizada}")`.
-6. **Una propiedad que hoy no aparece no es una baja.** Puede ser un timeout o
-   un sitio caído; la baja exige varias corridas coincidentes y comparables.
+6. **Lo que hoy no aparece no es una baja.** Puede ser un timeout; la baja
+   exige varias corridas coincidentes y comparables.
+7. **Los tests son una defensa, no una prueba.** Ver §1.1.
+
+### 1.1 Validación contra la fuente real
+
+Cuando un cambio toca **descubrimiento, enumeración, parsing, normalización o
+calidad de datos**, los tests sintéticos no alcanzan si existe una fuente real
+reproducible que expuso el defecto. Mínimo exigible:
+
+1. regresión automatizada;
+2. verificación contra la fuente real que originó el bug;
+3. recertificación de esa fuente;
+4. comparación de métricas antes/después.
+
+Se aplica al caso que motivó el cambio, no a todas las fuentes.
+
+**Por qué es una regla y no una recomendación.** En un solo día, tres arreglos
+pasaron la batería completa y fallaron contra los datos reales:
+
+| Caso | Qué habría pasado |
+|---|---|
+| Guardia de fichas vacías (D-008) | Descartaba **254 lotes legítimos** que publican sólo título y fotos |
+| Heurística de atributos (D-013) | Pasó 5 tests y **no corrigió nada**: las páginas traen tabla *y* prosa |
+| "0 homónimas en `main`" | Comparaba el nombre **en orden**; por conjunto de palabras hay **56** |
+
+En los tres, el error era invisible con la batería en verde.
 
 ---
 
 ## 2. Estado medido
 
-Todos los números son medidos, con su fuente. No hay estimaciones.
+Todos los números tienen fuente y fecha. No hay estimaciones.
 
-### Cola de certificación
+### 2.1 Universo e identidad
 
-Fuente: `ERETZ_AGENCY_CERTIFICATION_20260827/AGENCY_CERTIFICATION_PROGRESS.json`
-(heartbeat 2026-09-01T15:12:33).
-
-| Métrica | Valor |
-|---|---|
-| Universo de inmobiliarias | 6.597 |
-| Cursor global | 179 |
-| Certificadas | 187 |
-| Pendientes | 6.410 |
-
-Cobertura: **2,8 %** del universo. El grueso del trabajo está por delante.
-
-### Distribución de estados
-
-Fuente: 188 paquetes en `agencies/*/certification.json`, medido 2026-09-02.
-
-| Estado | Paquetes |
-|---|---|
-| `IDENTITY_PENDING` | 140 |
-| `CERTIFIED_COMPLETE` | 30 |
-| `BLOCKED_EXTERNAL` | 15 |
-| `CERTIFIED_BEST_AVAILABLE` | 2 |
-| `NO_INVENTORY_CONFIRMED` | 1 |
-
-`IDENTITY_PENDING` es 140 de 188 paquetes (74 %): **la resolución de identidad
-es el cuello de botella dominante**, no la extracción. Sólo 35 paquetes
-llegaron a ejecutar una estrategia de connector; el resto se detuvo antes, sin
-poder afirmar a qué inmobiliaria real corresponde la fuente.
-
-### Por qué está bloqueada la identidad
-
-Razones registradas en los 140 paquetes `IDENTITY_PENDING` (2026-09-02):
-
-| Razón | Paquetes |
-|---|---|
-| `canonical agency lacks a resolved ERETZ foreign key` | 134 |
-| `live identity was not validated` | 134 |
-| `official website unavailable` | 111 |
-
-**111 de 140 no tienen sitio web conocido**: `official_url` es `None`. No hay
-nada que certificar. El bloqueo dominante no es la extracción ni el connector,
-es el descubrimiento. Las 29 restantes sí tienen web pero no resuelven la
-clave foránea.
-
-### Presencia web conocida del universo
-
-Fuente: `agency_platform_directory.jsonl`, 2.596 entradas, 99,9 % con dominio.
-
-| Clasificación | Entradas |
-|---|---|
-| `OFFICIAL_WEB` | 2.085 |
-| `EXTERNAL_PORTAL_PROFILE` | 384 |
-| `OFFICIAL_OFFICE_PAGE` | 79 |
-| `NOT_A_REAL_ESTATE_WEB` | 23 |
-| `AMBIGUOUS_WEB_ATTRIBUTION` | 22 |
-
-El directorio cubre 2.596 de las 6.597 del universo: **unas 4.000
-inmobiliarias todavía no tienen presencia web clasificada**.
-
-Plataformas detectadas: TOKKO 848, `UNKNOWN` 509, sitio propio 360,
-WordPress 357, `SIN_CLASIFICAR` 239, Next.js 75, WASI 39, Laravel 32.
-**TOKKO solo concentra un tercio de los sitios conocidos**: es el objetivo de
-mayor apalancamiento por unidad de esfuerzo.
-
-### Resolución de identidad en el universo completo
-
-Fuente: `AGENCY_ID_RESOLUTION_FINAL.jsonl`, 6.597 inmobiliarias (2026-09-02).
+Fuente: `AGENCY_ID_RESOLUTION_FINAL.jsonl`, 6.597 inmobiliarias.
 
 | Resolución | Inmobiliarias |
 |---|---|
@@ -112,34 +69,15 @@ Fuente: `AGENCY_ID_RESOLUTION_FINAL.jsonl`, 6.597 inmobiliarias (2026-09-02).
 | `RESOLVED` | 1.095 |
 | `AMBIGUOUS` | 74 |
 
-De las no encontradas, **4.953 son `STAGING_NAMESPACE_NOT_A_MAIN_FK`**:
-existen en el namespace de staging y no tienen contraparte en la tabla `main`
-de ERETZ.
+De las no encontradas, **4.953 viven sólo en `inmobiliarias_staging`**. Sólo
+230 son franquicias; **4.723 son inmobiliarias independientes comunes**.
 
-Verificado localmente contra el backup `2026-05-27_inmobiliarias_main.csv`
-(7.004 filas): de esas 4.953, **0 tienen match por nombre normalizado en
-`main`**. El método se validó con un grupo de control —las 1.095 resueltas por
-nombre exacto dan match 1.095/1.095—, así que el cero es un hecho, no un fallo
-de la comparación.
+**Elegibles para certificar hoy: 753** (`identity_status == READY`), de las
+cuales ~33 están certificadas.
 
-Composición de esas 4.953: sólo 230 son sucursales de franquicia (RE/MAX 159,
-Century 21 35, Coldwell 30, Keller Williams 6). Las otras **4.723 son
-inmobiliarias independientes comunes**.
+### 2.2 Inventario ya extraído
 
-**Lectura.** No es un defecto de datos: son ~4.953 inmobiliarias descubiertas
-por el scraping de portales que todavía no fueron promovidas al maestro de
-ERETZ. Certificarlas antes de promoverlas produce propiedades que no se pueden
-asociar a ninguna fila de `main`. Ver §7.
-
-### Integridad de identidad
-
-Auditoría de los 35 paquetes con propiedades persistidas (2026-09-02):
-**0 colisiones de identidad**. Ninguna certificación previa informó más
-propiedades de las que la base habría guardado.
-
-### Inventario de propiedades ya extraído
-
-Fuente: `PREINGESTION_REBUILD.sqlite3`, 189.159 filas (2026-09-02).
+Fuente: `PREINGESTION_REBUILD.sqlite3`, 189.159 filas.
 
 | Estado | Filas |
 |---|---|
@@ -148,589 +86,240 @@ Fuente: `PREINGESTION_REBUILD.sqlite3`, 189.159 filas (2026-09-02).
 | `INVALID_OR_REJECTED` | 15.938 |
 | `DUPLICATE_OR_CONFLICT` | 222 |
 
-**127.595 propiedades ya extraídas no se pueden atribuir a ninguna
-inmobiliaria de `main`.** Es la misma causa de §7.1, medida en propiedades en
-vez de en inmobiliarias: dos tercios de todo lo scrapeado espera una decisión
-de promoción.
+**Dos tercios de todo lo scrapeado no se puede atribuir** porque su
+inmobiliaria no está en `main`. Ver §3.1.
 
-Entre los rechazos: 13.518 `RAW_ELIGIBLE_NOT_PUBLISH_ELIGIBLE` y 2.401
-`EXTERNAL_PORTAL_PROFILE`. Entre los conflictos, **165
-`MULTI_AGENCY_NORMALIZED_URL`**: una misma URL normalizada reclamada por más
-de una inmobiliaria — la misma clase de problema de identidad que D-001, en el
-otro extremo del pipeline.
+### 2.3 Completitud de las 45.404 candidatas
 
-### Completitud de campos de las 45.404 candidatas
+Cubren 520 inmobiliarias.
 
-Cubren 520 inmobiliarias distintas.
-
-| Campo | Cobertura |
+| Cobertura | Campos |
 |---|---|
-| título, operación, tipo | 100 % |
-| moneda / precio | 92 % |
-| descripción | 89 % |
-| imágenes | 83 % |
-| latitud / longitud | 77 % |
-| baños | 66 % |
-| ambientes | 62 % |
-| dirección / dormitorios | 61 % / 60 % |
-| superficie cubierta | 50 % |
-| barrio | 49 % |
-| superficie total | 21 % |
-| **ciudad** | **8,6 %** |
+| 100 % | título, operación, tipo |
+| 92 % | moneda, precio |
+| 89 % | descripción |
+| 83 % | imágenes |
+| 77 % | latitud, longitud |
+| 60-66 % | baños, ambientes, dirección, dormitorios |
+| 49-50 % | superficie cubierta, barrio |
+| 21 % | superficie total |
+| **8,6 %** | **ciudad** |
 
-**El hueco más grande es `ciudad`: 3.894 de 45.404.** Para un portal, la
-ciudad es la faceta de búsqueda principal: hoy el 91 % del inventario
-publicable no se puede filtrar por ciudad aunque haya coordenadas para 35.133.
+### 2.4 Rendimiento real del runner
 
-Cobertura por connector: `wasi` y `century21` 100 %, `generico` 24 %,
-**`tokko` 0 de 31.858 y `wordpress` 0 de 3.387**.
+74 corridas medidas:
 
-**No es un descuido: es una decisión deliberada y documentada.** El padrón de
-inmobiliarias tiene un campo `city`, pero guarda zonas —"centro", "recoleta",
-"palermo"—, que son barrios. `completar_ubicacion` lo rechaza a propósito y lo
-archiva como `zona_padron`, un rastro de auditoría, porque llenar `ciudad` con
-barrios disfrazados sería peor que dejarlo vacío: nadie lo notaría después. La
-provincia sí se infiere, porque es un vocabulario limpio de 23 valores, y
-queda marcada como inferida.
+| Métrica | Valor |
+|---|---|
+| Segundos por ficha | **2,0** |
+| Segundos por corrida (mediana / p90 / máx) | 143 / 481 / 927 |
 
-El camino viable es **geocodificación inversa desde las coordenadas** (77 % de
-cobertura), no el padrón. Tiene que quedar marcada como derivada, con la misma
-disciplina que ya se aplica a la provincia: una ciudad inferida guardada como
-si la hubiera publicado la fuente es exactamente la clase de dato que después
-no se distingue de uno real. Requiere decidir la fuente geográfica — ver §7.3.
+El cuello es el **límite de ritmo por host** (1,5 s), no la CPU.
 
-### Inmobiliarias duplicadas en el universo canónico
+### 2.5 Salud
 
-Los 165 conflictos `MULTI_AGENCY_NORMALIZED_URL` se explican **por completo**:
-las 56 URLs en disputa pertenecen a inmobiliarias duplicadas con el nombre
-invertido —`inmobiliaria salerno` / `salerno inmobiliaria`—, y **ninguna es un
-conflicto entre inmobiliarias realmente distintas**. El guardia del pipeline
-funciona; la causa está aguas arriba.
-
-Son **20 grupos (40 inmobiliarias, 0,6 % del universo)**, detectados por
-conjunto de palabras idéntico. Lista completa en
-`ERETZ_AGENCIAS_DUPLICADAS.json`.
-
-La duplicación llega a producción: `inmobiliaria salerno` es `eretz_id 3535` y
-`salerno inmobiliaria` es `6334` — el mismo negocio con dos fichas, partiendo
-su inventario. Son 2 grupos con doble id (247 filas). Y hay un caso asimétrico
-—`calderon inmobiliaria` tiene id y 0 propiedades; `inmobiliaria calderon`
-tiene 117 propiedades y ningún id—, así que unificarlo rescataría **117
-propiedades** hoy sin inmobiliaria.
-
-Es un hallazgo menor frente a las 127.595 sin resolver, y unificar cambia la
-identidad de propiedades ya guardadas: con 20 grupos, la revisión humana es
-más barata que automatizarlo.
-
-**Ojo con el dominio como señal.** Otros 16 grupos comparten dominio y en su
-mayoría **no** son duplicados: `re max urbana` / `re max time` son sucursales
-distintas, y tres inmobiliarias sin relación comparten un dominio de
-plataforma. El dominio no sirve como identidad de inmobiliaria.
-
-### Salud de la batería de tests
-
-`eretz-agency`: **1.262 tests pasan** (2026-09-02), sin regresiones tras los
-doce defectos cerrados. Se partió de 1.233.
+`eretz-agency`: **1.265+ tests pasan**, sin regresiones tras trece defectos
+cerrados. Se partió de 1.233.
 
 ---
 
-## 3. Registro de defectos cerrados
+## 3. Decisiones tomadas
 
-### D-001 — `roomix:alcami inmobiliaria` enumeraba 0 propiedades (CERRADO)
+### 3.1 Promoción de las 4.953 no promovidas
 
-**Síntoma.** La fuente se reportaba como `SIN_INVENTARIO` / no soportada y la
-certificación se detenía en `NEEDS_FIX`.
+**Promover = insertar en `inmobiliarias_main` y asignar un `eretz_id` real.**
+Es lo que habilita atribuir propiedades. `inmobiliarias_staging` es el buffer;
+la promoción es un paso posterior y distinto, y **es escritura productiva**.
 
-**Causa raíz.** `alcamipropiedades.com.ar` corre Bitrix24 Sites: un sitio de
-una sola página. El inventario vive en bloques `landing-block-*` de la
-portada; no hay ficha por propiedad, ni enlace, ni sitemap. Todos los
-detectores buscaban URLs de ficha y volvían vacíos. El cero era un hueco de
-cobertura, no un hecho de la fuente.
+**El riesgo no es perder una fila: es crear una duplicada** de una inmobiliaria
+que ya existe, partir su inventario y no poder distinguirla después de dos
+negocios distintos. Ya ocurre en producción: `inmobiliaria salerno` (3535) y
+`salerno inmobiliaria` (6334) son el mismo negocio.
 
-**Corrección.** Estrategia `BITRIX_LANDING_CARDS` en el connector genérico,
-que lee sólo las tarjetas **con precio**: las que no lo tienen son bloques de
-servicio de la plantilla ("Tasaciones", "Venta en exclusiva") y contarlas
-inflaría el inventario con texto de marketing. Los campos que la tarjeta no
-publica quedan ausentes — dormitorios, superficie, ciudad y coordenadas son
-`None` — y la operación sólo se afirma cuando el subtítulo la declara.
+Invariantes exigidas para promoción automática, todas demostradas:
 
-**Segundo defecto, descubierto por el propio chequeo de idempotencia.** Las
-tres tarjetas se enumeraban como `portada/#slug`. Pero `hash_dedup` normaliza
-la URL con `urlparse`, que **descarta el fragmento**: las tres propiedades —y
-la portada— colapsaban en una sola identidad. Se pisaban entre sí en el
-checkpoint y la segunda corrida las reportaba `MODIFICADA` aunque las huellas
-de contenido fueran idénticas. La certificación decía "3 propiedades" donde la
-base habría guardado 1.
+1. el cruce con staging no es ambiguo;
+2. no hay homónima en `main`;
+3. no es parte de un grupo duplicado del universo canónico;
+4. tiene web propia verificada o de alta confianza;
+5. esa web no es perfil de portal ajeno ni sitio no inmobiliario;
+6. el dominio no lo comparte con otra inmobiliaria.
 
-**Corrección.** El discriminador pasó al query, que la normalización sí
-conserva, y la identidad ahora sale del `data-fileid` que **Bitrix asigna** a
-cada tarjeta: único por construcción e independiente del orden de lectura, con
-el slug del título como respaldo. El slug solo era peor identidad, porque dos
-lotes pueden llamarse igual y se habrían fusionado en una sola propiedad,
-haciendo desaparecer inventario real.
+La sexta importa: hay dominios de plataforma compartidos por inmobiliarias sin
+relación, y `re max urbana` / `re max time` son sucursales distintas del mismo
+dominio. **Un dominio no identifica a una inmobiliaria.**
 
-**Estado final.** `CERTIFIED_BEST_AVAILABLE`; 3 propiedades enumeradas, 3
-identidades distintas, 0 colisiones, `SIN_CAMBIOS` en las tres, idempotente.
-La única razón registrada es `LOW_INVENTORY_0_11`, que es la marca de revisión
-esperada para un inventario de 0 a 11, no un defecto.
+Resultado (`scripts/agency_promotion_gate.py`, sin escribir en ninguna base):
 
-**Alcance de la clase de error.** Ningún otro connector construye URLs con
-fragmento, y los parámetros que la normalización descarta son sólo `utm_*` y
-click-ids. El defecto estaba acotado a esta estrategia.
-
-### D-002 — La certificación contaba cadenas, no identidades (CERRADO)
-
-Derivado de D-001. `compare_runs` medía `source_url` distintas, así que una
-enumeración podía ser perfectamente estable y aun así estar mal: informaba
-propiedades que el pipeline iba a colapsar en una sola fila, y nada lo decía.
-
-El certificador ahora compara identidades además de cadenas y bloquea la
-certificación con la razón `listings collapse into another identity after url
-normalization`. Reproducido contra el caso histórico de Alcami: nombra la
-causa raíz en lugar del síntoma engañoso ("second run is not idempotent").
-
-**Impacto.** Cambiar `agency_certifier.py` invalida la huella de las 35
-certificaciones que ejecutaron una estrategia. Es semánticamente correcto: se
-ganaron bajo un chequeo que no podía ver esta clase de defecto. Las otras 153
-no ejecutaron ninguna estrategia y no se ven afectadas.
-
----
-
-### D-003 — Una excepción aislada tumbaba la corrida entera (CERRADO)
-
-La llamada a `certify()` no estaba protegida. Sobre una cola de 6.410
-inmobiliarias, un fallo inesperado en una sola —un timeout raro, un disco
-lleno, un HTML que rompe un parser— mataba el proceso completo.
-
-Ahora el fallo se registra como `RUNNER_ERROR`, que **no** está en `TERMINAL`:
-la inmobiliaria vuelve sola a la cola en la próxima corrida. Un crash no es
-evidencia sobre la fuente —no prueba que no publique ni que su sitio esté
-roto—, así que guardarlo como estado terminal escribiría un problema nuestro
-como un hecho sobre ella. El traceback va a `AGENCY_RUNNER_ERRORS.jsonl` y no
-contamina el rollup de resultados.
-
-Se agregó además `AGENCY_DEFECT_QUEUE.jsonl`: con `--continue-after-fix` los
-defectos dejaban de detener la corrida y también dejaban de ser visibles.
-
-### D-004 — Evidencia congelada en un literal (CERRADO)
-
-Las 4.953 inmobiliarias `STAGING_NAMESPACE_NOT_A_MAIN_FK` llevaban como
-evidencia el texto `"0/4920 candidates linked by main.staging_id_origen"`,
-**hardcodeado**: una medición hecha una vez y grabada en el código. Si el
-enlace se poblara, el texto seguiría diciendo cero. La rama era además
-incondicional: toda candidata de staging se cerraba como `NOT_FOUND` sin
-comprobar nada.
-
-Ahora se verifica por registro contra el backup de `main` que la función ya
-tenía cargado. Si aparece una homónima en `main` sin clave foránea declarada,
-el estado pasa a `AMBIGUOUS` en vez de cerrarse: coincidir de nombre no prueba
-que sean la misma inmobiliaria, y elegir una sería inventar la identidad.
-
-Sobre los datos actuales el cambio no mueve ninguna clasificación —las 4.953
-no tienen homónimas—, pero deja de apoyarse en una afirmación que nadie
-comprobaba.
-
-### D-005 — Tokko guardaba prosa de la descripción como barrio (CERRADO)
-
-El extractor de campos de Tokko buscaba la etiqueta **sin exigir dos puntos y
-sin distinguir mayúsculas**. Así, una frase corriente de la descripción —"por
-su ubicación privilegiada, esta casa ofrece..."— se leía como si fuera el
-campo `Ubicación`, y dejaba `barrio='privilegiada'`.
-
-Medido sobre las 67.261 filas de Tokko con barrio: **1.145 (1,7 %) empezaban
-en minúscula** y eran fragmentos de prosa —`'tranquila'`, `'y'`,
-`'residencial'`, `'| Pileta, Quincho, Parrilla, Terreno de 1074m2 |'`—
-guardados como si fueran un barrio real. Un dato inventado que además parecía
-correcto.
-
-Un rótulo de ficha viene capitalizado o con dos puntos; en minúscula y sin dos
-puntos es una palabra de la descripción. La lectura ahora exige eso y sigue
-buscando más abajo si la primera coincidencia era prosa, para que una mención
-previa en la descripción no tape al campo verdadero. Los valores legítimos con
-mayúscula adentro —"Nueva Cordoba", "Villa Urquiza"— siguen entrando.
-
-El defecto afectaba a todos los campos que usan ese extractor —antigüedad,
-condición, orientación, disposición, situación, dirección—, no sólo a la
-ubicación.
-
-### D-006 — La operación no se leía de la forma verbal (CERRADO)
-
-13.518 filas quedan fuera de publicación por `RAW_ELIGIBLE_NOT_PUBLISH_ELIGIBLE`,
-que exige operación y tipo. La regla es correcta: sin saber si se vende o se
-alquila, un aviso no se puede publicar.
-
-De las 11.526 sin operación, el vocabulario tenía los infinitivos —"vender",
-"alquilar"— pero no las conjugadas, así que "Se vende terreno en Colastine" o
-"INMOBILIARIA LEAL VENDE CASA" quedaban sin el campo que más define un aviso.
-
-La pasada verbal corre sólo cuando nada más dijo algo, con límite de palabra
-—"vende" es parte de "vendedor"—, y un aviso que nombra las dos operaciones
-sigue devolviendo ausencia: elegir una sería inventar la mitad del anuncio.
-
-**Ganancia real: 117 filas obtienen operación, 53 pasan a publicables.** Es
-poco, y conviene decirlo: se verificó que **el 99 % de esas 11.526 no declara
-la operación en ningún lado** —ni título ni URL—, así que el hueco grande no
-era de extracción. La hipótesis de que los extractores estaban perdiendo una
-señal fácil resultó falsa.
-
-### D-007 — Tokko adivinaba el tipo en vez de leer el declarado (CERRADO)
-
-El tipo de propiedad salía sólo de adivinarlo en el título. **899 fichas
-quedaban sin tipo** —y sin tipo no se puede publicar— teniendo la ficha el dato
-declarado como campo propio (`Tipo de Propiedad`), que además ni siquiera
-figuraba entre las etiquetas conocidas, así que tampoco servía de frontera y
-los valores vecinos podían arrastrarla adentro.
-
-El título sigue mandando y el campo entra sólo donde el título no alcanzó, de
-modo que ningún valor ya detectado cambia.
-
-**Queda una decisión de principio pendiente:** lo declarado por la fuente
-debería ganarle a lo inferido del título. Es lo correcto, pero invertir la
-precedencia cambia valores existentes y no se puede medir el impacto sin el
-HTML original guardado.
-
-### D-008 — Una página vacía se guardaba como propiedad (CERRADO)
-
-El defecto más grave encontrado hasta ahora, porque corrompe datos en silencio.
-
-Certificando `roomix:alder inmobiliaria`, dos fichas volvieron **vacías** en la
-primera corrida: `titulo = "Alder Inmobiliaria"` —el nombre del sitio—, sin
-precio, sin descripción, sin ambientes y sin superficie. El pipeline las guardó
-igual y les **adivinó** `tipo_propiedad="departamento"`. En la segunda corrida
-las mismas URLs devolvieron los datos reales: casa, 4 dormitorios, USD 125.000.
-
-La ausencia convertida en afirmación. Y lo peor: **si las dos corridas hubieran
-fallado igual, se habría certificado `CERTIFIED_COMPLETE`** con dos propiedades
-fantasma de tipo inventado. Sólo el chequeo de idempotencia lo delató.
-
-Medido sobre la pre-ingesta: **351 fichas sin ningún campo definitorio**, en
-los cuatro connectors. Entre ellas `"Di Marco Propiedades"` guardada como
-galpón y `"Lincoln Negocios Inmobiliarios"` como departamento — el título es el
-`<title>` del sitio y el tipo sale del slug de la URL.
-
-El guardián de forma ya cubría esto, pero **sólo para URLs descubiertas por
-patrón**. Las de Alder venían del sitemap de WASI: mejor procedencia, no mejor
-contenido. Que una URL *debería* ser una ficha no prueba que la hayamos leído.
-El chequeo ahora corre en el punto común a todos los connectors.
-
-Y un cascarón es un fallo **transitorio**: la segunda corrida leyó esas mismas
-URLs enteras. El pipeline ya tenía reintentos diferidos para los timeouts, así
-que la ficha vacía entra por esa misma vía —fuera de la ventana inestable— en
-vez de darse por perdida al primer intento. Sólo si al reintentarla sigue sin
-traer nada cuenta como **detalle fallido**, con su rastro en los descartes:
-la URL sí era una ficha y lo que falló fue nuestra lectura, así que la razón
-que llega a la certificación es la verdadera.
-
-**El guardia se corrigió sobre datos reales, y la corrección importa.** La
-primera versión descartaba toda ficha sin campos publicados. Auditada contra la
-pre-ingesta, habría tirado **254 lotes y terrenos legítimos**: así se ofrece un
-lote —sólo título y fotos, sin precio, sin ambientes, sin superficie, sin
-dirección—. Descartarlos habría perdido inventario real, que es exactamente el
-daño que el guardia venía a evitar.
-
-El discriminador verdadero es que **el `<title>` que sobrevive es el del
-sitio**. Con las dos condiciones juntas quedan **14 filas en toda la
-pre-ingesta**, todas cascarones o páginas de categoría, y cero avisos reales.
-
-No se miran `operacion`, `tipo_propiedad` ni `provincia`: el cascarón de Alder
-tenía los tres, sacados del slug de la URL y del padrón, no de la ficha.
-Tampoco las imágenes, que ahí eran una sola y genérica.
-
-### D-009 — Un cero heredado del connector equivocado (CERRADO)
-
-`requenapropiedades.com.ar` es una app Laravel. Se le asignó el connector de
-**WordPress** porque el HTML menciona `wp-content`, la corrida cerró en `OK`
-con cero propiedades, y la certificación la reportó sin inventario — mientras
-el sitio publica **trece páginas de fichas** en `/propiedades`.
-
-El respaldo genérico existía pero exigía que el connector específico se
-declarara no soportado. Uno que termina en `OK` con cero no distingue "esta
-inmobiliaria no publica" de "elegimos el connector equivocado". Ahora alcanza
-con que no haya obtenido nada. La excepción es `BLOQUEADA`: ahí la fuente
-rechazó el acceso automático y volver a pedirle lo mismo con otro connector la
-golpea sin aprender nada.
-
-### D-010 — El sitemap traía fichas de otro host (CERRADO)
-
-Con el respaldo activo, el genérico encontró el sitemap de esa misma
-inmobiliaria… que publica sus fichas como `http://requenav2.test/propiedad/…`:
-**el hostname local del desarrollador quedó publicado en producción**. Las
-ocho URLs no responden.
-
-Eso, por sí solo, la certificación ya lo reportaba con honestidad. El daño
-mayor sería que **respondieran**: `hash_dedup` se calcula sobre la URL
-normalizada, así que cada propiedad quedaría guardada con identidad —y con
-enlace "ver publicación original"— en un host que no es el de la inmobiliaria.
-
-Ahora las URLs del sitemap se filtran por host propio, aceptando subdominios y
-`www`. Medido antes de aplicarlo sobre las 3.881 propiedades ya certificadas:
-**0 usan un host distinto del oficial**, así que la regla no cuesta inventario
-observado.
-
-### D-011 — El tipo estaba en la ficha y sólo se miraba el título (CERRADO)
-
-En `roomix:berrueta inmobiliaria`, 35 de 193 avisos quedaban sin
-`tipo_propiedad` y la certificación lo marcaba `EXTRACTION_FAILED` con razón:
-la evidencia de la página decía que el campo estaba. Los títulos son "3
-AMBIENTES AL FRENTE" o "2 AMBIENTES - PLENO CENTRO" —nombran el aviso sin
-decir qué es— y la ficha lo publica en un `<li>` o `<span>` cuyo contenido es
-sólo el tipo, exactamente donde el certificador ya miraba.
-
-Entra como último respaldo, después del título, la URL y el arranque del
-cuerpo, así que no cambia ningún valor que ya se detectaba. Si aparece más de
-un tipo distinto no se afirma ninguno: eso es el menú de categorías del sitio,
-y elegir el primero le pondría a cada aviso el tipo que figure más arriba en la
-navegación.
-
-**No se infiere el tipo desde la cantidad de ambientes.** "3 ambientes" es un
-atributo, no una declaración de tipo, y suponer departamento sería inventar el
-campo que decide si la propiedad se publica. Por eso el resto de esos 35 sigue
-sin tipo, y está bien que así sea.
-
-## 4. Mapa de bloques
-
-| # | Bloque | Estado |
+| Estado | Inmobiliarias | Propiedades retenidas |
 |---|---|---|
-| 1 | Runner autónomo y durable | hecho (ver D-003 y modo `--ready`) |
-| 2 | Universo canónico de inmobiliarias | parcial (6.597 en cola) |
-| 3 | **Descubrimiento global de bajo costo** | **pendiente — gatea al #7** |
-| 4 | Familias de connectors | parcial (5 connectors, 12 estrategias genéricas) |
-| 5 | Huellas por estrategia | hecho (granularidad por familia) |
-| 6 | Certificación global | 2,8 % |
-| 7 | **Resolución de identidad** | **cuello de botella: 140/188** |
-| 8 | Integridad de claves foráneas | pendiente |
-| 9 | Contrato de propiedad | pendiente |
-| 10 | Normalización | pendiente |
-| 11 | Deduplicación | pendiente |
-| 12 | Ciclo de vida | pendiente |
-| 13 | Quality gate | pendiente |
-| 14 | Publicación segura | pendiente |
-| 15 | Rendimiento de base | pendiente |
-| 16 | API, búsqueda, mapa/lista, detalle, ranking, contacto | pendiente |
-| 17 | Observabilidad y seguridad | pendiente |
-| 18 | QA, beta, launch gate, operación diaria | pendiente |
+| `SAFE_TO_PROMOTE` | **939** | **79.001** |
+| `REQUIRES_REVIEW` | 1.197 | — |
+| `INSUFFICIENT_EVIDENCE` | 2.462 | — |
+| `BLOCKED` | 355 | — |
 
-El orden de la parte inicial no es negociable, y la evidencia lo confirma:
-certificar más inmobiliarias sin resolver identidad multiplica filas que no se
-pueden asociar a nadie, y no se puede resolver identidad de una inmobiliaria
-cuya web no se conoce. Por eso el orden real de ataque es **#3 → #7 → #1 →
-#6**, no el orden nominal de la lista.
+Motivos de bloqueo: 289 web no propia, **56 homónima en `main`**, 25 duplicada.
 
----
+**Hallazgo aparte:** esas 56 **no son inmobiliarias nuevas**. Ya existen en
+`main` con el orden de palabras invertido —`bechara inmobiliaria` es
+`Inmobiliaria Bechara`, id 2654—. Retienen **1.140 propiedades** que se
+desbloquean **vinculándolas al id existente, sin crear nada**. Es una acción
+distinta y más segura que promover.
 
-### D-013 — Atributos tabulados leídos al revés (CERRADO)
+**Estado: preparado hasta dry-run.** La inserción en `main` queda del otro lado
+de la barrera de §8.
 
-El más silencioso de todos, y salió de perseguir el `NEEDS_FIX` de requena.
+### 3.2 Rollout de la corrida masiva
 
-Su ficha publica los atributos como tabla, **sin dos puntos**: `Ambientes 3
-Dormitorios 2 Baños 2 Cocheras 1`. El extractor buscaba el número **antes** del
-rótulo, así que `ambientes` quedaba sin leer en las 141 fichas —con el dato a
-la vista— y la certificación lo marcaba `EXTRACTION_FAILED` con razón.
+Prioridades, en orden: no dañar fuentes › no perder inventario › no duplicar
+procesos › recuperabilidad › throughput.
 
-**Lo grave no era la ausencia.** Al leer al revés, `dormitorios` tomaba el 3 de
-ambientes, y `ambientes` tomaba el 2 de `196 m2`. No un campo vacío: **el valor
-del campo vecino**, corrido un lugar, que parece correcto y después no se
-distingue de un dato real.
+**La concurrencia dentro de un mismo host está descartada por evidencia**: a
+2,0 s por ficha el sistema es límite-de-ritmo, no CPU. Subir workers sobre un
+host sólo lo golpea más fuerte sin ganar throughput. El único acelerador
+legítimo sería paralelizar **entre hosts distintos**, y eso compromete las
+prioridades 3 y 4, que están por encima de la 5. **No se habilitó.**
 
-**El primer arreglo no sirvió, y vale contar por qué.** Intenté decidir el
-formato contando cómo se presentan los rótulos en toda la ficha. Pasó todos los
-tests y **falló contra la página real**: las páginas traen tabla *y*
-descripción, y la prosa gana por mayoría. Tampoco hay regla local que sirva —en
-la tabla, `Dormitorios` viene precedido por el valor de `Ambientes`—.
+Implementado:
 
-La ambigüedad no estaba en la regla: estaba en haber aplanado el HTML. La
-estructura lo dice sin dudas —`<span>Ambientes</span><span>3</span>`: un
-elemento con sólo el rótulo seguido de otro con sólo el número—. Se lee de ahí,
-sin depender del nombre de la clase. Verificado contra la ficha real: Ambientes
-3, Dormitorios 2, Baños 2, Cocheras 1, los cuatro correctos.
-
-Sobre texto plano la lectura vuelve a ser conservadora, con una sola mejora: el
-límite de palabra, que evita leer el "2" de "196 m2 Ambientes" como cantidad.
-Sin estructura que lo aclare, **prefiere dejar el campo vacío antes que llenarlo
-con el número de al lado**.
-
-**Resultado.** `roomix:analia requena propiedades` cerró en
-**`CERTIFIED_COMPLETE`**: 141 propiedades, 141 identidades, 0 colisiones,
-idempotente y **ningún campo en `EXTRACTION_FAILED`**. `ambientes` pasó de 10 a
-60 presentes y de 54 fallos a 0; las 81 restantes son fichas donde la fuente no
-lo publica, que es la respuesta correcta.
-
-La cadena completa de esa inmobiliaria: **de 0 propiedades reportadas a 141
-certificadas**, atravesando D-009, D-010 y D-013.
-
-**Alcance medido, con una huella que lo delata.** En la pre-ingesta,
-`dormitorios > ambientes` —imposible: los dormitorios son un subconjunto de los
-ambientes— aparece **1.056 veces, y las 1.056 son de `generico`**: cero en
-tokko, wasi, century21 y wordpress. Es exactamente la firma del corrimiento
-(`ambientes` toma el 2 de "196 m2", `dormitorios` toma el 3 de ambientes).
-
-No es prueba concluyente —una fuente puede publicar un disparate— pero la
-concentración perfecta en el único connector con este defecto es difícil de
-explicar de otro modo. La validación hizo su trabajo y rechazó lo imposible,
-así que esas propiedades **perdieron los dos campos** en vez de guardarlos
-mal. Fallar cerrado evitó el dato falso; no pudo recuperar el verdadero.
-
-### D-012 — Cobertura al filo del umbral (ABIERTO)
-
-`roomix:berrueta inmobiliaria` enumera **193 de 197** que el propio sitio
-declara ("Se encontraron 197 resultados"): cobertura 0,9797 contra el 0,98
-exigido. **Falla por 0,0003.**
-
-La enumeración es estable e idempotente —193 en las dos corridas, 193 URLs
-distintas, 193 ids distintos, 0 duplicados, 17 páginas— así que no es ruido.
-Las 4 faltantes pueden ser avisos que el contador del sitio incluye y su
-paginación no renderiza, o un hueco real nuestro. **No se puede afirmar cuál
-sin trabajo por sitio, y no se bajó el umbral para que pasara:** relajar un
-guardia porque incomoda es cómo se pierde la garantía que da.
-
-**Es una pregunta de política, no técnica.** Con un corte duro en 0,98, las
-inmobiliarias que queden entre 0,95 y 0,98 se acumularán en `NEEDS_FIX`
-indefinidamente. Si una cobertura estable y reproducible por debajo del umbral
-debe cerrar como `CERTIFIED_BEST_AVAILABLE` —con su limitación documentada— en
-vez de quedar abierta, esa es una decisión del dueño del producto. Hoy sólo
-`NEEDS_FIX` es posible, y `NEEDS_FIX` nunca es un cierre.
-
-## 5. Riesgos abiertos
-
-- **El descubrimiento gobierna todo lo demás.** 111 de 140 `IDENTITY_PENDING`
-  no tienen web conocida, y ~4.000 inmobiliarias del universo no tienen
-  presencia web clasificada. Sin URL no hay certificación posible: agregar
-  capacidad de scraping no mueve ese número. El bloque #3 gatea al #7, y el #7
-  gatea al resto.
-- **Identidad sin resolver (140 de 188).** Cada certificación nueva sin
-  identidad resuelta agrega deuda, no cobertura: son filas que después no se
-  pueden asociar a ninguna inmobiliaria real.
-- **`SIN_INVENTARIO` es un nombre engañoso.** Significa "no reconocimos el
-  mecanismo de publicación", no "la inmobiliaria no publica". Alcami mostró
-  que la diferencia es inventario real invisible. Conviene renombrarlo.
-- **Cobertura 2,8 %.** Cualquier conclusión sobre el catálogo global es
-  prematura hasta que la cola avance sustancialmente.
-
----
-
-## 6. Qué requiere autorización humana explícita
-
-Escritura o modificación en base productiva; borrado de datos; migraciones
-productivas; cambios de permisos o RLS; deploy público; `git push`; merge;
-cambios de DNS o dominio; indexación pública; alta de servicios pagos; cambio
-de secretos o credenciales.
-
-No requieren autorización: analizar, programar localmente, refactorizar,
-correr tests, dry-runs, investigar, generar reportes, crear scripts, validar
-webs y ejecutar procesos locales seguros.
-
----
-
-## 7. Decisiones que necesitan al dueño del producto
-
-### 7.1 Qué hacer con las 4.953 inmobiliarias no promovidas
-
-75 % del universo de certificación no existe en la tabla `main` de ERETZ. No
-son franquicias ni ruido: 4.723 son inmobiliarias independientes comunes,
-descubiertas por el scraping de portales.
-
-Mientras no se promuevan, certificarlas produce propiedades que no se pueden
-asociar a ninguna fila de `main`. Las opciones son excluyentes y ninguna es
-técnica:
-
-1. **Promoverlas al maestro** y certificar sobre el universo completo. Implica
-   escritura en base productiva — barrera de autorización.
-2. **Excluirlas de la cola** hasta que se promuevan, y certificar sólo las
-   1.095 resueltas más las que resuelvan identidad. Reduce el universo activo
-   de 6.597 a ~1.100, y hace que la cobertura real pase de 2,8 % a ~17 %.
-3. **Certificarlas igual** aceptando que el resultado queda huérfano hasta la
-   promoción.
-
-Sin esta decisión, cualquier avance de la cola gasta esfuerzo de scraping en
-datos que hoy no tienen dónde aterrizar.
-
-### 7.2 Alcance de la corrida masiva
-
-La cola completa son 6.410 inmobiliarias pendientes con dos corridas en vivo
-cada una: del orden de 250 horas contra sitios de terceros, y la mayor parte
-produciría inventario huérfano por §7.1.
-
-Por eso la cola tiene ahora un modo `--ready`, que corre **sólo las 753
-inmobiliarias cuya identidad ya resuelve** (`identity_status == READY`) en vez
-de las 6.597. De esas 753 sólo 43 están certificadas, así que hay ~710 de
-trabajo productivo disponible **sin depender de ninguna decisión de producto**:
-sus resultados sí tienen dónde aterrizar.
-
-Queda por acordar la ventana y el ritmo de esa corrida, y si se usa
-`--continue-after-fix` para no detenerse en cada defecto —ahora que los
-defectos quedan registrados en `AGENCY_DEFECT_QUEUE.jsonl` y no se pierden de
-vista.
-
-**Costo real medido**, no estimado. Piloto de 8 sobre inmobiliarias `READY`,
-ejecutado 2026-09-02: **6 `CERTIFIED_COMPLETE` seguidas** y una `NEEDS_FIX`
-que detuvo la corrida por diseño (`roomix:alder inmobiliaria`, causa en
-D-008). Siete inmobiliarias en 77 minutos: **11 minutos de promedio**, con
-dispersión real —de 4 a 25 minutos según el tamaño del catálogo—.
-
-A ese ritmo las 753 son del orden de **140 horas** de ejecución continua. La
-cifra importa para la decisión: no es una tarde. Y con la cola deteniéndose en
-cada defecto, tampoco es desatendida sin `--continue-after-fix`.
-
-El piloto también validó lo construido: el campo nuevo de colisiones de
-identidad quedó en cero en las seis certificaciones, y `alpha inmobiliaria`
-cerró con 125 propiedades, baseline 125 y 125 identidades distintas.
-
-`alder` quedó después en **`CERTIFIED_COMPLETE`**: 148 propiedades, 148
-identidades, 0 colisiones, `SIN_CAMBIOS` en las 148, idempotente. Esa corrida
-tuvo **0 cascarones**, lo que confirma que eran transitorios —el piloto estaba
-golpeando el sitio— pero también significa que **no ejerció el guardia en
-vivo**: D-008 está validado por tests y por la auditoría de la pre-ingesta, no
-por esa corrida.
-
-**La dispersión de tiempos es mucho mayor de lo que sugiere el promedio.** La
-misma inmobiliaria tardó 13 minutos en el piloto y casi **3 horas** al
-recertificarla, con el sitio más lento. Cualquier planificación de la corrida
-masiva tiene que contar con eso.
-
-**Dato para planificar:** las 7 del piloto eran inmobiliarias **ya
-certificadas** cuya huella había quedado obsoleta. Con todas las huellas
-invalidadas, las próximas ~35 corridas vuelven a ganar certificaciones
-existentes antes de sumar cobertura nueva.
-
-### Lote de 25 con el código endurecido (2026-09-02)
-
-24 procesadas con `--continue-after-fix`:
-
-| Resultado | Inmobiliarias |
+| Mecanismo | Qué resuelve |
 |---|---|
-| `CERTIFIED_COMPLETE` | 20 |
-| `NEEDS_FIX` | 2 |
-| `BLOCKED_EXTERNAL` | 1 |
-| `NO_INVENTORY_CONFIRMED` | 1 |
+| Cerrojo de instancia única con PID | Dos runners se pisan el cursor y golpean las fuentes al doble de ritmo |
+| Latido por inmobiliaria, vence a 1 h | Un proceso muerto no traba la cola para siempre (4× la corrida más larga observada) |
+| `--limit N` | Lotes acotados sin cambiar de modo |
+| `--ready` | Corre las 753 elegibles, no las 6.597 |
+| `RUNNER_ERROR` no terminal | Un fallo aislado no tumba la corrida; la fuente vuelve sola a la cola |
+| `AGENCY_DEFECT_QUEUE.jsonl` | Los defectos siguen visibles con `--continue-after-fix` |
+| Checkpoint antes y después de cada agencia | Reanudación exacta |
 
-**83 % cerró limpio.** Las dos `NEEDS_FIX` se diagnosticaron y produjeron tres
-defectos reales (D-009, D-010, D-011): ninguna era un falso positivo del
-certificador. Vale la pena subrayarlo — la cola se detiene ante lo que
-realmente está roto.
+Flujo: `terminal sano → persistir → siguiente`; `NEEDS_FIX → persistir → detener`.
 
-### 7.3 Fuente geográfica para derivar ciudad
+### 3.3 Geografía de `ciudad`
 
-El 91 % del inventario publicable no tiene ciudad, y el padrón no sirve para
-llenarla (guarda barrios). Con coordenadas para el 77 %, la geocodificación
-inversa lo resuelve.
+Jerarquía de evidencia, de mayor a menor:
 
-**No hace falta un servicio pago.** El repo ya tiene `scraper/geocoder.py`
-usando **Nominatim (OpenStreetMap)**, gratuito y sin API key, para
-geocodificación *directa* (dirección → coordenadas), con validación de que las
-coordenadas caigan dentro de los límites de la ciudad esperada. Lo que falta
-es el sentido inverso (coordenadas → ciudad), del mismo proveedor.
+1. ciudad estructurada por la fuente → `SOURCE_STRUCTURED`
+2. ciudad explícita en dirección o metadata confiable → `SOURCE_TEXT`
+3. normalización contra catálogo canónico → `CANONICAL_NORMALIZED`
+4. coordenadas, sólo como evidencia complementaria → `GEOCODED`
+5. si no se puede demostrar → `UNKNOWN`
 
-Lo que sí hay que decidir:
+Prohibido: `provincia → ciudad`, y `coordenada aproximada → ciudad exacta`.
 
-1. **Nominatim inverso**: sin costo, pero su política pide ~1 req/s, así que
-   35.133 propiedades son del orden de 12 horas y es un servicio público
-   ajeno; el uso masivo conviene acordarlo.
-2. **Dataset local de localidades**: resuelve el volumen sin depender de la
-   red ni de terceros, y es la opción sana para reprocesar. Implica descargar
-   un archivo de datos abiertos — autorización de descarga.
+**Investigación de recursos existentes:**
 
-Sin ciudad no hay filtro por ciudad, y sin filtro por ciudad el portal no
-tiene su búsqueda principal.
+| Recurso | Sirve |
+|---|---|
+| `scraper/geocoder.py` (Nominatim, gratis, sin API key) | Sólo geocodificación **directa**; falta la inversa |
+| `CITY_BOUNDS` en ese módulo | 32 ciudades con cajas a mano — no es un catálogo |
+| Esquema de la base | `ciudad`/`provincia`/`barrio` son **TEXT libre, sin catálogo ni FK** |
+| Backup de `main` | 237 pares (ciudad, provincia) y contaminado: "provincia de buenos aires" figura como ciudad |
 
-Nota: `geocoder.py` lee y escribe Supabase con service role. Cualquier corrida
-suya cae bajo la barrera de §6 y no se ejecutó.
+**No existe geografía canónica en el sistema.**
+
+**Y la fuente tampoco la publica.** Verificado sobre una ficha real de Tokko
+—el connector con 0 de 31.858 ciudades—: publica `Ubicación: Alberdi`, que es
+un **barrio**. No hay campo de localidad ni JSON-LD con dirección. La hipótesis
+de "campo sin mapear" es falsa.
+
+El obstáculo es preciso: en el mismo lugar del slug aparecen `Alberdi`
+(barrio) y `Cordoba-Capital` (ciudad), y **distinguirlos exige un catálogo
+canónico de localidades argentinas**. Ver §7.
+
+---
+
+## 4. Defectos
+
+| # | Defecto | Estado | Impacto medido |
+|---|---|---|---|
+| D-001 | Landing de Bitrix24 no reconocida | cerrado | Alcami: 0 → 3 propiedades |
+| D-002 | La certificación contaba cadenas, no identidades | cerrado | 0 colisiones previas; guardia preventivo |
+| D-003 | Una excepción tumbaba la corrida entera | cerrado | 0 crashes en 24 corridas |
+| D-004 | Evidencia congelada en un literal | cerrado | 4.953 clasificadas sobre una afirmación no verificada |
+| D-005 | Tokko guardaba prosa como barrio | cerrado | 1.145 fichas |
+| D-006 | Operación no leída de la forma verbal | cerrado | 117 filas, 53 publicables |
+| D-007 | Tokko adivinaba el tipo | cerrado | 899 fichas sin tipo |
+| D-008 | **Página vacía guardada como propiedad** | cerrado | 351 fichas; tipo inventado |
+| D-009 | Cero heredado del connector equivocado | cerrado | Requena: 0 → 141 |
+| D-010 | Sitemap con fichas de otro host | cerrado | Identidad en host ajeno |
+| D-011 | Tipo declarado en la ficha, ignorado | cerrado | 35 de 193 en berrueta |
+| D-012 | Contador del sitio usado como verdad | cerrado | berrueta: el sitio declara 197 y sirve 193 |
+| D-013 | **Atributos tabulados leídos al revés** | cerrado | 1.056 combinaciones imposibles, todas en `generico` |
+
+### Los dos que importan
+
+**D-008 — la ausencia convertida en afirmación.** Dos fichas volvieron vacías y
+el pipeline las guardó con el nombre del sitio por título y un tipo
+**adivinado**. Si ambas corridas hubieran fallado igual, se habría certificado
+`CERTIFIED_COMPLETE` con propiedades fantasma. Sólo el chequeo de idempotencia
+lo delató. El guardia exige ahora dos condiciones —sin datos publicados **y**
+título igual al del sitio—, porque sólo la primera habría tirado 254 lotes
+reales.
+
+**D-013 — el valor del campo vecino.** `Ambientes 3 Dormitorios 2` sin dos
+puntos se leía buscando el número *antes* del rótulo: `dormitorios` tomaba el 3
+de ambientes y `ambientes` el 2 de `196 m2`. No un campo vacío — un valor
+equivocado que parece correcto. La ambigüedad no estaba en la regla: estaba en
+haber aplanado el HTML. Se lee de la estructura
+(`<span>Ambientes</span><span>3</span>`).
+
+---
+
+## 5. Arquitectura
+
+```
+Descubrimiento → Directorio de plataformas → Resolución de identidad
+                                                      │
+                          ┌───────────────────────────┤
+                          ▼                           ▼
+                 identity READY (753)         staging sin promover (4.953)
+                          │                           │
+                          ▼                    gate de promoción
+                  Cola de certificación         (939 / 1.197 / 2.462 / 355)
+                          │                           │
+              connector + estrategia            [BARRERA: escritura en main]
+                          │
+                 dos corridas en vivo
+                          │
+        ┌─────────────────┼─────────────────┐
+        ▼                 ▼                 ▼
+   CERTIFIED_*      NO_INVENTORY_*     NEEDS_FIX → detener, diagnosticar
+        │
+        ▼
+   Pre-ingesta (189.159) → quality gate → CANDIDATE (45.404)
+                                                │
+                                        [BARRERA: publicación]
+```
+
+---
+
+## 6. Blockers
+
+| Blocker | Qué frena | Necesita |
+|---|---|---|
+| Promoción a `main` | 79.001 propiedades atribuibles | Autorización de escritura productiva |
+| Vinculación de las 56 homónimas | 1.140 propiedades | Autorización de escritura productiva |
+| Catálogo geográfico canónico | Filtro por ciudad del portal (91 % del inventario) | Descarga de dataset oficial abierto |
+| 2.462 sin web conocida | Su promoción y certificación | Descubrimiento (bloque #3) |
+
+---
+
+## 7. Próximos milestones
+
+1. **Cerrar la cola `--ready`** (753, ~91 h de ejecución medida). En curso.
+2. **Catálogo geográfico canónico** y derivación de `ciudad` con provenance.
+3. **Descubrimiento** para las 2.462 sin web.
+4. **Vinculación e ingesta** una vez levantada la barrera.
+5. Contrato de propiedad, dedup, ciclo de vida, quality gate, publicación.
+
+---
+
+## 8. Barrera de autorización
+
+Requieren autorización humana explícita: escritura o modificación en base
+productiva; borrado; migraciones; permisos o RLS; deploy público; `git push`;
+merge; DNS; indexación pública; servicios pagos; secretos.
+
+No la requieren: analizar, programar localmente, refactorizar, correr tests,
+dry-runs, investigar, generar reportes, crear scripts, validar webs y ejecutar
+procesos locales seguros.
