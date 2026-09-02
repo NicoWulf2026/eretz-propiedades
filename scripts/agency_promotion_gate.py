@@ -180,6 +180,38 @@ def evaluar(catalogo: dict[str, dict[str, Any]],
     return salida
 
 
+def vinculaciones(catalogo: dict[str, dict[str, Any]],
+                  main: dict[str, list[str]],
+                  filas: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Las que ya existen en `main` y solo hay que enlazar, no crear.
+
+    Salieron bloqueadas por homonima, pero eso no las convierte en un problema:
+    las convierte en la accion MAS segura de todas. "bechara inmobiliaria" es
+    "Inmobiliaria Bechara" con las palabras al reves; enlazarla al id que ya
+    existe no crea ninguna fila y le devuelve la inmobiliaria a sus propiedades.
+
+    Coincidir el conjunto de palabras es evidencia fuerte pero no prueba: dos
+    negocios distintos podrian compartirlo. Por eso una sola candidata en main
+    es enlazable y varias van a revision, nunca se elige la primera.
+    """
+    salida = []
+    for fila in filas:
+        if "HOMONIMA_EN_MAIN" not in fila["reasons"]:
+            continue
+        nombre = fila["canonical_agency_id"].split(":", 1)[-1]
+        candidatas = main.get(clave_nombre(nombre), [])
+        salida.append({
+            "canonical_agency_id": fila["canonical_agency_id"],
+            "agency_name": fila["agency_name"],
+            "action": "LINK_TO_EXISTING" if len(candidatas) == 1
+                      else "REQUIRES_REVIEW",
+            "main_candidates": candidatas,
+            "evidence": "identical normalized word set",
+            "writes_a_new_row": False,
+        })
+    return salida
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--v2-dir", default=r"D:\INMO CAPITAL\ERETZ_SUPABASE_RECONCILIATION_V2_20260827")
@@ -211,6 +243,13 @@ def main() -> int:
         "reasons_by_state": {k: dict(v) for k, v in motivos.items()},
         "database_writes": 0,
     }
+    enlaces = vinculaciones(catalogo, nombres_de_main(Path(args.main_backup)),
+                            filas)
+    (salida / "AGENCY_MAIN_LINK_DRYRUN.jsonl").write_text(
+        "".join(json.dumps(e, ensure_ascii=False) + chr(10)
+                for e in enlaces),
+        encoding="utf-8")
+    resumen["links_dry_run"] = dict(Counter(e["action"] for e in enlaces))
     write_json(salida / "AGENCY_PROMOTION_GATE_SUMMARY.json", resumen)
 
     print(json.dumps(resumen, ensure_ascii=False, indent=2))
