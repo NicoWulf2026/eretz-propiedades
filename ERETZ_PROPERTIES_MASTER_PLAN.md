@@ -229,7 +229,7 @@ plataforma. El dominio no sirve como identidad de inmobiliaria.
 
 ### Salud de la batería de tests
 
-`eretz-agency`: **1.263 tests pasan** (2026-09-02), sin regresiones tras los
+`eretz-agency`: **1.262 tests pasan** (2026-09-02), sin regresiones tras los
 doce defectos cerrados. Se partió de 1.233.
 
 ---
@@ -532,12 +532,22 @@ ambientes, y `ambientes` tomaba el 2 de `196 m2`. No un campo vacío: **el valor
 del campo vecino**, corrido un lugar, que parece correcto y después no se
 distingue de un dato real.
 
-La adyacencia sola es ambigua —"3 dormitorios 2 baños" es prosa y ahí el número
-sí va antes—, así que el formato se decide **una vez por ficha**, mirando todos
-los rótulos conocidos y no el que se está leyendo: un solo campo no alcanza
-para distinguirlos, y equivocarse corre todos los valores. Un rótulo con dos
-puntos sigue mandando sobre ambos, porque ahí no hay nada que adivinar, y el
-límite de palabra evita leer el "2" de "m2" como una cantidad.
+**El primer arreglo no sirvió, y vale contar por qué.** Intenté decidir el
+formato contando cómo se presentan los rótulos en toda la ficha. Pasó todos los
+tests y **falló contra la página real**: las páginas traen tabla *y*
+descripción, y la prosa gana por mayoría. Tampoco hay regla local que sirva —en
+la tabla, `Dormitorios` viene precedido por el valor de `Ambientes`—.
+
+La ambigüedad no estaba en la regla: estaba en haber aplanado el HTML. La
+estructura lo dice sin dudas —`<span>Ambientes</span><span>3</span>`: un
+elemento con sólo el rótulo seguido de otro con sólo el número—. Se lee de ahí,
+sin depender del nombre de la clase. Verificado contra la ficha real: Ambientes
+3, Dormitorios 2, Baños 2, Cocheras 1, los cuatro correctos.
+
+Sobre texto plano la lectura vuelve a ser conservadora, con una sola mejora: el
+límite de palabra, que evita leer el "2" de "196 m2 Ambientes" como cantidad.
+Sin estructura que lo aclare, **prefiere dejar el campo vacío antes que llenarlo
+con el número de al lado**.
 
 **Alcance medido, con una huella que lo delata.** En la pre-ingesta,
 `dormitorios > ambientes` —imposible: los dormitorios son un subconjunto de los
