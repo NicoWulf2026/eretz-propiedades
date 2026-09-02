@@ -128,8 +128,8 @@ El cuello es el **límite de ritmo por host** (1,5 s), no la CPU.
 
 ### 2.5 Salud
 
-`eretz-agency`: **1.265+ tests pasan**, sin regresiones tras trece defectos
-cerrados. Se partió de 1.233.
+`eretz-agency`: **1.293 tests pasan**, sin regresiones tras trece defectos
+cerrados y la capa geográfica. Se partió de 1.233.
 
 ---
 
@@ -303,6 +303,18 @@ Validación estratificada (`scripts/geo_validacion.py`, informe en
 Los barrios **nunca** se convierten en ciudad, y las formas comerciales
 resuelven todas. El estrato con coordenada resuelve menos justamente porque ahí
 el control de contradicción actúa.
+
+**Dry-run listo hasta la barrera** (`scripts/geo_dryrun.py`,
+`ERETZ_GEO/CIUDAD_DRYRUN.jsonl`, `database_writes: 0`): sobre las 189.159 filas
+produce **17.608 propuestas** de ciudad con procedencia — 3.709 corrigen el
+texto publicado y 13.899 lo confirman con id oficial. Las 42 correcciones
+distintas son todas normalizaciones al nombre oficial (`Capital Federal` →
+`Ciudad Autónoma de Buenos Aires`, acentos, mayúsculas); **ninguna cambia de
+lugar una propiedad**.
+
+Se distingue el origen de la evidencia: `SOURCE_STRUCTURED` cuando el connector
+la saca de un campo propio de la fuente (wasi, century21) y `SOURCE_TEXT`
+cuando es una lectura nuestra. No valen lo mismo.
 
 **Dos correcciones que salieron de medir contra los datos reales, no de los
 tests** —la regla de §1.1 otra vez:
