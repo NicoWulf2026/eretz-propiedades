@@ -815,6 +815,21 @@ def detectar_operacion(texto: Any) -> str | None:
     for clave, val in _OPERACIONES.items():
         if clave in t:
             return val
+    # Formas verbales. Se consultan solo cuando nada de lo anterior dijo algo,
+    # asi que no pueden cambiar ninguna deteccion que ya funcionaba. Van con
+    # limite de palabra porque "vende" es parte de "vendedor". Titulos como
+    # "Se vende terreno en Colastine" o "INMOBILIARIA LEAL VENDE CASA"
+    # declaraban la operacion y quedaban sin ella, que es el campo que mas
+    # define un aviso: sin el, la propiedad no se puede publicar.
+    venta = re.search(r"\b(vende|venden|vendemos)\b", t)
+    alquiler = re.search(r"\b(alquila|alquilan|alquilamos|arrienda|arriendan)\b",
+                         t)
+    if venta and not alquiler:
+        return "venta"
+    if alquiler and not venta:
+        return "alquiler"
+    # Si el aviso nombra las dos, la fuente no declaro una sola operacion.
+    # Elegir cualquiera seria inventar la mitad del anuncio.
     return None
 
 

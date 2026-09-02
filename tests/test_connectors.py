@@ -1154,6 +1154,35 @@ def test_el_markup_escapado_no_termina_dentro_de_la_descripcion():
     assert "Casa linda" in t and "con patio" in t
 
 
+def test_operacion_se_lee_tambien_de_la_forma_verbal():
+    """El vocabulario tenia los infinitivos pero no las conjugadas, asi que
+    "Se vende terreno" quedaba sin operacion: el campo que mas define un aviso
+    y sin el cual no se puede publicar. Eran 108 fichas que lo declaraban en el
+    titulo."""
+    from connectors.base import detectar_operacion
+
+    assert detectar_operacion("Se vende terreno en Colastine Norte") == "venta"
+    assert detectar_operacion("INMOBILIARIA LEAL VENDE CASA") == "venta"
+    assert detectar_operacion("Se alquila local") == "alquiler"
+
+
+def test_la_forma_verbal_no_pisa_lo_que_ya_se_detectaba():
+    """La pasada verbal corre solo cuando nada dijo antes, y "vende" es parte
+    de "vendedor": sin limite de palabra inventaria una operacion."""
+    from connectors.base import detectar_operacion
+
+    assert detectar_operacion("Casa en venta") == "venta"
+    assert detectar_operacion("Alquiler temporario") == "alquiler_temporario"
+    assert detectar_operacion("Vendedor de la zona") is None
+
+
+def test_aviso_que_nombra_las_dos_operaciones_no_elige_una():
+    """Elegir una de las dos seria inventar la mitad del anuncio."""
+    from connectors.base import detectar_operacion
+
+    assert detectar_operacion("Se vende o se alquila casa") is None
+
+
 def test_tokko_no_confunde_una_palabra_de_la_descripcion_con_un_campo():
     """La etiqueta se buscaba sin exigir dos puntos y sin distinguir mayusculas,
     asi que "por su ubicacion privilegiada, esta casa ofrece..." se leia como si
