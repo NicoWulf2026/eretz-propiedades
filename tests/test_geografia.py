@@ -262,3 +262,43 @@ def test_la_promocion_desde_barrio_tambien_respeta_la_coordenada() -> None:
     assert prop.ciudad is None
     assert prop.barrio == "La Plata"
     assert prop.extra["ciudad_match"] == CONTRADICHA
+
+
+# ------------------------------------------------- versionado del snapshot
+def test_el_diff_detecta_lo_que_hace_peligroso_un_reemplazo() -> None:
+    """Un catalogo externo no puede cambiar en silencio. Que se elimine un id o
+    que una localidad cambie de provincia mueve propiedades de lugar sin que
+    nadie las haya tocado, y eso no se nota hasta que la busqueda por ciudad no
+    devuelve nada."""
+    from scripts.geo_snapshot_diff import comparar
+
+    viejo = {
+        "1": {"id": "1", "nombre": "Rosario",
+              "provincia": {"nombre": "Santa Fe"}},
+        "2": {"id": "2", "nombre": "Vieja", "provincia": {"nombre": "Cordoba"}},
+        "3": {"id": "3", "nombre": "Mudada", "provincia": {"nombre": "Cordoba"}},
+    }
+    nuevo = {
+        "1": {"id": "1", "nombre": "Rosario",
+              "provincia": {"nombre": "Santa Fe"}},
+        "3": {"id": "3", "nombre": "Mudada",
+              "provincia": {"nombre": "San Luis"}},
+        "4": {"id": "4", "nombre": "Nueva", "provincia": {"nombre": "Salta"}},
+    }
+    resultado = comparar(viejo, nuevo)
+    assert resultado["agregados"] == 1
+    assert resultado["eliminados"] == 1
+    assert resultado["cambiaron_de_provincia"] == 1
+    assert resultado["detalle_mudados"][0]["despues"] == "San Luis"
+
+
+def test_el_diff_ve_un_renombre_sin_confundirlo_con_una_mudanza() -> None:
+    from scripts.geo_snapshot_diff import comparar
+
+    viejo = {"1": {"id": "1", "nombre": "Cordoba",
+                   "provincia": {"nombre": "Cordoba"}}}
+    nuevo = {"1": {"id": "1", "nombre": "Córdoba",
+                   "provincia": {"nombre": "Cordoba"}}}
+    resultado = comparar(viejo, nuevo)
+    assert resultado["renombrados"] == 1
+    assert resultado["cambiaron_de_provincia"] == 0
