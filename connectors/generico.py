@@ -35,7 +35,8 @@ from .formularios import bajar_formulario
 from .base import (Bloqueado, Connector, ErrorPermanente, ErrorTransitorio,
                    Fuente, PropiedadNormalizada, a_numero, detectar_moneda,
                    detectar_operacion, detectar_tipo, identidad_de_imagen,
-                   limpiar, sin_fichas_vecinas)
+                   imagenes_de_fichas_vecinas, limpiar,
+                   sin_fichas_vecinas)
 
 # Los atributos numericos que una ficha suele tabular. Sirven para decidir si
 # la pagina los presenta como ``Rotulo N`` o como prosa.
@@ -1388,6 +1389,17 @@ class GenericoConnector(Connector):
             # connector, es la forma alcanzando una pagina que no era ficha.
             return None
 
+        # Recien aca se sacan las fotos de las fichas vecinas. Va DESPUES de
+        # confirmar: el guardian de forma exige fotos, y una ficha real cuyas
+        # unicas imagenes visibles eran del carrusel de relacionadas quedaria
+        # descartada por un filtro nuestro. Se limpia lo que se guarda, no lo
+        # que se usa para decidir si la pagina es una propiedad.
+        ajenas = {identidad_de_imagen(urllib.parse.urljoin(url, u))
+                  for u in imagenes_de_fichas_vecinas(html, url)}
+        if ajenas:
+            imagenes = [u for u in imagenes
+                        if identidad_de_imagen(u) not in ajenas]
+
         lat, lon = datos.get("lat"), datos.get("lon")
         if lat is None:
             m = RE_COORD.search(html)
@@ -1958,11 +1970,6 @@ class GenericoConnector(Connector):
         las veia sin una sola foto, y las que si entraban entraban sin
         galeria.
         """
-        # El carrusel de propiedades relacionadas trae la foto de cada vecina
-        # envuelta en un enlace a SU ficha. Sin sacarlo, cada aviso termina con
-        # fotos de otros, y como esos bloques rotan, cada rotacion se lee como
-        # que la propiedad cambio de fotos.
-        html = sin_fichas_vecinas(html or "", url)
         crudas = list(RE_IMG.findall(html or ""))
         for m in RE_IMG_ATRIBUTO.finditer(html or ""):
             crudas.append(m.group(1).split()[0] if m.group(1).strip() else "")

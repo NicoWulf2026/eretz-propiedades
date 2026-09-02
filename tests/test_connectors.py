@@ -1494,6 +1494,35 @@ def test_la_foto_enlazada_a_la_propia_ficha_se_conserva():
     assert "principal.jpeg" in limpio
 
 
+def test_el_guardian_de_forma_sigue_viendo_las_fotos_antes_de_limpiarlas():
+    """La limpieza no puede costar cobertura.
+
+    `_confirma_ficha` exige fotos para aceptar una pagina descubierta por
+    forma. Si el filtro de vecinas corriera antes, una ficha real cuyas unicas
+    imagenes visibles son las del carrusel de relacionadas quedaria descartada
+    por una limpieza nuestra: se perderia una propiedad valida para mejorar una
+    estadistica de completitud.
+
+    Por eso `_imagenes_de` devuelve TODO lo que la pagina muestra, y la resta
+    de lo ajeno pasa despues, sobre lo que se guarda.
+    """
+    from connectors.generico import GenericoConnector
+
+    vistas = GenericoConnector._imagenes_de(
+        FICHA_CON_VECINAS, "https://alfa.test/propiedad/999_lote/")
+    assert any("vecina-111" in u for u in vistas)
+
+
+def test_las_fotos_ajenas_se_identifican_para_restarlas_despues():
+    from connectors.base import imagenes_de_fichas_vecinas
+
+    ajenas = imagenes_de_fichas_vecinas(
+        FICHA_CON_VECINAS, "https://alfa.test/propiedad/999_lote/")
+    assert any("vecina-111" in u for u in ajenas)
+    assert any("vecina-222" in u for u in ajenas)
+    assert not any("propia" in u for u in ajenas)
+
+
 def test_operacion_se_lee_tambien_de_la_forma_verbal():
     """El vocabulario tenia los infinitivos pero no las conjugadas, asi que
     "Se vende terreno" quedaba sin operacion: el campo que mas define un aviso

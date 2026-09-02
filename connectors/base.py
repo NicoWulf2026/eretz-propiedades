@@ -925,6 +925,31 @@ def sin_fichas_vecinas(html: str, url_propia: Any) -> str:
     return RE_ENLACE_CON_IMAGEN.sub(decidir, html or "")
 
 
+def imagenes_de_fichas_vecinas(html: str, url_propia: Any) -> set[str]:
+    """Las urls de imagen que viven dentro de un enlace a OTRA ficha.
+
+    Se devuelven en vez de recortar el html porque el guardian de forma exige
+    fotos para aceptar una pagina como propiedad: si el filtro corriera antes,
+    una ficha real cuyas unicas imagenes visibles son las del carrusel de
+    relacionadas quedaria descartada por una limpieza nuestra. Se limpia lo que
+    se guarda, no lo que se usa para decidir.
+    """
+    ajenas: set[str] = set()
+    recortado = sin_fichas_vecinas(html, url_propia)
+    if recortado == (html or ""):
+        return ajenas
+    patron = re.compile(r'src="([^"]+)"|src=' + chr(39) + r'([^' + chr(39)
+                        + r']+)' + chr(39), re.I)
+    for bloque in RE_ENLACE_CON_IMAGEN.finditer(html or ""):
+        if bloque.group(0) in recortado:
+            continue
+        for coincidencia in patron.finditer(bloque.group(0)):
+            valor = coincidencia.group(1) or coincidencia.group(2)
+            if valor:
+                ajenas.add(unescape(valor.strip()))
+    return ajenas
+
+
 def detectar_operacion(texto: Any) -> str | None:
     if not texto:
         return None
