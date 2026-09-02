@@ -1229,6 +1229,40 @@ def test_el_markup_escapado_no_termina_dentro_de_la_descripcion():
     assert "Casa linda" in t and "con patio" in t
 
 
+def test_generico_lee_el_tipo_del_chip_de_categoria_de_la_ficha():
+    """Regresion de `roomix:berrueta inmobiliaria`.
+
+    35 de 193 avisos quedaban sin tipo porque el titulo no lo nombra -"3
+    AMBIENTES AL FRENTE" describe la propiedad sin decir que es-, mientras la
+    ficha lo publicaba en su propio elemento. Sin tipo no se puede publicar.
+    """
+    from connectors.generico import GenericoConnector
+
+    ficha = "<div><span>Departamento</span><p>3 AMBIENTES AL FRENTE</p></div>"
+    assert GenericoConnector._tipo_en_la_ficha(ficha) == "departamento"
+
+
+def test_generico_no_toma_el_tipo_del_menu_de_categorias():
+    """Si aparece mas de un tipo distinto, eso es la navegacion del sitio y no
+    la etiqueta de esta ficha: elegir el primero le pondria a cada aviso el
+    tipo que figure mas arriba en el menu."""
+    from connectors.generico import GenericoConnector
+
+    menu = "<ul><li>Casas</li><li>Departamentos</li><li>Terrenos</li></ul>"
+    assert GenericoConnector._tipo_en_la_ficha(menu) is None
+
+
+def test_generico_no_confunde_una_frase_con_una_etiqueta_de_tipo():
+    """Un elemento con una frase entera es texto de la ficha, no un chip de
+    categoria."""
+    from connectors.generico import GenericoConnector
+
+    assert GenericoConnector._tipo_en_la_ficha(
+        "<span>casa de 3 ambientes en venta</span>") is None
+    assert GenericoConnector._tipo_en_la_ficha(
+        "<span>Contacto</span><li>Nosotros</li>") is None
+
+
 def test_tokko_lee_el_tipo_declarado_cuando_el_titulo_no_alcanza():
     """El tipo salia solo de adivinarlo en el titulo, y 899 fichas quedaban sin
     el -sin tipo una propiedad no se puede publicar- teniendo la ficha el dato

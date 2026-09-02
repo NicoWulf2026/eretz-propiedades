@@ -1393,7 +1393,8 @@ class GenericoConnector(Connector):
                                or detectar_tipo(urllib.parse.unquote(
                                    urllib.parse.urlparse(url).path)
                                    .replace(".php", " ").replace("-", " "))
-                               or detectar_tipo(texto_campos[:300])),
+                               or detectar_tipo(texto_campos[:300])
+                               or self._tipo_en_la_ficha(principal)),
             "dormitorios": None if es_emprendimiento else self._cuenta_de_ficha(
                 principal, texto_campos, r"dormitorios?|habitaciones?",
                 datos.get("dorm")),
@@ -2166,6 +2167,33 @@ class GenericoConnector(Connector):
         # ya fueron excluidos del auditor y no entran en texto normalizado.
         narrativo = re.search(rf"([1-9]\d?)\s*(?:{etiqueta})", texto, re.I)
         return int(narrativo.group(1)) if narrativo else None
+
+    @staticmethod
+    def _tipo_en_la_ficha(html: str) -> str | None:
+        """El tipo declarado en su propio elemento, como chip de categoria.
+
+        El titulo no siempre lo dice: "3 AMBIENTES AL FRENTE" describe el aviso
+        sin nombrar que es. La ficha igual lo publica en un <li> o <span> cuyo
+        contenido es solo el tipo, y no leerlo dejaba 35 de 193 avisos de una
+        inmobiliaria sin el campo que decide si la propiedad se puede publicar.
+
+        Si aparece MAS DE UN tipo distinto no se afirma ninguno: eso es el menu
+        de categorias del sitio -"Casas", "Departamentos", "Terrenos"-, no la
+        etiqueta de esta ficha, y elegir el primero le pondria a cada aviso el
+        tipo que figure mas arriba en la navegacion.
+        """
+        tipos = set()
+        for match in re.finditer(
+                r"<(?:li|span)[^>]*>\s*([^<>]{3,24}?)\s*</(?:li|span)>",
+                html or "", re.I):
+            texto = match.group(1).strip()
+            # Un elemento con una frase es texto de la ficha, no una etiqueta.
+            if len(texto.split()) > 2:
+                continue
+            tipo = detectar_tipo(texto)
+            if tipo:
+                tipos.add(tipo)
+        return tipos.pop() if len(tipos) == 1 else None
 
     @staticmethod
     def _cuenta_de_ficha(html: str, texto: str, etiqueta: str,

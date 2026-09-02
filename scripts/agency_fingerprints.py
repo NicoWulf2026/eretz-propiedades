@@ -36,6 +36,7 @@ GENERIC_COMMON_METHODS = {
     "_imagenes_de", "_direccion_de", "_titulo_de_la_ficha",
     "_operacion_en_la_ficha", "_confirma_ficha", "_estado_fuente",
     "_de_json_ld", "_cuenta", "_cuenta_de_ficha", "_sup",
+    "_tipo_en_la_ficha",
 }
 GENERIC_STRATEGY_METHODS = {
     "generic/empty_catalog": {"_fichas_en"},
