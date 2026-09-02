@@ -719,7 +719,9 @@ class GenericoConnector(Connector):
             if "<" not in cuerpo:
                 continue
             locs = RE_LOC.findall(cuerpo)
-            fichas += [u for u in locs if self._es_ficha_url(u, propia)]
+            fichas += [u for u in locs
+                       if self._es_ficha_url(u, propia)
+                       and self._mismo_sitio(u, base)]
             indices += [u for u in locs if u.lower().endswith((".xml", ".xml.gz"))]
             if fichas or indices:
                 break
@@ -734,7 +736,8 @@ class GenericoConnector(Connector):
             except (ErrorTransitorio, ErrorPermanente, Bloqueado):
                 continue
             fichas += [u for u in RE_LOC.findall(cuerpo)
-                       if self._es_ficha_url(u, propia)]
+                       if self._es_ficha_url(u, propia)
+                       and self._mismo_sitio(u, base)]
             if len(fichas) >= MAX_FICHAS:
                 break
 
@@ -2167,6 +2170,32 @@ class GenericoConnector(Connector):
         # ya fueron excluidos del auditor y no entran en texto normalizado.
         narrativo = re.search(rf"([1-9]\d?)\s*(?:{etiqueta})", texto, re.I)
         return int(narrativo.group(1)) if narrativo else None
+
+    @staticmethod
+    def _mismo_sitio(url: str, base: str) -> bool:
+        """Si la url pertenece al sitio de la inmobiliaria.
+
+        El sitemap de requenapropiedades.com.ar publica sus fichas como
+        `http://requenav2.test/propiedad/...`: el hostname local del
+        desarrollador quedo publicado en produccion. Esas urls no responden,
+        pero el problema mayor es el otro: si respondieran, cada propiedad
+        quedaria guardada con identidad y enlace en un host que no es el de la
+        inmobiliaria, porque `hash_dedup` se calcula sobre la url normalizada.
+
+        Los subdominios propios si entran: una ficha en
+        `fichas.inmobiliaria.com.ar` sigue siendo de esa inmobiliaria.
+        """
+        def host(valor: str) -> str:
+            neto = urllib.parse.urlparse(valor).netloc.lower()
+            return neto[4:] if neto.startswith("www.") else neto
+
+        propio, ajeno = host(base), host(url)
+        if not ajeno:
+            return True
+        if not propio:
+            return False
+        return (ajeno == propio or ajeno.endswith("." + propio)
+                or propio.endswith("." + ajeno))
 
     @staticmethod
     def _tipo_en_la_ficha(html: str) -> str | None:

@@ -1229,6 +1229,38 @@ def test_el_markup_escapado_no_termina_dentro_de_la_descripcion():
     assert "Casa linda" in t and "con patio" in t
 
 
+def test_el_sitemap_no_aporta_fichas_de_otro_host():
+    """Regresion de `roomix:analia requena propiedades`.
+
+    Su sitemap publica las fichas como `http://requenav2.test/propiedad/...`:
+    el hostname local del desarrollador quedo en produccion. Esas urls no
+    responden, pero el dano mayor seria que respondieran: `hash_dedup` se
+    calcula sobre la url, asi que cada propiedad quedaria con identidad y
+    enlace en un host que no es el de la inmobiliaria.
+    """
+    from connectors.generico import GenericoConnector
+
+    base = "https://requenapropiedades.com.ar"
+    assert not GenericoConnector._mismo_sitio(
+        "http://requenav2.test/propiedad/x", base)
+    assert not GenericoConnector._mismo_sitio(
+        "https://www.zonaprop.com.ar/p/1", base)
+
+
+def test_el_sitemap_conserva_las_fichas_del_propio_sitio():
+    """Filtrar por host no puede costar inventario legitimo: una ficha en un
+    subdominio propio sigue siendo de esa inmobiliaria, y `www` es el mismo
+    sitio."""
+    from connectors.generico import GenericoConnector
+
+    base = "https://requenapropiedades.com.ar"
+    for url in ("https://requenapropiedades.com.ar/propiedad/x",
+                "https://www.requenapropiedades.com.ar/propiedad/x",
+                "https://fichas.requenapropiedades.com.ar/p/1",
+                "/propiedad/x"):
+        assert GenericoConnector._mismo_sitio(url, base), url
+
+
 def test_generico_lee_el_tipo_del_chip_de_categoria_de_la_ficha():
     """Regresion de `roomix:berrueta inmobiliaria`.
 
