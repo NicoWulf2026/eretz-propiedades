@@ -1,0 +1,446 @@
+[
+  {
+    "palabras": [
+      "inmobiliaria",
+      "salerno"
+    ],
+    "miembros": [
+      {
+        "canonical_agency_id": "roomix:inmobiliaria salerno",
+        "eretz_id": 3535,
+        "resolution_status": "RESOLVED",
+        "dominio": "https://www.salernoinmobiliaria.com/Alquiler",
+        "filas_preingesta": 109
+      },
+      {
+        "canonical_agency_id": "roomix:salerno inmobiliaria",
+        "eretz_id": 6334,
+        "resolution_status": "RESOLVED",
+        "dominio": "https://www.salernoinmobiliaria.com/",
+        "filas_preingesta": 56
+      }
+    ]
+  },
+  {
+    "palabras": [
+      "calderon",
+      "inmobiliaria"
+    ],
+    "miembros": [
+      {
+        "canonical_agency_id": "roomix:calderon inmobiliaria",
+        "eretz_id": 580,
+        "resolution_status": "RESOLVED",
+        "dominio": null,
+        "filas_preingesta": 0
+      },
+      {
+        "canonical_agency_id": "roomix:inmobiliaria calderon",
+        "eretz_id": null,
+        "resolution_status": "NOT_FOUND_IN_ERETZ",
+        "dominio": null,
+        "filas_preingesta": 117
+      }
+    ]
+  },
+  {
+    "palabras": [
+      "larocca",
+      "propiedades"
+    ],
+    "miembros": [
+      {
+        "canonical_agency_id": "roomix:larocca propiedades",
+        "eretz_id": 5441,
+        "resolution_status": "RESOLVED",
+        "dominio": "https://www.laroccapropiedades.com/",
+        "filas_preingesta": 89
+      },
+      {
+        "canonical_agency_id": "roomix:propiedades larocca",
+        "eretz_id": null,
+        "resolution_status": "NOT_FOUND_IN_ERETZ",
+        "dominio": null,
+        "filas_preingesta": 0
+      }
+    ]
+  },
+  {
+    "palabras": [
+      "inmobiliarios",
+      "negocios",
+      "rodriguez"
+    ],
+    "miembros": [
+      {
+        "canonical_agency_id": "roomix:rodriguez negocios inmobiliarios",
+        "eretz_id": 6239,
+        "resolution_status": "RESOLVED",
+        "dominio": "https://inmobiliaria-rodriguez.com.ar",
+        "filas_preingesta": 83
+      },
+      {
+        "canonical_agency_id": "roomix:rodriguez rodriguez negocios inmobiliarios",
+        "eretz_id": null,
+        "resolution_status": "NOT_FOUND_IN_ERETZ",
+        "dominio": null,
+        "filas_preingesta": 0
+      }
+    ]
+  },
+  {
+    "palabras": [
+      "inmobiliaria",
+      "rodriguez"
+    ],
+    "miembros": [
+      {
+        "canonical_agency_id": "roomix:inmobiliaria rodriguez",
+        "eretz_id": 2312,
+        "resolution_status": "RESOLVED",
+        "dominio": "https://www.todoprops.com/inmobiliarias/inmobiliaria/inmobiliaria-rodriguez?publisher=4008760",
+        "filas_preingesta": 0
+      },
+      {
+        "canonical_agency_id": "roomix:rodriguez inmobiliaria",
+        "eretz_id": 2363,
+        "resolution_status": "RESOLVED",
+        "dominio": "https://www.gladysrodriguezpropiedades.com.ar/",
+        "filas_preingesta": 82
+      }
+    ]
+  },
+  {
+    "palabras": [
+      "aguirre",
+      "inmobiliaria"
+    ],
+    "miembros": [
+      {
+        "canonical_agency_id": "roomix:aguirre inmobiliaria",
+        "eretz_id": 1226,
+        "resolution_status": "RESOLVED",
+        "dominio": "https://www.aguirreinmobiliaria.com.ar/",
+        "filas_preingesta": 38
+      },
+      {
+        "canonical_agency_id": "roomix:inmobiliaria aguirre",
+        "eretz_id": null,
+        "resolution_status": "NOT_FOUND_IN_ERETZ",
+        "dominio": null,
+        "filas_preingesta": 0
+      }
+    ]
+  },
+  {
+    "palabras": [
+      "gaia",
+      "inmobiliaria"
+    ],
+    "miembros": [
+      {
+        "canonical_agency_id": "roomix:gaia inmobiliaria",
+        "eretz_id": null,
+        "resolution_status": "NOT_FOUND_IN_ERETZ",
+        "dominio": null,
+        "filas_preingesta": 0
+      },
+      {
+        "canonical_agency_id": "roomix:inmobiliaria gaia",
+        "eretz_id": null,
+        "resolution_status": "NOT_FOUND_IN_ERETZ",
+        "dominio": null,
+        "filas_preingesta": 12
+      }
+    ]
+  },
+  {
+    "palabras": [
+      "labate",
+      "propiedades"
+    ],
+    "miembros": [
+      {
+        "canonical_agency_id": "roomix:labate propiedades",
+        "eretz_id": null,
+        "resolution_status": "NOT_FOUND_IN_ERETZ",
+        "dominio": null,
+        "filas_preingesta": 0
+      },
+      {
+        "canonical_agency_id": "roomix:propiedades labate",
+        "eretz_id": null,
+        "resolution_status": "NOT_FOUND_IN_ERETZ",
+        "dominio": null,
+        "filas_preingesta": 0
+      }
+    ]
+  },
+  {
+    "palabras": [
+      "casagrande",
+      "propiedades"
+    ],
+    "miembros": [
+      {
+        "canonical_agency_id": "roomix:casagrande propiedades",
+        "eretz_id": 4001,
+        "resolution_status": "RESOLVED",
+        "dominio": null,
+        "filas_preingesta": 0
+      },
+      {
+        "canonical_agency_id": "roomix:casagrande propiedades casagrande",
+        "eretz_id": null,
+        "resolution_status": "NOT_FOUND_IN_ERETZ",
+        "dominio": null,
+        "filas_preingesta": 0
+      }
+    ]
+  },
+  {
+    "palabras": [
+      "prieto",
+      "propiedades"
+    ],
+    "miembros": [
+      {
+        "canonical_agency_id": "roomix:prieto propiedades",
+        "eretz_id": 3003,
+        "resolution_status": "RESOLVED",
+        "dominio": null,
+        "filas_preingesta": 0
+      },
+      {
+        "canonical_agency_id": "roomix:propiedades prieto",
+        "eretz_id": null,
+        "resolution_status": "NOT_FOUND_IN_ERETZ",
+        "dominio": null,
+        "filas_preingesta": 0
+      }
+    ]
+  },
+  {
+    "palabras": [
+      "fontana",
+      "propiedades"
+    ],
+    "miembros": [
+      {
+        "canonical_agency_id": "roomix:fontana propiedades",
+        "eretz_id": null,
+        "resolution_status": "NOT_FOUND_IN_ERETZ",
+        "dominio": null,
+        "filas_preingesta": 0
+      },
+      {
+        "canonical_agency_id": "roomix:propiedades fontana",
+        "eretz_id": null,
+        "resolution_status": "NOT_FOUND_IN_ERETZ",
+        "dominio": null,
+        "filas_preingesta": 0
+      }
+    ]
+  },
+  {
+    "palabras": [
+      "bienes",
+      "cordoba",
+      "raices"
+    ],
+    "miembros": [
+      {
+        "canonical_agency_id": "roomix:bienes raices cordoba",
+        "eretz_id": null,
+        "resolution_status": "NOT_FOUND_IN_ERETZ",
+        "dominio": null,
+        "filas_preingesta": 0
+      },
+      {
+        "canonical_agency_id": "roomix:cordoba bienes raices",
+        "eretz_id": null,
+        "resolution_status": "NOT_FOUND_IN_ERETZ",
+        "dominio": null,
+        "filas_preingesta": 0
+      }
+    ]
+  },
+  {
+    "palabras": [
+      "cl",
+      "propiedades"
+    ],
+    "miembros": [
+      {
+        "canonical_agency_id": "roomix:cl propiedades",
+        "eretz_id": null,
+        "resolution_status": "NOT_FOUND_IN_ERETZ",
+        "dominio": null,
+        "filas_preingesta": 0
+      },
+      {
+        "canonical_agency_id": "roomix:propiedades cl",
+        "eretz_id": null,
+        "resolution_status": "NOT_FOUND_IN_ERETZ",
+        "dominio": null,
+        "filas_preingesta": 0
+      }
+    ]
+  },
+  {
+    "palabras": [
+      "inmobiliaria",
+      "innova"
+    ],
+    "miembros": [
+      {
+        "canonical_agency_id": "roomix:inmobiliaria innova",
+        "eretz_id": null,
+        "resolution_status": "NOT_FOUND_IN_ERETZ",
+        "dominio": null,
+        "filas_preingesta": 0
+      },
+      {
+        "canonical_agency_id": "roomix:innova inmobiliaria",
+        "eretz_id": 4197,
+        "resolution_status": "RESOLVED",
+        "dominio": "https://innovainmobiliaria.com.ar",
+        "filas_preingesta": 0
+      }
+    ]
+  },
+  {
+    "palabras": [
+      "inmobiliaria",
+      "up"
+    ],
+    "miembros": [
+      {
+        "canonical_agency_id": "roomix:inmobiliaria up",
+        "eretz_id": null,
+        "resolution_status": "NOT_FOUND_IN_ERETZ",
+        "dominio": null,
+        "filas_preingesta": 0
+      },
+      {
+        "canonical_agency_id": "roomix:up inmobiliaria",
+        "eretz_id": 3305,
+        "resolution_status": "RESOLVED",
+        "dominio": null,
+        "filas_preingesta": 0
+      }
+    ]
+  },
+  {
+    "palabras": [
+      "gonnet",
+      "propiedades"
+    ],
+    "miembros": [
+      {
+        "canonical_agency_id": "roomix:gonnet propiedades",
+        "eretz_id": 2479,
+        "resolution_status": "RESOLVED",
+        "dominio": null,
+        "filas_preingesta": 0
+      },
+      {
+        "canonical_agency_id": "roomix:propiedades gonnet",
+        "eretz_id": null,
+        "resolution_status": "NOT_FOUND_IN_ERETZ",
+        "dominio": null,
+        "filas_preingesta": 0
+      }
+    ]
+  },
+  {
+    "palabras": [
+      "daniel",
+      "propiedades",
+      "t"
+    ],
+    "miembros": [
+      {
+        "canonical_agency_id": "roomix:daniel t propiedades",
+        "eretz_id": null,
+        "resolution_status": "NOT_FOUND_IN_ERETZ",
+        "dominio": null,
+        "filas_preingesta": 0
+      },
+      {
+        "canonical_agency_id": "roomix:t daniel propiedades",
+        "eretz_id": null,
+        "resolution_status": "NOT_FOUND_IN_ERETZ",
+        "dominio": null,
+        "filas_preingesta": 0
+      }
+    ]
+  },
+  {
+    "palabras": [
+      "fernandez",
+      "lopez",
+      "propiedades"
+    ],
+    "miembros": [
+      {
+        "canonical_agency_id": "roomix:fernandez lopez propiedades",
+        "eretz_id": null,
+        "resolution_status": "NOT_FOUND_IN_ERETZ",
+        "dominio": null,
+        "filas_preingesta": 0
+      },
+      {
+        "canonical_agency_id": "roomix:lopez fernandez propiedades",
+        "eretz_id": null,
+        "resolution_status": "NOT_FOUND_IN_ERETZ",
+        "dominio": "https://www.lopezfernandezprop.com.ar/",
+        "filas_preingesta": 0
+      }
+    ]
+  },
+  {
+    "palabras": [
+      "lopez",
+      "propiedades"
+    ],
+    "miembros": [
+      {
+        "canonical_agency_id": "roomix:lopez lopez propiedades",
+        "eretz_id": null,
+        "resolution_status": "NOT_FOUND_IN_ERETZ",
+        "dominio": "https://www.lopezlopezpropiedades.com.ar/",
+        "filas_preingesta": 0
+      },
+      {
+        "canonical_agency_id": "roomix:lopez propiedades",
+        "eretz_id": 5814,
+        "resolution_status": "RESOLVED",
+        "dominio": "https://www.lopezpropiedadesbb.com.ar/",
+        "filas_preingesta": 0
+      }
+    ]
+  },
+  {
+    "palabras": [
+      "cervetto",
+      "propiedades"
+    ],
+    "miembros": [
+      {
+        "canonical_agency_id": "roomix:cervetto propiedades",
+        "eretz_id": null,
+        "resolution_status": "NOT_FOUND_IN_ERETZ",
+        "dominio": null,
+        "filas_preingesta": 0
+      },
+      {
+        "canonical_agency_id": "roomix:propiedades cervetto",
+        "eretz_id": null,
+        "resolution_status": "NOT_FOUND_IN_ERETZ",
+        "dominio": null,
+        "filas_preingesta": 0
+      }
+    ]
+  }
+]
