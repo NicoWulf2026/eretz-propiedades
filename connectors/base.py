@@ -703,7 +703,18 @@ class Connector:
             if desde_barrio:
                 # Era una ciudad, no un barrio: dejarla duplicada en `barrio`
                 # afirmaria un barrio que no existe.
+                #
+                # Y vaciarlo no es haber fallado al extraerlo. El valor se
+                # validó contra el catalogo y se rechazo COMO BARRIO, que es
+                # una decision de validacion. Sin decirlo, la certificacion lee
+                # "Cordoba Capital" promovida a ciudad como si hubieramos
+                # perdido el barrio de esa ficha.
                 prop.barrio = None
+                descartados = prop.extra.get("atributos_descartados") or ""
+                partes = [x for x in str(descartados).split(",") if x]
+                if "barrio" not in partes:
+                    partes.append("barrio")
+                prop.extra["atributos_descartados"] = ",".join(partes)
             if not prop.provincia:
                 # La provincia de una localidad resuelta es un hecho del
                 # catalogo, no una inferencia nuestra.

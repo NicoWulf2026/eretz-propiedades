@@ -325,3 +325,20 @@ def test_un_barrio_comun_no_cuenta_como_dato_rechazado() -> None:
     un descarte inventaria un problema donde no lo hay."""
     prop = _resolver(_propiedad(barrio="Palermo"))
     assert prop.extra.get("atributos_descartados") is None
+
+
+def test_promover_un_barrio_a_ciudad_no_es_perder_el_barrio() -> None:
+    """Regresion de `roomix:aagaard inmobiliaria`.
+
+    Tokko publica la ubicacion en un solo campo. Cuando dice "Cordoba Capital"
+    eso es una ciudad, y dejarla ademas en `barrio` afirmaria un barrio que no
+    existe. Pero vaciarlo tampoco es haber fallado al extraerlo: el valor se
+    valido contra el catalogo y se rechazo COMO BARRIO.
+
+    Sin esa distincion la certificacion leia 38 promociones correctas como 38
+    barrios perdidos, y bloqueaba una inmobiliaria que estaba bien.
+    """
+    prop = _resolver(_propiedad(barrio="Cordoba Capital"))
+    assert prop.ciudad == "Córdoba"
+    assert prop.barrio is None
+    assert "barrio" in prop.extra["atributos_descartados"]
