@@ -351,11 +351,29 @@ tests** —la regla de §1.1 otra vez:
 | D-011 | Tipo declarado en la ficha, ignorado | cerrado | 35 de 193 en berrueta |
 | D-012 | **Contador del sitio usado como verdad** | cerrado | berrueta: el sitio declara 197 y sirve 193 |
 | D-013 | **Atributos tabulados leídos al revés** | cerrado | 1.056 combinaciones imposibles, todas en `generico` |
+| D-014 | Propiedad incompleta tratada como inválida | cerrado | **13.518 propiedades no llegaban a la base** |
+| D-015 | **Fotos de otras propiedades atribuidas al aviso** | cerrado | 84.378 imágenes ajenas en 6.584 propiedades |
 
 **`NEEDS_FIX` abiertos: 0.** Verificado por
 `scripts/agency_rollout_preflight.py`.
 
-### Los tres que importan
+### Los cuatro que importan
+
+**D-015 — la foto de la casa de al lado.** El chequeo de idempotencia marcó que
+una de 88 fichas cambiaba de fotos entre dos corridas separadas por segundos.
+No era el sitio cambiando: `azpropiedades.com` pone al pie un carrusel de
+relacionadas, cada una un enlace a otra ficha con su miniatura adentro.
+Extraer imágenes del documento entero le pegaba a cada aviso **las fotos de sus
+vecinos**, y como el bloque rota, cada rotación se leía como un cambio.
+
+Verificado contra la página: las cuatro miniaturas de esa ficha estaban las
+cuatro dentro de enlaces a **otras** propiedades. Ninguna era suya. Mostrarle a
+alguien la foto de otra casa es peor que no mostrarle ninguna.
+
+La regla es estructural, no un filtro por nombre de archivo: una imagen
+envuelta en un enlace a otra **página** no es de esta propiedad. Las galerías
+con lightbox no se tocan —ahí el href es el archivo— ni la foto enlazada a la
+propia ficha.
 
 **D-012 — el denominador no era verdad.** Lo describí como "falla por 0,0003",
 lo que sugiere un borde de precisión. No lo es: 193/197 = 0,97969 y en enteros
