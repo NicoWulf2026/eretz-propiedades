@@ -1026,17 +1026,39 @@ def test_tokko_reconoce_la_foto_de_su_propiedad():
 def test_la_ubicacion_del_padron_solo_rellena_lo_vacio():
     """Una ubicacion explicita de la ficha no se pisa con una inferencia."""
     c = conector()
+    # El par ciudad/provincia tiene que ser coherente: Funes es de Santa Fe.
+    # La fixture decia "Cordoba" y eso ahora lo detecta la geografia canonica,
+    # que no afirma una ciudad cuya provincia la contradice. Lo que este test
+    # comprueba es otra cosa -que el padron no pise lo explicito-, asi que la
+    # fixture se corrige en vez de aflojar la validacion.
     f = B.Fuente(canonical_agency_id="a", agency_name="Alfa",
                  official_url="https://alfa.com.ar/", inmobiliaria_id=1,
-                 extra={"city": "Rosario", "province": "Santa Fe"})
+                 extra={"city": "Rosario", "province": "Cordoba"})
     p = B.PropiedadNormalizada(canonical_agency_id="a", source_listing_id="1",
                                source_url="https://alfa.com.ar/p/1", connector="t",
                                ciudad="Funes")
-    p.provincia = "Cordoba"
+    p.provincia = "Santa Fe"
     c.completar_ubicacion(p, f)
     assert p.ciudad == "Funes"                    # la explicita gana
-    assert p.provincia == "Cordoba"               # la explicita tampoco se pisa
+    assert p.provincia == "Santa Fe"              # la explicita tampoco se pisa
     assert "provincia_origen" not in p.extra
+
+
+def test_una_ciudad_que_su_provincia_contradice_no_se_afirma():
+    """Funes es de Santa Fe. Si el aviso dice Cordoba, una de las dos esta mal
+    y no hay forma de saber cual: no se afirma ninguna. El valor publicado
+    queda en `extra` para poder auditarlo, y la propiedad sigue existiendo."""
+    c = conector()
+    f = B.Fuente(canonical_agency_id="a", agency_name="Alfa",
+                 official_url="https://alfa.com.ar/", inmobiliaria_id=1)
+    p = B.PropiedadNormalizada(canonical_agency_id="a", source_listing_id="1",
+                               source_url="https://alfa.com.ar/p/1",
+                               connector="t", titulo="Casa", ciudad="Funes")
+    p.provincia = "Cordoba"
+    c.completar_ubicacion(p, f)
+    assert p.ciudad is None
+    assert p.titulo == "Casa"
+    assert p.extra["ciudad_publicada"] == "Funes"
 
 
 def test_la_ubicacion_inferida_queda_marcada_como_tal():

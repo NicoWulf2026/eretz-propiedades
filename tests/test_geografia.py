@@ -154,3 +154,111 @@ def test_la_normalizacion_es_estable(geo) -> None:
     assert normalizar("Córdoba") == normalizar("CORDOBA") == "cordoba"
     assert normalizar("Gral. San Martín") == "gral san martin"
     assert normalizar(None) == ""
+
+
+# --------------------------------------------------------- integracion comun
+def _propiedad(**campos):
+    from connectors.base import PropiedadNormalizada
+
+    base = {"canonical_agency_id": "roomix:x", "source_listing_id": "1",
+            "source_url": "https://x.test/p/1", "connector": "generico"}
+    return PropiedadNormalizada(**{**base, **campos})
+
+
+def _resolver(prop):
+    from connectors.base import Connector
+
+    Connector._resolver_geografia(prop)
+    return prop
+
+
+def test_el_pipeline_normaliza_la_ciudad_publicada() -> None:
+    prop = _resolver(_propiedad(ciudad="Capital Federal"))
+    assert prop.ciudad == "Ciudad Autónoma de Buenos Aires"
+    assert prop.extra["ciudad_match"] == POR_ALIAS
+    assert prop.extra["ciudad_publicada"] == "Capital Federal"
+    assert prop.extra["localidad_id"]
+
+
+def test_un_barrio_sale_de_ciudad_y_va_a_barrio() -> None:
+    """No se tira el dato: se guarda donde vale. Barrio y localidad son
+    dimensiones distintas, y `ciudad` no puede quedar con algo que no es una
+    localidad real."""
+    prop = _resolver(_propiedad(ciudad="Palermo"))
+    assert prop.ciudad is None
+    assert prop.barrio == "Palermo"
+
+
+def test_no_se_pisa_un_barrio_que_la_fuente_ya_publico() -> None:
+    prop = _resolver(_propiedad(ciudad="Palermo", barrio="Palermo Chico"))
+    assert prop.ciudad is None
+    assert prop.barrio == "Palermo Chico"
+
+
+def test_la_ciudad_de_la_oficina_no_sobrevive_a_la_coordenada() -> None:
+    """Regresion de Sotheby's: publicaba CABA en propiedades de Bariloche."""
+    prop = _resolver(_propiedad(ciudad="CABA", latitud=-41.10, longitud=-71.48))
+    assert prop.ciudad is None
+    assert prop.extra["ciudad_match"] == CONTRADICHA
+
+
+def test_la_propiedad_sobrevive_aunque_no_haya_ciudad() -> None:
+    """Primer principio: una propiedad valida no desaparece por un dato que
+    falta. Solo se vacia el campo que no se puede afirmar."""
+    prop = _resolver(_propiedad(titulo="Casa con patio", precio=120000.0,
+                                ciudad="Nordelta"))
+    assert prop.titulo == "Casa con patio"
+    assert prop.precio == 120000.0
+    assert prop.ciudad is None
+    assert prop.barrio == "Nordelta"
+
+
+def test_la_provincia_del_catalogo_completa_la_que_falta() -> None:
+    prop = _resolver(_propiedad(ciudad="Rosario"))
+    assert prop.ciudad == "Rosario"
+    assert prop.provincia == "Santa Fe"
+
+
+def test_sin_ciudad_publicada_no_se_inventa_ninguna() -> None:
+    """El barrio si se evalua -puede ser una ciudad escondida-, pero si no
+    resuelve no se inventa nada y el barrio se conserva. Queda el rastro de
+    que se miro, que es lo que despues permite auditarlo."""
+    prop = _resolver(_propiedad(titulo="Casa", barrio="Centro"))
+    assert prop.ciudad is None
+    assert prop.barrio == "Centro"
+    assert prop.extra["ciudad_match"] == NO_ENCONTRADA
+
+
+def test_sin_ninguna_ubicacion_no_se_mira_nada() -> None:
+    prop = _resolver(_propiedad(titulo="Casa", precio=100000.0))
+    assert prop.ciudad is None and prop.barrio is None
+    assert "ciudad_match" not in prop.extra
+
+
+def test_un_barrio_que_en_realidad_es_una_ciudad_se_promueve() -> None:
+    """Tokko publica la ubicacion en un solo campo, sin decir de que nivel es,
+    y el connector la guarda como barrio. Cuando resuelve a una localidad
+    censal es una ciudad de verdad escondida donde nadie la busca: son 11.440
+    propiedades con "Mar Del Plata", "La Plata", "Rosario" o "Quilmes"."""
+    prop = _resolver(_propiedad(barrio="Mar Del Plata"))
+    assert prop.ciudad == "Mar del Plata"
+    assert prop.barrio is None
+    assert prop.extra["ciudad_campo_de_origen"] == "barrio"
+
+
+def test_un_barrio_de_verdad_se_queda_donde_esta() -> None:
+    """El 76% de esos campos son barrios reales. Promoverlos inventaria una
+    localidad; dejarlos donde estan conserva el dato."""
+    prop = _resolver(_propiedad(barrio="Alberdi"))
+    assert prop.ciudad is None
+    assert prop.barrio == "Alberdi"
+
+
+def test_la_promocion_desde_barrio_tambien_respeta_la_coordenada() -> None:
+    """El arbitraje no puede saltearse los controles: si la coordenada
+    contradice, no se promueve nada."""
+    prop = _resolver(_propiedad(barrio="La Plata", latitud=-41.10,
+                                longitud=-71.48))
+    assert prop.ciudad is None
+    assert prop.barrio == "La Plata"
+    assert prop.extra["ciudad_match"] == CONTRADICHA

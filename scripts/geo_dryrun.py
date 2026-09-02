@@ -20,6 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from connectors.base import Connector, PropiedadNormalizada
 from connectors.geografia import geografia
 
 # La ciudad que la fuente publica en un campo propio es evidencia de la
@@ -47,19 +48,25 @@ def main() -> int:
         for crudo, connector, hash_dedup in conexion.execute(
                 "select row_json, connector, hash_dedup from rows"):
             fila = json.loads(crudo)
-            publicada = fila.get("ciudad")
-            if not publicada:
-                conteo["sin ciudad que normalizar"] += 1
+            if not (fila.get("ciudad") or fila.get("barrio")):
+                conteo["sin ubicacion que normalizar"] += 1
                 continue
 
-            resultado = geo.resolver_localidad(
-                publicada, provincia=fila.get("provincia"),
-                lat=fila.get("latitud"), lon=fila.get("longitud"))
-            conteo[resultado.certeza] += 1
-            if not resultado.resuelta:
+            # Se invoca EXACTAMENTE la logica del pipeline, no una copia:
+            # un backfill que decide distinto que la ingesta produce dos
+            # verdades para el mismo dato.
+            prop = PropiedadNormalizada(
+                canonical_agency_id=str(fila.get("canonical_agency_id") or ""),
+                source_listing_id=str(fila.get("source_listing_id") or ""),
+                source_url=str(fila.get("source_url") or ""),
+                connector=connector or "",
+                ciudad=fila.get("ciudad"), barrio=fila.get("barrio"),
+                provincia=fila.get("provincia"),
+                latitud=fila.get("latitud"), longitud=fila.get("longitud"))
+            Connector._resolver_geografia(prop)
+            conteo[prop.extra.get("ciudad_match") or "SIN_UBICACION"] += 1
+            if not prop.ciudad:
                 continue
-
-            entidad = resultado.entidad
             origen = ("SOURCE_STRUCTURED"
                       if connector in CONNECTORS_CON_CAMPO_PROPIO
                       else "SOURCE_TEXT")
@@ -67,20 +74,21 @@ def main() -> int:
             archivo.write(json.dumps({
                 "hash_dedup": hash_dedup,
                 "source_url": fila.get("source_url"),
-                "publicado": {"ciudad": publicada,
+                "publicado": {"ciudad": fila.get("ciudad"),
+                              "barrio": fila.get("barrio"),
                               "provincia": fila.get("provincia")},
                 "propuesto": {
-                    "ciudad": entidad.official_name,
-                    "provincia": entidad.provincia,
-                    "departamento": entidad.departamento,
-                    "locality_id": entidad.official_id,
+                    "ciudad": prop.ciudad,
+                    "barrio": prop.barrio,
+                    "provincia": prop.provincia,
+                    "locality_id": prop.extra.get("localidad_id"),
                 },
                 "evidencia": {
-                    "match": resultado.certeza,
+                    "match": prop.extra.get("ciudad_match"),
                     "evidence_origin": origen,
-                    "provenance": resultado.provenance,
-                    "reason": resultado.motivo,
-                    "source": entidad.fuente,
+                    "provenance": prop.extra.get("ciudad_provenance"),
+                    "campo_de_origen": prop.extra.get("ciudad_campo_de_origen"),
+                    "source": prop.extra.get("localidad_fuente"),
                 },
                 "writes": False,
             }, ensure_ascii=False) + "\n")

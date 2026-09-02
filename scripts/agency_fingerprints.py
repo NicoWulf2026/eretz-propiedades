@@ -118,6 +118,11 @@ def fingerprint_components(connector: str, strategy: str) -> dict[str, bytes]:
         "shared/runner": _semantic_file(ROOT / "scripts" / "run_rollout.py"),
         "shared/certifier": _semantic_file(
             ROOT / "scripts" / "agency_certifier.py"),
+        # La geografia canonica decide la ciudad y el barrio de cada
+        # propiedad: cambiarla cambia lo que se extrae, asi que tiene que
+        # invalidar la certificacion como cualquier otro cambio de extraccion.
+        "shared/geografia": _semantic_file(
+            ROOT / "connectors" / "geografia.py"),
     }
     if connector != "generico":
         components[f"connector/{connector}"] = _semantic_file(

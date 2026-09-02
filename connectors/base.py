@@ -118,6 +118,19 @@ else:  # pragma: no cover - solo si el repo del pipeline no esta montado
         return hashlib.sha256(base.encode()).hexdigest()[:32]
 
 
+def geografia(*args, **kwargs):
+    """Catalogo geografico canonico, cargado la primera vez que se usa.
+
+    El import va diferido para que importar `base` no lea el snapshot: hay
+    scripts que solo necesitan las estructuras y no la geografia.
+    """
+    from connectors.geografia import geografia as _geografia
+    return _geografia(*args, **kwargs)
+
+
+GEO_NO_ENCONTRADA = "NOT_FOUND"
+
+
 # --------------------------------------------------------------------------
 # Representacion normalizada comun
 # --------------------------------------------------------------------------
@@ -637,6 +650,69 @@ class Connector:
             # Se guarda como rastro, no como ubicacion: sirve para auditar de
             # donde salio una propiedad sin contaminar los campos de ubicacion.
             prop.extra["zona_padron"] = zona
+        self._resolver_geografia(prop)
+
+    @staticmethod
+    def _resolver_geografia(prop: "PropiedadNormalizada") -> None:
+        """Pone la ciudad y el barrio en la dimension que les corresponde.
+
+        Barrio y localidad son cosas distintas, y GeoRef no cataloga barrios.
+        Eso convierte al catalogo en el arbitro: una cadena que resuelve a una
+        localidad censal ES una ciudad; una que no resuelve es, muy
+        probablemente, un barrio.
+
+        Sirve en los dos sentidos, y los dos aparecen en los datos reales:
+
+          - `ciudad = "Palermo"` contamina la faceta principal de busqueda con
+            una localidad que no existe. Se mueve a `barrio`.
+          - `barrio = "Mar Del Plata"` esconde una ciudad de verdad donde nadie
+            la va a buscar. Son 11.440 propiedades de Tokko, que publica la
+            ubicacion en un solo campo sin decir de que nivel es.
+
+        Nunca se inventa: si no resuelve, el texto se conserva donde estaba y
+        `ciudad` queda vacia. Y la propiedad nunca desaparece por esto.
+        """
+        desde_barrio = not prop.ciudad
+        publicada = prop.ciudad or prop.barrio
+        if not publicada:
+            return
+        try:
+            catalogo = geografia()
+        except (OSError, ValueError):
+            # Sin snapshot no se normaliza, pero no se rompe nada ni se pierde
+            # lo que la fuente publico.
+            return
+
+        resolucion = catalogo.resolver_localidad(
+            publicada, provincia=prop.provincia,
+            lat=prop.latitud, lon=prop.longitud)
+        prop.extra["ciudad_publicada"] = publicada
+        prop.extra["ciudad_match"] = resolucion.certeza
+        prop.extra["ciudad_provenance"] = resolucion.provenance
+        prop.extra["ciudad_campo_de_origen"] = ("barrio" if desde_barrio
+                                                else "ciudad")
+
+        if resolucion.resuelta:
+            entidad = resolucion.entidad
+            prop.ciudad = entidad.official_name
+            prop.extra["localidad_id"] = entidad.official_id
+            prop.extra["localidad_fuente"] = entidad.fuente
+            if desde_barrio:
+                # Era una ciudad, no un barrio: dejarla duplicada en `barrio`
+                # afirmaria un barrio que no existe.
+                prop.barrio = None
+            if not prop.provincia:
+                # La provincia de una localidad resuelta es un hecho del
+                # catalogo, no una inferencia nuestra.
+                prop.provincia = entidad.provincia
+            return
+
+        if desde_barrio:
+            # No resolvio: es lo que decia ser, un barrio. Se queda donde esta.
+            return
+        prop.ciudad = None
+        if resolucion.certeza == GEO_NO_ENCONTRADA and not prop.barrio:
+            prop.barrio = publicada
 
     def anotar_error(self, fuente: Fuente, etapa: str, error: Exception) -> None:
         self.errores.append({
