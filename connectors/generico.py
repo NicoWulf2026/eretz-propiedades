@@ -1183,15 +1183,22 @@ class GenericoConnector(Connector):
         # La RAIZ tambien puede ser el listado. Una plataforma entera pagina
         # asi -abinmobiliaria.com.ar?page=2- y sin este patron el connector solo
         # veia las 18 fichas de la portada: la fuente tenia 46.
+        # Que la paginacion se AGOTE y que se INTERRUMPA se veian igual aguas
+        # abajo, y no significan lo mismo: llegar al final prueba que eso es
+        # todo lo que la fuente sirve por este camino, mientras que cortar por
+        # un error no prueba nada sobre el inventario restante.
+        self.paginacion_interrumpida = False
         for patron in (patron_infinito, "{b}/propiedades/page/{n}/", "{b}/propiedades?page={n}",
                        "{b}?page={n}"):
             inicio_patron = len(vistas)
             duplicados_patron = 0
             sin_nuevas = 0
+            interrumpido = False
             for n in range(2, 60):
                 try:
                     html = self.descargador.bajar(patron.format(b=base, n=n))
                 except (ErrorTransitorio, ErrorPermanente, Bloqueado):
+                    interrumpido = True
                     break
                 if html.lstrip().startswith("["):
                     try:
@@ -1220,6 +1227,7 @@ class GenericoConnector(Connector):
                     sin_nuevas = 0
             if len(vistas) > inicio_patron:
                 self.duplicados_origen = duplicados_patron
+                self.paginacion_interrumpida = interrumpido
                 break
 
     @staticmethod

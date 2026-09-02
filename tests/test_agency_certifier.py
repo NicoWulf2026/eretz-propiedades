@@ -193,6 +193,62 @@ def test_queue_does_not_repeat_current_identity_terminal_results(monkeypatch) ->
     }, record)
 
 
+def _enumeracion_corta() -> dict:
+    return {"enumerated": 193, "pages_observed": 219, "collapse_ratio": 0.02,
+            "exhaustive_review_required": False, "review_reasons": []}
+
+
+def test_an_exhausted_pagination_below_the_declared_total_is_documented() -> None:
+    """Regresion de `roomix:berrueta inmobiliaria`.
+
+    Quedarse corto contra el total que el sitio declara DE SI MISMO se leia
+    siempre como defecto nuestro. Verificado contra la fuente: el sitio declara
+    197, su paginacion sirve 193, y la ficha 194 que aparecia era
+    `/propiedad/0`, que devuelve el catalogo entero. El contador estaba mal, no
+    la enumeracion.
+
+    Llegar al final de la paginacion no prueba lo mismo que cortar por un
+    error, asi que aqui es una limitacion documentada y no un defecto.
+    """
+    run = {"estado": "ENUMERACION_INCOMPLETA", "detalles_fallidos": 0,
+           "enumeracion_agotada": True}
+    comparison = {"same_url_set": True, "idempotent": True,
+                  "identity_collisions": 0}
+    status, reasons = certification_status(
+        run, run, comparison, _enumeracion_corta(), {})
+    assert status == "CERTIFIED_BEST_AVAILABLE"
+    assert reasons == ["DECLARED_TOTAL_ABOVE_ENUMERATION"]
+
+
+def test_an_interrupted_pagination_is_still_a_defect() -> None:
+    """Cortar por un error no prueba nada sobre el inventario restante: puede
+    faltar la mitad del catalogo y verse igual que haber terminado."""
+    run = {"estado": "ENUMERACION_INCOMPLETA", "detalles_fallidos": 0,
+           "enumeracion_agotada": False}
+    comparison = {"same_url_set": True, "idempotent": True,
+                  "identity_collisions": 0}
+    status, reasons = certification_status(
+        run, run, comparison, _enumeracion_corta(), {})
+    assert status == "NEEDS_FIX"
+    assert "one or both runs did not finish with connector state OK" in reasons
+
+
+def test_a_severe_inventory_loss_is_not_excused_by_exhaustion() -> None:
+    """La perdida grave la sigue atajando el colapso contra lo que esta
+    inmobiliaria tenia, que es evidencia propia y no un numero que publica su
+    propia pagina."""
+    enumeracion = _enumeracion_corta()
+    enumeracion["collapse_ratio"] = 0.9
+    run = {"estado": "ENUMERACION_INCOMPLETA", "detalles_fallidos": 0,
+           "enumeracion_agotada": True}
+    comparison = {"same_url_set": True, "idempotent": True,
+                  "identity_collisions": 0}
+    status, reasons = certification_status(
+        run, run, comparison, enumeracion, {})
+    assert status == "NEEDS_FIX"
+    assert any("collapsed" in r for r in reasons)
+
+
 def test_zero_inventory_from_a_specific_connector_still_tries_the_generic() -> None:
     """Regresion de `roomix:analia requena propiedades`.
 

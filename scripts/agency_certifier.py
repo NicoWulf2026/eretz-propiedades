@@ -622,7 +622,24 @@ def certification_status(run1: dict[str, Any], run2: dict[str, Any],
             and enumeration.get("external_catalog_hosts")):
         return "BLOCKED_EXTERNAL", [
             "official site delegates inventory to an external property portal"]
-    if states - {"OK"}:
+    estados_no_ok = states - {"OK"}
+    agotadas = all(bool(run.get("enumeracion_agotada"))
+                   for run in (run1, run2))
+    if estados_no_ok == {"ENUMERACION_INCOMPLETA"} and agotadas:
+        # La paginacion llego hasta el final y aun asi quedo por debajo del
+        # total que el sitio declara de si mismo. No es lo mismo que haber
+        # cortado antes de tiempo, y el contador del sitio puede estar mal:
+        # berruetainmob.com.ar declara 197, sirve 193, y la ficha 194 que
+        # aparecia era /propiedad/0, que devuelve el catalogo entero.
+        #
+        # Se registra como limitacion documentada y no como defecto. La perdida
+        # grave de inventario la sigue atajando `collapse_ratio`, que compara
+        # contra lo que esta inmobiliaria tenia, no contra un numero que
+        # publica su propia pagina y que nadie verifico.
+        enumeration.setdefault("review_reasons", []).append(
+            "DECLARED_TOTAL_ABOVE_ENUMERATION")
+        enumeration["exhaustive_review_required"] = True
+    elif estados_no_ok:
         reasons.append("one or both runs did not finish with connector state OK")
     if run1.get("detalles_fallidos") or run2.get("detalles_fallidos"):
         reasons.append("one or more listing details failed")

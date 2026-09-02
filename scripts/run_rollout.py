@@ -331,6 +331,14 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
     # trae ids nuevos; con total declarado, la comparacion manda.
     r["enumeracion_completa"] = (r["cobertura"] is None or
                                  r["cobertura"] >= COBERTURA_MINIMA)
+    # Si la paginacion llego hasta el final o si la cortaron. Sin esta
+    # distincion, quedarse corto contra el total que declara el sitio se leia
+    # siempre como un defecto nuestro, y el contador del sitio puede estar mal:
+    # berruetainmob.com.ar declara 197 y sirve 193, con una ficha fantasma
+    # /propiedad/0 que devuelve el catalogo entero.
+    r["paginacion_interrumpida"] = bool(
+        getattr(con, "paginacion_interrumpida", False))
+    r["enumeracion_agotada"] = not r["paginacion_interrumpida"]
 
     seleccion = avisos if max_fichas <= 0 else avisos[:max_fichas]
     r["detalles_pedidos"] = len(seleccion)
