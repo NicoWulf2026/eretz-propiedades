@@ -1154,6 +1154,38 @@ def test_el_markup_escapado_no_termina_dentro_de_la_descripcion():
     assert "Casa linda" in t and "con patio" in t
 
 
+def test_tokko_no_confunde_una_palabra_de_la_descripcion_con_un_campo():
+    """La etiqueta se buscaba sin exigir dos puntos y sin distinguir mayusculas,
+    asi que "por su ubicacion privilegiada, esta casa ofrece..." se leia como si
+    fuera el campo Ubicacion y dejaba `barrio='privilegiada'`. Eran 1.145 fichas
+    con prosa guardada como barrio: un dato inventado que ademas parecia real.
+    """
+    from connectors.tokko import _campo
+
+    prosa = "Casa amplia. Por su ubicacion privilegiada, esta casa ofrece mucho."
+    assert _campo(prosa, "Ubicacion") is None
+
+
+def test_tokko_sigue_leyendo_el_campo_cuando_es_un_rotulo_de_verdad():
+    """El rotulo real viene capitalizado o con dos puntos. Endurecer la lectura
+    no puede costar los valores legitimos, que ademas llevan mayuscula adentro
+    -"Nueva Cordoba", "Villa Urquiza"- y no se pueden cortar por eso."""
+    from connectors.tokko import _campo
+
+    assert _campo("Ubicacion Nueva Cordoba", "Ubicacion") == "Nueva Cordoba"
+    assert _campo("ubicacion: Alberdi", "Ubicacion") == "Alberdi"
+
+
+def test_tokko_prosa_previa_no_tapa_al_rotulo_real():
+    """Descartar la primera coincidencia no alcanza: si la descripcion menciona
+    la palabra antes de la ficha, el campo verdadero esta mas abajo y hay que
+    seguir buscando en vez de devolver nada."""
+    from connectors.tokko import _campo
+
+    texto = "su ubicacion ideal. " + "x" * 80 + " Ubicacion Villa Urquiza"
+    assert _campo(texto, "Ubicacion") == "Villa Urquiza"
+
+
 def test_tokko_extrae_la_descripcion_de_la_ficha_que_ya_bajo():
     """Esta en el HTML que el connector ya descarga: no cuesta una peticion."""
     ficha = FICHA.replace("<div>(REF. AAP8636261)</div>",

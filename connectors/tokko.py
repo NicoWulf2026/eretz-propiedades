@@ -105,22 +105,30 @@ def _campo(texto: str, etiqueta: str) -> str | None:
     palabra con mayuscula' fallaria con "Nueva Cordoba" o "Villa Urquiza", que
     son valores legitimos con mayuscula adentro.
     """
-    m = re.search(rf"\b{re.escape(etiqueta)}\s*:?\s+(.{{1,70}}?)\s*(?=(?:{_STOP})\b|$)",
-                  texto, re.I)
-    if not m:
-        return None
-    valor = limpiar(m.group(1))
-    if not valor or valor.lower() in {"s", "si", "sí", "no", "-"} and etiqueta.lower() in {
-            "dirección", "direccion", "ubicación", "ubicacion"}:
-        return None
-    return valor
+    for valor in _valores_campo(texto, etiqueta):
+        if valor.lower() in {"s", "si", "sí", "no", "-"} and etiqueta.lower() in {
+                "dirección", "direccion", "ubicación", "ubicacion"}:
+            return None
+        return valor
+    return None
 
 
 def _valores_campo(texto: str, etiqueta: str) -> Iterator[str]:
-    """Todos los candidatos; el titulo puede anticipar la misma etiqueta."""
-    patron = rf"\b{re.escape(etiqueta)}\s*:?\s+(.{{1,70}}?)\s*(?=(?:{_STOP})\b|$)"
+    """Todos los candidatos; el titulo puede anticipar la misma etiqueta.
+
+    Sin dos puntos, la etiqueta solo cuenta si viene capitalizada como rotulo.
+    En minuscula es una palabra corriente de la descripcion: "por su ubicacion
+    privilegiada, esta casa ofrece..." dejaba `barrio='privilegiada'`. Eran
+    1.145 fichas con prosa guardada como ubicacion -"tranquila", "y",
+    "residencial"-, un dato inventado que ademas parecia un barrio de verdad.
+    """
+    patron = (rf"\b({re.escape(etiqueta)})\s*(:?)\s+(.{{1,70}}?)"
+              rf"\s*(?=(?:{_STOP})\b|$)")
     for match in re.finditer(patron, texto, re.I):
-        valor = limpiar(match.group(1))
+        rotulo, dos_puntos, crudo = match.groups()
+        if not dos_puntos and rotulo[:1].islower():
+            continue
+        valor = limpiar(crudo)
         if valor:
             yield valor
 
