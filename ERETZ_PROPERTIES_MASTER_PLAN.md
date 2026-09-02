@@ -549,6 +549,15 @@ límite de palabra, que evita leer el "2" de "196 m2 Ambientes" como cantidad.
 Sin estructura que lo aclare, **prefiere dejar el campo vacío antes que llenarlo
 con el número de al lado**.
 
+**Resultado.** `roomix:analia requena propiedades` cerró en
+**`CERTIFIED_COMPLETE`**: 141 propiedades, 141 identidades, 0 colisiones,
+idempotente y **ningún campo en `EXTRACTION_FAILED`**. `ambientes` pasó de 10 a
+60 presentes y de 54 fallos a 0; las 81 restantes son fichas donde la fuente no
+lo publica, que es la respuesta correcta.
+
+La cadena completa de esa inmobiliaria: **de 0 propiedades reportadas a 141
+certificadas**, atravesando D-009, D-010 y D-013.
+
 **Alcance medido, con una huella que lo delata.** En la pre-ingesta,
 `dormitorios > ambientes` —imposible: los dormitorios son un subconjunto de los
 ambientes— aparece **1.056 veces, y las 1.056 son de `generico`**: cero en
