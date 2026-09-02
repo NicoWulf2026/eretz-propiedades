@@ -72,8 +72,18 @@ Fuente: `AGENCY_ID_RESOLUTION_FINAL.jsonl`, 6.597 inmobiliarias.
 De las no encontradas, **4.953 viven sólo en `inmobiliarias_staging`**. Sólo
 230 son franquicias; **4.723 son inmobiliarias independientes comunes**.
 
-**Elegibles para certificar hoy: 753** (`identity_status == READY`), de las
-cuales ~33 están certificadas.
+**Elegibles para certificar hoy: 753** (`identity_status == READY`).
+
+Estado de los 190 paquetes existentes:
+
+| Estado | Paquetes |
+|---|---|
+| `IDENTITY_PENDING` | 140 |
+| `CERTIFIED_COMPLETE` | 31 |
+| `BLOCKED_EXTERNAL` | 15 |
+| `CERTIFIED_BEST_AVAILABLE` | 3 |
+| `NO_INVENTORY_CONFIRMED` | 1 |
+| **`NEEDS_FIX`** | **0** |
 
 ### 2.2 Inventario ya extraído
 
@@ -203,8 +213,12 @@ Implementado:
 | `RUNNER_ERROR` no terminal | Un fallo aislado no tumba la corrida; la fuente vuelve sola a la cola |
 | `AGENCY_DEFECT_QUEUE.jsonl` | Los defectos siguen visibles con `--continue-after-fix` |
 | Checkpoint antes y después de cada agencia | Reanudación exacta |
+| `agency_rollout_preflight.py` | Seis chequeos antes de abrir; sale distinto de cero si alguno falla |
 
 Flujo: `terminal sano → persistir → siguiente`; `NEEDS_FIX → persistir → detener`.
+
+**Impacto de los cambios, calculado por huella y no por reflejo: 36
+certificaciones a rehacer**, no las 6.597 del universo.
 
 ### 3.3 Geografía de `ciudad`
 
@@ -255,10 +269,28 @@ canónico de localidades argentinas**. Ver §7.
 | D-009 | Cero heredado del connector equivocado | cerrado | Requena: 0 → 141 |
 | D-010 | Sitemap con fichas de otro host | cerrado | Identidad en host ajeno |
 | D-011 | Tipo declarado en la ficha, ignorado | cerrado | 35 de 193 en berrueta |
-| D-012 | Contador del sitio usado como verdad | cerrado | berrueta: el sitio declara 197 y sirve 193 |
+| D-012 | **Contador del sitio usado como verdad** | cerrado | berrueta: el sitio declara 197 y sirve 193 |
 | D-013 | **Atributos tabulados leídos al revés** | cerrado | 1.056 combinaciones imposibles, todas en `generico` |
 
-### Los dos que importan
+**`NEEDS_FIX` abiertos: 0.** Verificado por
+`scripts/agency_rollout_preflight.py`.
+
+### Los tres que importan
+
+**D-012 — el denominador no era verdad.** Lo describí como "falla por 0,0003",
+lo que sugiere un borde de precisión. No lo es: 193/197 = 0,97969 y en enteros
+hacen falta 194. Enumerando el catálogo a mano por su scroll infinito, el sitio
+sirve **194 fichas y la 194 es `/propiedad/0`, que devuelve el catálogo
+entero**. O sea 193 reales, exactamente las que trajo el connector: **el
+contador del sitio está inflado en 4**.
+
+No se tocó el umbral. Faltaba una distinción: el bucle cortaba igual ante un
+error de descarga que al llegar al final. Agotar la paginación por debajo del
+total declarado es una limitación documentada
+(`DECLARED_TOTAL_ABOVE_ENUMERATION` → `CERTIFIED_BEST_AVAILABLE`); que la
+interrumpan sigue siendo `NEEDS_FIX`, porque cortar por un error no prueba nada
+sobre el inventario restante. La pérdida grave la sigue atajando
+`collapse_ratio`, que compara contra lo que **esta inmobiliaria tenía**.
 
 **D-008 — la ausencia convertida en afirmación.** Dos fichas volvieron vacías y
 el pipeline las guardó con el nombre del sitio por título y un tipo
