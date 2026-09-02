@@ -521,6 +521,73 @@ def test_un_detalle_transitorio_se_reintenta_al_final_del_lote():
     assert connector.intentos == 2
 
 
+class _ConnectorCascaron(B.Connector):
+    """Devuelve el cascaron en la primera lectura; el resto depende del test."""
+
+    nombre = "prueba"
+
+    def __init__(self, recupera: bool):
+        super().__init__()
+        self.recupera = recupera
+        self.intentos = 0
+
+    def discover(self, _fuente):
+        return {"variante": "TEST", "soportada": True, "total_declarado": 1}
+
+    def fetch_listing(self, _fuente, _plan):
+        yield {"source_listing_id": "1",
+               "source_url": "https://alfa.test/p/1", "pagina": 1}
+
+    def normalize(self, crudo, fuente_actual):
+        self.intentos += 1
+        con_datos = self.recupera and self.intentos > 1
+        extra = {"precio": 125000.0, "moneda": "USD"} if con_datos else {}
+        return B.PropiedadNormalizada(
+            canonical_agency_id=fuente_actual.canonical_agency_id,
+            source_listing_id=crudo["source_listing_id"],
+            source_url=crudo["source_url"], connector=self.nombre,
+            # Lo unico que sobrevive de un cascaron: el titulo del sitio.
+            titulo="Alder Inmobiliaria",
+            inmobiliaria_id=fuente_actual.inmobiliaria_id, **extra)
+
+
+def test_una_ficha_vacia_se_reintenta_antes_de_darla_por_perdida():
+    """Regresion de `roomix:alder inmobiliaria`.
+
+    La pagina devolvio el cascaron en la primera lectura y los datos reales en
+    la segunda. Un cascaron es un fallo transitorio de lectura, asi que se
+    difiere como un timeout: darlo por perdido al primer intento perderia
+    inventario que la fuente si publica.
+    """
+    from scripts.run_rollout import _procesar_con
+
+    connector = _ConnectorCascaron(recupera=True)
+    resultado = _procesar_con(
+        connector, B.Fuente("ag-1", "Alfa", "https://alfa.test", 7), 0, True, 60)
+
+    assert connector.intentos == 2
+    assert resultado["detalles_obtenidos"] == 1
+    assert resultado["detalles_fallidos"] == 0
+    assert resultado["fichas_sin_contenido"] == 0
+
+
+def test_una_ficha_que_sigue_vacia_no_se_guarda_como_propiedad():
+    """Si al reintentarla sigue sin traer nada, no leimos ninguna ficha. Cuenta
+    como detalle fallido -la url si era una ficha- y deja rastro, porque una
+    url descartada en silencio es indistinguible de una que nunca existio."""
+    from scripts.run_rollout import _procesar_con
+
+    connector = _ConnectorCascaron(recupera=False)
+    resultado = _procesar_con(
+        connector, B.Fuente("ag-1", "Alfa", "https://alfa.test", 7), 0, True, 60)
+
+    assert resultado["detalles_obtenidos"] == 0
+    assert resultado["detalles_fallidos"] == 1
+    assert resultado["fichas_sin_contenido"] == 1
+    assert connector.descartes[0]["motivo"] == "FICHA_SIN_CONTENIDO"
+    assert connector.descartes[0]["titulo"] == "Alder Inmobiliaria"
+
+
 def test_el_backoff_esta_configurado():
     src = (ROOT / "connectors" / "base.py").read_text(encoding="utf-8")
     assert "demora *= 2" in src and "random.uniform" in src

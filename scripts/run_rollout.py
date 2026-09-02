@@ -254,6 +254,20 @@ def procesar(con, fuente: Fuente, max_fichas: int, observacion: bool,
     return r
 
 
+def _anotar_ficha_vacia(con, fuente: Fuente, prop) -> None:
+    """Rastro de una ficha que no trajo nada, ni siquiera al reintentarla."""
+    if not hasattr(con, "descartes"):
+        con.descartes = []
+    if len(con.descartes) < 500:
+        con.descartes.append({
+            "canonical_agency_id": fuente.canonical_agency_id,
+            "source_url": prop.source_url,
+            "motivo": "FICHA_SIN_CONTENIDO",
+            "titulo": (prop.titulo or "")[:120],
+            "tipo_propiedad": prop.tipo_propiedad,
+        })
+
+
 def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
                   presupuesto: float = PRESUPUESTO_POR_FUENTE) -> dict:
     t0 = time.time()
@@ -354,9 +368,18 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
                 continue
             fallidos += 1
             continue
+        if ficha_sin_contenido(p):
+            # La pagina devolvio el cascaron: titulo del sitio y ningun campo
+            # definitorio. Es un fallo de lectura, no una propiedad, y se
+            # difiere igual que un timeout -la maquinaria que ya existe para
+            # reintentar fuera de la ventana inestable-. Guardarla dejaria una
+            # propiedad con el nombre de la inmobiliaria y un tipo adivinado.
+            reintentos_diferidos.append(a)
+            continue
         con.completar_ubicacion(p, fuente)
         objetos.append(p)
 
+    fichas_vacias = 0
     for a in reintentos_diferidos:
         if limite and time.time() > limite:
             fallidos += 1
@@ -372,6 +395,15 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
         if p is None:
             fallidos += 1
             continue
+        if ficha_sin_contenido(p):
+            # Segunda lectura y sigue sin traer nada. Cuenta como detalle
+            # fallido -la url si era una ficha, lo que fallo fue leerla- con su
+            # rastro: sin el, una url descartada es indistinguible de una que
+            # nunca existio y nadie podria notar si el guardian se equivoca.
+            fallidos += 1
+            fichas_vacias += 1
+            _anotar_ficha_vacia(con, fuente, p)
+            continue
         con.completar_ubicacion(p, fuente)
         objetos.append(p)
         recuperados_diferidos += 1
@@ -379,29 +411,7 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
     # El filtro va ANTES de registrar: la huella tiene que calcularse sobre lo
     # que efectivamente se guarda, o el checkpoint quedaria comparando contra
     # una version de la propiedad que no existe en el artefacto.
-    # Una ficha sin ningun campo definitorio no es una propiedad: es la pagina
-    # devolviendo el cascaron. Cuenta como detalle FALLIDO, no como descarte
-    # silencioso, porque la url si era una ficha -otra corrida la leyo entera-
-    # y lo que fallo fue nuestra lectura. Guardarla igual dejaria una propiedad
-    # con el nombre del sitio por titulo y un tipo adivinado.
-    sin_contenido = [p for p in objetos if ficha_sin_contenido(p)]
-    if sin_contenido:
-        objetos = [p for p in objetos if not ficha_sin_contenido(p)]
-        fallidos += len(sin_contenido)
-        if not hasattr(con, "descartes"):
-            con.descartes = []
-        for p in sin_contenido:
-            # Sin rastro, una url descartada es indistinguible de una que nunca
-            # existio, y si el guardian se equivoca nadie puede notarlo.
-            if len(con.descartes) < 500:
-                con.descartes.append({
-                    "canonical_agency_id": fuente.canonical_agency_id,
-                    "source_url": p.source_url,
-                    "motivo": "FICHA_SIN_CONTENIDO",
-                    "titulo": (p.titulo or "")[:120],
-                    "tipo_propiedad": p.tipo_propiedad,
-                })
-    r["fichas_sin_contenido"] = len(sin_contenido)
+    r["fichas_sin_contenido"] = fichas_vacias
 
     r["imagenes_compartidas_descartadas"] = descartar_imagenes_compartidas(objetos)
 
