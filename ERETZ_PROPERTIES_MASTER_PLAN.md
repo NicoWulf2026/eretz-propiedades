@@ -229,8 +229,8 @@ plataforma. El dominio no sirve como identidad de inmobiliaria.
 
 ### Salud de la batería de tests
 
-`eretz-agency`: **1.233 tests pasan** (2026-09-02), sin regresiones tras los
-cambios de D-001 y D-002.
+`eretz-agency`: **1.250 tests pasan** (2026-09-02), sin regresiones tras los
+ocho defectos cerrados. Se partió de 1.233.
 
 ---
 
@@ -551,6 +551,23 @@ cada defecto, tampoco es desatendida sin `--continue-after-fix`.
 El piloto también validó lo construido: el campo nuevo de colisiones de
 identidad quedó en cero en las seis certificaciones, y `alpha inmobiliaria`
 cerró con 125 propiedades, baseline 125 y 125 identidades distintas.
+
+`alder` quedó después en **`CERTIFIED_COMPLETE`**: 148 propiedades, 148
+identidades, 0 colisiones, `SIN_CAMBIOS` en las 148, idempotente. Esa corrida
+tuvo **0 cascarones**, lo que confirma que eran transitorios —el piloto estaba
+golpeando el sitio— pero también significa que **no ejerció el guardia en
+vivo**: D-008 está validado por tests y por la auditoría de la pre-ingesta, no
+por esa corrida.
+
+**La dispersión de tiempos es mucho mayor de lo que sugiere el promedio.** La
+misma inmobiliaria tardó 13 minutos en el piloto y casi **3 horas** al
+recertificarla, con el sitio más lento. Cualquier planificación de la corrida
+masiva tiene que contar con eso.
+
+**Dato para planificar:** las 7 del piloto eran inmobiliarias **ya
+certificadas** cuya huella había quedado obsoleta. Con todas las huellas
+invalidadas, las próximas ~35 corridas vuelven a ganar certificaciones
+existentes antes de sumar cobertura nueva.
 
 ### 7.3 Fuente geográfica para derivar ciudad
 
