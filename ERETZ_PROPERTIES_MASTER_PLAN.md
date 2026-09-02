@@ -166,8 +166,20 @@ Motivos de bloqueo: 289 web no propia, **56 homónima en `main`**, 25 duplicada.
 desbloquean **vinculándolas al id existente, sin crear nada**. Es una acción
 distinta y más segura que promover.
 
-**Estado: preparado hasta dry-run.** La inserción en `main` queda del otro lado
-de la barrera de §8.
+Dry-run en `AGENCY_MAIN_LINK_DRYRUN.jsonl`:
+
+| Acción | Inmobiliarias |
+|---|---|
+| `LINK_TO_EXISTING` (una sola candidata) | 54 |
+| `REQUIRES_REVIEW` (varias candidatas) | 2 |
+
+Las 2 en revisión tienen dos candidatas cada una —`inmobiliaria up` apunta a
+3019 y 3305, o sea que `main` ya tiene ahí su propia duplicada—. Coincidir el
+conjunto de palabras es evidencia fuerte pero no prueba: elegir la primera
+sería inventar la identidad.
+
+**Estado: preparado hasta dry-run**, con `writes_a_new_row: false` en todas las
+filas. La escritura en `main` queda del otro lado de la barrera de §8.
 
 ### 3.2 Rollout de la corrida masiva
 
