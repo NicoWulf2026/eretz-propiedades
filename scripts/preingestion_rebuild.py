@@ -437,8 +437,24 @@ def rebuild(args: argparse.Namespace) -> dict[str, Any]:
                 status, reason = "INVALID_OR_REJECTED", rejection
             elif agency_id is None:
                 status, reason = "AGENCY_ID_UNRESOLVED", "CANONICAL_AGENCY_NOT_RESOLVED"
-            elif not operation or not property_type:
-                status, reason = "INVALID_OR_REJECTED", "RAW_ELIGIBLE_NOT_PUBLISH_ELIGIBLE"
+
+            # Faltar operacion o tipo NO invalida una propiedad: la deja
+            # incompleta. Marcarla INVALID_OR_REJECTED la mandaba al mismo
+            # archivo que un perfil de portal y no llegaba nunca a la base, o
+            # sea que desaparecia del producto. Eran 13.518 propiedades reales.
+            #
+            # El propio esquema ya declaraba la politica correcta y la
+            # pre-ingesta la contradecia: `operacion TEXT` lleva el comentario
+            # "FASE 1: no rechazar por operacion faltante", y `tipo_propiedad`
+            # tambien admite nulo.
+            #
+            # Se conserva, se publica y se deja el rastro de que campo falta,
+            # sin inventarlo: la ausencia queda como ausencia.
+            faltantes = [nombre for nombre, valor in
+                         (("operacion", operation),
+                          ("tipo_propiedad", property_type)) if not valor]
+            if faltantes and status == "CANDIDATE":
+                counters["incomplete_but_published_rows"] += 1
 
             row["inmobiliaria_id"] = agency_id
             if agency_id is not None:
@@ -452,6 +468,9 @@ def rebuild(args: argparse.Namespace) -> dict[str, Any]:
                 "sanitized_counts": fixes,
                 "description_technical_content_removed": cleaned,
                 "publish_eligible": status == "CANDIDATE",
+                # Que le falta para estar completa. Es una senal de calidad
+                # para enriquecer despues, no un motivo de descarte.
+                "campos_pendientes": faltantes,
             }
             db.execute(
                 "insert into rows values(?,?,?,?,?,?,?,?,?,?)",

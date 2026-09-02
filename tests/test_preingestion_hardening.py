@@ -266,6 +266,69 @@ def test_external_portal_profile_never_produces_insert(tmp_path: Path, monkeypat
     assert summary["quality"]["portal_contaminated_rows_removed"] == 1
 
 
+def test_una_propiedad_sin_operacion_no_desaparece(tmp_path: Path,
+                                                  monkeypatch) -> None:
+    """Primer principio de ERETZ: una propiedad valida no deja de mostrarse
+    porque le falte un dato enriquecible.
+
+    Faltar operacion la marcaba INVALID_OR_REJECTED, el mismo estado que un
+    perfil de portal, y con eso no llegaba nunca a la base: desaparecia del
+    producto. Eran 13.518 propiedades reales.
+
+    El propio esquema ya declaraba la politica -`operacion TEXT` lleva el
+    comentario "FASE 1: no rechazar por operacion faltante"- y la pre-ingesta
+    la contradecia.
+    """
+    summary = run_one_row_rebuild(
+        tmp_path, monkeypatch,
+        crosswalk_row={
+            "stable_id": "roomix:agency",
+            "nombre_original": "Agency",
+            "crosswalk": "EXACT_MATCH",
+            "crosswalk_candidato": {"tabla": "main", "id": "10",
+                                    "nombre": "Agency"},
+        },
+        source_row={
+            "canonical_agency_id": "roomix:agency",
+            "connector": "tokko",
+            "source_url": "https://agency.test/propiedad/12345",
+            "source_listing_id": "12345",
+            "titulo": "Casa con patio en el centro",
+            "precio": 120000.0,
+            "moneda": "USD",
+            # Sin operacion ni tipo: la fuente no los publica.
+        },
+    )
+    assert summary["status_counts"].get("INVALID_OR_REJECTED", 0) == 0
+    assert summary["agency_mappings"]["resolved"] == 1
+
+
+def test_lo_que_no_es_una_propiedad_si_se_rechaza(tmp_path: Path,
+                                                  monkeypatch) -> None:
+    """Conservar lo incompleto no puede volverse conservar cualquier cosa: una
+    url de busqueda no identifica ninguna propiedad y sigue rechazandose."""
+    summary = run_one_row_rebuild(
+        tmp_path, monkeypatch,
+        crosswalk_row={
+            "stable_id": "roomix:agency",
+            "nombre_original": "Agency",
+            "crosswalk": "EXACT_MATCH",
+            "crosswalk_candidato": {"tabla": "main", "id": "10",
+                                    "nombre": "Agency"},
+        },
+        source_row={
+            "canonical_agency_id": "roomix:agency",
+            "connector": "tokko",
+            "source_url": "https://agency.test/buscar-propiedades/casas",
+            "source_listing_id": "casas",
+            "titulo": "Casas en venta",
+            "operacion": "venta",
+            "tipo_propiedad": "casa",
+        },
+    )
+    assert summary["status_counts"].get("INVALID_OR_REJECTED", 0) == 1
+
+
 def test_ambiguous_agency_mapping_fails_closed_to_hold(tmp_path: Path, monkeypatch) -> None:
     summary = run_one_row_rebuild(
         tmp_path,
