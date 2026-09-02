@@ -622,6 +622,16 @@ def certification_status(run1: dict[str, Any], run2: dict[str, Any],
             and enumeration.get("external_catalog_hosts")):
         return "BLOCKED_EXTERNAL", [
             "official site delegates inventory to an external property portal"]
+    # Una corrida que se quedo sin presupuesto esta truncada: comparar media
+    # inventario contra el inventario entero no dice nada sobre la fuente, dice
+    # que se acabo el reloj. Informarlo como "no es idempotente" manda a buscar
+    # un defecto de extraccion que no existe.
+    truncadas = [run for run in (run1, run2) if run.get("presupuesto_agotado")]
+    if truncadas:
+        return "NEEDS_FIX", [
+            "one or both runs ran out of time budget before finishing; "
+            "the comparison between them is not conclusive"]
+
     estados_no_ok = states - {"OK"}
     agotadas = all(bool(run.get("enumeracion_agotada"))
                    for run in (run1, run2))

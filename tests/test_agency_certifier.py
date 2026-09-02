@@ -193,6 +193,51 @@ def test_queue_does_not_repeat_current_identity_terminal_results(monkeypatch) ->
     }, record)
 
 
+def test_una_corrida_truncada_no_se_juzga_por_idempotencia() -> None:
+    """Regresion de `roomix:abriola propiedades`.
+
+    Su sitio sirve a 6,27 s por ficha. La primera corrida se corto exactamente
+    en el tope del presupuesto con 238 de 263 fichas y la segunda las trajo
+    todas, asi que la comparacion entre ambas no medía la fuente: medía el
+    reloj. La certificacion lo informaba como "second run is not idempotent",
+    que manda a buscar un defecto de extraccion que no existe.
+    """
+    truncada = {"estado": "PRESUPUESTO_AGOTADO", "detalles_fallidos": 0,
+                "presupuesto_agotado": True, "enumeracion_agotada": True}
+    completa = {"estado": "OK", "detalles_fallidos": 0,
+                "enumeracion_agotada": True}
+    comparacion = {"same_url_set": False, "idempotent": False,
+                   "identity_collisions": 0}
+    enumeracion = {"enumerated": 263, "pages_observed": 279,
+                   "exhaustive_review_required": False, "review_reasons": []}
+
+    estado, razones = certification_status(
+        truncada, completa, comparacion, enumeracion, {})
+    assert estado == "NEEDS_FIX"
+    assert len(razones) == 1
+    assert "time budget" in razones[0]
+    assert not any("idempotent" in r for r in razones)
+
+
+def test_el_presupuesto_escala_con_el_trabajo_pedido() -> None:
+    """Un presupuesto plano castiga a la inmobiliaria grande o lenta justamente
+    por serlo, y lo que se pierde ahi es inventario."""
+    from scripts.run_rollout import (PRESUPUESTO_MAXIMO,
+                                     PRESUPUESTO_POR_FUENTE,
+                                     SEGUNDOS_POR_FICHA_LENTA)
+
+    def presupuesto(fichas: int) -> float:
+        return min(max(PRESUPUESTO_POR_FUENTE,
+                       fichas * SEGUNDOS_POR_FICHA_LENTA), PRESUPUESTO_MAXIMO)
+
+    # Una inmobiliaria chica conserva el presupuesto base.
+    assert presupuesto(50) == PRESUPUESTO_POR_FUENTE
+    # abriola necesitaba 1.649 s para sus 263 fichas y ahora le entran.
+    assert presupuesto(263) > 1649
+    # Y una fuente patologica no se queda con la cola entera.
+    assert presupuesto(100000) == PRESUPUESTO_MAXIMO
+
+
 def _enumeracion_corta() -> dict:
     return {"enumerated": 193, "pages_observed": 219, "collapse_ratio": 0.02,
             "exhaustive_review_required": False, "review_reasons": []}

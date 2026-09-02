@@ -67,6 +67,18 @@ COBERTURA_MINIMA = 0.98
 # lo que corresponde con algo que puede haber sido pasajero.
 PRESUPUESTO_POR_FUENTE = 1800
 
+# Un presupuesto plano castiga a la inmobiliaria grande o lenta justamente por
+# serlo, y lo que se pierde ahi es inventario. abriolapropiedades.com.ar sirve
+# a 6,27 s por ficha: con 263 fichas necesita 1.649 s, y la primera corrida se
+# corto exactamente en el tope con 238. La segunda las trajo todas, asi que la
+# comparacion entre ambas no medía la fuente, medía el reloj.
+#
+# El presupuesto pasa a escalar con el trabajo pedido. El margen por ficha esta
+# por encima del peor sitio medido; el limitador de ritmo solo ya impone 1,5 s.
+SEGUNDOS_POR_FICHA_LENTA = 8.0
+# Techo duro: una fuente patologica no puede quedarse con la cola entera.
+PRESUPUESTO_MAXIMO = 5400
+
 
 class EscritorDurable:
     """Append seguro a JSONL desde varios hilos.
@@ -346,7 +358,12 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
     fallidos = 0
     reintentos_diferidos: list[dict] = []
     recuperados_diferidos = 0
+    if presupuesto:
+        presupuesto = min(
+            max(presupuesto, len(seleccion) * SEGUNDOS_POR_FICHA_LENTA),
+            PRESUPUESTO_MAXIMO)
     limite = t0 + presupuesto if presupuesto else None
+    r["presupuesto_efectivo"] = presupuesto or None
     for a in seleccion:
         if limite and time.time() > limite:
             r["presupuesto_agotado"] = True
