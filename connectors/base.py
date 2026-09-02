@@ -833,6 +833,26 @@ def detectar_operacion(texto: Any) -> str | None:
     return None
 
 
+def ficha_sin_contenido(prop: "PropiedadNormalizada") -> bool:
+    """Una ficha que no trajo NINGUN campo definitorio no es una propiedad.
+
+    Cuando la pagina devuelve el cascaron -sin renderizar, un error blando, un
+    limite de tasa- lo unico que sobrevive es el titulo del sitio, y el tipo se
+    termina adivinando del slug de la url. Asi quedo guardado "Di Marco
+    Propiedades" como un galpon y "Lincoln Negocios Inmobiliarios" como un
+    departamento: 351 fichas en la pre-ingesta con la ausencia convertida en
+    afirmacion, que despues no se distingue de un dato real.
+
+    El guardian de forma ya cubria esto, pero solo para las urls descubiertas
+    por patron. Una url venida de un sitemap tiene mejor procedencia, no mejor
+    contenido: que DEBERIA ser una ficha no prueba que la hayamos leido.
+    """
+    definitorios = (prop.precio, prop.descripcion, prop.dormitorios,
+                    prop.ambientes, prop.superficie_total,
+                    prop.superficie_cubierta)
+    return not any(valor not in (None, "", 0) for valor in definitorios)
+
+
 def detectar_tipo(texto: Any) -> str | None:
     if not texto:
         return None

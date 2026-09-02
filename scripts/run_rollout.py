@@ -36,7 +36,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from connectors.base import (Bloqueado, Checkpoint, Descargador,  # noqa: E402
                              ErrorPermanente, ErrorTransitorio, Fuente,
-                             LimitadorDeRitmo, calcular_hash_dedup)
+                             LimitadorDeRitmo, calcular_hash_dedup,
+                             ficha_sin_contenido)
 from connectors.tokko import TokkoConnector  # noqa: E402
 from connectors.wordpress import WordPressConnector  # noqa: E402
 from connectors.century21 import Century21Connector  # noqa: E402
@@ -378,6 +379,30 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
     # El filtro va ANTES de registrar: la huella tiene que calcularse sobre lo
     # que efectivamente se guarda, o el checkpoint quedaria comparando contra
     # una version de la propiedad que no existe en el artefacto.
+    # Una ficha sin ningun campo definitorio no es una propiedad: es la pagina
+    # devolviendo el cascaron. Cuenta como detalle FALLIDO, no como descarte
+    # silencioso, porque la url si era una ficha -otra corrida la leyo entera-
+    # y lo que fallo fue nuestra lectura. Guardarla igual dejaria una propiedad
+    # con el nombre del sitio por titulo y un tipo adivinado.
+    sin_contenido = [p for p in objetos if ficha_sin_contenido(p)]
+    if sin_contenido:
+        objetos = [p for p in objetos if not ficha_sin_contenido(p)]
+        fallidos += len(sin_contenido)
+        if not hasattr(con, "descartes"):
+            con.descartes = []
+        for p in sin_contenido:
+            # Sin rastro, una url descartada es indistinguible de una que nunca
+            # existio, y si el guardian se equivoca nadie puede notarlo.
+            if len(con.descartes) < 500:
+                con.descartes.append({
+                    "canonical_agency_id": fuente.canonical_agency_id,
+                    "source_url": p.source_url,
+                    "motivo": "FICHA_SIN_CONTENIDO",
+                    "titulo": (p.titulo or "")[:120],
+                    "tipo_propiedad": p.tipo_propiedad,
+                })
+    r["fichas_sin_contenido"] = len(sin_contenido)
+
     r["imagenes_compartidas_descartadas"] = descartar_imagenes_compartidas(objetos)
 
     for p in objetos:

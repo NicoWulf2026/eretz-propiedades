@@ -505,6 +505,10 @@ def test_un_detalle_transitorio_se_reintenta_al_final_del_lote():
                 canonical_agency_id=fuente_actual.canonical_agency_id,
                 source_listing_id=crudo["source_listing_id"],
                 source_url=crudo["source_url"], connector=self.nombre,
+                # Un aviso de verdad: sin ningun campo definitorio el guardian
+                # de fichas vacias lo contaria como detalle no leido, y este
+                # test es sobre el reintento, no sobre el contenido.
+                precio=125000.0, moneda="USD",
                 inmobiliaria_id=fuente_actual.inmobiliaria_id)
 
     connector = ConnectorTransitorio()
@@ -1162,6 +1166,40 @@ def test_tokko_lee_el_tipo_declarado_cuando_el_titulo_no_alcanza():
 
     texto = "DETALLES DE LA PROPIEDAD Tipo de Propiedad Terreno Superficie total 500"
     assert _tipo_propiedad(_campo(texto, "Tipo de Propiedad")) == "terreno"
+
+
+def _ficha(**campos):
+    from connectors.base import PropiedadNormalizada
+
+    base = {"canonical_agency_id": "roomix:x", "source_listing_id": "1",
+            "source_url": "https://x.test/p/1", "connector": "wasi"}
+    return PropiedadNormalizada(**{**base, **campos})
+
+
+def test_una_ficha_sin_ningun_campo_definitorio_no_es_una_propiedad():
+    """Regresion de `roomix:alder inmobiliaria`.
+
+    La pagina devolvio el cascaron y quedo guardada una propiedad con el nombre
+    del sitio por titulo -"Di Marco Propiedades"- y el tipo adivinado del slug
+    de la url. La ausencia convertida en afirmacion: sin precio, sin
+    descripcion, sin ambientes y sin superficie no leimos ninguna ficha.
+    """
+    from connectors.base import ficha_sin_contenido
+
+    cascaron = _ficha(titulo="Di Marco Propiedades", tipo_propiedad="galpon")
+    assert ficha_sin_contenido(cascaron) is True
+
+
+def test_un_solo_campo_definitorio_alcanza_para_ser_una_propiedad():
+    """El guardian tiene que ser estricto en lo que descarta: un aviso escueto
+    -solo el precio, o solo la descripcion- sigue siendo un aviso, y tirarlo
+    seria perder inventario real por prolijidad."""
+    from connectors.base import ficha_sin_contenido
+
+    assert ficha_sin_contenido(_ficha(titulo="Casa", precio=125000.0)) is False
+    assert ficha_sin_contenido(_ficha(descripcion="Casa con patio")) is False
+    assert ficha_sin_contenido(_ficha(dormitorios=2)) is False
+    assert ficha_sin_contenido(_ficha(superficie_total=200.0)) is False
 
 
 def test_operacion_se_lee_tambien_de_la_forma_verbal():
