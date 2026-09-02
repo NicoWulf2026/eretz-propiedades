@@ -518,6 +518,26 @@ cuya web no se conoce. Por eso el orden real de ataque es **#3 → #7 → #1 →
 
 ---
 
+### D-012 — Cobertura al filo del umbral (ABIERTO)
+
+`roomix:berrueta inmobiliaria` enumera **193 de 197** que el propio sitio
+declara ("Se encontraron 197 resultados"): cobertura 0,9797 contra el 0,98
+exigido. **Falla por 0,0003.**
+
+La enumeración es estable e idempotente —193 en las dos corridas, 193 URLs
+distintas, 193 ids distintos, 0 duplicados, 17 páginas— así que no es ruido.
+Las 4 faltantes pueden ser avisos que el contador del sitio incluye y su
+paginación no renderiza, o un hueco real nuestro. **No se puede afirmar cuál
+sin trabajo por sitio, y no se bajó el umbral para que pasara:** relajar un
+guardia porque incomoda es cómo se pierde la garantía que da.
+
+**Es una pregunta de política, no técnica.** Con un corte duro en 0,98, las
+inmobiliarias que queden entre 0,95 y 0,98 se acumularán en `NEEDS_FIX`
+indefinidamente. Si una cobertura estable y reproducible por debajo del umbral
+debe cerrar como `CERTIFIED_BEST_AVAILABLE` —con su limitación documentada— en
+vez de quedar abierta, esa es una decisión del dueño del producto. Hoy sólo
+`NEEDS_FIX` es posible, y `NEEDS_FIX` nunca es un cierre.
+
 ## 5. Riesgos abiertos
 
 - **El descubrimiento gobierna todo lo demás.** 111 de 140 `IDENTITY_PENDING`
