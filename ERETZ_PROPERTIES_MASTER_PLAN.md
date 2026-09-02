@@ -539,6 +539,18 @@ para distinguirlos, y equivocarse corre todos los valores. Un rótulo con dos
 puntos sigue mandando sobre ambos, porque ahí no hay nada que adivinar, y el
 límite de palabra evita leer el "2" de "m2" como una cantidad.
 
+**Alcance medido, con una huella que lo delata.** En la pre-ingesta,
+`dormitorios > ambientes` —imposible: los dormitorios son un subconjunto de los
+ambientes— aparece **1.056 veces, y las 1.056 son de `generico`**: cero en
+tokko, wasi, century21 y wordpress. Es exactamente la firma del corrimiento
+(`ambientes` toma el 2 de "196 m2", `dormitorios` toma el 3 de ambientes).
+
+No es prueba concluyente —una fuente puede publicar un disparate— pero la
+concentración perfecta en el único connector con este defecto es difícil de
+explicar de otro modo. La validación hizo su trabajo y rechazó lo imposible,
+así que esas propiedades **perdieron los dos campos** en vez de guardarlos
+mal. Fallar cerrado evitó el dato falso; no pudo recuperar el verdadero.
+
 ### D-012 — Cobertura al filo del umbral (ABIERTO)
 
 `roomix:berrueta inmobiliaria` enumera **193 de 197** que el propio sitio
