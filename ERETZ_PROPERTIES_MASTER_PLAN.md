@@ -290,6 +290,20 @@ antes del control de contradicción. El p95 de distancia entre la propiedad y su
 localidad cayó de 1.034 km a 15,2 km. Cuesta 0,509 ms por propiedad, sin una
 sola consulta remota.
 
+Validación estratificada (`scripts/geo_validacion.py`, informe en
+`ERETZ_GEO/VALIDACION_GEOGRAFICA.json`):
+
+| Estrato | n | Resueltas |
+|---|---|---|
+| Barrio publicado como ciudad | 1.901 | **0,0 %** |
+| Forma comercial o capital | 3.478 | **100,0 %** |
+| Con ciudad sin coordenada | 6.432 | 68,1 % |
+| Con ciudad y coordenada | 19.633 | 49,7 % |
+
+Los barrios **nunca** se convierten en ciudad, y las formas comerciales
+resuelven todas. El estrato con coordenada resuelve menos justamente porque ahí
+el control de contradicción actúa.
+
 **Dos correcciones que salieron de medir contra los datos reales, no de los
 tests** —la regla de §1.1 otra vez:
 
