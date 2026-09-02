@@ -94,6 +94,9 @@ ETIQUETAS = (
     "Situación", "Situacion", "Expensas", "Orientación", "Orientacion",
     "Disposición", "Disposicion", "Crédito", "Credito", "Estado",
     "INFORMACIÓN BÁSICA", "INFORMACION BASICA", "SUPERFICIES", "REF.",
+    # La ficha declara el tipo como campo propio. Sin esta etiqueta no era
+    # frontera, asi que los valores vecinos podian arrastrarla adentro.
+    "Tipo de Propiedad", "Tipo de propiedad",
 )
 _STOP = "|".join(re.escape(e) for e in sorted(ETIQUETAS, key=len, reverse=True))
 
@@ -428,7 +431,13 @@ class TokkoConnector(Connector):
             precio=precio,
             moneda=moneda,
             operacion=operacion,
-            tipo_propiedad=_tipo_propiedad(titulo),
+            # El titulo manda porque es lo que venia funcionando; el campo
+            # entra solo donde el titulo no alcanzo. Eran 899 fichas sin tipo
+            # -y sin tipo una propiedad no se puede publicar- teniendo la
+            # fuente el dato declarado en la ficha.
+            tipo_propiedad=(_tipo_propiedad(titulo)
+                            or _tipo_propiedad(
+                                _campo(texto, "Tipo de Propiedad"))),
             direccion=direccion,
             barrio=ubicacion,
             ciudad=None,

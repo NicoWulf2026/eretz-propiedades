@@ -1154,6 +1154,16 @@ def test_el_markup_escapado_no_termina_dentro_de_la_descripcion():
     assert "Casa linda" in t and "con patio" in t
 
 
+def test_tokko_lee_el_tipo_declarado_cuando_el_titulo_no_alcanza():
+    """El tipo salia solo de adivinarlo en el titulo, y 899 fichas quedaban sin
+    el -sin tipo una propiedad no se puede publicar- teniendo la ficha el dato
+    declarado como campo propio."""
+    from connectors.tokko import _campo, _tipo_propiedad
+
+    texto = "DETALLES DE LA PROPIEDAD Tipo de Propiedad Terreno Superficie total 500"
+    assert _tipo_propiedad(_campo(texto, "Tipo de Propiedad")) == "terreno"
+
+
 def test_operacion_se_lee_tambien_de_la_forma_verbal():
     """El vocabulario tenia los infinitivos pero no las conjugadas, asi que
     "Se vende terreno" quedaba sin operacion: el campo que mas define un aviso
