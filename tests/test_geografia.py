@@ -342,3 +342,21 @@ def test_promover_un_barrio_a_ciudad_no_es_perder_el_barrio() -> None:
     assert prop.ciudad == "Córdoba"
     assert prop.barrio is None
     assert "barrio" in prop.extra["atributos_descartados"]
+
+
+def test_toda_ciudad_publicada_que_no_se_afirma_queda_como_rechazo() -> None:
+    """Un barrio en el campo ciudad, una coordenada que la desmiente y una
+    homonima sin contexto son tres motivos distintos para no afirmar, pero los
+    tres son la validacion funcionando. Ninguno es un fallo de extraccion, y
+    tratarlos como tal bloquea inmobiliarias que estan bien."""
+    for ciudad, contexto in (("Palermo", {}),
+                             ("CABA", {"latitud": -41.10, "longitud": -71.48}),
+                             ("San Pedro", {})):
+        prop = _resolver(_propiedad(ciudad=ciudad, **contexto))
+        assert prop.ciudad is None, ciudad
+        assert "ciudad" in prop.extra["atributos_descartados"], ciudad
+
+
+def test_si_la_fuente_no_publico_ciudad_no_hay_nada_que_rechazar() -> None:
+    prop = _resolver(_propiedad(barrio="Alberdi"))
+    assert prop.extra.get("atributos_descartados") is None

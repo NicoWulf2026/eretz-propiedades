@@ -656,6 +656,19 @@ class Connector:
         self._resolver_geografia(prop)
 
     @staticmethod
+    def _marcar_descartado(prop: "PropiedadNormalizada", campo: str) -> None:
+        """Deja constancia de que un valor se rechazo, no de que falto.
+
+        `EXTRACTION_FAILED` es un defecto nuestro y bloquea la certificacion;
+        `REJECTED_BY_VALIDATION` es la validacion haciendo su trabajo.
+        """
+        descartados = prop.extra.get("atributos_descartados") or ""
+        partes = [x for x in str(descartados).split(",") if x]
+        if campo not in partes:
+            partes.append(campo)
+        prop.extra["atributos_descartados"] = ",".join(partes)
+
+    @staticmethod
     def _resolver_geografia(prop: "PropiedadNormalizada") -> None:
         """Pone la ciudad y el barrio en la dimension que les corresponde.
 
@@ -710,11 +723,7 @@ class Connector:
                 # "Cordoba Capital" promovida a ciudad como si hubieramos
                 # perdido el barrio de esa ficha.
                 prop.barrio = None
-                descartados = prop.extra.get("atributos_descartados") or ""
-                partes = [x for x in str(descartados).split(",") if x]
-                if "barrio" not in partes:
-                    partes.append("barrio")
-                prop.extra["atributos_descartados"] = ",".join(partes)
+                Connector._marcar_descartado(prop, "barrio")
             if not prop.provincia:
                 # La provincia de una localidad resuelta es un hecho del
                 # catalogo, no una inferencia nuestra.
@@ -728,12 +737,13 @@ class Connector:
         # "Caseros" en 11 avisos del Gran Buenos Aires, y la unica Caseros del
         # catalogo esta en Entre Rios, a 238 km. Afirmarla los habria mandado a
         # otra provincia.
-        if resolucion.certeza in (GEO_CONTRADICHA, GEO_AMBIGUA):
-            descartados = prop.extra.get("atributos_descartados") or ""
-            partes = [x for x in str(descartados).split(",") if x]
-            if "ciudad" not in partes:
-                partes.append("ciudad")
-            prop.extra["atributos_descartados"] = ",".join(partes)
+        if not desde_barrio:
+            # La fuente publico una ciudad y no la afirmamos: sea porque la
+            # coordenada la desmiente, porque hay varias candidatas o porque no
+            # es una localidad sino un barrio, el valor se validó y se rechazo.
+            # Es distinto de no haberlo podido leer, y la certificacion lo
+            # trata distinto: uno bloquea y el otro no.
+            Connector._marcar_descartado(prop, "ciudad")
 
         if desde_barrio:
             # No resolvio: es lo que decia ser, un barrio. Se queda donde esta.
