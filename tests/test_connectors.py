@@ -563,7 +563,9 @@ def test_una_ficha_vacia_se_reintenta_antes_de_darla_por_perdida():
 
     connector = _ConnectorCascaron(recupera=True)
     resultado = _procesar_con(
-        connector, B.Fuente("ag-1", "Alfa", "https://alfa.test", 7), 0, True, 60)
+        connector,
+        B.Fuente("roomix:alder inmobiliaria", "Alder", "https://alfa.test", 7),
+        0, True, 60)
 
     assert connector.intentos == 2
     assert resultado["detalles_obtenidos"] == 1
@@ -579,7 +581,9 @@ def test_una_ficha_que_sigue_vacia_no_se_guarda_como_propiedad():
 
     connector = _ConnectorCascaron(recupera=False)
     resultado = _procesar_con(
-        connector, B.Fuente("ag-1", "Alfa", "https://alfa.test", 7), 0, True, 60)
+        connector,
+        B.Fuente("roomix:alder inmobiliaria", "Alder", "https://alfa.test", 7),
+        0, True, 60)
 
     assert resultado["detalles_obtenidos"] == 0
     assert resultado["detalles_fallidos"] == 1
@@ -1238,35 +1242,52 @@ def test_tokko_lee_el_tipo_declarado_cuando_el_titulo_no_alcanza():
 def _ficha(**campos):
     from connectors.base import PropiedadNormalizada
 
-    base = {"canonical_agency_id": "roomix:x", "source_listing_id": "1",
+    base = {"canonical_agency_id": "roomix:di marco propiedades",
+            "source_listing_id": "1",
             "source_url": "https://x.test/p/1", "connector": "wasi"}
     return PropiedadNormalizada(**{**base, **campos})
 
 
-def test_una_ficha_sin_ningun_campo_definitorio_no_es_una_propiedad():
+def test_el_cascaron_de_una_pagina_no_es_una_propiedad():
     """Regresion de `roomix:alder inmobiliaria`.
 
-    La pagina devolvio el cascaron y quedo guardada una propiedad con el nombre
-    del sitio por titulo -"Di Marco Propiedades"- y el tipo adivinado del slug
-    de la url. La ausencia convertida en afirmacion: sin precio, sin
-    descripcion, sin ambientes y sin superficie no leimos ninguna ficha.
+    La pagina no renderizo y lo unico que sobrevivio fue el <title> del sitio.
+    Quedo guardada una propiedad llamada "Di Marco Propiedades" con el tipo
+    adivinado del slug de la url: la ausencia convertida en afirmacion.
     """
     from connectors.base import ficha_sin_contenido
 
-    cascaron = _ficha(titulo="Di Marco Propiedades", tipo_propiedad="galpon")
+    cascaron = _ficha(titulo="Di Marco Propiedades", tipo_propiedad="galpon",
+                      # El cascaron de alder traia estos tres, sacados del slug
+                      # de la url y del padron, no de la ficha.
+                      operacion="venta", provincia="Cordoba",
+                      imagenes=["https://cdn.test/generica.jpg"])
     assert ficha_sin_contenido(cascaron) is True
 
 
-def test_un_solo_campo_definitorio_alcanza_para_ser_una_propiedad():
-    """El guardian tiene que ser estricto en lo que descarta: un aviso escueto
-    -solo el precio, o solo la descripcion- sigue siendo un aviso, y tirarlo
-    seria perder inventario real por prolijidad."""
+def test_un_lote_sin_precio_publicado_sigue_siendo_una_propiedad():
+    """Medido: 254 lotes y terrenos reales publican solo titulo y fotos, sin
+    precio, sin ambientes, sin superficie y sin direccion. Descartarlos por no
+    traer datos perderia inventario que la fuente si ofrece, asi que hace falta
+    ademas que el titulo sea el nombre del sitio."""
     from connectors.base import ficha_sin_contenido
 
-    assert ficha_sin_contenido(_ficha(titulo="Casa", precio=125000.0)) is False
-    assert ficha_sin_contenido(_ficha(descripcion="Casa con patio")) is False
-    assert ficha_sin_contenido(_ficha(dormitorios=2)) is False
-    assert ficha_sin_contenido(_ficha(superficie_total=200.0)) is False
+    lote = _ficha(titulo="Venta Lote Barrio La Posta Pilar",
+                  tipo_propiedad="terreno", operacion="venta")
+    assert ficha_sin_contenido(lote) is False
+
+
+def test_un_solo_dato_publicado_alcanza_para_ser_una_propiedad():
+    """Aunque el titulo coincida con el nombre de la inmobiliaria, un dato
+    publicado por la fuente prueba que la ficha se leyo."""
+    from connectors.base import ficha_sin_contenido
+
+    assert ficha_sin_contenido(_ficha(titulo="Di Marco Propiedades",
+                                      precio=125000.0)) is False
+    assert ficha_sin_contenido(_ficha(titulo="Di Marco Propiedades",
+                                      barrio="Parque Luro")) is False
+    assert ficha_sin_contenido(_ficha(titulo="Di Marco Propiedades",
+                                      descripcion="Casa con patio")) is False
 
 
 def test_operacion_se_lee_tambien_de_la_forma_verbal():

@@ -26,6 +26,7 @@ import json
 import os
 import random
 import re
+import unicodedata
 import ssl
 import threading
 import time
@@ -833,24 +834,43 @@ def detectar_operacion(texto: Any) -> str | None:
     return None
 
 
+def _palabras(valor: Any) -> set[str]:
+    plano = unicodedata.normalize("NFKD", str(valor or "").lower())
+    plano = "".join(c for c in plano if not unicodedata.combining(c))
+    return set(re.sub(r"[^a-z0-9]+", " ", plano).split())
+
+
 def ficha_sin_contenido(prop: "PropiedadNormalizada") -> bool:
-    """Una ficha que no trajo NINGUN campo definitorio no es una propiedad.
+    """Ficha que no trajo ningun dato Y cuyo titulo es el nombre del sitio.
 
     Cuando la pagina devuelve el cascaron -sin renderizar, un error blando, un
-    limite de tasa- lo unico que sobrevive es el titulo del sitio, y el tipo se
-    termina adivinando del slug de la url. Asi quedo guardado "Di Marco
-    Propiedades" como un galpon y "Lincoln Negocios Inmobiliarios" como un
-    departamento: 351 fichas en la pre-ingesta con la ausencia convertida en
-    afirmacion, que despues no se distingue de un dato real.
+    limite de tasa- lo unico que sobrevive es el <title> del sitio, y el tipo
+    se termina adivinando del slug de la url: quedaron guardados "Ferraro
+    Propiedades" como un terreno, "Lincoln Negocios Inmobiliarios" como un
+    departamento y "CASAS EN ALQUILER | ARRAMBIDE PROPIEDADES" como una casa.
+    La ausencia convertida en afirmacion.
 
-    El guardian de forma ya cubria esto, pero solo para las urls descubiertas
-    por patron. Una url venida de un sitemap tiene mejor procedencia, no mejor
-    contenido: que DEBERIA ser una ficha no prueba que la hayamos leido.
+    Las dos condiciones son necesarias, y eso se midio. Sin datos no alcanza:
+    254 lotes y terrenos reales publican solo titulo y fotos -sin precio, sin
+    ambientes, sin superficie, sin direccion- y descartarlos perderia
+    inventario que la fuente si ofrece. El titulo solo tampoco alcanza: una
+    inmobiliaria puede nombrarse en el titulo de un aviso legitimo.
+
+    No se miran `operacion` ni `tipo_propiedad` ni `provincia`: el cascaron de
+    alder los tenia los tres, sacados del slug de la url y del padron, no de la
+    ficha. Tampoco las imagenes, que en ese caso eran una sola y generica.
     """
-    definitorios = (prop.precio, prop.descripcion, prop.dormitorios,
-                    prop.ambientes, prop.superficie_total,
-                    prop.superficie_cubierta)
-    return not any(valor not in (None, "", 0) for valor in definitorios)
+    publicados = (prop.precio, prop.descripcion, prop.dormitorios,
+                  prop.ambientes, prop.banos, prop.superficie_total,
+                  prop.superficie_cubierta, prop.direccion, prop.barrio,
+                  prop.ciudad, prop.latitud, prop.longitud, prop.moneda)
+    if any(valor not in (None, "", 0) for valor in publicados):
+        return False
+    titulo = _palabras(prop.titulo)
+    agencia = _palabras(str(prop.canonical_agency_id or "").split(":", 1)[-1])
+    if not titulo or not agencia:
+        return False
+    return titulo <= agencia or agencia <= titulo
 
 
 def detectar_tipo(texto: Any) -> str | None:
