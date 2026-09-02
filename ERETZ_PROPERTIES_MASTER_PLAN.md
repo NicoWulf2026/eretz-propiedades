@@ -232,25 +232,74 @@ Jerarquía de evidencia, de mayor a menor:
 
 Prohibido: `provincia → ciudad`, y `coordenada aproximada → ciudad exacta`.
 
-**Investigación de recursos existentes:**
+**Estado: IN PROGRESS.** Resuelto el catálogo, pendiente el cableado al
+pipeline.
 
-| Recurso | Sirve |
+**Fuente adoptada: GeoRef Argentina** (Servicio de Normalización de Datos
+Geográficos, datos.gob.ar). Oficial, gratuita, sin credenciales. Snapshot local
+en `ERETZ_GEO/`, bajado el 2026-09-02 con `scripts/geo_snapshot.py`, con
+`MANIFEST.json` que guarda url, fecha, totales, vía y sha256 por recurso.
+
+| Recurso | Filas | Vía |
+|---|---|---|
+| provincias | 24 | volcado |
+| departamentos | 529 | volcado |
+| municipios | 2.082 | API (no está en el volcado) |
+| **localidades censales** | **4.023** | volcado |
+| localidades | 4.028 | volcado |
+| asentamientos | 14.466 | volcado |
+
+Para actualizarlo se vuelve a correr el script: reescribe el manifiesto y los
+sha256 permiten comparar versiones y ver si cambiaron ids o nombres. La API
+topea `max + inicio` en 10.000, por eso `asentamientos` sólo sale del volcado.
+
+**Decisiones tomadas sobre los datos, no supuestas:**
+
+- El nivel canónico de ciudad es **`localidades_censales`**. No
+  `asentamientos`, que son las mismas más 10.425 parajes: pasaría de 270
+  nombres repetidos a 1.545 y haría matchear el Paraje Alberdi de Chaco con una
+  propiedad de Córdoba. No `municipios`, que son división administrativa.
+- **CABA no tiene localidad censal**: está partida en quince comunas. Resuelve
+  a la provincia, porque nadie publica "CABA - Comuna 4" como ciudad.
+- `<Provincia> Capital` sale del catálogo —localidad homónima de su provincia,
+  o departamento capital donde el nombre no coincide, como Tucumán— sin
+  escribir a mano ninguna correspondencia.
+- Las coordenadas **sólo desempatan** candidatas que el nombre ya trajo, y sin
+  radio absoluto: la separación entre homónimas es bimodal (p5 = 0,8 km contra
+  mediana de 400 km).
+
+**La prueba de que hacía falta un catálogo y no una tabla de excepciones:** en
+GeoRef **no existe ninguna localidad llamada `Alberdi`**. Hay `Alberdi Viejo`,
+`Colonia Alberdi`, `Villa Alberdi` y dos `Juan Bautista Alberdi`. El único
+`Alberdi` exacto del país es un Paraje en Chaco. GeoRef no cataloga barrios.
+
+**Resultado medido** sobre las 31.444 propiedades con ciudad publicada:
+
+| Resolución | % |
 |---|---|
-| `scraper/geocoder.py` (Nominatim, gratis, sin API key) | Sólo geocodificación **directa**; falta la inversa |
-| `CITY_BOUNDS` en ese módulo | 32 ciudades con cajas a mano — no es un catálogo |
-| Esquema de la base | `ciudad`/`provincia`/`barrio` son **TEXT libre, sin catálogo ni FK** |
-| Backup de `main` | 237 pares (ciudad, provincia) y contaminado: "provincia de buenos aires" figura como ciudad |
+| `EXACT_CANONICAL` | 37,2 |
+| `NOT_FOUND` (casi todo barrios) | 33,2 |
+| `ALIAS_MATCH` | 12,2 |
+| `AMBIGUOUS` | 6,3 |
+| `CONTEXT_MATCH` | 5,2 |
+| `CONTRADICTED_BY_COORDINATES` | 4,5 |
+| `COORDINATE_SUPPORTED` | 1,3 |
 
-**No existe geografía canónica en el sistema.**
+**56,0 % resueltas y cero falsos positivos** a más de 100 km, contra 12,63 %
+antes del control de contradicción. El p95 de distancia entre la propiedad y su
+localidad cayó de 1.034 km a 15,2 km. Cuesta 0,509 ms por propiedad, sin una
+sola consulta remota.
 
-**Y la fuente tampoco la publica.** Verificado sobre una ficha real de Tokko
-—el connector con 0 de 31.858 ciudades—: publica `Ubicación: Alberdi`, que es
-un **barrio**. No hay campo de localidad ni JSON-LD con dirección. La hipótesis
-de "campo sin mapear" es falsa.
+**Dos correcciones que salieron de medir contra los datos reales, no de los
+tests** —la regla de §1.1 otra vez:
 
-El obstáculo es preciso: en el mismo lugar del slug aparecen `Alberdi`
-(barrio) y `Cordoba-Capital` (ciudad), y **distinguirlos exige un catálogo
-canónico de localidades argentinas**. Ver §7.
+1. El campo `provincia` trae basura: `"GBA Sur"`, `/api/v1/state/149/`.
+   Tratarla como contradicción dejaba sin ciudad a **1.498 avisos de La Plata**.
+   Un valor que no nombra una provincia no puede contradecir a una.
+2. `argentinasothebysrealty.com` publica `ciudad = CABA` en avisos cuyas
+   coordenadas caen a 3,7 km de Lago Moreno, Río Negro: el campo tiene **la
+   oficina de la inmobiliaria, no la propiedad**. Eran **1.422 casas de
+   Bariloche afirmadas como porteñas**.
 
 ---
 
@@ -343,7 +392,8 @@ Descubrimiento → Directorio de plataformas → Resolución de identidad
 |---|---|---|
 | Promoción a `main` | 79.001 propiedades atribuibles | Autorización de escritura productiva |
 | Vinculación de las 56 homónimas | 1.140 propiedades | Autorización de escritura productiva |
-| Catálogo geográfico canónico | Filtro por ciudad del portal (91 % del inventario) | Descarga de dataset oficial abierto |
+| Cablear la geografía al pipeline | Que `ciudad` se llene con procedencia | Punto seguro sin certificación en vuelo (§3.3) |
+| Escribir `ciudad` sobre lo ya extraído | 17.608 propiedades resolubles | Autorización de escritura productiva |
 | 2.462 sin web conocida | Su promoción y certificación | Descubrimiento (bloque #3) |
 
 ---
@@ -351,10 +401,16 @@ Descubrimiento → Directorio de plataformas → Resolución de identidad
 ## 7. Próximos milestones
 
 1. **Cerrar la cola `--ready`** (753, ~91 h de ejecución medida). En curso.
-2. **Catálogo geográfico canónico** y derivación de `ciudad` con provenance.
+2. **Cablear la geografía** a los connectors y al quality gate, en un punto sin
+   certificación en vuelo: tocar `connectors/base.py` cambia la huella de todas
+   las estrategias y invalidaría la evidencia de la corrida activa.
 3. **Descubrimiento** para las 2.462 sin web.
 4. **Vinculación e ingesta** una vez levantada la barrera.
 5. Contrato de propiedad, dedup, ciclo de vida, quality gate, publicación.
+
+La geografía es una **dependencia** del contrato de propiedad y del filtro de
+búsqueda, no una misión aparte: entra en el DAG entre la normalización y el
+quality gate.
 
 ---
 
