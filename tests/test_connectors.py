@@ -22,7 +22,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from connectors import base as B  # noqa: E402
-from connectors.tokko import TokkoConnector, _campo, _texto_plano  # noqa: E402
+from connectors.tokko import (TokkoConnector, _campo, _cantidad,
+                              _cantidad_descriptiva, _descripcion,
+                              _texto_plano)  # noqa: E402
 
 
 # --------------------------------------------------------------- fixtures HTML
@@ -213,6 +215,33 @@ def test_la_direccion_se_lee_aunque_no_haya_dos_puntos():
 def test_un_valor_con_mayuscula_adentro_no_corta_el_campo():
     t = _texto_plano("<div>Ubicacion Nueva Cordoba Ambientes 2</div>")
     assert _campo(t, "Ubicacion") == "Nueva Cordoba"
+
+
+def test_cantidad_salta_la_mencion_del_titulo_y_lee_el_bloque_estructurado():
+    texto = ("Casa 3 dormitorios zona plana Propiedades Venta "
+             "Dormitorios 3 Baños 2 Antiguedad A Estrenar")
+    assert _cantidad(texto, "Dormitorios") == 3
+    assert _cantidad(texto, "Baños") == 2
+
+
+def test_ubicacion_corta_antes_de_terreno():
+    texto = "Ubicación Potrero De Garay Terreno 2 m² Agua Corriente No"
+    assert _campo(texto, "Ubicación") == "Potrero De Garay"
+
+
+def test_cantidad_descriptiva_acepta_numero_o_palabra_explicita():
+    assert _cantidad_descriptiva("Tiene 2 baños completos", r"ba[nñ]os?") == 2
+    assert _cantidad_descriptiva("Ofrece dos baños completos", r"ba[nñ]os?") == 2
+    assert _cantidad_descriptiva("Baño zonificado", r"ba[nñ]os?") is None
+
+
+def test_cantidad_descriptiva_no_acepta_segunda_alternativa_sin_cantidad():
+    assert _cantidad_descriptiva(
+        "Amplias habitaciones con buena luz", r"dormitorios?|habitaciones?"
+    ) is None
+    assert _cantidad_descriptiva(
+        "Cuenta con tres habitaciones", r"dormitorios?|habitaciones?"
+    ) == 3
 
 
 def test_las_expensas_van_a_datos_extra_no_a_una_columna_nueva():
@@ -423,12 +452,69 @@ def test_un_404_es_ausencia_definitiva_no_error():
                         "source_url": "https://alfa.com.ar/p/9-x"}, fuente()) is None
 
 
+def test_generico_anota_404_de_catalogo_para_revalidacion_diferida():
+    from connectors.generico import GenericoConnector
+
+    url = "https://alfa.com.ar/propiedad.php?id=900"
+    c = GenericoConnector(DescargadorFalso(
+        {}, {url: B.ErrorPermanente("http 404")}))
+    actual = B.Fuente("ag-1", "Alfa", "https://alfa.com.ar", 7)
+    assert c.normalize({"source_listing_id": "900", "source_url": url},
+                       actual) is None
+    assert c.errores and c.errores[0]["etapa"] == "detalle_permanente"
+
+
 def test_un_error_transitorio_se_anota_y_no_frena_la_fuente():
     c = conector({"https://alfa.com.ar/p/": FICHA},
                  {"https://alfa.com.ar/p/9-x": B.ErrorTransitorio("timeout")})
     assert c.normalize({"source_listing_id": "9",
                         "source_url": "https://alfa.com.ar/p/9-x"}, fuente()) is None
     assert c.errores and c.errores[0]["etapa"] == "detalle"
+
+
+def test_un_detalle_transitorio_se_reintenta_al_final_del_lote():
+    """Una ventana inestable no debe obligar a repetir 54 fichas sanas.
+
+    El primer intento queda auditado por el connector y el pipeline vuelve a
+    pedir solamente esa ficha una vez que termino el resto del inventario.
+    """
+    from scripts.run_rollout import _procesar_con
+
+    class ConnectorTransitorio(B.Connector):
+        nombre = "prueba"
+
+        def __init__(self):
+            super().__init__()
+            self.intentos = 0
+
+        def discover(self, _fuente):
+            return {"variante": "TEST", "soportada": True,
+                    "total_declarado": 1}
+
+        def fetch_listing(self, _fuente, _plan):
+            yield {"source_listing_id": "1",
+                   "source_url": "https://alfa.test/p/1", "pagina": 1}
+
+        def normalize(self, crudo, fuente_actual):
+            self.intentos += 1
+            if self.intentos == 1:
+                self.anotar_error(fuente_actual, "detalle",
+                                  B.ErrorTransitorio("timeout"))
+                return None
+            return B.PropiedadNormalizada(
+                canonical_agency_id=fuente_actual.canonical_agency_id,
+                source_listing_id=crudo["source_listing_id"],
+                source_url=crudo["source_url"], connector=self.nombre,
+                inmobiliaria_id=fuente_actual.inmobiliaria_id)
+
+    connector = ConnectorTransitorio()
+    actual = B.Fuente("ag-1", "Alfa", "https://alfa.test", 7)
+    resultado = _procesar_con(connector, actual, 0, True, 60)
+    assert resultado["detalles_obtenidos"] == 1
+    assert resultado["detalles_fallidos"] == 0
+    assert resultado["reintentos_diferidos"] == 1
+    assert resultado["detalles_recuperados_diferidos"] == 1
+    assert connector.intentos == 2
 
 
 def test_el_backoff_esta_configurado():
@@ -461,6 +547,8 @@ def test_todo_lo_extra_cabe_en_datos_extra():
     p = norm()
     assert isinstance(p.extra, dict)
     json.dumps(p.extra)  # tiene que ser serializable a jsonb
+
+
 
 
 # --------------------------------------------------------- robustez del runner
@@ -572,6 +660,58 @@ def test_wordpress_sin_inventario_no_se_fuerza():
     assert list(c.fetch_listing(wp_fuente(), plan)) == []
 
 
+def test_wordpress_posts_son_inventario_solo_con_taxonomias_cruzadas():
+    types = json.dumps({
+        "post": {"rest_base": "posts", "taxonomies": [
+            "category", "post_tag", "localidad", "operacion"]}})
+    operations = json.dumps([
+        {"id": 9, "name": "Alquiler", "slug": "alquiler", "count": 1},
+        {"id": 29, "name": "Venta", "slug": "venta", "count": 2},
+    ])
+    categories = json.dumps([
+        {"id": 4, "name": "Casas", "slug": "casas", "count": 3}])
+    locations = json.dumps([
+        {"id": 14, "name": "San Antonio de Areco",
+         "slug": "san-antonio-de-areco", "count": 3}])
+    items = [{
+        "id": 10179,
+        "link": "https://wp.com.ar/venta-casa-10179",
+        "type": "post", "modified": "2026-08-27T17:24:54",
+        "title": {"rendered": "VENTA | Casa San Antonio de Areco"},
+        "content": {"rendered": (
+            '<p>Casa con 2 dormitorios y 1 baño. USD 180.000</p>'
+            '<img src="https://wp.com.ar/casa.jpg">')},
+        "categories": [4], "localidad": [14], "operacion": [29],
+    }]
+    c = wp_conector({
+        "https://wp.com.ar/wp-json/wp/v2/types": types,
+        "https://wp.com.ar/wp-json/wp/v2/operacion?": operations,
+        "https://wp.com.ar/wp-json/wp/v2/categories?": categories,
+        "https://wp.com.ar/wp-json/wp/v2/localidad?": locations,
+        "https://wp.com.ar/wp-json/wp/v2/posts?": json.dumps(items),
+        "https://wp.com.ar/venta-casa-10179": "<html></html>",
+    })
+    plan = c.discover(wp_fuente())
+    assert plan["variante"] == "WORDPRESS_POST_TAXONOMY"
+    assert plan["total_declarado"] == 3
+    raw = list(c.fetch_listing(wp_fuente(), plan))
+    assert raw[0]["post_taxonomy_catalog"] is True
+    prop = c.normalize(raw[0], wp_fuente())
+    assert (prop.operacion, prop.tipo_propiedad) == ("venta", "casa")
+    assert prop.ciudad == "San Antonio de Areco"
+    assert (prop.precio, prop.moneda) == (180000.0, "USD")
+
+
+def test_wordpress_no_trata_un_blog_comun_como_inventario():
+    types = json.dumps({
+        "post": {"rest_base": "posts", "taxonomies": ["category", "post_tag"]}})
+    c = wp_conector({
+        "https://wp.com.ar/wp-json/wp/v2/types": types,
+        "https://wp.com.ar/": '<a href="/noticias/mercado-inmobiliario">Nota</a>',
+    })
+    assert c.discover(wp_fuente())["soportada"] is False
+
+
 def test_wordpress_pagina_por_rest_y_corta_al_agotarse():
     c = wp_conector()
     f = wp_fuente()
@@ -624,6 +764,110 @@ def test_wordpress_produce_la_misma_representacion_normalizada():
     p = c.normalize(list(c.fetch_listing(f, c.discover(f)))[0], f)
     assert isinstance(p, B.PropiedadNormalizada)
     assert p.hash_dedup and p.fingerprint
+
+
+def test_wordpress_rest_usa_taxonomias_y_meta_sin_inventar_campos():
+    tipos = json.dumps({
+        "property": {"rest_base": "properties", "taxonomies": [
+            "property_type", "property_status", "property_state",
+            "property_city", "property_area"]}})
+    item = [{
+        "id": 77, "link": "https://wp.com.ar/property/casa-77/",
+        "type": "property", "modified": "2026-08-01T10:00:00",
+        "title": {"rendered": "Oportunidad"},
+        "content": {"rendered": "<p>Baño: 1</p>"},
+        "property_type": [1], "property_status": [2], "property_state": [3],
+        "property_city": [4], "property_area": [5],
+        "property_meta": {
+            "fave_property_price": ["125000"], "fave_currency": ["USD"],
+            "fave_property_address": ["San Martin 123"],
+            "fave_property_bedrooms": ["2"], "fave_property_rooms": ["3"],
+            "fave_property_size": ["80"], "fave_property_land": ["100"],
+            "houzez_geolocation_lat": ["-24.18"],
+            "houzez_geolocation_long": ["-65.31"],
+        },
+    }]
+    paginas = {
+        "https://wp.com.ar/wp-json/wp/v2/types": tipos,
+        "https://wp.com.ar/wp-json/wp/v2/property_type?": json.dumps([
+            {"id": 1, "name": "Galp�n", "slug": "galpon"}]),
+        "https://wp.com.ar/wp-json/wp/v2/property_status?": json.dumps([
+            {"id": 2, "name": "Venta", "slug": "venta"}]),
+        "https://wp.com.ar/wp-json/wp/v2/property_state?": json.dumps([
+            {"id": 3, "name": "Jujuy", "slug": "jujuy"}]),
+        "https://wp.com.ar/wp-json/wp/v2/property_city?": json.dumps([
+            {"id": 4, "name": "San Salvador", "slug": "san-salvador"}]),
+        "https://wp.com.ar/wp-json/wp/v2/property_area?": json.dumps([
+            {"id": 5, "name": "Centro", "slug": "centro"}]),
+        "https://wp.com.ar/wp-json/wp/v2/properties?": json.dumps(item),
+        # El widget HTML contradice el REST. No debe contaminar cantidades.
+        "https://wp.com.ar/property/casa-77/": "<p>9 baños</p>",
+    }
+    c = wp_conector(paginas)
+    f = wp_fuente()
+    crudo = list(c.fetch_listing(f, c.discover(f)))[0]
+    p = c.normalize(crudo, f)
+    assert (p.operacion, p.tipo_propiedad) == ("venta", "galpon")
+    assert (p.direccion, p.barrio, p.ciudad, p.provincia) == (
+        "San Martin 123", "Centro", "San Salvador", "Jujuy")
+    assert (p.precio, p.moneda) == (125000.0, "USD")
+    assert (p.ambientes, p.dormitorios, p.banos) == (3, 2, 1)
+    assert (p.superficie_total, p.superficie_cubierta) == (100.0, 80.0)
+    assert (p.latitud, p.longitud) == (-24.18, -65.31)
+    assert p.extra["source_fields_provided"]["tipo_propiedad"] is True
+
+
+def test_wordpress_elimina_timestamp_dinamico_de_descripcion():
+    c = wp_conector()
+    f = wp_fuente()
+    base = {
+        "source_listing_id": "8", "source_url": "https://wp.com.ar/property/8/",
+        "pagina": 1, "taxonomy_terms": {},
+    }
+    def normalizada(hora: str):
+        return c.normalize({**base, "rest": {
+            "id": 8, "type": "property", "title": {"rendered": "Casa USD 10.000"},
+            "content": {"rendered": (
+                "<p>Descripción estable.</p> Actualizado el día: 2026-08-28 " + hora)},
+        }}, f)
+    una = normalizada("18:44:56")
+    dos = normalizada("18:59:44")
+    assert una.descripcion == "Descripción estable."
+    assert una.fingerprint == dos.fingerprint
+
+
+def test_wordpress_rechaza_coordenadas_fuera_de_argentina_y_precio_cero():
+    c = wp_conector()
+    f = wp_fuente()
+    p = c.normalize({
+        "source_listing_id": "9", "source_url": "https://wp.com.ar/property/9/",
+        "pagina": 1, "taxonomy_terms": {}, "rest": {
+            "id": 9, "type": "property", "title": {"rendered": "Terreno"},
+            "content": {"rendered": "<p>Terreno disponible</p>"},
+            "property_meta": {
+                "fave_property_price": ["0"], "fave_currency": ["USD"],
+                "houzez_geolocation_lat": ["25.68654"],
+                "houzez_geolocation_long": ["-80.431345"],
+            },
+        }}, f)
+    assert p.precio is None
+    assert (p.latitud, p.longitud) == (None, None)
+    assert "latitud:fuera_argentina" in p.extra["atributos_descartados"]
+    assert "longitud:fuera_argentina" in p.extra["atributos_descartados"]
+
+
+@pytest.mark.parametrize(("texto", "esperada"), [
+    ("Posee una superficie total de 108 m2.", "108"),
+    ("Departamento cómodo de 48 m² de superficie total.", "48"),
+    ("Superficie total: 1.375 m2", "1.375"),
+])
+def test_wordpress_superficie_admite_redacciones_explicitas(texto, esperada):
+    assert WordPressConnector._superficie(texto, r"superficie total") == esperada
+
+
+def test_wordpress_superficie_no_infiere_dimensiones_de_lote():
+    texto = "Lote de 8,50 metros de frente por 29,50 metros de fondo"
+    assert WordPressConnector._superficie(texto, r"superficie total|terreno") is None
 
 
 def test_dos_connectors_distintos_no_colisionan_en_identidad():
@@ -935,6 +1179,13 @@ def test_una_descripcion_demasiado_corta_no_cuenta():
     assert p.descripcion is None
 
 
+def test_caracteristicas_dentro_de_la_descripcion_no_la_trunca():
+    texto = ("DESCRIPCION Casa impecable en Urca Caracteristicas: ingreso "
+             "jerarquizado, living comedor, cocina y patio amplio para la familia. "
+             "Contacto")
+    assert _descripcion(texto) and "Caracteristicas" in _descripcion(texto)
+
+
 def test_century21_usa_la_url_que_publica_la_fuente():
     """Construir "/v/propiedad/<id>" a mano daba una url inexistente, y
     source_url entra en el hash de identidad: cada propiedad habria quedado
@@ -997,6 +1248,329 @@ def test_generico_prefiere_el_sitemap():
     plan = gen_conector().discover(fuente())
     assert plan["variante"] == "SITEMAP" and plan["soportada"] is True
     assert plan["total_declarado"] == 2
+
+
+def test_generico_descubre_catalogo_php_query_solo_en_su_fuente() -> None:
+    home = ('<a href="/resultados.php?operacion=Venta">Venta</a>'
+            '<a href="/resultados.php?operacion=Alquiler">Alquiler</a>')
+    sale = "".join(
+        f'<a href="/propiedad.php?id={listing_id}&origen=tokko">ficha</a>'
+        for listing_id in (6296799, 6296904, 6296970))
+    rent = '<a href="/propiedad.php?id=8109268&origen=tokko">ficha</a>'
+    c = gen_conector({
+        "https://alfa.com.ar/resultados.php?operacion=Venta": sale,
+        "https://alfa.com.ar/resultados.php?operacion=Alquiler": rent,
+        "https://alfa.com.ar/": home,
+    })
+    plan = c.discover(fuente())
+    assert plan["variante"] == "QUERY_CATALOG_HTML"
+    assert plan["total_declarado"] == 4
+    crudos = list(c.fetch_listing(fuente(), plan))
+    assert {row["source_listing_id"] for row in crudos} == {
+        "6296799", "6296904", "6296970", "8109268"}
+    assert all(row["por_forma"] for row in crudos)
+
+
+def test_generico_descubre_y_normaliza_catalogo_php_ajax_sin_campos_internos() -> None:
+    home = ("".join(f'<script src="/js/vendor-{index}.js"></script>'
+                    for index in range(15))
+            + '<script src="/js/custom.js"></script>'
+            + '<script src="/js/main.js"></script>')
+    javascript = (
+        "function menuVentas(){searchParams={operacion:'V'};"
+        "window.open('resultados.php?search='+btoa('{}'));}"
+        "function menuAlquileres(){searchParams={operacion:'A'};}"
+        "$.ajax({url:'./ajax/search.php',data:{searchParams:{}}});"
+        "window.open('ficha.php?id='+item.idcasa+'&op='+item.operacion);"
+    )
+    sale = [
+        {"idcasa": str(8000 + index), "direccion": "65 e/ 116 y 117",
+         "nro": "180", "moneda": "u$s", "monto": "6500.00",
+         "comodidad": "Cochera descubierta en zona de facultades",
+         "subtipo": "Cochera", "localidad": "La Plata", "operacion": "V",
+         "latlng": "-34.92,-57.93", "fotos": ["../fotos/uno.jpg"],
+         "password": "no-debe-persistirse", "totalCount": 3}
+        for index in range(3)
+    ]
+
+    class AjaxDownloader(DescargadorFalso):
+        def bajar_formulario(self, _url, formulario, limite_bytes):
+            self.pedidos += 1
+            assert limite_bytes == 8_000_000
+            operation = formulario["searchParams[operacion]"]
+            return json.dumps(sale if operation == "V" else [])
+
+    downloader = AjaxDownloader({
+        "https://alfa.com.ar/js/custom.js": javascript,
+        "https://alfa.com.ar/js/main.js": javascript,
+        "https://alfa.com.ar/": home,
+    })
+    c = GenericoConnector(descargador=downloader)
+    actual = B.Fuente("ag-1", "Alfa", "https://alfa.com.ar/", 7,
+                      extra={"city": "La Plata", "province": "Buenos Aires"})
+    plan = c.discover(actual)
+    assert plan["variante"] == "PHP_AJAX_SEARCH"
+    assert plan["total_declarado"] == 3
+    assert all("password" not in row for row in plan["php_ajax_rows"])
+    crudos = list(c.fetch_listing(actual, plan))
+    prop = c.normalize(crudos[0], actual)
+    assert prop is not None
+    assert prop.source_listing_id == "8000"
+    assert prop.source_url.endswith("ficha.php?id=8000&op=V")
+    assert prop.precio == 6500 and prop.moneda == "USD"
+    assert prop.operacion == "venta" and prop.tipo_propiedad == "cochera"
+    assert prop.direccion == "65 e/ 116 y 117 180"
+    assert prop.latitud == -34.92 and prop.longitud == -57.93
+    assert prop.imagenes == ["https://alfa.com.ar/fotos/uno.jpg"]
+    serialized = json.dumps(prop.a_dict())
+    assert "no-debe-persistirse" not in serialized and "password" not in serialized
+
+
+def test_generico_confirma_catalogo_php_explicitamente_vacio() -> None:
+    c = gen_conector({
+        "https://alfa.com.ar/": '<a href="propiedades.php">Propiedades</a>',
+        "https://alfa.com.ar/propiedades.php": (
+            "<main><p>No se encontraron inmuebles publicados por este vendedor.</p></main>"
+        ),
+    })
+    plan = c.discover(fuente())
+    assert plan["variante"] == "EMPTY_CATALOG_HTML"
+    assert plan["soportada"] is True
+    assert plan["total_declarado"] == 0
+    assert list(c.fetch_listing(fuente(), plan)) == []
+
+
+def test_generico_detecta_catalogo_xintel_hidratado_por_api() -> None:
+    c = gen_conector({
+        "https://alfa.com.ar/": (
+            "<script>$.ajax({url:'https://xintelapi.com.ar/',data:{"
+            "'json':'resultados.fichas','inm':'ABC','apiK':'publicada'}});</script>"
+        ),
+    })
+    plan = c.discover(fuente())
+    assert plan["variante"] == "XINTEL_API"
+    assert plan["soportada"] is True
+    assert plan["xintel_inm"] == "ABC"
+
+
+def test_generico_descubre_catalogo_wordpress_editorial_con_evidencia_cruzada() -> None:
+    home = ('<link href="/wp-content/theme.css">'
+            '<a href="/alquiler/">Alquiler</a><a href="/venta/">Venta</a>')
+    categories = json.dumps([
+        {"id": 9, "name": "Alquiler", "slug": "alquiler", "count": 2},
+        {"id": 10, "name": "Venta", "slug": "venta", "count": 1},
+    ])
+    rent = (
+        '<article class="et_pb_post post category-alquiler">'
+        '<a href="/mitre-123/">Mitre 123</a></article>'
+        '<article class="et_pb_post post category-alquiler">'
+        '<a href="/rioja-456/">Rioja 456</a></article>')
+    sale = ('<article class="et_pb_post post category-venta">'
+            '<a href="/cordoba-789/">Cordoba 789</a></article>')
+    posts = json.dumps([
+        {"id": 101, "link": "https://alfa.com.ar/mitre-123/",
+         "slug": "mitre-123", "title": {"rendered": "Mitre 123"},
+         "categories": [9]},
+        {"id": 102, "link": "https://alfa.com.ar/rioja-456/",
+         "slug": "rioja-456", "title": {"rendered": "Rioja 456"},
+         "categories": [9]},
+        {"id": 103, "link": "https://alfa.com.ar/cordoba-789/",
+         "slug": "cordoba-789", "title": {"rendered": "Cordoba 789"},
+         "categories": [10]},
+    ])
+    c = gen_conector({
+        "https://alfa.com.ar/": home,
+        "https://alfa.com.ar/alquiler/": rent,
+        "https://alfa.com.ar/venta/": sale,
+        "https://alfa.com.ar/wp-json/wp/v2/categories?per_page=100"
+        "&_fields=id,name,slug,count": categories,
+        "https://alfa.com.ar/wp-json/wp/v2/posts?categories=9,10&per_page=100"
+        "&page=1&_fields=id,link,slug,title,categories": posts,
+    })
+    plan = c.discover(fuente())
+    assert plan["variante"] == "WORDPRESS_CATEGORY_CATALOG"
+    assert plan["total_declarado"] == 3
+    rows = list(c.fetch_listing(fuente(), plan))
+    assert [(row["source_listing_id"], row["operacion_catalogo"])
+            for row in rows] == [("101", "alquiler"), ("102", "alquiler"),
+                                 ("103", "venta")]
+    assert all(row["catalogo_runtime_verificado"] for row in rows)
+
+
+def test_generico_no_acepta_posts_wordpress_que_no_coinciden_con_catalogo() -> None:
+    c = gen_conector({
+        "https://alfa.com.ar/": (
+            '<link href="/wp-content/theme.css"><a href="/venta/">Venta</a>'),
+        "https://alfa.com.ar/venta/": (
+            '<article class="et_pb_post category-venta">'
+            '<a href="/propiedad-real-123/">Propiedad</a></article>'),
+        "https://alfa.com.ar/wp-json/wp/v2/categories?per_page=100"
+        "&_fields=id,name,slug,count": json.dumps([
+            {"id": 10, "slug": "venta", "count": 3}]),
+    })
+    plan = c.discover(fuente())
+    assert plan["variante"] != "WORDPRESS_CATEGORY_CATALOG"
+
+
+def test_generico_descubre_y_agota_catalogo_mapaprop() -> None:
+    home = (
+        '<footer>powered by MAPAPROP</footer>'
+        '<a href="/buscar/?type=&operation=&view=list&page=0">Propiedades</a>')
+    page0 = (
+        '<p>Se encontraron 5 propiedades</p>'
+        '<a href="/propiedad/venta-de-casa-en-haedo-380-1001">Uno</a>'
+        '<a href="/propiedad/venta-de-casa-en-haedo-380-1001">Uno repetido</a>'
+        '<a href="/propiedad/venta-de-ph-en-haedo-380-1002">Dos</a>'
+        '<a href="/propiedad/alquiler-de-local-en-moron-380-1003">Tres</a>'
+        '<a href="/buscar/?type=&operation=&view=list&page=1">2</a>')
+    page1 = (
+        '<p>Se encontraron 5 propiedades</p>'
+        '<a href="/propiedad/venta-de-terreno-en-castelar-380-1004">Cuatro</a>'
+        '<a href="/propiedad/venta-de-departamento-en-haedo-380-1005">Cinco</a>')
+    c = gen_conector({
+        "https://alfa.com.ar/": home,
+        "https://alfa.com.ar/buscar/?type=&operation=&view=list&page=0": page0,
+        "https://alfa.com.ar/buscar/?type=&operation=&view=list&page=1": page1,
+    })
+    plan = c.discover(fuente())
+    assert plan["variante"] == "MAPAPROP_HTML"
+    assert plan["total_declarado"] == 5 and plan["per_page"] == 3
+    rows = list(c.fetch_listing(fuente(), plan))
+    assert [row["source_listing_id"] for row in rows] == [
+        "1001", "1002", "1003", "1004", "1005"]
+    assert [row["pagina"] for row in rows] == [1, 1, 1, 2, 2]
+    assert all(row["mapaprop_catalog"] for row in rows)
+
+
+def test_generico_no_habilita_mapaprop_sin_catalogo_verificable() -> None:
+    c = gen_conector({
+        "https://alfa.com.ar/": (
+            '<footer>powered by MAPAPROP</footer>'
+            '<a href="/buscar/?view=list&page=0">Propiedades</a>'),
+        "https://alfa.com.ar/buscar/?view=list&page=0": (
+            '<p>Se encontraron 90 propiedades</p><p>sin fichas</p>'),
+    })
+    assert c.discover(fuente())["variante"] != "MAPAPROP_HTML"
+
+
+def test_generico_normaliza_ficha_mapaprop_desde_bloques_rotulados() -> None:
+    detail = (
+        '<html><head><meta property="og:title" '
+        'content="VENTA - Departamento 3 Ambientes en Haedo"></head><body>'
+        '<div class="price nota">Valor: USD 65000</div>'
+        '<div class="description"><h3>Descripcion</h3><div><p>'
+        'Codigo 380-2584. Living comedor luminoso, cocina funcional y terraza '
+        'compartida en el complejo.</p></div></div>'
+        '<h3>Ubicacion:</h3><ul>'
+        '<li><strong>Calle:</strong> Ramon Carrillo 325</li>'
+        '<li><strong>Localidad/Barrio:</strong> Haedo</li>'
+        '<li><strong>Municipio:</strong> Moron</li>'
+        '<li><strong>Provincia:</strong> Buenos Aires</li></ul>'
+        '<ul class="list-inline"><li>1 dormitorio/s</li>'
+        '<li>2 Ambientes / espacios</li><li>1 bano/s completo/s</li>'
+        '<li>40 m2 de superficie cubierta</li><li>45 m2 de superficie total</li></ul>'
+        '<div id="photos"><a href="https://images.mapaprop.app/photos/380/1001/1.jpg">Foto</a>'
+        '<img src="https://images.mapaprop.app/photos/380/1001/1t.jpg"></div>'
+        '<script>var latitude = "-34.6382"; var longitude = "-58.5664";</script>'
+        + '<p>contenido estable para superar el minimo de la ficha</p>' * 8
+        + '</body></html>')
+    url = "https://alfa.com.ar/propiedad/venta-de-departamento-en-haedo-380-1001"
+    c = gen_conector({url: detail})
+    prop = c.normalize({
+        "source_listing_id": "1001", "source_url": url, "pagina": 1,
+        "por_forma": True, "catalogo_runtime_verificado": True,
+        "mapaprop_catalog": True,
+    }, fuente())
+    assert prop is not None
+    assert prop.descripcion.startswith("Codigo 380-2584")
+    assert (prop.precio, prop.moneda, prop.operacion) == (65000, "USD", "venta")
+    assert (prop.direccion, prop.barrio, prop.ciudad, prop.provincia) == (
+        "Ramon Carrillo 325", "Haedo", "Moron", "Buenos Aires")
+    assert (prop.dormitorios, prop.ambientes, prop.banos) == (1, 2, 1)
+    assert (prop.superficie_cubierta, prop.superficie_total) == (40, 45)
+    assert prop.imagenes == [
+        "https://images.mapaprop.app/photos/380/1001/1.jpg"]
+    assert prop.extra["via"] == "mapaprop_html"
+    assert prop.extra["source_fields_provided"]["direccion"] is True
+
+
+def test_generico_normaliza_ficha_wordpress_editorial_sin_banners_ni_thumbnails() -> None:
+    detail = (
+        '<html><head><title>Mitre 123 | Alfa</title></head><body>'
+        '<article class="post category-alquiler">'
+        '<img src="/wp-content/uploads/header-alquiler.jpg">'
+        '<h2>Mitre 123</h2><p>Departamento luminoso con cocina integrada, '
+        'balcon al frente y excelente ventilacion.</p>'
+        '<p>Precio alquiler mensual: $ 380.000</p>'
+        '<div class="et_pb_gallery">'
+        '<a href="/wp-content/uploads/WhatsApp-Image-depto.jpg">'
+        '<img src="/wp-content/uploads/WhatsApp-Image-depto-480x320.jpg"></a></div>'
+        '<p>Consultar por esta propiedad</p></article>'
+        + '<p>relleno estable de la ficha.</p>' * 15 + '</body></html>')
+    c = gen_conector({"https://alfa.com.ar/mitre-123/": detail})
+    prop = c.normalize({
+        "source_listing_id": "101",
+        "source_url": "https://alfa.com.ar/mitre-123/",
+        "por_forma": True,
+        "catalogo_runtime_verificado": True,
+        "wordpress_category_catalog": True,
+        "titulo_catalogo": "Mitre 123",
+        "operacion_catalogo": "alquiler",
+    }, fuente())
+    assert prop is not None
+    assert prop.titulo == "Mitre 123" and prop.direccion == "Mitre 123"
+    assert prop.operacion == "alquiler" and prop.precio == 380000
+    assert prop.moneda == "ARS"
+    assert prop.descripcion.startswith("Departamento luminoso")
+    assert prop.imagenes == [
+        "https://alfa.com.ar/wp-content/uploads/WhatsApp-Image-depto.jpg"]
+    assert prop.extra["via"] == "wordpress_category_catalog"
+    assert prop.extra["source_fields_provided"]["descripcion"] is True
+
+
+def test_generico_normaliza_fila_xintel_estructurada() -> None:
+    c = gen_conector({})
+    prop = c._normalizar_xintel({
+        "source_listing_id": "127",
+        "source_url": "https://alfa.com.ar/casa-en-venta-ficha-abc127",
+        "pagina": 1,
+        "xintel": {
+            "titulo": "Casa en venta Barrio Centro 5 ambientes",
+            "tipo": "Casa", "operacion": "Venta", "precio": "U$S 450.000",
+            "direccion_completa": "Mitre al 500", "in_bar": "Centro",
+            "in_loc": "Rosario", "cantidad_ambientes": "5",
+            "cantidad_dormitorios": "4", "in_ban": "2",
+            "in_sto": "625.00", "in_cub": "384.00",
+            "latitud": "-32.95", "longitud": "-60.66",
+            "img_princ": "https://cdn.example/abc127_1.jpg",
+        },
+    }, fuente(), "<html><body>Ficha publica</body></html>")
+    assert prop.precio == 450000
+    assert prop.moneda == "USD"
+    assert prop.operacion == "venta"
+    assert prop.tipo_propiedad == "casa"
+    assert prop.ambientes == 5 and prop.dormitorios == 4 and prop.banos == 2
+    assert prop.superficie_total == 625 and prop.superficie_cubierta == 384
+    assert prop.imagenes == ["https://cdn.example/abc127_1.jpg"]
+
+
+def test_generico_query_php_no_confunde_extension_ph_con_departamento() -> None:
+    html = ("<html><head><meta property=\"og:title\" content=\"Terreno en La Falda\">"
+            "</head><body>Venta USD 12.500 Superficie total: 640 m2"
+            '<img src="/fotos/1.jpg"><img src="/fotos/2.jpg">'
+            '<img src="/fotos/3.jpg">' + " descripcion suficiente" * 20
+            + "</body></html>")
+    c = gen_conector({
+        "https://alfa.com.ar/propiedad.php?id=6296799&origen=tokko": html,
+    })
+    prop = c.normalize({
+        "source_listing_id": "6296799",
+        "source_url": "https://alfa.com.ar/propiedad.php?id=6296799&origen=tokko",
+        "por_forma": True,
+        "catalogo_runtime_verificado": True,
+    }, fuente())
+    assert prop is not None
+    assert prop.tipo_propiedad == "terreno"
 
 
 def test_generico_no_confunde_el_listado_con_una_ficha():
@@ -2289,13 +2863,14 @@ def test_una_foto_no_se_cuenta_dos_veces_por_venir_de_dos_atributos():
     assert GenericoConnector._imagenes_de(html, "https://alfa.com.ar/p/1") ==         ["https://alfa.com.ar/f/1.jpg"]
 
 
-def test_la_cobertura_se_mide_por_url_no_por_id_de_la_fuente():
+def test_la_cobertura_se_mide_por_url_y_duplica_solo_la_contabilidad():
     """La identidad con la que se guarda una propiedad es su URL. `_id_de`
     deriva el id de la ruta y dos fichas distintas pueden dar el mismo numero:
     una fuente que entrego sus 400 fichas figuraba con 50% de cobertura y
     quedaba ENUMERACION_INCOMPLETA con el inventario entero en la mano."""
     src = (ROOT / "scripts" / "run_rollout.py").read_text(encoding="utf-8")
-    assert 'r["cobertura"] = round(len(urls) / declarado, 4)' in src
+    assert 'contabilizadas = len(urls) + r["duplicados_en_listado"]' in src
+    assert 'min(contabilizadas, declarado) / declarado' in src
     assert 'urls = {a["source_url"] for a in avisos}' in src
     # El conteo de ids se sigue informando: sirve para ver colisiones.
     assert 'r["ids_unicos"] = len(set(ids))' in src
@@ -2342,3 +2917,169 @@ def test_una_fuente_lenta_no_retiene_la_corrida_entera():
 
     # Y una fuente cortada no da por ausente a nada: no la terminamos de mirar.
     assert 'confiable = confiable and not r.get("presupuesto_agotado")' in src
+
+
+# ----------------------------------------------------- Bitrix24 Landing
+# Regresion de un caso real: `roomix:alcami inmobiliaria`. El sitio publica su
+# inventario en la portada, sin ficha ni sitemap, y el conector lo reportaba
+# como VARIANTE_NO_SOPORTADA. La certificacion se detenia en NEEDS_FIX y el
+# inventario real quedaba invisible.
+def _tarjeta_landing(titulo: str, precio: str, subtitulo: str,
+                     texto: str = "Descripcion", imagen: str = "foto.jpg",
+                     file_id: str | None = None) -> str:
+    fid = f' data-fileid="{file_id}"' if file_id else ""
+    return (
+        '<article class="h-100">'
+        f'<h4 class="landing-block-node-card-title font-italic">{titulo}</h4>'
+        f'<img class="landing-block-node-card-img"{fid} src="data:image/svg+xml;base64,AAA" '
+        f'data-src="https://cdn.bitrix24.es/b1/landing/{imagen}">'
+        f'<div class="landing-block-node-card-price-subtitle"><span>{subtitulo}</span></div>'
+        f'<div class="landing-block-node-card-price g-font-weight-700">{precio}</div>'
+        f'<div class="landing-block-node-card-text g-mb-40"><p>{texto}</p></div>'
+        '</article>')
+
+
+BITRIX_HOME = (
+    '<html><head><link href="/bitrix/js/landing/css/landing_public.min.css"></head>'
+    '<body>'
+    # Bloque de servicios de la plantilla: sin precio, no es inventario.
+    '<article><h4 class="landing-block-node-card-title">Tasaciones</h4>'
+    '<div class="landing-block-node-card-text"><p>Tasamos tu propiedad</p></div></article>'
+    + _tarjeta_landing("LOTE COMERCIAL", "$60.000 Usd", "Aprovecha!",
+                       "LOTE EN CALLE REGALADO OLGUIN", file_id="4737")
+    + _tarjeta_landing("Calle La Pampa y Bariloche", "13.000 usd", "Valor de Venta",
+                       "9 LOTES DE 200 MT2", file_id="3507")
+    + '</body></html>')
+
+
+def test_generico_lee_el_inventario_de_una_landing_de_bitrix() -> None:
+    """El sitio no tiene ficha ni sitemap: si no se lee la portada, parece vacio."""
+    c = gen_conector({"https://alfa.com.ar/": BITRIX_HOME})
+    plan = c.discover(fuente())
+    assert plan["variante"] == "BITRIX_LANDING_CARDS"
+    assert plan["soportada"] is True
+    assert plan["total_declarado"] == 2
+
+
+def test_generico_no_cuenta_como_inmueble_una_tarjeta_de_servicios() -> None:
+    """"Tasaciones" es un bloque de la plantilla. Contarlo inflaria el
+    inventario con texto de marketing."""
+    c = gen_conector({"https://alfa.com.ar/": BITRIX_HOME})
+    titulos = {r["titulo"] for r in c.discover(fuente())["bitrix_rows"]}
+    assert "Tasaciones" not in titulos
+
+
+def test_generico_no_confunde_el_subtitulo_con_el_precio() -> None:
+    """`-card-price` y `-card-price-subtitle` comparten prefijo. Un match laxo
+    devuelve "Valor de Venta" como precio: un dato inventado y verosimil."""
+    c = gen_conector({"https://alfa.com.ar/": BITRIX_HOME})
+    filas = {r["titulo"]: r for r in c.discover(fuente())["bitrix_rows"]}
+    assert filas["Calle La Pampa y Bariloche"]["precio_texto"] == "13.000 usd"
+    assert filas["Calle La Pampa y Bariloche"]["subtitulo"] == "Valor de Venta"
+
+
+def test_generico_normaliza_la_tarjeta_sin_inventar_lo_que_falta() -> None:
+    c = gen_conector({"https://alfa.com.ar/": BITRIX_HOME})
+    f = fuente()
+    plan = c.discover(f)
+    props = [c.normalize(crudo, f) for crudo in c.fetch_listing(f, plan)]
+    por_titulo = {p.titulo: p for p in props}
+
+    pampa = por_titulo["Calle La Pampa y Bariloche"]
+    assert (pampa.precio, pampa.moneda) == (13000.0, "USD")
+    assert pampa.operacion == "venta"          # la fuente lo declara
+    assert pampa.imagenes                       # la foto diferida se recupera
+    # Lo que la tarjeta no publica queda ausente, nunca en cero.
+    for p in props:
+        assert p.dormitorios is None and p.ambientes is None
+        assert p.superficie_total is None and p.superficie_cubierta is None
+        assert p.ciudad is None and p.latitud is None and p.longitud is None
+
+
+def test_generico_no_afirma_la_operacion_que_la_fuente_no_declara() -> None:
+    """El subtitulo de esa tarjeta es "Aprovecha!". Suponer "venta" porque las
+    otras dos lo son seria inventar el campo que mas define una publicacion."""
+    c = gen_conector({"https://alfa.com.ar/": BITRIX_HOME})
+    f = fuente()
+    props = [c.normalize(x, f) for x in c.fetch_listing(f, c.discover(f))]
+    lote = next(p for p in props if p.titulo == "LOTE COMERCIAL")
+    assert lote.operacion is None
+    assert lote.precio == 60000.0 and lote.moneda == "USD"
+
+
+def test_generico_enumera_la_landing_de_forma_idempotente() -> None:
+    """La certificacion compara conjuntos de URLs entre dos corridas. Sin una
+    clave estable por tarjeta, cada corrida enumeraria un inventario distinto."""
+    c = gen_conector({"https://alfa.com.ar/": BITRIX_HOME})
+    f = fuente()
+    urls = [{x["source_url"] for x in c.fetch_listing(f, c.discover(f))}
+            for _ in range(2)]
+    assert urls[0] == urls[1]
+    assert len(urls[0]) == 2      # una URL distinta por tarjeta, no una sola
+
+
+def test_generico_da_identidad_propia_a_cada_tarjeta_de_la_landing() -> None:
+    """Regresion del bug que dejo a `roomix:alcami inmobiliaria` en NEEDS_FIX.
+
+    Que las URLs sean distintas COMO TEXTO no alcanza. `hash_dedup` normaliza
+    con urlparse, que descarta el fragmento, asi que `portada/#a` y
+    `portada/#b` eran la MISMA propiedad: las tarjetas se pisaban entre si en
+    el checkpoint y la segunda corrida las reportaba MODIFICADA aunque el
+    contenido fuera identico. Lo que hay que comparar es la identidad que usa
+    el pipeline, no la cadena que escribimos.
+    """
+    c = gen_conector({"https://alfa.com.ar/": BITRIX_HOME})
+    f = fuente()
+    corridas = [[c.normalize(x, f) for x in c.fetch_listing(f, c.discover(f))]
+                for _ in range(2)]
+    for props in corridas:
+        assert len({p.hash_dedup for p in props}) == len(props) == 2
+    # La identidad tiene que ser la misma entre corridas, no solo distinta.
+    assert ({p.hash_dedup for p in corridas[0]}
+            == {p.hash_dedup for p in corridas[1]})
+
+
+def test_generico_no_fusiona_dos_tarjetas_que_comparten_titulo() -> None:
+    """Dos lotes pueden publicarse con el mismo titulo. Derivar la identidad
+    del titulo los volveria una sola propiedad y haria desaparecer inventario
+    real, que es justo lo que esta estrategia vino a evitar."""
+    home = (
+        '<html><head><link href="/bitrix/js/landing/css/landing_public.min.css">'
+        '</head><body>'
+        + _tarjeta_landing("LOTE", "$10.000 Usd", "Valor de Venta",
+                           file_id="11")
+        + _tarjeta_landing("LOTE", "$20.000 Usd", "Valor de Venta",
+                           file_id="22")
+        + '</body></html>')
+    c = gen_conector({"https://alfa.com.ar/": home})
+    f = fuente()
+    props = [c.normalize(x, f) for x in c.fetch_listing(f, c.discover(f))]
+    assert len(props) == 2
+    assert len({p.hash_dedup for p in props}) == 2
+
+
+def test_generico_cae_al_titulo_cuando_la_tarjeta_no_trae_id_de_origen() -> None:
+    """No toda landing marca `data-fileid`. Sin ese id la identidad sale del
+    titulo, y el campo de trazabilidad queda ausente en vez de inventado."""
+    home = (
+        '<html><head><link href="/bitrix/js/landing/css/landing_public.min.css">'
+        '</head><body>'
+        + _tarjeta_landing("Casa en Godoy Cruz", "$1.000 Usd", "Valor de Venta")
+        + _tarjeta_landing("Depto en Guaymallen", "$2.000 Usd", "Valor de Venta")
+        + '</body></html>')
+    c = gen_conector({"https://alfa.com.ar/": home})
+    f = fuente()
+    props = [c.normalize(x, f) for x in c.fetch_listing(f, c.discover(f))]
+    assert len({p.hash_dedup for p in props}) == 2
+    assert all(p.extra["identificador_de_origen"] is None for p in props)
+
+
+def test_generico_no_ve_landing_de_bitrix_donde_no_la_hay() -> None:
+    """Sin la marca de la plataforma no se activa: un `<article>` con precio es
+    algo que cualquier sitio puede tener."""
+    c = gen_conector({"https://alfa.com.ar/": (
+        '<html><body><article>'
+        '<h4 class="landing-block-node-card-title">Casa</h4>'
+        '<div class="landing-block-node-card-price">USD 100</div>'
+        '</article></body></html>')})
+    assert c.discover(fuente())["variante"] != "BITRIX_LANDING_CARDS"

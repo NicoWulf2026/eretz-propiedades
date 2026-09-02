@@ -39,6 +39,7 @@ from config import (
     SUPABASE_SERVICE_ROLE_KEY,
     SUPABASE_TABLE,
     SUPABASE_URL,
+    require_supabase_config,
 )
 from models import Propiedad
 
@@ -1393,6 +1394,7 @@ def run(
       Fase 2 — fuentes SOURCE_CONFIGS (config.py)
       Fase 3 — scrapers especializados (APL, Raffin, etc.)
     """
+    require_supabase_config()
     session = SessionFactory.make()
     supabase = SupabaseClient(session, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_TABLE)
 

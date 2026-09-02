@@ -27,7 +27,6 @@ import os
 import random
 import re
 import ssl
-import sys
 import threading
 import time
 import urllib.error
@@ -35,7 +34,7 @@ import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Iterator
+from typing import Any, Iterator
 
 CONNECTOR_API_VERSION = "connector_v1"
 
@@ -660,7 +659,8 @@ _OPERACIONES = {"venta": "venta", "vender": "venta", "sale": "venta",
 
 _TIPOS = {
     "casa": "casa", "chalet": "casa", "quinta": "casa", "duplex": "casa",
-    "departamento": "departamento", "depto": "departamento", "ph": "departamento",
+    "departamento": "departamento", "depto": "departamento",
+    "dpto": "departamento", "ph": "departamento",
     "loft": "departamento", "monoambiente": "departamento",
     "terreno": "terreno", "lote": "terreno", "campo": "terreno", "fraccion": "terreno",
     "local": "local", "fondo de comercio": "local",
@@ -740,10 +740,25 @@ def a_numero(texto: Any) -> float | None:
 
 
 def a_entero(texto: Any) -> int | None:
-    v = a_numero(texto)
-    if v is None:
+    """Parse a single integer token, never a concatenation of several values.
+
+    ``a_numero`` is intentionally permissive for prices and surfaces, where
+    punctuation is meaningful.  Counts are different: ``"3 baños + 1
+    toilette"`` must not become ``31`` and ``"1 + 1"`` must not become
+    ``11``.  A count with more than one numeric token is ambiguous and fails
+    closed.
+    """
+    if texto is None or isinstance(texto, bool):
         return None
-    return int(v) if 0 <= v < 1000 else None
+    if isinstance(texto, int):
+        return texto if 0 <= texto < 1000 else None
+    if isinstance(texto, float):
+        return int(texto) if texto.is_integer() and 0 <= texto < 1000 else None
+    tokens = re.findall(r"(?<![\d.,])\d+(?![\d.,])", str(texto))
+    if len(tokens) != 1:
+        return None
+    value = int(tokens[0])
+    return value if 0 <= value < 1000 else None
 
 
 def detectar_moneda(texto: Any) -> str | None:

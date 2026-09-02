@@ -36,7 +36,8 @@ import requests
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 
-from config import SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL
+from config import (SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL,
+                    require_supabase_config)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -578,4 +579,6 @@ Ejemplos:
     if args.debug:
         logging.getLogger().setLevel(logging.DEBUG)
 
+    if not args.dry_run:
+        require_supabase_config()
     scrape_zonaprop_agencias(dry_run=args.dry_run, provincia=args.provincia)

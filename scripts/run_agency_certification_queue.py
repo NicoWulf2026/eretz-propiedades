@@ -1,0 +1,282 @@
+#!/usr/bin/env python
+"""Cola deterministica y reanudable para AGENCY_CERTIFIER.
+
+Procesa una inmobiliaria por vez. Ante NEEDS_FIX se detiene para que el defecto
+se corrija antes de contaminar la evaluacion de las siguientes fuentes.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import sys
+import time
+from collections import Counter, defaultdict
+from pathlib import Path
+from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from scripts.agency_certifier import (
+    CERTIFIER_VERSION,
+    append_jsonl,
+    certify,
+    choose_connector,
+    load_catalog,
+    read_jsonl,
+    resolve_identity,
+    update_rollups,
+    version_del_codigo,
+    write_json,
+)
+from scripts.agency_fingerprints import (
+    GENERIC_STRATEGY_METHODS,
+    strategy_fingerprint,
+    strategy_for,
+)
+
+TERMINAL = {
+    "CERTIFIED_COMPLETE", "CERTIFIED_BEST_AVAILABLE", "BLOCKED_EXTERNAL",
+    "IDENTITY_PENDING", "NO_INVENTORY_CONFIRMED",
+}
+
+
+def queue_fingerprint(queue: list[str], mode: str) -> str:
+    payload = json.dumps({"mode": mode, "queue": queue},
+                         ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(payload.encode()).hexdigest()[:16]
+
+
+def fingerprint_inventory() -> dict[str, dict[str, str]]:
+    connectors = {
+        name: version_del_codigo(name)
+        for name in ("century21", "generico", "tokko", "wasi", "wordpress")
+    }
+    strategies = {
+        strategy: strategy_fingerprint("generico", strategy)
+        for strategy in sorted(GENERIC_STRATEGY_METHODS)
+    }
+    strategies.update({
+        name: strategy_fingerprint(name, name)
+        for name in ("century21", "tokko", "wasi", "wordpress")
+    })
+    return {"connector_fingerprints": connectors,
+            "strategy_fingerprints": strategies}
+
+
+def progress_payload(*, mode: str, universe: int, queue: list[str],
+                     pending: list[str], current_count: int,
+                     started_at: str, global_cursor: int = 0,
+                     last_terminal_agency: str | None = None,
+                     current_agency: str | None = None,
+                     current_phase: str = "READY") -> dict[str, Any]:
+    now = time.strftime("%Y-%m-%dT%H:%M:%S")
+    return {
+        "checkpoint_schema_version": 2,
+        "mode": mode,
+        "universe": universe,
+        "queue_size": len(queue),
+        "queue_fingerprint": queue_fingerprint(queue, mode),
+        "global_cursor": global_cursor,
+        "last_terminal_agency": last_terminal_agency,
+        "next_agency": pending[0] if pending else None,
+        "pending_count": len(pending),
+        "remaining": len(pending),
+        "certified_count": current_count,
+        "started_at": started_at,
+        "last_heartbeat": now,
+        "updated_at": now,
+        "current_agency": current_agency,
+        "current_phase": current_phase,
+        **fingerprint_inventory(),
+    }
+
+
+def is_current_result(previous: dict[str, Any],
+                      record: dict[str, dict[str, Any]]) -> bool:
+    """Decide si un cierre persistido sigue vigente.
+
+    ``IDENTITY_PENDING`` y los bloqueos resueltos antes de elegir conector no
+    tienen ``connector_version`` por diseño: dependen del certificador de
+    identidad, no del parser de propiedades. Exigirles una huella inexistente
+    hacía que cada reanudación repitiera miles de cierres terminales. Los
+    resultados que sí usaron un conector mantienen la comparación estricta de
+    fingerprint.
+    """
+    status = previous.get("status")
+    if status not in TERMINAL:
+        return False
+    if status == "IDENTITY_PENDING" or (
+            status == "BLOCKED_EXTERNAL" and not previous.get("connector_version")):
+        return previous.get("certifier_version") == CERTIFIER_VERSION
+    connector = previous.get("connector") or choose_connector(record)
+    if previous.get("strategy_fingerprint"):
+        strategy = previous.get("connector_strategy") or strategy_for(
+            connector, previous.get("publication_mechanism"))
+        return previous.get("strategy_fingerprint") == strategy_fingerprint(
+            connector, strategy)
+    return previous.get("connector_version") == version_del_codigo(connector)
+
+
+def inventory(record: dict[str, dict[str, Any]]) -> int:
+    platform = record["platform"]
+    values = [platform.get("declared_inventory"), platform.get("enumerated_inventory"),
+              platform.get("properties_normalized")]
+    return max([int(x) for x in values if isinstance(x, (int, float))] or [0])
+
+
+def bucket(record: dict[str, dict[str, Any]]) -> str:
+    amount = inventory(record)
+    if amount <= 11:
+        return "low"
+    if amount <= 100:
+        return "medium"
+    return "large"
+
+
+def pilot_queue(catalog: dict[str, dict[str, Any]], limit: int) -> list[str]:
+    groups: dict[tuple[str, str], list[str]] = defaultdict(list)
+    for canonical_id in sorted(catalog):
+        identity = resolve_identity(catalog[canonical_id], canonical_id)
+        if identity["identity_status"] != "READY":
+            continue
+        groups[(choose_connector(catalog[canonical_id]), bucket(catalog[canonical_id]))].append(canonical_id)
+    # Intercala plataforma y tamano; no toma las mas grandes primero porque el
+    # objetivo del piloto es descubrir clases de fallo, no maximizar filas.
+    selected: list[str] = []
+    keys = sorted(groups)
+    while len(selected) < limit and any(groups.values()):
+        for key in keys:
+            if groups[key] and len(selected) < limit:
+                selected.append(groups[key].pop(0))
+    return selected
+
+
+def full_queue(catalog: dict[str, dict[str, Any]]) -> list[str]:
+    return sorted(catalog)
+
+
+def latest_results(output: Path) -> dict[str, dict[str, Any]]:
+    latest: dict[str, dict[str, Any]] = {}
+    for row in read_jsonl(output / "AGENCY_CERTIFICATION_RESULTS.jsonl"):
+        latest[row["canonical_agency_id"]] = row
+    return latest
+
+
+def render_summary(output: Path, universe: int, latest: dict[str, dict[str, Any]],
+                   mode: str, stopped_on: str | None) -> None:
+    counts = Counter(row["status"] for row in latest.values())
+    lines = [
+        "# AGENCY CERTIFICATION SUMMARY", "",
+        f"- Updated: {time.strftime('%Y-%m-%dT%H:%M:%S')}",
+        f"- Mode: {mode}", f"- Canonical universe: {universe:,}",
+        f"- Agencies attempted: {len(latest):,}",
+        f"- Agencies not started: {universe - len(latest):,}",
+        f"- Stopped on: {stopped_on or 'none'}", "", "## Status", "",
+    ]
+    lines += [f"- {status}: {count:,}" for status, count in sorted(counts.items())]
+    lines += ["", "This report certifies read-only evidence only. It does not authorize a canary or write.", ""]
+    (output / "AGENCY_CERTIFICATION_SUMMARY.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--pilot", type=int, metavar="N")
+    mode.add_argument("--full", action="store_true")
+    parser.add_argument("--v2-dir", default=r"D:\INMO CAPITAL\ERETZ_SUPABASE_RECONCILIATION_V2_20260827")
+    parser.add_argument("--data-dir", default=r"D:\INMO CAPITAL\ERETZ_AGENCY_DATA")
+    parser.add_argument("--platform-directory", default=r"D:\INMO CAPITAL\agency_platform_directory.jsonl")
+    parser.add_argument("--preingestion-db", default=r"D:\INMO CAPITAL\ERETZ_SUPABASE_RECONCILIATION_V2_20260827\PREINGESTION_REBUILD.sqlite3")
+    parser.add_argument("--output", default=r"D:\INMO CAPITAL\ERETZ_AGENCY_CERTIFICATION_20260827")
+    parser.add_argument("--interval", type=float, default=1.5)
+    parser.add_argument("--budget", type=float, default=1800.0)
+    parser.add_argument("--max-listings", type=int, default=0)
+    parser.add_argument("--continue-after-fix", action="store_true")
+    args = parser.parse_args()
+    output = Path(args.output)
+    output.mkdir(parents=True, exist_ok=True)
+    catalog = load_catalog(Path(args.v2_dir), Path(args.data_dir),
+                           Path(args.platform_directory))
+    queue = pilot_queue(catalog, args.pilot) if args.pilot else full_queue(catalog)
+    mode_name = f"pilot-{args.pilot}" if args.pilot else "full"
+    existing = latest_results(output)
+    def current(key: str) -> bool:
+        return is_current_result(existing.get(key, {}), catalog[key])
+
+    stale = [key for key in queue if key in existing and not current(key)
+             and existing[key].get("status") in TERMINAL]
+    for key in stale:
+        append_jsonl(output / "AGENCY_MASTER_PROGRESS.jsonl", {
+            "canonical_agency_id": key, "status": "RECERTIFICATION_REQUIRED",
+            "reason": "connector code fingerprint changed",
+            "mode": mode_name, "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S")})
+    pending = [key for key in queue if not current(key)]
+    progress_path = output / "AGENCY_CERTIFICATION_PROGRESS.json"
+    previous_progress: dict[str, Any] = {}
+    if progress_path.exists():
+        try:
+            previous_progress = json.loads(progress_path.read_text(encoding="utf-8"))
+        except ValueError:
+            previous_progress = {}
+    current_queue_fingerprint = queue_fingerprint(queue, mode_name)
+    same_queue = previous_progress.get("queue_fingerprint") == current_queue_fingerprint
+    started_at = (previous_progress.get("started_at") if same_queue else None)
+    started_at = started_at or time.strftime("%Y-%m-%dT%H:%M:%S")
+    last_terminal = (previous_progress.get("last_terminal_agency")
+                     if same_queue else None)
+    global_cursor = int(previous_progress.get("global_cursor") or 0) if same_queue else 0
+    write_json(progress_path, progress_payload(
+        mode=mode_name, universe=len(catalog), queue=queue, pending=pending,
+        current_count=sum(current(key) for key in queue),
+        started_at=started_at, global_cursor=global_cursor,
+        last_terminal_agency=last_terminal))
+    stopped_on: str | None = None
+    for index, canonical_id in enumerate(pending, 1):
+        write_json(progress_path, progress_payload(
+            mode=mode_name, universe=len(catalog), queue=queue,
+            pending=pending[index - 1:],
+            current_count=sum(current(key) for key in queue),
+            started_at=started_at, global_cursor=global_cursor,
+            last_terminal_agency=last_terminal,
+            current_agency=canonical_id, current_phase="CERTIFY"))
+        result = certify(canonical_id, catalog, output, Path(args.preingestion_db),
+                         args.interval, args.max_listings, args.budget)
+        update_rollups(output, result)
+        append_jsonl(output / "AGENCY_MASTER_PROGRESS.jsonl", {
+            "canonical_agency_id": canonical_id, "status": result["status"],
+            "mode": mode_name, "position": index, "queue_size": len(queue),
+            "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S")})
+        existing[canonical_id] = result
+        terminal = result["status"] in TERMINAL
+        if terminal:
+            last_terminal = canonical_id
+            global_cursor = queue.index(canonical_id) + 1
+        remaining_pending = [key for key in pending[index:] if not current(key)]
+        phase = ("STOPPED_NEEDS_FIX" if result["status"] == "NEEDS_FIX"
+                 else "READY")
+        if phase == "STOPPED_NEEDS_FIX":
+            remaining_pending.insert(0, canonical_id)
+        checkpoint = progress_payload(
+            mode=mode_name, universe=len(catalog), queue=queue,
+            pending=remaining_pending,
+            current_count=sum(current(key) for key in queue),
+            started_at=started_at, global_cursor=global_cursor,
+            last_terminal_agency=last_terminal,
+            current_agency=(canonical_id if phase != "READY" else None),
+            current_phase=phase)
+        checkpoint.update({"attempted_in_this_run": index,
+                           "last_agency": canonical_id,
+                           "last_status": result["status"]})
+        write_json(progress_path, checkpoint)
+        print(json.dumps({"position": index, "total": len(pending),
+                          "agency": canonical_id, "status": result["status"]}), flush=True)
+        if result["status"] == "NEEDS_FIX" and not args.continue_after_fix:
+            stopped_on = canonical_id
+            break
+    render_summary(output, len(catalog), existing, mode_name, stopped_on)
+    return 2 if stopped_on else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

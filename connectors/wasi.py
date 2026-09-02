@@ -57,6 +57,87 @@ RE_LOC = re.compile(r"<loc>\s*([^<\s]+)\s*</loc>")
 RE_FOTO = re.compile(r"https://images?\.wasi\.co/[^\"'\s)]+")
 
 
+def _campos_wasi(html: str) -> dict[str, Any]:
+    """Compatibilidad con etiquetas singulares y mojibake del HTML Wasi."""
+    compatible = (html or "").replace("Ba�o:", "Banos:")
+    compatible = compatible.replace("Baño:", "Banos:")
+    compatible = compatible.replace("N�mero de planta:", "Numero de plantas:")
+    compatible = compatible.replace("Número de planta:", "Numero de plantas:")
+    return campos_de_ficha(compatible)
+
+
+def _descripcion_wasi(html: str) -> str | None:
+    match = re.search(r'"description"\s*:\s*"(.*?)"\s*,\s*"address"',
+                      html or "", re.S)
+    if not match:
+        return None
+    texto = match.group(1).encode().decode("unicode_escape", "ignore")
+    return limpiar(unescape(re.sub(r"<[^>]+>", " ", texto)))
+
+
+def _numeros_descriptivos(texto: str, etiqueta: str) -> list[float]:
+    hallados: dict[tuple[int, int], float] = {}
+    for patron in (rf"\b(\d{{1,2}})\s*(?:{etiqueta})\b",
+                   rf"\b(?:{etiqueta})\s*:?\s*(\d{{1,2}})\b"):
+        for match in re.finditer(patron, texto or "", re.I):
+            valor = a_numero(match.group(1))
+            if valor and 1 <= valor <= 99:
+                hallados[match.span()] = valor
+    return list(hallados.values())
+
+
+def _medidas_descriptivas(texto: str, patrones: tuple[str, ...]) -> list[float]:
+    valores: list[float] = []
+    for patron in patrones:
+        for match in re.finditer(patron, texto or "", re.I):
+            valor = a_numero(match.group(1))
+            if valor and 5 <= valor <= 100_000:
+                valores.append(valor)
+    return valores
+
+
+def _campos_descriptivos(texto: str | None,
+                         tipo_propiedad: str | None) -> tuple[dict[str, float], set[str]]:
+    """Valores escalares inequivocos de la descripcion y rechazos explicitos."""
+    texto = texto or ""
+    encontrados: dict[str, float] = {}
+    ambiguos: set[str] = set()
+    etiquetas = {
+        "ambientes": r"ambientes?",
+        "dormitorios": r"dormitorios?|habitaciones?",
+        "banos": r"ba(?:n|ñ|�)os?|toilettes?",
+    }
+    for campo, etiqueta in etiquetas.items():
+        valores = _numeros_descriptivos(texto, etiqueta)
+        if not valores:
+            continue
+        if tipo_propiedad == "terreno" or len(valores) != 1:
+            ambiguos.add(campo)
+        else:
+            encontrados[campo] = valores[0]
+
+    medidas = {
+        "superficie_total": _medidas_descriptivas(texto, (
+            r"superficie\s+(?:de\s+)?terreno\s*:?\s*([\d.,]+)\s*(?:m2|m²|mtrs?|metros?)",
+            r"\bterreno\s+(?:de\s+)?([\d.,]+)\s*(?:m2|m²|mtrs?|metros?)",
+            r"\blote\s+de\s+([\d.,]+)\s*(?:m2|m²|mtrs?|metros?)",
+            r"([\d.,]+)\s*(?:m2|m²|mtrs?|metros?)\s+totales\b",
+        )),
+        "superficie_cubierta": _medidas_descriptivas(texto, (
+            r"superficie(?:\s+total)?\s+cubierta\s*:?\s*([\d.,]+)\s*(?:m2|m²|mtrs?|metros?)",
+            r"([\d.,]+)\s*(?:m2|m²|mtrs?|metros?)\s+cubiert[oa]s?\b",
+            r"\bconstruidos?\s*:?\s*([\d.,]+)\s*(?:m2|m²|mtrs?|metros?)",
+        )),
+    }
+    for campo, valores in medidas.items():
+        unicos = set(valores)
+        if len(unicos) == 1:
+            encontrados[campo] = next(iter(unicos))
+        elif unicos:
+            ambiguos.add(campo)
+    return encontrados, ambiguos
+
+
 class WasiConnector(Connector):
     nombre = "wasi"
 
@@ -190,7 +271,7 @@ class WasiConnector(Connector):
         # La identidad sale de la url que declara la ficha, no de la que se uso
         # para llegar: la misma propiedad se sirve bajo dos slugs.
         url = url_canonica(html, pedida)
-        c = campos_de_ficha(html)
+        c = _campos_wasi(html)
 
         titulo = None
         m = re.search(r'<meta[^>]+property="og:title"[^>]+content="([^"]{1,250})"', html)
@@ -200,11 +281,12 @@ class WasiConnector(Connector):
             m = re.search(r"<title[^>]*>(.{1,250}?)</title>", html, re.S | re.I)
             titulo = limpiar(unescape(m.group(1))) if m else None
 
-        descripcion = None
-        md = re.search(r'"description"\s*:\s*"(.*?)"\s*,\s*"address"', html, re.S)
-        if md:
-            texto = md.group(1).encode().decode("unicode_escape", "ignore")
-            descripcion = limpiar(unescape(re.sub(r"<[^>]+>", " ", texto)))
+        descripcion = _descripcion_wasi(html)
+        tipo_propiedad = detectar_tipo(c.get("tipo_propiedad"))
+        descriptivos, ambiguos = _campos_descriptivos(descripcion, tipo_propiedad)
+
+        def campo_numerico(nombre: str) -> Any:
+            return c.get(nombre) if c.get(nombre) is not None else descriptivos.get(nombre)
 
         lat = lon = None
         mg = re.search(r'"latitude"\s*:\s*"?(-?\d+\.\d+)"?\s*,\s*'
@@ -236,7 +318,7 @@ class WasiConnector(Connector):
             precio=c.get("precio"),
             moneda=c.get("moneda"),
             operacion=detectar_operacion(c.get("operacion")),
-            tipo_propiedad=detectar_tipo(c.get("tipo_propiedad")),
+            tipo_propiedad=tipo_propiedad,
             direccion=None,
             barrio=limpiar(c.get("barrio")),
             ciudad=limpiar(c.get("ciudad")),
@@ -246,11 +328,11 @@ class WasiConnector(Connector):
             # Las medidas salen de la tabla. El floorSize del JSON-LD es la
             # cantidad de plantas: leerlo como superficie registraria 2 m2 para
             # un duplex de 84.
-            superficie_cubierta=c.get("superficie_cubierta"),
-            superficie_total=c.get("superficie_total"),
-            dormitorios=a_entero(c.get("dormitorios")),
-            banos=a_entero(c.get("banos")),
-            ambientes=None,
+            superficie_cubierta=campo_numerico("superficie_cubierta"),
+            superficie_total=campo_numerico("superficie_total"),
+            dormitorios=a_entero(campo_numerico("dormitorios")),
+            banos=a_entero(campo_numerico("banos")),
+            ambientes=a_entero(campo_numerico("ambientes")),
             imagenes=imagenes,
             extra={k: v for k, v in {
                 "codigo_fuente": c.get("codigo"),
@@ -260,6 +342,7 @@ class WasiConnector(Connector):
                 "cocheras": c.get("cocheras"),
                 "pais": c.get("pais"),
                 "url_enumerada": pedida if pedida != url else None,
+                "atributos_descartados": ",".join(sorted(ambiguos)) or None,
             }.items() if v is not None},
             # La resolucion de conflictos entre inmobiliarias lee
             # `provenance.agency_name` para saber quien publica un aviso. Sin

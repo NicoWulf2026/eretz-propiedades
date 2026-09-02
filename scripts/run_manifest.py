@@ -397,20 +397,17 @@ def _lookup_inmobiliaria_ids(
     source_ids: List[str],
 ) -> Dict[str, int]:
     """
-    Resuelve source_id -> inmobiliaria_id con dos rutas en cascada:
+    Resuelve source_id -> inmobiliaria_id exclusivamente por su namespace de
+    scraping:
 
     1. PRIMARY:  WHERE scraping_id_origen IN (source_ids)
        El campo scraping_id_origen mapea el ID del sistema de scraping al ID
        canónico de inmobiliarias_main. Es el path original y tiene prioridad.
 
-    2. FALLBACK: WHERE id IN (unresolved_ids)
-       Solo para source_ids que no encontraron match en el path primario.
-       Cubre fuentes cuyo id en inmobiliarias_main coincide directamente con
-       el source_id del manifest pero no tienen scraping_id_origen configurado
-       con ese valor. El guard (sid not in mapping) garantiza que un resultado
-       primario nunca es sobreescrito por el fallback.
-
-    Solo lectura — nunca escribe.
+    La igualdad numerica entre ``source_id`` y ``inmobiliarias_main.id`` no
+    demuestra identidad: pertenecen a namespaces independientes.  La antigua
+    ruta de fallback por id directo fue la causa de atribuciones cruzadas.
+    Solo lectura — nunca escribe y falla cerrado cuando falta el origen.
     """
     try:
         import requests  # noqa: PLC0415
@@ -440,45 +437,6 @@ def _lookup_inmobiliaria_ids(
             else:
                 print(f"  [FK-LOOKUP] WARN: status={resp.status_code}", file=sys.stderr)
 
-        # ── Path fallback: id = source_id (solo para los no resueltos) ──────────────
-        unresolved = [sid for sid in source_ids if sid not in mapping]
-        if unresolved:
-            print(
-                f"  [FK-LOOKUP] {len(unresolved)} sin match por scraping_id_origen. "
-                f"Intentando fallback por id...",
-                file=sys.stderr,
-            )
-            for i in range(0, len(unresolved), CHUNK):
-                chunk = unresolved[i : i + CHUNK]
-                ids_csv = ",".join(chunk)
-                resp2 = requests.get(
-                    f"{supabase_url.rstrip('/')}/rest/v1/inmobiliarias_main",
-                    headers={"apikey": key, "Authorization": f"Bearer {key}"},
-                    params={
-                        "select": "id,nombre",
-                        "id":     f"in.({ids_csv})",
-                        "limit":  str(CHUNK),
-                    },
-                    timeout=30,
-                )
-                if resp2.status_code == 200:
-                    for row in resp2.json():
-                        sid = str(row.get("id", ""))
-                        mid = row.get("id")
-                        if sid and mid is not None and sid not in mapping:
-                            mapping[sid] = mid
-                            print(
-                                f"  [FK-LOOKUP] fallback id match: "
-                                f"source_id={sid} -> inmobiliaria_id={mid} "
-                                f"({row.get('nombre', '?')[:40]})",
-                                file=sys.stderr,
-                            )
-                else:
-                    print(
-                        f"  [FK-LOOKUP] WARN fallback: status={resp2.status_code}",
-                        file=sys.stderr,
-                    )
-
         return mapping
     except Exception as exc:
         print(f"  [FK-LOOKUP] ERROR: {exc}", file=sys.stderr)
@@ -492,17 +450,16 @@ def _lookup_inmobiliaria_ids_safe(
 ) -> Tuple[Dict[str, int], List[ValidationError]]:
     """Resolve manifest IDs without silently crossing source ID spaces.
 
-    Both scraping_id_origen and canonical id are read. A primary match keeps
-    priority only when it is compatible with the manifest name/domain. When
-    both spaces collide, the only compatible candidate wins; ambiguous or
-    mismatched rows remain unresolved with an explicit validation error.
+    Only ``scraping_id_origen`` is a compatible namespace for manifest
+    ``source_id``.  A numerically equal canonical id is not queried and cannot
+    become a fallback.  Ambiguous or mismatched rows remain unresolved with an
+    explicit validation error.
     """
     import requests  # noqa: PLC0415
 
     source_by_id = {str(row.get("source_id", "")): row for row in sources}
     source_ids = [sid for sid in source_by_id if sid]
     primary_by_sid: Dict[str, List[Dict[str, Any]]] = {}
-    fallback_by_sid: Dict[str, Dict[str, Any]] = {}
     errors: List[ValidationError] = []
     headers = {"apikey": key, "Authorization": f"Bearer {key}"}
     chunk_size = 50
@@ -570,50 +527,24 @@ def _lookup_inmobiliaria_ids_safe(
                 "limit": str(chunk_size * 2),
             },
         )
-        fallback_response = get_fk_response({"select": select, "id": f"in.({ids_csv})", "limit": str(chunk_size)})
-        if primary_response.status_code != 200 or fallback_response.status_code != 200:
+        if primary_response.status_code != 200:
             raise RuntimeError(
-                "FK lookup HTTP failure "
-                f"primary={primary_response.status_code} fallback={fallback_response.status_code}"
+                f"FK lookup HTTP failure primary={primary_response.status_code}"
             )
         for row in primary_response.json():
             sid = str(row.get("scraping_id_origen", ""))
             if sid:
                 primary_by_sid.setdefault(sid, []).append(row)
-        for row in fallback_response.json():
-            sid = str(row.get("id", ""))
-            if sid:
-                fallback_by_sid[sid] = row
-
     mapping: Dict[str, int] = {}
     for sid, source in source_by_id.items():
         name = str(source.get("_manifest_name") or source.get("source_name") or "")
         primary_matches = primary_by_sid.get(sid, [])
-        fallback = fallback_by_sid.get(sid)
         if len(primary_matches) > 1:
             errors.append((sid, name, "ambiguous scraping_id_origen"))
             continue
         primary = primary_matches[0] if primary_matches else None
 
-        if primary and fallback and primary.get("id") != fallback.get("id"):
-            primary_ok = compatible(source, primary)
-            fallback_ok = compatible(source, fallback)
-            if primary_ok and not fallback_ok:
-                mapping[sid] = int(primary["id"])
-            elif fallback_ok and not primary_ok:
-                mapping[sid] = int(fallback["id"])
-            else:
-                errors.append(
-                    (
-                        sid,
-                        name,
-                        "unresolved FK collision "
-                        f"primary_id={primary.get('id')} fallback_id={fallback.get('id')}",
-                    )
-                )
-            continue
-
-        candidate = primary or fallback
+        candidate = primary
         if candidate is None:
             errors.append((sid, name, "missing FK candidate"))
         elif not compatible(source, candidate):

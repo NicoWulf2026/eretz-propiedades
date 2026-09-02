@@ -374,6 +374,36 @@ def ingest_agencies(args: argparse.Namespace) -> int:
     return 0
 
 
+def ingest_local_snapshot(args: argparse.Namespace) -> int:
+    """Reuse a prior targeted snapshot without modifying its database.
+
+    The source is attached in SQLite read-only mode.  This is an optimization
+    only: callers must still render SELECT-only targeted queries for corrected
+    inputs that are not covered by the previous cache.
+    """
+    destination = _connect(Path(args.database))
+    source_path = Path(args.source_database).resolve()
+    source = sqlite3.connect(f"file:{source_path}?mode=ro", uri=True)
+    try:
+        destination.executemany(
+            "insert or ignore into agencies(id) values(?)",
+            source.execute("select id from agencies"),
+        )
+        placeholders = ",".join("?" for _ in range(8 + len(DIGEST_FIELDS)))
+        destination.executemany(
+            f"insert or ignore into dbrows values({placeholders})",
+            source.execute("select * from dbrows"),
+        )
+        destination.commit()
+        agencies = destination.execute("select count(*) from agencies").fetchone()[0]
+        rows = destination.execute("select count(*) from dbrows").fetchone()[0]
+    finally:
+        source.close()
+        destination.close()
+    print(f"agencies={agencies} snapshot_rows={rows}")
+    return 0
+
+
 def ingest_resolutions(args: argparse.Namespace) -> int:
     connection = _connect(Path(args.database))
     connection.execute("""
@@ -745,6 +775,10 @@ def parser() -> argparse.ArgumentParser:
     command = commands.add_parser("ingest-agencies")
     command.add_argument("--database", required=True)
     command.set_defaults(func=ingest_agencies)
+    command = commands.add_parser("ingest-local-snapshot")
+    command.add_argument("--database", required=True)
+    command.add_argument("--source-database", required=True)
+    command.set_defaults(func=ingest_local_snapshot)
     command = commands.add_parser("ingest-resolutions")
     command.add_argument("--database", required=True)
     command.add_argument("--file", required=True)

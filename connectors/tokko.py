@@ -23,6 +23,7 @@ que es la forma mas cara de fallar.
 from __future__ import annotations
 
 import re
+import unicodedata
 import urllib.parse
 from html import unescape
 from typing import Any, Iterator
@@ -43,6 +44,17 @@ RE_FOTO = re.compile(r"https://static\.tokkobroker\.com/(?:pictures|thumbs)/[^\"
 RE_COORD = re.compile(r"(-?[23456]\d\.\d{3,})\s*,\s*(-?[567]\d\.\d{3,})")
 
 
+def _tipo_propiedad(texto: str | None) -> str | None:
+    """Tokko publica tipos con acentos; el vocabulario canonico no los usa."""
+    if not texto:
+        return None
+    sin_acentos = "".join(
+        char for char in unicodedata.normalize("NFKD", texto)
+        if not unicodedata.combining(char)
+    )
+    return detectar_tipo(sin_acentos)
+
+
 def _texto_plano(html: str) -> str:
     """HTML a texto legible.
 
@@ -55,7 +67,11 @@ def _texto_plano(html: str) -> str:
     Desescapar tampoco es cosmetico en las etiquetas: varios temas escriben
     "Direcci&oacute;n", y sin traducirlo el campo sale vacio sin que nada falle.
     """
-    t = re.sub(r"<(script|style)[^>]*>.*?</>", " ", html, flags=re.S | re.I)
+    # The closing-tag backreference used to contain a literal control byte
+    # (``\x01``), so no script/style block was ever removed.  Besides leaking
+    # JavaScript into descriptions, that also exposed unrelated numbers to the
+    # attribute parser.
+    t = re.sub(r"<(script|style)[^>]*>.*?</\1\s*>", " ", html, flags=re.S | re.I)
     t = unescape(t)
     t = re.sub(r"<[^>]+>", " ", t)
     t = unescape(t)
@@ -70,8 +86,10 @@ def _texto_plano(html: str) -> str:
 # direccion.
 ETIQUETAS = (
     "Dirección", "Direccion", "Ubicación", "Ubicacion", "Ambientes",
-    "Total construido", "Total terreno", "Superficie total", "Superficie",
-    "Dormitorios", "Baños", "Banos", "Suites", "Cocheras", "Plantas",
+    "Total construido", "Total terreno", "Superficie total",
+    "Superficie cubierta", "Superficie", "Terreno", "Cubierta", "Total Built",
+    "Dormitorios", "Baños", "Banos", "Toilettes", "Garages",
+    "Suites", "Cocheras", "Plantas",
     "Apto profesional", "Condición", "Condicion", "Antigüedad", "Antiguedad",
     "Situación", "Situacion", "Expensas", "Orientación", "Orientacion",
     "Disposición", "Disposicion", "Crédito", "Credito", "Estado",
@@ -96,6 +114,70 @@ def _campo(texto: str, etiqueta: str) -> str | None:
             "dirección", "direccion", "ubicación", "ubicacion"}:
         return None
     return valor
+
+
+def _valores_campo(texto: str, etiqueta: str) -> Iterator[str]:
+    """Todos los candidatos; el titulo puede anticipar la misma etiqueta."""
+    patron = rf"\b{re.escape(etiqueta)}\s*:?\s+(.{{1,70}}?)\s*(?=(?:{_STOP})\b|$)"
+    for match in re.finditer(patron, texto, re.I):
+        valor = limpiar(match.group(1))
+        if valor:
+            yield valor
+
+
+def _cantidad(texto: str, *etiquetas: str) -> int | None:
+    """Read one structured count from a labelled Tokko field.
+
+    A value containing two numbers is deliberately rejected.  Tokko commonly
+    renders ``3 baños + 1 toilette`` in the same visual block; stripping all
+    non-digits used to turn that into 31.
+    """
+    for etiqueta in etiquetas:
+        for raw in _valores_campo(texto, etiqueta):
+            value = a_entero(raw)
+            if value is not None:
+                return value
+    return None
+
+
+def _descripcion(texto: str) -> str | None:
+    """Descripcion propia sin cortar subtitulos internos como Caracteristicas."""
+    match = re.search(
+        r"DESCRIPCI[OÓ]N\s*(.{0,4000}?)\s*"
+        r"(?=INFORMACI[OÓ]N|SUPERFICIES|Ubicaci[oó]n en el mapa|"
+        r"Contactanos|Contacto|Compartir|"
+        r"Consultar|Volver a Resultados|\Z)",
+        texto, re.S | re.I)
+    if not match:
+        return None
+    crudo = match.group(1)
+    for marca in ("http", "REF.", "(REF", "Volver a", "Compartir"):
+        indice = crudo.find(marca)
+        if indice > 0:
+            crudo = crudo[:indice]
+    valor = limpiar(crudo)
+    if valor and len(valor) >= 40 and len(valor.split()) >= 6:
+        return valor
+    return None
+
+
+_NUMERO_EN_PALABRAS = {
+    "un": 1, "uno": 1, "una": 1, "dos": 2, "tres": 3, "cuatro": 4,
+    "cinco": 5, "seis": 6, "siete": 7, "ocho": 8, "nueve": 9, "diez": 10,
+}
+
+
+def _cantidad_descriptiva(texto: str | None, etiqueta: str) -> int | None:
+    """Fallback explicito y acotado para cantidades escritas en la descripcion."""
+    if not texto:
+        return None
+    palabras = "|".join(_NUMERO_EN_PALABRAS)
+    match = re.search(
+        rf"\b(\d{{1,2}}|{palabras})\s+(?:{etiqueta})\b", texto, re.I)
+    if not match:
+        return None
+    token = match.group(1).lower()
+    return int(token) if token.isdigit() and int(token) > 0 else _NUMERO_EN_PALABRAS.get(token)
 
 
 class TokkoConnector(Connector):
@@ -287,10 +369,14 @@ class TokkoConnector(Connector):
             expensas = a_numero(me.group(1))
 
         sup_cub = sup_tot = None
-        ms = re.search(r"Total construido\s*([\d.,]+)\s*m", texto, re.I)
+        ms = re.search(
+            r"(?:Total construido|Superficie cubierta|Cubierta|Total Built)"
+            r"\s*:?\s*([\d.,]+)\s*m", texto, re.I)
         if ms:
             sup_cub = a_numero(ms.group(1))
-        ms = re.search(r"(?:Superficie total|Total terreno)\s*:?\s*([\d.,]+)\s*m", texto, re.I)
+        ms = re.search(
+            r"(?:Superficie total|Total terreno|Terreno)\s*:?\s*([\d.,]+)\s*m",
+            texto, re.I)
         if ms:
             sup_tot = a_numero(ms.group(1))
 
@@ -300,29 +386,7 @@ class TokkoConnector(Connector):
         # La descripcion esta en la ficha que ya se bajo: extraerla no cuesta
         # una peticion adicional. Se corta el encabezado y el pie, que repiten
         # el titulo y los datos de contacto en todas las fichas.
-        descripcion = None
-        # Sin minimo de largo en el patron: exigir 40 caracteres obligaba al
-        # motor a saltearse el corte mas cercano y seguir hasta el siguiente,
-        # tragandose la seccion que venia despues. El largo se valida abajo,
-        # sobre el texto ya recortado.
-        md = re.search(r"DESCRIPCI[OÓ]N\s*(.{0,4000}?)\s*"
-                       r"(?=INFORMACI[OÓ]N|SUPERFICIES|CARACTER[IÍ]STICAS|"
-                       r"Ubicaci[oó]n en el mapa|Contactanos|Contacto|Compartir|"
-                       r"Consultar|Volver a Resultados|\Z)", texto, re.S | re.I)
-        if md:
-            crudo_desc = md.group(1)
-            # El corte de respaldo (\Z) existe para las fichas donde la
-            # descripcion es lo ultimo, pero en las demas se traga lo que sigue:
-            # urls de fotos, la referencia interna, el pie. Se recorta en la
-            # primera de esas marcas antes de medir el largo, o una descripcion
-            # de dos palabras pasaria por buena solo porque arrastra un carrusel.
-            for marca in ("http", "REF.", "(REF", "Volver a", "Compartir"):
-                i = crudo_desc.find(marca)
-                if i > 0:
-                    crudo_desc = crudo_desc[:i]
-            descripcion = limpiar(crudo_desc)
-            if descripcion and (len(descripcion) < 40 or len(descripcion.split()) < 6):
-                descripcion = None
+        descripcion = _descripcion(texto)
 
         extra = {k: v for k, v in {
             "expensas": expensas,
@@ -341,6 +405,11 @@ class TokkoConnector(Connector):
             "imagenes_totales_en_pagina": len(set(RE_FOTO.findall(html))),
         }.items() if v not in (None, "", False)}
 
+        dormitorios = (_cantidad(texto, "Dormitorios")
+                        or _cantidad_descriptiva(descripcion, r"dormitorios?|habitaciones?"))
+        banos = (_cantidad(texto, "Baños", "Banos")
+                 or _cantidad_descriptiva(descripcion, r"ba[nñ]os?"))
+
         return PropiedadNormalizada(
             canonical_agency_id=fuente.canonical_agency_id,
             source_listing_id=pid,
@@ -351,16 +420,16 @@ class TokkoConnector(Connector):
             precio=precio,
             moneda=moneda,
             operacion=operacion,
-            tipo_propiedad=detectar_tipo(titulo),
+            tipo_propiedad=_tipo_propiedad(titulo),
             direccion=direccion,
             barrio=ubicacion,
             ciudad=None,
             provincia=None,
             latitud=lat,
             longitud=lon,
-            dormitorios=a_entero(_campo(texto, "Dormitorios")),
-            banos=a_entero(_campo(texto, "Baños")) or a_entero(_campo(texto, "Banos")),
-            ambientes=a_entero(_campo(texto, "Ambientes")),
+            dormitorios=dormitorios,
+            banos=banos,
+            ambientes=_cantidad(texto, "Ambientes"),
             superficie_total=sup_tot,
             superficie_cubierta=sup_cub,
             imagenes=imagenes,

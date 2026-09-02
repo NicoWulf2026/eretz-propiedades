@@ -13,7 +13,8 @@ from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 
 from clients import SupabaseClient
-from config import SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_TABLE, SOURCE_CONFIGS
+from config import (SOURCE_CONFIGS, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_TABLE,
+                    SUPABASE_URL, require_supabase_config)
 from extractors import DataCleaner
 from models import Propiedad
 from clients import SessionFactory
@@ -4193,6 +4194,7 @@ def _dict_to_form(d: dict) -> str:
 
 
 def scrape_all():
+    require_supabase_config()
     session = SessionFactory.create()
     supabase = SupabaseClient(session, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_TABLE)
     existing_urls = supabase.get_all_existing_urls()

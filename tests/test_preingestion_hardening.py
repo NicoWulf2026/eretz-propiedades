@@ -1,0 +1,231 @@
+from __future__ import annotations
+
+import csv
+import json
+from argparse import Namespace
+from pathlib import Path
+
+from connectors.base import a_entero
+from connectors.tokko import _cantidad, _texto_plano
+from scripts.preingestion_rebuild import (
+    AMBIGUOUS,
+    NOT_FOUND,
+    build_agency_manifest,
+    derive_contract,
+    host,
+    sanitize_count,
+    sanitize_description,
+)
+import scripts.preingestion_rebuild as rebuild_module
+
+
+def write_jsonl(path: Path, rows: list[dict]) -> None:
+    path.write_text(
+        "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+
+
+def write_main(path: Path, rows: list[dict]) -> None:
+    fields = [
+        "id", "nombre", "web", "ciudad", "provincia", "telefono",
+        "telefono_principal", "email_principal",
+    ]
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def test_numeric_source_id_never_becomes_foreign_main_id(tmp_path: Path) -> None:
+    crosswalk = tmp_path / "crosswalk.jsonl"
+    web = tmp_path / "web.jsonl"
+    platform = tmp_path / "platform.jsonl"
+    main = tmp_path / "main.csv"
+    write_jsonl(crosswalk, [{
+        "stable_id": "roomix:guccione propiedades",
+        "nombre_original": "Guccione Propiedades",
+        "crosswalk": "HIGH_CONFIDENCE_EXISTING",
+        "crosswalk_candidato": {"tabla": "staging", "id": "6136", "nombre": "Guccione Propiedades"},
+    }])
+    write_jsonl(web, [])
+    write_jsonl(platform, [])
+    write_main(main, [{"id": "6136", "nombre": "INMOBILIARIA GUSTAVO SATTLER"}])
+
+    manifest, mapping = build_agency_manifest(crosswalk, web, platform, main)
+
+    assert mapping == {}
+    assert manifest[0]["eretz_id"] is None
+    assert manifest[0]["resolution_status"] == NOT_FOUND
+    assert manifest[0]["resolution_method"] == "STAGING_NAMESPACE_NOT_A_MAIN_FK"
+
+
+def test_two_canonical_agencies_cannot_silently_share_eretz_id(tmp_path: Path) -> None:
+    crosswalk = tmp_path / "crosswalk.jsonl"
+    web = tmp_path / "web.jsonl"
+    platform = tmp_path / "platform.jsonl"
+    main = tmp_path / "main.csv"
+    write_jsonl(crosswalk, [
+        {"stable_id": "roomix:a", "nombre_original": "A", "crosswalk": "EXACT_MATCH",
+         "crosswalk_candidato": {"tabla": "main", "id": "10", "nombre": "A"}},
+        {"stable_id": "roomix:a alias", "nombre_original": "A", "crosswalk": "EXACT_MATCH",
+         "crosswalk_candidato": {"tabla": "main", "id": "10", "nombre": "A"}},
+    ])
+    write_jsonl(web, [])
+    write_jsonl(platform, [])
+    write_main(main, [{"id": "10", "nombre": "A"}])
+
+    manifest, mapping = build_agency_manifest(crosswalk, web, platform, main)
+
+    assert mapping == {}
+    assert all(row["resolution_status"] == AMBIGUOUS for row in manifest)
+    assert all("same_agency_duplicate" in row["evidence"] for row in manifest)
+
+
+def test_external_portal_domain_invalidates_resolved_identity(tmp_path: Path) -> None:
+    crosswalk = tmp_path / "crosswalk.jsonl"
+    web = tmp_path / "web.jsonl"
+    platform = tmp_path / "platform.jsonl"
+    main = tmp_path / "main.csv"
+    write_jsonl(crosswalk, [{
+        "stable_id": "roomix:agency", "nombre_original": "Agency", "crosswalk": "EXACT_MATCH",
+        "crosswalk_candidato": {"tabla": "main", "id": "10", "nombre": "Agency"},
+    }])
+    write_jsonl(web, [])
+    write_jsonl(platform, [{
+        "canonical_agency_id": "roomix:agency",
+        "domain": "https://datoinmobiliario.com.ar/perfil/agency",
+    }])
+    write_main(main, [{"id": "10", "nombre": "Agency"}])
+
+    manifest, mapping = build_agency_manifest(crosswalk, web, platform, main)
+
+    assert mapping == {}
+    assert manifest[0]["resolution_status"] == AMBIGUOUS
+    assert manifest[0]["evidence"]["official_domain_rejected"] == "SHARED_EXTERNAL_PORTAL"
+
+
+def test_datoinmobiliario_is_an_external_portal_host() -> None:
+    assert host("http://datoinmobiliario.com.ar/casa-venta") == "datoinmobiliario.com.ar"
+
+
+def test_tokko_multiple_bathroom_counts_do_not_concatenate() -> None:
+    assert a_entero("1 + 1") is None
+    assert a_entero("3 baños + 1 toilette") is None
+    assert _cantidad("Baños 1 + 1 Dormitorios 2", "Baños") is None
+    assert _cantidad("Baños 3 + 1 Dormitorios 2", "Baños") is None
+
+
+def test_tokko_description_does_not_include_javascript() -> None:
+    raw = "<div>Descripción Casa luminosa con patio propio</div><script>function getCookie(){return document.cookie}</script>"
+    plain = _texto_plano(raw)
+    assert "Casa luminosa" in plain
+    assert "getCookie" not in plain
+    assert "document.cookie" not in plain
+    cleaned, contaminated = sanitize_description("Casa luminosa function getCookie() document.cookie")
+    assert contaminated is True
+    assert cleaned == "Casa luminosa"
+
+
+def test_large_room_count_needs_explicit_hotel_evidence() -> None:
+    street_like = {"ambientes": 150, "tipo_propiedad": "departamento", "direccion": "Calle 150"}
+    assert sanitize_count(street_like, "ambientes") == (None, "IMPLAUSIBLE_UNPROVED_COUNT")
+    hotel = {"ambientes": 150, "tipo_propiedad": "hotel", "descripcion": "Hotel con 150 ambientes"}
+    assert sanitize_count(hotel, "ambientes") == (150, None)
+
+
+def test_contract_is_only_derived_from_deterministic_text() -> None:
+    operation, property_type, derived = derive_contract({
+        "source_url": "https://agency.test/departamento-en-venta/123",
+        "titulo": "Departamento",
+    })
+    assert operation == "venta"
+    assert property_type == "departamento"
+    assert set(derived) == {"operacion", "tipo_propiedad"}
+    assert derive_contract({"source_url": "https://agency.test/aviso/123"})[:2] == (None, None)
+
+
+def run_one_row_rebuild(
+    tmp_path: Path,
+    monkeypatch,
+    *,
+    crosswalk_row: dict,
+    source_row: dict,
+    platform_rows: list[dict] | None = None,
+) -> dict:
+    source_root = tmp_path / "source"
+    source_dir = source_root / "sample"
+    source_dir.mkdir(parents=True)
+    write_jsonl(source_dir / "properties.jsonl", [source_row])
+    monkeypatch.setattr(
+        rebuild_module, "ENTRADAS", (("sample", "properties.jsonl", "tokko"),)
+    )
+    crosswalk = tmp_path / "crosswalk.jsonl"
+    web = tmp_path / "web.jsonl"
+    platform = tmp_path / "platform.jsonl"
+    main = tmp_path / "main.csv"
+    write_jsonl(crosswalk, [crosswalk_row])
+    write_jsonl(web, [])
+    write_jsonl(platform, platform_rows or [])
+    write_main(main, [{"id": "10", "nombre": "Agency"}])
+    output = tmp_path / "output"
+    return rebuild_module.rebuild(Namespace(
+        output_dir=str(output),
+        source_root=str(source_root),
+        crosswalk=str(crosswalk),
+        web_directory=str(web),
+        platform_directory=str(platform),
+        main_backup=str(main),
+    ))
+
+
+def test_external_portal_profile_never_produces_insert(tmp_path: Path, monkeypatch) -> None:
+    summary = run_one_row_rebuild(
+        tmp_path,
+        monkeypatch,
+        crosswalk_row={
+            "stable_id": "roomix:agency",
+            "nombre_original": "Agency",
+            "crosswalk": "EXACT_MATCH",
+            "crosswalk_candidato": {"tabla": "main", "id": "10", "nombre": "Agency"},
+        },
+        source_row={
+            "canonical_agency_id": "roomix:agency",
+            "connector": "tokko",
+            "source_url": "https://datoinmobiliario.com.ar/propiedad/12345",
+            "source_listing_id": "12345",
+            "titulo": "Dato Inmobiliario",
+            "operacion": "venta",
+            "tipo_propiedad": "departamento",
+        },
+        platform_rows=[{
+            "canonical_agency_id": "roomix:agency",
+            "domain": "https://datoinmobiliario.com.ar/perfil/agency",
+        }],
+    )
+    assert summary["status_counts"] == {"INVALID_OR_REJECTED": 1}
+    assert summary["quality"]["portal_contaminated_rows_removed"] == 1
+
+
+def test_ambiguous_agency_mapping_fails_closed_to_hold(tmp_path: Path, monkeypatch) -> None:
+    summary = run_one_row_rebuild(
+        tmp_path,
+        monkeypatch,
+        crosswalk_row={
+            "stable_id": "roomix:agency",
+            "nombre_original": "Agency",
+            "crosswalk": "HIGH_CONFIDENCE_EXISTING",
+            "crosswalk_candidato": {"tabla": "staging", "id": "10", "nombre": "Agency"},
+        },
+        source_row={
+            "canonical_agency_id": "roomix:agency",
+            "connector": "tokko",
+            "source_url": "https://agency.test/propiedad/12345",
+            "source_listing_id": "12345",
+            "titulo": "Departamento en venta",
+            "operacion": "venta",
+            "tipo_propiedad": "departamento",
+        },
+    )
+    assert summary["status_counts"] == {"AGENCY_ID_UNRESOLVED": 1}
+    assert summary["agency_mappings"]["not_found"] == 1

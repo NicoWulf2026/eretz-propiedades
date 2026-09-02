@@ -300,10 +300,18 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
     r["enumeradas"] = len(ids)
     r["ids_unicos"] = len(set(ids))
     r["urls_unicas"] = len(urls)
-    r["duplicados_en_listado"] = len(ids) - len(urls)
+    r["duplicados_en_listado"] = (len(ids) - len(urls)
+                                  + int(getattr(con, "duplicados_origen", 0)))
     r["paginas"] = max((a["pagina"] for a in avisos), default=0)
     declarado = plan.get("total_declarado")
-    r["cobertura"] = round(len(urls) / declarado, 4) if declarado else None
+    # El total humano de algunos CMS cuenta tarjetas, no identidades unicas.
+    # Si una tarjeta se repite entre paginas, la cobertura esta contabilizada
+    # pero se normaliza una sola propiedad. No confundir ese duplicado probado
+    # con una URL faltante ni inflar el inventario de ERETZ.
+    contabilizadas = len(urls) + r["duplicados_en_listado"]
+    r["registros_declarados_contabilizados"] = contabilizadas
+    r["cobertura"] = (round(min(contabilizadas, declarado) / declarado, 4)
+                      if declarado else None)
     # Sin total declarado la paginacion se da por agotada cuando una pagina no
     # trae ids nuevos; con total declarado, la comparacion manda.
     r["enumeracion_completa"] = (r["cobertura"] is None or
@@ -313,6 +321,8 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
     r["detalles_pedidos"] = len(seleccion)
     objetos = []
     fallidos = 0
+    reintentos_diferidos: list[dict] = []
+    recuperados_diferidos = 0
     limite = t0 + presupuesto if presupuesto else None
     for a in seleccion:
         if limite and time.time() > limite:
@@ -320,6 +330,36 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
             r["detalles_sin_pedir"] = (len(seleccion) - len(objetos)
                                        - fallidos)
             break
+        errores_antes = len(con.errores)
+        try:
+            p = con.normalize(a, fuente)
+        except Bloqueado:
+            fallidos += 1
+            break
+        except (ErrorTransitorio, ErrorPermanente):
+            fallidos += 1
+            continue
+        if p is None:
+            # Algunos connectors convierten el fallo transitorio final del
+            # downloader en ``None`` y lo dejan registrado en ``errores``.
+            # Reintentarlo inmediatamente vuelve a caer dentro de la misma
+            # ventana inestable. Se difiere hasta terminar el resto del lote:
+            # conserva el limite de ritmo, no insiste ante 403/429 y permite
+            # recuperar cortes aislados sin repetir toda la inmobiliaria.
+            if (len(con.errores) > errores_antes
+                    and con.errores[-1].get("etapa") in {
+                        "detalle", "detalle_permanente"}):
+                reintentos_diferidos.append(a)
+                continue
+            fallidos += 1
+            continue
+        con.completar_ubicacion(p, fuente)
+        objetos.append(p)
+
+    for a in reintentos_diferidos:
+        if limite and time.time() > limite:
+            fallidos += 1
+            continue
         try:
             p = con.normalize(a, fuente)
         except Bloqueado:
@@ -333,6 +373,7 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
             continue
         con.completar_ubicacion(p, fuente)
         objetos.append(p)
+        recuperados_diferidos += 1
 
     # El filtro va ANTES de registrar: la huella tiene que calcularse sobre lo
     # que efectivamente se guarda, o el checkpoint quedaria comparando contra
@@ -348,6 +389,8 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
 
     r["detalles_obtenidos"] = len(props)
     r["detalles_fallidos"] = fallidos
+    r["reintentos_diferidos"] = len(reintentos_diferidos)
+    r["detalles_recuperados_diferidos"] = recuperados_diferidos
     # Cuantas descarto el guardian de forma. Separarlo de los fallos importa:
     # una pagina que no era ficha no es una fuente que respondio mal, y sin
     # esta cuenta las dos cosas se leen igual en el resumen.

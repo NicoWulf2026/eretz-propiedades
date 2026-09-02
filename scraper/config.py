@@ -250,16 +250,24 @@ SUPABASE_TABLE: str = os.environ.get("SUPABASE_TABLE", "propiedades")
 
 SUPABASE_KEY = SUPABASE_SERVICE_ROLE_KEY
 
-_required = {
-    "SUPABASE_URL": SUPABASE_URL,
-    "SUPABASE_SERVICE_ROLE_KEY": SUPABASE_SERVICE_ROLE_KEY,
-}
-_missing = [k for k, v in _required.items() if not v]
-if _missing:
-    raise RuntimeError(
-        f"Variables de entorno requeridas no configuradas: {', '.join(_missing)}\n"
-        f"Copiá .env.example a .env y completá los valores."
-    )
+def require_supabase_config() -> None:
+    """Falla al iniciar una operacion remota, no al importar parsers puros.
+
+    Los tests de parsing y seguridad no necesitan una Service Role. Validar en
+    import impedía incluso recolectarlos y tentaba a cargar secretos reales en
+    CI. Los entrypoints productivos llaman esta compuerta antes de crear el
+    cliente, por lo que el comportamiento fail-closed se conserva.
+    """
+    required = {
+        "SUPABASE_URL": SUPABASE_URL,
+        "SUPABASE_SERVICE_ROLE_KEY": SUPABASE_SERVICE_ROLE_KEY,
+    }
+    missing = [key for key, value in required.items() if not value]
+    if missing:
+        raise RuntimeError(
+            "Variables de entorno requeridas no configuradas: "
+            f"{', '.join(missing)}\n"
+            "Copiá .env.example a .env y completá los valores.")
 
 REQUEST_TIMEOUT: int = 15
 PAGE_DELAY: float = 1.2

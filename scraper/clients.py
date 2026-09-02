@@ -85,6 +85,9 @@ class SupabaseClient:
         key: str,
         table: str = SUPABASE_TABLE,
     ) -> None:
+        if not url or not key:
+            raise RuntimeError(
+                "SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY son requeridas")
         self.session = session
         self.url = url.rstrip("/")
         self.key = key

@@ -869,19 +869,11 @@ def test_safe_fk_collision_uses_only_compatible_canonical_id():
         "url_listado": "http://raizeninmobiliaria.com.ar/adm-propiedades.php",
         "scraping_id_origen": 84,
     }]
-    fallback = [{
-        "id": 84,
-        "nombre": "Yacoub Alquileres",
-        "web": "https://yacoub.com.ar",
-        "url_listado": "https://yacoub.com.ar/propiedades",
-        "scraping_id_origen": 735,
-    }]
-
-    with patch("requests.get", side_effect=[_fk_response(primary), _fk_response(fallback)]):
+    with patch("requests.get", side_effect=[_fk_response(primary)]):
         mapping, errors = rm._lookup_inmobiliaria_ids_safe("https://fake.co", "fake", [source])
 
-    assert mapping == {"84": 84}
-    assert errors == []
+    assert mapping == {}
+    assert errors == [("84", "Yacoub Alquileres", "strong FK identity mismatch candidate_id=4566")]
 
 
 def test_safe_fk_keeps_compatible_primary_when_fallback_mismatches():
@@ -895,15 +887,7 @@ def test_safe_fk_keeps_compatible_primary_when_fallback_mismatches():
         "url_listado": None,
         "scraping_id_origen": 10,
     }]
-    fallback = [{
-        "id": 10,
-        "nombre": "Other Inmo",
-        "web": "https://other.test",
-        "url_listado": None,
-        "scraping_id_origen": 77,
-    }]
-
-    with patch("requests.get", side_effect=[_fk_response(primary), _fk_response(fallback)]):
+    with patch("requests.get", side_effect=[_fk_response(primary)]):
         mapping, errors = rm._lookup_inmobiliaria_ids_safe("https://fake.co", "fake", [source])
 
     assert mapping == {"10": 500}
@@ -915,13 +899,11 @@ def test_safe_fk_ambiguous_collision_is_rejected():
 
     source = {"source_id": "10", "_manifest_name": "Same", "web": "https://same.test"}
     primary = [{"id": 500, "nombre": "Same", "web": "https://same.test", "url_listado": None, "scraping_id_origen": 10}]
-    fallback = [{"id": 10, "nombre": "Same", "web": "https://same.test", "url_listado": None, "scraping_id_origen": 77}]
-
-    with patch("requests.get", side_effect=[_fk_response(primary), _fk_response(fallback)]):
+    with patch("requests.get", side_effect=[_fk_response(primary)]):
         mapping, errors = rm._lookup_inmobiliaria_ids_safe("https://fake.co", "fake", [source])
 
-    assert mapping == {}
-    assert any("unresolved FK collision" in error[2] for error in errors)
+    assert mapping == {"10": 500}
+    assert errors == []
 
 
 def test_safe_fk_multiple_primary_matches_are_rejected():
@@ -933,7 +915,7 @@ def test_safe_fk_multiple_primary_matches_are_rejected():
         {"id": 501, "nombre": "Inmo 2", "web": "https://inmo2.test", "url_listado": None, "scraping_id_origen": 10},
     ]
 
-    with patch("requests.get", side_effect=[_fk_response(primary), _fk_response([])]):
+    with patch("requests.get", side_effect=[_fk_response(primary)]):
         mapping, errors = rm._lookup_inmobiliaria_ids_safe("https://fake.co", "fake", [source])
 
     assert mapping == {}
@@ -944,7 +926,7 @@ def test_safe_fk_missing_source_is_classified():
     import run_manifest as rm
 
     source = {"source_id": "9999", "_manifest_name": "Missing", "web": "https://missing.test"}
-    with patch("requests.get", side_effect=[_fk_response([]), _fk_response([])]):
+    with patch("requests.get", side_effect=[_fk_response([])]):
         mapping, errors = rm._lookup_inmobiliaria_ids_safe("https://fake.co", "fake", [source])
 
     assert mapping == {}
@@ -969,14 +951,13 @@ def test_safe_fk_lookup_retries_transient_transport_failure():
             side_effect=[
                 requests.ReadTimeout("temporary fk preflight timeout"),
                 _fk_response(primary),
-                _fk_response(primary),
             ],
         ) as mocked_get:
             mapping, errors = rm._lookup_inmobiliaria_ids_safe("https://fake.co", "fake", [source])
 
     assert mapping == {"10": 10}
     assert errors == []
-    assert mocked_get.call_count == 3
+    assert mocked_get.call_count == 2
     mocked_sleep.assert_called_once_with(0.5)
 
 

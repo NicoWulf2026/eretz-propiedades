@@ -249,7 +249,15 @@ def main() -> int:
             "city": e.get("ciudad") or (e.get("zonas_observadas") or [None])[0],
             "province": e.get("provincia"),
             "eretz_status": e.get("crosswalk"),
-            "eretz_id": (e.get("crosswalk_candidato") or {}).get("id"),
+            # IDs from staging and main are different namespaces.  A staging
+            # id is evidence about a candidate entity, never a FK for
+            # propiedades.  Only main candidates may populate eretz_id.
+            "eretz_id": ((e.get("crosswalk_candidato") or {}).get("id")
+                         if (e.get("crosswalk_candidato") or {}).get("tabla") == "main"
+                         else None),
+            "staging_candidate_id": ((e.get("crosswalk_candidato") or {}).get("id")
+                                     if (e.get("crosswalk_candidato") or {}).get("tabla") == "staging"
+                                     else None),
             "previous_url": url or None,
             "previous_url_status": estado,
             "selected_domain": (sitio or {}).get("url") if estado in (VERIFIED, HIGH) else None,
