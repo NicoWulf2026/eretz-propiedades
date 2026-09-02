@@ -302,3 +302,26 @@ def test_el_diff_ve_un_renombre_sin_confundirlo_con_una_mudanza() -> None:
     resultado = comparar(viejo, nuevo)
     assert resultado["renombrados"] == 1
     assert resultado["cambiaron_de_provincia"] == 0
+
+
+def test_negarse_a_afirmar_es_rechazo_de_validacion_no_fallo_de_extraccion() -> None:
+    """La certificacion los trata distinto y con razon: EXTRACTION_FAILED es un
+    defecto nuestro y bloquea; REJECTED_BY_VALIDATION es la validacion haciendo
+    su trabajo.
+
+    Caso real: azpropiedades publica "Caseros" en 11 avisos del Gran Buenos
+    Aires. La unica Caseros del catalogo esta en Entre Rios, a 238 km, porque
+    la de Tres de Febrero no es localidad censal. Afirmarla habria mandado esas
+    once propiedades a otra provincia.
+    """
+    prop = _resolver(_propiedad(barrio="Caseros", latitud=-34.6057,
+                                longitud=-58.5608))
+    assert prop.ciudad is None
+    assert "ciudad" in prop.extra["atributos_descartados"]
+
+
+def test_un_barrio_comun_no_cuenta_como_dato_rechazado() -> None:
+    """La fuente no publico ninguna ciudad: no hay nada que rechazar, y marcar
+    un descarte inventaria un problema donde no lo hay."""
+    prop = _resolver(_propiedad(barrio="Palermo"))
+    assert prop.extra.get("atributos_descartados") is None

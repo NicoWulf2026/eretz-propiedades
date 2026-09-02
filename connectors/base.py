@@ -130,6 +130,8 @@ def geografia(*args, **kwargs):
 
 
 GEO_NO_ENCONTRADA = "NOT_FOUND"
+GEO_CONTRADICHA = "CONTRADICTED_BY_COORDINATES"
+GEO_AMBIGUA = "AMBIGUOUS"
 
 
 # --------------------------------------------------------------------------
@@ -707,6 +709,20 @@ class Connector:
                 # catalogo, no una inferencia nuestra.
                 prop.provincia = entidad.provincia
             return
+
+        # Negarse a afirmar NO es lo mismo que fallar al extraer, y la
+        # certificacion los trata distinto: `EXTRACTION_FAILED` es un defecto
+        # nuestro y bloquea, `REJECTED_BY_VALIDATION` es la validacion haciendo
+        # su trabajo. Aca la validacion funciono: azpropiedades publica
+        # "Caseros" en 11 avisos del Gran Buenos Aires, y la unica Caseros del
+        # catalogo esta en Entre Rios, a 238 km. Afirmarla los habria mandado a
+        # otra provincia.
+        if resolucion.certeza in (GEO_CONTRADICHA, GEO_AMBIGUA):
+            descartados = prop.extra.get("atributos_descartados") or ""
+            partes = [x for x in str(descartados).split(",") if x]
+            if "ciudad" not in partes:
+                partes.append("ciudad")
+            prop.extra["atributos_descartados"] = ",".join(partes)
 
         if desde_barrio:
             # No resolvio: es lo que decia ser, un barrio. Se queda donde esta.
