@@ -389,6 +389,53 @@ debería ganarle a lo inferido del título. Es lo correcto, pero invertir la
 precedencia cambia valores existentes y no se puede medir el impacto sin el
 HTML original guardado.
 
+### D-008 — Una página vacía se guardaba como propiedad (CERRADO)
+
+El defecto más grave encontrado hasta ahora, porque corrompe datos en silencio.
+
+Certificando `roomix:alder inmobiliaria`, dos fichas volvieron **vacías** en la
+primera corrida: `titulo = "Alder Inmobiliaria"` —el nombre del sitio—, sin
+precio, sin descripción, sin ambientes y sin superficie. El pipeline las guardó
+igual y les **adivinó** `tipo_propiedad="departamento"`. En la segunda corrida
+las mismas URLs devolvieron los datos reales: casa, 4 dormitorios, USD 125.000.
+
+La ausencia convertida en afirmación. Y lo peor: **si las dos corridas hubieran
+fallado igual, se habría certificado `CERTIFIED_COMPLETE`** con dos propiedades
+fantasma de tipo inventado. Sólo el chequeo de idempotencia lo delató.
+
+Medido sobre la pre-ingesta: **351 fichas sin ningún campo definitorio**, en
+los cuatro connectors. Entre ellas `"Di Marco Propiedades"` guardada como
+galpón y `"Lincoln Negocios Inmobiliarios"` como departamento — el título es el
+`<title>` del sitio y el tipo sale del slug de la URL.
+
+El guardián de forma ya cubría esto, pero **sólo para URLs descubiertas por
+patrón**. Las de Alder venían del sitemap de WASI: mejor procedencia, no mejor
+contenido. Que una URL *debería* ser una ficha no prueba que la hayamos leído.
+El chequeo ahora corre en el punto común a todos los connectors.
+
+Y un cascarón es un fallo **transitorio**: la segunda corrida leyó esas mismas
+URLs enteras. El pipeline ya tenía reintentos diferidos para los timeouts, así
+que la ficha vacía entra por esa misma vía —fuera de la ventana inestable— en
+vez de darse por perdida al primer intento. Sólo si al reintentarla sigue sin
+traer nada cuenta como **detalle fallido**, con su rastro en los descartes:
+la URL sí era una ficha y lo que falló fue nuestra lectura, así que la razón
+que llega a la certificación es la verdadera.
+
+**El guardia se corrigió sobre datos reales, y la corrección importa.** La
+primera versión descartaba toda ficha sin campos publicados. Auditada contra la
+pre-ingesta, habría tirado **254 lotes y terrenos legítimos**: así se ofrece un
+lote —sólo título y fotos, sin precio, sin ambientes, sin superficie, sin
+dirección—. Descartarlos habría perdido inventario real, que es exactamente el
+daño que el guardia venía a evitar.
+
+El discriminador verdadero es que **el `<title>` que sobrevive es el del
+sitio**. Con las dos condiciones juntas quedan **14 filas en toda la
+pre-ingesta**, todas cascarones o páginas de categoría, y cero avisos reales.
+
+No se miran `operacion`, `tipo_propiedad` ni `provincia`: el cascarón de Alder
+tenía los tres, sacados del slug de la URL y del padrón, no de la ficha.
+Tampoco las imágenes, que ahí eran una sola y genérica.
+
 ## 4. Mapa de bloques
 
 | # | Bloque | Estado |
@@ -491,10 +538,19 @@ Queda por acordar la ventana y el ritmo de esa corrida, y si se usa
 defectos quedan registrados en `AGENCY_DEFECT_QUEUE.jsonl` y no se pierden de
 vista.
 
-**Costo real medido**, no estimado: `roomix:alpha inmobiliaria` (125
-propiedades, 147 páginas, dos corridas) tardó **9 minutos**. A ese ritmo las
-753 son del orden de **110 horas** de ejecución continua. La cifra importa
-para la decisión: no es una tarde.
+**Costo real medido**, no estimado. Piloto de 8 sobre inmobiliarias `READY`,
+ejecutado 2026-09-02: **6 `CERTIFIED_COMPLETE` seguidas** y una `NEEDS_FIX`
+que detuvo la corrida por diseño (`roomix:alder inmobiliaria`, causa en
+D-008). Siete inmobiliarias en 77 minutos: **11 minutos de promedio**, con
+dispersión real —de 4 a 25 minutos según el tamaño del catálogo—.
+
+A ese ritmo las 753 son del orden de **140 horas** de ejecución continua. La
+cifra importa para la decisión: no es una tarde. Y con la cola deteniéndose en
+cada defecto, tampoco es desatendida sin `--continue-after-fix`.
+
+El piloto también validó lo construido: el campo nuevo de colisiones de
+identidad quedó en cero en las seis certificaciones, y `alpha inmobiliaria`
+cerró con 125 propiedades, baseline 125 y 125 identidades distintas.
 
 ### 7.3 Fuente geográfica para derivar ciudad
 
