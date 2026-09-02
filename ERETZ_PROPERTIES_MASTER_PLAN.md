@@ -353,6 +353,42 @@ El defecto afectaba a todos los campos que usan ese extractor —antigüedad,
 condición, orientación, disposición, situación, dirección—, no sólo a la
 ubicación.
 
+### D-006 — La operación no se leía de la forma verbal (CERRADO)
+
+13.518 filas quedan fuera de publicación por `RAW_ELIGIBLE_NOT_PUBLISH_ELIGIBLE`,
+que exige operación y tipo. La regla es correcta: sin saber si se vende o se
+alquila, un aviso no se puede publicar.
+
+De las 11.526 sin operación, el vocabulario tenía los infinitivos —"vender",
+"alquilar"— pero no las conjugadas, así que "Se vende terreno en Colastine" o
+"INMOBILIARIA LEAL VENDE CASA" quedaban sin el campo que más define un aviso.
+
+La pasada verbal corre sólo cuando nada más dijo algo, con límite de palabra
+—"vende" es parte de "vendedor"—, y un aviso que nombra las dos operaciones
+sigue devolviendo ausencia: elegir una sería inventar la mitad del anuncio.
+
+**Ganancia real: 117 filas obtienen operación, 53 pasan a publicables.** Es
+poco, y conviene decirlo: se verificó que **el 99 % de esas 11.526 no declara
+la operación en ningún lado** —ni título ni URL—, así que el hueco grande no
+era de extracción. La hipótesis de que los extractores estaban perdiendo una
+señal fácil resultó falsa.
+
+### D-007 — Tokko adivinaba el tipo en vez de leer el declarado (CERRADO)
+
+El tipo de propiedad salía sólo de adivinarlo en el título. **899 fichas
+quedaban sin tipo** —y sin tipo no se puede publicar— teniendo la ficha el dato
+declarado como campo propio (`Tipo de Propiedad`), que además ni siquiera
+figuraba entre las etiquetas conocidas, así que tampoco servía de frontera y
+los valores vecinos podían arrastrarla adentro.
+
+El título sigue mandando y el campo entra sólo donde el título no alcanzó, de
+modo que ningún valor ya detectado cambia.
+
+**Queda una decisión de principio pendiente:** lo declarado por la fuente
+debería ganarle a lo inferido del título. Es lo correcto, pero invertir la
+precedencia cambia valores existentes y no se puede medir el impacto sin el
+HTML original guardado.
+
 ## 4. Mapa de bloques
 
 | # | Bloque | Estado |
