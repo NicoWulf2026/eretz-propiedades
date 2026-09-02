@@ -229,8 +229,8 @@ plataforma. El dominio no sirve como identidad de inmobiliaria.
 
 ### Salud de la batería de tests
 
-`eretz-agency`: **1.250 tests pasan** (2026-09-02), sin regresiones tras los
-ocho defectos cerrados. Se partió de 1.233.
+`eretz-agency`: **1.258 tests pasan** (2026-09-02), sin regresiones tras los
+once defectos cerrados. Se partió de 1.233.
 
 ---
 
@@ -436,6 +436,57 @@ No se miran `operacion`, `tipo_propiedad` ni `provincia`: el cascarón de Alder
 tenía los tres, sacados del slug de la URL y del padrón, no de la ficha.
 Tampoco las imágenes, que ahí eran una sola y genérica.
 
+### D-009 — Un cero heredado del connector equivocado (CERRADO)
+
+`requenapropiedades.com.ar` es una app Laravel. Se le asignó el connector de
+**WordPress** porque el HTML menciona `wp-content`, la corrida cerró en `OK`
+con cero propiedades, y la certificación la reportó sin inventario — mientras
+el sitio publica **trece páginas de fichas** en `/propiedades`.
+
+El respaldo genérico existía pero exigía que el connector específico se
+declarara no soportado. Uno que termina en `OK` con cero no distingue "esta
+inmobiliaria no publica" de "elegimos el connector equivocado". Ahora alcanza
+con que no haya obtenido nada. La excepción es `BLOQUEADA`: ahí la fuente
+rechazó el acceso automático y volver a pedirle lo mismo con otro connector la
+golpea sin aprender nada.
+
+### D-010 — El sitemap traía fichas de otro host (CERRADO)
+
+Con el respaldo activo, el genérico encontró el sitemap de esa misma
+inmobiliaria… que publica sus fichas como `http://requenav2.test/propiedad/…`:
+**el hostname local del desarrollador quedó publicado en producción**. Las
+ocho URLs no responden.
+
+Eso, por sí solo, la certificación ya lo reportaba con honestidad. El daño
+mayor sería que **respondieran**: `hash_dedup` se calcula sobre la URL
+normalizada, así que cada propiedad quedaría guardada con identidad —y con
+enlace "ver publicación original"— en un host que no es el de la inmobiliaria.
+
+Ahora las URLs del sitemap se filtran por host propio, aceptando subdominios y
+`www`. Medido antes de aplicarlo sobre las 3.881 propiedades ya certificadas:
+**0 usan un host distinto del oficial**, así que la regla no cuesta inventario
+observado.
+
+### D-011 — El tipo estaba en la ficha y sólo se miraba el título (CERRADO)
+
+En `roomix:berrueta inmobiliaria`, 35 de 193 avisos quedaban sin
+`tipo_propiedad` y la certificación lo marcaba `EXTRACTION_FAILED` con razón:
+la evidencia de la página decía que el campo estaba. Los títulos son "3
+AMBIENTES AL FRENTE" o "2 AMBIENTES - PLENO CENTRO" —nombran el aviso sin
+decir qué es— y la ficha lo publica en un `<li>` o `<span>` cuyo contenido es
+sólo el tipo, exactamente donde el certificador ya miraba.
+
+Entra como último respaldo, después del título, la URL y el arranque del
+cuerpo, así que no cambia ningún valor que ya se detectaba. Si aparece más de
+un tipo distinto no se afirma ninguno: eso es el menú de categorías del sitio,
+y elegir el primero le pondría a cada aviso el tipo que figure más arriba en la
+navegación.
+
+**No se infiere el tipo desde la cantidad de ambientes.** "3 ambientes" es un
+atributo, no una declaración de tipo, y suponer departamento sería inventar el
+campo que decide si la propiedad se publica. Por eso el resto de esos 35 sigue
+sin tipo, y está bien que así sea.
+
 ## 4. Mapa de bloques
 
 | # | Bloque | Estado |
@@ -568,6 +619,22 @@ masiva tiene que contar con eso.
 certificadas** cuya huella había quedado obsoleta. Con todas las huellas
 invalidadas, las próximas ~35 corridas vuelven a ganar certificaciones
 existentes antes de sumar cobertura nueva.
+
+### Lote de 25 con el código endurecido (2026-09-02)
+
+24 procesadas con `--continue-after-fix`:
+
+| Resultado | Inmobiliarias |
+|---|---|
+| `CERTIFIED_COMPLETE` | 20 |
+| `NEEDS_FIX` | 2 |
+| `BLOCKED_EXTERNAL` | 1 |
+| `NO_INVENTORY_CONFIRMED` | 1 |
+
+**83 % cerró limpio.** Las dos `NEEDS_FIX` se diagnosticaron y produjeron tres
+defectos reales (D-009, D-010, D-011): ninguna era un falso positivo del
+certificador. Vale la pena subrayarlo — la cola se detiene ante lo que
+realmente está roto.
 
 ### 7.3 Fuente geográfica para derivar ciudad
 
