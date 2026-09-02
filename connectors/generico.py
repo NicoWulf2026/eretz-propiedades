@@ -37,6 +37,11 @@ from .base import (Bloqueado, Connector, ErrorPermanente, ErrorTransitorio,
                    detectar_operacion, detectar_tipo, identidad_de_imagen,
                    limpiar)
 
+# Los atributos numericos que una ficha suele tabular. Sirven para decidir si
+# la pagina los presenta como ``Rotulo N`` o como prosa.
+ETIQUETAS_ATRIBUTO = (r"ambientes?|dormitorios?|habitaciones?|ba[nñ]os?"
+                      r"|cocheras?|toilettes?")
+
 SITEMAPS = ("/sitemap.xml", "/sitemap_index.xml", "/wp-sitemap.xml",
             "/sitemap-index.xml", "/sitemapindex.xml")
 
@@ -2157,19 +2162,52 @@ class GenericoConnector(Connector):
                 return n if 1 <= n <= 99 else None
             except (TypeError, ValueError):
                 pass
-        # Un rotulo estructurado manda sobre la prosa. En una ficha real
-        # ``baño sauna ... Ambientes: 5 Dormitorios: 4 Baños: 5`` el orden
-        # inverso tomaba el 5 de ambientes como dormitorios y el 4 como baños.
+        # Un rotulo con dos puntos no admite ambiguedad y manda sobre todo lo
+        # demas. En una ficha real ``baño sauna ... Ambientes: 5 Dormitorios: 4
+        # Baños: 5`` buscar el numero ANTES del rotulo tomaba el 5 de
+        # ambientes como dormitorios y el 4 como baños.
         for rotulo in re.finditer(
                 rf"(?:{etiqueta})\s*:\s*(\d{{1,2}})\b", texto, re.I):
             if 1 <= int(rotulo.group(1)) <= 99:
                 return int(rotulo.group(1))
-        # Cero en los CMS suele ser placeholder, no una afirmacion de que la
-        # propiedad carece del atributo. Si la descripcion publica una
-        # cantidad positiva explicita, se conserva; los filtros del catalogo
-        # ya fueron excluidos del auditor y no entran en texto normalizado.
-        narrativo = re.search(rf"([1-9]\d?)\s*(?:{etiqueta})", texto, re.I)
-        return int(narrativo.group(1)) if narrativo else None
+        # Sin dos puntos la adyacencia es ambigua y hay que resolverla mirando
+        # la ficha entera: "Ambientes 3 Dormitorios 2" es una tabla y el numero
+        # va DESPUES del rotulo; "3 dormitorios 2 baños" es prosa y va ANTES.
+        # Elegir mal no deja el campo vacio: le pone el numero del campo
+        # vecino, que parece correcto y despues no se distingue de un dato
+        # real. Antes se leia siempre como prosa, y las fichas con tabla
+        # quedaban con los valores corridos un lugar.
+        if GenericoConnector._es_tabla_de_atributos(texto):
+            hallazgo = re.search(
+                rf"(?:{etiqueta})\s*(\d{{1,2}})\b", texto, re.I)
+        else:
+            # Cero en los CMS suele ser placeholder, no una afirmacion de que
+            # la propiedad carece del atributo. Si la descripcion publica una
+            # cantidad positiva explicita, se conserva; los filtros del
+            # catalogo ya fueron excluidos del auditor.
+            #
+            # El limite de palabra evita leer el "2" de "196 m2 Ambientes"
+            # como si fuera la cantidad de ambientes.
+            hallazgo = re.search(
+                rf"\b([1-9]\d?)\s*(?:{etiqueta})", texto, re.I)
+        if not hallazgo:
+            return None
+        valor = int(hallazgo.group(1))
+        return valor if 1 <= valor <= 99 else None
+
+    @staticmethod
+    def _es_tabla_de_atributos(texto: str) -> bool:
+        """Si la ficha lista los atributos como ``Rotulo N`` y no como prosa.
+
+        Se decide una vez por ficha y con TODOS los rotulos conocidos, no con
+        el que se esta leyendo: un solo campo no alcanza para distinguir los
+        dos formatos, y equivocarse corre todos los valores un lugar.
+        """
+        despues = len(re.findall(
+            rf"(?:{ETIQUETAS_ATRIBUTO})\s*\d{{1,2}}\b", texto, re.I))
+        antes = len(re.findall(
+            rf"\b[1-9]\d?\s*(?:{ETIQUETAS_ATRIBUTO})", texto, re.I))
+        return despues > antes
 
     @staticmethod
     def _mismo_sitio(url: str, base: str) -> bool:
