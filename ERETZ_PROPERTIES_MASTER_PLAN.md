@@ -115,6 +115,25 @@ Cubren 520 inmobiliarias.
 | 21 % | superficie total |
 | **8,6 %** | **ciudad** |
 
+### 2.4 Cobertura: ninguna propiedad se pierde
+
+Principio: **una propiedad válida no deja de mostrarse porque le falte un dato
+enriquecible.** Medido sobre los 37 paquetes con corrida:
+
+| Vía de pérdida | Propiedades |
+|---|---|
+| Detalles fallidos | 0 |
+| Descartadas por el guardián de forma | 0 |
+| Fichas sin contenido | 0 |
+| Sin pedir por presupuesto | 0 |
+
+**4.029 enumeradas → 4.029 guardadas: 100 %.** Los 126 duplicados de listado
+son la misma URL repetida, y las 7.037 imágenes descartadas son *chrome* del
+sitio, no propiedades.
+
+Se corrigió además el punto donde sí se perdían: faltar operación o tipo las
+marcaba `INVALID_OR_REJECTED` y no llegaban a la base. Eran 13.518 (D-014).
+
 ### 2.4 Rendimiento real del runner
 
 74 corridas medidas:
@@ -128,7 +147,7 @@ El cuello es el **límite de ritmo por host** (1,5 s), no la CPU.
 
 ### 2.5 Salud
 
-`eretz-agency`: **1.309 tests pasan**, sin regresiones tras trece defectos
+`eretz-agency`: **1.316 tests pasan**, sin regresiones tras quince defectos
 cerrados y la geografía canónica. Se partió de 1.233.
 
 ---
