@@ -128,8 +128,8 @@ El cuello es el **límite de ritmo por host** (1,5 s), no la CPU.
 
 ### 2.5 Salud
 
-`eretz-agency`: **1.293 tests pasan**, sin regresiones tras trece defectos
-cerrados y la capa geográfica. Se partió de 1.233.
+`eretz-agency`: **1.309 tests pasan**, sin regresiones tras trece defectos
+cerrados y la geografía canónica. Se partió de 1.233.
 
 ---
 
@@ -232,8 +232,13 @@ Jerarquía de evidencia, de mayor a menor:
 
 Prohibido: `provincia → ciudad`, y `coordenada aproximada → ciudad exacta`.
 
-**Estado: IN PROGRESS.** Resuelto el catálogo, pendiente el cableado al
-pipeline.
+**Estado: V1 CERRADO** en todo lo que no depende de la base productiva.
+Documentación completa en [`ERETZ_CANONICAL_GEOGRAPHY.md`](ERETZ_CANONICAL_GEOGRAPHY.md).
+
+Integrada en el pipeline (`Connector._resolver_geografia`, llamado desde
+`completar_ubicacion`): una sola lógica canónica para todos los connectors,
+snapshot local, cero consultas remotas por propiedad, 0,509 ms cada una. El
+backfill invoca **el mismo código**, no una copia.
 
 **Fuente adoptada: GeoRef Argentina** (Servicio de Normalización de Datos
 Geográficos, datos.gob.ar). Oficial, gratuita, sin credenciales. Snapshot local
@@ -418,8 +423,9 @@ Descubrimiento → Directorio de plataformas → Resolución de identidad
 |---|---|---|
 | Promoción a `main` | 79.001 propiedades atribuibles | Autorización de escritura productiva |
 | Vinculación de las 56 homónimas | 1.140 propiedades | Autorización de escritura productiva |
-| Cablear la geografía al pipeline | Que `ciudad` se llene con procedencia | Punto seguro sin certificación en vuelo (§3.3) |
-| Escribir `ciudad` sobre lo ya extraído | 17.608 propiedades resolubles | Autorización de escritura productiva |
+| **Postgres de producción caído** | Promoción, vinculación y escritura de ciudad | `PGRST002`: PostgREST responde, la base detrás no |
+| Escribir `ciudad` sobre lo ya extraído | 29.048 propuestas listas | Que vuelva la base |
+| Polígonos de localidad | 40.635 propiedades con coordenada y sin ciudad | GeoRef no los publica en estos recursos |
 | 2.462 sin web conocida | Su promoción y certificación | Descubrimiento (bloque #3) |
 
 ---
