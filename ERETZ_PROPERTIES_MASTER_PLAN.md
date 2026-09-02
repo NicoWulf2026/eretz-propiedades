@@ -229,8 +229,8 @@ plataforma. El dominio no sirve como identidad de inmobiliaria.
 
 ### Salud de la batería de tests
 
-`eretz-agency`: **1.258 tests pasan** (2026-09-02), sin regresiones tras los
-once defectos cerrados. Se partió de 1.233.
+`eretz-agency`: **1.263 tests pasan** (2026-09-02), sin regresiones tras los
+doce defectos cerrados. Se partió de 1.233.
 
 ---
 
@@ -517,6 +517,27 @@ cuya web no se conoce. Por eso el orden real de ataque es **#3 → #7 → #1 →
 #6**, no el orden nominal de la lista.
 
 ---
+
+### D-013 — Atributos tabulados leídos al revés (CERRADO)
+
+El más silencioso de todos, y salió de perseguir el `NEEDS_FIX` de requena.
+
+Su ficha publica los atributos como tabla, **sin dos puntos**: `Ambientes 3
+Dormitorios 2 Baños 2 Cocheras 1`. El extractor buscaba el número **antes** del
+rótulo, así que `ambientes` quedaba sin leer en las 141 fichas —con el dato a
+la vista— y la certificación lo marcaba `EXTRACTION_FAILED` con razón.
+
+**Lo grave no era la ausencia.** Al leer al revés, `dormitorios` tomaba el 3 de
+ambientes, y `ambientes` tomaba el 2 de `196 m2`. No un campo vacío: **el valor
+del campo vecino**, corrido un lugar, que parece correcto y después no se
+distingue de un dato real.
+
+La adyacencia sola es ambigua —"3 dormitorios 2 baños" es prosa y ahí el número
+sí va antes—, así que el formato se decide **una vez por ficha**, mirando todos
+los rótulos conocidos y no el que se está leyendo: un solo campo no alcanza
+para distinguirlos, y equivocarse corre todos los valores. Un rótulo con dos
+puntos sigue mandando sobre ambos, porque ahí no hay nada que adivinar, y el
+límite de palabra evita leer el "2" de "m2" como una cantidad.
 
 ### D-012 — Cobertura al filo del umbral (ABIERTO)
 
