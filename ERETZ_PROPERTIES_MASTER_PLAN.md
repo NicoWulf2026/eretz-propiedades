@@ -372,11 +372,27 @@ tests** —la regla de §1.1 otra vez:
 | D-013 | **Atributos tabulados leídos al revés** | cerrado | 1.056 combinaciones imposibles, todas en `generico` |
 | D-014 | Propiedad incompleta tratada como inválida | cerrado | **13.518 propiedades no llegaban a la base** |
 | D-015 | **Fotos de otras propiedades atribuidas al aviso** | cerrado | 84.378 imágenes ajenas en 6.584 propiedades |
+| D-016 | Negarse a afirmar leído como fallo de extracción | cerrado | Bloqueaba inmobiliarias correctas |
 
 **`NEEDS_FIX` abiertos: 0.** Verificado por
 `scripts/agency_rollout_preflight.py`.
 
-### Los cuatro que importan
+### Los cinco que importan
+
+**D-016 — la diferencia entre no poder y no querer.** La certificación
+distingue `EXTRACTION_FAILED` (defecto nuestro, bloquea) de
+`REJECTED_BY_VALIDATION` (la validación funcionando). La geografía vacía un
+campo en tres situaciones distintas —un barrio en el campo ciudad, una
+coordenada que desmiente, una homónima sin contexto— y las tres se leían como
+si hubiéramos fallado al extraer.
+
+Bloqueó dos inmobiliarias que estaban perfectas. `aagaard` tenía 301
+identidades, 0 colisiones e idempotencia, y quedaba en `NEEDS_FIX` porque 38
+promociones correctas de barrio a ciudad se contaban como 38 barrios perdidos.
+
+Los arreglé de a uno, cada vez que uno frenaba la cola, hasta que quedó claro
+que era una sola regla: **si la fuente publicó un valor y no lo afirmamos, ese
+valor se rechazó.** El tercer caso lo cerré antes de que frenara nada.
 
 **D-015 — la foto de la casa de al lado.** El chequeo de idempotencia marcó que
 una de 88 fichas cambiaba de fotos entre dos corridas separadas por segundos.
