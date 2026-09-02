@@ -193,6 +193,43 @@ def test_queue_does_not_repeat_current_identity_terminal_results(monkeypatch) ->
     }, record)
 
 
+def test_zero_inventory_from_a_specific_connector_still_tries_the_generic() -> None:
+    """Regresion de `roomix:analia requena propiedades`.
+
+    El sitio es una app Laravel y se le asigno el connector de WordPress porque
+    el HTML menciona `wp-content`. La corrida cerro en OK con cero propiedades
+    y se reporto sin inventario, mientras el sitio publicaba trece paginas de
+    fichas. Un connector que termina en OK con cero no distingue "no publica"
+    de "elegimos el connector equivocado".
+    """
+    from scripts.agency_certifier import debe_reintentar_con_generico
+
+    assert debe_reintentar_con_generico("wordpress", {"estado": "OK", "_props": []})
+    assert debe_reintentar_con_generico(
+        "tokko", {"estado": "VARIANTE_NO_SOPORTADA", "_props": []})
+
+
+def test_the_generic_fallback_never_replaces_a_connector_that_found_inventory() -> None:
+    """El fallback reemplaza al especifico, no lo complementa: si el especifico
+    trajo propiedades, mezclar dos lecturas del mismo sitio duplicaria
+    inventario o lo contaminaria con otra estrategia."""
+    from scripts.agency_certifier import debe_reintentar_con_generico
+
+    assert not debe_reintentar_con_generico(
+        "wasi", {"estado": "OK", "_props": [{"source_url": "u"}]})
+    assert not debe_reintentar_con_generico(
+        "generico", {"estado": "OK", "_props": []})
+
+
+def test_a_blocked_source_is_not_hit_again_with_another_connector() -> None:
+    """La fuente rechazo el acceso automatico: volver a pedirle lo mismo con
+    otro connector la golpea sin aprender nada."""
+    from scripts.agency_certifier import debe_reintentar_con_generico
+
+    assert not debe_reintentar_con_generico(
+        "tokko", {"estado": "BLOQUEADA", "_props": []})
+
+
 def test_ready_queue_only_includes_resolved_identities(monkeypatch) -> None:
     """Certificar una fuente cuya identidad no resuelve gasta dos corridas en
     vivo contra un sitio de terceros para producir inventario que despues no

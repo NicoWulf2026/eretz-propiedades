@@ -541,17 +541,36 @@ def diagnose_enumeration(run: dict[str, Any], baseline: int | None,
     }
 
 
+def debe_reintentar_con_generico(connector_name: str,
+                                 result: dict[str, Any]) -> bool:
+    """Si conviene reintentar con el connector generico.
+
+    Una plataforma declarada puede haber cambiado, y el fallback solo reemplaza
+    al especifico si obtiene algo: nunca para mezclar ambos.
+
+    Alcanza con que el especifico no haya obtenido NADA, sin exigirle ademas
+    que se declare no soportado. Un connector que termina en OK con cero no
+    distingue "esta inmobiliaria no publica" de "elegimos el connector
+    equivocado": requenapropiedades.com.ar es una app Laravel y se le asigno el
+    de WordPress porque el HTML menciona `wp-content`, la corrida cerro en OK
+    con cero, se reporto sin inventario, y el sitio publica trece paginas de
+    fichas. Un cero se demuestra, no se hereda del connector que elegimos.
+
+    La excepcion es `BLOQUEADA`: ahi la fuente rechazo el acceso automatico y
+    volver a pedirle lo mismo con otro connector la golpea sin aprender nada.
+    """
+    return (connector_name != "generico"
+            and not result.get("_props")
+            and result.get("estado") != "BLOQUEADA")
+
+
 def run_once(connector_name: str, source: Fuente, checkpoint: Checkpoint,
              interval: float, max_listings: int, budget: float) -> tuple[dict[str, Any], AuditDownloader]:
     downloader = AuditDownloader(LimitadorDeRitmo(interval), timeout=25,
                                  reintentos=3, limite_bytes=800_000)
     connector = CONNECTORS[connector_name](downloader, checkpoint)
     result = _procesar_con(connector, source, max_listings, True, budget)
-    # Una plataforma declarada puede haber cambiado. El fallback generico solo
-    # se usa si el especifico no obtuvo inventario, nunca para mezclar ambos.
-    if (connector_name != "generico"
-            and result.get("estado") in {"VARIANTE_NO_SOPORTADA", "ERROR_DISCOVERY"}
-            and not result.get("_props")):
+    if debe_reintentar_con_generico(connector_name, result):
         fallback = GenericoConnector(downloader, checkpoint)
         alternate = _procesar_con(fallback, source, max_listings, True, budget)
         if alternate.get("detalles_obtenidos") or alternate.get("estado") == "OK":
