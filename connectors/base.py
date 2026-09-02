@@ -28,6 +28,7 @@ import random
 import re
 import unicodedata
 import ssl
+from html import unescape
 import threading
 import time
 import urllib.error
@@ -881,6 +882,47 @@ def identidad_de_imagen(u: str) -> str:
                 # Next.js pasa la foto como ruta: /_next/image?url=%2Ffotos%2Fa.jpg
                 return urllib.parse.urljoin(base, adentro)
     return base
+
+
+RE_ENLACE_CON_IMAGEN = re.compile(
+    r'<a\b[^>]*?href="([^"]+)"[^>]*>(?:(?!</a>).)*?<img\b(?:(?!</a>).)*?</a>',
+    re.I | re.S)
+RE_ARCHIVO_DE_IMAGEN = re.compile(r"\.(?:jpe?g|png|webp|gif|avif)$", re.I)
+
+
+def sin_fichas_vecinas(html: str, url_propia: Any) -> str:
+    """Saca los bloques que enlazan a OTRA ficha y muestran su foto.
+
+    azpropiedades.com pone al pie un carrusel de propiedades relacionadas: cada
+    una es un `<a href="/propiedad/OTRO_ID/">` con su miniatura adentro.
+    Extraer imagenes del documento entero le pegaba a cada aviso las fotos de
+    sus vecinos -84.378 imagenes ajenas en 5.903 propiedades- y ademas rompia
+    la idempotencia, porque el sitio rota ese bloque y cada rotacion se leia
+    como que la propiedad habia cambiado de fotos.
+
+    Mostrarle a alguien la foto de otra casa es peor que no mostrarle ninguna.
+
+    La regla es estructural y no depende del nombre del archivo: una imagen
+    envuelta en un enlace a otra PAGINA no es de esta propiedad. Las galerias
+    con lightbox no se tocan, porque ahi el href es el archivo de imagen y no
+    una ficha.
+    """
+    ruta_propia = urllib.parse.urlparse(
+        str(url_propia or "")).path.rstrip("/") or None
+
+    def decidir(coincidencia: "re.Match[str]") -> str:
+        destino = unescape(coincidencia.group(1)).strip()
+        if not destino or destino.startswith(
+                ("javascript:", "mailto:", "tel:", "#")):
+            return coincidencia.group(0)
+        if RE_ARCHIVO_DE_IMAGEN.search(destino.split("?")[0]):
+            return coincidencia.group(0)
+        ruta = urllib.parse.urlparse(destino).path.rstrip("/")
+        if ruta_propia and ruta and ruta == ruta_propia:
+            return coincidencia.group(0)
+        return " "
+
+    return RE_ENLACE_CON_IMAGEN.sub(decidir, html or "")
 
 
 def detectar_operacion(texto: Any) -> str | None:

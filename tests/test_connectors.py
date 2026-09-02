@@ -1440,6 +1440,60 @@ def test_un_solo_dato_publicado_alcanza_para_ser_una_propiedad():
                                       descripcion="Casa con patio")) is False
 
 
+FICHA_CON_VECINAS = (
+    '<div class="listing-gallery">'
+    '<img src="https://cdn.test/propia-1.jpeg">'
+    '<a href="https://alfa.test/propiedad/111_casa/" class="listing-thumb">'
+    '<img src="https://cdn.test/vecina-111_thumbnail.jpeg"></a>'
+    '<a href="https://alfa.test/propiedad/222_depto/" class="listing-thumb">'
+    '<img src="https://cdn.test/vecina-222_thumbnail.jpeg"></a>'
+    '<a href="https://cdn.test/propia-2.jpeg" class="lightbox">'
+    '<img src="https://cdn.test/propia-2.jpeg"></a>'
+    '</div>')
+
+
+def test_no_se_le_ponen_a_una_propiedad_las_fotos_de_sus_vecinas():
+    """Regresion de `roomix:agustin zlotnik propiedades`.
+
+    azpropiedades.com pone al pie un carrusel de relacionadas: cada una es un
+    enlace a OTRA ficha con su miniatura adentro. Extraer imagenes del
+    documento entero le pegaba a cada aviso las fotos de sus vecinos -84.378
+    imagenes ajenas en 5.903 propiedades- y ademas rompia la idempotencia,
+    porque el sitio rota ese bloque y cada rotacion se leia como que la
+    propiedad habia cambiado de fotos.
+
+    Mostrarle a alguien la foto de otra casa es peor que no mostrarle ninguna.
+    """
+    from connectors.base import sin_fichas_vecinas
+
+    limpio = sin_fichas_vecinas(FICHA_CON_VECINAS,
+                                "https://alfa.test/propiedad/999_lote/")
+    assert "vecina-111" not in limpio
+    assert "vecina-222" not in limpio
+    assert "propia-1" in limpio
+
+
+def test_la_galeria_con_lightbox_no_se_toca():
+    """En una galeria el enlace apunta al archivo de imagen, no a otra ficha:
+    esa imagen SI es de la propiedad y no se puede descartar."""
+    from connectors.base import sin_fichas_vecinas
+
+    limpio = sin_fichas_vecinas(FICHA_CON_VECINAS,
+                                "https://alfa.test/propiedad/999_lote/")
+    assert "propia-2" in limpio
+
+
+def test_la_foto_enlazada_a_la_propia_ficha_se_conserva():
+    """Algunos sitios envuelven la foto principal en un enlace a la misma
+    ficha. Descartarla dejaria al aviso sin su imagen."""
+    from connectors.base import sin_fichas_vecinas
+
+    ficha = ('<a href="https://alfa.test/propiedad/999_lote/">'
+             '<img src="https://cdn.test/principal.jpeg"></a>')
+    limpio = sin_fichas_vecinas(ficha, "https://alfa.test/propiedad/999_lote/")
+    assert "principal.jpeg" in limpio
+
+
 def test_operacion_se_lee_tambien_de_la_forma_verbal():
     """El vocabulario tenia los infinitivos pero no las conjugadas, asi que
     "Se vende terreno" quedaba sin operacion: el campo que mas define un aviso

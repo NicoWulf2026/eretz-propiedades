@@ -27,6 +27,7 @@ from html import unescape
 from typing import Any, Iterator
 
 from .base import (Bloqueado, Connector, ErrorPermanente, ErrorTransitorio,
+                   sin_fichas_vecinas,
                    Fuente, PropiedadNormalizada, a_entero, a_numero,
                    detectar_moneda, detectar_operacion, detectar_tipo, limpiar,
                    recorte_estable_de_imagenes)
@@ -488,7 +489,8 @@ class WordPressConnector(Connector):
                 except (ErrorTransitorio, ErrorPermanente, Bloqueado):
                     html = ""
                 if html:
-                    imagenes += RE_IMG.findall(html)
+                    imagenes += RE_IMG.findall(
+                        sin_fichas_vecinas(html, url))
                     if not descripcion:
                         m = re.search(
                             r'<meta[^>]+name="description"[^>]+content="([^"]{1,400})"',
@@ -507,7 +509,9 @@ class WordPressConnector(Connector):
             if m:
                 descripcion = limpiar(m.group(1))
             texto = texto_plano[:6000]
-            imagenes = RE_IMG.findall(html)
+            # El carrusel de propiedades relacionadas trae la foto de cada
+            # vecina. Sin sacarlo, cada aviso terminaba con fotos de otros.
+            imagenes = RE_IMG.findall(sin_fichas_vecinas(html, url))
             fecha = None
 
         # Precio y moneda. La convencion de "$" la decide el pipeline, no este
