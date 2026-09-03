@@ -373,9 +373,27 @@ tests** —la regla de §1.1 otra vez:
 | D-014 | Propiedad incompleta tratada como inválida | cerrado | **13.518 propiedades no llegaban a la base** |
 | D-015 | **Fotos de otras propiedades atribuidas al aviso** | cerrado | 84.378 imágenes ajenas en 6.584 propiedades |
 | D-016 | Negarse a afirmar leído como fallo de extracción | cerrado | Bloqueaba inmobiliarias correctas |
+| D-017 | Corrida truncada juzgada por idempotencia | cerrado | Razón engañosa; mandaba a buscar un bug inexistente |
+| D-018 | Presupuesto plano y duplicado en tres lugares | cerrado | **Dos inmobiliarias no podían certificar nunca** |
+| D-019 | Ruido de la fuente confundido con extracción inestable | cerrado | Bloqueo indefinido por un atributo opcional |
+| D-020 | Tabla de atributos con encabezados; rótulos compuestos | cerrado | Valores del campo vecino, coincidentes por azar |
+| D-021 | Descripción leída por clase CSS y no por rótulo | cerrado | 0 → 11 de 11 en una inmobiliaria |
 
 **`NEEDS_FIX` abiertos: 0.** Verificado por
 `scripts/agency_rollout_preflight.py`.
+
+### El patrón que se repitió cinco veces
+
+**Negarse a afirmar no es fallar al extraer.** La certificación distingue
+`EXTRACTION_FAILED` —defecto nuestro, bloquea— de `REJECTED_BY_VALIDATION` —la
+validación funcionando—. El pipeline decide honestamente no contestar en cinco
+lugares distintos: ciudad desmentida por la coordenada, ciudad que era barrio,
+barrio promovido a ciudad, rótulo que funde dos atributos, y homónima sin
+contexto. Los cinco se leían como si hubiéramos fallado, y bloquearon
+inmobiliarias que estaban perfectas.
+
+Los arreglé de a uno hasta que quedó claro que era una sola regla. **Si la
+fuente publicó un valor y no lo afirmamos, ese valor se rechazó.**
 
 ### Los cinco que importan
 
