@@ -92,3 +92,35 @@ def test_una_corrida_vacia_no_puede_pasar_por_exitosa():
     dice nada. Las excepciones por fuente tienen que quedar contadas aparte."""
     assert '"estado": "EXCEPCION"' in FUENTE or "EXCEPCION" in FUENTE
     assert "fuentes_por_estado" in FUENTE
+
+
+def test_un_fallo_transitorio_tiene_segunda_oportunidad_como_el_none():
+    """El mismo timeout tenía o no reintento según qué rama lo absorbiera.
+
+    Cuando el connector devuelve ``None`` y deja el error en ``errores``, el
+    runner difiere la ficha y la reintenta al terminar el lote. Cuando el
+    descargador propaga `ErrorTransitorio` —el mismo fallo, sólo que sin
+    absorber— iba directo a fallido, sin segunda oportunidad.
+
+    Eso dejó a `alagnapropiedades.com.ar` en NEEDS_FIX: 210 fichas en la
+    primera corrida y 209 en la segunda, inventarios distintos, por una ficha
+    que devuelve HTTP 200 cuando se la pide de nuevo.
+
+    `Bloqueado` y `ErrorPermanente` no se difieren: insistir ante un 403/429 o
+    un 404 no es reintentar, es golpear.
+    """
+    cuerpo = inspect.getsource(sys.modules["scripts.run_rollout"])
+    bucle = cuerpo[cuerpo.index("errores_antes = len(con.errores)"):]
+    bucle = bucle[:bucle.index("fichas_vacias = 0")]
+
+    transitorio = bucle.index("except ErrorTransitorio:")
+    permanente = bucle.index("except ErrorPermanente:")
+    bloqueado = bucle.index("except Bloqueado:")
+
+    # El transitorio se difiere; los otros dos cuentan como fallo en el acto.
+    assert "reintentos_diferidos.append(a)" in bucle[transitorio:transitorio + 900]
+    assert "fallidos += 1" in bucle[permanente:permanente + 120]
+    assert "fallidos += 1" in bucle[bloqueado:bloqueado + 120]
+    assert "reintentos_diferidos" not in bucle[bloqueado:bloqueado + 120]
+    # Y nunca vuelven a fusionarse en una sola rama que los trate igual.
+    assert "except (ErrorTransitorio, ErrorPermanente):" not in bucle

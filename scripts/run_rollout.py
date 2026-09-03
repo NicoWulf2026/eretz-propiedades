@@ -373,8 +373,23 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
         except Bloqueado:
             fallidos += 1
             break
-        except (ErrorTransitorio, ErrorPermanente):
+        except ErrorPermanente:
             fallidos += 1
+            continue
+        except ErrorTransitorio:
+            # Transitorio significa que puede desaparecer solo. El descargador
+            # ya reintento tres veces, pero las tres cayeron dentro de la misma
+            # ventana congestionada -que en buena parte crea el propio runner
+            # pidiendole fichas al sitio-. Se difiere igual que el ``None`` de
+            # abajo, que es el MISMO fallo cuando el connector lo absorbio en
+            # lugar de propagarlo.
+            #
+            # Esa asimetria dejo a alagnapropiedades.com.ar en NEEDS_FIX por
+            # una ficha que devuelve HTTP 200 al pedirla de nuevo: 210 fichas
+            # en la primera corrida y 209 en la segunda, inventarios distintos.
+            # El mismo timeout tenia o no segunda oportunidad segun que rama lo
+            # hubiese absorbido.
+            reintentos_diferidos.append(a)
             continue
         if p is None:
             # Algunos connectors convierten el fallo transitorio final del
