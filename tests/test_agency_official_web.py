@@ -97,3 +97,30 @@ def test_el_nombre_se_busca_con_el_mismo_alfabeto():
     a `Remax Cuore`, cuyo sitio escribe la marca con barra."""
     assert solo_alfanumerico("RE/MAX Cuore") == "remaxcuore"
     assert solo_alfanumerico("remax") in solo_alfanumerico("RE/MAX CUORE")
+
+
+def test_cuando_el_dominio_no_lleva_el_nombre_lo_decide_la_pagina():
+    """La regla del dominio no distingue un acrónimo de un dominio ajeno.
+
+    `ayfb.com.ar` es de `Archeri + Fernandez Bazan` y su página lo nombra; el
+    sitio de los Bomberos de San Lorenzo, que el gate de promoción daba como
+    web de `Casiana Severio`, no. Sin palabra hallada en el dominio se busca la
+    más larga del nombre, que es lo que permite separarlos.
+    """
+    from scripts.agency_official_web_verify import palabra_a_buscar
+
+    assert palabra_a_buscar({"palabra_que_coincide": "alfa"}) == "alfa"
+    assert palabra_a_buscar(
+        {"palabra_que_coincide": None,
+         "nombre": "Casiana Severio Administracion"}) == "administracion"
+    # Un nombre sin ninguna palabra larga no alcanza para preguntar nada.
+    assert palabra_a_buscar({"palabra_que_coincide": None, "nombre": "A B C"}) == ""
+
+
+def test_sin_url_no_se_intenta_abrir_nada():
+    """El gate de promoción guarda el host pelado y deja `official_url` en None
+    cuando no afirma. Pedirle a urllib que abra eso daba un TypeError sobre
+    bytes que no explicaba nada."""
+    resultado = verificar({"official_url": None, "nombre": "Alfa"})
+    assert resultado["verificacion"] == "NO_LLEGO_A_ABRIRSE"
+    assert resultado["official_url"] is None

@@ -156,9 +156,31 @@ def evidencia_de_otro_pais(texto: str) -> list[str]:
     return [p for p in OTROS_PAISES if p in plano]
 
 
+def palabra_a_buscar(fila: dict[str, Any]) -> str:
+    """Con que palabra se comprueba que la pagina nombra a esta inmobiliaria.
+
+    Normalmente es la que la compuerta encontro en el dominio. Cuando el
+    dominio no lleva el nombre -un acronimo como `ayfb.com.ar`, o un dominio
+    ajeno- no hay tal palabra, y entonces se usa la mas larga del nombre. Sirve
+    para separar dos cosas que la regla del dominio confunde: un acronimo
+    legitimo nombra a la inmobiliaria en la pagina, y el sitio de los Bomberos
+    de San Lorenzo no.
+    """
+    palabra = fila.get("palabra_que_coincide")
+    if palabra:
+        return solo_alfanumerico(palabra)
+    partes = (fila.get("nombre") or "").replace(".", " ").split()
+    mas_larga = max(partes, key=len, default="")
+    return solo_alfanumerico(mas_larga) if len(mas_larga) >= 4 else ""
+
+
 def evaluar(fila: dict[str, Any]) -> dict[str, Any]:
-    url = fila["official_url"]
+    url = fila.get("official_url")
     inicio = time.time()
+    if not isinstance(url, str) or not url.startswith("http"):
+        return dict(fila, verificacion="NO_LLEGO_A_ABRIRSE",
+                    verificacion_razon="no hay una url que abrir",
+                    official_url=None, segundos=0.0)
     host = urllib.parse.urlparse(url).netloc.lower()
     tld = host.rsplit(".", 1)[-1]
     if tld in TLD_EXTRANJEROS:
@@ -183,7 +205,7 @@ def evaluar(fila: dict[str, Any]) -> dict[str, Any]:
     # idiomas. Solo se lo trata como contradiccion cuando el pais aparece en la
     # autodescripcion del sitio, que es donde el sitio dice que es.
     contra = evidencia_de_otro_pais(f"{titulo} {autodescripcion(html)}")
-    palabra = solo_alfanumerico(fila.get("palabra_que_coincide") or "")
+    palabra = palabra_a_buscar(fila)
     nombre_presente = bool(palabra) and palabra in solo_alfanumerico(
         f"{autodescripcion(html)} {texto}")
 
