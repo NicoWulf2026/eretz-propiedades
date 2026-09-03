@@ -147,8 +147,58 @@ El cuello es el **límite de ritmo por host** (1,5 s), no la CPU.
 
 ### 2.5 Salud
 
-`eretz-agency`: **1.316 tests pasan**, sin regresiones tras quince defectos
-cerrados y la geografía canónica. Se partió de 1.233.
+`eretz-agency`: **1.346 tests pasan**, sin regresiones tras dieciocho defectos
+cerrados, la geografía canónica y la compuerta de web oficial. Se partió de
+1.233.
+
+---
+
+### 2.6 Web oficial: cuál se puede afirmar
+
+Fuente: `web_identity_resolved.jsonl` (598 dominios descubiertos por el
+resolver), pasada por `agency_official_web_gate.py` y
+`agency_official_web_verify.py`.
+
+El resolver decidía **una entidad por vez**, y esa era su limitación: un
+verificador que mira una sola entidad no puede ver que 65 eligieron el mismo
+host. De 598 dominios, **597 quedaron `OFFICIAL_WEB_HIGH_CONFIDENCE`** —o sea
+que el estado no discriminaba nada— y `buscainmueble.com` figuraba como web
+oficial de **65 inmobiliarias distintas**.
+
+| Etapa | Entidades |
+|---|---|
+| Dominios descubiertos por el resolver | 598 |
+| Descartadas: host reclamado por varias | 121 |
+| Descartadas: el nombre no está en el dominio | 82 |
+| Afirmables tras la compuerta | 395 |
+| **Verificadas argentinas, abriendo el sitio** | **316** |
+| Sin evidencia de país | 48 |
+| No respondieron / sin texto / ccTLD extranjero / otro país | 31 |
+
+Reglas, en orden:
+
+1. La web oficial es un **origen**, no una página. 298 de 598 apuntaban a la
+   ficha de una propiedad.
+2. Un host que reclaman **varias entidades no identifica a ninguna**. La regla
+   se demuestra con nuestros propios datos y voltea portales, colegios y redes
+   de franquicia sin lista mantenida a mano.
+3. El nombre tiene que estar en el **dominio**. La evidencia de nombre leída en
+   la página no sirve, y se midió: `waze.com` y `signalhire.com` traen
+   `nombre_exacto` igual que un sitio propio, porque un directorio que lista a
+   una inmobiliaria menciona su nombre exacto.
+4. Abrir el sitio y exigir evidencia argentina: dominio `.ar`, la palabra
+   Argentina, o teléfono +54. **Un nombre de lugar no es evidencia de país**:
+   la primera versión buscó localidades de GeoRef y dejó pasar a la Sandoval de
+   **Ibiza**, cuya página dice "esquina" —palabra corriente en cualquier aviso
+   y además localidad de Corrientes—. Tampoco alcanza con subir a provincias:
+   Córdoba, La Rioja y Santa Fe son también provincias españolas.
+
+**Qué destraba hoy, medido: casi nada.** De las 111 pendientes sin web, la
+compuerta aporta una web verificada a **2**, y esas dos siguen frenadas por la
+FK de ERETZ. Las otras 78 nunca tuvieron candidatos y encontrarlas exige una
+API de búsqueda paga, descartada. El valor es hacia adelante: **308 de las 316
+pertenecen a inmobiliarias que todavía no tienen paquete de certificación**. Es
+un insumo puesto por anticipado, no un desbloqueo.
 
 ---
 
@@ -497,7 +547,7 @@ Descubrimiento → Directorio de plataformas → Resolución de identidad
 | **Postgres de producción caído** | Promoción, vinculación y escritura de ciudad | `PGRST002`: PostgREST responde, la base detrás no |
 | Escribir `ciudad` sobre lo ya extraído | 29.048 propuestas listas | Que vuelva la base |
 | Polígonos de localidad | 40.635 propiedades con coordenada y sin ciudad | GeoRef no los publica en estos recursos |
-| 2.462 sin web conocida | Su promoción y certificación | Descubrimiento (bloque #3) |
+| 2.462 sin web conocida | Su promoción y certificación | 316 webs oficiales ya verificadas (§2.6); las 78 sin candidatos necesitan API de búsqueda paga |
 
 ---
 
@@ -507,7 +557,10 @@ Descubrimiento → Directorio de plataformas → Resolución de identidad
 2. **Cablear la geografía** a los connectors y al quality gate, en un punto sin
    certificación en vuelo: tocar `connectors/base.py` cambia la huella de todas
    las estrategias y invalidaría la evidencia de la corrida activa.
-3. **Descubrimiento** para las 2.462 sin web.
+3. **Cablear `AGENCY_OFFICIAL_WEB_VERIFIED.jsonl`** a `load_catalog` del
+   certificador, en un punto sin certificación en vuelo: hoy `resolve_identity`
+   lee `agency_web_directory.jsonl` y nunca miró la salida del resolver, así
+   que las 316 webs verificadas están calculadas y sin consumir.
 4. **Vinculación e ingesta** una vez levantada la barrera.
 5. Contrato de propiedad, dedup, ciclo de vida, quality gate, publicación.
 
