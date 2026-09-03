@@ -1338,6 +1338,18 @@ class GenericoConnector(Connector):
             visible = limpiar(_texto(m.group(1))) if m else None
             descripcion = visible if visible and len(visible) >= 20 else None
 
+        if not descripcion:
+            # Regla general en vez del enesimo patron por sitio: un rotulo cuyo
+            # texto es EXACTAMENTE "Descripcion", seguido del bloque que lo
+            # sigue. Los patrones de arriba estan atados a nombres de clase
+            # concretos -title_blue, separador-titulo- y no cubren
+            # alejoandresen.com.ar, que usa <h3>Descripcion</h3><p>...</p>.
+            #
+            # Se exige que el rotulo sea solo eso: un <p> que MENCIONE la
+            # palabra es prosa de la ficha, y tomar lo que le sigue traeria
+            # cualquier cosa.
+            descripcion = self._descripcion_rotulada(principal)
+
         precio = mapaprop.get("precio", datos.get("precio"))
         moneda = mapaprop.get("moneda") or datos.get("moneda")
         if precio is None:
@@ -2329,6 +2341,20 @@ class GenericoConnector(Connector):
             # azar; con baños 3 habria guardado 3.
             return None
         return GenericoConnector._cuenta(texto, etiqueta, previo)
+
+    @staticmethod
+    def _descripcion_rotulada(html: str) -> str | None:
+        """El bloque que sigue a un rotulo que dice solo "Descripcion"."""
+        bloque = r"(?:p|div|section|article)"
+        rotulo = r"(?:h[1-6]|div|span|strong|b|p)"
+        m = re.search(
+            rf"<{rotulo}[^>]*>\s*Descripci(?:[oó]|&oacute;)n\s*"
+            rf"</{rotulo}>\s*<{bloque}[^>]*>(.*?)</{bloque}>",
+            html or "", re.I | re.S)
+        if not m:
+            return None
+        visible = limpiar(_texto(m.group(1)))
+        return visible if visible and len(visible) >= 20 else None
 
     @staticmethod
     def _rotulo_compuesto(marcado: str, etiqueta: str) -> bool:

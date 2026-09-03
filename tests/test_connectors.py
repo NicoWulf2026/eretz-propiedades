@@ -1313,6 +1313,36 @@ def test_una_unidad_pegada_a_un_numero_no_es_una_cantidad():
     assert G._cuenta("Superficie 196 m2 Ambientes 3", r"ambientes?", None) != 2
 
 
+def test_la_descripcion_se_lee_de_un_rotulo_general_y_no_de_un_patron_por_sitio():
+    """Los patrones anteriores estaban atados a nombres de clase concretos
+    -title_blue, separador-titulo- y no cubrian alejoandresen.com.ar, que usa
+    <h3>Descripcion</h3><p>...</p>. Sumar el enesimo patron particular no
+    escala: la regla es que un rotulo diga SOLO "Descripcion"."""
+    from connectors.generico import GenericoConnector as G
+
+    ficha = ('<section id="description"><h3>Descripcion</h3>'
+             '<p>JARDIN PROPIO. Divino dos ambientes con toilette y jardin '
+             'interno al este.</p></section>')
+    assert G._descripcion_rotulada(ficha).startswith("JARDIN PROPIO")
+
+
+def test_una_frase_que_menciona_la_palabra_no_es_el_rotulo():
+    """Un parrafo que dice "descripcion" adentro es prosa de la ficha. Tomar lo
+    que le sigue traeria cualquier cosa."""
+    from connectors.generico import GenericoConnector as G
+
+    ficha = ('<p>Vea la descripcion completa mas abajo</p>'
+             '<p>Telefono de contacto y horarios de atencion al publico</p>')
+    assert G._descripcion_rotulada(ficha) is None
+
+
+def test_una_descripcion_demasiado_corta_no_cuenta():
+    from connectors.generico import GenericoConnector as G
+
+    assert G._descripcion_rotulada(
+        "<h3>Descripcion</h3><p>Casa</p>") is None
+
+
 FICHA_CON_ENCABEZADOS = (
     '<div><h6>Banos</h6><figure>2</figure></div>'
     '<div><h6>Cocheras</h6><figure>1</figure></div>')
