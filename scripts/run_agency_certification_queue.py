@@ -31,6 +31,7 @@ from scripts.agency_certifier import (
     version_del_codigo,
     write_json,
 )
+from scripts.run_rollout import PRESUPUESTO_POR_FUENTE
 from scripts.agency_fingerprints import (
     GENERIC_STRATEGY_METHODS,
     strategy_fingerprint,
@@ -267,7 +268,11 @@ def main() -> int:
     parser.add_argument("--preingestion-db", default=r"D:\INMO CAPITAL\ERETZ_SUPABASE_RECONCILIATION_V2_20260827\PREINGESTION_REBUILD.sqlite3")
     parser.add_argument("--output", default=r"D:\INMO CAPITAL\ERETZ_AGENCY_CERTIFICATION_20260827")
     parser.add_argument("--interval", type=float, default=1.5)
-    parser.add_argument("--budget", type=float, default=1800.0)
+    # El default sale del modulo, no de un numero repetido aca: tenerlo en dos
+    # lugares hizo que subir el presupuesto no tuviera ningun efecto, porque el
+    # CLI seguia pasando el viejo.
+    parser.add_argument("--budget", type=float,
+                        default=PRESUPUESTO_POR_FUENTE)
     parser.add_argument("--max-listings", type=int, default=0)
     parser.add_argument("--continue-after-fix", action="store_true")
     parser.add_argument("--limit", type=int, default=0,

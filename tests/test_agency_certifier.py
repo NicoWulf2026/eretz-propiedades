@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from scripts.agency_certifier import (
     classify_field,
@@ -217,6 +218,27 @@ def test_una_corrida_truncada_no_se_juzga_por_idempotencia() -> None:
     assert len(razones) == 1
     assert "time budget" in razones[0]
     assert not any("idempotent" in r for r in razones)
+
+
+def test_el_presupuesto_del_cli_es_el_del_modulo() -> None:
+    """El valor estaba escrito en tres lugares, y por eso subirlo no tuvo
+    ningun efecto: el modulo decia 5.400 y los dos CLI seguian pasando 1.800,
+    asi que alagna se volvio a truncar exactamente igual.
+
+    Un default duplicado es una constante que miente.
+    """
+    import re
+
+    from scripts.run_rollout import PRESUPUESTO_POR_FUENTE
+
+    for archivo in ("scripts/agency_certifier.py",
+                    "scripts/run_agency_certification_queue.py"):
+        texto = Path(archivo).read_text(encoding="utf-8")
+        numeros = re.findall(r'--budget"[^)]*?default=([\d.]+)', texto,
+                             re.S)
+        assert not numeros, f"{archivo} repite el presupuesto: {numeros}"
+        assert "default=PRESUPUESTO_POR_FUENTE" in texto, archivo
+    assert PRESUPUESTO_POR_FUENTE == 5400
 
 
 def test_el_presupuesto_alcanza_para_las_fuentes_lentas_medidas() -> None:

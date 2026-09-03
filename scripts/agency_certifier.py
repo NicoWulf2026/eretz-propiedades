@@ -42,7 +42,8 @@ from scripts.agency_fingerprints import (
     strategy_fingerprint,
     strategy_for,
 )
-from scripts.run_rollout import _procesar_con, version_del_codigo
+from scripts.run_rollout import (PRESUPUESTO_POR_FUENTE, _procesar_con,
+                                 version_del_codigo)
 
 CERTIFIER_VERSION = "agency_certifier_v1"
 IDENTITY_STRATEGY_VERSION = "canonical_main_exact_live_v2"
@@ -814,7 +815,11 @@ def main() -> int:
     parser.add_argument("--interval", type=float, default=1.5)
     parser.add_argument("--max-listings", type=int, default=0,
                         help="0 certifies the full live inventory")
-    parser.add_argument("--budget", type=float, default=1800.0)
+    # El default sale del modulo, no de un numero repetido aca: tenerlo en dos
+    # lugares hizo que subir el presupuesto no tuviera ningun efecto, porque el
+    # CLI seguia pasando el viejo.
+    parser.add_argument("--budget", type=float,
+                        default=PRESUPUESTO_POR_FUENTE)
     args = parser.parse_args()
     if bool(args.canonical_id) == bool(args.eretz_id):
         parser.error("provide exactly one of --canonical-id or --eretz-id")
