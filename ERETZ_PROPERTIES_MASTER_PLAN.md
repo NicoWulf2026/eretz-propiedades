@@ -87,33 +87,65 @@ Estado de los 190 paquetes existentes:
 
 ### 2.2 Inventario ya extraído
 
-Fuente: `PREINGESTION_REBUILD.sqlite3`, 189.159 filas.
+Fuente: `PREINGESTION_REBUILD.sqlite3`, 189.159 filas. Reconstruido el
+2026-09-03 en `ERETZ_PREINGESTION_REBUILD_20260903`; la base anterior era del
+27 de agosto, **anterior al fix D-014**, así que sus números ya no valían.
 
-| Estado | Filas |
-|---|---|
-| `AGENCY_ID_UNRESOLVED` | 127.595 (67,5 %) |
-| `CANDIDATE` (publicable) | 45.404 |
-| `INVALID_OR_REJECTED` | 15.938 |
-| `DUPLICATE_OR_CONFLICT` | 222 |
+| Estado | 27 ago | 3 sep |
+|---|---|---|
+| `AGENCY_ID_UNRESOLVED` | 127.595 | 127.595 |
+| `CANDIDATE` (publicable) | 45.404 | **58.427** |
+| `INVALID_OR_REJECTED` | 15.938 | **2.420** |
+| `DUPLICATE_OR_CONFLICT` | 222 | 717 |
 
-**Dos tercios de todo lo scrapeado no se puede atribuir** porque su
+**+13.023 propiedades publicables**, un 28,7 % más. Las transiciones cierran
+exactas: 13.023 `INVALID` → `CANDIDATE`, 493 `INVALID` →
+`DUPLICATE_OR_CONFLICT`, 57 al revés, 2 `CANDIDATE` → `DUPLICATE`.
+
+Las recuperadas son propiedades de verdad, no relleno: sobre una muestra de
+4.000, el 100 % tiene URL, el 99,9 % título, el 84 % precio y moneda, el 90 %
+descripción, el 82 % imágenes y el 61 % coordenadas. Se descartaban por no
+traer `tipo_propiedad`, que en esa muestra es del 0 %.
+
+Lo que les falta queda anotado en `_preingestion.campos_pendientes` —7.139 sin
+operación, 3.777 sin ninguna de las dos, 1.929 sin tipo— y se publican igual.
+Una señal de calidad para enriquecer después no es un motivo de descarte.
+
+**Dos tercios de todo lo scrapeado sigue sin poder atribuirse** porque su
 inmobiliaria no está en `main`. Ver §3.1.
 
-### 2.3 Completitud de las 45.404 candidatas
+### 2.3 Completitud de las 58.427 candidatas
 
-Cubren 520 inmobiliarias.
+Cubren 550 inmobiliarias.
 
-| Cobertura | Campos |
-|---|---|
-| 100 % | título, operación, tipo |
-| 92 % | moneda, precio |
-| 89 % | descripción |
-| 83 % | imágenes |
-| 77 % | latitud, longitud |
-| 60-66 % | baños, ambientes, dirección, dormitorios |
-| 49-50 % | superficie cubierta, barrio |
-| 21 % | superficie total |
-| **8,6 %** | **ciudad** |
+| Campo | Cobertura | Filas |
+|---|---|---|
+| título | 100,0 % | 58.412 |
+| moneda | 91,0 % | 53.194 |
+| precio | 90,9 % | 53.088 |
+| tipo de propiedad | 90,2 % | 52.721 |
+| descripción | 89,8 % | 52.466 |
+| imágenes | 85,1 % | 49.750 |
+| operación | 81,3 % | 47.511 |
+| latitud, longitud | 72,7 % | 42.499 |
+| baños | 66,2 % | 38.667 |
+| dormitorios | 58,8 % | 34.362 |
+| ambientes | 58,5 % | 34.168 |
+| dirección | 51,1 % | 29.872 |
+| superficie cubierta | 47,7 % | 27.856 |
+| barrio | 38,6 % | 22.559 |
+| superficie total | 26,5 % | 15.484 |
+| **ciudad** | **10,2 %** | 5.965 |
+
+**La tabla anterior decía 100 % en operación y tipo, y era sesgo de
+supervivencia:** todo lo que no los traía había sido descartado antes de
+contar. Los porcentajes de ahora bajan en varios campos porque el denominador
+creció un 28,7 %, pero en filas absolutas sube casi todo —las coordenadas pasan
+de 34.961 a 42.499—. Son los primeros números honestos de esta tabla.
+
+El dry-run de geografía no cambia: recorre las 189.159 filas sin importar su
+estado, así que reclasificar candidatas no mueve sus 29.048 propuestas.
+Verificado, no supuesto.
 
 ### 2.4 Cobertura: ninguna propiedad se pierde
 
@@ -557,10 +589,14 @@ Descubrimiento → Directorio de plataformas → Resolución de identidad
 2. **Cablear la geografía** a los connectors y al quality gate, en un punto sin
    certificación en vuelo: tocar `connectors/base.py` cambia la huella de todas
    las estrategias y invalidaría la evidencia de la corrida activa.
-3. **Cablear `AGENCY_OFFICIAL_WEB_VERIFIED.jsonl`** a `load_catalog` del
-   certificador, en un punto sin certificación en vuelo: hoy `resolve_identity`
-   lee `agency_web_directory.jsonl` y nunca miró la salida del resolver, así
-   que las 316 webs verificadas están calculadas y sin consumir.
+3. **Cablear, en el mismo punto sin certificación en vuelo**, dos insumos que
+   hoy están calculados y sin consumir:
+   - `AGENCY_OFFICIAL_WEB_VERIFIED.jsonl` a `load_catalog` del certificador;
+     `resolve_identity` lee `agency_web_directory.jsonl` y nunca miró la salida
+     del resolver, así que las 316 webs verificadas no las usa nadie.
+   - la base de preingestión del 3 de septiembre como canónica; la que apunta
+     el certificador por defecto es del 27 de agosto y le faltan las 13.023
+     candidatas recuperadas. No se reemplaza con un proceso leyéndola.
 4. **Vinculación e ingesta** una vez levantada la barrera.
 5. Contrato de propiedad, dedup, ciclo de vida, quality gate, publicación.
 
