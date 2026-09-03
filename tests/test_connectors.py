@@ -1362,6 +1362,43 @@ def test_los_encabezados_tambien_son_celdas_de_una_tabla_de_atributos():
                               None) == 1
 
 
+def test_una_ficha_con_segmento_intermedio_se_reconoce():
+    """Regresion de `roomix:alianza real estate`.
+
+    Publica sus fichas como /propiedad/detalle/104/GARCIA-Y-RAFAELA, con un
+    segmento entre la palabra clave y el id. El patron general exige que el id
+    venga pegado, asi que 26 fichas quedaban invisibles.
+    """
+    from connectors.generico import GenericoConnector as G
+
+    assert G._es_ficha_url("https://alfa.test/propiedad/detalle/104/Casa-Del-Sur")
+    assert G._es_ficha_url("https://alfa.test/propiedad/ver/12/Casa-Centro")
+
+
+def test_un_catalogo_anidado_no_se_confunde_con_una_ficha():
+    """Se pide un segmento NUMERICO seguido del slug, no cualquier ruta
+    anidada: si no, un catalogo por categoria entraria como propiedad."""
+    from connectors.generico import GenericoConnector as G
+
+    for ruta in ("/propiedades/venta/casas", "/ventas/listado",
+                 "/propiedades/listado", "/nosotros"):
+        assert not G._es_ficha_url("https://alfa.test" + ruta), ruta
+
+
+def test_la_enumeracion_usa_el_mismo_reconocedor_que_la_regla():
+    """La logica estaba escrita dos veces: en `_es_ficha_url` y repetida dentro
+    de `_fichas_en`. Agregar una forma nueva en la primera no tenia ningun
+    efecto sobre la enumeracion. Una regla escrita dos veces miente en uno de
+    los dos lados."""
+    from connectors.generico import GenericoConnector as G
+
+    html = ('<a href="https://alfa.test/propiedad/detalle/104/Casa-Del-Sur">x</a>'
+            '<a href="https://alfa.test/nosotros">y</a>')
+    encontradas = G._fichas_en(html, "https://alfa.test", None)
+    assert len(encontradas) == 1
+    assert "detalle/104" in encontradas[0]
+
+
 def test_se_siguen_los_catalogos_que_la_portada_enlaza():
     """Regresion de `roomix:alianza real estate`.
 

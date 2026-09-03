@@ -67,6 +67,17 @@ RE_FICHA = re.compile(
 # /8471-venta-casa-3-ambientes-en-adrogue. Ni el patron de Tokko ni el de arriba
 # la ven. Para que un id suelto en la raiz no arrastre cualquier pagina, se
 # exige que el slug diga de que se trata.
+# Algunas plataformas intercalan un segmento antes del id:
+# /propiedad/detalle/104/GARCIA-Y-RAFAELA. El patron general exige que el id
+# venga pegado a la palabra clave, asi que esas fichas quedaban invisibles y el
+# sitio se reportaba sin inventario.
+#
+# Se pide un segmento NUMERICO seguido del slug, no cualquier ruta anidada: un
+# catalogo como /propiedades/venta/casas no tiene numero y no entra.
+RE_FICHA_ANIDADA = re.compile(
+    r"/(?:propiedad(?:es)?|inmueble[s]?|ficha[s]?|listing[s]?|propert(?:y|ies))/"
+    r"(?:[a-z0-9-]+/)?\d{2,}/[^/?#]+/?$", re.I)
+
 RE_FICHA_RAIZ = re.compile(
     r"^/(\d{3,})-[a-z0-9-]*(venta|alquiler|casa|departamento|depto|terreno|"
     r"lote|ph|local|oficina|galpon|campo|cochera|quinta|duplex|chalet)"
@@ -948,8 +959,10 @@ class GenericoConnector(Connector):
     @staticmethod
     def _es_ficha_url(u: str, propia: "re.Pattern | None" = None) -> bool:
         ruta = urllib.parse.urlparse(u).path
-        return not RE_NO_FICHA.search(ruta) and bool(RE_FICHA.search(u) or RE_FICHA_RAIZ.search(ruta)
-                    or (propia is not None and propia.match(ruta)))
+        return not RE_NO_FICHA.search(ruta) and bool(
+            RE_FICHA.search(u) or RE_FICHA_ANIDADA.search(ruta)
+            or RE_FICHA_RAIZ.search(ruta)
+            or (propia is not None and propia.match(ruta)))
 
     @staticmethod
     def _solo_por_forma(u: str, propia: "re.Pattern | None") -> bool:
@@ -981,9 +994,11 @@ class GenericoConnector(Connector):
             u = urllib.parse.urljoin(base, m.group(1))
             if urllib.parse.urlparse(u).netloc.lower().replace("www.", "") != host:
                 continue
-            ruta = urllib.parse.urlparse(u).path
-            if RE_NO_FICHA.search(ruta) or not (RE_FICHA.search(u) or RE_FICHA_RAIZ.search(ruta)
-                    or (extra is not None and extra.match(ruta))):
+            # Se pregunta al reconocedor, no se repite su logica: estaba
+            # duplicada aca y agregar una forma nueva en `_es_ficha_url` no
+            # tenia ningun efecto sobre la enumeracion. Una regla escrita dos
+            # veces es una regla que miente en uno de los dos lados.
+            if not GenericoConnector._es_ficha_url(u, extra):
                 continue
             c = u.split("#")[0].rstrip("/")
             if c not in vistas:
