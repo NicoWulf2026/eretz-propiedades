@@ -48,6 +48,15 @@ ETIQUETAS_ATRIBUTO_COMPUESTO = (
 ETIQUETAS_ATRIBUTO = (r"ambientes?|dormitorios?|habitaciones?|ba[nñ]os?"
                       r"|cocheras?|toilettes?")
 
+# El rotulo con el que cada atributo contable se publica. Vive aca, y no en el
+# auditor, para que la senal de fuente y la extraccion no puedan quedar leyendo
+# etiquetas distintas para el mismo campo.
+ETIQUETAS_DE_CONTEO = {
+    "dormitorios": r"dormitorios?|habitaciones?",
+    "banos": r"ba[nñ]os?|toilettes?",
+    "ambientes": r"ambientes?",
+}
+
 SITEMAPS = ("/sitemap.xml", "/sitemap_index.xml", "/wp-sitemap.xml",
             "/sitemap-index.xml", "/sitemapindex.xml")
 
@@ -213,6 +222,25 @@ def _texto(html: str) -> str:
     return re.sub(r"\s+", " ", unescape(t).replace("\xa0", " "))
 
 
+def sin_marcado_comentado(html: str) -> str:
+    """Quita el marcado que vive dentro de un comentario HTML.
+
+    Un comentario no lo muestra ningun navegador: no es contenido publicado.
+    Alagna deja el bloque de ambientes comentado, con la `X` de la plantilla
+    adentro; leerlo hacia creer que la fuente provee un dato que nadie ve, y
+    exigia extraer un valor que no existe.
+
+    Los `<script>` envueltos en `<!-- //-->` son el patron viejo de esconder
+    JavaScript de navegadores antiguos, no marcado muerto: ahi puede viajar el
+    JSON-LD de la ficha, asi que esos comentarios se conservan.
+    """
+    def decidir(coincidencia):
+        bloque = coincidencia.group(0)
+        return bloque if "<script" in bloque.lower() else " "
+
+    return re.sub(r"<!--.*?-->", decidir, html or "", flags=re.S)
+
+
 def cuerpo_principal(html: str) -> str:
     """Parte de la ficha anterior a relacionadas/footer.
 
@@ -220,6 +248,7 @@ def cuerpo_principal(html: str) -> str:
     documento entero produjo dormitorios>ambientes que el guardián debió
     descartar; el dato nunca debió entrar al parser.
     """
+    html = sin_marcado_comentado(html)
     return re.split(
         r"id=[\"'](?:relacionadas|bottom)[\"']|<footer\b|"
         r"<div[^>]+class=[\"'][^\"']*titulo_prod_int[^\"']*[\"'][^>]*>\s*"
@@ -1467,12 +1496,12 @@ class GenericoConnector(Connector):
                                or detectar_tipo(texto_campos[:300])
                                or self._tipo_en_la_ficha(principal)),
             "dormitorios": None if es_emprendimiento else self._cuenta_de_ficha(
-                principal, texto_campos, r"dormitorios?|habitaciones?",
+                principal, texto_campos, ETIQUETAS_DE_CONTEO["dormitorios"],
                 datos.get("dorm")),
             "banos": None if es_emprendimiento else self._cuenta_de_ficha(
-                principal, texto_campos, r"ba[nñ]os?|toilettes?", datos.get("banos")),
+                principal, texto_campos, ETIQUETAS_DE_CONTEO["banos"], datos.get("banos")),
             "ambientes": None if es_emprendimiento else self._cuenta_de_ficha(
-                principal, texto_campos, r"ambientes?", None),
+                principal, texto_campos, ETIQUETAS_DE_CONTEO["ambientes"], None),
             "superficie_total": (mapaprop.get("superficie_total")
                                  or datos.get("sup_total")
                                  or self._sup(texto_campos, r"total|terreno")),
@@ -2444,11 +2473,16 @@ class GenericoConnector(Connector):
         su numero. Intentar deducirlo del texto aplanado ya fallo, porque las
         paginas traen tabla Y descripcion y la prosa gana por mayoria.
         """
+        # Se normaliza igual que en `_cuenta_de_ficha`. Leer el marcado crudo
+        # dejaba la regla ciega a las fichas cuya unica fila tabulada es
+        # `Baños`: el portal la sirve con la enye rota y la etiqueta no
+        # coincidia, asi que una tabla real pasaba por prosa.
+        marcado = normalizar_texto_campos(unescape(marcado or ""))
         celda = r"(?:span|div|dd|dt|td|li|p|b|strong|h[1-6]|figure)"
         return bool(re.search(
             rf"<{celda}[^>]*>\s*(?:{ETIQUETAS_ATRIBUTO_COMPUESTO})\s*"
             rf"</{celda}>\s*<{celda}[^>]*>\s*\d{{1,2}}\s*</{celda}>",
-            marcado or "", re.I))
+            marcado, re.I))
 
     @staticmethod
     def _rotulo_compuesto(marcado: str, etiqueta: str) -> bool:

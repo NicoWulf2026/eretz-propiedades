@@ -1025,3 +1025,53 @@ def test_tokko_audit_ignores_related_price_and_reads_structured_fields() -> None
     assert signals["banos"] is True
     assert signals["superficie_total"] is True
     assert signals["superficie_cubierta"] is True
+
+
+def test_el_marcado_comentado_no_prueba_que_la_fuente_provea_el_campo():
+    """Alagna publica el bloque de ambientes dentro de un comentario HTML.
+
+    Adentro esta la `X` de la plantilla, no un valor. Un comentario no lo
+    muestra ningun navegador: contarlo como campo provisto obligaba a extraer
+    un dato que la fuente nunca publico, y dejaba la agencia en NEEDS_FIX por
+    negarse a inventarlo.
+    """
+    from connectors.generico import sin_marcado_comentado
+
+    comentado = (
+        '<div class="datos"><!-- <div class="desc">Ambientes</div>'
+        '<div class="valor">3</div> --></div>'
+        '<div class="desc">Dormitorios</div><div class="valor">3</div>')
+    señales = source_signals(comentado, "https://x.com/p/1")
+    assert señales["ambientes"] is False
+    assert señales["dormitorios"] is True
+
+    # El patron viejo de esconder JavaScript de navegadores antiguos no es
+    # marcado muerto: ahi puede viajar el JSON-LD de la ficha.
+    con_script = '<!-- <script type="application/ld+json">{"a":1}</script> //-->'
+    assert "ld+json" in sin_marcado_comentado(con_script)
+
+
+def test_la_prosa_no_prueba_un_atributo_que_la_ficha_tabula():
+    """La senal de fuente tiene que leer donde lee el extractor.
+
+    Un monoambiente de alagnapropiedades.com.ar no publica fila de dormitorios
+    -no tiene-, pero su descripcion habla de "departamentos monoambientes, 1 y
+    2 dormitorios": la mezcla de unidades del EDIFICIO. La ficha de un terreno
+    describe la casa a demoler que tiene encima. El extractor descarta las dos
+    a proposito, porque la pagina tabula sus atributos; el auditor las contaba
+    como campo provisto y dejaba la agencia en NEEDS_FIX por acertar.
+
+    La unica fila tabulada del monoambiente es ``Ba�os`` con la enye rota,
+    igual que la sirve el portal: si la regla estructural no normaliza antes de
+    mirar, una tabla real le pasa por prosa.
+    """
+    tabulada = ('<div class="desc">Ba�os</div><div class="valor">1</div>'
+                '<p>Edificio con departamentos monoambientes, 1 y 2 '
+                'dormitorios de excelente calidad.</p>')
+    señales = source_signals(tabulada, "https://x.com/p/1")
+    assert señales["banos"] is True
+    assert señales["dormitorios"] is False
+
+    con_fila = ('<div class="desc">Dormitorios</div><div class="valor">3</div>'
+                + tabulada)
+    assert source_signals(con_fila, "https://x.com/p/2")["dormitorios"] is True

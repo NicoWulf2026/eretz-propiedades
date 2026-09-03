@@ -25,7 +25,8 @@ from connectors.base import (ESQUEMA_CHECKPOINT, HUELLA_VERSION, Checkpoint,
                              Descargador, Fuente, LimitadorDeRitmo,
                              detectar_operacion, detectar_tipo)
 from connectors.century21 import Century21Connector
-from connectors.generico import (GenericoConnector, _texto, cuerpo_principal,
+from connectors.generico import (ETIQUETAS_DE_CONTEO, GenericoConnector,
+                                 _texto, cuerpo_principal,
                                  normalizar_texto_campos,
                                  sin_filtros_catalogo)
 from connectors.tokko import (RE_COORD as TOKKO_RE_COORD, TokkoConnector,
@@ -145,6 +146,20 @@ def source_signals(body: str, url: str = "") -> dict[str, bool]:
     # de un terreno) no constituye un valor extraible del campo.
     for field in ("moneda", "ambientes", "dormitorios", "banos"):
         signals[field] = bool(SOURCE_SIGNALS[field].search(text))
+    # Cuando la ficha publica sus atributos como pares rotulo/valor, el
+    # extractor lee la estructura y descarta la prosa a proposito. La senal de
+    # fuente tiene que leer donde lee el extractor: si no, el auditor exige un
+    # dato que el parser fue disenado para no tomar, y la agencia queda en
+    # NEEDS_FIX por hacer lo correcto.
+    #
+    # Las dos fichas que lo probaron: la descripcion de un monoambiente habla
+    # de "departamentos monoambientes, 1 y 2 dormitorios" -la mezcla de
+    # unidades del EDIFICIO- y la de un terreno describe la casa a demoler que
+    # tiene encima. Ninguna de las dos publica dormitorios propios.
+    if GenericoConnector._es_tabla_estructurada(main):
+        for campo, etiqueta in ETIQUETAS_DE_CONTEO.items():
+            signals[campo] = GenericoConnector._cuenta_de_ficha(
+                main, "", etiqueta, None) is not None
     if is_development:
         # Un desarrollo ofrece unidades heterogeneas; sus cantidades no son
         # un escalar propio del registro padre aunque la descripcion enumere
