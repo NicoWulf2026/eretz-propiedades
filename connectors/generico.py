@@ -904,20 +904,31 @@ class GenericoConnector(Connector):
         runtime = propia or self._patron_raiz_local(html)
         enlaces = self._fichas_en(html, base, runtime)
         listado = base + "/propiedades"
-        if urllib.parse.urlparse(fuente.official_url).path.rstrip("/") != "/propiedades":
-            try:
-                html_listado = self.descargador.bajar(listado)
-            except (ErrorTransitorio, ErrorPermanente, Bloqueado):
-                html_listado = ""
-            runtime_listado = runtime or self._patron_raiz_local(html_listado)
-            enlaces_listado = self._fichas_en(html_listado, base, runtime_listado)
-            catalogo_explicito = bool(re.search(
-                r"Se encontraron\s+[\d.]+\s+resultados|"
-                r"params\.append\(['\"]infinito['\"]|id=['\"]prop-list['\"]",
-                html_listado, re.I))
-            if enlaces_listado and (catalogo_explicito
-                                     or len(enlaces_listado) > len(enlaces)):
-                html, enlaces, runtime = html_listado, enlaces_listado, runtime_listado
+        ruta_propia = urllib.parse.urlparse(fuente.official_url).path.rstrip("/")
+        if ruta_propia != "/propiedades":
+            # Se prueba /propiedades por convencion, pero tambien los catalogos
+            # que la PORTADA enlaza: alianzarealestate.com.ar publica el suyo en
+            # /ventas/listado y con una sola ruta fija se reportaba sin
+            # inventario teniendo doce fichas. Seguir la navegacion del sitio no
+            # es adivinar una ruta, es leer la que el sitio declara.
+            for candidato in [listado] + self._catalogos_enlazados(html, base):
+                try:
+                    html_listado = self.descargador.bajar(candidato)
+                except (ErrorTransitorio, ErrorPermanente, Bloqueado):
+                    continue
+                runtime_listado = runtime or self._patron_raiz_local(html_listado)
+                enlaces_listado = self._fichas_en(html_listado, base,
+                                                  runtime_listado)
+                catalogo_explicito = bool(re.search(
+                    r"Se encontraron\s+[\d.]+\s+resultados|"
+                    r"params\.append\(['\"]infinito['\"]|id=['\"]prop-list['\"]",
+                    html_listado, re.I))
+                if enlaces_listado and (catalogo_explicito
+                                        or len(enlaces_listado) > len(enlaces)):
+                    html, enlaces = html_listado, enlaces_listado
+                    runtime, listado = runtime_listado, candidato
+                    if catalogo_explicito:
+                        break
         else:
             listado = fuente.official_url
         if enlaces:
@@ -2379,6 +2390,35 @@ class GenericoConnector(Connector):
             return None
         visible = limpiar(_texto(m.group(1)))
         return visible if visible and len(visible) >= 20 else None
+
+    @staticmethod
+    def _catalogos_enlazados(html: str, base: str) -> list[str]:
+        """Los catalogos que la portada enlaza, en su propio orden.
+
+        Probar una ruta fija -/propiedades- deja afuera a los sitios que
+        publican su listado en otro lado. Seguir la navegacion del sitio no es
+        adivinar: es leer la ruta que el sitio declara.
+
+        Se acotan a unos pocos para no recorrer el menu entero de una fuente
+        ajena, y se ignora la raiz, que ya se bajo.
+        """
+        vistos: list[str] = []
+        patron = re.compile(
+            r"(?:listado|propiedades|inmuebles|emprendimientos|catalogo|"
+            r"resultados|ventas|alquileres|buscar)", re.I)
+        for coincidencia in re.finditer(r'href="([^"]+)"', html or ""):
+            destino = urllib.parse.urljoin(base, unescape(coincidencia.group(1)))
+            if not destino.startswith(base):
+                continue
+            ruta = urllib.parse.urlparse(destino).path.rstrip("/")
+            if not ruta or not patron.search(ruta):
+                continue
+            limpio = destino.split("#")[0]
+            if limpio not in vistos:
+                vistos.append(limpio)
+            if len(vistos) >= 4:
+                break
+        return vistos
 
     @staticmethod
     def _es_tabla_estructurada(marcado: str) -> bool:

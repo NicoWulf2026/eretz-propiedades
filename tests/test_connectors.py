@@ -1362,6 +1362,37 @@ def test_los_encabezados_tambien_son_celdas_de_una_tabla_de_atributos():
                               None) == 1
 
 
+def test_se_siguen_los_catalogos_que_la_portada_enlaza():
+    """Regresion de `roomix:alianza real estate`.
+
+    El descubrimiento probaba una unica ruta fija, /propiedades. Ese sitio
+    publica su catalogo en /ventas/listado, asi que se reportaba sin inventario
+    teniendo doce fichas, y con un baseline de quince el colapso era del 100%.
+
+    Seguir la navegacion del sitio no es adivinar una ruta: es leer la que el
+    sitio declara.
+    """
+    from connectors.generico import GenericoConnector as G
+
+    portada = (
+        '<a href="/ventas/listado">Ventas</a>'
+        '<a href="/nosotros">Nosotros</a>'
+        '<a href="https://facebook.com/propiedades">Facebook</a>'
+        '<a href="/alquileres/listado">Alquileres</a>')
+    candidatos = G._catalogos_enlazados(portada, "https://alfa.test")
+    assert "https://alfa.test/ventas/listado" in candidatos
+    assert "https://alfa.test/alquileres/listado" in candidatos
+    # Ni el menu institucional ni los dominios ajenos.
+    assert not any("nosotros" in c or "facebook" in c for c in candidatos)
+
+
+def test_no_se_recorre_el_menu_entero_de_una_fuente_ajena():
+    from connectors.generico import GenericoConnector as G
+
+    portada = "".join(f'<a href="/listado/{i}">x</a>' for i in range(20))
+    assert len(G._catalogos_enlazados(portada, "https://alfa.test")) <= 4
+
+
 FICHA_TABLA_CON_HUECO = (
     '<div><h6>Dormitorios</h6><figure>3</figure></div>'
     '<div><h6>Cocheras</h6><figure>2</figure></div>'
