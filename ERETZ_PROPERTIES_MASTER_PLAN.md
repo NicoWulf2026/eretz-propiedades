@@ -300,12 +300,18 @@ dominio. **Un dominio no identifica a una inmobiliaria.**
 
 Resultado (`scripts/agency_promotion_gate.py`, sin escribir en ninguna base):
 
-| Estado | Inmobiliarias | Propiedades retenidas |
-|---|---|---|
-| `SAFE_TO_PROMOTE` | **939** | **79.001** |
-| `REQUIRES_REVIEW` | 1.197 | — |
-| `INSUFFICIENT_EVIDENCE` | 2.462 | — |
-| `BLOCKED` | 355 | — |
+| Estado | Antes | Ahora | Propiedades retenidas |
+|---|---|---|---|
+| `SAFE_TO_PROMOTE` | 939 | **733** | **63.831** |
+| `REQUIRES_REVIEW` | 1.197 | 1.197 | — |
+| `INSUFFICIENT_EVIDENCE` | 2.462 | 2.631 | — |
+| `BLOCKED` | 355 | 392 | 3.966 |
+
+La columna "ahora" es la clasificación con **evidencia web leída** (abajo). Las
+733 son las 715 que sostienen su evidencia más 18 que estaban en
+`INSUFFICIENT_EVIDENCE` con un único bloqueo —no tener web en el directorio—
+cuya web existe y se leyó. Los 37 que pasan a `BLOCKED` son los dominios ajenos
+y extranjeros. Las cuentas cierran exactas.
 
 Motivos de bloqueo: 289 web no propia, **56 homónima en `main`**, 25 duplicada.
 
@@ -342,10 +348,11 @@ Las 13 no son todas del mismo caso y necesitan ojo humano: `buscojobs.com.uy` o
 Inmobiliaria` bajo `.com.uy` parecen inmobiliarias **uruguayas** dentro de un
 universo argentino, que es otra pregunta.
 
-**Consecuencia para la decisión:** promover inserta en `inmobiliarias_main`, y
-el propio gate dice que el riesgo no es perder una fila sino crear una
-duplicada. 715 de las 939 sostienen su evidencia cuando se la lee; las otras
-224 no deberían promoverse con la evidencia actual.
+**La invariante 4 pasó a exigir evidencia leída**, en los dos sentidos: una web
+que se abrió y sostiene la identidad promueve aunque el directorio no la
+conociera, y una que se abrió y resultó ajena bloquea, porque mirar es más
+fuerte que cualquier estado declarado. Un `OFFICIAL_WEB_HIGH_CONFIDENCE` que
+nadie leyó ya no alcanza para insertar una fila en `main`.
 
 **Hallazgo aparte:** esas 56 **no son inmobiliarias nuevas**. Ya existen en
 `main` con el orden de palabras invertido —`bechara inmobiliaria` es
@@ -628,7 +635,7 @@ Descubrimiento → Directorio de plataformas → Resolución de identidad
                  identity READY (753)         staging sin promover (4.953)
                           │                           │
                           ▼                    gate de promoción
-                  Cola de certificación         (939 / 1.197 / 2.462 / 355)
+                  Cola de certificación         (733 / 1.197 / 2.631 / 392)
                           │                           │
               connector + estrategia            [BARRERA: escritura en main]
                           │
@@ -650,7 +657,7 @@ Descubrimiento → Directorio de plataformas → Resolución de identidad
 
 | Blocker | Qué frena | Necesita |
 |---|---|---|
-| Promoción a `main` | 79.001 propiedades atribuibles | Autorización de escritura productiva; y sólo 715 de las 939 sostienen su evidencia web al leerla (§3.1) |
+| Promoción a `main` | 63.831 propiedades atribuibles (733 inmobiliarias) | Autorización de escritura productiva |
 | Vinculación de las 56 homónimas | 1.140 propiedades | Autorización de escritura productiva |
 | **Postgres de producción caído** | Promoción, vinculación y escritura de ciudad | `PGRST002`: PostgREST responde, la base detrás no |
 | Escribir `ciudad` sobre lo ya extraído | 29.048 propuestas listas | Que vuelva la base |
