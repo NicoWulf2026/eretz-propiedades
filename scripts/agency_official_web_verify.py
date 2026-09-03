@@ -12,8 +12,9 @@ Que cuenta como evidencia de pais, y por que tan poco:
 
   a favor    el dominio es `.ar`, la pagina nombra Argentina, o publica un
              telefono +54
-  en contra  el dominio vive bajo el ccTLD de otro pais, o la pagina nombra
-             otro pais sin ningun indicio de los de arriba
+  en contra  el dominio vive bajo el ccTLD de otro pais, o el sitio se
+             DESCRIBE A SI MISMO -titulo y meta de cabecera- como de otro pais
+             y no hay ningun indicio de los de arriba
 
 **Un nombre de lugar no es evidencia de pais.** La primera version de este
 script uso el catalogo GeoRef para buscar localidades argentinas en el texto, y
@@ -30,6 +31,12 @@ sitio es argentino no prueba que no lo sea, asi que esas entidades quedan
 convierte una duda en un veredicto. Por la misma razon, una pagina que no
 entrega texto -renderizada por JavaScript- queda `PAGINA_SIN_TEXTO` y no
 rechazada: no leerla no es leerla y encontrar otra cosa.
+
+Y que una pagina MENCIONE otro pais tampoco alcanza: una inmobiliaria argentina
+puede vender en Punta del Este o tener un menu de idiomas. Por eso el pais
+extranjero solo cuenta cuando aparece en la autodescripcion del sitio, que es
+donde el sitio dice lo que es. `SANDOVAL AGENCIA INMOBILIARIA IBIZA` lo pone en
+el titulo; `Pizzo Propiedades` solo nombraba Espana en el cuerpo.
 
 Reanudable: cada entidad terminada se escribe y no se repite.
 No escribe en ninguna base.
@@ -94,8 +101,35 @@ def solo_alfanumerico(texto: str) -> str:
 
 def texto_visible(html: str) -> str:
     t = RE_TAG.sub(" ", html or "")
+    # La descarga se corta a 400 KB y puede partir un `<style>` o un `<script>`
+    # antes de su cierre. Sin etiqueta de cierre el limpiador de arriba no lo
+    # puede sacar, y entonces el CSS pasa por texto visible: `biglieri.com.ar`
+    # inyecta Bootstrap en linea y entregaba 396.077 caracteres de hoja de
+    # estilos donde el nombre de la inmobiliaria se ahogaba.
+    abierto = re.search(r"<(?:script|style|noscript)[^>]*>(?![\s\S]*</)",
+                        t, re.I)
+    if abierto:
+        t = t[:abierto.start()]
     t = re.sub(r"<[^>]+>", " ", t)
     return re.sub(r"\s+", " ", unescape(t)).strip()
+
+
+def autodescripcion(html: str) -> str:
+    """Lo que el sitio dice de si mismo en la cabecera.
+
+    El titulo y los `meta`/`og` son la unica parte del documento donde el sitio
+    se nombra a proposito. Sirve cuando el cuerpo se arma en el navegador y no
+    hay texto que leer.
+    """
+    cabecera = re.split(r"</head>", html or "", maxsplit=1, flags=re.I)[0]
+    partes = re.findall(
+        r"<meta[^>]+(?:name|property)=[\"'](?:og:[a-z_]+|description|"
+        r"application-name|author)[\"'][^>]+content=[\"']([^\"']{1,300})",
+        cabecera, re.I)
+    encontrado = RE_TITULO.search(cabecera)
+    if encontrado:
+        partes.append(encontrado.group(1))
+    return unescape(" ".join(partes))
 
 
 def bajar(url: str) -> str:
@@ -144,10 +178,14 @@ def evaluar(fila: dict[str, Any]) -> dict[str, Any]:
         if encontrado else ""
     texto = texto_visible(html)
     favor = evidencia_de_argentina(texto, host)
-    contra = evidencia_de_otro_pais(texto)
+    # Que la pagina MENCIONE otro pais no prueba que sea de alli: una
+    # inmobiliaria argentina puede vender en Punta del Este o tener un menu de
+    # idiomas. Solo se lo trata como contradiccion cuando el pais aparece en la
+    # autodescripcion del sitio, que es donde el sitio dice que es.
+    contra = evidencia_de_otro_pais(f"{titulo} {autodescripcion(html)}")
     palabra = solo_alfanumerico(fila.get("palabra_que_coincide") or "")
     nombre_presente = bool(palabra) and palabra in solo_alfanumerico(
-        f"{titulo} {texto}")
+        f"{autodescripcion(html)} {texto}")
 
     if len(texto) < TEXTO_MINIMO and not nombre_presente:
         estado, razon = ("PAGINA_SIN_TEXTO",
