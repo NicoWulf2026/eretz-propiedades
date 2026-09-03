@@ -255,6 +255,60 @@ def test_el_presupuesto_alcanza_para_las_fuentes_lentas_medidas() -> None:
     assert PRESUPUESTO_POR_FUENTE >= 209 * 15.0   # alagna
 
 
+def test_un_atributo_de_plataforma_que_parpadea_no_es_un_defecto() -> None:
+    """Regresion de `roomix:alder inmobiliaria`.
+
+    147 de 148 propiedades identicas entre corridas, y la restante difiere en
+    un solo atributo opcional de `extra`: la fuente publico `superficie_privada`
+    en una corrida y no en la otra. Verificado bajando la pagina tres veces
+    seguidas: el valor esta siempre, asi que fue ruido transitorio de la fuente
+    y no inestabilidad de la extraccion.
+
+    La distincion no es de conveniencia. Los cinco defectos reales encontrados
+    -prosa como barrio, tipo adivinado, ficha vacia, atributos corridos, fotos
+    ajenas- se manifestaron TODOS en columnas del contrato. Ninguno en `extra`.
+    """
+    enumeracion = {"enumerated": 148, "pages_observed": 150,
+                   "exhaustive_review_required": False, "review_reasons": [],
+                   "collapse_ratio": 0.0}
+    run = {"estado": "OK", "detalles_fallidos": 0, "enumeracion_agotada": True}
+    comparacion = {"same_url_set": True, "idempotent": False,
+                   "identity_collisions": 0, "same_contract_signature": True}
+
+    estado, razones = certification_status(
+        run, run, comparacion, enumeracion, {})
+    assert estado == "CERTIFIED_BEST_AVAILABLE"
+    assert razones == ["UNSTABLE_SOURCE_ATTRIBUTES"]
+
+
+def test_una_columna_del_contrato_inestable_sigue_bloqueando() -> None:
+    """La garantia que da el chequeo de idempotencia es sobre lo que el
+    pipeline promete. Si eso cambia entre dos corridas separadas por segundos,
+    es un defecto nuestro y bloquea."""
+    enumeracion = {"enumerated": 148, "pages_observed": 150,
+                   "exhaustive_review_required": False, "review_reasons": [],
+                   "collapse_ratio": 0.0}
+    run = {"estado": "OK", "detalles_fallidos": 0, "enumeracion_agotada": True}
+    comparacion = {"same_url_set": True, "idempotent": False,
+                   "identity_collisions": 0, "same_contract_signature": False}
+
+    estado, razones = certification_status(
+        run, run, comparacion, enumeracion, {})
+    assert estado == "NEEDS_FIX"
+    assert "second run is not idempotent" in razones
+
+
+def test_la_firma_del_contrato_ignora_extra_pero_no_las_columnas() -> None:
+    from scripts.agency_certifier import firma_de_columnas
+
+    base = {"hash_dedup": "a", "titulo": "Casa", "precio": 100000,
+            "extra": {"superficie_privada": 277.44}}
+    sin_extra = {**base, "extra": {}}
+    otro_precio = {**base, "precio": 120000}
+    assert firma_de_columnas([base]) == firma_de_columnas([sin_extra])
+    assert firma_de_columnas([base]) != firma_de_columnas([otro_precio])
+
+
 def _enumeracion_corta() -> dict:
     return {"enumerated": 193, "pages_observed": 219, "collapse_ratio": 0.02,
             "exhaustive_review_required": False, "review_reasons": []}

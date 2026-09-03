@@ -304,6 +304,34 @@ def stable_signature(properties: Iterable[dict[str, Any]]) -> str:
     return hashlib.sha256(json.dumps(payload).encode()).hexdigest()
 
 
+# Lo que el pipeline promete: las columnas del contrato. `extra` lleva los
+# atributos que cada plataforma publica de mas y se pasan tal cual.
+COLUMNAS_DEL_CONTRATO = (
+    "titulo", "descripcion", "precio", "moneda", "operacion", "tipo_propiedad",
+    "direccion", "barrio", "ciudad", "provincia", "latitud", "longitud",
+    "dormitorios", "banos", "ambientes", "superficie_total",
+    "superficie_cubierta", "imagenes", "source_status")
+
+
+def firma_de_columnas(properties: Iterable[dict[str, Any]]) -> str:
+    """Huella de lo que promete el contrato, sin los atributos de plataforma.
+
+    Sirve para separar dos cosas que se veian iguales: que nuestra extraccion
+    sea inestable, que es un defecto, y que la fuente parpadee en un atributo
+    opcional, que no lo es y no lo podemos arreglar.
+
+    La distincion no es de conveniencia: los cinco defectos reales encontrados
+    -prosa como barrio, tipo adivinado, ficha vacia, atributos corridos, fotos
+    ajenas- se manifestaron TODOS en columnas del contrato. Ninguno en `extra`.
+    """
+    payload = sorted(
+        (str(p.get("hash_dedup")),
+         json.dumps([p.get(c) for c in COLUMNAS_DEL_CONTRATO],
+                    ensure_ascii=False, sort_keys=True))
+        for p in properties)
+    return hashlib.sha256(json.dumps(payload).encode()).hexdigest()
+
+
 def compare_runs(run1: dict[str, Any], run2: dict[str, Any]) -> dict[str, Any]:
     props1, props2 = run1.get("_props", []), run2.get("_props", [])
     urls1 = {p.get("source_url") for p in props1 if p.get("source_url")}
@@ -324,6 +352,8 @@ def compare_runs(run1: dict[str, Any], run2: dict[str, Any]) -> dict[str, Any]:
         "missing_in_run2": len(urls1 - urls2),
         "new_in_run2": len(urls2 - urls1),
         "same_content_signature": stable_signature(props1) == stable_signature(props2),
+        "same_contract_signature": (firma_de_columnas(props1)
+                                    == firma_de_columnas(props2)),
         "run2_changes": dict(changes),
         "idempotent": (urls1 == urls2 and not changes.get("NUEVA", 0)
                        and not changes.get("MODIFICADA", 0)),
@@ -657,7 +687,16 @@ def certification_status(run1: dict[str, Any], run2: dict[str, Any],
     if not comparison["same_url_set"]:
         reasons.append("run inventories differ")
     if not comparison["idempotent"]:
-        reasons.append("second run is not idempotent")
+        if (comparison.get("same_url_set")
+                and comparison.get("same_contract_signature")):
+            # Lo que cambio entre corridas esta en `extra`, no en el contrato:
+            # la fuente parpadea en un atributo opcional que publica de mas. No
+            # es inestabilidad nuestra y no se puede arreglar del lado de aca.
+            enumeration.setdefault("review_reasons", []).append(
+                "UNSTABLE_SOURCE_ATTRIBUTES")
+            enumeration["exhaustive_review_required"] = True
+        else:
+            reasons.append("second run is not idempotent")
     colisiones = comparison.get("identity_collisions") or 0
     if colisiones:
         reasons.append(
