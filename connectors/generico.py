@@ -1457,6 +1457,18 @@ class GenericoConnector(Connector):
         # La aritmetica de inmuebles vive en un modulo aparte: la comparten el
         # connector y la correccion de lo ya extraido, y asi no pueden divergir.
         fuera = revisar(campos)
+        # Un rotulo que funde dos atributos no se pudo asignar a ninguno. Eso
+        # es la validacion funcionando, no un fallo de extraccion: la
+        # certificacion los trata distinto y uno de los dos bloquea.
+        marcado_campos = normalizar_texto_campos(unescape(principal or ""))
+        for nombre, etiqueta in (("dormitorios", r"dormitorios?|habitaciones?"),
+                                 ("ambientes", r"ambientes?"),
+                                 ("banos", r"ba[nñ]os?|toilettes?"),
+                                 ("cocheras", r"cocheras?|garages?")):
+            if (campos.get(nombre) is None
+                    and self._rotulo_compuesto(marcado_campos, etiqueta)
+                    and nombre not in fuera):
+                fuera.append(nombre)
         lat, lon = campos["latitud"], campos["longitud"]
         precio, moneda = campos["precio"], campos["moneda"]
         descartados = ({"atributos_descartados": ",".join(fuera)} if fuera else {})
