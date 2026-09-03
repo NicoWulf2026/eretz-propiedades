@@ -219,23 +219,18 @@ def test_una_corrida_truncada_no_se_juzga_por_idempotencia() -> None:
     assert not any("idempotent" in r for r in razones)
 
 
-def test_el_presupuesto_escala_con_el_trabajo_pedido() -> None:
-    """Un presupuesto plano castiga a la inmobiliaria grande o lenta justamente
-    por serlo, y lo que se pierde ahi es inventario."""
-    from scripts.run_rollout import (PRESUPUESTO_MAXIMO,
-                                     PRESUPUESTO_POR_FUENTE,
-                                     SEGUNDOS_POR_FICHA_LENTA)
+def test_el_presupuesto_alcanza_para_las_fuentes_lentas_medidas() -> None:
+    """Un presupuesto que trunca sistematicamente a una fuente le impide
+    certificar POR SIEMPRE: reintentarla no cambia nada.
 
-    def presupuesto(fichas: int) -> float:
-        return min(max(PRESUPUESTO_POR_FUENTE,
-                       fichas * SEGUNDOS_POR_FICHA_LENTA), PRESUPUESTO_MAXIMO)
+    Con el tope viejo de 1.800 s, abriola -6,3 s por ficha, 263 fichas- y
+    alagna -15 s por ficha, 209 fichas- no podian certificarse nunca. Lo que se
+    pierde ahi es inventario, que esta muy por encima del throughput.
+    """
+    from scripts.run_rollout import PRESUPUESTO_POR_FUENTE
 
-    # Una inmobiliaria chica conserva el presupuesto base.
-    assert presupuesto(50) == PRESUPUESTO_POR_FUENTE
-    # abriola necesitaba 1.649 s para sus 263 fichas y ahora le entran.
-    assert presupuesto(263) > 1649
-    # Y una fuente patologica no se queda con la cola entera.
-    assert presupuesto(100000) == PRESUPUESTO_MAXIMO
+    assert PRESUPUESTO_POR_FUENTE >= 263 * 7.0    # abriola
+    assert PRESUPUESTO_POR_FUENTE >= 209 * 15.0   # alagna
 
 
 def _enumeracion_corta() -> dict:

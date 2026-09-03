@@ -65,19 +65,20 @@ COBERTURA_MINIMA = 0.98
 # El presupuesto no descarta la fuente: corta el detalle, guarda lo que ya
 # obtuvo y lo deja anotado. La corrida siguiente la vuelve a intentar, que es
 # lo que corresponde con algo que puede haber sido pasajero.
-PRESUPUESTO_POR_FUENTE = 1800
-
-# Un presupuesto plano castiga a la inmobiliaria grande o lenta justamente por
-# serlo, y lo que se pierde ahi es inventario. abriolapropiedades.com.ar sirve
-# a 6,27 s por ficha: con 263 fichas necesita 1.649 s, y la primera corrida se
-# corto exactamente en el tope con 238. La segunda las trajo todas, asi que la
-# comparacion entre ambas no medía la fuente, medía el reloj.
+# Cuanto se esta dispuesto a gastar en UNA fuente antes de considerarla
+# patologica. No intenta predecir cuan rapido responde el sitio: eso no se sabe
+# de antemano y ya fallo dos veces.
 #
-# El presupuesto pasa a escalar con el trabajo pedido. El margen por ficha esta
-# por encima del peor sitio medido; el limitador de ritmo solo ya impone 1,5 s.
-SEGUNDOS_POR_FICHA_LENTA = 8.0
-# Techo duro: una fuente patologica no puede quedarse con la cola entera.
-PRESUPUESTO_MAXIMO = 5400
+# Con el tope anterior de 1.800 s, abriolapropiedades.com.ar -6,3 s por ficha-
+# no podia certificarse NUNCA: sus dos corridas necesitaban mas, asi que
+# reintentarla no cambiaba nada. alagnapropiedades.com.ar va a 15 s por ficha y
+# le pasaba lo mismo. Un presupuesto que trunca sistematicamente a las fuentes
+# lentas les impide certificar por siempre, y lo que se pierde ahi es
+# inventario: la segunda prioridad del rollout, muy por encima del throughput.
+#
+# Es un tope, no una duracion: la fuente rapida termina y devuelve enseguida.
+# Lo unico que cambia es cuanto puede retener la cola la fuente lenta.
+PRESUPUESTO_POR_FUENTE = 5400
 
 
 class EscritorDurable:
@@ -358,10 +359,6 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
     fallidos = 0
     reintentos_diferidos: list[dict] = []
     recuperados_diferidos = 0
-    if presupuesto:
-        presupuesto = min(
-            max(presupuesto, len(seleccion) * SEGUNDOS_POR_FICHA_LENTA),
-            PRESUPUESTO_MAXIMO)
     limite = t0 + presupuesto if presupuesto else None
     r["presupuesto_efectivo"] = presupuesto or None
     for a in seleccion:
