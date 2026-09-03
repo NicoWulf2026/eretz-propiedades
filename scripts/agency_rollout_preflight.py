@@ -22,8 +22,10 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.agency_certifier import load_catalog
+from scripts.agency_fingerprints import strategy_fingerprint, strategy_for
 from scripts.run_agency_certification_queue import (CERROJO, LATIDO_VENCIDO,
-                                                    TERMINAL, full_queue,
+                                                    TERMINAL, choose_connector,
+                                                    full_queue,
                                                     is_current_result,
                                                     latest_results,
                                                     queue_fingerprint,
@@ -110,13 +112,56 @@ def hay_trabajo(salida: Path, cola: list[str],
     return True, f"{len(pendientes)} pendientes; la proxima es {pendientes[0]}"
 
 
-def sin_defectos_abiertos(salida: Path) -> tuple[bool, str]:
-    """`NEEDS_FIX` nunca es un cierre: no se abre la cola con uno pendiente."""
+def huella_vigente(resultado: dict[str, Any],
+                   registro: dict[str, dict[str, Any]]) -> bool:
+    """Si el veredicto lo produjo el codigo que corre hoy.
+
+    No se usa `is_current_result`: esa devuelve False de entrada para cualquier
+    estado NO TERMINAL, y `NEEDS_FIX` no lo es. Preguntarle por un defecto daria
+    siempre "vencido" y habria desactivado el guardian en silencio.
+    """
+    guardada = resultado.get("strategy_fingerprint")
+    if not guardada:
+        # Sin huella registrada no se puede demostrar que este vencido, y ante
+        # la duda el defecto sigue abierto.
+        return True
+    conector = resultado.get("connector") or choose_connector(registro)
+    estrategia = resultado.get("connector_strategy") or strategy_for(
+        conector, resultado.get("publication_mechanism"))
+    return guardada == strategy_fingerprint(conector, estrategia)
+
+
+def sin_defectos_abiertos(salida: Path,
+                          catalogo: dict[str, dict[str, Any]]
+                          ) -> tuple[bool, str]:
+    """`NEEDS_FIX` nunca es un cierre: no se abre la cola con uno pendiente.
+
+    Pendiente quiere decir que su huella SIGUE VIGENTE: el veredicto lo produjo
+    el codigo que hoy corre, nadie lo corrigio, y reabrir seria caminar hacia la
+    misma parada. Ese caso bloquea, que es el peligroso.
+
+    Cuando la huella cambio, en cambio, ese veredicto lo emitio codigo que ya no
+    existe. No es un defecto abierto sino evidencia vencida, y volver a
+    evaluarla es exactamente para lo que esta la cola.
+
+    Sin la distincion el protocolo queda en deadlock: el paquete solo se limpia
+    recertificando y recertificar exige reabrir, asi que un solo `NEEDS_FIX`
+    cerraba la cola para siempre.
+    """
     resultados = latest_results(salida)
-    abiertos = [k for k, r in resultados.items()
-                if r.get("status") == "NEEDS_FIX"]
+    abiertos, vencidos = [], []
+    for clave, resultado in resultados.items():
+        if resultado.get("status") != "NEEDS_FIX":
+            continue
+        if clave in catalogo and not huella_vigente(resultado, catalogo[clave]):
+            vencidos.append(clave)
+        else:
+            abiertos.append(clave)
     if abiertos:
         return False, f"{len(abiertos)} sin resolver: {abiertos[:5]}"
+    if vencidos:
+        return True, (f"ninguno abierto; {len(vencidos)} con huella vencida "
+                      f"que la cola vuelve a evaluar: {vencidos[:3]}")
     return True, "ninguno abierto"
 
 
@@ -142,7 +187,7 @@ def main() -> int:
         ("huellas", huellas_al_dia(salida, catalogo)),
         ("git coherente", git_coherente()),
         ("hay trabajo pendiente", hay_trabajo(salida, cola, catalogo)),
-        ("sin NEEDS_FIX abiertos", sin_defectos_abiertos(salida)),
+        ("sin NEEDS_FIX abiertos", sin_defectos_abiertos(salida, catalogo)),
     ]
 
     print(f"cola {modo}: {len(cola)} inmobiliarias")
