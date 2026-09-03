@@ -309,6 +309,44 @@ Resultado (`scripts/agency_promotion_gate.py`, sin escribir en ninguna base):
 
 Motivos de bloqueo: 289 web no propia, **56 homónima en `main`**, 25 duplicada.
 
+#### La evidencia web de las 939 nunca se había leído
+
+La invariante 4 exige "web propia con identidad de confianza alta o
+verificada". Las 939 la cumplen con `free_web_audit_v1`, **la auditoría que
+puntuó URLs sin abrirlas**: 933 de ellas se apoyan en
+`OFFICIAL_WEB_HIGH_CONFIDENCE`, que se midió y no discrimina nada —597 de 598
+dominios descubiertos lo traen—. Ninguna de las 939 había pasado por el
+resolver que sí abre la página.
+
+Se abrieron las 939 (`scripts/promotion_web_recheck.py`, sin escribir en
+ninguna base):
+
+| Veredicto | Inmobiliarias |
+|---|---|
+| Sostiene su evidencia | 715 |
+| Plausible, pero el dominio no lo prueba | 79 |
+| Sin evidencia de país | 70 |
+| No responde | 38 |
+| **Dominio ajeno demostrado** | **24** |
+| **Dominio de otro país** | **13** |
+
+**24 apuntan a una web que es demostrablemente de otro:** el sitio de los
+**Bomberos de San Lorenzo** (Casiana Severio Administración), el canal de
+noticias **tn.com.ar** (Fast Propiedades), la web de **turismo municipal de Mar
+del Plata** (Abdala Negocios Inmobiliarios), un planificador de viajes
+(Coldwell Banker Patagonia), un portal de empleo (CENTURY 21 Mitoff). La página
+ni siquiera nombra a la inmobiliaria.
+
+Las 13 no son todas del mismo caso y necesitan ojo humano: `buscojobs.com.uy` o
+`fotocasa.es` son dominios equivocados, pero `PropiedadesUY` y `Machado
+Inmobiliaria` bajo `.com.uy` parecen inmobiliarias **uruguayas** dentro de un
+universo argentino, que es otra pregunta.
+
+**Consecuencia para la decisión:** promover inserta en `inmobiliarias_main`, y
+el propio gate dice que el riesgo no es perder una fila sino crear una
+duplicada. 715 de las 939 sostienen su evidencia cuando se la lee; las otras
+224 no deberían promoverse con la evidencia actual.
+
 **Hallazgo aparte:** esas 56 **no son inmobiliarias nuevas**. Ya existen en
 `main` con el orden de palabras invertido —`bechara inmobiliaria` es
 `Inmobiliaria Bechara`, id 2654—. Retienen **1.140 propiedades** que se
@@ -612,7 +650,7 @@ Descubrimiento → Directorio de plataformas → Resolución de identidad
 
 | Blocker | Qué frena | Necesita |
 |---|---|---|
-| Promoción a `main` | 79.001 propiedades atribuibles | Autorización de escritura productiva |
+| Promoción a `main` | 79.001 propiedades atribuibles | Autorización de escritura productiva; y sólo 715 de las 939 sostienen su evidencia web al leerla (§3.1) |
 | Vinculación de las 56 homónimas | 1.140 propiedades | Autorización de escritura productiva |
 | **Postgres de producción caído** | Promoción, vinculación y escritura de ciudad | `PGRST002`: PostgREST responde, la base detrás no |
 | Escribir `ciudad` sobre lo ya extraído | 29.048 propuestas listas | Que vuelva la base |
