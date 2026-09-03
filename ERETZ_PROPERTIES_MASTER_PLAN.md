@@ -234,6 +234,44 @@ un insumo puesto por anticipado, no un desbloqueo.
 
 ---
 
+### 2.7 La misma propiedad publicada dos veces
+
+Fuente: `PROPERTY_DUPLICATE_GROUPS.jsonl`, sobre las 13.322 candidatas con
+firma completa (22,8 % del total; el resto no tiene con qué compararse).
+
+El dedup que ya existía es por URL dentro de una misma inmobiliaria
+(`hash_dedup`). No ve el caso de producto.
+
+| Caso | Grupos |
+|---|---|
+| La **misma** inmobiliaria publicándola dos veces | 397 |
+| Dos inmobiliarias distintas publicando la misma | 117 |
+| Filas involucradas | 1.297 |
+| Grupos con precios distintos | 297 |
+
+**El caso más grande es dentro de una misma inmobiliaria.** Las dos URLs
+difieren sólo en el id de la ficha —`257229-PH-en-Venta-…` y
+`393830-PH-en-Venta-…`— con el mismo título y el mismo precio. `hash_dedup` no
+puede verlo porque hashea la URL.
+
+Los 117 entre inmobiliarias se reparten en **133 pares distintos**, y el par
+más frecuente cubre 7. O sea que **no** es una inmobiliaria cargada dos veces
+con otro nombre —eso sería identidad y se arreglaría en otro lado— sino
+multi-listado real, que es como funciona el mercado.
+
+**Agrupa y no elige ganador.** Cuál de las dos se muestra define quién se lleva
+el clic: es una decisión comercial, no técnica, y borrar una la destruiría
+antes de que nadie la tome. `ganadores_elegidos: 0`.
+
+La firma es deliberadamente conservadora: coordenada a 5 decimales (~1,1 m),
+que pierde duplicados cuando dos inmobiliarias geocodifican distinto —perder
+uno es mejor que fusionar dos propiedades que no son la misma— y todos los
+campos presentes, porque una firma con nulos no es identidad sino ausencia.
+Dos unidades idénticas del mismo edificio caen igual en un grupo: otra razón
+para no borrar.
+
+---
+
 ## 3. Decisiones tomadas
 
 ### 3.1 Promoción de las 4.953 no promovidas
@@ -598,7 +636,9 @@ Descubrimiento → Directorio de plataformas → Resolución de identidad
      el certificador por defecto es del 27 de agosto y le faltan las 13.023
      candidatas recuperadas. No se reemplaza con un proceso leyéndola.
 4. **Vinculación e ingesta** una vez levantada la barrera.
-5. Contrato de propiedad, dedup, ciclo de vida, quality gate, publicación.
+5. **Decidir qué se hace con los 514 grupos duplicados** (§2.7). La detección
+   está hecha; elegir cuál se muestra es una decisión de producto.
+6. Contrato de propiedad, ciclo de vida, quality gate, publicación.
 
 La geografía es una **dependencia** del contrato de propiedad y del filtro de
 búsqueda, no una misión aparte: entra en el DAG entre la normalización y el
