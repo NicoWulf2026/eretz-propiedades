@@ -38,6 +38,11 @@ from .base import (Bloqueado, Connector, ErrorPermanente, ErrorTransitorio,
                    imagenes_de_fichas_vecinas, limpiar,
                    sin_fichas_vecinas)
 
+# Familias de atributo que un rotulo puede fundir. Si una celda nombra dos, el
+# numero que la sigue no se puede asignar a ninguna.
+ETIQUETAS_ATRIBUTO_COMPUESTO = (
+    r"dormitorios?|habitaciones?|ambientes?|ba[nñ]os?|cocheras?|garages?")
+
 # Los atributos numericos que una ficha suele tabular. Sirven para decidir si
 # la pagina los presenta como ``Rotulo N`` o como prosa.
 ETIQUETAS_ATRIBUTO = (r"ambientes?|dormitorios?|habitaciones?|ba[nñ]os?"
@@ -2306,13 +2311,40 @@ class GenericoConnector(Connector):
         # dice que valor pertenece a que rotulo-, mientras que sobre el texto
         # aplanado "Ambientes 3 Dormitorios 2" y "3 dormitorios 2 baños" se ven
         # iguales y elegir mal corre todos los valores un lugar.
-        celda = r"(?:span|div|dd|dt|td|li|p|b|strong)"
+        # Los encabezados y `figure` tambien se usan como celda de rotulo y de
+        # valor: alejoandresen.com.ar publica <h6>Baños</h6><figure>2</figure>,
+        # que es la misma pareja estructural con otras etiquetas.
+        celda = r"(?:span|div|dd|dt|td|li|p|b|strong|h[1-6]|figure)"
         rotulo = re.search(
             rf"<{celda}[^>]*>\s*(?:{etiqueta})\s*</{celda}>\s*"
             rf"<{celda}[^>]*>\s*(\d{{1,2}})\s*</{celda}>", marcado, re.I)
         if rotulo and 1 <= int(rotulo.group(1)) <= 99:
             return int(rotulo.group(1))
+        if GenericoConnector._rotulo_compuesto(marcado, etiqueta):
+            # El rotulo funde dos atributos -"Dormitorios/Ambientes 2"- y no se
+            # puede saber a cual corresponde el numero. Caer al texto plano es
+            # peor que no contestar: ahi el patron narrativo agarra el numero
+            # del campo VECINO. En esa ficha "Baños 2 Dormitorios/Ambientes 2"
+            # daba ambientes=2 tomando el 2 de los baños, y coincidia de puro
+            # azar; con baños 3 habria guardado 3.
+            return None
         return GenericoConnector._cuenta(texto, etiqueta, previo)
+
+    @staticmethod
+    def _rotulo_compuesto(marcado: str, etiqueta: str) -> bool:
+        """Si la etiqueta vive en una celda junto a OTRO atributo conocido."""
+        celda = r"(?:span|div|dd|dt|td|li|p|b|strong|h[1-6]|figure)"
+        for bloque in re.finditer(
+                rf"<{celda}[^>]*>([^<>]{{1,60}})</{celda}>", marcado or "",
+                re.I):
+            contenido = bloque.group(1)
+            if not re.search(etiqueta, contenido, re.I):
+                continue
+            otros = {m.group(0).lower() for m in re.finditer(
+                ETIQUETAS_ATRIBUTO_COMPUESTO, contenido, re.I)}
+            if len(otros) > 1:
+                return True
+        return False
 
     @staticmethod
     def _sup(texto: str, etiqueta: str) -> float | None:

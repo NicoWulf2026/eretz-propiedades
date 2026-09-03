@@ -1313,6 +1313,45 @@ def test_una_unidad_pegada_a_un_numero_no_es_una_cantidad():
     assert G._cuenta("Superficie 196 m2 Ambientes 3", r"ambientes?", None) != 2
 
 
+FICHA_CON_ENCABEZADOS = (
+    '<div><h6>Banos</h6><figure>2</figure></div>'
+    '<div><h6>Cocheras</h6><figure>1</figure></div>')
+FICHA_CON_ROTULO_COMPUESTO = (
+    '<div><h6>Banos</h6><figure>3</figure></div>'
+    '<div><h6>Dormitorios/Ambientes</h6><figure>2</figure></div>')
+
+
+def test_los_encabezados_tambien_son_celdas_de_una_tabla_de_atributos():
+    """alejoandresen.com.ar publica <h6>Banos</h6><figure>2</figure>: la misma
+    pareja estructural de siempre, con otras etiquetas."""
+    from connectors.generico import GenericoConnector as G
+
+    assert G._cuenta_de_ficha(FICHA_CON_ENCABEZADOS, "", r"ba[nñ]os?",
+                              None) == 2
+    assert G._cuenta_de_ficha(FICHA_CON_ENCABEZADOS, "", r"cocheras?",
+                              None) == 1
+
+
+def test_un_rotulo_que_funde_dos_atributos_no_se_asigna_a_ninguno():
+    """"Dormitorios/Ambientes 2" no dice cual de los dos es 2.
+
+    Y caer al texto plano es peor que no contestar: ahi el patron narrativo
+    agarra el numero del campo VECINO. En la ficha real "Banos 2
+    Dormitorios/Ambientes 2" daba ambientes=2 tomando el 2 de los banos, y
+    coincidia de puro azar. Con banos 3 habria guardado 3.
+    """
+    from connectors.generico import GenericoConnector as G
+
+    texto = "Banos 3 Dormitorios/Ambientes 2 Superficie Total 98"
+    assert G._cuenta_de_ficha(FICHA_CON_ROTULO_COMPUESTO, texto,
+                              r"dormitorios?|habitaciones?", None) is None
+    assert G._cuenta_de_ficha(FICHA_CON_ROTULO_COMPUESTO, texto,
+                              r"ambientes?", None) is None
+    # El rotulo simple de al lado sigue leyendose.
+    assert G._cuenta_de_ficha(FICHA_CON_ROTULO_COMPUESTO, texto,
+                              r"ba[nñ]os?", None) == 3
+
+
 def test_el_sitemap_no_aporta_fichas_de_otro_host():
     """Regresion de `roomix:analia requena propiedades`.
 
