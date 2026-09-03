@@ -16,10 +16,11 @@ def registro(*, estado_web="OFFICIAL_WEB_HIGH_CONFIDENCE",
     }
 
 
-def clasificar_una(reg, homonimas=0, grupo=1, en_dominio=1):
+def clasificar_una(reg, homonimas=0, grupo=1, en_dominio=1, lectura=None):
     return clasificar(reg, homonimas_en_main=homonimas,
                       miembros_del_grupo=grupo,
-                      inmobiliarias_en_el_dominio=en_dominio)
+                      inmobiliarias_en_el_dominio=en_dominio,
+                      lectura=lectura)
 
 
 def test_una_homonima_en_main_nunca_se_promueve() -> None:
@@ -88,10 +89,42 @@ def test_sin_web_no_hay_evidencia_suficiente() -> None:
 
 
 def test_solo_se_promueve_con_todas_las_invariantes_demostradas() -> None:
-    estado, motivos = clasificar_una(registro())
+    estado, motivos = clasificar_una(registro(), lectura="SOSTIENE_SU_EVIDENCIA")
     assert estado == SAFE
-    assert set(motivos) == {"WEB_OFFICIAL_WEB_HIGH_CONFIDENCE", "SIN_HOMONIMA",
+    assert set(motivos) == {"WEB_LEIDA_SOSTIENE_SU_EVIDENCIA", "SIN_HOMONIMA",
                             "SIN_DUPLICADA", "DOMINIO_PROPIO"}
+
+
+def test_un_estado_de_web_que_nadie_leyo_no_alcanza_para_promover() -> None:
+    """Las 939 promovibles cumplian la invariante 4 con `free_web_audit_v1`, la
+    auditoria que puntuo URLs SIN ABRIRLAS. `OFFICIAL_WEB_HIGH_CONFIDENCE` lo
+    traen 597 de 598 dominios descubiertos, asi que no distingue nada: al leer
+    esas 939 aparecieron 24 apuntando a una web ajena -el cuartel de Bomberos
+    de San Lorenzo, el canal tn.com.ar, turismo municipal de Mar del Plata-.
+
+    Promover inserta una fila en `main`. Un estado declarado no alcanza.
+    """
+    estado, motivos = clasificar_una(registro(), lectura=None)
+    assert estado == SIN_EVIDENCIA
+    assert motivos[0] == "WEB_NUNCA_LEIDA"
+
+
+def test_leer_la_pagina_y_ver_que_es_de_otro_bloquea() -> None:
+    """Es mas fuerte que cualquier estado de descubrimiento: se miro."""
+    for veredicto in ("DOMINIO_AJENO_DEMOSTRADO", "DOMINIO_DE_OTRO_PAIS"):
+        estado, motivos = clasificar_una(registro(), lectura=veredicto)
+        assert estado == BLOCKED, veredicto
+        assert f"LA_WEB_NO_ES_PROPIA_{veredicto}" in motivos
+
+
+def test_una_web_leida_vale_aunque_el_directorio_no_la_conozca() -> None:
+    """18 de las `INSUFFICIENT_EVIDENCE` tenian como unico bloqueo no tener web
+    en el directorio. Su web existe y se leyo; el directorio no la conocia."""
+    sin_dominio = registro(estado_web="NO_EXISTING_WEB_DATA", dominio="")
+    assert clasificar_una(sin_dominio)[0] == SIN_EVIDENCIA
+    estado, motivos = clasificar_una(sin_dominio, lectura="VERIFICADA_ARGENTINA")
+    assert estado == SAFE
+    assert "WEB_LEIDA_VERIFICADA_ARGENTINA" in motivos
 
 
 def test_el_bloqueo_gana_sobre_la_revision() -> None:

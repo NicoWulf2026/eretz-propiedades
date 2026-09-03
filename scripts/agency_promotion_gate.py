@@ -57,6 +57,18 @@ WEB_DEMOSTRADA = {"OFFICIAL_WEB_VERIFIED", "OFFICIAL_WEB_HIGH_CONFIDENCE"}
 # Uno que demuestra lo contrario, o que no hay nada que demostrar todavia.
 WEB_AUSENTE = {"NO_EXISTING_WEB_DATA", "SEARCH_SECOND_PASS_REQUIRED",
                "NO_INDEPENDENT_WEBSITE"}
+# Veredictos de haber ABIERTO la pagina. La invariante 4 pedia "web propia con
+# identidad de confianza alta", y las 939 promovibles la cumplian con
+# `free_web_audit_v1`, la auditoria que puntuo URLs sin abrirlas: 933 con
+# `OFFICIAL_WEB_HIGH_CONFIDENCE`, un estado que lo traen 597 de 598 dominios
+# descubiertos y por lo tanto no discrimina nada. Al leerlas aparecieron 24 que
+# apuntan a una web ajena -el cuartel de Bomberos de San Lorenzo, el canal
+# tn.com.ar, turismo municipal de Mar del Plata- y 13 a otro pais.
+#
+# Desde aca, una web solo prueba identidad si alguien la leyo.
+LECTURA_SOSTIENE = {"SOSTIENE_SU_EVIDENCIA", "VERIFICADA_ARGENTINA"}
+LECTURA_DESMIENTE = {"DOMINIO_AJENO_DEMOSTRADO", "DOMINIO_DE_OTRO_PAIS"}
+
 WEB_NO_PROPIA = {"EXTERNAL_PORTAL_PROFILE", "NOT_A_REAL_ESTATE_WEB",
                  "PORTAL_NOT_OFFICIAL"}
 
@@ -71,6 +83,30 @@ def clave_nombre(valor: Any) -> str:
     return " ".join(sorted(palabras(valor)))
 
 
+def evidencia_leida(data_dir: Path, salida: Path) -> dict[str, str]:
+    """Que se sabe de cada web POR HABERLA ABIERTO.
+
+    Dos artefactos, ambos producidos abriendo la pagina:
+    `AGENCY_OFFICIAL_WEB_VERIFIED.jsonl` para el universo descubierto y
+    `AGENCY_PROMOTION_WEB_RECHECK.jsonl` para las que este mismo gate ya habia
+    dado por promovibles. El rechequeo pisa a la verificacion porque es mas
+    especifico.
+    """
+    leida: dict[str, str] = {}
+    for ruta, campo in ((data_dir / "AGENCY_OFFICIAL_WEB_VERIFIED.jsonl", "verificacion"),
+                        (salida / "AGENCY_PROMOTION_WEB_RECHECK.jsonl", "veredicto")):
+        if not ruta.exists():
+            continue
+        for linea in ruta.read_text(encoding="utf-8").splitlines():
+            if not linea.strip():
+                continue
+            fila = json.loads(linea)
+            veredicto = fila.get(campo)
+            if veredicto:
+                leida[fila["canonical_agency_id"]] = veredicto
+    return leida
+
+
 def dominio_de(registro: dict[str, dict[str, Any]]) -> str:
     crudo = (registro["directory"].get("selected_domain")
              or registro["platform"].get("domain")
@@ -83,7 +119,8 @@ def dominio_de(registro: dict[str, dict[str, Any]]) -> str:
 def clasificar(registro: dict[str, dict[str, Any]], *,
                homonimas_en_main: int,
                miembros_del_grupo: int,
-               inmobiliarias_en_el_dominio: int) -> tuple[str, list[str]]:
+               inmobiliarias_en_el_dominio: int,
+               lectura: str | None = None) -> tuple[str, list[str]]:
     """Decide si una inmobiliaria puede promoverse, y por que.
 
     Devuelve siempre las razones: una clasificacion sin motivo no se puede
@@ -105,6 +142,10 @@ def clasificar(registro: dict[str, dict[str, Any]], *,
         bloqueos.append("DUPLICADA_EN_EL_UNIVERSO")
     if tipo_web in WEB_NO_PROPIA or estado_web in WEB_NO_PROPIA:
         bloqueos.append("LA_WEB_NO_ES_PROPIA")
+    if lectura in LECTURA_DESMIENTE:
+        # Se abrio la pagina y no es de esta inmobiliaria. Eso es mas fuerte
+        # que cualquier estado de descubrimiento.
+        bloqueos.append(f"LA_WEB_NO_ES_PROPIA_{lectura}")
     if bloqueos:
         return BLOCKED, bloqueos
 
@@ -121,15 +162,23 @@ def clasificar(registro: dict[str, dict[str, Any]], *,
     if revisiones:
         return REVIEW, revisiones
 
+    if lectura in LECTURA_SOSTIENE:
+        # Se abrio la pagina y sostiene la identidad. Va primero: 18 de las
+        # `INSUFFICIENT_EVIDENCE` tenian como unico bloqueo no tener web en el
+        # directorio, y su web existe -se leyo-, solo que ese directorio no la
+        # conocia.
+        return SAFE, [f"WEB_LEIDA_{lectura}", "SIN_HOMONIMA", "SIN_DUPLICADA",
+                      "DOMINIO_PROPIO"]
     if estado_web in WEB_AUSENTE or not dominio_de(registro):
         # Sin web no queda mas evidencia que el nombre, y el nombre solo es
         # exactamente lo que produce duplicadas.
         return SIN_EVIDENCIA, ["SIN_WEB_QUE_CORROBORE_LA_IDENTIDAD"]
     if estado_web not in WEB_DEMOSTRADA:
         return SIN_EVIDENCIA, [f"ESTADO_DE_WEB_NO_CONCLUYENTE_{estado_web}"]
-
-    return SAFE, [f"WEB_{estado_web}", "SIN_HOMONIMA", "SIN_DUPLICADA",
-                  "DOMINIO_PROPIO"]
+    # Tiene un estado de descubrimiento alto pero nadie abrio la pagina. Ese
+    # estado se midio y no distingue el sitio propio del de un cuartel de
+    # bomberos, asi que no alcanza para insertar una fila en `main`.
+    return SIN_EVIDENCIA, ["WEB_NUNCA_LEIDA", f"ESTADO_DECLARADO_{estado_web}"]
 
 
 def nombres_de_main(backup: Path) -> dict[str, list[str]]:
@@ -144,7 +193,8 @@ def nombres_de_main(backup: Path) -> dict[str, list[str]]:
 
 
 def evaluar(catalogo: dict[str, dict[str, Any]],
-            main: dict[str, list[str]]) -> list[dict[str, Any]]:
+            main: dict[str, list[str]],
+            leida: dict[str, str] | None = None) -> list[dict[str, Any]]:
     candidatas = [k for k, r in catalogo.items()
                   if r["resolution"].get("resolution_method")
                   == "STAGING_NAMESPACE_NOT_A_MAIN_FK"]
@@ -167,7 +217,8 @@ def evaluar(catalogo: dict[str, dict[str, Any]],
             registro,
             homonimas_en_main=len(main.get(clave_nombre(nombre), [])),
             miembros_del_grupo=len(por_nombre[clave_nombre(nombre)]),
-            inmobiliarias_en_el_dominio=len(por_dominio.get(dominio, [])))
+            inmobiliarias_en_el_dominio=len(por_dominio.get(dominio, [])),
+            lectura=(leida or {}).get(clave))
         salida.append({
             "canonical_agency_id": clave,
             "agency_name": registro["resolution"].get("agency_name") or nombre,
@@ -175,6 +226,7 @@ def evaluar(catalogo: dict[str, dict[str, Any]],
             "reasons": motivos,
             "domain": dominio or None,
             "discovery_status": registro["directory"].get("status"),
+            "lectura_de_la_web": (leida or {}).get(clave),
             "web_kind": registro["platform"].get("web_kind"),
         })
     return salida
@@ -223,7 +275,8 @@ def main() -> int:
 
     catalogo = load_catalog(Path(args.v2_dir), Path(args.data_dir),
                             Path(args.platform_directory))
-    filas = evaluar(catalogo, nombres_de_main(Path(args.main_backup)))
+    leida = evidencia_leida(Path(args.data_dir), Path(args.output))
+    filas = evaluar(catalogo, nombres_de_main(Path(args.main_backup)), leida)
 
     salida = Path(args.output)
     salida.mkdir(parents=True, exist_ok=True)
@@ -241,6 +294,7 @@ def main() -> int:
         "total": len(filas),
         "by_state": dict(conteo),
         "reasons_by_state": {k: dict(v) for k, v in motivos.items()},
+        "con_evidencia_web_leida": len(leida),
         "database_writes": 0,
     }
     enlaces = vinculaciones(catalogo, nombres_de_main(Path(args.main_backup)),
