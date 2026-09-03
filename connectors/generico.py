@@ -2344,6 +2344,18 @@ class GenericoConnector(Connector):
             rf"<{celda}[^>]*>\s*(\d{{1,2}})\s*</{celda}>", marcado, re.I)
         if rotulo and 1 <= int(rotulo.group(1)) <= 99:
             return int(rotulo.group(1))
+        if GenericoConnector._es_tabla_estructurada(marcado):
+            # La ficha presenta sus atributos como pares rotulo/valor: lo
+            # demostro al menos uno que si se leyo de la estructura. En ese
+            # formato el numero va DESPUES del rotulo, asi que caer al texto
+            # plano no deja el campo vacio: le pone el del campo anterior.
+            #
+            # alagnapropiedades.com.ar publica "Cocheras 2 Ambientes X" -con X
+            # de plantilla sin completar- y de ahi salia ambientes=2, el 2 de
+            # las cocheras. Peor: la validacion veia dormitorios 3 > ambientes
+            # 2, un par imposible, y descartaba LOS DOS. Una extraccion mala
+            # destruia un dato bueno.
+            return None
         if GenericoConnector._rotulo_compuesto(marcado, etiqueta):
             # El rotulo funde dos atributos -"Dormitorios/Ambientes 2"- y no se
             # puede saber a cual corresponde el numero. Caer al texto plano es
@@ -2367,6 +2379,21 @@ class GenericoConnector(Connector):
             return None
         visible = limpiar(_texto(m.group(1)))
         return visible if visible and len(visible) >= 20 else None
+
+    @staticmethod
+    def _es_tabla_estructurada(marcado: str) -> bool:
+        """Si la ficha presenta sus atributos como pares rotulo/valor.
+
+        Lo decide la estructura, no un conteo sobre el texto: alcanza con que
+        UN atributo conocido aparezca como celda de rotulo seguida de celda con
+        su numero. Intentar deducirlo del texto aplanado ya fallo, porque las
+        paginas traen tabla Y descripcion y la prosa gana por mayoria.
+        """
+        celda = r"(?:span|div|dd|dt|td|li|p|b|strong|h[1-6]|figure)"
+        return bool(re.search(
+            rf"<{celda}[^>]*>\s*(?:{ETIQUETAS_ATRIBUTO_COMPUESTO})\s*"
+            rf"</{celda}>\s*<{celda}[^>]*>\s*\d{{1,2}}\s*</{celda}>",
+            marcado or "", re.I))
 
     @staticmethod
     def _rotulo_compuesto(marcado: str, etiqueta: str) -> bool:

@@ -1362,6 +1362,43 @@ def test_los_encabezados_tambien_son_celdas_de_una_tabla_de_atributos():
                               None) == 1
 
 
+FICHA_TABLA_CON_HUECO = (
+    '<div><h6>Dormitorios</h6><figure>3</figure></div>'
+    '<div><h6>Cocheras</h6><figure>2</figure></div>'
+    '<div><h6>Ambientes</h6><figure>X</figure></div>')
+
+
+def test_en_una_tabla_el_texto_plano_no_completa_los_huecos():
+    """Regresion de `roomix:alagna propiedades`.
+
+    Su ficha publica "Cocheras 2 Ambientes X", con X de plantilla sin
+    completar. El texto aplanado daba ambientes=2 tomando el 2 de las cocheras,
+    y despues la validacion veia dormitorios 3 > ambientes 2 -un par
+    imposible- y descartaba LOS DOS. Una extraccion mala destruia un dato
+    bueno.
+
+    Si la estructura ya demostro que la ficha es una tabla, el texto plano no
+    es evidencia para los rotulos que quedaron sin valor.
+    """
+    from connectors.generico import GenericoConnector as G
+
+    texto = "Dormitorios 3 Cocheras 2 Ambientes X Situacion Excelente"
+    assert G._cuenta_de_ficha(FICHA_TABLA_CON_HUECO, texto,
+                              r"dormitorios?|habitaciones?", None) == 3
+    assert G._cuenta_de_ficha(FICHA_TABLA_CON_HUECO, texto,
+                              r"ambientes?", None) is None
+
+
+def test_una_ficha_en_prosa_si_usa_el_texto():
+    """La regla solo aplica donde la estructura demostro que hay tabla. Una
+    ficha que describe en prosa sigue leyendose del texto."""
+    from connectors.generico import GenericoConnector as G
+
+    assert G._cuenta_de_ficha("<p>Casa amplia</p>",
+                              "USD 55.000 3 dormitorios 2 banos",
+                              r"dormitorios?|habitaciones?", None) == 3
+
+
 def test_un_rotulo_que_funde_dos_atributos_no_se_asigna_a_ninguno():
     """"Dormitorios/Ambientes 2" no dice cual de los dos es 2.
 
