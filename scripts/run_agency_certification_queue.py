@@ -19,6 +19,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from scripts.preingestion_manifest import base_canonica  # noqa: E402
 from scripts.defect_triage import (STOP, clasificar,  # noqa: E402
                                    debe_cortar_por_lote)
 from scripts.agency_certifier import (
@@ -267,7 +268,10 @@ def main() -> int:
     parser.add_argument("--v2-dir", default=r"D:\INMO CAPITAL\ERETZ_SUPABASE_RECONCILIATION_V2_20260827")
     parser.add_argument("--data-dir", default=r"D:\INMO CAPITAL\ERETZ_AGENCY_DATA")
     parser.add_argument("--platform-directory", default=r"D:\INMO CAPITAL\agency_platform_directory.jsonl")
-    parser.add_argument("--preingestion-db", default=r"D:\INMO CAPITAL\ERETZ_SUPABASE_RECONCILIATION_V2_20260827\PREINGESTION_REBUILD.sqlite3")
+    # La vigente la declara `ERETZ_DATA_MANIFEST.json`, no una ruta escrita a
+    # mano: una ruta a mano envejece en silencio, que es exactamente como este
+    # runner termino apuntando a la snapshot del 27 de agosto.
+    parser.add_argument("--preingestion-db", default=str(base_canonica()))
     parser.add_argument("--output", default=r"D:\INMO CAPITAL\ERETZ_AGENCY_CERTIFICATION_20260827")
     parser.add_argument("--interval", type=float, default=1.5)
     # El default sale del modulo, no de un numero repetido aca: tenerlo en dos

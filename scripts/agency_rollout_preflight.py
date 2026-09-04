@@ -22,6 +22,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.agency_certifier import load_catalog
+from scripts.preingestion_manifest import base_canonica, describir
 from scripts.agency_fingerprints import (FINGERPRINT_SCHEMA_VERSION,
                                          strategy_fingerprint,
                                          strategy_fingerprint_v1, strategy_for)
@@ -175,12 +176,37 @@ def sin_defectos_abiertos(salida: Path,
     return True, "ninguno abierto"
 
 
+def base_de_datos_vigente(ruta: str) -> tuple[bool, str]:
+    """Que el runner no arranque apuntando a una snapshot vencida.
+
+    El certificador estuvo apuntando por default a la base del 27 de agosto,
+    anterior al fix D-014, mientras la vigente era la del 3 de septiembre. No lo
+    noto nadie porque la ruta estaba escrita a mano en dos `argparse` y una ruta
+    a mano envejece en silencio. Esto lo vuelve imposible de repetir.
+    """
+    dato = describir(ruta)
+    estado = dato.get("estado")
+    if estado == "HISTORICA":
+        return False, (f"apunta a una snapshot HISTORICA del {dato.get('fecha')} "
+                       f"({dato.get('proposito')}); la vigente es "
+                       f"{base_canonica()}")
+    if estado == "NO_DECLARADA":
+        return False, (f"la base {ruta} no esta declarada en "
+                       f"ERETZ_DATA_MANIFEST.json; una base sin declarar no "
+                       f"se puede auditar despues")
+    if not Path(ruta).exists():
+        return False, f"la base declarada vigente no existe en disco: {ruta}"
+    return True, (f"base vigente del {dato.get('fecha')}, "
+                  f"{dato.get('candidatas')} candidatas")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--v2-dir", default=r"D:\INMO CAPITAL\ERETZ_SUPABASE_RECONCILIATION_V2_20260827")
     parser.add_argument("--data-dir", default=r"D:\INMO CAPITAL\ERETZ_AGENCY_DATA")
     parser.add_argument("--platform-directory", default=r"D:\INMO CAPITAL\agency_platform_directory.jsonl")
     parser.add_argument("--output", default=r"D:\INMO CAPITAL\ERETZ_AGENCY_CERTIFICATION_20260827")
+    parser.add_argument("--preingestion-db", default=str(base_canonica()))
     parser.add_argument("--full", action="store_true",
                         help="comprobar contra la cola completa, no --ready")
     args = parser.parse_args()
@@ -198,6 +224,8 @@ def main() -> int:
         ("git coherente", git_coherente()),
         ("hay trabajo pendiente", hay_trabajo(salida, cola, catalogo)),
         ("sin NEEDS_FIX abiertos", sin_defectos_abiertos(salida, catalogo)),
+        ("base de preingestion vigente",
+         base_de_datos_vigente(args.preingestion_db)),
     ]
 
     print(f"cola {modo}: {len(cola)} inmobiliarias")

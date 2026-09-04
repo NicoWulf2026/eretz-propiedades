@@ -879,7 +879,11 @@ def main() -> int:
     parser.add_argument("--v2-dir", default=r"D:\INMO CAPITAL\ERETZ_SUPABASE_RECONCILIATION_V2_20260827")
     parser.add_argument("--data-dir", default=r"D:\INMO CAPITAL\ERETZ_AGENCY_DATA")
     parser.add_argument("--platform-directory", default=r"D:\INMO CAPITAL\agency_platform_directory.jsonl")
-    parser.add_argument("--preingestion-db", default=r"D:\INMO CAPITAL\ERETZ_SUPABASE_RECONCILIATION_V2_20260827\PREINGESTION_REBUILD.sqlite3")
+    # Import local a proposito: `main` esta fuera de la huella, asi que
+    # corregir a que base se apunta no invalida ninguna certificacion. Un
+    # import de nivel superior si la cambiaria.
+    from scripts.preingestion_manifest import base_canonica
+    parser.add_argument("--preingestion-db", default=str(base_canonica()))
     parser.add_argument("--output", default=r"D:\INMO CAPITAL\ERETZ_AGENCY_CERTIFICATION_20260827")
     parser.add_argument("--interval", type=float, default=1.5)
     parser.add_argument("--max-listings", type=int, default=0,
