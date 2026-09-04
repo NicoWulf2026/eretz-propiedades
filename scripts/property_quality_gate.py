@@ -1,0 +1,156 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""El quality gate: donde puede aparecer cada propiedad, y por que.
+
+No decide si una propiedad vale. Decide en que superficies puede mostrarse sin
+mentirle a nadie, aplicando `property_contract`. Una propiedad sin `operacion`
+sigue teniendo ficha y sigue en el listado; lo unico que pierde es el filtro
+venta/alquiler, porque ahi si estariamos afirmando algo que no sabemos.
+
+Explicable, versionado y auditable:
+
+  explicable  cada propiedad sale con la lista de razones por las que no llega
+              a un alcance, en castellano y sin codigos internos
+  versionado  `contrato_version` viaja en cada fila; cambiar el contrato se ve
+              en el artefacto y no hay que adivinar con que reglas se decidio
+  auditable   el artefacto es una fila por propiedad, no un agregado. Un numero
+              resumido no se puede discutir; una fila si
+
+**De donde sale el diagnostico de un campo ausente.** El contrato distingue
+`SOURCE_NOT_PROVIDED` de `EXTRACTION_FAILED`, y esa diferencia importa: el
+primero no tiene arreglo posible y el segundo es un defecto nuestro. La fila de
+pre-ingesta no alcanza para separarlos, pero los paquetes de certificacion si
+saben, por agencia y por campo, si la fuente lo publicaba. Aca se usa esa
+cobertura para resolver los ausentes, y cada fila declara que el diagnostico
+vino de ahi -`cobertura_de_la_agencia`- y no de la propiedad misma. Sin paquete
+queda `AUSENTE_SIN_DIAGNOSTICO`, que es la verdad: todavia no sabemos.
+
+No escribe en ninguna base.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import sqlite3
+import sys
+from collections import Counter, defaultdict
+from pathlib import Path
+from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from scripts.property_contract import (AUSENTE_SIN_DIAGNOSTICO,  # noqa: E402
+                                       CONTRATO_VERSION, TODOS, evaluar)
+
+GATE_VERSION = "property_quality_gate_v1"
+
+
+def cobertura_por_agencia(paquetes: Path) -> dict[str, dict[str, bool]]:
+    """Por agencia y campo: la fuente lo publicaba, si o no.
+
+    Sale de `field_coverage` de cada certificacion, que es donde se comparo lo
+    que la pagina ofrecia contra lo que el parser saco.
+    """
+    fuera: dict[str, dict[str, bool]] = {}
+    if not paquetes.exists():
+        return fuera
+    for carpeta in paquetes.iterdir():
+        archivo = carpeta / "certification.json"
+        if not archivo.exists():
+            continue
+        try:
+            paquete = json.loads(archivo.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            continue
+        campos = paquete.get("field_coverage") or {}
+        publica: dict[str, bool] = {}
+        for campo, dato in campos.items():
+            if not isinstance(dato, dict):
+                continue
+            provistos = dato.get("source_provided")
+            if isinstance(provistos, int):
+                publica[campo] = provistos > 0
+        if publica:
+            fuera[paquete.get("canonical_agency_id")] = publica
+    return fuera
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--db", default=r"D:\INMO CAPITAL\ERETZ_PREINGESTION_REBUILD_20260903\PREINGESTION_REBUILD.sqlite3")
+    ap.add_argument("--paquetes", default=r"D:\INMO CAPITAL\ERETZ_AGENCY_CERTIFICATION_20260827\agencies")
+    ap.add_argument("--salida", default=r"D:\INMO CAPITAL\ERETZ_PREINGESTION_REBUILD_20260903")
+    ap.add_argument("--limite", type=int, default=0)
+    args = ap.parse_args()
+
+    cobertura = cobertura_por_agencia(Path(args.paquetes))
+    conexion = sqlite3.connect(f"file:{Path(args.db).as_posix()}?mode=ro", uri=True)
+    consulta = ("select row_json, canonical_id, hash_dedup from rows "
+                "where status = 'CANDIDATE'")
+    if args.limite:
+        consulta += f" limit {args.limite}"
+
+    destino = Path(args.salida) / "PROPERTY_QUALITY_GATE.jsonl"
+    alcances: Counter = Counter()
+    razones: Counter = Counter()
+    estados: Counter = Counter()
+    con_diagnostico = sin_diagnostico = 0
+    fallos_por_campo: Counter = Counter()
+    total = publicables = 0
+    agencias_con_cobertura = set()
+
+    with destino.open("w", encoding="utf-8") as archivo:
+        for crudo, canonical, hash_dedup in conexion.execute(consulta):
+            fila = json.loads(crudo)
+            total += 1
+            fuente = cobertura.get(canonical)
+            if fuente:
+                agencias_con_cobertura.add(canonical)
+            veredicto = evaluar(fila, fuente)
+            publicables += bool(veredicto["publicable"])
+            for alcance in veredicto["alcances"]:
+                alcances[alcance] += 1
+            for razon in veredicto["razones_de_exclusion"]:
+                razones[razon] += 1
+            for campo, estado in veredicto["estados_de_campo"].items():
+                estados[estado] += 1
+                if estado == AUSENTE_SIN_DIAGNOSTICO:
+                    sin_diagnostico += 1
+                elif estado in ("SOURCE_NOT_PROVIDED", "EXTRACTION_FAILED"):
+                    con_diagnostico += 1
+                if estado == "EXTRACTION_FAILED":
+                    fallos_por_campo[campo] += 1
+            archivo.write(json.dumps({
+                "hash_dedup": hash_dedup,
+                "canonical_agency_id": canonical,
+                "source_url": fila.get("source_url"),
+                "gate_version": GATE_VERSION,
+                "origen_del_diagnostico": ("cobertura_de_la_agencia" if fuente
+                                           else "sin_paquete_de_certificacion"),
+                **veredicto,
+            }, ensure_ascii=False) + "\n")
+
+    resumen = {
+        "gate_version": GATE_VERSION,
+        "contrato_version": CONTRATO_VERSION,
+        "propiedades_evaluadas": total,
+        "publicables": publicables,
+        "no_publicables": total - publicables,
+        "por_alcance": dict(alcances.most_common()),
+        "motivos_de_alcance_reducido": dict(razones.most_common()),
+        "estados_de_campo": dict(estados.most_common()),
+        "campos_ausentes_con_diagnostico": con_diagnostico,
+        "campos_ausentes_sin_diagnostico": sin_diagnostico,
+        "extraccion_fallida_por_campo": dict(fallos_por_campo.most_common()),
+        "agencias_con_cobertura_certificada": len(agencias_con_cobertura),
+        "database_writes": 0,
+        "artefacto": destino.name,
+    }
+    (Path(args.salida) / "PROPERTY_QUALITY_GATE_SUMMARY.json").write_text(
+        json.dumps(resumen, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(json.dumps(resumen, ensure_ascii=False, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
