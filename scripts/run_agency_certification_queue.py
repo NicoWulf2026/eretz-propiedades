@@ -12,6 +12,7 @@ import json
 import os
 import sys
 import time
+import urllib.request
 import traceback
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -20,6 +21,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.preingestion_manifest import base_canonica  # noqa: E402
+from scripts.defect_triage import senales_de_catalogo  # noqa: E402
 from scripts.defect_triage import (STOP, clasificar,  # noqa: E402
                                    debe_cortar_por_lote)
 from scripts.agency_certifier import (
@@ -258,6 +260,28 @@ def render_summary(output: Path, universe: int, latest: dict[str, dict[str, Any]
     (output / "AGENCY_CERTIFICATION_SUMMARY.md").write_text("\n".join(lines), encoding="utf-8")
 
 
+
+def senales_en_la_portada(url: str | None) -> list[str]:
+    """Baja la portada una vez y busca estructura de catalogo.
+
+    Una sola peticion, y solo cuando el connector no reconocio la forma del
+    sitio. Si no se puede leer se devuelve vacio: no poder mirar no es haber
+    mirado y no haber encontrado nada, y el triage ya trata la ausencia de
+    senales como motivo para NO detener, asi que un fallo de red no puede
+    fabricar una parada.
+    """
+    if not url:
+        return []
+    try:
+        with urllib.request.urlopen(urllib.request.Request(
+                url, headers={"User-Agent": "Mozilla/5.0 (compatible; ERETZ/1.0)"}),
+                timeout=25) as respuesta:
+            html = respuesta.read(400_000).decode("utf-8", "replace")
+    except Exception:  # noqa: BLE001 - no poder mirar no decide nada
+        return []
+    return senales_de_catalogo(html)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     mode = parser.add_mutually_exclusive_group(required=True)
@@ -378,6 +402,15 @@ def main() -> int:
             # decide es el RADIO: un parser roto que comparten 343 agencias no
             # puede seguir corriendo, y un sitio que anduvo lento media hora no
             # justifica detener 758.
+            # "No reconoci la forma del sitio" no es "el sitio no tiene
+            # inventario". Antes de clasificar se mira la portada: si publica
+            # estructura de catalogo, lo que esta en juego son propiedades
+            # reales que no estamos leyendo. `alta.com.ar` tenia 16 detras de
+            # un /buscador y `almadimatteo.com.ar` 28 en paginas de categoria.
+            if any((result.get(r) or {}).get("estado") == "VARIANTE_NO_SOPORTADA"
+                   for r in ("run1", "run2")):
+                result["senales_de_catalogo"] = senales_en_la_portada(
+                    result.get("official_url"))
             triage = clasificar(result)
             triage.update({"position": index, "queue_size": len(queue),
                            "epoch": time.time()})

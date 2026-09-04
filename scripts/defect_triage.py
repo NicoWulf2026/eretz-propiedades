@@ -27,6 +27,7 @@ No escribe en ninguna base.
 from __future__ import annotations
 
 import hashlib
+import re
 import time
 from typing import Any
 
@@ -45,6 +46,70 @@ RADIO_AGENCIA = "AGENCIA"            # esta inmobiliaria y ninguna otra
 CLASES_EXTERNAS = ("ErrorTransitorio", "Bloqueado", "TimeoutError",
                    "URLError", "HTTPError", "ConnectionResetError",
                    "IncompleteRead", "socket.timeout")
+
+
+# Senales de que un sitio SI publica catalogo, aunque no lo hayamos podido
+# enumerar. Se miran ENLACES y rutas, no vocabulario: una inmobiliaria sin
+# catalogo igual dice "venta" y "propiedad" en su texto institucional, y
+# contarlo como inventario seria el falso positivo simetrico.
+#
+# Los patrones salen de los dos casos reales, no de suponer:
+#
+#   alta.com.ar          Next.js con ruta /buscador; las fichas viven en
+#                        /propiedad/<id> y el catalogo detras de
+#                        /api/tokko/properties. 16 propiedades.
+#   almadimatteo.com.ar  HTML estatico; el menu enlaza casasychalets/,
+#                        deptosyph/, duplex/, lotes/, locales/ y alquileres/,
+#                        y cada ficha es un .html en su carpeta. 28 fichas.
+#
+# Entre las dos, 44 propiedades que el sistema dio por inexistentes.
+
+# Rutas de ficha individual.
+RE_URL_DE_FICHA = re.compile(
+    r"""href=["'][^"']*/(?:propiedad|propiedades|inmueble|inmuebles|ficha|"""
+    r"""listing|emprendimiento)/[^"']{2,90}["']""", re.I)
+
+# Un endpoint de catalogo referenciado desde el cliente.
+RE_API_DE_CATALOGO = re.compile(
+    r"""["'][^"']*/api/[^"']*(?:propert|propiedad|inmueble|listing|tokko|"""
+    r"""wasi|search)[^"']*["']""", re.I)
+
+# Un contador publicado: "16 propiedades encontradas".
+RE_CONTADOR = re.compile(
+    r"(\d{1,5})\s*(?:propiedades|inmuebles|resultados|avisos)", re.I)
+
+# Enlaces a una pagina de busqueda o listado.
+RE_RUTA_DE_BUSQUEDA = re.compile(
+    r"""href=["'][^"']*/(?:buscador|busqueda|buscar|listado|catalogo|"""
+    r"""propiedades|inmuebles)(?:[/?."']|["'])""", re.I)
+
+# Enlaces a categorias del rubro. Es la forma que toma un catalogo estatico:
+# el menu lleva a una pagina por tipo y ahi cuelgan las fichas.
+RE_CATEGORIA = re.compile(
+    r"""href=["'][^"']*(?:casas?ychalets?|casas|departamentos?|deptos?|"""
+    r"""duplex|lotes|terrenos|locales|galpones|cocheras|campos|"""
+    r"""alquileres?|ventas?)[^"']*\.(?:html?|php|aspx)["']""", re.I)
+
+
+def senales_de_catalogo(html: str) -> list[str]:
+    """Evidencia estructural de que hay inventario publicado."""
+    if not html:
+        return []
+    senales = []
+    fichas = set(RE_URL_DE_FICHA.findall(html))
+    if fichas:
+        senales.append(f"{len(fichas)} enlaces con forma de ficha")
+    categorias = set(RE_CATEGORIA.findall(html))
+    if len(categorias) >= 2:
+        senales.append(f"{len(categorias)} paginas de categoria del rubro")
+    if RE_API_DE_CATALOGO.search(html):
+        senales.append("endpoint de catalogo referenciado en el cliente")
+    if RE_RUTA_DE_BUSQUEDA.search(html):
+        senales.append("enlace a una pagina de busqueda o listado")
+    contador = RE_CONTADOR.search(html)
+    if contador and int(contador.group(1)) > 0:
+        senales.append(f"contador publicado: {contador.group(0).strip()}")
+    return senales
 
 
 def _corridas(resultado: dict[str, Any]) -> list[dict[str, Any]]:
@@ -167,13 +232,19 @@ def clasificar(resultado: dict[str, Any]) -> dict[str, Any]:
             "la enumeracion quedo incompleta y el enumerador es compartido; "
             "no se puede separar el sitio de nuestra paginacion")
     if "VARIANTE_NO_SOPORTADA" in estados:
-        # El connector no reconoce la forma de este sitio. Es un hueco, no un
-        # defecto que se propague: nadie mas certifica mal por esto, y darle
-        # soporte es una estrategia nueva que no toca a las existentes.
+        # "No reconoci la forma" NO es "no hay inventario". Si el sitio muestra
+        # estructura de catalogo, lo que esta en juego son propiedades reales
+        # que no estamos publicando, y eso pesa mas que ahorrarse una parada.
+        senales = resultado.get("senales_de_catalogo") or []
+        if senales:
+            return _veredicto(
+                STOP, resultado, "posible_perdida_de_inventario", RADIO_FAMILIA,
+                f"el sitio publica catalogo y no lo pudimos enumerar: "
+                f"{'; '.join(senales)}")
         return _veredicto(
             CONTINUE, resultado, "variante_no_soportada", RADIO_ESTRATEGIA,
-            "el connector no reconoce la forma de este sitio; es un hueco de "
-            "cobertura, no un error que herede otra agencia")
+            "el connector no reconoce la forma de este sitio y no se hallaron "
+            "senales de catalogo publicado")
     if "BLOQUEADA" in estados:
         return _veredicto(
             CONTINUE, resultado, "sitio_nos_bloquea", RADIO_AGENCIA,

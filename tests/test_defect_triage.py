@@ -200,3 +200,75 @@ def test_cada_estado_de_corrida_tiene_su_propio_radio():
     # de "nuestra paginación no llegó": se para.
     v = _con("ENUMERACION_INCOMPLETA")
     assert (v["decision"], v["radio_estimado"]) == (STOP, RADIO_FAMILIA)
+
+
+# ------------- inventario no enumerado: la regla que faltaba ---------------
+
+def test_B_un_catalogo_que_no_supimos_leer_detiene_la_cola():
+    """`alta.com.ar` fue clasificado SIN_INVENTARIO y publica 16 propiedades
+    detrás de `/buscador`; `almadimatteo.com.ar` fue clasificado igual y
+    publica 28 fichas en páginas de categoría. Entre las dos, 44 propiedades
+    que el sistema dio por inexistentes.
+
+    "No reconocí la forma del sitio" no es "el sitio no tiene inventario".
+    Cuando hay estructura de catálogo, lo que está en juego son propiedades
+    reales que no estamos publicando, y eso pesa más que ahorrarse una parada.
+    """
+    v = clasificar(_resultado(
+        run1={"estado": "VARIANTE_NO_SOPORTADA"},
+        senales_de_catalogo=["12 paginas de categoria del rubro"]))
+    assert v["decision"] == STOP
+    assert v["componente_sospechoso"] == "posible_perdida_de_inventario"
+    assert v["radio_estimado"] == RADIO_FAMILIA
+    assert "no lo pudimos enumerar" in v["evidencia"]
+
+
+def test_A_un_sitio_realmente_sin_catalogo_no_detiene():
+    """Sin señales estructurales el hueco es de cobertura y no arrastra a
+    nadie: sigue siendo un `NEEDS_FIX` pendiente, pero no frena 730."""
+    v = clasificar(_resultado(run1={"estado": "VARIANTE_NO_SOPORTADA"},
+                              senales_de_catalogo=[]))
+    assert v["decision"] == CONTINUE
+    assert v["componente_sospechoso"] == "variante_no_soportada"
+    assert v["certificado"] is False
+
+
+def test_C_las_palabras_institucionales_no_son_un_catalogo():
+    """Una inmobiliaria sin catálogo igual dice "venta" y "propiedad" en su
+    texto. Contarlo como inventario sería el falso positivo simétrico, así que
+    se miran ENLACES y rutas, nunca vocabulario."""
+    from scripts.defect_triage import senales_de_catalogo
+
+    institucional = (
+        "<html><body><h1>Somos una empresa con 30 anios en el mercado "
+        "inmobiliario</h1><p>Compra, Venta, Alquileres y Tasaciones de "
+        "propiedades e inmuebles.</p>"
+        "<a href='/contacto.html'>Contacto</a>"
+        "<a href='/nosotros.html'>Quienes somos</a></body></html>")
+    assert senales_de_catalogo(institucional) == []
+
+
+def test_D_un_catalogo_por_api_o_js_es_senal_valida():
+    """El catálogo de `alta.com.ar` no está en el HTML: vive detrás de
+    `/api/tokko/properties`. Que no se vea sin ejecutar JavaScript no lo
+    vuelve inexistente."""
+    from scripts.defect_triage import senales_de_catalogo
+
+    assert senales_de_catalogo(
+        '<script src="/x.js"></script><a href="/api/tokko/properties">x</a>')
+    assert senales_de_catalogo('<a href="/buscador">Buscar</a>')
+    assert senales_de_catalogo('<a href="/propiedad/8519885">Ficha</a>')
+    assert senales_de_catalogo("<p>16 propiedades encontradas</p>")
+    # Dos categorias del rubro alcanzan; una sola no.
+    assert senales_de_catalogo(
+        '<a href="casasychalets/casasychalets.html">Casas</a>'
+        '<a href="lotes/lotes.html">Lotes</a>')
+    assert senales_de_catalogo('<a href="lotes/lotes.html">Lotes</a>') == []
+
+
+def test_no_poder_mirar_no_fabrica_una_parada():
+    """Si la portada no se puede bajar, no hay señales y no se detiene: no
+    haber mirado no es haber mirado y no encontrado nada."""
+    from scripts.defect_triage import senales_de_catalogo
+    assert senales_de_catalogo("") == []
+    assert senales_de_catalogo(None) == []
