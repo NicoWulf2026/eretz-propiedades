@@ -19,6 +19,8 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from scripts.defect_triage import (STOP, clasificar,  # noqa: E402
+                                   debe_cortar_por_lote)
 from scripts.agency_certifier import (
     CERTIFIER_VERSION,
     append_jsonl,
@@ -324,6 +326,7 @@ def main() -> int:
         last_terminal_agency=last_terminal))
     cerrojo = tomar_cerrojo(output)
     stopped_on: str | None = None
+    defectos_pendientes: list[dict[str, Any]] = []
     for index, canonical_id in enumerate(pending, 1):
         latir(cerrojo, canonical_id)
         write_json(progress_path, progress_payload(
@@ -364,14 +367,20 @@ def main() -> int:
             last_terminal_agency=last_terminal,
             current_agency=(canonical_id if phase != "READY" else None),
             current_phase=phase)
+        triage = None
         if result["status"] in {"NEEDS_FIX", "RUNNER_ERROR"}:
-            # Cola de triage: con --continue-after-fix los defectos dejaban de
-            # detener la corrida y tambien dejaban de ser visibles.
+            # Parar en cada defecto cuesta semanas de cola detenida; seguir
+            # siempre certifica agencias con un defecto conocido encima. Lo que
+            # decide es el RADIO: un parser roto que comparten 343 agencias no
+            # puede seguir corriendo, y un sitio que anduvo lento media hora no
+            # justifica detener 758.
+            triage = clasificar(result)
+            triage.update({"position": index, "queue_size": len(queue),
+                           "epoch": time.time()})
+            defectos_pendientes.append(triage)
             append_jsonl(output / "AGENCY_DEFECT_QUEUE.jsonl", {
-                "canonical_agency_id": canonical_id,
-                "status": result["status"],
+                **triage,
                 "reasons": result.get("reasons", []),
-                "position": index, "queue_size": len(queue),
                 "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S")})
         checkpoint.update({"attempted_in_this_run": index,
                            "last_agency": canonical_id,
@@ -379,9 +388,33 @@ def main() -> int:
         write_json(progress_path, checkpoint)
         print(json.dumps({"position": index, "total": len(pending),
                           "agency": canonical_id, "status": result["status"]}), flush=True)
-        if result["status"] == "NEEDS_FIX" and not args.continue_after_fix:
-            stopped_on = canonical_id
-            break
+        if triage is not None and not args.continue_after_fix:
+            corta, motivo_lote = debe_cortar_por_lote(defectos_pendientes)
+            if triage["decision"] == STOP:
+                stopped_on = canonical_id
+                print(json.dumps({
+                    "detiene": canonical_id,
+                    "motivo": "radio transversal",
+                    "componente": triage["componente_sospechoso"],
+                    "radio": triage["radio_estimado"],
+                    "evidencia": triage["evidencia"]}, ensure_ascii=False),
+                    flush=True)
+                break
+            if corta:
+                # El defecto era continuable, pero el lote acumulado ya no.
+                # Se corta ACA, que es un checkpoint recien escrito.
+                stopped_on = canonical_id
+                print(json.dumps({"detiene": canonical_id,
+                                  "motivo": "corte por lote",
+                                  "detalle": motivo_lote},
+                                 ensure_ascii=False), flush=True)
+                break
+            print(json.dumps({
+                "continua_pese_a": canonical_id,
+                "radio": triage["radio_estimado"],
+                "componente": triage["componente_sospechoso"],
+                "pendientes": len(defectos_pendientes)}, ensure_ascii=False),
+                flush=True)
     render_summary(output, len(catalog), existing, mode_name, stopped_on)
     cerrojo.unlink(missing_ok=True)
     return 2 if stopped_on else 0
