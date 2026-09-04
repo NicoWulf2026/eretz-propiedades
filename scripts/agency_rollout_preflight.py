@@ -22,7 +22,9 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.agency_certifier import load_catalog
-from scripts.agency_fingerprints import strategy_fingerprint, strategy_for
+from scripts.agency_fingerprints import (FINGERPRINT_SCHEMA_VERSION,
+                                         strategy_fingerprint,
+                                         strategy_fingerprint_v1, strategy_for)
 from scripts.run_agency_certification_queue import (CERROJO, LATIDO_VENCIDO,
                                                     TERMINAL, choose_connector,
                                                     full_queue,
@@ -128,6 +130,14 @@ def huella_vigente(resultado: dict[str, Any],
     conector = resultado.get("connector") or choose_connector(registro)
     estrategia = resultado.get("connector_strategy") or strategy_for(
         conector, resultado.get("publication_mechanism"))
+    if resultado.get("fingerprint_schema_version") != FINGERPRINT_SCHEMA_VERSION:
+        # El paquete se emitio con otra definicion de huella. Comparar contra
+        # la actual no responde nada -todo difiere por construccion- y dejarlo
+        # pasar convertiria el cambio de modelo en una amnistia silenciosa para
+        # todos los defectos abiertos. Se recomputa con el algoritmo de SU
+        # esquema, que es lo unico que contesta la pregunta real: cambio el
+        # comportamiento desde que se emitio este veredicto.
+        return guardada == strategy_fingerprint_v1(conector, estrategia)
     return guardada == strategy_fingerprint(conector, estrategia)
 
 

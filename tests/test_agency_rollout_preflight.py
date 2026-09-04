@@ -3,14 +3,17 @@ from __future__ import annotations
 
 import json
 
+from scripts.agency_fingerprints import FINGERPRINT_SCHEMA_VERSION
 from scripts.agency_rollout_preflight import (huella_vigente,
                                               sin_defectos_abiertos)
 
 
-def _resultado(huella: str | None = "vieja", estado: str = "NEEDS_FIX") -> dict:
+def _resultado(huella: str | None = "vieja", estado: str = "NEEDS_FIX",
+               esquema: int | None = FINGERPRINT_SCHEMA_VERSION) -> dict:
     return {"canonical_agency_id": "roomix:alfa", "status": estado,
             "connector": "generico", "connector_strategy": "generico/portal",
-            "strategy_fingerprint": huella}
+            "strategy_fingerprint": huella,
+            "fingerprint_schema_version": esquema}
 
 
 def _salida(tmp_path, resultados: list[dict]):
@@ -66,3 +69,27 @@ def test_no_se_juzga_un_defecto_con_is_current_result(monkeypatch):
     monkeypatch.setattr("scripts.agency_rollout_preflight.strategy_fingerprint",
                         lambda *_: "nueva")
     assert huella_vigente(_resultado(huella="vieja"), {}) is False
+
+
+def test_cambiar_la_definicion_de_la_huella_no_amnistia_los_defectos(tmp_path,
+                                                                     monkeypatch):
+    """Redefinir qué se hashea cambia todas las huellas y no corrige nada.
+
+    Sin esta regla, subir `FINGERPRINT_SCHEMA_VERSION` habría dejado en cero la
+    lista de `NEEDS_FIX` abiertos: todos pasarían por "evidencia vencida" de un
+    plumazo. Un paquete de un esquema anterior se juzga con el algoritmo de SU
+    esquema, que es lo único que contesta si cambió el comportamiento.
+    """
+    import scripts.agency_rollout_preflight as pre
+
+    viejo = _resultado(huella="vieja", esquema=1)
+    # El algoritmo del esquema 1 da lo mismo que lo guardado: nadie toco el
+    # comportamiento, asi que el defecto sigue abierto.
+    monkeypatch.setattr(pre, "strategy_fingerprint_v1", lambda *_: "vieja")
+    monkeypatch.setattr(pre, "strategy_fingerprint", lambda *_: "nueva-por-el-modelo")
+    salida = _salida(tmp_path, [viejo])
+    assert sin_defectos_abiertos(salida, {"roomix:alfa": {}})[0] is False
+
+    # Si ademas cambio el comportamiento, ahi si es evidencia vencida.
+    monkeypatch.setattr(pre, "strategy_fingerprint_v1", lambda *_: "otra")
+    assert sin_defectos_abiertos(salida, {"roomix:alfa": {}})[0] is True

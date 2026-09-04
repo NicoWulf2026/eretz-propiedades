@@ -386,11 +386,22 @@ def load_catalog(v2: Path, data_dir: Path, platform_directory: Path) -> dict[str
                  for r in read_jsonl(platform_directory)}
     directory = {r["canonical_agency_id"]: r
                  for r in read_jsonl(data_dir / "agency_web_directory.jsonl")}
-    keys = set(resolution) | set(sources) | set(platforms) | set(directory)
+    # La web que alguien ABRIO y comprobo. `agency_web_directory.jsonl` viene de
+    # `free_web_audit_v1`, que puntuo urls sin abrirlas: 597 de 598 dominios
+    # descubiertos traen `OFFICIAL_WEB_HIGH_CONFIDENCE`, o sea que ese estado no
+    # distingue el sitio propio del de un cuartel de bomberos. Esta salida si
+    # abrio la pagina.
+    verificada = {r["canonical_agency_id"]: r
+                  for r in read_jsonl(data_dir / "AGENCY_OFFICIAL_WEB_VERIFIED.jsonl")
+                  if r.get("verificacion") == "VERIFICADA_ARGENTINA"
+                  and r.get("official_url")}
+    keys = (set(resolution) | set(sources) | set(platforms) | set(directory)
+            | set(verificada))
     return {key: {"resolution": resolution.get(key, {}),
                   "live": live.get(key, {}), "source": sources.get(key, {}),
                   "platform": platforms.get(key, {}),
-                  "directory": directory.get(key, {})}
+                  "directory": directory.get(key, {}),
+                  "verificada": verificada.get(key, {})}
             for key in keys}
 
 
@@ -431,9 +442,13 @@ def baseline_inventory(record: dict[str, dict[str, Any]], pre_db: Path,
 def resolve_identity(record: dict[str, dict[str, Any]], canonical_id: str) -> dict[str, Any]:
     resolution, live = record["resolution"], record["live"]
     source, platform, directory = record["source"], record["platform"], record["directory"]
+    verificada = record.get("verificada") or {}
     eretz_id = resolution.get("eretz_id") or live.get("eretz_id") or platform.get("eretz_id")
+    # La web leida va ANTES del directorio: evidencia que alguien abrio le gana
+    # a un puntaje calculado sobre la cadena de la url sin visitarla.
     official = (platform.get("domain") or source.get("official_url")
-                or resolution.get("official_domain") or directory.get("official_url"))
+                or resolution.get("official_domain")
+                or verificada.get("official_url") or directory.get("official_url"))
     name = (resolution.get("agency_name") or source.get("agency_name")
             or platform.get("agency_name") or directory.get("agency_name") or canonical_id)
     status = "READY"

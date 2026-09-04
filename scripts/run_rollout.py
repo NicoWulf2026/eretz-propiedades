@@ -461,6 +461,18 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
 
     r["detalles_obtenidos"] = len(props)
     r["detalles_fallidos"] = fallidos
+    # Por que fallaron. El certificador no pasa por `main()`, que es donde se
+    # escribia `errors.jsonl`, asi que descartaba la evidencia: `aconcagua
+    # propiedades` perdio 16 fichas -las 16 de alquiler, ninguna de venta- y no
+    # habia forma de saber si fueron 404, timeouts o bloqueos.
+    #
+    # Se guarda el RECUENTO por etapa y clase, no el detalle: el texto de la
+    # excepcion puede arrastrar una url con credenciales y el paquete no es
+    # lugar para eso.
+    conteo_errores: Counter = Counter()
+    for anotado in getattr(con, "errores", []):
+        conteo_errores[f"{anotado.get('etapa')}/{anotado.get('clase')}"] += 1
+    r["errores_por_etapa"] = dict(conteo_errores)
     r["reintentos_diferidos"] = len(reintentos_diferidos)
     r["detalles_recuperados_diferidos"] = recuperados_diferidos
     # Cuantas descarto el guardian de forma. Separarlo de los fallos importa:

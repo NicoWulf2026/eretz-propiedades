@@ -14,7 +14,8 @@ from pathlib import Path
 from typing import Iterable
 
 ROOT = Path(__file__).resolve().parents[1]
-FINGERPRINT_SCHEMA_VERSION = 1
+RAIZ = ROOT  # alias en castellano para los tests
+FINGERPRINT_SCHEMA_VERSION = 2
 
 PUBLICATION_STRATEGIES = {
     "EMPTY_CATALOG_HTML": "generic/empty_catalog",
@@ -79,6 +80,38 @@ GENERIC_STRATEGY_FUNCTIONS = {
 }
 
 
+# Lo unico que sale de la huella de certificacion. Son funciones que no pueden
+# alterar la evidencia: CLI, orquestacion, lectura/escritura de reportes y
+# metadatos. Todo lo demas del archivo -constantes, clases, imports y cualquier
+# funcion nueva- se queda adentro por defecto.
+#
+# El default importa. Se probo derivar esta lista automaticamente por alcance
+# desde `certify()` y el resultado marcaba `source_signals` como inalcanzable:
+# la usa la CLASE `AuditDownloader`, no una llamada directa. Excluirla habria
+# sacado de la huella la funcion que decide `source_provided`, y ese es el fallo
+# grave -haria pasar por vigentes certificaciones que no lo son-. Por eso la
+# regla es semantico por defecto y operativo solo con prueba explicita.
+#
+# Antes estos dos archivos se hasheaban ENTEROS. Tocar `main()` -203 lineas de
+# argparse y logging en el runner- invalidaba las 44 certificaciones. Paso tres
+# veces: 3f2ebe015, 64b17caac y 4d49c8427 no cambiaron nada que pudiera alterar
+# un resultado y resetearon la cola entera.
+RUNNER_OPERACIONALES = frozenset({
+    "main",                 # CLI, orquestacion y escritura del resumen
+    "universo",             # elige QUE fuentes correr, no que se extrae
+    "procesar",             # envoltorio del modo standalone
+    "leer_jsonl",           # lectura de artefactos
+    "version_del_codigo",   # metadato: se escribe en el paquete, no decide nada
+})
+CERTIFIER_OPERACIONALES = frozenset({
+    "main",                 # CLI y orquestacion
+    "update_rollups",       # rollup de presentacion
+    "find_canonical",       # busqueda para el reporte
+    "read_jsonl",           # lectura de artefactos
+    "append_jsonl",         # escritura de bitacora
+})
+
+
 def strategy_for(connector: str, publication_mechanism: str | None) -> str:
     if connector != "generico":
         return connector
@@ -89,6 +122,20 @@ def strategy_for(connector: str, publication_mechanism: str | None) -> str:
 def _semantic_file(path: Path) -> bytes:
     tree = ast.parse(path.read_text(encoding="utf-8"))
     return ast.dump(tree, include_attributes=False).encode()
+
+
+def _archivo_sin_operativas(fuente: str, excluidas: frozenset[str]) -> bytes:
+    """El archivo entero menos las funciones operativas nombradas.
+
+    Se excluye por lista corta y explicita, nunca por heuristica: lo que no
+    esta en la lista pertenece a la huella, incluidas las clases, las
+    constantes y cualquier funcion que se agregue despues.
+    """
+    arbol = ast.parse(fuente)
+    arbol.body = [nodo for nodo in arbol.body
+                  if not (isinstance(nodo, (ast.FunctionDef, ast.AsyncFunctionDef))
+                          and nodo.name in excluidas)]
+    return ast.dump(arbol, include_attributes=False).encode()
 
 
 def _selected_nodes(path: Path, class_name: str,
@@ -115,9 +162,12 @@ def _selected_nodes(path: Path, class_name: str,
 def fingerprint_components(connector: str, strategy: str) -> dict[str, bytes]:
     components = {
         "shared/base": _semantic_file(ROOT / "connectors" / "base.py"),
-        "shared/runner": _semantic_file(ROOT / "scripts" / "run_rollout.py"),
-        "shared/certifier": _semantic_file(
-            ROOT / "scripts" / "agency_certifier.py"),
+        "shared/runner": _archivo_sin_operativas(
+            (ROOT / "scripts" / "run_rollout.py").read_text(encoding="utf-8"),
+            RUNNER_OPERACIONALES),
+        "shared/certifier": _archivo_sin_operativas(
+            (ROOT / "scripts" / "agency_certifier.py").read_text(encoding="utf-8"),
+            CERTIFIER_OPERACIONALES),
         # La geografia canonica decide la ciudad y el barrio de cada
         # propiedad: cambiarla cambia lo que se extrae, asi que tiene que
         # invalidar la certificacion como cualquier otro cambio de extraccion.
@@ -153,6 +203,26 @@ def fingerprint_from_components(components: dict[str, bytes]) -> str:
         digest.update(payload)
         digest.update(b"\0")
     return digest.hexdigest()[:12]
+
+
+@lru_cache(maxsize=None)
+def strategy_fingerprint_v1(connector: str, strategy: str) -> str:
+    """La huella como se calculaba en el esquema 1: archivos enteros.
+
+    Codigo de transicion. Sirve para una sola pregunta, que es la unica que
+    importa ante un paquete viejo: cambio el COMPORTAMIENTO desde que se emitio
+    ese veredicto, o solo cambio la definicion de la huella. Comparar un
+    paquete del esquema 1 contra la huella del esquema 2 no puede responderla,
+    porque todo difiere por construccion.
+
+    Se puede borrar cuando no queden paquetes del esquema 1.
+    """
+    componentes = dict(fingerprint_components(connector, strategy))
+    componentes["shared/runner"] = _semantic_file(
+        ROOT / "scripts" / "run_rollout.py")
+    componentes["shared/certifier"] = _semantic_file(
+        ROOT / "scripts" / "agency_certifier.py")
+    return fingerprint_from_components(componentes)
 
 
 @lru_cache(maxsize=None)
