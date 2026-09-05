@@ -270,6 +270,83 @@ campos presentes, porque una firma con nulos no es identidad sino ausencia.
 Dos unidades idénticas del mismo edificio caen igual en un grupo: otra razón
 para no borrar.
 
+#### Qué distingue a los miembros de un grupo
+
+Fuente: `PROPERTY_DUPLICATE_EVIDENCE.jsonl`. La decisión de producto estaba
+planteada sobre 514 grupos indistinguibles entre sí, y no son el mismo
+problema. La pregunta que la vuelve decidible: **dentro de un grupo, los
+miembros se diferencian en algo además del id de la URL?**
+
+| Clase | Grupos | Misma inmob. | Entre inmob. |
+|---|---|---|---|
+| Puede haber dos unidades distintas | 207 | 111 | 96 |
+| Mismo inmueble, precio distinto | 163 | 153 | 10 |
+| Sólo texto o ubicación imprecisa | 72 | 65 | 7 |
+| Mismo inmueble, datos contradictorios | 40 | 36 | 4 |
+| **Idénticos en todo lo visible** | **32** | **32** | **0** |
+
+**La comparación normaliza antes de decidir.** `Tissera Esquina Los Cedros` y
+`Tissera esquina Los Cedros` son la misma dirección; comparadas crudas
+mandaban el grupo a "dos unidades distintas" cuando lo único que cambiaba era
+una mayúscula y un baño. Normalizar movió 72 grupos de esa clase a las de
+inconsistencia, que es donde estaban. Es el mismo error de alfabetos distintos
+que ya apareció entre la señal de fuente y su extracción, y van cuatro.
+
+**Que difiera la cuenta de baños no prueba que sean dos propiedades.** Dos
+fichas con la misma dirección, el mismo precio y la misma superficie cubierta
+que discrepan en un baño son un dato mal cargado. Sólo la dirección y la
+superficie distinguen de verdad, y ni siquiera ellas alcanzan: la firma ya
+exige coordenada idéntica a ~1,1 m, y en un edificio las unidades apiladas
+comparten coordenada —`Chacra del Norte 1 Piso 1` es un piso, no un duplicado—.
+
+**Lo único demostrablemente colapsable son 32 grupos**, idénticos en los 17
+campos visibles y todos dentro de una misma inmobiliaria: ahí no hay decisión
+comercial que tomar, porque el clic va a la misma agencia en cualquier caso.
+Los otros 482 siguen sin ganador. Los 163 de precio distinto no son un
+duplicado a resolver sino una **contradicción a mostrar**: hoy el portal
+enseñaría dos precios para el mismo inmueble sin decir cuál rige.
+
+### 2.8 El quality gate sobre las 58.427
+
+Fuente: `PROPERTY_QUALITY_GATE.jsonl` y su resumen, una fila por propiedad.
+`database_writes: 0`.
+
+**58.427 de 58.427 publicables. Cero pérdidas.** La regla se sostiene sobre
+datos reales: una propiedad real incompleta sobrevive; lo que falta le quita
+alcance, no existencia.
+
+| Alcance | Propiedades | |
+|---|---|---|
+| FICHA | 58.427 | 100 % |
+| LISTADO | 58.427 | 100 % |
+| FILTRO_PRECIO | 53.088 | 90,9 % |
+| FILTRO_TIPO | 52.721 | 90,2 % |
+| FILTRO_OPERACION | 47.511 | 81,3 % |
+| MAPA | 42.499 | 72,7 % |
+| **FILTRO_CIUDAD** | **5.965** | **10,2 %** |
+
+**La ciudad es el agujero, y con mucha diferencia.** 52.462 propiedades no
+entran al filtro por ciudad, que es probablemente el primer filtro que usa
+cualquiera que entra a buscar. Eso confirma la prioridad del milestone 2: la
+geografía no es una mejora incremental sino la diferencia entre un portal que
+se puede usar y uno que no.
+
+**De dónde sale el diagnóstico de un ausente.** Con 30 de 767 agencias
+certificadas: 11.206 campos `EXTRACTION_FAILED` —defectos nuestros—, 3.678
+`SOURCE_NOT_PROVIDED` y 316.839 `AUSENTE_SIN_DIAGNOSTICO`, que es la verdad
+mientras la cola no llegue. Los tres primeros defectos por volumen son
+`superficie_total` (1.722), `ambientes` (1.500) y `ciudad` (1.421).
+
+**Haber extraído un campo prueba que la fuente lo publica.** El detector de
+señales mira el marcado y falla hacia el "no lo publica": `alpha inmobiliaria`
+figuraba con `source_provided: 0` en `descripcion` y a la vez con las 127
+descripciones extraídas. Leyendo sólo la señal, esas fichas exoneraban al
+parser con un `SOURCE_NOT_PROVIDED` sobre un campo que la fuente evidentemente
+publica. Eran 128 de 290 pares agencia/campo, el 44 %, y 1.480 campos sobre las
+candidatas —con sólo 30 agencias certificadas—. Sumar la extracción como
+evidencia sólo puede mover un campo hacia `EXTRACTION_FAILED`, o sea hacia
+buscar defectos propios, que es el lado por el que hay que fallar.
+
 ---
 
 ## 3. Decisiones tomadas
@@ -672,18 +749,19 @@ Descubrimiento → Directorio de plataformas → Resolución de identidad
 2. **Cablear la geografía** a los connectors y al quality gate, en un punto sin
    certificación en vuelo: tocar `connectors/base.py` cambia la huella de todas
    las estrategias y invalidaría la evidencia de la corrida activa.
-3. **Cablear, en el mismo punto sin certificación en vuelo**, dos insumos que
-   hoy están calculados y sin consumir:
-   - `AGENCY_OFFICIAL_WEB_VERIFIED.jsonl` a `load_catalog` del certificador;
-     `resolve_identity` lee `agency_web_directory.jsonl` y nunca miró la salida
-     del resolver, así que las 316 webs verificadas no las usa nadie.
-   - la base de preingestión del 3 de septiembre como canónica; la que apunta
-     el certificador por defecto es del 27 de agosto y le faltan las 13.023
-     candidatas recuperadas. No se reemplaza con un proceso leyéndola.
+3. ~~Cablear las webs verificadas y la base canónica.~~ **Hecho.**
+   `AGENCY_OFFICIAL_WEB_VERIFIED.jsonl` entra por `load_catalog` y
+   `resolve_identity` lo prefiere al directorio; el default de la base sale del
+   manifiesto, no de una ruta escrita a mano. Se probó que ambas bases dan la
+   misma línea base —189.159 filas, 1.724 ids, cero conteos distintos—, así que
+   corregirlo no invalidó ninguna certificación.
 4. **Vinculación e ingesta** una vez levantada la barrera.
-5. **Decidir qué se hace con los 514 grupos duplicados** (§2.7). La detección
-   está hecha; elegir cuál se muestra es una decisión de producto.
-6. Contrato de propiedad, ciclo de vida, quality gate, publicación.
+5. **Decidir qué se hace con los grupos duplicados** (§2.7). La evidencia ya
+   está: 32 grupos son idénticos en todo lo visible y todos de una misma
+   inmobiliaria —ahí no hay decisión comercial—, y 163 muestran dos precios
+   para el mismo inmueble. Los 482 restantes siguen sin ganador.
+6. Contrato de propiedad, ciclo de vida, quality gate, publicación. El gate ya
+   corrió sobre las 58.427: **58.427 publicables, cero pérdidas** (§2.8).
 
 La geografía es una **dependencia** del contrato de propiedad y del filtro de
 búsqueda, no una misión aparte: entra en el DAG entre la normalización y el
