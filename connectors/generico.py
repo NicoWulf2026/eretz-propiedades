@@ -912,7 +912,8 @@ class GenericoConnector(Connector):
         return None
 
     # ---------------------------------------------------------------- discover
-    def discover(self, fuente: Fuente) -> dict[str, Any]:
+    def discover(self, fuente: Fuente,
+                 _desde_la_raiz: bool = False) -> dict[str, Any]:
         p = urllib.parse.urlparse(fuente.official_url)
         base = f"{p.scheme}://{p.netloc}"
         plan: dict[str, Any] = {"base": base, "variante": "SIN_INVENTARIO",
@@ -1165,6 +1166,29 @@ class GenericoConnector(Connector):
                          "fichas": fichas_categoria[:MAX_FICHAS],
                          "total_declarado": len(fichas_categoria)})
             return plan
+
+        # La url declarada puede ser una subpagina institucional. `altos
+        # servicios inmobiliarios` figura como `/page/empresa-1`, que no
+        # enlaza ninguna ficha, mientras la raiz publica su catalogo en
+        # `/listing` con veinte propiedades. Leer solo lo declarado hacia pasar
+        # por vacio a un sitio lleno.
+        #
+        # Se intenta una sola vez y solo cuando ya no quedaba nada por probar,
+        # asi que el costo es una peticion extra unicamente en el caso que de
+        # otro modo se perderia entero.
+        if not _desde_la_raiz and p.path.strip("/"):
+            desde_raiz = self.discover(
+                Fuente(canonical_agency_id=fuente.canonical_agency_id,
+                       agency_name=fuente.agency_name,
+                       official_url=base + "/",
+                       inmobiliaria_id=fuente.inmobiliaria_id,
+                       detected_platform=fuente.detected_platform,
+                       extra=fuente.extra),
+                _desde_la_raiz=True)
+            if desde_raiz.get("soportada"):
+                desde_raiz["entrada_corregida"] = base + "/"
+                desde_raiz["entrada_declarada"] = fuente.official_url
+                return desde_raiz
 
         return plan
 

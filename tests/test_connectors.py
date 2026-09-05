@@ -3719,3 +3719,30 @@ def test_el_rotulo_de_descripcion_admite_coletilla_y_acento_roto():
     # Y un bloque corto no es una descripcion.
     assert GenericoConnector._descripcion_rotulada(
         "<h3>Descripcion</h3><p>Casa</p>") is None
+
+
+def test_si_la_url_declarada_es_una_subpagina_se_busca_en_la_raiz():
+    """`altos servicios inmobiliarios` figura como `/page/empresa-1`, una
+    página institucional que no enlaza ninguna ficha, mientras su raíz publica
+    veinte propiedades en `/listing`. Leer sólo lo declarado hacía pasar por
+    vacío a un sitio lleno, y el colapso de inventario contra el baseline lo
+    delató: 20 conocidas, 0 encontradas.
+
+    El intento a la raíz ocurre una sola vez y sólo cuando ya no quedaba nada
+    por probar, así que cuesta una petición extra únicamente en el caso que de
+    otro modo se perdería entero.
+    """
+    import inspect
+
+    from connectors.generico import GenericoConnector
+
+    fuente = inspect.getsource(GenericoConnector.discover)
+    # El intento es el ultimo recurso: va despues de todos los detectores.
+    assert "_desde_la_raiz" in fuente
+    assert fuente.index("_desde_la_raiz: bool") < fuente.index("if not _desde_la_raiz")
+    # Y no se repite: la llamada recursiva lo marca.
+    assert "_desde_la_raiz=True" in fuente
+    # Solo se adopta si la raiz SI encontro catalogo.
+    assert 'if desde_raiz.get("soportada")' in fuente
+    # Queda registrado que la entrada se corrigio, para poder auditarlo.
+    assert '"entrada_corregida"' in fuente and '"entrada_declarada"' in fuente
