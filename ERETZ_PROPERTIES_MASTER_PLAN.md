@@ -327,9 +327,37 @@ alcance, no existencia.
 
 **La ciudad es el agujero, y con mucha diferencia.** 52.462 propiedades no
 entran al filtro por ciudad, que es probablemente el primer filtro que usa
-cualquiera que entra a buscar. Eso confirma la prioridad del milestone 2: la
-geografía no es una mejora incremental sino la diferencia entre un portal que
-se puede usar y uno que no.
+cualquiera que entra a buscar.
+
+**Y el backfill pendiente no lo tapa.** Escribir las 22.158 propuestas aptas
+—lo que hoy espera a que vuelva Postgres— llevaría el filtro por ciudad de
+5.965 a **10.552**, del 10,2 % al 18,1 %. Sólo 4.587 propiedades ganan ciudad:
+la mayoría de las propuestas confirman o corrigen un texto que ya estaba, no
+llenan un hueco. Destrabar la base **no** arregla el filtro por ciudad, y darlo
+por hecho habría dejado el problema abierto detrás de un blocker que se iba a
+levantar solo.
+
+De dónde sale el hueco que quedaría —47.875 propiedades—:
+
+| Señal disponible | Propiedades | |
+|---|---|---|
+| **Tiene coordenada** | **35.644** | 74,5 % |
+| Sólo provincia | 8.586 | 17,9 % |
+| Sin coordenada, con barrio o dirección | 3.157 | 6,6 % |
+| Sin ninguna señal de ubicación | 488 | 1,0 % |
+
+Tres de cada cuatro tienen coordenada. Hoy la coordenada **sólo desempata**
+candidatas que el nombre ya trajo (§3.3), así que no las alcanza. Resolverlas
+exige una decisión de producto que el plan ya tomó en el otro sentido: el nivel
+canónico es `localidades_censales`, y se descartó `municipios` por ser división
+administrativa. Sin polígonos de localidad —GeoRef no los publica—, una
+coordenada sola puede ubicar el departamento o el municipio, no la localidad.
+
+**La pregunta es qué significa `ciudad` cuando lo único que hay es un punto en
+el mapa.** Sostener `localidades_censales` deja esas 35.644 en `UNKNOWN`;
+aceptar el municipio como respuesta de segunda, con la procedencia marcada,
+las recupera al costo de mezclar dos niveles. No es una decisión técnica y no
+la tomo solo.
 
 **De dónde sale el diagnóstico de un ausente.** Con 30 de 767 agencias
 certificadas: 11.206 campos `EXTRACTION_FAILED` —defectos nuestros—, 3.678
