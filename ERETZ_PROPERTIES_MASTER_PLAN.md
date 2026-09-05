@@ -819,9 +819,19 @@ Descubrimiento → Directorio de plataformas → Resolución de identidad
 ## 7. Próximos milestones
 
 1. **Cerrar la cola `--ready`** (753, ~91 h de ejecución medida). En curso.
-2. **Cablear la geografía** a los connectors y al quality gate, en un punto sin
-   certificación en vuelo: tocar `connectors/base.py` cambia la huella de todas
-   las estrategias y invalidaría la evidencia de la corrida activa.
+2. **Geografía.** El cableado ya está: vive en `Connector._resolver_geografia`
+   para los connectors, y el quality gate ahora consulta las propuestas aptas y
+   reporta el alcance proyectado aparte del real. Lo que queda son dos cosas
+   distintas:
+   - **Corregir el resolver** para que un nombre que sale del campo `barrio` no
+     resuelva a una localidad de otra provincia sin corroboración (§3.4). Vive
+     en `connectors/base.py`, así que necesita un punto sin certificación en
+     vuelo: tocarlo cambia la huella de todas las estrategias.
+   - **Decidir qué significa `ciudad` cuando sólo hay una coordenada** (§2.8).
+     Son 35.644 propiedades, tres de cada cuatro de las que quedarían sin
+     ciudad. No es técnica: el plan ya descartó `municipios` como nivel
+     canónico, y recuperarlas obliga a revisar esa decisión o a dejarlas en
+     `UNKNOWN`.
 3. ~~Cablear las webs verificadas y la base canónica.~~ **Hecho.**
    `AGENCY_OFFICIAL_WEB_VERIFIED.jsonl` entra por `load_catalog` y
    `resolve_identity` lo prefiere al directorio; el default de la base sale del
