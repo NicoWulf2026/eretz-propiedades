@@ -40,7 +40,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.property_contract import (AUSENTE_SIN_DIAGNOSTICO,  # noqa: E402
-                                       CONTRATO_VERSION, TODOS, evaluar)
+                                       CONTRATO_VERSION, evaluar)
 
 GATE_VERSION = "property_quality_gate_v1"
 
@@ -50,6 +50,18 @@ def cobertura_por_agencia(paquetes: Path) -> dict[str, dict[str, bool]]:
 
     Sale de `field_coverage` de cada certificacion, que es donde se comparo lo
     que la pagina ofrecia contra lo que el parser saco.
+
+    **Haberlo extraido tambien prueba que la fuente lo publica.** El detector
+    de senales de origen mira el marcado y falla hacia el "no lo publica":
+    `alpha inmobiliaria` figura con `source_provided: 0` en `descripcion` y al
+    mismo tiempo con las 127 descripciones extraidas. Leyendo solo la senal,
+    esas 127 fichas exoneraban al parser con un `SOURCE_NOT_PROVIDED` -"no hay
+    nada que arreglar"- sobre un campo que la fuente evidentemente publica.
+    Son 128 de 290 exoneraciones, el 44 %.
+
+    Sumar la extraccion como evidencia solo puede mover un campo de exonerado
+    a `EXTRACTION_FAILED`, es decir hacia buscar defectos nuestros, que es el
+    lado por el que hay que fallar.
     """
     fuera: dict[str, dict[str, bool]] = {}
     if not paquetes.exists():
@@ -68,18 +80,28 @@ def cobertura_por_agencia(paquetes: Path) -> dict[str, dict[str, bool]]:
             if not isinstance(dato, dict):
                 continue
             provistos = dato.get("source_provided")
+            extraidos = dato.get("normalized_present")
             if isinstance(provistos, int):
-                publica[campo] = provistos > 0
+                publica[campo] = (provistos > 0
+                                  or (isinstance(extraidos, int)
+                                      and extraidos > 0))
         if publica:
             fuera[paquete.get("canonical_agency_id")] = publica
     return fuera
 
 
 def main() -> int:
+    # La base sale del manifiesto, no de una ruta escrita a mano: una snapshot
+    # vieja clavada en el default ya hizo que el certificador midiera contra un
+    # universo al que le faltaban 13.023 candidatas.
+    from scripts.preingestion_manifest import base_canonica
+
     ap = argparse.ArgumentParser()
-    ap.add_argument("--db", default=r"D:\INMO CAPITAL\ERETZ_PREINGESTION_REBUILD_20260903\PREINGESTION_REBUILD.sqlite3")
+    ap.add_argument("--db", default=str(base_canonica()))
     ap.add_argument("--paquetes", default=r"D:\INMO CAPITAL\ERETZ_AGENCY_CERTIFICATION_20260827\agencies")
-    ap.add_argument("--salida", default=r"D:\INMO CAPITAL\ERETZ_PREINGESTION_REBUILD_20260903")
+    # El artefacto vive al lado de la base que describe, asi que la salida
+    # sigue a la canonica en vez de repetir la ruta.
+    ap.add_argument("--salida", default=str(base_canonica().parent))
     ap.add_argument("--limite", type=int, default=0)
     args = ap.parse_args()
 
