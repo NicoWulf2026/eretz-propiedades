@@ -106,8 +106,10 @@ def test_un_fallo_transitorio_tiene_segunda_oportunidad_como_el_none():
     primera corrida y 209 en la segunda, inventarios distintos, por una ficha
     que devuelve HTTP 200 cuando se la pide de nuevo.
 
-    `Bloqueado` y `ErrorPermanente` no se difieren: insistir ante un 403/429 o
-    un 404 no es reintentar, es golpear.
+    `ErrorPermanente` no se difiere: insistir ante un 404 no es reintentar, es
+    golpear. `Bloqueado` cede ritmo una vez y difiere una vez —ver
+    ``test_un_sitio_que_nos_corta_pide_ritmo_no_abandono``— pero el segundo
+    bloqueo, ya a velocidad reducida, también cuenta como fallo en el acto.
     """
     cuerpo = inspect.getsource(sys.modules["scripts.run_rollout"])
     bucle = cuerpo[cuerpo.index("errores_antes = len(con.errores)"):]
@@ -131,6 +133,36 @@ def test_un_fallo_transitorio_tiene_segunda_oportunidad_como_el_none():
 
     assert "fallidos += 1" in _rama(permanente)
     assert "fallidos += 1" in _rama(bloqueado)
-    assert "reintentos_diferidos" not in _rama(bloqueado)
+    # Bloqueado difiere como mucho una vez, y ese diferimiento esta guardado
+    # tras `if not ritmo_cedido`: nunca es incondicional como el transitorio.
+    rama_bloqueado = _rama(bloqueado)
+    if "reintentos_diferidos" in rama_bloqueado:
+        assert rama_bloqueado.index("if not ritmo_cedido") < rama_bloqueado.index(
+            "reintentos_diferidos")
     # Y nunca vuelven a fusionarse en una sola rama que los trate igual.
     assert "except (ErrorTransitorio, ErrorPermanente):" not in bucle
+
+
+def test_un_sitio_que_nos_corta_pide_ritmo_no_abandono():
+    """Un 403/429 dice "vas muy rápido", no "no vuelvas".
+
+    Hoy un solo bloqueo abandonaba la inmobiliaria entera. `alejandro foster`
+    enumeraba sus 33 fichas y perdía 5 por eso; recertificada a mano con
+    intervalo de 5 s cerró COMPLETE sin tocar una línea del parser.
+
+    Se cede ritmo UNA vez y se sigue. Si vuelve a cortar después de haber
+    bajado la velocidad, ahí sí es una negativa y no una queja.
+    """
+    cuerpo = inspect.getsource(sys.modules["scripts.run_rollout"])
+    bucle = cuerpo[cuerpo.index("errores_antes = len(con.errores)"):]
+    bucle = bucle[:bucle.index("fichas_vacias = 0")]
+    rama = bucle[bucle.index("except Bloqueado:"):]
+    rama = rama[:rama.index("except ErrorPermanente:")]
+
+    # Primero cede ritmo y difiere; el abandono queda para la segunda vez.
+    assert "ritmo_cedido" in rama
+    assert "FACTOR_DE_CORTESIA" in rama
+    assert "reintentos_diferidos.append(a)" in rama
+    assert rama.index("reintentos_diferidos.append(a)") < rama.index("break")
+    # Y ceder ritmo no puede ser gratis de auditar.
+    assert '"ritmo_cedido"' in cuerpo

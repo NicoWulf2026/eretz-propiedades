@@ -282,15 +282,39 @@ class LimitadorDeRitmo:
     inmobiliarias, no infraestructura preparada para que la golpeen.
     """
 
+    # Tope de cortesia. Un sitio que sigue cortando a 30 s por pedido no esta
+    # pidiendo ritmo: esta diciendo que no. Sin tope, un solo host podria
+    # dejar la corrida sin final.
+    INTERVALO_MAXIMO = 30.0
+
     def __init__(self, intervalo: float = 1.5):
         self.intervalo = intervalo
         self._ultimo: dict[str, float] = {}
+        self._intervalos: dict[str, float] = {}
         self._locks: dict[str, threading.Lock] = {}
         self._maestro = threading.Lock()
 
     def _lock_de(self, host: str) -> threading.Lock:
         with self._maestro:
             return self._locks.setdefault(host, threading.Lock())
+
+    def intervalo_de(self, host: str) -> float:
+        """El intervalo vigente para ESTE host."""
+        return self._intervalos.get(host, self.intervalo)
+
+    def ceder_ritmo(self, host: str, factor: float) -> float:
+        """Baja la velocidad para un host, sin tocar a los demas.
+
+        El limitador es uno solo y lo comparten todos los hilos, asi que un
+        `self.intervalo *= factor` frenaria tambien a las inmobiliarias que no
+        se quejaron, y con varias fuentes bloqueadas en paralelo compondria
+        cuatro veces por cada una. La queja es de un host: la respuesta
+        tambien.
+        """
+        with self._maestro:
+            nuevo = min(self.intervalo_de(host) * factor, self.INTERVALO_MAXIMO)
+            self._intervalos[host] = nuevo
+            return nuevo
 
     def esperar(self, host: str) -> None:
         """Espera lo que le falte a ESTE host, sin frenar a los demas.
@@ -303,7 +327,7 @@ class LimitadorDeRitmo:
         """
         with self._lock_de(host):
             ahora = time.monotonic()
-            falta = self.intervalo - (ahora - self._ultimo.get(host, 0.0))
+            falta = self.intervalo_de(host) - (ahora - self._ultimo.get(host, 0.0))
             if falta > 0:
                 time.sleep(falta)
                 ahora = time.monotonic()

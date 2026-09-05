@@ -3746,3 +3746,42 @@ def test_si_la_url_declarada_es_una_subpagina_se_busca_en_la_raiz():
     assert 'if desde_raiz.get("soportada")' in fuente
     # Queda registrado que la entrada se corrigio, para poder auditarlo.
     assert '"entrada_corregida"' in fuente and '"entrada_declarada"' in fuente
+
+
+def test_ceder_ritmo_frena_al_host_que_se_quejo_y_a_nadie_mas():
+    """La cortesia extra es del host, no de la corrida.
+
+    El limitador es uno solo y lo comparten todos los hilos. Bajar
+    `self.intervalo` cuando un sitio nos corta frenaria tambien a las
+    inmobiliarias que respondian bien, y con varias fuentes bloqueadas en
+    paralelo compondria el factor una vez por cada una.
+    """
+    lim = B.LimitadorDeRitmo(1.5)
+    lim.ceder_ritmo("lento.com.ar", 4.0)
+
+    assert lim.intervalo_de("lento.com.ar") == 6.0
+    assert lim.intervalo_de("otro.com.ar") == 1.5
+    assert lim.intervalo == 1.5
+
+    # Ceder de nuevo compone, pero nunca por encima del tope: un sitio que
+    # sigue cortando a 30 s por pedido no pide ritmo, dice que no.
+    for _ in range(10):
+        lim.ceder_ritmo("lento.com.ar", 4.0)
+    assert lim.intervalo_de("lento.com.ar") == B.LimitadorDeRitmo.INTERVALO_MAXIMO
+
+
+def test_esperar_respeta_el_intervalo_cedido_del_host():
+    """Ceder ritmo sin que `esperar` lo lea seria decoracion."""
+    import time as _t
+    lim = B.LimitadorDeRitmo(0.075)
+    lim.ceder_ritmo("lento.com", 4.0)   # 0.075 -> 0.3
+
+    lim.esperar("lento.com")
+    t0 = _t.monotonic()
+    lim.esperar("lento.com")
+    assert _t.monotonic() - t0 >= 0.25
+
+    lim.esperar("rapido.com")
+    t0 = _t.monotonic()
+    lim.esperar("rapido.com")           # este host no cedio nada
+    assert _t.monotonic() - t0 < 0.2

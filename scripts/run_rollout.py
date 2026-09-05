@@ -78,6 +78,12 @@ COBERTURA_MINIMA = 0.98
 #
 # Es un tope, no una duracion: la fuente rapida termina y devuelve enseguida.
 # Lo unico que cambia es cuanto puede retener la cola la fuente lenta.
+
+# Cuanto se baja la velocidad cuando un sitio nos corta. Cuatro veces mas
+# lento resolvio el caso medido; el numero no es magico, es el que basto
+# sin volver la corrida interminable.
+FACTOR_DE_CORTESIA = 4.0
+
 PRESUPUESTO_POR_FUENTE = 5400
 
 
@@ -360,6 +366,7 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
     reintentos_diferidos: list[dict] = []
     recuperados_diferidos = 0
     desaparecidas = 0
+    ritmo_cedido = False
     limite = t0 + presupuesto if presupuesto else None
     r["presupuesto_efectivo"] = presupuesto or None
     for a in seleccion:
@@ -372,6 +379,26 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
         try:
             p = con.normalize(a, fuente)
         except Bloqueado:
+            # Un 403/429 dice "vas muy rapido", no "no vuelvas". Hoy un solo
+            # bloqueo abandonaba la inmobiliaria ENTERA: `alejandro foster`
+            # enumeraba sus 33 fichas y perdia 5 por esto, y recertificada a
+            # mano con intervalo de 5 s cerro COMPLETE sin tocar una linea del
+            # parser.
+            #
+            # Se cede ritmo UNA vez y se sigue. Si vuelve a cortar despues de
+            # haber bajado la velocidad, ahi si es una negativa y no una queja.
+            if not ritmo_cedido:
+                ritmo_cedido = True
+                limitador = getattr(con.descargador, "limitador", None)
+                if limitador is not None:
+                    # Por host: el limitador lo comparten todos los hilos y
+                    # frenarlo entero castigaria a quien no se quejo.
+                    anfitrion = urllib.parse.urlparse(
+                        a.get("source_url") or fuente.official_url).netloc
+                    r["intervalo_cedido"] = limitador.ceder_ritmo(
+                        anfitrion, FACTOR_DE_CORTESIA)
+                reintentos_diferidos.append(a)
+                continue
             fallidos += 1
             break
         except ErrorPermanente:
@@ -475,6 +502,9 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
     # De los fallidos, cuantos fueron 404/410. Un enlace que la fuente publica
     # y ya no existe no es inventario que perdimos leyendo mal.
     r["detalles_desaparecidos"] = desaparecidas
+    # Que hubo que bajar la velocidad queda registrado: es una propiedad del
+    # sitio y explica por que esta corrida tardo mas que otras.
+    r["ritmo_cedido"] = ritmo_cedido
     # Por que fallaron. El certificador no pasa por `main()`, que es donde se
     # escribia `errors.jsonl`, asi que descartaba la evidencia: `aconcagua
     # propiedades` perdio 16 fichas -las 16 de alquiler, ninguna de venta- y no
