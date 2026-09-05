@@ -593,6 +593,51 @@ tests** —la regla de §1.1 otra vez:
    oficina de la inmobiliaria, no la propiedad**. Eran **1.422 casas de
    Bariloche afirmadas como porteñas**.
 
+### 3.4 Las 29.048 propuestas de ciudad no estaban listas
+
+Fuente: `CIUDAD_DRYRUN_AUDIT.jsonl`. `database_writes: 0`.
+
+El dry-run quedó anotado como "29.048 propuestas listas", esperando únicamente
+que volviera Postgres. **La primera fila del artefacto propone `Villa del
+Parque` —un barrio de CABA, con `Melincué al 2600`, una calle de CABA— como
+localidad de Río Negro.** La segunda propone `Barrio Norte`, también de CABA,
+también a Río Negro. Son nombres de barrio que existen como localidad censal en
+otra provincia, y lo único que los sostiene es el nombre.
+
+El control de contradicción por coordenadas no puede intervenir: estas filas no
+tienen coordenada. Y el plan ya lo había anticipado en otra forma —"GeoRef no
+cataloga barrios", y el caso `Alberdi` está documentado como la razón para no
+hacer exactamente esto—; lo que faltaba era aplicarlo también cuando el nombre
+sale del campo `barrio`.
+
+**El criterio es la corroboración, no el origen.** Una propuesta se sostiene
+cuando algo además del nombre la respalda: la provincia que publicó la fuente,
+el apoyo de una coordenada, o el desempate por contexto.
+
+| Clase | Propuestas |
+|---|---|
+| Aptas para escritura | 22.158 |
+| Nombre de barrio sin corroborar | 5.730 |
+| Nombre de ciudad sin corroborar | 1.160 |
+
+**Qué se descartó por el camino.** Contradecir con la provincia dominante de la
+propia inmobiliaria parecía razonable y es falso: marcaba 127 propuestas, y las
+que miré son correctas —una agencia de Río Negro vendiendo en Plottier o
+Centenario, que son de Neuquén y están al lado—. Habría rechazado respuestas
+buenas para atrapar unas pocas malas.
+
+**El costo es asimétrico y por eso se retiene.** Perder la ciudad no pierde la
+propiedad: por contrato conserva ficha y listado, y sólo pierde el filtro por
+ciudad. Una ciudad falsa no se nota, no se revierte sola, y manda a una persona
+a buscar en la provincia equivocada.
+
+Las 5.730 no son irrecuperables: una coordenada, o la provincia publicada,
+alcanzan para resolverlas. Quedan en `UNKNOWN` hasta tenerlas.
+
+**La corrección del resolver entra en la próxima ventana sin certificación en
+vuelo**, junto al milestone 2: vive en `Connector._resolver_geografia`, o sea
+en `connectors/base.py`, y tocarlo invalida la huella de todas las estrategias.
+
 ---
 
 ## 4. Defectos
@@ -737,7 +782,7 @@ Descubrimiento → Directorio de plataformas → Resolución de identidad
 | Promoción a `main` | 63.831 propiedades atribuibles (733 inmobiliarias) | Autorización de escritura productiva |
 | Vinculación de las 56 homónimas | 1.140 propiedades | Autorización de escritura productiva |
 | **Postgres de producción caído** | Promoción, vinculación y escritura de ciudad | `PGRST002`: PostgREST responde, la base detrás no |
-| Escribir `ciudad` sobre lo ya extraído | 29.048 propuestas listas | Que vuelva la base |
+| Escribir `ciudad` sobre lo ya extraído | **22.158** propuestas aptas; 6.890 retenidas (§3.4) | Que vuelva la base |
 | Polígonos de localidad | 40.635 propiedades con coordenada y sin ciudad | GeoRef no los publica en estos recursos |
 | 2.462 sin web conocida | Su promoción y certificación | 316 webs oficiales ya verificadas (§2.6); las 78 sin candidatos necesitan API de búsqueda paga |
 
