@@ -22,6 +22,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.agency_certifier import load_catalog
+from scripts.defect_triage import CONTINUE, clasificar
 from scripts.preingestion_manifest import base_canonica, describir
 from scripts.agency_fingerprints import (FINGERPRINT_SCHEMA_VERSION,
                                          strategy_fingerprint,
@@ -158,22 +159,41 @@ def sin_defectos_abiertos(salida: Path,
     Sin la distincion el protocolo queda en deadlock: el paquete solo se limpia
     recertificando y recertificar exige reabrir, asi que un solo `NEEDS_FIX`
     cerraba la cola para siempre.
+
+    **Y bloquea el que la politica de triage habria parado, no cualquiera.** Un
+    defecto de radio acotado -el sitio caido, el que nos bloquea, el que se
+    quedo sin tiempo- es por definicion uno que la cola atraviesa sin detenerse:
+    exigir que este resuelto para reabrir contradice la politica que dice
+    seguir. `varelanegociosinmobiliarios.com` no respondia y dejaba la cola
+    cerrada esperando que un servidor ajeno volviera.
+
+    La clasificacion se RECALCULA sobre el resultado guardado en vez de leer el
+    veredicto que quedo escrito: un veredicto lo produjo el triage de ese
+    momento, y si el triage cambio -como cambio al dejar de leer un sitio
+    inaccesible como perdida sistematica- el registro viejo ya no dice la
+    verdad. Es el mismo criterio que las huellas.
     """
     resultados = latest_results(salida)
-    abiertos, vencidos = [], []
+    abiertos, vencidos, acotados = [], [], []
     for clave, resultado in resultados.items():
         if resultado.get("status") != "NEEDS_FIX":
             continue
         if clave in catalogo and not huella_vigente(resultado, catalogo[clave]):
             vencidos.append(clave)
+        elif clasificar(resultado).get("decision") == CONTINUE:
+            acotados.append(clave)
         else:
             abiertos.append(clave)
     if abiertos:
         return False, f"{len(abiertos)} sin resolver: {abiertos[:5]}"
+    detalle = "ninguno que detenga la cola"
     if vencidos:
-        return True, (f"ninguno abierto; {len(vencidos)} con huella vencida "
-                      f"que la cola vuelve a evaluar: {vencidos[:3]}")
-    return True, "ninguno abierto"
+        detalle += (f"; {len(vencidos)} con huella vencida que la cola vuelve "
+                    f"a evaluar: {vencidos[:3]}")
+    if acotados:
+        detalle += (f"; {len(acotados)} de radio acotado que la cola atraviesa: "
+                    f"{acotados[:3]}")
+    return True, detalle
 
 
 def base_de_datos_vigente(ruta: str) -> tuple[bool, str]:

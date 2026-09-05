@@ -93,3 +93,65 @@ def test_cambiar_la_definicion_de_la_huella_no_amnistia_los_defectos(tmp_path,
     # Si ademas cambio el comportamiento, ahi si es evidencia vencida.
     monkeypatch.setattr(pre, "strategy_fingerprint_v1", lambda *_: "otra")
     assert sin_defectos_abiertos(salida, {"roomix:alfa": {}})[0] is True
+
+
+def test_un_defecto_de_radio_acotado_no_cierra_la_cola(tmp_path, monkeypatch):
+    """La cola atraviesa un defecto de radio acotado sin detenerse; exigir que
+    esté resuelto para reabrir contradice la política que dice seguir.
+
+    `varelanegociosinmobiliarios.com` no respondía y dejaba la cola cerrada
+    esperando que un servidor ajeno volviera.
+    """
+    monkeypatch.setattr("scripts.agency_rollout_preflight.strategy_fingerprint",
+                        lambda *_: "vieja")
+    caido = dict(_resultado(),
+                 reasons=["one or both runs did not finish with connector "
+                          "state OK"],
+                 run1={"estado": "ERROR_DISCOVERY", "detalle": "TimeoutError"},
+                 run2={"estado": "ERROR_DISCOVERY", "detalle": "TimeoutError"},
+                 comparison={"identity_collisions": 0}, field_coverage={},
+                 enumeration_audit={"review_reasons": ["COLLAPSE_GT_80_PERCENT"]})
+    salida = _salida(tmp_path, [caido])
+
+    ok, detalle = sin_defectos_abiertos(salida, {"roomix:alfa": {}})
+    assert ok is True
+    assert "radio acotado" in detalle
+
+
+def test_un_defecto_transversal_sigue_cerrando_la_cola(tmp_path, monkeypatch):
+    """La puerta anterior no puede tapar el caso peligroso: un colapso con el
+    sitio leído es nuestro y para la cola."""
+    monkeypatch.setattr("scripts.agency_rollout_preflight.strategy_fingerprint",
+                        lambda *_: "vieja")
+    nuestro = dict(_resultado(),
+                   reasons=["inventory collapsed by more than 80%"],
+                   run1={"estado": "OK", "detalles_fallidos": 0},
+                   run2={"estado": "OK", "detalles_fallidos": 0},
+                   comparison={"identity_collisions": 0}, field_coverage={},
+                   enumeration_audit={"review_reasons": ["COLLAPSE_GT_80_PERCENT"]})
+    salida = _salida(tmp_path, [nuestro])
+
+    assert sin_defectos_abiertos(salida, {"roomix:alfa": {}})[0] is False
+
+
+def test_el_veredicto_se_recalcula_y_no_se_lee_del_registro(tmp_path, monkeypatch):
+    """Un veredicto lo produjo el triage de ese momento. Si el triage cambió
+    —como cambió al dejar de leer un sitio inaccesible como pérdida
+    sistemática— el registro viejo ya no dice la verdad. Es el mismo criterio
+    que las huellas."""
+    monkeypatch.setattr("scripts.agency_rollout_preflight.strategy_fingerprint",
+                        lambda *_: "vieja")
+    # El registro dice STOP; el triage de hoy, sobre los mismos datos, dice
+    # CONTINUE. Manda el de hoy.
+    con_veredicto_viejo = dict(_resultado(),
+                               decision="STOP", radio_estimado="FAMILIA",
+                               reasons=["inventory collapsed"],
+                               run1={"estado": "ERROR_DISCOVERY"},
+                               run2={"estado": "ERROR_DISCOVERY"},
+                               comparison={"identity_collisions": 0},
+                               field_coverage={},
+                               enumeration_audit={
+                                   "review_reasons": ["COLLAPSE_GT_80_PERCENT"]})
+    salida = _salida(tmp_path, [con_veredicto_viejo])
+
+    assert sin_defectos_abiertos(salida, {"roomix:alfa": {}})[0] is True
