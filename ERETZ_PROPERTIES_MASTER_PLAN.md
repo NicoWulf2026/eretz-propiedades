@@ -710,6 +710,30 @@ inmobiliarias que estaban perfectas.
 Los arreglé de a uno hasta que quedó claro que era una sola regla. **Si la
 fuente publicó un valor y no lo afirmamos, ese valor se rechazó.**
 
+### El otro patrón: cuatro reglas rotas por la misma vocal
+
+Distinto del anterior y todavía sin arreglar de raíz. Cuatro veces una regla
+falló porque comparó texto sin normalizar, y las cuatro veces la arreglé
+dentro de la regla:
+
+1. `_es_tabla_estructurada` no veía `Baños` con la ñ rota y leía prosa donde
+   había tabla.
+2. La señal de fuente y su extracción usaban alfabetos distintos, y un campo
+   publicado figuraba como no publicado.
+3. `RE/MAX` no matcheaba `remax`, y `Remax Cuore` quedaba fuera de su propia
+   verificación de web.
+4. `Tissera Esquina Los Cedros` y `Tissera esquina Los Cedros` contaban como
+   direcciones distintas, y 72 grupos duplicados salieron clasificados como
+   "pueden ser dos unidades" por una mayúscula.
+
+Cada arreglo fue correcto y ninguno fue el arreglo. **La normalización de
+texto tiene que ser un paso del pipeline, no una defensa que cada regla se
+pone por su cuenta**: mientras sea per-regla, la quinta regla que se escriba va
+a nacer rota igual que las cuatro anteriores.
+
+Entra en la misma ventana sin certificación en vuelo que el resolver de
+geografía: vive en `connectors/`, así que invalida huellas.
+
 ### Los cinco que importan
 
 **D-016 — la diferencia entre no poder y no querer.** La certificación
