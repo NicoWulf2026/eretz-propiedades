@@ -3732,20 +3732,28 @@ def test_si_la_url_declarada_es_una_subpagina_se_busca_en_la_raiz():
     por probar, así que cuesta una petición extra únicamente en el caso que de
     otro modo se perdería entero.
     """
-    import inspect
-
     from connectors.generico import GenericoConnector
 
-    fuente = inspect.getsource(GenericoConnector.discover)
-    # El intento es el ultimo recurso: va despues de todos los detectores.
-    assert "_desde_la_raiz" in fuente
-    assert fuente.index("_desde_la_raiz: bool") < fuente.index("if not _desde_la_raiz")
-    # Y no se repite: la llamada recursiva lo marca.
-    assert "_desde_la_raiz=True" in fuente
-    # Solo se adopta si la raiz SI encontro catalogo.
-    assert 'if desde_raiz.get("soportada")' in fuente
+    institucional = "<html><body><h1>Quienes somos</h1></body></html>"
+    portada = """<html><body>
+      <a href="/propiedad/1-casa-en-venta">Casa</a>
+      <a href="/propiedad/2-depto-en-venta">Depto</a>
+    </body></html>"""
+    d = DescargadorFalso({"https://alfa.com.ar/page/empresa-1": institucional,
+                          "https://alfa.com.ar/": portada})
+    plan = GenericoConnector(descargador=d).discover(
+        fuente(url="https://alfa.com.ar/page/empresa-1"))
+
+    assert plan["soportada"]
     # Queda registrado que la entrada se corrigio, para poder auditarlo.
-    assert '"entrada_corregida"' in fuente and '"entrada_declarada"' in fuente
+    assert plan["entrada_corregida"] == "https://alfa.com.ar/"
+    assert plan["entrada_declarada"] == "https://alfa.com.ar/page/empresa-1"
+
+    # Y no se intenta cuando la url declarada YA es la raiz: seria pedir dos
+    # veces la misma pagina para llegar a la misma conclusion.
+    d2 = DescargadorFalso({"https://alfa.com.ar/": institucional})
+    GenericoConnector(descargador=d2).discover(fuente(url="https://alfa.com.ar/"))
+    assert d2.pedidos_urls.count("https://alfa.com.ar/") == 1
 
 
 def test_ceder_ritmo_frena_al_host_que_se_quejo_y_a_nadie_mas():
@@ -3785,3 +3793,59 @@ def test_esperar_respeta_el_intervalo_cedido_del_host():
     t0 = _t.monotonic()
     lim.esperar("rapido.com")           # este host no cedio nada
     assert _t.monotonic() - t0 < 0.2
+
+
+# ------------------------------------------- portada ilegible vs sin inventario
+def test_una_portada_que_no_se_puede_leer_no_es_una_inmobiliaria_sin_propiedades():
+    """`varelanegociosinmobiliarios.com` no respondió en 102 s y salió como
+    `SIN_INVENTARIO`, es decir como una inmobiliaria sin propiedades. De ahí el
+    triage lo leyó como pérdida sistemática de inventario de radio FAMILIA y
+    paró la cola entera.
+
+    `NO_INVENTORY_CONFIRMED` y `BLOCKED_EXTERNAL` son estados terminales
+    distintos justamente por esto: no poder leer un sitio no prueba nada sobre
+    su inventario.
+    """
+    from connectors.generico import GenericoConnector
+
+    d = DescargadorFalso({}, fallar={"https://alfa.com.ar/":
+                                     B.ErrorTransitorio("TimeoutError")})
+    c = GenericoConnector(descargador=d)
+
+    with pytest.raises(B.ErrorTransitorio):
+        c.discover(fuente(url="https://alfa.com.ar/"))
+
+
+def test_si_la_subpagina_no_responde_todavia_queda_la_raiz():
+    """La url declarada puede ser una subpágina caída mientras el sitio está
+    entero. Propagar el error sin mirar la raíz perdería el catálogo por una
+    url mal declarada."""
+    from connectors.generico import GenericoConnector
+
+    portada = """<html><body>
+      <a href="/propiedad/1-casa-en-venta">Casa</a>
+      <a href="/propiedad/2-depto-en-venta">Depto</a>
+    </body></html>"""
+    d = DescargadorFalso({"https://alfa.com.ar/": portada},
+                         fallar={"https://alfa.com.ar/page/empresa-1":
+                                 B.ErrorTransitorio("TimeoutError")})
+    c = GenericoConnector(descargador=d)
+
+    plan = c.discover(fuente(url="https://alfa.com.ar/page/empresa-1"))
+    assert plan["soportada"]
+    assert plan["entrada_corregida"] == "https://alfa.com.ar/"
+    assert plan["entrada_declarada"] == "https://alfa.com.ar/page/empresa-1"
+
+
+def test_si_la_subpagina_y_la_raiz_fallan_se_propaga_el_error():
+    """Que la raíz tampoco se pueda leer confirma que el problema es llegar al
+    sitio."""
+    from connectors.generico import GenericoConnector
+
+    d = DescargadorFalso({}, fallar={
+        "https://alfa.com.ar/page/empresa-1": B.ErrorTransitorio("timeout"),
+        "https://alfa.com.ar/": B.ErrorTransitorio("timeout")})
+    c = GenericoConnector(descargador=d)
+
+    with pytest.raises(B.ErrorTransitorio):
+        c.discover(fuente(url="https://alfa.com.ar/page/empresa-1"))

@@ -199,6 +199,20 @@ def clasificar(resultado: dict[str, Any]) -> dict[str, Any]:
                 f"{corrida['imagenes_compartidas_descartadas']} imagenes "
                 f"compartidas descartadas; la regla es compartida")
 
+    # Antes de leer un colapso como perdida sistematica hay que haber podido
+    # LEER el sitio. `varelanegociosinmobiliarios.com` no respondio en 102 s en
+    # ninguna de las dos corridas: su inventario "colapso" al 0 % porque nunca
+    # se llego a la portada, y eso no es un defecto transversal nuestro sino un
+    # sitio caido. Sin esta puerta, cualquier caida ajena para la cola entera
+    # con un veredicto de radio FAMILIA que no se sostiene.
+    inaccesibles = [c for c in corridas
+                    if c.get("estado") in ("ERROR_DISCOVERY", "ERROR_LISTADO")]
+    if len(inaccesibles) == len(corridas) and corridas:
+        return _veredicto(
+            CONTINUE, resultado, "fuente_inaccesible", RADIO_AGENCIA,
+            "no se pudo llegar al sitio en ninguna de las dos corridas: "
+            f"{'; '.join(sorted({str(c.get('detalle') or 'sin detalle')[:60] for c in inaccesibles}))}")
+
     if "COLLAPSE_GT_80_PERCENT" in revision:
         return _veredicto(
             STOP, resultado, "perdida_sistematica_de_inventario",
@@ -249,6 +263,11 @@ def clasificar(resultado: dict[str, Any]) -> dict[str, Any]:
         return _veredicto(
             CONTINUE, resultado, "sitio_nos_bloquea", RADIO_AGENCIA,
             "el sitio nos bloqueo (403/429); es su decision, no nuestro parser")
+    if {"ERROR_DISCOVERY", "ERROR_LISTADO"} & set(estados):
+        return _veredicto(
+            CONTINUE, resultado, "fuente_inaccesible", RADIO_AGENCIA,
+            "una de las corridas no pudo llegar al sitio; es la red o el "
+            "servidor, no nuestro parser")
     if "PRESUPUESTO_AGOTADO" in estados:
         return _veredicto(
             CONTINUE, resultado, "sitio_lento", RADIO_AGENCIA,

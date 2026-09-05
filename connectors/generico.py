@@ -911,6 +911,37 @@ class GenericoConnector(Connector):
             return {"ruta": ruta, "total": total}
         return None
 
+    def _plan_desde_la_raiz(self, fuente: Fuente, base: str, p: Any,
+                            _desde_la_raiz: bool) -> dict[str, Any] | None:
+        """El catalogo de la raiz, cuando la url declarada es una subpagina.
+
+        `altos servicios inmobiliarios` figura como `/page/empresa-1`, que no
+        enlaza ninguna ficha, mientras la raiz publica su catalogo en
+        `/listing` con veinte propiedades. Leer solo lo declarado hacia pasar
+        por vacio a un sitio lleno.
+
+        Devuelve None cuando no hay raiz que probar o cuando la raiz tampoco
+        sirve, para que el llamador siga con lo que ya tenia.
+        """
+        if _desde_la_raiz or not p.path.strip("/"):
+            return None
+        try:
+            desde_raiz = self.discover(
+                Fuente(canonical_agency_id=fuente.canonical_agency_id,
+                       agency_name=fuente.agency_name,
+                       official_url=base + "/",
+                       inmobiliaria_id=fuente.inmobiliaria_id,
+                       detected_platform=fuente.detected_platform,
+                       extra=fuente.extra),
+                _desde_la_raiz=True)
+        except (ErrorTransitorio, ErrorPermanente, Bloqueado):
+            return None
+        if not desde_raiz.get("soportada"):
+            return None
+        desde_raiz["entrada_corregida"] = base + "/"
+        desde_raiz["entrada_declarada"] = fuente.official_url
+        return desde_raiz
+
     # ---------------------------------------------------------------- discover
     def discover(self, fuente: Fuente,
                  _desde_la_raiz: bool = False) -> dict[str, Any]:
@@ -980,7 +1011,22 @@ class GenericoConnector(Connector):
         try:
             html = self.descargador.bajar(fuente.official_url)
         except (ErrorTransitorio, ErrorPermanente, Bloqueado):
-            return plan
+            # No poder LEER la portada no es lo mismo que leerla y que no
+            # publique nada. Devolver el plan vacio las hacia indistinguibles:
+            # `varelanegociosinmobiliarios.com` no respondio en 102 s y salio
+            # como `SIN_INVENTARIO`, o sea como una inmobiliaria sin
+            # propiedades, y de ahi el triage lo leyo como una perdida
+            # sistematica de inventario de radio FAMILIA y paro la cola.
+            #
+            # `NO_INVENTORY_CONFIRMED` y `BLOCKED_EXTERNAL` son estados
+            # terminales distintos justamente por esto.
+            desde_raiz = self._plan_desde_la_raiz(fuente, base, p,
+                                                  _desde_la_raiz)
+            if desde_raiz is not None:
+                return desde_raiz
+            # Que la raiz tampoco se pueda leer confirma que el problema es
+            # llegar al sitio. Se propaga para que el runner lo diga.
+            raise
         # Xintel/Amaira deja el catalogo HTML vacio y lo hidrata desde su API
         # publica. Las credenciales que siguen son identificadores publicados
         # por el propio JavaScript del sitio; nunca se persisten en resultados.
@@ -1176,19 +1222,9 @@ class GenericoConnector(Connector):
         # Se intenta una sola vez y solo cuando ya no quedaba nada por probar,
         # asi que el costo es una peticion extra unicamente en el caso que de
         # otro modo se perderia entero.
-        if not _desde_la_raiz and p.path.strip("/"):
-            desde_raiz = self.discover(
-                Fuente(canonical_agency_id=fuente.canonical_agency_id,
-                       agency_name=fuente.agency_name,
-                       official_url=base + "/",
-                       inmobiliaria_id=fuente.inmobiliaria_id,
-                       detected_platform=fuente.detected_platform,
-                       extra=fuente.extra),
-                _desde_la_raiz=True)
-            if desde_raiz.get("soportada"):
-                desde_raiz["entrada_corregida"] = base + "/"
-                desde_raiz["entrada_declarada"] = fuente.official_url
-                return desde_raiz
+        desde_raiz = self._plan_desde_la_raiz(fuente, base, p, _desde_la_raiz)
+        if desde_raiz is not None:
+            return desde_raiz
 
         return plan
 

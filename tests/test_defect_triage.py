@@ -272,3 +272,51 @@ def test_no_poder_mirar_no_fabrica_una_parada():
     from scripts.defect_triage import senales_de_catalogo
     assert senales_de_catalogo("") == []
     assert senales_de_catalogo(None) == []
+
+
+def test_un_sitio_que_no_responde_no_es_una_perdida_sistematica():
+    """`varelanegociosinmobiliarios.com` no respondió en 102 s en ninguna de
+    las dos corridas. Su inventario "colapsó" al 0 % porque nunca se llegó a la
+    portada, y el triage lo leyó como pérdida sistemática de radio FAMILIA y
+    paró la cola entera.
+
+    Antes de leer un colapso como pérdida sistemática hay que haber podido leer
+    el sitio.
+    """
+    v = clasificar(_resultado(
+        run1={"estado": "ERROR_DISCOVERY", "detalle": "TimeoutError",
+              "detalles_fallidos": 0},
+        run2={"estado": "ERROR_DISCOVERY", "detalle": "TimeoutError",
+              "detalles_fallidos": 0},
+        enumeration_audit={"review_reasons": ["COLLAPSE_GT_80_PERCENT"]}))
+
+    assert v["decision"] == CONTINUE
+    assert v["componente_sospechoso"] == "fuente_inaccesible"
+    assert v["radio_estimado"] == RADIO_AGENCIA
+    assert "no se pudo llegar al sitio" in v["evidencia"]
+    # Sigue sin certificar: continuar no es cerrar.
+    assert v["certificado"] is False
+    assert v["pendiente_de_resolucion"] is True
+
+
+def test_un_colapso_con_el_sitio_leido_si_detiene():
+    """La puerta anterior no puede tapar el caso real: si las dos corridas
+    leyeron el sitio y aun así el inventario colapsó, es nuestro."""
+    v = clasificar(_resultado(
+        enumeration_audit={"review_reasons": ["COLLAPSE_GT_80_PERCENT"]}))
+
+    assert v["decision"] == STOP
+    assert v["componente_sospechoso"] == "perdida_sistematica_de_inventario"
+    assert v["radio_estimado"] == RADIO_FAMILIA
+
+
+def test_una_sola_corrida_inaccesible_tambien_tiene_nombre():
+    """Que una de las dos no llegue al sitio explica que los inventarios
+    difieran, y es la red o el servidor, no el parser."""
+    v = clasificar(_resultado(
+        run2={"estado": "ERROR_LISTADO", "detalle": "TimeoutError",
+              "detalles_fallidos": 0}))
+
+    assert v["decision"] == CONTINUE
+    assert v["componente_sospechoso"] == "fuente_inaccesible"
+    assert v["radio_estimado"] == RADIO_AGENCIA
