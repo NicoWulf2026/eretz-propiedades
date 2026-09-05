@@ -1075,3 +1075,40 @@ def test_la_prosa_no_prueba_un_atributo_que_la_ficha_tabula():
     con_fila = ('<div class="desc">Dormitorios</div><div class="valor">3</div>'
                 + tabulada)
     assert source_signals(con_fila, "https://x.com/p/2")["dormitorios"] is True
+
+
+def test_un_enlace_muerto_de_la_fuente_no_es_un_fallo_de_lectura():
+    """`almadimatteo.com.ar` publica 28 enlaces y 3 devuelven 404.
+
+    Con la regla anterior ese sitio no podía certificar nunca, aunque sus 25
+    propiedades vivas se leyeran enteras y de forma idempotente. Un 404 sobre
+    una ficha que la fuente sigue enlazando es una inconsistencia SUYA, no una
+    lectura fallida nuestra.
+
+    Sólo se descuentan las bajas que aparecen en LAS DOS corridas: una que
+    aparece en una sola no es una baja, es un sitio inestable.
+    """
+    from scripts.agency_certifier import certification_status
+
+    def _estado(fallidos, desaparecidas_1, desaparecidas_2):
+        run = {"estado": "OK", "detalles_fallidos": fallidos,
+               "detalles_desaparecidos": desaparecidas_1}
+        run2 = {"estado": "OK", "detalles_fallidos": fallidos,
+                "detalles_desaparecidos": desaparecidas_2}
+        comparacion = {"same_url_set": True, "idempotent": True,
+                       "same_contract_signature": True, "identity_collisions": 0}
+        enumeracion = {"enumerated": 25, "pages_observed": 3,
+                       "exhaustive_review_required": False, "review_reasons": []}
+        return certification_status(run, run2, comparacion, enumeracion, {})
+
+    # Tres bajas confirmadas en las dos corridas: no bloquean.
+    estado, razones = _estado(3, 3, 3)
+    assert "one or more listing details failed" not in razones
+
+    # Un fallo que NO es una baja sigue bloqueando.
+    estado, razones = _estado(3, 2, 2)
+    assert "one or more listing details failed" in razones
+
+    # Una baja que aparece en una sola corrida no cuenta como baja.
+    estado, razones = _estado(3, 3, 0)
+    assert "one or more listing details failed" in razones

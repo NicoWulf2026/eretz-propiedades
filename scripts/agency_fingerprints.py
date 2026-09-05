@@ -15,7 +15,7 @@ from typing import Iterable
 
 ROOT = Path(__file__).resolve().parents[1]
 RAIZ = ROOT  # alias en castellano para los tests
-FINGERPRINT_SCHEMA_VERSION = 2
+FINGERPRINT_SCHEMA_VERSION = 3
 
 PUBLICATION_STRATEGIES = {
     "EMPTY_CATALOG_HTML": "generic/empty_catalog",
@@ -30,15 +30,24 @@ PUBLICATION_STRATEGIES = {
     "XINTEL_API": "generic/xintel",
     "BUSCADORPROP_JSON": "generic/buscadorprop_json",
     "BITRIX_LANDING_CARDS": "generic/bitrix_landing",
+    "TOKKO_PROXY_JSON": "generic/tokko_proxy",
+    "CATEGORY_HTML_CATALOG": "generic/category_html",
 }
 
-GENERIC_COMMON_METHODS = {
-    "_es_ficha_url", "_solo_por_forma", "_id_de", "normalize",
-    "_imagenes_de", "_direccion_de", "_titulo_de_la_ficha",
-    "_operacion_en_la_ficha", "_confirma_ficha", "_estado_fuente",
-    "_de_json_ld", "_cuenta", "_cuenta_de_ficha", "_sup",
-    "_tipo_en_la_ficha", "_mismo_sitio",
-}
+# `generic/common` es SEMANTICO POR DEFECTO: todo metodo de la clase que no
+# pertenezca a una estrategia concreta entra ahi, incluidos los que se agreguen
+# despues.
+#
+# Antes era una lista blanca, y por eso dejaba afuera en silencio a doce
+# metodos, entre ellos `discover` -que elige la estrategia-, `fetch_listing`
+# -que decide que se enumera- y `_es_tabla_estructurada`, que decide que se
+# extrae. Cambiar cualquiera de los tres cambia el inventario certificado y no
+# invalidaba nada.
+#
+# La lista blanca falla del lado peligroso: olvidarse de agregar un metodo deja
+# certificaciones falsamente vigentes. Al invertir el default, olvidarse cuesta
+# una recertificacion de mas, que es el error barato.
+METODOS_OPERATIVOS = frozenset()  # nada operativo en este connector, por ahora
 GENERIC_STRATEGY_METHODS = {
     "generic/empty_catalog": {"_fichas_en"},
     "generic/html_catalog": {
@@ -68,15 +77,21 @@ GENERIC_STRATEGY_METHODS = {
         "_catalogo_bitrix_landing", "_nodo_landing", "_clave_landing",
         "_normalizar_bitrix_landing",
     },
+    # Un frontend propio que sirve el catalogo Tokko desde su mismo host.
+    "generic/tokko_proxy": {
+        "_catalogo_tokko_proxy", "_normalizar_tokko_proxy",
+    },
+    # Catalogo estatico repartido en paginas de categoria.
+    "generic/category_html": {
+        "_rutas_de_categoria", "_catalogo_por_categorias",
+    },
 }
 
-GENERIC_COMMON_FUNCTIONS = {
-    "patron_de_forma", "_texto", "cuerpo_principal",
-    "sin_filtros_catalogo", "normalizar_texto_campos", "_aplanar_ld",
-}
+FUNCIONES_OPERATIVAS = frozenset()
 GENERIC_STRATEGY_FUNCTIONS = {
     "generic/wordpress_category": {
         "_sin_variantes_wordpress", "_imagenes_galeria_wordpress"},
+    "generic/tokko_proxy": {"_entero", "_decimal", "_coordenada"},
 }
 
 
@@ -110,6 +125,38 @@ CERTIFIER_OPERACIONALES = frozenset({
     "read_jsonl",           # lectura de artefactos
     "append_jsonl",         # escritura de bitacora
 })
+
+
+
+@lru_cache(maxsize=1)
+def _miembros_de_generico() -> tuple[frozenset[str], frozenset[str]]:
+    """Que metodos y funciones existen hoy en `generico.py`.
+
+    Se lee el archivo en vez de mantener una lista: una lista se desactualiza
+    en silencio y el costo de ese olvido es una certificacion falsamente
+    vigente.
+    """
+    arbol = ast.parse((ROOT / "connectors" / "generico.py").read_text(encoding="utf-8"))
+    funciones = {n.name for n in arbol.body
+                 if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    metodos: set[str] = set()
+    for nodo in arbol.body:
+        if isinstance(nodo, ast.ClassDef) and nodo.name == "GenericoConnector":
+            metodos = {n.name for n in nodo.body
+                       if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    return frozenset(metodos), frozenset(funciones)
+
+
+def _comunes() -> tuple[set[str], set[str]]:
+    metodos, funciones = _miembros_de_generico()
+    de_estrategias: set[str] = set()
+    for grupo in GENERIC_STRATEGY_METHODS.values():
+        de_estrategias |= grupo
+    de_estrategias_f: set[str] = set()
+    for grupo in GENERIC_STRATEGY_FUNCTIONS.values():
+        de_estrategias_f |= grupo
+    return (set(metodos) - de_estrategias - METODOS_OPERATIVOS,
+            set(funciones) - de_estrategias_f - FUNCIONES_OPERATIVAS)
 
 
 def strategy_for(connector: str, publication_mechanism: str | None) -> str:
@@ -178,17 +225,14 @@ def fingerprint_components(connector: str, strategy: str) -> dict[str, bytes]:
         components[f"connector/{connector}"] = _semantic_file(
             ROOT / "connectors" / f"{connector}.py")
         return components
-    methods = GENERIC_COMMON_METHODS | GENERIC_STRATEGY_METHODS.get(
-        strategy, set())
-    functions = GENERIC_COMMON_FUNCTIONS | GENERIC_STRATEGY_FUNCTIONS.get(
-        strategy, set())
+    comunes_m, comunes_f = _comunes()
     components["generic/common"] = _selected_nodes(
         ROOT / "connectors" / "generico.py", "GenericoConnector",
-        GENERIC_COMMON_METHODS, GENERIC_COMMON_FUNCTIONS)
+        comunes_m, comunes_f)
     components[f"strategy/{strategy}"] = _selected_nodes(
         ROOT / "connectors" / "generico.py", "GenericoConnector",
-        methods - GENERIC_COMMON_METHODS,
-        functions - GENERIC_COMMON_FUNCTIONS)
+        GENERIC_STRATEGY_METHODS.get(strategy, set()),
+        GENERIC_STRATEGY_FUNCTIONS.get(strategy, set()))
     if strategy == "generic/php_ajax_search":
         components["strategy/php_form_transport"] = _semantic_file(
             ROOT / "connectors" / "formularios.py")

@@ -169,7 +169,63 @@ def test_el_esquema_de_huella_esta_versionado():
     la huella no corrige ninguno."""
     from scripts.agency_fingerprints import (FINGERPRINT_SCHEMA_VERSION,
                                              strategy_fingerprint_v1)
-    assert FINGERPRINT_SCHEMA_VERSION == 2
+    assert FINGERPRINT_SCHEMA_VERSION == 3
     # El algoritmo viejo sigue disponible para juzgar paquetes del esquema 1.
     assert (strategy_fingerprint_v1("tokko", "tokko")
             != strategy_fingerprint("tokko", "tokko"))
+
+
+# ---- el modelo semantico por defecto (esquema 3) --------------------------
+
+def test_discover_y_fetch_listing_estan_dentro_de_la_huella():
+    """Son el corazón semántico del connector: `discover` elige la estrategia y
+    `fetch_listing` decide qué se enumera. Estuvieron FUERA de toda huella, así
+    que cambiar qué inventario se encuentra no invalidaba nada.
+    """
+    from scripts.agency_fingerprints import _comunes
+    metodos, _ = _comunes()
+    for critico in ("discover", "fetch_listing", "_es_tabla_estructurada",
+                    "_catalogos_enlazados", "_total_declarado_en", "normalize"):
+        assert critico in metodos, critico
+
+
+def test_ningun_metodo_del_connector_queda_fuera_de_la_huella():
+    """La regresión que impide que esto vuelva a pasar.
+
+    El modelo viejo era una lista blanca y dejaba doce métodos afuera en
+    silencio. Una lista blanca falla del lado peligroso: olvidarse de agregar
+    uno deja certificaciones falsamente vigentes. Ahora es semántico por
+    defecto, y olvidarse cuesta una recertificación de más.
+    """
+    import ast
+    from scripts.agency_fingerprints import (GENERIC_STRATEGY_METHODS, ROOT,
+                                             _comunes)
+    arbol = ast.parse((ROOT / "connectors" / "generico.py").read_text(encoding="utf-8"))
+    clase = next(n for n in arbol.body
+                 if isinstance(n, ast.ClassDef) and n.name == "GenericoConnector")
+    todos = {n.name for n in clase.body
+             if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    comunes, _ = _comunes()
+    de_estrategias = set().union(*GENERIC_STRATEGY_METHODS.values())
+    huerfanos = todos - comunes - de_estrategias
+    assert huerfanos == set(), f"metodos fuera de toda huella: {sorted(huerfanos)}"
+
+
+def test_las_estrategias_nuevas_no_arrastran_a_las_viejas():
+    """Un detector propio de una estrategia sólo invalida a la suya."""
+    from scripts.agency_fingerprints import fingerprint_components
+    tokko_proxy = fingerprint_components("generico", "generic/tokko_proxy")
+    categoria = fingerprint_components("generico", "generic/category_html")
+    assert tokko_proxy["strategy/generic/tokko_proxy"] != categoria["strategy/generic/category_html"]
+    # y comparten el mismo tronco comun
+    assert tokko_proxy["generic/common"] == categoria["generic/common"]
+
+
+def test_las_familias_propias_no_se_invalidan_por_generico():
+    """Tokko, Wasi, WordPress y Century21 tienen su propio archivo: el camino
+    no-generico retorna antes de mirar `generico.py`."""
+    from scripts.agency_fingerprints import fingerprint_components
+    for connector in ("tokko", "wasi", "wordpress", "century21"):
+        componentes = fingerprint_components(connector, connector)
+        assert "generic/common" not in componentes
+        assert f"connector/{connector}" in componentes

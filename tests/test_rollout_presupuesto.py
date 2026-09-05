@@ -119,8 +119,18 @@ def test_un_fallo_transitorio_tiene_segunda_oportunidad_como_el_none():
 
     # El transitorio se difiere; los otros dos cuentan como fallo en el acto.
     assert "reintentos_diferidos.append(a)" in bucle[transitorio:transitorio + 900]
-    assert "fallidos += 1" in bucle[permanente:permanente + 120]
-    assert "fallidos += 1" in bucle[bloqueado:bloqueado + 120]
-    assert "reintentos_diferidos" not in bucle[bloqueado:bloqueado + 120]
+    # Se mira hasta la rama siguiente, no una ventana de caracteres: un
+    # comentario nuevo movia el limite y rompia el test sin que cambiara nada
+    # del comportamiento.
+    def _rama(desde: int) -> str:
+        resto = bucle[desde:]
+        siguiente = resto.find("\n        except", 1)
+        corte = resto.find("\n        if ", 1)
+        fin = min(x for x in (siguiente, corte, len(resto)) if x > 0)
+        return resto[:fin]
+
+    assert "fallidos += 1" in _rama(permanente)
+    assert "fallidos += 1" in _rama(bloqueado)
+    assert "reintentos_diferidos" not in _rama(bloqueado)
     # Y nunca vuelven a fusionarse en una sola rama que los trate igual.
     assert "except (ErrorTransitorio, ErrorPermanente):" not in bucle

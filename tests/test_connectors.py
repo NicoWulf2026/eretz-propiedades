@@ -3687,3 +3687,35 @@ def test_generico_no_ve_landing_de_bitrix_donde_no_la_hay() -> None:
         '<div class="landing-block-node-card-price">USD 100</div>'
         '</article></body></html>')})
     assert c.discover(fuente())["variante"] != "BITRIX_LANDING_CARDS"
+
+
+def test_el_rotulo_de_descripcion_admite_coletilla_y_acento_roto():
+    """`almadimatteo.com.ar` no leía la descripción en ninguna de sus 25
+    fichas, por dos razones que la regla no contemplaba.
+
+    El rótulo dice "Descripción DE LA PROPIEDAD", no sólo "Descripción"; y la
+    fuente sirve la vocal acentuada rota. Esto último es el mismo problema de
+    alfabetos distintos que ya apareció entre la señal de fuente y su
+    extracción, y entre el guardián de tabla y su marcado.
+    """
+    from connectors.generico import GenericoConnector
+
+    largo = "Hermosa casa en barrio Los Cedros, dos plantas, amplia y luminosa."
+
+    exacto = f"<h3>Descripcion</h3><p>{largo}</p>"
+    assert GenericoConnector._descripcion_rotulada(exacto)
+
+    coletilla = f"<h3>Descripcion de la propiedad</h3><p>{largo}</p>"
+    assert GenericoConnector._descripcion_rotulada(coletilla)
+
+    roto = f"<h3>Descripci\ufffdn de la propiedad</h3><p>{largo}</p>"
+    assert GenericoConnector._descripcion_rotulada(roto)
+
+    # Un rotulo con una frase larga ya no es un rotulo, es texto.
+    frase = (f"<h3>Descripcion de todas las propiedades que administramos "
+             f"desde hace treinta anios</h3><p>{largo}</p>")
+    assert GenericoConnector._descripcion_rotulada(frase) is None
+
+    # Y un bloque corto no es una descripcion.
+    assert GenericoConnector._descripcion_rotulada(
+        "<h3>Descripcion</h3><p>Casa</p>") is None

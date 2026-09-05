@@ -712,7 +712,23 @@ def certification_status(run1: dict[str, Any], run2: dict[str, Any],
         enumeration["exhaustive_review_required"] = True
     elif estados_no_ok:
         reasons.append("one or both runs did not finish with connector state OK")
-    if run1.get("detalles_fallidos") or run2.get("detalles_fallidos"):
+    # Un 404 sobre una ficha que la fuente sigue enlazando no es una lectura
+    # fallida: es una inconsistencia de la fuente. `almadimatteo.com.ar`
+    # publica 28 enlaces y 3 estan muertos; con la regla anterior ese sitio no
+    # podia certificar nunca, aunque sus 25 propiedades vivas se leyeran
+    # enteras y de forma idempotente.
+    #
+    # Solo se descuentan las que desaparecieron en LAS DOS corridas: una baja
+    # que aparece en una sola no es una baja, es un sitio inestable.
+    fallidos_de_lectura = max(
+        0, int(run1.get("detalles_fallidos") or 0)
+        - min(int(run1.get("detalles_desaparecidos") or 0),
+              int(run2.get("detalles_desaparecidos") or 0)))
+    fallidos_de_lectura += max(
+        0, int(run2.get("detalles_fallidos") or 0)
+        - min(int(run1.get("detalles_desaparecidos") or 0),
+              int(run2.get("detalles_desaparecidos") or 0)))
+    if fallidos_de_lectura:
         reasons.append("one or more listing details failed")
     if not comparison["same_url_set"]:
         reasons.append("run inventories differ")

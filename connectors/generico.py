@@ -57,6 +57,18 @@ ETIQUETAS_DE_CONTEO = {
     "ambientes": r"ambientes?",
 }
 
+# Rutas donde un frontend propio suele exponer el catalogo Tokko.
+RUTAS_TOKKO_PROXY = ("/api/tokko/properties", "/api/properties",
+                     "/api/tokko/property")
+
+# Cuantas paginas de categoria se recorren. El menu de una inmobiliaria
+# tiene pocas; mas que esto es recorrer el sitio entero de un tercero.
+MAX_CATEGORIAS = 12
+
+# Paginado del proxy Tokko y tope de seguridad.
+PAGINA_TOKKO_PROXY = 50
+TOPE_TOKKO_PROXY = 5000
+
 SITEMAPS = ("/sitemap.xml", "/sitemap_index.xml", "/wp-sitemap.xml",
             "/sitemap-index.xml", "/sitemapindex.xml")
 
@@ -272,6 +284,32 @@ def normalizar_texto_campos(texto: str) -> str:
     """
     return (texto or "").replace("Ba�os", "Baños").replace("ba�os", "baños") \
         .replace("Ba�o", "Baño").replace("ba�o", "baño")
+
+
+
+def _entero(valor: Any) -> int | None:
+    """Un entero razonable, o nada. Nunca un cero inventado."""
+    try:
+        n = int(float(valor))
+    except (TypeError, ValueError):
+        return None
+    return n if 1 <= n <= 99 else None
+
+
+def _decimal(valor: Any) -> float | None:
+    try:
+        n = float(valor)
+    except (TypeError, ValueError):
+        return None
+    return n if n > 0 else None
+
+
+def _coordenada(valor: Any) -> float | None:
+    try:
+        n = float(valor)
+    except (TypeError, ValueError):
+        return None
+    return n if n != 0 else None
 
 
 def _aplanar_ld(dato: Any) -> Iterator[dict]:
@@ -751,6 +789,128 @@ class GenericoConnector(Connector):
         slug = re.sub(r"[^a-z0-9]+", "-", plano.lower()).strip("-")
         return slug or f"tarjeta-{indice}"
 
+    @staticmethod
+    def _rutas_de_categoria(html: str, base: str) -> list[str]:
+        """Paginas de categoria que la portada enlaza, en su propio orden.
+
+        Un catalogo estatico no vive en una ruta unica: el menu lleva a una
+        pagina por tipo -casas, departamentos, lotes, alquileres- y las fichas
+        cuelgan de ahi. `almadimatteo.com.ar` publica 28 propiedades asi y el
+        enumerador no bajaba ese nivel, con lo cual el sitio pasaba por vacio.
+
+        Se lee la navegacion que el sitio declara, no una ruta adivinada, y se
+        exige que la categoria sea del rubro: seguir cualquier enlace del menu
+        seria recorrer "quienes somos" y "contacto".
+        """
+        patron = re.compile(
+            r"(?:casas?ychalets?|casas|chalets|departamentos?|deptos?|duplex|"
+            r"ph\b|lotes|terrenos|locales|galpones|cocheras|campos|quintas|"
+            r"oficinas|emprendimientos|alquileres?|ventas?)", re.I)
+        vistos: list[str] = []
+        for coincidencia in re.finditer(r'href=["\']([^"\']+)["\']', html or ""):
+            destino = urllib.parse.urljoin(base + "/", unescape(coincidencia.group(1)))
+            if not destino.startswith(base):
+                continue
+            ruta = urllib.parse.urlparse(destino).path
+            if not re.search(r"\.(?:html?|php|aspx)$", ruta, re.I):
+                continue
+            # La palabra del rubro tiene que estar en el NOMBRE DEL ARCHIVO, no
+            # en cualquier parte de la ruta. `casasychalets/casasychalets.html`
+            # es una categoria; `casasychalets/Aroca/Aroca.html` es una casa, y
+            # mirar la ruta entera las confundia y perdia la propiedad.
+            if not patron.search(ruta.rsplit("/", 1)[-1]):
+                continue
+            limpio = destino.split("#")[0]
+            if limpio not in vistos:
+                vistos.append(limpio)
+        return vistos[:MAX_CATEGORIAS]
+
+    def _catalogo_por_categorias(self, html: str, base: str,
+                                 propia: "re.Pattern | None") -> list[str] | None:
+        """Fichas alcanzables recorriendo las paginas de categoria.
+
+        Devuelve None cuando no hay catalogo por categorias, para que el
+        detector siguiente tenga su turno. Una lista vacia y un None significan
+        cosas distintas y confundirlas es como se declara vacio un sitio lleno.
+        """
+        categorias = self._rutas_de_categoria(html, base)
+        if len(categorias) < 2:
+            return None
+        fichas: list[str] = []
+        vistas: set[str] = set()
+        # La portada tambien enlaza fichas directamente -lo destacado del mes-,
+        # y mirar solo las categorias las perdia: en `almadimatteo.com.ar` eran
+        # seis de veintiocho.
+        paginas: list[tuple[str, str]] = [(base + "/", html)]
+        for categoria in categorias:
+            try:
+                paginas.append((categoria, self.descargador.bajar(categoria)))
+            except (ErrorTransitorio, ErrorPermanente, Bloqueado):
+                continue
+        for categoria, cuerpo in paginas:
+            for coincidencia in re.finditer(r'href=["\']([^"\']+)["\']', cuerpo):
+                destino = urllib.parse.urljoin(categoria, unescape(coincidencia.group(1)))
+                if not destino.startswith(base):
+                    continue
+                ruta = urllib.parse.urlparse(destino).path
+                if not re.search(r"\.(?:html?|php|aspx)$", ruta, re.I):
+                    continue
+                # La ficha vive MAS ABAJO que su categoria. Ese salto de nivel
+                # es lo que la separa de la navegacion, que apunta al mismo
+                # nivel o hacia arriba.
+                # Una ficha cuelga MAS ABAJO que la pagina que la enlaza.
+                # Desde la portada hace falta un nivel extra: ahi el segundo
+                # nivel son las categorias, no las propiedades.
+                minimo = urllib.parse.urlparse(categoria).path.count("/")
+                if categoria.rstrip("/") == base:
+                    # Desde la portada lo que separa una ficha de una categoria
+                    # no es la profundidad -`emprendimientos/calle9.html` es una
+                    # propiedad y vive al mismo nivel que `lotes/lotes.html`-
+                    # sino no ser una de las categorias ya identificadas, que se
+                    # descartan unas lineas mas abajo.
+                    minimo = 1
+                if ruta.count("/") <= minimo:
+                    continue
+                limpio = destino.split("#")[0]
+                if limpio in vistas or limpio in categorias:
+                    continue
+                vistas.add(limpio)
+                fichas.append(limpio)
+        return fichas or None
+
+    def _catalogo_tokko_proxy(self, base: str) -> dict[str, Any] | None:
+        """Un frontend propio que sirve el catalogo Tokko desde su mismo host.
+
+        `alta.com.ar` es Next.js: el HTML inicial no trae ninguna propiedad y
+        el catalogo se hidrata desde `/api/tokko/properties`, en el MISMO
+        origen. Sin ejecutar JavaScript el sitio parece vacio, y publica 16.
+
+        No se prueba un dominio: se prueba una FORMA -un endpoint propio que
+        devuelve `{count, objects}` con objetos de Tokko-, que es reutilizable
+        por cualquier sitio construido asi.
+        """
+        for ruta in RUTAS_TOKKO_PROXY:
+            try:
+                cuerpo = self.descargador.bajar(
+                    f"{base}{ruta}?limit=1&offset=0")
+            except (ErrorTransitorio, ErrorPermanente, Bloqueado):
+                continue
+            try:
+                dato = json.loads(cuerpo)
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if not isinstance(dato, dict):
+                continue
+            objetos = dato.get("objects")
+            if not isinstance(objetos, list) or "count" not in dato:
+                continue
+            try:
+                total = int(dato["count"])
+            except (TypeError, ValueError):
+                continue
+            return {"ruta": ruta, "total": total}
+        return None
+
     # ---------------------------------------------------------------- discover
     def discover(self, fuente: Fuente) -> dict[str, Any]:
         p = urllib.parse.urlparse(fuente.official_url)
@@ -802,6 +962,17 @@ class GenericoConnector(Connector):
             plan.update({"variante": "SITEMAP", "soportada": True,
                          "fichas": limpias[:MAX_FICHAS],
                          "total_declarado": len(limpias)})
+            return plan
+
+        # --- 1.b catalogo servido por el propio frontend --------------------
+        # Antes de leer el HTML: un frontend que hidrata desde su propia API no
+        # va a mostrar ninguna propiedad en el documento inicial, y mirarlo
+        # primero solo confirma un vacio que no existe.
+        proxy = self._catalogo_tokko_proxy(base)
+        if proxy is not None:
+            plan.update({"variante": "TOKKO_PROXY_JSON", "soportada": True,
+                         "tokko_proxy_ruta": proxy["ruta"],
+                         "total_declarado": proxy["total"]})
             return plan
 
         # --- 2. listado en HTML --------------------------------------------
@@ -983,6 +1154,18 @@ class GenericoConnector(Connector):
                          "patron_runtime": runtime,
                          "patron_catalogo": patron_catalogo,
                          "catalogo_runtime_verificado": bool(runtime and not propia)})
+        # --- ultimo recurso: catalogo repartido en paginas de categoria -----
+        # Va al final a proposito: cualquier detector especifico describe mejor
+        # al sitio que recorrerle el menu. Solo cuando ninguno reconocio la
+        # forma se sigue la navegacion, que es lo unico que queda antes de
+        # declarar vacio un sitio que puede estar lleno.
+        fichas_categoria = self._catalogo_por_categorias(html, base, propia)
+        if fichas_categoria:
+            plan.update({"variante": "CATEGORY_HTML_CATALOG", "soportada": True,
+                         "fichas": fichas_categoria[:MAX_FICHAS],
+                         "total_declarado": len(fichas_categoria)})
+            return plan
+
         return plan
 
     @staticmethod
@@ -1042,7 +1225,39 @@ class GenericoConnector(Connector):
         if plan["variante"] == "EMPTY_CATALOG_HTML":
             return
         propia = plan.get("patron_runtime") or self._patron_de(fuente)
-        if plan["variante"] == "SITEMAP":
+        if plan["variante"] == "TOKKO_PROXY_JSON":
+            # `limit`/`offset` con corte por respuesta vacia. No se confia en
+            # `count` para terminar: un total declarado que miente cortaria la
+            # enumeracion antes de tiempo, y perder inventario en silencio es
+            # justamente lo que este connector viene a evitar.
+            base_ = plan["base"]
+            ruta = plan["tokko_proxy_ruta"]
+            offset, pagina, vistos = 0, 0, set()
+            while offset < TOPE_TOKKO_PROXY:
+                pagina += 1
+                try:
+                    cuerpo = self.descargador.bajar(
+                        f"{base_}{ruta}?limit={PAGINA_TOKKO_PROXY}&offset={offset}")
+                except (ErrorTransitorio, ErrorPermanente, Bloqueado):
+                    break
+                try:
+                    objetos = (json.loads(cuerpo) or {}).get("objects") or []
+                except (json.JSONDecodeError, TypeError):
+                    break
+                if not objetos:
+                    break
+                for objeto in objetos:
+                    identificador = str(objeto.get("id") or "").strip()
+                    if not identificador or identificador in vistos:
+                        continue
+                    vistos.add(identificador)
+                    yield {"source_listing_id": identificador,
+                           "source_url": f"{base_}/propiedad/{identificador}",
+                           "pagina": pagina,
+                           "tokko_objeto": objeto}
+                offset += PAGINA_TOKKO_PROXY
+            return
+        if plan["variante"] in ("SITEMAP", "CATEGORY_HTML_CATALOG"):
             for i, u in enumerate(plan["fichas"], 1):
                 yield {"source_listing_id": self._id_de(u), "source_url": u,
                        "pagina": 1 + i // 100,
@@ -1310,6 +1525,11 @@ class GenericoConnector(Connector):
             return self._normalizar_php_ajax(crudo, fuente)
         if crudo.get("bitrix_card"):
             return self._normalizar_bitrix_landing(crudo, fuente)
+        if crudo.get("tokko_objeto"):
+            # El objeto ya vino completo en el listado y la ficha se arma en el
+            # navegador: bajarla costaria una peticion por propiedad para leer
+            # menos de lo que ya tenemos.
+            return self._normalizar_tokko_proxy(crudo, fuente)
         url = crudo["source_url"]
         try:
             html = self.descargador.bajar(url)
@@ -1411,7 +1631,10 @@ class GenericoConnector(Connector):
             # Solo con moneda explicita al lado. Un numero suelto en el texto
             # puede ser cualquier cosa, y un precio equivocado se publica sin
             # que nadie lo note.
-            m = re.search(r"(USD|U\$S|US\$|\$|ARS)\s*([\d][\d.,]{2,15})", texto)
+            # Sin `re.I` se perdia `u$s 85.000` en minuscula, que es como lo
+            # escriben las fuentes que arman la ficha a mano.
+            m = re.search(r"(USD|U\$S|US\$|\$|ARS)\s*([\d][\d.,]{2,15})",
+                          texto, re.I)
             if m:
                 moneda = moneda or detectar_moneda(m.group(1))
                 precio = a_numero(m.group(2))
@@ -1907,6 +2130,73 @@ class GenericoConnector(Connector):
                         "source_platform": "PHP_AJAX_SEARCH",
                         "pagina_listado": crudo.get("pagina")},
         )
+
+    def _normalizar_tokko_proxy(self, crudo: dict,
+                                fuente: Fuente) -> PropiedadNormalizada | None:
+        """Arma la propiedad con el objeto que ya trajo la API del sitio.
+
+        No se baja la ficha: el objeto de Tokko viene completo en el listado, y
+        en estos frontends la ficha es una pagina que se arma en el navegador,
+        asi que pedirla costaria una peticion por propiedad para leer menos.
+
+        Nada se inventa. Lo que el objeto no trae queda en None y el contrato
+        de propiedad decide despues en que superficies puede aparecer.
+        """
+        objeto = crudo.get("tokko_objeto") or {}
+        if not objeto:
+            return None
+
+        def texto(valor: Any) -> str | None:
+            if isinstance(valor, dict):
+                valor = valor.get("name") or valor.get("nombre")
+            valor = limpiar(str(valor)) if valor not in (None, "") else None
+            return valor or None
+
+        # Tokko publica una operacion por propiedad, con su precio adentro.
+        operacion = precio = moneda = None
+        for op in (objeto.get("operations") or []):
+            if not isinstance(op, dict):
+                continue
+            operacion = detectar_operacion(str(op.get("operation_type") or "")) \
+                or operacion
+            for p in (op.get("prices") or []):
+                if isinstance(p, dict) and p.get("price"):
+                    precio = a_numero(str(p.get("price")))
+                    moneda = detectar_moneda(str(p.get("currency") or ""))
+                    break
+            if precio is not None:
+                break
+
+        ubicacion = objeto.get("location") or {}
+        imagenes = [i.get("image") for i in (objeto.get("photos") or [])
+                    if isinstance(i, dict) and i.get("image")]
+
+        propiedad = PropiedadNormalizada(
+            canonical_agency_id=fuente.canonical_agency_id,
+            source_listing_id=str(crudo["source_listing_id"]),
+            source_url=crudo["source_url"],
+            connector="generico",
+            inmobiliaria_id=fuente.inmobiliaria_id,
+            titulo=texto(objeto.get("publication_title")) or texto(objeto.get("address")),
+            descripcion=texto(objeto.get("description")),
+            operacion=operacion,
+            tipo_propiedad=texto(objeto.get("type")),
+            precio=precio,
+            moneda=moneda,
+            direccion=texto(objeto.get("address")),
+            barrio=texto(ubicacion.get("name")),
+            provincia=texto(ubicacion.get("state")),
+            latitud=_coordenada(objeto.get("geo_lat")),
+            longitud=_coordenada(objeto.get("geo_long")),
+            ambientes=_entero(objeto.get("room_amount")),
+            dormitorios=_entero(objeto.get("suite_amount")),
+            banos=_entero(objeto.get("bathroom_amount")),
+            superficie_total=_decimal(objeto.get("total_surface")),
+            superficie_cubierta=_decimal(objeto.get("roofed_surface")),
+            imagenes=imagenes,
+            extra={"tokko_proxy": True},
+        )
+        return propiedad
 
     def _normalizar_xintel(self, crudo: dict, fuente: Fuente,
                            html: str) -> PropiedadNormalizada:
@@ -2423,16 +2713,67 @@ class GenericoConnector(Connector):
 
     @staticmethod
     def _descripcion_rotulada(html: str) -> str | None:
-        """El bloque que sigue a un rotulo que dice solo "Descripcion"."""
-        bloque = r"(?:p|div|section|article)"
-        rotulo = r"(?:h[1-6]|div|span|strong|b|p)"
+        """El bloque que sigue a un rotulo de descripcion.
+
+        Dos cosas que la version anterior no contemplaba, ambas vistas en
+        `almadimatteo.com.ar`, donde la descripcion no se leia en ninguna de
+        sus veinticinco fichas:
+
+        - el rotulo puede traer una coletilla: "Descripcion DE LA PROPIEDAD".
+          Se acepta una corta, porque una larga ya no es un rotulo sino texto.
+        - la fuente puede servir la vocal acentuada rota. Es el mismo problema
+          de alfabetos distintos que ya aparecio entre la senal de fuente y su
+          extraccion, y entre el guardian de tabla y su marcado.
+        """
+        bloque = r"(?:p|div|section|article|td)"
+        rotulo = r"(?:h[1-6]|div|span|strong|b|p|td)"
+        # `.` cubre la vocal rota que sirven algunas fuentes legacy.
+        acento = r"(?:[o\u00f3]|&oacute;|.)"
         m = re.search(
-            rf"<{rotulo}[^>]*>\s*Descripci(?:[oó]|&oacute;)n\s*"
-            rf"</{rotulo}>\s*<{bloque}[^>]*>(.*?)</{bloque}>",
+            rf"<{rotulo}[^>]*>\s*Descripci{acento}n"
+            rf"(?:\s+(?:de|del)\s+(?:la\s+|el\s+)?[\w\u00c0-\u017f]{{3,20}})?"
+            # El rotulo puede venir repetido -la misma maqueta lo pone en el
+            # encabezado y en la celda-, y entre el rotulo y el texto puede
+            # haber envoltorios vacios.
+            rf"\s*:?\s*</{rotulo}>"
+            rf"(?:\s*<[^>]*>\s*|\s*Descripci{acento}n[^<]{{0,25}}\s*)*?"
+            rf"<{bloque}[^>]*>(.*?)</{bloque}>",
             html or "", re.I | re.S)
-        if not m:
+        if m:
+            visible = limpiar(_texto(m.group(1)))
+            if visible and len(visible) >= 20:
+                return visible
+
+        # El primer bloque puede ser un envoltorio vacio. `almadimatteo.com.ar`
+        # pone el rotulo dos veces -una por variante responsive- y despues
+        # anida divs con una tabla vacia antes del texto; buscar "el bloque
+        # siguiente" encontraba el vacio y devolvia nada.
+        #
+        # Lo que una persona lee es el texto que sigue al rotulo hasta el
+        # proximo encabezado. Eso es lo que se toma, acotado para no arrastrar
+        # la pagina entera.
+        etiqueta = re.search(
+            rf"<{rotulo}[^>]*>\s*Descripci{acento}n"
+            rf"(?:\s+(?:de|del)\s+(?:la\s+|el\s+)?[\w\u00c0-\u017f]{{3,20}})?"
+            rf"\s*:?\s*</{rotulo}>", html or "", re.I | re.S)
+        if not etiqueta:
             return None
-        visible = limpiar(_texto(m.group(1)))
+        resto = (html or "")[etiqueta.end():]
+        # La misma maqueta repite el rotulo, una vez por variante responsive.
+        # Cortar en "el proximo encabezado" caia sobre ese duplicado y dejaba
+        # el texto entero afuera.
+        repeticion = re.compile(
+            rf"\A\s*(?:<[^>]*>\s*)*?<{rotulo}[^>]*>\s*Descripci{acento}n"
+            rf"[^<]{{0,25}}</{rotulo}>", re.I | re.S)
+        while True:
+            otro = repeticion.match(resto)
+            if not otro:
+                break
+            resto = resto[otro.end():]
+        corte = re.search(r"<h[1-6]\b|<footer\b", resto, re.I)
+        if corte:
+            resto = resto[:corte.start()]
+        visible = limpiar(_texto(resto[:6000]))
         return visible if visible and len(visible) >= 20 else None
 
     @staticmethod

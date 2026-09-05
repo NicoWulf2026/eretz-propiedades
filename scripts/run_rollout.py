@@ -359,6 +359,7 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
     fallidos = 0
     reintentos_diferidos: list[dict] = []
     recuperados_diferidos = 0
+    desaparecidas = 0
     limite = t0 + presupuesto if presupuesto else None
     r["presupuesto_efectivo"] = presupuesto or None
     for a in seleccion:
@@ -374,7 +375,11 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
             fallidos += 1
             break
         except ErrorPermanente:
+            # 404/410: la ficha ya no existe. La fuente la sigue enlazando, y
+            # eso es una inconsistencia SUYA, no una lectura fallida nuestra.
+            # Se cuenta aparte para que el certificador pueda distinguirlas.
             fallidos += 1
+            desaparecidas += 1
             continue
         except ErrorTransitorio:
             # Transitorio significa que puede desaparecer solo. El descargador
@@ -431,6 +436,12 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
             continue
         if p is None:
             fallidos += 1
+            # El connector atrapa el 404 y devuelve None marcando la etapa, asi
+            # que la baja definitiva no llega nunca como excepcion. Se
+            # reconoce por ese rastro.
+            if (con.errores
+                    and con.errores[-1].get("etapa") == "detalle_permanente"):
+                desaparecidas += 1
             continue
         if ficha_sin_contenido(p):
             # Segunda lectura y sigue sin traer nada. Cuenta como detalle
@@ -461,6 +472,9 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
 
     r["detalles_obtenidos"] = len(props)
     r["detalles_fallidos"] = fallidos
+    # De los fallidos, cuantos fueron 404/410. Un enlace que la fuente publica
+    # y ya no existe no es inventario que perdimos leyendo mal.
+    r["detalles_desaparecidos"] = desaparecidas
     # Por que fallaron. El certificador no pasa por `main()`, que es donde se
     # escribia `errors.jsonl`, asi que descartaba la evidencia: `aconcagua
     # propiedades` perdio 16 fichas -las 16 de alquiler, ninguna de venta- y no
