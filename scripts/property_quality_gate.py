@@ -45,6 +45,29 @@ from scripts.property_contract import (AUSENTE_SIN_DIAGNOSTICO,  # noqa: E402
 GATE_VERSION = "property_quality_gate_v1"
 
 
+def ciudades_propuestas(auditoria: Path) -> dict[str, dict[str, Any]]:
+    """Las propuestas de ciudad que la auditoria dio por aptas, por propiedad.
+
+    Se leen las APTAS unicamente. Las 6.890 retenidas -entre ellas `Villa del
+    Parque`, barrio de CABA, propuesto como localidad de Rio Negro- no entran
+    ni siquiera en la proyeccion: proyectar sobre datos que no se van a
+    escribir seria prometer un filtro que no va a existir.
+    """
+    fuera: dict[str, dict[str, Any]] = {}
+    if not auditoria.exists():
+        return fuera
+    for linea in auditoria.read_text(encoding="utf-8").splitlines():
+        if not linea.strip():
+            continue
+        fila = json.loads(linea)
+        if not fila.get("apta_para_escritura"):
+            continue
+        hash_dedup = fila.get("hash_dedup")
+        if hash_dedup:
+            fuera[hash_dedup] = fila.get("propuesto") or {}
+    return fuera
+
+
 def cobertura_por_agencia(paquetes: Path) -> dict[str, dict[str, bool]]:
     """Por agencia y campo: la fuente lo publicaba, si o no.
 
@@ -103,9 +126,12 @@ def main() -> int:
     # sigue a la canonica en vez de repetir la ruta.
     ap.add_argument("--salida", default=str(base_canonica().parent))
     ap.add_argument("--limite", type=int, default=0)
+    ap.add_argument("--auditoria-de-ciudad",
+                    default=r"D:\INMO CAPITAL\ERETZ_GEO\CIUDAD_DRYRUN_AUDIT.jsonl")
     args = ap.parse_args()
 
     cobertura = cobertura_por_agencia(Path(args.paquetes))
+    propuestas = ciudades_propuestas(Path(args.auditoria_de_ciudad))
     conexion = sqlite3.connect(f"file:{Path(args.db).as_posix()}?mode=ro", uri=True)
     consulta = ("select row_json, canonical_id, hash_dedup from rows "
                 "where status = 'CANDIDATE'")
@@ -114,6 +140,8 @@ def main() -> int:
 
     destino = Path(args.salida) / "PROPERTY_QUALITY_GATE.jsonl"
     alcances: Counter = Counter()
+    proyectados: Counter = Counter()
+    con_ciudad_propuesta = 0
     razones: Counter = Counter()
     estados: Counter = Counter()
     con_diagnostico = sin_diagnostico = 0
@@ -132,6 +160,21 @@ def main() -> int:
             publicables += bool(veredicto["publicable"])
             for alcance in veredicto["alcances"]:
                 alcances[alcance] += 1
+
+            # El alcance que HABRIA si las propuestas aptas estuvieran
+            # escritas. Se informa aparte y nunca reemplaza al real: la
+            # geografia esta resuelta y sin escribir porque la base de
+            # produccion no responde, y confundir "se puede" con "esta" es
+            # prometer un filtro que hoy no existe.
+            propuesta = propuestas.get(hash_dedup)
+            proyectada = dict(fila)
+            if propuesta and not fila.get("ciudad"):
+                proyectada["ciudad"] = propuesta.get("ciudad")
+                proyectada["provincia"] = (proyectada.get("provincia")
+                                           or propuesta.get("provincia"))
+                con_ciudad_propuesta += 1
+            for alcance in evaluar(proyectada, fuente)["alcances"]:
+                proyectados[alcance] += 1
             for razon in veredicto["razones_de_exclusion"]:
                 razones[razon] += 1
             for campo, estado in veredicto["estados_de_campo"].items():
@@ -159,6 +202,9 @@ def main() -> int:
         "publicables": publicables,
         "no_publicables": total - publicables,
         "por_alcance": dict(alcances.most_common()),
+        "por_alcance_si_se_escribiera_la_ciudad": dict(proyectados.most_common()),
+        "propiedades_que_ganarian_ciudad": con_ciudad_propuesta,
+        "propuestas_de_ciudad_aptas_leidas": len(propuestas),
         "motivos_de_alcance_reducido": dict(razones.most_common()),
         "estados_de_campo": dict(estados.most_common()),
         "campos_ausentes_con_diagnostico": con_diagnostico,

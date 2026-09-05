@@ -130,3 +130,72 @@ def test_la_base_por_defecto_es_la_canonica_del_manifiesto():
     fuente = Path("scripts/property_quality_gate.py").read_text(encoding="utf-8")
     assert 'default=str(base_canonica())' in fuente
     assert "PREINGESTION_REBUILD_20260903" not in fuente
+
+
+def test_solo_entran_las_propuestas_de_ciudad_aptas(tmp_path):
+    """Las 6.890 retenidas —entre ellas `Villa del Parque`, barrio de CABA
+    propuesto como localidad de Río Negro— no entran ni siquiera en la
+    proyección. Proyectar sobre datos que no se van a escribir sería prometer
+    un filtro que no va a existir."""
+    from scripts.property_quality_gate import ciudades_propuestas
+
+    auditoria = tmp_path / "audit.jsonl"
+    auditoria.write_text("\n".join(json.dumps(f, ensure_ascii=False) for f in (
+        {"hash_dedup": "buena", "apta_para_escritura": True,
+         "propuesto": {"ciudad": "Morón", "provincia": "Buenos Aires"}},
+        {"hash_dedup": "dudosa", "apta_para_escritura": False,
+         "propuesto": {"ciudad": "Villa del Parque", "provincia": "Río Negro"}},
+    )) + "\n", encoding="utf-8")
+
+    propuestas = ciudades_propuestas(auditoria)
+    assert set(propuestas) == {"buena"}
+    assert ciudades_propuestas(tmp_path / "no-existe.jsonl") == {}
+
+
+def test_la_proyeccion_no_reemplaza_al_alcance_real(tmp_path, monkeypatch):
+    """La geografía está resuelta y sin escribir porque la base de producción
+    no responde. Confundir "se puede" con "está" prometería un filtro que hoy
+    no existe, así que el alcance proyectado viaja aparte."""
+    db = tmp_path / "p.sqlite3"
+    conexion = sqlite3.connect(db)
+    conexion.execute("create table rows (row_json text, canonical_id text, "
+                     "hash_dedup text, status text)")
+    fila = {"source_url": "https://alfa.com.ar/p/1", "hash_dedup": "h1",
+            "canonical_agency_id": "roomix:alfa", "titulo": "Casa en Venta",
+            "operacion": "venta", "tipo_propiedad": "casa",
+            "precio": 100000.0, "moneda": "USD", "ciudad": None}
+    conexion.execute("insert into rows values (?,?,?,?)",
+                     (json.dumps(fila), "roomix:alfa", "h1", "CANDIDATE"))
+    conexion.commit()
+    conexion.close()
+
+    auditoria = tmp_path / "audit.jsonl"
+    auditoria.write_text(json.dumps(
+        {"hash_dedup": "h1", "apta_para_escritura": True,
+         "propuesto": {"ciudad": "Morón", "provincia": "Buenos Aires"}},
+        ensure_ascii=False) + "\n", encoding="utf-8")
+
+    salida = tmp_path / "out"
+    salida.mkdir()
+    paquetes = tmp_path / "paquetes"
+    paquetes.mkdir()
+
+    import sys
+    from scripts import property_quality_gate as gate
+    monkeypatch.setattr(sys, "argv", [
+        "gate", "--db", str(db), "--paquetes", str(paquetes),
+        "--salida", str(salida), "--auditoria-de-ciudad", str(auditoria)])
+    assert gate.main() == 0
+
+    resumen = json.loads(
+        (salida / "PROPERTY_QUALITY_GATE_SUMMARY.json").read_text(encoding="utf-8"))
+    # Hoy no entra al filtro por ciudad; con la propuesta escrita, sí.
+    assert "FILTRO_CIUDAD" not in resumen["por_alcance"]
+    assert resumen["por_alcance_si_se_escribiera_la_ciudad"]["FILTRO_CIUDAD"] == 1
+    assert resumen["propiedades_que_ganarian_ciudad"] == 1
+    assert resumen["database_writes"] == 0
+
+    # Y la fila sigue diciendo la verdad de hoy.
+    fila_salida = json.loads((salida / "PROPERTY_QUALITY_GATE.jsonl")
+                             .read_text(encoding="utf-8").strip())
+    assert "FILTRO_CIUDAD" not in fila_salida["alcances"]
