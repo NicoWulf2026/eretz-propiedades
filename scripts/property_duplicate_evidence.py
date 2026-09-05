@@ -45,7 +45,8 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts.preingestion_manifest import base_canonica  # noqa: E402
+from scripts.preingestion_manifest import (base_canonica,
+                                            exigir_base_vigente)  # noqa: E402
 
 EVIDENCIA_VERSION = "property_duplicate_evidence_v1"
 
@@ -105,6 +106,8 @@ def main() -> int:
                                 / "PROPERTY_DUPLICATE_GROUPS.jsonl"))
     ap.add_argument("--salida", default=str(base_canonica().parent))
     args = ap.parse_args()
+    # Una base vencida es legible y no se queja: hay que preguntar.
+    exigir_base_vigente(args.db)
 
     grupos = [json.loads(l) for l in
               Path(args.grupos).read_text(encoding="utf-8").splitlines() if l.strip()]

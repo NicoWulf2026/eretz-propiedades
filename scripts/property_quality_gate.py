@@ -117,7 +117,8 @@ def main() -> int:
     # La base sale del manifiesto, no de una ruta escrita a mano: una snapshot
     # vieja clavada en el default ya hizo que el certificador midiera contra un
     # universo al que le faltaban 13.023 candidatas.
-    from scripts.preingestion_manifest import base_canonica
+    from scripts.preingestion_manifest import (base_canonica,
+                                            exigir_base_vigente)
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", default=str(base_canonica()))
@@ -129,6 +130,8 @@ def main() -> int:
     ap.add_argument("--auditoria-de-ciudad",
                     default=r"D:\INMO CAPITAL\ERETZ_GEO\CIUDAD_DRYRUN_AUDIT.jsonl")
     args = ap.parse_args()
+    # Una base vencida es legible y no se queja: hay que preguntar.
+    exigir_base_vigente(args.db)
 
     cobertura = cobertura_por_agencia(Path(args.paquetes))
     propuestas = ciudades_propuestas(Path(args.auditoria_de_ciudad))

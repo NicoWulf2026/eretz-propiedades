@@ -84,3 +84,53 @@ def test_el_manifiesto_real_declara_la_base_del_3_de_septiembre():
     # Y la del 27 de agosto sigue existiendo, declarada como evidencia.
     historicas = manifiesto.historicas()
     assert any("20260827" in str(h) for h in historicas)
+
+
+def test_una_base_declarada_historica_no_se_puede_abrir():
+    """La Fase 2 pidió que el runtime falle si intenta usar una snapshot
+    HISTORICAL. `geo_dryrun.py` —el script que produjo las 29.048 propuestas de
+    ciudad— tenía clavada en su argparse la base del 27 de agosto, con 45.404
+    candidatas contra las 58.427 vigentes."""
+    import pytest
+
+    from scripts.preingestion_manifest import (BaseVencida, exigir_base_vigente,
+                                               historicas)
+    vencidas = historicas()
+    assert vencidas, "el manifiesto tiene que declarar al menos una historica"
+    with pytest.raises(BaseVencida) as e:
+        exigir_base_vigente(vencidas[0])
+    assert "HISTORICA" in str(e.value)
+
+
+def test_la_canonica_se_abre_sin_quejas():
+    from scripts.preingestion_manifest import base_canonica, exigir_base_vigente
+    assert exigir_base_vigente(base_canonica()) == base_canonica()
+
+
+def test_una_base_no_declarada_no_se_rechaza(tmp_path):
+    """El defecto que la guarda previene es el default que envejece solo.
+    Pasar una ruta a mano es un acto deliberado —una copia, un fixture, un
+    análisis puntual— y prohibirlo sólo obligaría a rodear la guarda."""
+    from scripts.preingestion_manifest import exigir_base_vigente
+    suelta = tmp_path / "copia.sqlite3"
+    suelta.write_bytes(b"")
+    assert exigir_base_vigente(suelta) == suelta
+
+
+def test_ningun_script_arranca_apuntando_a_una_historica():
+    """Un default no se prueba solo: hay que mirarlos todos. Dos apuntaban a la
+    base del 27 de agosto."""
+    from pathlib import Path
+
+    from scripts.preingestion_manifest import historicas
+
+    vencidas = [str(h) for h in historicas()]
+    culpables = []
+    for script in Path("scripts").glob("*.py"):
+        texto = script.read_text(encoding="utf-8", errors="replace")
+        for linea in texto.splitlines():
+            if "default=" not in linea:
+                continue
+            if any(v in linea or v.replace("\\", "/") in linea for v in vencidas):
+                culpables.append(f"{script.name}: {linea.strip()[:90]}")
+    assert not culpables, "defaults apuntando a una base vencida: " + str(culpables)

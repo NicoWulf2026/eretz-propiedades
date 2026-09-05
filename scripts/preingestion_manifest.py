@@ -77,3 +77,36 @@ def describir(ruta: str | Path) -> dict:
         if Path(dato.get("ruta", "")) == Path(objetivo):
             return dato
     return {"ruta": objetivo, "estado": "NO_DECLARADA"}
+
+
+class BaseVencida(RuntimeError):
+    """Se intento leer una snapshot declarada HISTORICA."""
+
+
+def exigir_base_vigente(ruta: str | Path) -> Path:
+    """Falla si la ruta es una snapshot declarada vencida.
+
+    Una ruta escrita a mano envejece en silencio. `geo_dryrun.py` -el script
+    que produjo las 29.048 propuestas de ciudad- tenia clavada en su
+    `argparse` la base del 27 de agosto, declarada HISTORICA, con 45.404
+    candidatas contra las 58.427 vigentes. Siguio ahi, legible y
+    desactualizada, sin que nadie preguntara.
+
+    El preflight ya cubria al runner de certificacion. Esto cubre a cualquiera
+    que abra una base.
+
+    **Una base no declarada NO se rechaza aca.** El defecto que esto previene
+    es el default que envejece solo; pasar una ruta a mano es un acto
+    deliberado -una copia, un fixture, un analisis puntual- y prohibirlo no
+    haria mas seguro a nadie, solo obligaria a rodear la guarda. El runner de
+    certificacion si exige que la base este declarada, porque ahi el universo
+    tiene que ser auditable.
+    """
+    objetivo = Path(ruta)
+    dato = describir(objetivo)
+    if dato.get("estado") == "HISTORICA":
+        raise BaseVencida(
+            f"{objetivo} esta declarada HISTORICA en el manifiesto "
+            f"({dato.get('proposito') or 'sin proposito declarado'}). "
+            f"La vigente es {base_canonica()}.")
+    return objetivo

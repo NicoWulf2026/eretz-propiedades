@@ -20,6 +20,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from scripts.preingestion_manifest import (base_canonica,  # noqa: E402
+                                            exigir_base_vigente)
+
 from connectors.base import Connector, PropiedadNormalizada
 from connectors.geografia import geografia
 
@@ -31,9 +34,14 @@ CONNECTORS_CON_CAMPO_PROPIO = {"wasi", "century21"}
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--db", default=r"D:\INMO CAPITAL\ERETZ_SUPABASE_RECONCILIATION_V2_20260827\PREINGESTION_REBUILD.sqlite3")
+    # Sale del manifiesto: este default estuvo clavado en la base del 27 de
+    # agosto -13.023 candidatas menos- y las propuestas de ciudad se
+    # calcularon sobre ese universo sin que nadie lo notara.
+    parser.add_argument("--db", default=str(base_canonica()))
     parser.add_argument("--salida", default=r"D:\INMO CAPITAL\ERETZ_GEO")
     args = parser.parse_args()
+    # Una base vencida es legible y no se queja: hay que preguntar.
+    exigir_base_vigente(args.db)
 
     geo = geografia()
     conexion = sqlite3.connect(f"file:{Path(args.db).as_posix()}?mode=ro",

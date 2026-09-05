@@ -45,6 +45,13 @@ from itertools import combinations
 from pathlib import Path
 from typing import Any
 
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from scripts.preingestion_manifest import (base_canonica,  # noqa: E402
+                                           exigir_base_vigente)
+
 # ~1,1 m. Mas precision separa lo que es lo mismo; menos junta lo que no lo es.
 DECIMALES = 5
 
@@ -140,9 +147,13 @@ def agrupar(registros) -> tuple[list[dict[str, Any]], dict[str, Any]]:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--db", default=r"D:\INMO CAPITAL\ERETZ_PREINGESTION_REBUILD_20260903\PREINGESTION_REBUILD.sqlite3")
-    ap.add_argument("--salida", default=r"D:\INMO CAPITAL\ERETZ_PREINGESTION_REBUILD_20260903")
+    # Del manifiesto, no de una ruta escrita a mano: un default fechado
+    # envejece en silencio.
+    ap.add_argument("--db", default=str(base_canonica()))
+    ap.add_argument("--salida", default=str(base_canonica().parent))
     args = ap.parse_args()
+    # Una base vencida es legible y no se queja: hay que preguntar.
+    exigir_base_vigente(args.db)
 
     conexion = sqlite3.connect(f"file:{Path(args.db).as_posix()}?mode=ro", uri=True)
     registros = ((json.loads(crudo), canonical, hash_dedup)
