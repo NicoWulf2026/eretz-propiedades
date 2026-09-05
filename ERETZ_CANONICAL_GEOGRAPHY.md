@@ -278,9 +278,16 @@ cache`. PostgREST está arriba y la base detrás no responde.
 
 Queda preparado hasta dry-run, con `database_writes: 0`:
 
-- `ERETZ_GEO/CIUDAD_DRYRUN.jsonl` — 29.048 propuestas con procedencia.
-- `AGENCY_PROMOTION_GATE.jsonl` — 939 promovibles.
+- `ERETZ_GEO/CIUDAD_DRYRUN.jsonl` — 29.048 propuestas con procedencia, de las
+  cuales **22.158 son aptas para escritura**: `CIUDAD_DRYRUN_AUDIT.jsonl`
+  retiene 6.890 que no se sostienen sin corroboración. La primera fila del
+  artefacto proponía `Villa del Parque` —barrio de CABA— como localidad de Río
+  Negro. Ver §3.4 del Master Plan.
+- `AGENCY_PROMOTION_GATE.jsonl` — **733** promovibles: de las 939 declaradas,
+  24 apuntaban a webs demostrablemente extranjeras.
 - `AGENCY_MAIN_LINK_DRYRUN.jsonl` — 54 vinculables.
+
+Verificado el 2026-09-05: el síntoma sigue siendo el mismo `PGRST002`.
 
 ---
 
