@@ -237,6 +237,71 @@ def full_queue(catalog: dict[str, dict[str, Any]]) -> list[str]:
     return sorted(catalog)
 
 
+# Cuantas inmobiliarias por familia se certifican ANTES del bulk. Con una sola
+# no se distingue un defecto de familia de una fuente rara; con muchas se paga
+# el canario como si fuera el bulk.
+CANARIOS_POR_FAMILIA = 3
+
+# Lo que ya se sabe que tarda o que nos rechaza. No se saca del universo: se
+# corre al final, para que no bloquee a las 700 que si avanzan.
+SENALES_DE_COLA_LARGA = ("BLOCKED_EXTERNAL",)
+
+
+def _familia(resultado: dict[str, Any]) -> str:
+    return (resultado.get("connector_strategy")
+            or resultado.get("connector") or "sin familia")
+
+
+def _es_cola_larga(resultado: dict[str, Any]) -> bool:
+    """Fuentes lentas o que rechazan el acceso, por evidencia previa."""
+    if resultado.get("status") in SENALES_DE_COLA_LARGA:
+        return True
+    return any((corrida or {}).get("presupuesto_agotado")
+               for corrida in (resultado.get("run1"), resultado.get("run2")))
+
+
+def ordenar_para_correr(cola: list[str],
+                        resultados: dict[str, dict[str, Any]]) -> list[str]:
+    """Canarios, bulk, long tail. El universo NO cambia: cambia el orden.
+
+    Procesar por orden alfabetico deja que un defecto de familia aparezca en
+    el dia tres. `alta`, `alma di matteo` y `altos servicios` fueron tres
+    paradas seguidas de la misma clase de problema -catalogos que no se
+    enumeraban- y cada una costo una ventana entera.
+
+    Con canarios, una familia rota se descubre en la primera hora, se arregla
+    una vez, y el bulk corre sobre codigo ya validado en esa familia. Es la
+    diferencia entre pagar una recertificacion y pagarla por cada agencia que
+    ya habia pasado.
+
+    La cola larga va al final por la misma razon al reves: un sitio que nos
+    rechaza o que agota el presupuesto no aporta informacion nueva sobre el
+    codigo, y adelante frena a las que si.
+    """
+    canarios: list[str] = []
+    bulk: list[str] = []
+    larga: list[str] = []
+    vistos_por_familia: Counter = Counter()
+
+    conocidos = [c for c in cola if c in resultados]
+    for canonical_id in conocidos:
+        resultado = resultados[canonical_id]
+        if _es_cola_larga(resultado):
+            larga.append(canonical_id)
+            continue
+        familia = _familia(resultado)
+        if vistos_por_familia[familia] < CANARIOS_POR_FAMILIA:
+            vistos_por_familia[familia] += 1
+            canarios.append(canonical_id)
+        else:
+            bulk.append(canonical_id)
+
+    # Las que nunca se certificaron no tienen familia conocida todavia: van al
+    # bulk, que es donde se descubre.
+    bulk.extend(c for c in cola if c not in resultados)
+    return canarios + bulk + larga
+
+
 def latest_results(output: Path) -> dict[str, dict[str, Any]]:
     latest: dict[str, dict[str, Any]] = {}
     for row in read_jsonl(output / "AGENCY_CERTIFICATION_RESULTS.jsonl"):
@@ -320,6 +385,9 @@ def main() -> int:
     else:
         queue, mode_name = full_queue(catalog), "full"
     existing = latest_results(output)
+    if not args.pilot:
+        # El universo no cambia; cambia el orden. Ver `ordenar_para_correr`.
+        queue = ordenar_para_correr(queue, existing)
     def current(key: str) -> bool:
         return is_current_result(existing.get(key, {}), catalog[key])
 
