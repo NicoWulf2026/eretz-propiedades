@@ -38,7 +38,7 @@ from __future__ import annotations
 
 from typing import Any
 
-CONTRATO_VERSION = "property_contract_v1"
+CONTRATO_VERSION = "property_contract_v2"
 
 EXTRACTED = "EXTRACTED"
 SOURCE_NOT_PROVIDED = "SOURCE_NOT_PROVIDED"
@@ -74,7 +74,11 @@ LISTADO = "LISTADO"                  # el listado general
 FILTRO_OPERACION = "FILTRO_OPERACION"
 FILTRO_TIPO = "FILTRO_TIPO"
 FILTRO_PRECIO = "FILTRO_PRECIO"
-FILTRO_CIUDAD = "FILTRO_CIUDAD"
+# v2: `FILTRO_CIUDAD` afirmaba tener una ciudad cuando lo unico que habia era
+# texto en el campo `ciudad` -un barrio contaba igual que una localidad
+# censal-. Se parte en dos alcances que dicen cosas distintas:
+FILTRO_LOCALIDAD = "FILTRO_LOCALIDAD"    # localidad censal DEMOSTRADA
+AREA_BUSQUEDA = "AREA_BUSQUEDA"          # se la puede encontrar por su area
 MAPA = "MAPA"
 
 # Que rechazo de validacion afecta a que campo. La cadena la escribe el
@@ -126,8 +130,13 @@ def estado_de_campo(fila: dict[str, Any], campo: str,
     return AUSENTE_SIN_DIAGNOSTICO
 
 
-def alcances(fila: dict[str, Any]) -> tuple[set[str], list[str]]:
-    """Donde puede aparecer esta propiedad, y por que no en el resto."""
+def alcances(fila: dict[str, Any],
+             geo: dict[str, Any] | None = None) -> tuple[set[str], list[str]]:
+    """Donde puede aparecer esta propiedad, y por que no en el resto.
+
+    `geo` trae las dimensiones canonicas ya resueltas y separadas por nivel.
+    Sin el, la localidad no se afirma: no afirmarla es la respuesta correcta
+    cuando no hay con que demostrarla."""
     razones: list[str] = []
 
     faltan_identidad = [c for c in IDENTIDAD if not _presente(fila.get(c))]
@@ -157,10 +166,24 @@ def alcances(fila: dict[str, Any]) -> tuple[set[str], list[str]]:
         # pesos y la diferencia es de un orden de magnitud.
         razones.append("sin precio con moneda: no entra al filtro por precio")
 
-    if _presente(fila.get("ciudad")):
-        permitidos.add(FILTRO_CIUDAD)
+    # La localidad solo se afirma con evidencia canonica corroborada. Que la
+    # fuente haya escrito algo en el campo `ciudad` no alcanza: `Villa del
+    # Parque` es un barrio de CABA y resolvia a una localidad de Rio Negro.
+    geo = geo or {}
+    if _presente(geo.get("localidad_canonica")):
+        permitidos.add(FILTRO_LOCALIDAD)
     else:
-        razones.append("sin ciudad canonica: no entra al filtro por ciudad")
+        razones.append("sin localidad canonica demostrada: no entra al filtro "
+                       "por localidad")
+
+    # El area de busqueda permite encontrarla sin afirmar que es su ciudad. El
+    # nivel viaja con el valor; sin nivel, un municipio se lee como ciudad.
+    area = (geo.get("area_busqueda") or {}) if isinstance(geo, dict) else {}
+    if _presente(area.get("valor")) and area.get("nivel") not in (None, "SIN_AREA"):
+        permitidos.add(AREA_BUSQUEDA)
+    else:
+        razones.append("sin area de busqueda: no se la puede encontrar por "
+                       "ubicacion")
 
     if _presente(fila.get("latitud")) and _presente(fila.get("longitud")):
         permitidos.add(MAPA)
@@ -171,10 +194,11 @@ def alcances(fila: dict[str, Any]) -> tuple[set[str], list[str]]:
 
 
 def evaluar(fila: dict[str, Any],
-            fuente: dict[str, bool] | None = None) -> dict[str, Any]:
+            fuente: dict[str, bool] | None = None,
+            geo: dict[str, Any] | None = None) -> dict[str, Any]:
     """El veredicto completo del contrato para una propiedad."""
     fuente = fuente or {}
-    permitidos, razones = alcances(fila)
+    permitidos, razones = alcances(fila, geo)
     estados = {c: estado_de_campo(fila, c, fuente.get(c)) for c in TODOS}
     return {
         "contrato_version": CONTRATO_VERSION,

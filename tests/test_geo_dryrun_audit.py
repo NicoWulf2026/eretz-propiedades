@@ -61,8 +61,8 @@ def test_perder_la_ciudad_no_pierde_la_propiedad():
         "operacion": "venta", "tipo_propiedad": "departamento",
         "precio": 100000.0, "moneda": "USD", "ciudad": None})
     assert "FICHA" in permitidos and "LISTADO" in permitidos
-    assert "FILTRO_CIUDAD" not in permitidos
-    assert any("ciudad" in r for r in razones)
+    assert "FILTRO_LOCALIDAD" not in permitidos
+    assert any("localidad" in r for r in razones)
 
 
 def test_la_auditoria_no_escribe_en_ninguna_base(tmp_path, monkeypatch):

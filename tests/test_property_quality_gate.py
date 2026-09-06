@@ -152,10 +152,42 @@ def test_solo_entran_las_propuestas_de_ciudad_aptas(tmp_path):
     assert ciudades_propuestas(tmp_path / "no-existe.jsonl") == {}
 
 
-def test_la_proyeccion_no_reemplaza_al_alcance_real(tmp_path, monkeypatch):
-    """La geografía está resuelta y sin escribir porque la base de producción
-    no responde. Confundir "se puede" con "está" prometería un filtro que hoy
-    no existe, así que el alcance proyectado viaja aparte."""
+def test_la_localidad_sale_de_la_cobertura_y_no_del_campo_crudo(tmp_path, monkeypatch):
+    """`FILTRO_CIUDAD: 5.965` no era cobertura de localidad: era "hay texto en
+    el campo ciudad". Un barrio contaba igual que una localidad censal."""
+    salida = _corrida(tmp_path, monkeypatch, ciudad="Villa del Parque",
+                      nivel="PROVINCIA", valor="Buenos Aires",
+                      municipio="Tres de Febrero")
+    resumen = json.loads(
+        (salida / "PROPERTY_QUALITY_GATE_SUMMARY.json").read_text(encoding="utf-8"))
+    # Hay texto de ciudad, pero no hay localidad demostrada.
+    assert "FILTRO_LOCALIDAD" not in resumen["por_alcance"]
+    assert resumen["por_alcance"]["AREA_BUSQUEDA"] == 1
+    assert resumen["database_writes"] == 0
+    # Y la propiedad existe igual: la regla que no se negocia.
+    assert resumen["publicables"] == resumen["propiedades_evaluadas"] == 1
+
+
+def test_el_municipio_geometrico_sube_el_area_y_no_la_localidad(tmp_path, monkeypatch):
+    """La decisión: un municipio puede servir para descubrir una propiedad,
+    pero no puede fingir ser una localidad. La proyección lo mide sin
+    reemplazar al alcance real."""
+    salida = _corrida(tmp_path, monkeypatch, ciudad=None,
+                      nivel="PROVINCIA", valor="Cordoba",
+                      municipio="La Calera")
+    resumen = json.loads(
+        (salida / "PROPERTY_QUALITY_GATE_SUMMARY.json").read_text(encoding="utf-8"))
+    assert resumen["area_de_busqueda_por_nivel_hoy"] == {"PROVINCIA": 1}
+    assert resumen["area_de_busqueda_por_nivel_proyectada"] == {"MUNICIPIO": 1}
+    assert resumen["propiedades_que_suben_a_nivel_municipio"] == 1
+    # La proyección NO otorga localidad, ni en el alcance real ni en el proyectado.
+    assert "FILTRO_LOCALIDAD" not in resumen["por_alcance"]
+    assert "FILTRO_LOCALIDAD" not in resumen["por_alcance_con_municipio_geometrico"]
+    assert resumen["database_writes"] == 0
+
+
+def _corrida(tmp_path, monkeypatch, *, ciudad, nivel, valor, municipio):
+    """Una propiedad, una cobertura y un sondeo: el gate de punta a punta."""
     db = tmp_path / "p.sqlite3"
     conexion = sqlite3.connect(db)
     conexion.execute("create table rows (row_json text, canonical_id text, "
@@ -163,39 +195,36 @@ def test_la_proyeccion_no_reemplaza_al_alcance_real(tmp_path, monkeypatch):
     fila = {"source_url": "https://alfa.com.ar/p/1", "hash_dedup": "h1",
             "canonical_agency_id": "roomix:alfa", "titulo": "Casa en Venta",
             "operacion": "venta", "tipo_propiedad": "casa",
-            "precio": 100000.0, "moneda": "USD", "ciudad": None}
+            "precio": 100000.0, "moneda": "USD", "ciudad": ciudad}
     conexion.execute("insert into rows values (?,?,?,?)",
                      (json.dumps(fila), "roomix:alfa", "h1", "CANDIDATE"))
     conexion.commit()
     conexion.close()
 
-    auditoria = tmp_path / "audit.jsonl"
-    auditoria.write_text(json.dumps(
-        {"hash_dedup": "h1", "apta_para_escritura": True,
-         "propuesto": {"ciudad": "Morón", "provincia": "Buenos Aires"}},
+    cobertura = tmp_path / "cobertura.jsonl"
+    cobertura.write_text(json.dumps({
+        "hash_dedup": "h1", "localidad_canonica": None,
+        "area_busqueda": {"nivel": nivel, "valor": valor}},
         ensure_ascii=False) + "\n", encoding="utf-8")
+    sondeo = tmp_path / "sondeo.jsonl"
+    sondeo.write_text(json.dumps({
+        "hash_dedup": "h1", "municipio_geometrico": municipio,
+        "departamento_geometrico": municipio}, ensure_ascii=False) + "\n",
+        encoding="utf-8")
 
     salida = tmp_path / "out"
     salida.mkdir()
     paquetes = tmp_path / "paquetes"
     paquetes.mkdir()
+    vacio = tmp_path / "vacio.jsonl"
+    vacio.write_text("", encoding="utf-8")
 
     import sys
     from scripts import property_quality_gate as gate
     monkeypatch.setattr(sys, "argv", [
         "gate", "--db", str(db), "--paquetes", str(paquetes),
-        "--salida", str(salida), "--auditoria-de-ciudad", str(auditoria)])
+        "--salida", str(salida), "--auditoria-de-ciudad", str(vacio),
+        "--cobertura-geografica", str(cobertura),
+        "--sondeo-geometrico", str(sondeo)])
     assert gate.main() == 0
-
-    resumen = json.loads(
-        (salida / "PROPERTY_QUALITY_GATE_SUMMARY.json").read_text(encoding="utf-8"))
-    # Hoy no entra al filtro por ciudad; con la propuesta escrita, sí.
-    assert "FILTRO_CIUDAD" not in resumen["por_alcance"]
-    assert resumen["por_alcance_si_se_escribiera_la_ciudad"]["FILTRO_CIUDAD"] == 1
-    assert resumen["propiedades_que_ganarian_ciudad"] == 1
-    assert resumen["database_writes"] == 0
-
-    # Y la fila sigue diciendo la verdad de hoy.
-    fila_salida = json.loads((salida / "PROPERTY_QUALITY_GATE.jsonl")
-                             .read_text(encoding="utf-8").strip())
-    assert "FILTRO_CIUDAD" not in fila_salida["alcances"]
+    return salida

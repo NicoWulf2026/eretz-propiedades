@@ -91,10 +91,41 @@ def test_un_campo_presente_esta_extraido():
 def test_el_veredicto_declara_su_version():
     """Cambiar el contrato tiene que verse en el artefacto; si no, no se puede
     auditar con qué reglas se decidió."""
-    v = evaluar(_propiedad())
-    assert v["contrato_version"] == "property_contract_v1"
+    geo = {"localidad_canonica": "Rosario",
+           "area_busqueda": {"nivel": "LOCALIDAD", "valor": "Rosario"}}
+    v = evaluar(_propiedad(), geo=geo)
+    assert v["contrato_version"] == "property_contract_v2"
     assert v["publicable"] is True
     assert v["database_writes"] == 0
     assert set(v["alcances"]) == {"FICHA", "LISTADO", "FILTRO_OPERACION",
                                   "FILTRO_TIPO", "FILTRO_PRECIO",
-                                  "FILTRO_CIUDAD", "MAPA"}
+                                  "FILTRO_LOCALIDAD", "AREA_BUSQUEDA", "MAPA"}
+
+
+def test_la_localidad_no_se_afirma_sin_evidencia_canonica():
+    """v2. Que la fuente escriba algo en el campo `ciudad` no la vuelve una
+    localidad: `Villa del Parque` es un barrio de CABA y resolvía a una
+    localidad de Río Negro."""
+    v = evaluar(_propiedad(ciudad="Villa del Parque"))
+    assert "FILTRO_LOCALIDAD" not in v["alcances"]
+    assert any("localidad canonica" in r for r in v["razones_de_exclusion"])
+    # Y sigue existiendo igual: la propiedad no se pierde por eso.
+    assert v["publicable"] is True
+    assert {"FICHA", "LISTADO"} <= set(v["alcances"])
+
+
+def test_un_municipio_da_area_de_busqueda_pero_no_localidad():
+    """La decisión: un municipio puede servir para descubrir una propiedad,
+    pero no puede fingir ser una localidad."""
+    v = evaluar(_propiedad(ciudad=None), geo={
+        "localidad_canonica": None,
+        "area_busqueda": {"nivel": "MUNICIPIO", "valor": "La Calera"}})
+    assert "AREA_BUSQUEDA" in v["alcances"]
+    assert "FILTRO_LOCALIDAD" not in v["alcances"]
+
+
+def test_sin_area_tampoco_se_pierde_la_propiedad():
+    v = evaluar(_propiedad(ciudad=None), geo={
+        "area_busqueda": {"nivel": "SIN_AREA", "valor": None}})
+    assert "AREA_BUSQUEDA" not in v["alcances"]
+    assert v["publicable"] is True
