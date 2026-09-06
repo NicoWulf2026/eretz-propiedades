@@ -12,6 +12,7 @@ import json
 import os
 import sys
 import time
+import urllib.parse
 import urllib.request
 import traceback
 from collections import Counter, defaultdict
@@ -50,6 +51,13 @@ TERMINAL = {
 
 
 CERROJO = "AGENCY_CERTIFICATION_RUNNER.lock"
+# La bandera que corta a TODOS los workers. Un defecto transversal lo es para
+# los dos: si uno para por radio FAMILIA y el otro sigue, el segundo certifica
+# con el mismo codigo sospechado y hay que rehacer su trabajo igual.
+BANDERA_DE_PARO = "AGENCY_CERTIFICATION_STOP.json"
+# Tope duro. Mas de dos procesos contra sitios de inmobiliarias chicas deja de
+# ser paralelismo y pasa a ser una molestia para ellas.
+WORKERS_MAXIMO = 2
 # El latido se refresca al terminar cada inmobiliaria. Sobre 74 corridas
 # medidas, la mas larga tardo 927 s, asi que un latido de mas de una hora
 # significa que ese proceso ya no esta: es cuatro veces el peor caso observado,
@@ -66,14 +74,83 @@ def latir(ruta: Path, canonical_id: str | None) -> None:
     }, ensure_ascii=False), encoding="utf-8")
 
 
-def tomar_cerrojo(output: Path) -> Path:
+def particion(cola: list[str], catalogo: dict[str, dict[str, Any]],
+              worker: int, workers: int) -> list[str]:
+    """Reparte la cola por HOST, no por agencia.
+
+    Por host y no por posicion por una razon concreta: la cortesia se le debe
+    al sitio, y el limitador vive dentro de cada proceso. Si dos workers
+    pudieran tocar el mismo host, le estariamos pidiendo al doble del ritmo que
+    acordamos, sin que ninguno de los dos se entere.
+
+    Sobre las 767 hay 765 hosts distintos y dos hosts con dos agencias cada
+    uno: repartir por host mantiene esas cuatro juntas en el mismo worker y
+    deja el reparto casi perfectamente parejo igual.
+
+    Es deterministico: la misma cola y el mismo numero de workers dan siempre
+    el mismo reparto, asi que reiniciar un worker no le cambia el trabajo.
+    """
+    if workers <= 1:
+        return cola
+    mias = []
+    for canonical_id in cola:
+        anfitrion = host_de(catalogo.get(canonical_id) or {}, canonical_id)
+        digest = hashlib.sha256(anfitrion.encode("utf-8")).hexdigest()
+        if int(digest, 16) % workers == worker:
+            mias.append(canonical_id)
+    return mias
+
+
+def host_de(entrada: dict[str, Any], canonical_id: str) -> str:
+    """El host de la fuente, o el id como sustituto si no se puede leer."""
+    try:
+        url = resolve_identity(entrada, canonical_id).get("official_url")
+    except Exception:  # noqa: BLE001 - repartir nunca puede tumbar la cola
+        url = None
+    anfitrion = urllib.parse.urlparse(url or "").netloc.lower()
+    return anfitrion.removeprefix("www.") or canonical_id
+
+
+def pedir_paro(output: Path, canonical_id: str, triage: dict[str, Any]) -> None:
+    """Deja escrito que hay que parar, para el worker que todavia no se entero."""
+    write_json(output / BANDERA_DE_PARO, {
+        "canonical_agency_id": canonical_id,
+        "componente": triage.get("componente_sospechoso"),
+        "radio": triage.get("radio_estimado"),
+        "evidencia": triage.get("evidencia"),
+        "cuando": time.strftime("%Y-%m-%dT%H:%M:%S")})
+
+
+def hay_que_parar(output: Path) -> dict[str, Any] | None:
+    ruta = output / BANDERA_DE_PARO
+    if not ruta.exists():
+        return None
+    try:
+        return json.loads(ruta.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"canonical_agency_id": "desconocida"}
+
+
+def sufijado(nombre: str, worker: int, workers: int) -> str:
+    """El mismo nombre de archivo cuando hay un worker; uno propio si hay dos.
+
+    Con un solo worker no cambia nada, asi que las corridas viejas y sus
+    artefactos siguen siendo los mismos archivos.
+    """
+    if workers <= 1:
+        return nombre
+    raiz, punto, extension = nombre.partition(".")
+    return f"{raiz}.w{worker}{punto}{extension}"
+
+
+def tomar_cerrojo(output: Path, worker: int = 0, workers: int = 1) -> Path:
     """Impide dos runners sobre el mismo checkpoint.
 
     Dos procesos escribiendo el mismo progreso se pisan el cursor y le vuelven
     a pedir a las mismas fuentes el mismo inventario: rompe la recuperabilidad
     y golpea sitios ajenos al doble del ritmo que acordamos con ellos.
     """
-    ruta = output / CERROJO
+    ruta = output / sufijado(CERROJO, worker, workers)
     if ruta.exists():
         try:
             previo = json.loads(ruta.read_text(encoding="utf-8"))
@@ -370,10 +447,20 @@ def main() -> int:
                         default=PRESUPUESTO_POR_FUENTE)
     parser.add_argument("--max-listings", type=int, default=0)
     parser.add_argument("--continue-after-fix", action="store_true")
+    parser.add_argument("--worker", type=int, default=0,
+                        help="cual de los workers es este (0..N-1)")
+    parser.add_argument("--workers", type=int, default=1,
+                        help=f"cuantos workers en paralelo (maximo {WORKERS_MAXIMO})")
     parser.add_argument("--limit", type=int, default=0,
                         help="cuantas inmobiliarias procesar en esta corrida "
                              "(0 = hasta agotar la cola)")
     args = parser.parse_args()
+    if not 1 <= args.workers <= WORKERS_MAXIMO:
+        raise SystemExit(
+            f"--workers tiene que estar entre 1 y {WORKERS_MAXIMO}: mas procesos "
+            f"contra sitios de inmobiliarias chicas dejan de ser paralelismo.")
+    if not 0 <= args.worker < args.workers:
+        raise SystemExit(f"--worker tiene que estar entre 0 y {args.workers - 1}")
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
     catalog = load_catalog(Path(args.v2_dir), Path(args.data_dir),
@@ -388,6 +475,15 @@ def main() -> int:
     if not args.pilot:
         # El universo no cambia; cambia el orden. Ver `ordenar_para_correr`.
         queue = ordenar_para_correr(queue, existing)
+    # La cola COMPLETA se conserva para el checkpoint y el resumen: repartir no
+    # puede cambiar de que universo se esta hablando.
+    cola_completa = queue
+    if args.workers > 1:
+        queue = particion(queue, catalog, args.worker, args.workers)
+        mode_name = f"{mode_name}-w{args.worker}de{args.workers}"
+        print(f"### worker {args.worker} de {args.workers}: "
+              f"{len(queue)} de {len(cola_completa)} inmobiliarias ###",
+              flush=True)
     def current(key: str) -> bool:
         return is_current_result(existing.get(key, {}), catalog[key])
 
@@ -401,7 +497,8 @@ def main() -> int:
     pending = [key for key in queue if not current(key)]
     if args.limit > 0:
         pending = pending[:args.limit]
-    progress_path = output / "AGENCY_CERTIFICATION_PROGRESS.json"
+    progress_path = output / sufijado("AGENCY_CERTIFICATION_PROGRESS.json",
+                                     args.worker, args.workers)
     previous_progress: dict[str, Any] = {}
     if progress_path.exists():
         try:
@@ -420,10 +517,24 @@ def main() -> int:
         current_count=sum(current(key) for key in queue),
         started_at=started_at, global_cursor=global_cursor,
         last_terminal_agency=last_terminal))
-    cerrojo = tomar_cerrojo(output)
+    cerrojo = tomar_cerrojo(output, args.worker, args.workers)
+    # Una bandera de una corrida anterior no puede frenar la siguiente: si
+    # quedo puesta, el defecto ya se atendio o el preflight lo habria visto.
+    (output / BANDERA_DE_PARO).unlink(missing_ok=True)
     stopped_on: str | None = None
     defectos_pendientes: list[dict[str, Any]] = []
     for index, canonical_id in enumerate(pending, 1):
+        # Un defecto transversal lo es para los dos workers. Se mira ANTES de
+        # empezar la siguiente, que es el unico momento en que parar no
+        # desperdicia una corrida a medias.
+        ajeno = hay_que_parar(output) if args.workers > 1 else None
+        if ajeno:
+            stopped_on = ajeno.get("canonical_agency_id")
+            print(json.dumps({"para_por_otro_worker": stopped_on,
+                              "componente": ajeno.get("componente"),
+                              "radio": ajeno.get("radio")},
+                             ensure_ascii=False), flush=True)
+            break
         latir(cerrojo, canonical_id)
         write_json(progress_path, progress_payload(
             mode=mode_name, universe=len(catalog), queue=queue,
@@ -497,6 +608,11 @@ def main() -> int:
             corta, motivo_lote = debe_cortar_por_lote(defectos_pendientes)
             if triage["decision"] == STOP:
                 stopped_on = canonical_id
+                # El otro worker no puede enterarse solo: un defecto
+                # transversal lo es para los dos, y si sigue certificando con
+                # el codigo sospechado hay que rehacer su trabajo igual.
+                if args.workers > 1:
+                    pedir_paro(output, canonical_id, triage)
                 print(json.dumps({
                     "detiene": canonical_id,
                     "motivo": "radio transversal",
@@ -509,6 +625,11 @@ def main() -> int:
                 # El defecto era continuable, pero el lote acumulado ya no.
                 # Se corta ACA, que es un checkpoint recien escrito.
                 stopped_on = canonical_id
+                if args.workers > 1:
+                    pedir_paro(output, canonical_id,
+                               {"componente_sospechoso": "corte por lote",
+                                "radio_estimado": triage["radio_estimado"],
+                                "evidencia": motivo_lote})
                 print(json.dumps({"detiene": canonical_id,
                                   "motivo": "corte por lote",
                                   "detalle": motivo_lote},

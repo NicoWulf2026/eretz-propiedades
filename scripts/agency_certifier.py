@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import sqlite3
 import sys
@@ -260,10 +261,23 @@ def write_json(path: Path, value: Any) -> None:
 
 
 def append_jsonl(path: Path, value: dict[str, Any]) -> None:
+    """Agrega una linea, con una sola llamada al sistema.
+
+    Con dos workers, dos procesos agregan al mismo artefacto. Un `write`
+    de Python puede partirse en varias llamadas y dejar media linea de un
+    proceso adentro de la linea del otro: un JSONL corrupto justo en el
+    archivo que es la fuente de verdad de las certificaciones.
+
+    Abriendo con `O_APPEND` y escribiendo el renglon entero de una vez, el
+    sistema operativo serializa la escritura y cada linea llega completa.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(value, ensure_ascii=False) + "\n")
-        handle.flush()
+    renglon = (json.dumps(value, ensure_ascii=False) + "\n").encode("utf-8")
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND)
+    try:
+        os.write(descriptor, renglon)
+    finally:
+        os.close(descriptor)
 
 
 def write_jsonl(path: Path, rows: Iterable[dict[str, Any]]) -> None:
