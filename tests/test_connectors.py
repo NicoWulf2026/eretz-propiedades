@@ -3849,3 +3849,59 @@ def test_si_la_subpagina_y_la_raiz_fallan_se_propaga_el_error():
 
     with pytest.raises(B.ErrorTransitorio):
         c.discover(fuente(url="https://alfa.com.ar/page/empresa-1"))
+
+
+def test_un_desplegable_de_navegacion_tambien_es_un_indice_de_catalogo():
+    """`amipropiedades.com.ar` publica sus 27 propiedades en un `<select>`
+    "POR CÓDIGO" y en ningún `<a>`. Leyendo sólo `href`, un sitio entero con
+    catálogo declarado figuraba como SIN_INVENTARIO, y el triage lo paró como
+    posible pérdida de inventario —que es exactamente lo que era—.
+
+    Además sus fichas viven al MISMO nivel que su categoría
+    (`/propiedades/casas.html` y `/propiedades/146-....html`), así que la regla
+    de profundidad las habría descartado igual. Por eso el desplegable no pasa
+    por esa regla: no hay nada que inferir cuando el sitio puso la ficha en su
+    propio índice.
+    """
+    from connectors.generico import GenericoConnector as G
+
+    pagina = "https://ami.com.ar/propiedades/casas.html"
+    cuerpo = """<select name="byCode" onchange="redirect(this.value);">
+      <option value="0">POR CODIGO</option>
+      <option value="../propiedades/239-venta-casa-5-ambientes.html">C1</option>
+      <option value="../propiedades/375-venta-casa-5-ambientes.html">C11</option>
+      <option value="../propiedades/190-venta-casa-3-ambientes.html">C4</option>
+    </select>"""
+    fichas = G._catalogo_de_selector(cuerpo, pagina, "https://ami.com.ar")
+
+    assert fichas == [
+        "https://ami.com.ar/propiedades/239-venta-casa-5-ambientes.html",
+        "https://ami.com.ar/propiedades/375-venta-casa-5-ambientes.html",
+        "https://ami.com.ar/propiedades/190-venta-casa-3-ambientes.html"]
+
+
+def test_un_desplegable_corto_no_es_un_catalogo():
+    """Con uno o dos destinos puede ser un selector de idioma, de sucursal o
+    de moneda. Tomarlo por catálogo inventaría inventario."""
+    from connectors.generico import GenericoConnector as G
+
+    idiomas = """<select><option value="/es/index.html">ES</option>
+      <option value="/en/index.html">EN</option></select>"""
+    assert G._catalogo_de_selector(idiomas, "https://x.com/", "https://x.com") == []
+
+    # Y un desplegable sin destinos navegables tampoco.
+    filtro = """<select><option value="casa">Casa</option>
+      <option value="depto">Depto</option>
+      <option value="ph">PH</option></select>"""
+    assert G._catalogo_de_selector(filtro, "https://x.com/", "https://x.com") == []
+
+
+def test_el_desplegable_no_sale_del_sitio():
+    """Un destino de otro dominio no es inventario de esta inmobiliaria."""
+    from connectors.generico import GenericoConnector as G
+
+    mixto = """<select>
+      <option value="https://otra.com/p/1.html">A</option>
+      <option value="https://otra.com/p/2.html">B</option>
+      <option value="https://otra.com/p/3.html">C</option></select>"""
+    assert G._catalogo_de_selector(mixto, "https://x.com/", "https://x.com") == []

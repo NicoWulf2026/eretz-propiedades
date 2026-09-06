@@ -155,3 +155,72 @@ def equivalentes(a: str | None, b: str | None) -> bool:
             if re.fullmatch(regex, otro):
                 return True
     return False
+
+
+# Las palabras que el pipeline lee de una ficha. Cuando la fuente perdio un
+# byte -`Ba?os`- el caracter no se puede reconstruir en general, pero SI se
+# puede reconocer contra un vocabulario declarado: si el token coincide con
+# `banos` en todo salvo en la posicion perdida, es esa palabra.
+#
+# Esto reemplaza a la tabla de cuatro reemplazos escrita a mano que cubria
+# `Banos`/`Bano` y nada mas. El vocabulario se declara una vez y vale para
+# todas las reglas, que es la diferencia entre una etapa del pipeline y una
+# defensa por regla.
+VOCABULARIO_DE_CAMPOS = (
+    "baño", "baños", "dormitorio", "dormitorios", "habitación", "habitaciones",
+    "ambiente", "ambientes", "descripción", "ubicación", "superficie",
+    "antigüedad", "cochera", "cocheras", "garage", "toilette", "toilettes",
+    "balcón", "balcones", "año", "años", "construcción", "categoría",
+    "orientación", "disposición", "expensas", "operación", "código",
+)
+
+
+def _canonico_de(token: str, vocabulario: tuple[str, ...]) -> str | None:
+    """La palabra del vocabulario que este token roto puede ser, si es una sola.
+
+    Si dos palabras distintas encajan, no se elige: quedarse con el token roto
+    es preferible a inventar cual de las dos era.
+    """
+    if REEMPLAZO not in token:
+        return None
+    largo = len(token)
+    candidatas = []
+    for palabra in vocabulario:
+        if len(palabra) != largo:
+            continue
+        if all(t == REEMPLAZO or t == p
+               for t, p in zip(token.casefold(), palabra.casefold())):
+            candidatas.append(palabra)
+    if len(candidatas) != 1:
+        return None
+    return candidatas[0]
+
+
+def _con_la_forma_de(original: str, canonico: str) -> str:
+    """Devuelve el canonico respetando mayusculas del original."""
+    if original.isupper():
+        return canonico.upper()
+    if original[:1].isupper():
+        return canonico[:1].upper() + canonico[1:]
+    return canonico
+
+
+def normalizar_campos(texto: str | None,
+                      vocabulario: tuple[str, ...] = VOCABULARIO_DE_CAMPOS
+                      ) -> str:
+    """Etiquetas visibles legibles otra vez, sin tabla escrita a mano.
+
+    Primero repara el mojibake -que se puede demostrar-, y despues reconoce
+    contra el vocabulario los tokens donde la fuente ya perdio el byte. Lo que
+    no encaja con exactamente una palabra del vocabulario se deja como esta.
+    """
+    reparado = reparar(texto) or ""
+    if REEMPLAZO not in reparado:
+        return reparado
+
+    def _pieza(m: re.Match) -> str:
+        token = m.group(0)
+        canonico = _canonico_de(token, vocabulario)
+        return _con_la_forma_de(token, canonico) if canonico else token
+
+    return re.sub(r"[^\s<>=\"'/]+", _pieza, reparado)

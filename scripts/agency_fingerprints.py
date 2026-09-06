@@ -84,6 +84,7 @@ GENERIC_STRATEGY_METHODS = {
     # Catalogo estatico repartido en paginas de categoria.
     "generic/category_html": {
         "_rutas_de_categoria", "_catalogo_por_categorias",
+        "_catalogo_de_selector",
     },
 }
 
@@ -220,6 +221,11 @@ def fingerprint_components(connector: str, strategy: str) -> dict[str, bytes]:
         # invalidar la certificacion como cualquier otro cambio de extraccion.
         "shared/geografia": _semantic_file(
             ROOT / "connectors" / "geografia.py"),
+        # La normalizacion de texto decide que etiqueta se reconoce y que dos
+        # valores son el mismo. Es codigo semantico y va en la huella desde el
+        # primer dia: un modulo nuevo que nadie registra es exactamente el
+        # agujero que tuvo `discover()` cuando era semantico y quedaba afuera.
+        "shared/texto": _semantic_file(ROOT / "connectors" / "texto.py"),
     }
     if connector != "generico":
         components[f"connector/{connector}"] = _semantic_file(

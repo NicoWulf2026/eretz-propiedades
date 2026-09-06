@@ -31,6 +31,7 @@ from html import unescape
 from typing import Any, Iterator
 
 from .coherencia import NO_ES_FOTO, revisar
+from .texto import normalizar_campos
 from .formularios import bajar_formulario
 from .base import (Bloqueado, Connector, ErrorPermanente, ErrorTransitorio,
                    Fuente, PropiedadNormalizada, a_numero, detectar_moneda,
@@ -278,12 +279,20 @@ def sin_filtros_catalogo(html: str) -> str:
 def normalizar_texto_campos(texto: str) -> str:
     """Repara etiquetas visibles rotas por decodificacion legacy.
 
-    Algunos portales sirven ``Ba�os``/``Ba�o`` aunque el resto del HTML
-    sea utilizable. La misma normalizacion se comparte con el auditor para que
-    una senal de fuente y su extraccion nunca usen alfabetos distintos.
+    Delega en `connectors.texto`, que es la UNICA etapa de normalizacion del
+    pipeline. Antes esto era una tabla escrita a mano con cuatro reemplazos
+    -`Ba�os`, `ba�os`, `Ba�o`, `ba�o`- y nada mas: cubria la palabra que
+    alguien recordo el dia que la vio romperse.
+
+    La version central repara el mojibake que se puede demostrar y reconoce
+    contra un vocabulario declarado los tokens donde la fuente ya perdio el
+    byte, asi que ahora tambien vuelven `Descripcion`, `Antiguedad`, `Codigo`,
+    `Ano` y el resto del vocabulario, sin escribir una linea por palabra.
+
+    La misma normalizacion se comparte con el auditor para que una senal de
+    fuente y su extraccion nunca usen alfabetos distintos.
     """
-    return (texto or "").replace("Ba�os", "Baños").replace("ba�os", "baños") \
-        .replace("Ba�o", "Baño").replace("ba�o", "baño")
+    return normalizar_campos(texto)
 
 
 
@@ -825,6 +834,41 @@ class GenericoConnector(Connector):
                 vistos.append(limpio)
         return vistos[:MAX_CATEGORIAS]
 
+    @staticmethod
+    def _catalogo_de_selector(cuerpo: str, pagina: str,
+                              base: str) -> list[str]:
+        """Fichas enlazadas desde un `<select>` de navegacion.
+
+        `amipropiedades.com.ar` publica sus 27 propiedades en un desplegable
+        "POR CODIGO" -`<option value="../propiedades/375-venta-casa...html">`-
+        y no en un solo `<a>`. Leyendo unicamente `href`, un sitio entero con
+        catalogo declarado figuraba como SIN_INVENTARIO y el triage lo paro
+        como posible perdida de inventario, que es exactamente lo que era.
+
+        No hace falta adivinar por la forma de la URL: un `<select>` cuyas
+        opciones apuntan a varios documentos del propio sitio ES el indice del
+        catalogo. Lo dice el sitio con su propia navegacion, y eso es mejor
+        evidencia que cualquier patron que pudieramos inventar.
+
+        Se exigen TRES destinos distintos: con uno o dos, el desplegable puede
+        ser un selector de idioma, de sucursal o de moneda.
+        """
+        fichas: list[str] = []
+        for bloque in re.finditer(r"(?is)<select\b[^>]*>(.*?)</select>", cuerpo):
+            destinos: list[str] = []
+            for opcion in re.finditer(
+                    r'(?is)<option[^>]*\bvalue=["\']([^"\']+)["\']',
+                    bloque.group(1)):
+                crudo = unescape(opcion.group(1)).strip()
+                if not re.search(r"\.(?:html?|php|aspx)$", crudo, re.I):
+                    continue
+                destino = urllib.parse.urljoin(pagina, crudo).split("#")[0]
+                if destino.startswith(base) and destino not in destinos:
+                    destinos.append(destino)
+            if len(destinos) >= 3:
+                fichas.extend(destinos)
+        return fichas
+
     def _catalogo_por_categorias(self, html: str, base: str,
                                  propia: "re.Pattern | None") -> list[str] | None:
         """Fichas alcanzables recorriendo las paginas de categoria.
@@ -848,6 +892,17 @@ class GenericoConnector(Connector):
             except (ErrorTransitorio, ErrorPermanente, Bloqueado):
                 continue
         for categoria, cuerpo in paginas:
+            # La navegacion por desplegable no pasa por la regla de
+            # profundidad: no hay nada que inferir cuando el sitio puso la
+            # ficha en su propio indice. En `amipropiedades.com.ar` la ficha
+            # vive ADEMAS al mismo nivel que su categoria
+            # -`/propiedades/casas.html` y `/propiedades/146-....html`-, asi
+            # que la regla de profundidad la habria descartado igual.
+            for destino in self._catalogo_de_selector(cuerpo, categoria, base):
+                if destino in vistas or destino in categorias:
+                    continue
+                vistas.add(destino)
+                fichas.append(destino)
             for coincidencia in re.finditer(r'href=["\']([^"\']+)["\']', cuerpo):
                 destino = urllib.parse.urljoin(categoria, unescape(coincidencia.group(1)))
                 if not destino.startswith(base):
