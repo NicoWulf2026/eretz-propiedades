@@ -226,6 +226,13 @@ def fingerprint_components(connector: str, strategy: str) -> dict[str, bytes]:
         # primer dia: un modulo nuevo que nadie registra es exactamente el
         # agujero que tuvo `discover()` cuando era semantico y quedaba afuera.
         "shared/texto": _semantic_file(ROOT / "connectors" / "texto.py"),
+        # El guardian de coherencia decide que atributos se descartan
+        # -dormitorios>ambientes, cubierta>total, una foto que no es foto-.
+        # `generico.py` lo importa y no era componente de ninguna huella:
+        # cambiar esa regla habria cambiado lo que se extrae sin invalidar una
+        # sola certificacion. Tercera vez que aparece codigo semantico afuera.
+        "shared/coherencia": _semantic_file(
+            ROOT / "connectors" / "coherencia.py"),
     }
     if connector != "generico":
         components[f"connector/{connector}"] = _semantic_file(
