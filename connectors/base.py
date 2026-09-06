@@ -46,7 +46,12 @@ CONNECTOR_API_VERSION = "connector_v1"
 # fecha entre dos corridas -varias con el mismo 04:00:29, o sea un cron- sin que
 # cambiara una sola letra del aviso. Con ella adentro, MODIFICADA deja de
 # significar "cambio algo" y pasa a significar "el sitio corrio su tarea nocturna".
-NO_SON_CONTENIDO = ("raw_html_len", "fetched_at", "modificado_en_fuente")
+NO_SON_CONTENIDO = ("raw_html_len", "fetched_at", "modificado_en_fuente",
+                    # Geografia DERIVADA: se calcula a partir de campos que ya
+                    # entran en la huella. Ver HUELLA_VERSION 5.
+                    "geo", "ciudad_publicada", "ciudad_match",
+                    "ciudad_provenance", "ciudad_campo_de_origen",
+                    "localidad_id", "localidad_fuente")
 
 # Version de lo que se COMPARA. Se sube cada vez que cambia que entra en la
 # huella o que se guarda: excluir un campo, ordenar una lista, normalizar un
@@ -64,11 +69,62 @@ NO_SON_CONTENIDO = ("raw_html_len", "fetched_at", "modificado_en_fuente")
 #   4  se descartan las imagenes de la PAGINA: las que aparecen en la mitad o
 #      mas del catalogo de la inmobiliaria y por lo tanto no son de ninguna
 #      propiedad -iconos, botones, banners: el 15,8% de las referencias-
-HUELLA_VERSION = 4
+#   5  la geografia DERIVADA sale de la huella de contenido. Sus insumos
+#      -ciudad, barrio, provincia, lat, lon- ya estan hasheados, asi que
+#      agregarla no aporta informacion sobre si la FUENTE cambio, y en cambio
+#      hacia que cualquier mejora del resolver devolviera el inventario entero
+#      como MODIFICADA. Que cambie el resolver es asunto de la huella de
+#      estrategia y de la recertificacion, no del incremental.
+HUELLA_VERSION = 5
 
 # Lo que devuelve `registrar` cuando la huella guardada se calculo con otra
 # formula: no se puede afirmar que cambio ni que no cambio.
 BASELINE_INCOMPATIBLE = "BASELINE_INCOMPATIBLE"
+
+# --------------------------------------------------------------------------
+# Geografia canonica: dimensiones separadas y una capa de busqueda aparte
+# --------------------------------------------------------------------------
+# La regla que ordena todo: NO INVENTAR GEOGRAFIA. Un municipio puede servir
+# para descubrir una propiedad, pero no puede fingir ser una localidad.
+#
+# Un solo campo `ciudad` no podia sostener a la vez "esto es una localidad
+# censal demostrada" y "esto es lo que escribio la inmobiliaria": con el campo
+# plano, `Villa del Parque` -barrio de CABA- contaba igual que una localidad.
+DIMENSIONES_GEO = ("provincia", "departamento", "municipio", "localidad",
+                   "barrio")
+
+# Procedencias, de mas fuerte a mas debil.
+GEO_SOURCE_STRUCTURED = "SOURCE_STRUCTURED"   # la fuente lo publica en su campo
+GEO_SOURCE_TEXT = "SOURCE_TEXT"               # lo leimos de su texto
+GEO_CANONICAL = "CANONICAL_NORMALIZED"        # resuelto contra el catalogo
+GEO_GEOMETRY = "GEOMETRY"                     # resuelto por geometria oficial
+GEO_UNKNOWN = "UNKNOWN"                       # no se pudo demostrar
+
+# Niveles del area de busqueda, de mas preciso a menos. El nivel viaja SIEMPRE
+# junto al valor: sin el, un municipio en la caja de busqueda se lee como una
+# ciudad, que es justamente lo que no se quiere.
+AREA_LOCALIDAD = "LOCALIDAD"
+AREA_MUNICIPIO = "MUNICIPIO"
+AREA_DEPARTAMENTO = "DEPARTAMENTO"
+AREA_PROVINCIA = "PROVINCIA"
+AREA_SIN = "SIN_AREA"
+
+# Cuando la coordenada y lo que publico la fuente se contradicen, no se elige:
+# una de las dos esta mal y quedarse con cualquiera seria decidir sin
+# evidencia. Se declara el conflicto y se conservan las dos.
+GEO_CONFLICT = "GEO_CONFLICT"
+
+
+def dimension_geo(valor=None, *, id=None, procedencia=GEO_UNKNOWN,
+                  confianza=None, evidencia=None, rechazo=None) -> dict:
+    """Una dimension geografica con todo lo que hace falta para auditarla.
+
+    `rechazo` es la mitad que suele faltar. Sin ella, "no se pudo demostrar" y
+    "nunca se intento" se ven iguales, y confundir esas dos ausencias es como
+    se escribe geografia inventada.
+    """
+    return {"id": id, "nombre": valor, "procedencia": procedencia,
+            "confianza": confianza, "evidencia": evidencia, "rechazo": rechazo}
 
 # --------------------------------------------------------------------------
 # Reuso del pipeline existente: la identidad de propiedad y los vocabularios
@@ -171,6 +227,11 @@ class PropiedadNormalizada:
     imagenes: list[str] = field(default_factory=list)
     # --- lo que va a datos_extra ---
     extra: dict[str, Any] = field(default_factory=dict)
+    # Las cinco dimensiones canonicas, cada una con procedencia, confianza,
+    # evidencia y rechazo, mas el area de busqueda derivada. Un solo campo
+    # anidado en vez de veinticinco sueltos: la forma la fija `dimension_geo`
+    # y se puede versionar entera.
+    geo: dict[str, Any] = field(default_factory=dict)
     # --- procedencia ---
     source_status: str = "activa"
     inmobiliaria_id: int | None = None
@@ -211,8 +272,13 @@ class PropiedadNormalizada:
         Reordenar no es un cambio. Agregar o sacar texto si, y eso se sigue
         detectando porque cambia el conjunto de palabras.
         """
+        # `geo` queda afuera por la misma razon que `scraped_at`: es DERIVADO.
+        # Sus insumos -ciudad, barrio, provincia, lat, lon- ya estan aca, asi
+        # que no agrega informacion sobre si la fuente cambio, y si entrara,
+        # cualquier mejora del resolver devolveria el inventario entero como
+        # MODIFICADA. Ver HUELLA_VERSION 5.
         campos = {k: v for k, v in asdict(self).items()
-                  if k not in ("scraped_at", "provenance", "extra")}
+                  if k not in ("scraped_at", "provenance", "extra", "geo")}
         campos["extra"] = {k: v for k, v in self.extra.items()
                            if k not in NO_SON_CONTENIDO}
         if isinstance(campos.get("descripcion"), str):
@@ -737,6 +803,8 @@ class Connector:
             prop.ciudad = entidad.official_name
             prop.extra["localidad_id"] = entidad.official_id
             prop.extra["localidad_fuente"] = entidad.fuente
+            Connector._escribir_dimensiones(prop, entidad, resolucion,
+                                            desde_barrio, publicada)
             if desde_barrio:
                 # Era una ciudad, no un barrio: dejarla duplicada en `barrio`
                 # afirmaria un barrio que no existe.
@@ -775,10 +843,98 @@ class Connector:
 
         if desde_barrio:
             # No resolvio: es lo que decia ser, un barrio. Se queda donde esta.
+            Connector._escribir_dimensiones(prop, None, resolucion,
+                                            desde_barrio, publicada)
             return
         prop.ciudad = None
         if resolucion.certeza == GEO_NO_ENCONTRADA and not prop.barrio:
             prop.barrio = publicada
+        Connector._escribir_dimensiones(prop, None, resolucion,
+                                        desde_barrio, publicada)
+
+    @staticmethod
+    def _escribir_dimensiones(prop: "PropiedadNormalizada", entidad,
+                              resolucion, desde_barrio: bool,
+                              publicada: str) -> None:
+        """Llena las cinco dimensiones y deriva el area de busqueda.
+
+        Ninguna dimension se rellena con otra. Si la localidad no se puede
+        demostrar queda en UNKNOWN aunque haya municipio: el municipio se
+        guarda en SU campo, donde no engana a nadie.
+        """
+        geo: dict[str, Any] = {}
+
+        if entidad is not None:
+            geo["localidad"] = dimension_geo(
+                entidad.official_name, id=entidad.official_id,
+                procedencia=GEO_CANONICAL, confianza=resolucion.certeza,
+                evidencia=f"'{publicada}' resolvio contra {entidad.fuente}")
+            # Los ids de GeoRef son jerarquicos -`06` provincia, `06280`
+            # departamento, `06280040` localidad-, asi que el departamento no
+            # se deduce: viene adentro del id de la localidad.
+            geo["departamento"] = dimension_geo(
+                getattr(entidad, "departamento", None),
+                id=getattr(entidad, "departamento_id", None),
+                procedencia=(GEO_CANONICAL
+                             if getattr(entidad, "departamento_id", None)
+                             else GEO_UNKNOWN),
+                evidencia="derivado del id de la localidad")
+            geo["municipio"] = dimension_geo(
+                getattr(entidad, "municipio", None),
+                id=getattr(entidad, "municipio_id", None),
+                procedencia=(GEO_CANONICAL
+                             if getattr(entidad, "municipio_id", None)
+                             else GEO_UNKNOWN),
+                rechazo=(None if getattr(entidad, "municipio_id", None)
+                         else "el catalogo no declara gobierno local"))
+        else:
+            geo["localidad"] = dimension_geo(
+                None, procedencia=GEO_UNKNOWN,
+                rechazo=f"'{publicada}' no se pudo demostrar: "
+                        f"{resolucion.certeza}")
+            geo["departamento"] = dimension_geo(None)
+            geo["municipio"] = dimension_geo(None)
+
+        provincia = prop.provincia or getattr(entidad, "provincia", None)
+        geo["provincia"] = dimension_geo(
+            provincia,
+            id=getattr(entidad, "provincia_id", None),
+            procedencia=(GEO_SOURCE_TEXT if prop.provincia
+                         else (GEO_CANONICAL if provincia else GEO_UNKNOWN)))
+
+        # Barrio es una dimension propia y NO se resuelve contra el catalogo de
+        # localidades: GeoRef no cataloga barrios. El texto que publico la
+        # fuente se conserva aunque no se pueda canonizar, porque una persona
+        # que busca en Villa del Parque reconoce el nombre y esconderlo pierde
+        # informacion real sin ganar nada.
+        barrio_fuente = prop.barrio if not desde_barrio else publicada
+        geo["barrio"] = dimension_geo(
+            barrio_fuente,
+            procedencia=GEO_SOURCE_TEXT if barrio_fuente else GEO_UNKNOWN,
+            rechazo=(None if not barrio_fuente else
+                     "no se canoniza: el catalogo de localidades no cataloga "
+                     "barrios"))
+
+        geo["area_busqueda"] = Connector._area_de_busqueda(geo)
+        prop.geo = geo
+
+    @staticmethod
+    def _area_de_busqueda(geo: dict[str, Any]) -> dict[str, Any]:
+        """La capa de descubrimiento, derivada y con el nivel explicito.
+
+        Baja de nivel hasta encontrar algo demostrado, y NUNCA rellena
+        `localidad` al hacerlo: son dos caminos que no se tocan. Uno afirma
+        donde esta la propiedad; el otro permite encontrarla.
+        """
+        for nivel, dimension in ((AREA_LOCALIDAD, "localidad"),
+                                 (AREA_MUNICIPIO, "municipio"),
+                                 (AREA_DEPARTAMENTO, "departamento"),
+                                 (AREA_PROVINCIA, "provincia")):
+            dato = geo.get(dimension) or {}
+            if dato.get("nombre") and dato.get("procedencia") != GEO_UNKNOWN:
+                return {"nivel": nivel, "nombre": dato["nombre"],
+                        "id": dato.get("id"), "origen": dimension}
+        return {"nivel": AREA_SIN, "nombre": None, "id": None, "origen": None}
 
     def anotar_error(self, fuente: Fuente, etapa: str, error: Exception) -> None:
         self.errores.append({

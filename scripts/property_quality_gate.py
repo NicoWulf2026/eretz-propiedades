@@ -147,8 +147,6 @@ def main() -> int:
     # sigue a la canonica en vez de repetir la ruta.
     ap.add_argument("--salida", default=str(base_canonica().parent))
     ap.add_argument("--limite", type=int, default=0)
-    ap.add_argument("--sondeo-geometrico",
-                    default=r"D:\INMO CAPITAL\ERETZ_GEO\GEO_REVERSE_PROBE.jsonl")
     ap.add_argument("--cobertura-geografica",
                     default=r"D:\INMO CAPITAL\ERETZ_GEO\GEO_COVERAGE_AUDIT.jsonl")
     ap.add_argument("--auditoria-de-ciudad",
@@ -160,7 +158,6 @@ def main() -> int:
     cobertura = cobertura_por_agencia(Path(args.paquetes))
     propuestas = ciudades_propuestas(Path(args.auditoria_de_ciudad))
     geo_por_hash = geografia_por_propiedad(Path(args.cobertura_geografica))
-    geometria = geografia_por_propiedad(Path(args.sondeo_geometrico))
     conexion = sqlite3.connect(f"file:{Path(args.db).as_posix()}?mode=ro", uri=True)
     consulta = ("select row_json, canonical_id, hash_dedup from rows "
                 "where status = 'CANDIDATE'")
@@ -169,10 +166,8 @@ def main() -> int:
 
     destino = Path(args.salida) / "PROPERTY_QUALITY_GATE.jsonl"
     alcances: Counter = Counter()
-    proyectados: Counter = Counter()
     niveles_actuales: Counter = Counter()
-    niveles_proyectados: Counter = Counter()
-    con_municipio_geometrico = 0
+    en_conflicto = 0
     razones: Counter = Counter()
     estados: Counter = Counter()
     con_diagnostico = sin_diagnostico = 0
@@ -200,29 +195,12 @@ def main() -> int:
             # geografia esta resuelta y sin escribir porque la base de
             # produccion no responde, y confundir "se puede" con "esta" es
             # prometer un filtro que hoy no existe.
-            # La proyeccion ya NO es "si se escribieran las propuestas de
-            # ciudad": la cobertura aplica la misma regla de corroboracion que
-            # decide cuales son aptas, asi que esas ya estan contadas arriba.
-            # Lo que falta medir es el escalon siguiente: el municipio
-            # geometrico como AREA DE BUSQUEDA, que no afirma localidad.
-            geo_proyectada = dict(geo or {})
-            sonda = geometria.get(hash_dedup)
-            nivel_actual = ((geo or {}).get("area_busqueda") or {}).get("nivel")
-            if sonda and nivel_actual in (None, "SIN_AREA", "PROVINCIA"):
-                municipio = sonda.get("municipio_geometrico")
-                departamento = sonda.get("departamento_geometrico")
-                if municipio:
-                    geo_proyectada["area_busqueda"] = {
-                        "nivel": "MUNICIPIO", "valor": municipio}
-                    con_municipio_geometrico += 1
-                elif departamento:
-                    geo_proyectada["area_busqueda"] = {
-                        "nivel": "DEPARTAMENTO", "valor": departamento}
-            for alcance in evaluar(fila, fuente, geo_proyectada)["alcances"]:
-                proyectados[alcance] += 1
-            niveles_proyectados[
-                (geo_proyectada.get("area_busqueda") or {}).get("nivel")
-                or "SIN_AREA"] += 1
+            # El nivel del area y el estado geografico salen de la cobertura,
+            # que ya aplico la geometria oficial y la regla de conflicto. El
+            # gate NO recalcula geografia: dos lugares decidiendo lo mismo
+            # producen dos verdades, y tarde o temprano difieren.
+            if (geo or {}).get("estado_geografico") == "GEO_CONFLICT":
+                en_conflicto += 1
             for razon in veredicto["razones_de_exclusion"]:
                 razones[razon] += 1
             for campo, estado in veredicto["estados_de_campo"].items():
@@ -252,12 +230,9 @@ def main() -> int:
         "publicables": publicables,
         "no_publicables": total - publicables,
         "por_alcance": dict(alcances.most_common()),
-        "por_alcance_con_municipio_geometrico": dict(proyectados.most_common()),
-        "area_de_busqueda_por_nivel_hoy": dict(niveles_actuales.most_common()),
-        "area_de_busqueda_por_nivel_proyectada": dict(niveles_proyectados.most_common()),
-        "propiedades_que_suben_a_nivel_municipio": con_municipio_geometrico,
+        "area_de_busqueda_por_nivel": dict(niveles_actuales.most_common()),
+        "propiedades_en_conflicto_geografico": en_conflicto,
         "propuestas_de_ciudad_aptas_leidas": len(propuestas),
-        "puntos_con_sondeo_geometrico": len(geometria),
         "motivos_de_alcance_reducido": dict(razones.most_common()),
         "estados_de_campo": dict(estados.most_common()),
         "campos_ausentes_con_diagnostico": con_diagnostico,

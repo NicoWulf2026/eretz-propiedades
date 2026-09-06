@@ -25,6 +25,13 @@ tomada, y este script la mide en vez de discutirla.
 `AREA_BUSQUEDA` es la capa de descubrimiento y viaja con su nivel explicito,
 para que nadie la confunda con la ciudad.
 
+**GEO_CONFLICT.** La geometria oficial y la provincia que publica la fuente se
+contradicen en 3.852 de 36.552 puntos -el 10,5 %-. No se elige ninguna: una de
+las dos esta mal y quedarse con cualquiera seria decidir sin evidencia. Se
+declara el conflicto, se conservan las dos, y el municipio geometrico NO se usa
+como area de busqueda en esos casos: si la coordenada esta mal, su municipio
+tambien lo esta, y mandaria a una persona a buscar en la provincia equivocada.
+
 No escribe en ninguna base.
 """
 from __future__ import annotations
@@ -44,9 +51,12 @@ from scripts.preingestion_manifest import (base_canonica,  # noqa: E402
                                            exigir_base_vigente)
 
 from connectors.base import Connector, PropiedadNormalizada  # noqa: E402
+from connectors.texto import plegar  # noqa: E402
 from connectors.geografia import geografia  # noqa: E402
 
-COBERTURA_VERSION = "geo_coverage_audit_v1"
+COBERTURA_VERSION = "geo_coverage_audit_v2"
+
+GEO_CONFLICT = "GEO_CONFLICT"
 
 CONNECTORS_CON_CAMPO_PROPIO = {"wasi", "century21"}
 
@@ -74,16 +84,48 @@ def _presente(valor: Any) -> bool:
     return valor not in (None, "", [], {})
 
 
+def _plegado(texto: Any) -> str:
+    """Comparacion de nombres por la unica etapa de normalizacion que hay."""
+    return plegar(texto if isinstance(texto, str) else None,
+                  conservar_espacios=False)
+
+
+def cargar_cache(ruta: Path) -> dict[str, dict[str, Any]]:
+    """La geometria oficial ya resuelta, indexada por coordenada redondeada."""
+    fuera: dict[str, dict[str, Any]] = {}
+    if not ruta.exists():
+        return fuera
+    for linea in ruta.read_text(encoding="utf-8").splitlines():
+        if linea.strip():
+            fila = json.loads(linea)
+            if fila.get("clave"):
+                fuera[fila["clave"]] = fila
+    return fuera
+
+
+def clave_de(lat: Any, lon: Any) -> str | None:
+    try:
+        return f"{round(float(lat), 5)},{round(float(lon), 5)}"
+    except (TypeError, ValueError):
+        return None
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", default=str(base_canonica()))
     ap.add_argument("--geo", default=r"D:\INMO CAPITAL\ERETZ_GEO")
+    ap.add_argument("--cache-geometrica",
+                    default=r"D:\INMO CAPITAL\ERETZ_GEO\GEO_REVERSE_CACHE.jsonl",
+                    help="geometria oficial ya resuelta, indexada por coordenada")
     ap.add_argument("--salida", default=r"D:\INMO CAPITAL\ERETZ_GEO")
     args = ap.parse_args()
     exigir_base_vigente(args.db)
 
     geo = geografia()
     localidades = catalogo_de_localidades(geo)
+    # La geometria se lee de la cache, nunca de la red: GeoRef es fuente, no
+    # dependencia online. Lo que ya se pregunto no se vuelve a preguntar.
+    geometria = cargar_cache(Path(args.cache_geometrica))
 
     conexion = sqlite3.connect(f"file:{Path(args.db).as_posix()}?mode=ro",
                                uri=True)
@@ -93,6 +135,7 @@ def main() -> int:
     demostrable: Counter = Counter()
     area: Counter = Counter()
     motivos_sin_localidad: Counter = Counter()
+    conflictos: Counter = Counter()
     total = 0
 
     with destino.open("w", encoding="utf-8") as archivo:
@@ -160,13 +203,34 @@ def main() -> int:
             if _presente(fila.get("barrio")):
                 demostrable["barrio_texto"] += 1
 
+            # La geometria oficial, si este punto ya fue resuelto.
+            punto = geometria.get(clave_de(fila.get("latitud"),
+                                           fila.get("longitud")) or "")
+            prov_geo = (punto or {}).get("provincia")
+            muni_geo = (punto or {}).get("municipio")
+            depto_geo = (punto or {}).get("departamento")
+
+            # GEO_CONFLICT: la coordenada dice una provincia y la fuente otra.
+            # No se elige. Y el municipio geometrico NO se usa como area: si la
+            # coordenada esta mal, su municipio tambien, y mandaria a una
+            # persona a buscar en la provincia equivocada.
+            conflicto = bool(
+                prov_geo and fila.get("provincia")
+                and _plegado(prov_geo) != _plegado(fila.get("provincia")))
+            if conflicto:
+                conflictos["provincia_geometrica_vs_publicada"] += 1
+
             # El area de busqueda baja de nivel, nunca miente sobre cual es.
             if corroborada:
                 nivel, valor = NIVEL_LOCALIDAD, prop.ciudad
             elif _presente(municipio_nombre):
                 nivel, valor = NIVEL_MUNICIPIO, municipio_nombre
+            elif muni_geo and not conflicto:
+                nivel, valor = NIVEL_MUNICIPIO, muni_geo
             elif _presente(departamento_nombre):
                 nivel, valor = NIVEL_DEPARTAMENTO, departamento_nombre
+            elif depto_geo and not conflicto:
+                nivel, valor = NIVEL_DEPARTAMENTO, depto_geo
             elif _presente(provincia_final):
                 nivel, valor = NIVEL_PROVINCIA, provincia_final
             else:
@@ -189,6 +253,14 @@ def main() -> int:
                 "match": match,
                 "veredicto_de_corroboracion": veredicto,
                 "area_busqueda": {"nivel": nivel, "valor": valor},
+                "geometria": {"provincia": prov_geo, "departamento": depto_geo,
+                              "municipio": muni_geo} if punto else None,
+                "estado_geografico": GEO_CONFLICT if conflicto else None,
+                "conflicto": ({"publicado": fila.get("provincia"),
+                               "geometrico": prov_geo,
+                               "razon": "la provincia publicada y la geometria "
+                                        "oficial no coinciden"}
+                              if conflicto else None),
                 "writes": False,
             }, ensure_ascii=False) + "\n")
 
@@ -204,6 +276,8 @@ def main() -> int:
         "localidad_canonica_pct": round(
             100 * demostrable["localidad"] / total, 1) if total else 0,
         "motivos_sin_localidad": dict(motivos_sin_localidad.most_common()),
+        "conflictos_geograficos": dict(conflictos.most_common()),
+        "puntos_con_geometria_en_cache": len(geometria),
         "database_writes": 0,
         "artefacto": destino.name,
     }

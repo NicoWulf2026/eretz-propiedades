@@ -170,6 +170,9 @@ def main() -> int:
                 archivo.write(json.dumps({
                     "hash_dedup": fila["hash_dedup"],
                     "sondeo_version": SONDEO_VERSION,
+                    # La coordenada viaja en la salida: sin ella, reconstruir
+                    # la cache exige volver a la base y unir por hash.
+                    "lat": fila["lat"], "lon": fila["lon"],
                     "provincia_geometrica": prov,
                     "departamento_geometrico": depto,
                     "municipio_geometrico": muni,

@@ -156,8 +156,7 @@ def test_la_localidad_sale_de_la_cobertura_y_no_del_campo_crudo(tmp_path, monkey
     """`FILTRO_CIUDAD: 5.965` no era cobertura de localidad: era "hay texto en
     el campo ciudad". Un barrio contaba igual que una localidad censal."""
     salida = _corrida(tmp_path, monkeypatch, ciudad="Villa del Parque",
-                      nivel="PROVINCIA", valor="Buenos Aires",
-                      municipio="Tres de Febrero")
+                      nivel="PROVINCIA", valor="Buenos Aires")
     resumen = json.loads(
         (salida / "PROPERTY_QUALITY_GATE_SUMMARY.json").read_text(encoding="utf-8"))
     # Hay texto de ciudad, pero no hay localidad demostrada.
@@ -168,26 +167,38 @@ def test_la_localidad_sale_de_la_cobertura_y_no_del_campo_crudo(tmp_path, monkey
     assert resumen["publicables"] == resumen["propiedades_evaluadas"] == 1
 
 
-def test_el_municipio_geometrico_sube_el_area_y_no_la_localidad(tmp_path, monkeypatch):
+def test_el_municipio_da_area_y_nunca_localidad(tmp_path, monkeypatch):
     """La decisión: un municipio puede servir para descubrir una propiedad,
-    pero no puede fingir ser una localidad. La proyección lo mide sin
-    reemplazar al alcance real."""
+    pero no puede fingir ser una localidad.
+
+    El nivel lo decide la cobertura, que ya aplicó la geometría oficial y la
+    regla de conflicto. El gate NO recalcula geografía: dos lugares decidiendo
+    lo mismo producen dos verdades, y tarde o temprano difieren.
+    """
     salida = _corrida(tmp_path, monkeypatch, ciudad=None,
-                      nivel="PROVINCIA", valor="Cordoba",
-                      municipio="La Calera")
+                      nivel="MUNICIPIO", valor="La Calera")
     resumen = json.loads(
         (salida / "PROPERTY_QUALITY_GATE_SUMMARY.json").read_text(encoding="utf-8"))
-    assert resumen["area_de_busqueda_por_nivel_hoy"] == {"PROVINCIA": 1}
-    assert resumen["area_de_busqueda_por_nivel_proyectada"] == {"MUNICIPIO": 1}
-    assert resumen["propiedades_que_suben_a_nivel_municipio"] == 1
-    # La proyección NO otorga localidad, ni en el alcance real ni en el proyectado.
+    assert resumen["area_de_busqueda_por_nivel"] == {"MUNICIPIO": 1}
+    assert resumen["por_alcance"]["AREA_BUSQUEDA"] == 1
     assert "FILTRO_LOCALIDAD" not in resumen["por_alcance"]
-    assert "FILTRO_LOCALIDAD" not in resumen["por_alcance_con_municipio_geometrico"]
     assert resumen["database_writes"] == 0
 
 
-def _corrida(tmp_path, monkeypatch, *, ciudad, nivel, valor, municipio):
-    """Una propiedad, una cobertura y un sondeo: el gate de punta a punta."""
+def test_un_conflicto_geografico_se_cuenta_y_no_borra_la_propiedad(tmp_path, monkeypatch):
+    """La coordenada y la fuente se contradicen en 3.859 propiedades. No se
+    elige ninguna: se declara el conflicto y queda contado."""
+    salida = _corrida(tmp_path, monkeypatch, ciudad=None,
+                      nivel="PROVINCIA", valor="Cordoba",
+                      estado="GEO_CONFLICT")
+    resumen = json.loads(
+        (salida / "PROPERTY_QUALITY_GATE_SUMMARY.json").read_text(encoding="utf-8"))
+    assert resumen["propiedades_en_conflicto_geografico"] == 1
+    assert resumen["publicables"] == 1
+
+
+def _corrida(tmp_path, monkeypatch, *, ciudad, nivel, valor, estado=None):
+    """Una propiedad y su cobertura: el gate de punta a punta."""
     db = tmp_path / "p.sqlite3"
     conexion = sqlite3.connect(db)
     conexion.execute("create table rows (row_json text, canonical_id text, "
@@ -204,13 +215,9 @@ def _corrida(tmp_path, monkeypatch, *, ciudad, nivel, valor, municipio):
     cobertura = tmp_path / "cobertura.jsonl"
     cobertura.write_text(json.dumps({
         "hash_dedup": "h1", "localidad_canonica": None,
+        "estado_geografico": estado,
         "area_busqueda": {"nivel": nivel, "valor": valor}},
         ensure_ascii=False) + "\n", encoding="utf-8")
-    sondeo = tmp_path / "sondeo.jsonl"
-    sondeo.write_text(json.dumps({
-        "hash_dedup": "h1", "municipio_geometrico": municipio,
-        "departamento_geometrico": municipio}, ensure_ascii=False) + "\n",
-        encoding="utf-8")
 
     salida = tmp_path / "out"
     salida.mkdir()
@@ -224,7 +231,6 @@ def _corrida(tmp_path, monkeypatch, *, ciudad, nivel, valor, municipio):
     monkeypatch.setattr(sys, "argv", [
         "gate", "--db", str(db), "--paquetes", str(paquetes),
         "--salida", str(salida), "--auditoria-de-ciudad", str(vacio),
-        "--cobertura-geografica", str(cobertura),
-        "--sondeo-geometrico", str(sondeo)])
+        "--cobertura-geografica", str(cobertura)])
     assert gate.main() == 0
     return salida
