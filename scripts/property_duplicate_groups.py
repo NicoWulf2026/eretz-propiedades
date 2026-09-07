@@ -51,6 +51,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.preingestion_manifest import (base_canonica,  # noqa: E402
                                            exigir_base_vigente)
+from connectors.texto import plegar  # noqa: E402
 
 # ~1,1 m. Mas precision separa lo que es lo mismo; menos junta lo que no lo es.
 DECIMALES = 5
@@ -71,6 +72,39 @@ def firma_de(fila: dict[str, Any]) -> tuple | None:
     return (latitud, longitud, *valores[2:])
 
 
+# La firma fuerte exige coordenada, y solo el 22,8 % de las candidatas la
+# tiene completa: el otro 77 % no tiene con que compararse y sus duplicados
+# son invisibles.
+#
+# La secundaria no es una version floja de la fuerte: es OTRA pregunta. Pide
+# direccion, tipo, operacion, precio y moneda, y solo agrupa DENTRO de una
+# misma inmobiliaria. Sin coordenada, cruzar agencias por nombre de calle
+# juntaria dos "San Martin 450" de dos ciudades distintas, que es exactamente
+# el error que la geografia ya nos enseño a no cometer.
+CAMPOS_DE_FIRMA_SECUNDARIA = ("direccion", "tipo_propiedad", "operacion",
+                              "precio", "moneda")
+
+
+def firma_secundaria_de(fila: dict[str, Any],
+                        canonical: str) -> tuple | None:
+    """Misma agencia, misma direccion, mismo precio: la misma publicacion.
+
+    Se normaliza la direccion antes de comparar, por la unica etapa de
+    normalizacion que hay: `Tissera Esquina Los Cedros` y `Tissera esquina Los
+    Cedros` son la misma calle, y compararlas crudas ya mando 72 grupos a la
+    clase equivocada una vez.
+    """
+    valores = [fila.get(c) for c in CAMPOS_DE_FIRMA_SECUNDARIA]
+    if any(v in (None, "", 0) for v in valores):
+        return None
+    direccion = plegar(str(valores[0]))
+    # Una direccion de menos de cinco caracteres utiles no identifica nada:
+    # "s/n", "0", "ND".
+    if len(direccion) < 5:
+        return None
+    return ("SECUNDARIA", canonical, direccion, *valores[1:])
+
+
 def identificador(firma: tuple) -> str:
     crudo = "|".join(str(x) for x in firma)
     return hashlib.sha256(crudo.encode("utf-8")).hexdigest()[:16]
@@ -79,13 +113,21 @@ def identificador(firma: tuple) -> str:
 def agrupar(registros) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Arma los grupos y las cuentas. Separado de la base para poder probarlo."""
     grupos: dict[tuple, list[dict[str, Any]]] = defaultdict(list)
+    por_clase: Counter = Counter()
     candidatas = con_firma = 0
     for fila, canonical, hash_dedup in registros:
         candidatas += 1
         firma = firma_de(fila)
+        clase = "FUERTE"
+        if firma is None:
+            # La secundaria solo entra cuando la fuerte no se pudo formar: si
+            # las dos aplicaran, una propiedad caeria en dos grupos.
+            firma = firma_secundaria_de(fila, canonical)
+            clase = "SECUNDARIA"
         if firma is None:
             continue
         con_firma += 1
+        por_clase[clase] += 1
         grupos[firma].append({
             "canonical_agency_id": canonical,
             "hash_dedup": hash_dedup,
@@ -119,7 +161,14 @@ def agrupar(registros) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         salida.append({
             "grupo_id": identificador(firma),
             "alcance": alcance,
-            "firma": dict(zip(CAMPOS_DE_FIRMA, firma)),
+            # Las dos firmas responden preguntas distintas y no se mezclan en
+            # el mismo artefacto sin decir cual fue.
+            "clase_de_firma": ("SECUNDARIA" if firma[0] == "SECUNDARIA"
+                               else "FUERTE"),
+            "firma": (dict(zip(("clase", "inmobiliaria", "direccion",
+                                *CAMPOS_DE_FIRMA_SECUNDARIA[1:]), firma))
+                      if firma[0] == "SECUNDARIA"
+                      else dict(zip(CAMPOS_DE_FIRMA, firma))),
             "inmobiliarias": sorted(agencias),
             "miembros": miembros,
             "precios_distintos": len(precios) > 1,
@@ -131,6 +180,7 @@ def agrupar(registros) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     resumen = {
         "candidatas": candidatas,
         "con_firma_completa": con_firma,
+        "por_clase_de_firma": dict(por_clase.most_common()),
         "cobertura_de_la_firma": round(100 * con_firma / max(1, candidatas), 1),
         "grupos_entre_inmobiliarias": entre_agencias,
         "grupos_dentro_de_la_misma": misma_agencia,

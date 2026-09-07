@@ -101,3 +101,70 @@ def test_precios_distintos_se_marcan():
     ])
     assert grupos[0]["precios_distintos"] is True
     assert resumen["grupos_con_precios_distintos"] == 1
+
+
+def test_la_firma_secundaria_no_cruza_inmobiliarias():
+    """Sin coordenada, cruzar agencias por nombre de calle juntaría dos
+    "San Martín 450" de dos ciudades distintas: es el mismo error que la
+    geografía ya nos enseñó a no cometer."""
+    from scripts.property_duplicate_groups import firma_secundaria_de
+
+    fila = {"direccion": "San Martin 450", "tipo_propiedad": "casa",
+            "operacion": "venta", "precio": 100000.0, "moneda": "USD"}
+    una = firma_secundaria_de(fila, "roomix:alfa")
+    otra = firma_secundaria_de(fila, "roomix:beta")
+
+    assert una is not None and otra is not None
+    assert una != otra, "dos agencias distintas no pueden compartir firma"
+
+
+def test_la_firma_secundaria_normaliza_la_direccion():
+    """`Tissera Esquina Los Cedros` y `Tissera esquina Los Cedros` son la misma
+    calle; compararlas crudas ya mandó 72 grupos a la clase equivocada."""
+    from scripts.property_duplicate_groups import firma_secundaria_de
+
+    base = {"tipo_propiedad": "casa", "operacion": "venta",
+            "precio": 100000.0, "moneda": "USD"}
+    a = firma_secundaria_de(dict(base, direccion="Tissera Esquina Los Cedros"),
+                            "roomix:alfa")
+    b = firma_secundaria_de(dict(base, direccion="tissera  esquina los cedros"),
+                            "roomix:alfa")
+    assert a == b
+
+
+def test_una_direccion_que_no_identifica_nada_no_forma_firma():
+    """"s/n", "0" y "ND" no son direcciones: agrupar por ellas juntaría
+    propiedades que no tienen nada que ver."""
+    from scripts.property_duplicate_groups import firma_secundaria_de
+
+    base = {"tipo_propiedad": "casa", "operacion": "venta",
+            "precio": 100000.0, "moneda": "USD"}
+    for basura in ("s/n", "0", "ND", "-", ""):
+        assert firma_secundaria_de(dict(base, direccion=basura),
+                                   "roomix:alfa") is None
+
+
+def test_sin_precio_no_hay_firma_secundaria():
+    """La dirección sola no alcanza: un edificio entero comparte dirección."""
+    from scripts.property_duplicate_groups import firma_secundaria_de
+
+    assert firma_secundaria_de(
+        {"direccion": "San Martin 450", "tipo_propiedad": "casa",
+         "operacion": "venta", "precio": None, "moneda": None},
+        "roomix:alfa") is None
+
+
+def test_una_propiedad_no_cae_en_dos_grupos():
+    """La secundaria sólo entra cuando la fuerte no se pudo formar: si las dos
+    aplicaran, una propiedad caería en dos grupos y se contaría dos veces."""
+    from scripts.property_duplicate_groups import agrupar
+
+    completa = {"latitud": -31.4, "longitud": -64.2, "tipo_propiedad": "casa",
+                "operacion": "venta", "dormitorios": 3,
+                "superficie_cubierta": 120.0, "direccion": "San Martin 450",
+                "precio": 100000.0, "moneda": "USD", "source_url": "u"}
+    grupos, resumen = agrupar([(completa, "roomix:alfa", "h1"),
+                               (dict(completa), "roomix:alfa", "h2")])
+    assert resumen["por_clase_de_firma"] == {"FUERTE": 2}
+    assert len(grupos) == 1
+    assert grupos[0]["clase_de_firma"] == "FUERTE"
