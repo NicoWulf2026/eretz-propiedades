@@ -45,6 +45,12 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from connectors.texto import sin_acentos  # noqa: E402
+
 # Palabras que casi toda inmobiliaria comparte. Si el dominio coincide solo por
 # una de estas, no probo nada.
 GENERICAS = {"propiedades", "inmobiliaria", "inmobiliarias", "inmobiliarios",
@@ -77,12 +83,34 @@ def palabras_del_nombre(nombre: str) -> list[str]:
     return [p for p in crudo if len(p) >= LARGO_MINIMO and p not in GENERICAS]
 
 
+def nombre_completo_en_el_dominio(nombre: str, origen_url: str) -> str | None:
+    """El nombre ENTERO, pegado, contra la marca del dominio.
+
+    `ABP PROPIEDADES` vive en `abppropiedades.com.ar` y la compuerta lo daba
+    por sin rastro: "abp" tiene tres letras y cae por el largo minimo, y
+    "propiedades" es generica. Ninguna palabra sobrevivia, aunque el nombre
+    completo sea EXACTAMENTE el dominio.
+
+    La asimetria es deliberada. Una palabra generica suelta no prueba nada
+    -miles de dominios dicen "propiedades"- pero el nombre entero coincidiendo
+    exacto es de la evidencia mas fuerte que hay: no es que el dominio
+    contenga algo del nombre, es que el dominio ES el nombre.
+
+    Por eso se exige coincidencia EXACTA y no que uno contenga al otro:
+    `Buro 2` esta contenido en `remax-buro2.com.ar`, que es el dominio de la
+    franquicia y no el de la inmobiliaria.
+    """
+    entero = re.sub(r"[^a-z0-9]+", "", sin_acentos(nombre or "").lower())
+    marca = re.sub(r"[^a-z0-9]+", "", marca_de(origen_url))
+    return entero if entero and entero == marca else None
+
+
 def nombre_en_el_dominio(nombre: str, origen_url: str) -> str | None:
     marca = marca_de(origen_url)
     for palabra in palabras_del_nombre(nombre):
         if palabra in marca:
             return palabra
-    return None
+    return nombre_completo_en_el_dominio(nombre, origen_url)
 
 
 def evaluar(filas: list[dict[str, Any]]) -> list[dict[str, Any]]:
