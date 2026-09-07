@@ -115,6 +115,14 @@ def construir(certificacion: Path, geo: Path, preingestion: Path) -> dict[str, A
                         "corrida; quedan marcadas con el lote",
             "por_que_primero": "las propiedades apuntan a estos ids: "
                                "escribirlas antes las dejaria colgadas.",
+            # El numero que cambia como se lee este paso: promover no es
+            # anotar inmobiliarias en una tabla, es habilitar que su
+            # inventario se pueda certificar. Una fuente sin `eretz_id` no
+            # entra a la cola por diseno, porque su inventario no se puede
+            # asociar a nadie.
+            "efecto": "el universo certificable pasa de 767 a 1.500 "
+                      "inmobiliarias: ninguna de las 733 esta hoy en la cola, "
+                      "y 280 de ellas ya tienen web argentina verificada",
         },
         {
             "orden": 3,
