@@ -767,6 +767,30 @@ mapa Leaflet. Los dos patrones son generales.
 Eso es exactamente para lo que el corte por lote existe: la misma firma dos
 veces significa que el radio se estimó mal, no que sea el mismo problema.
 
+### 3.8 Lo que espera la próxima ventana semántica
+
+Todo esto está diagnosticado contra la fuente real y medido. Se aplica cuando
+la cola pare —por STOP, por corte de lote, o al terminar— y **junto**, porque
+comparten radio transversal y separarlo cuesta una recertificación por cambio.
+
+**La cortesía adaptativa nunca se dispara.** `alejandro foster` acumuló 11
+bloqueos del sitio en una corrida con `ritmo_cedido: false`. El mecanismo
+reacciona al `Bloqueado` que se propaga, y el connector lo absorbe: lo registra
+en `errores` y devuelve `None`, así que el `except` del runner no lo ve nunca.
+El arreglo es mirar `con.errores` después de cada ficha —la maquinaria ya está,
+`errores_antes` se calcula y no se usa para esto—. Una agencia afectada hasta
+ahora, 4 detalles perdidos y una corrida que enumeró 20 de 33.
+
+**Corta-circuito por host.** Contra un sitio muerto cada sonda de `discover`
+paga el timeout completo: `a varela` consumió 13 minutos por corrida para no
+traer nada. Una vez que el host falló N veces seguidas, las sondas siguientes
+deberían fallar rápido.
+
+**Las lecturas estructuradas que no ocurren.** `wordpress` falla en 16 campos
+sobre 3.397 propiedades y `tokko` en 14 sobre 3.211, concentrados en pocas
+agencias. El radio es por familia (`connector/wordpress`, `connector/tokko`),
+no transversal, así que pueden ir en la misma ventana sin ampliarla.
+
 ---
 
 ## 4. Defectos
