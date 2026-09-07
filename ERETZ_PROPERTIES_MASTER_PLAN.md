@@ -808,6 +808,18 @@ fuente y son **dos problemas distintos**:
   superficie aparece **en la prosa de la descripción** —"Tiene una superficie
   total de 105 m²"—. Leerla de ahí es posible pero es otra clase de extracción,
   con otro riesgo, y merece su propia decisión.
+- **wasi (147) y `generic/sitemap` (150)**: la ficha no publica superficie. En
+  cinco fichas de `alderinmobiliaria` no aparece una sola mención de m², y en
+  `becerrapropiedades` sólo aparece en prosa ambigua —"DOS LOTES de 500 m2",
+  que no se sabe si son 500 o 1.000—. No son defectos nuestros.
+
+**Una advertencia sobre la lista de prioridades.** Al corregir el agregado de
+cobertura, `tokko/superficie_total` dejó de figurar como defecto propio y pasó
+a `AUSENTE_SIN_DIAGNOSTICO`: el detector de señales de origen tampoco reconoce
+la etiqueta `Terreno:`, así que la cobertura de ese campo parece parcial. El
+gate es honesto sobre lo que puede probar de los artefactos, pero **las 12
+fichas que abrí a mano son mejor evidencia que el agregado**. El defecto real
+más grande ya no aparece en el ranking automático, y por eso queda escrito acá.
 
 ---
 
