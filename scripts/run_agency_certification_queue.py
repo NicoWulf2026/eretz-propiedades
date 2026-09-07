@@ -330,11 +330,24 @@ def _familia(resultado: dict[str, Any]) -> str:
 
 
 def _es_cola_larga(resultado: dict[str, Any]) -> bool:
-    """Fuentes lentas o que rechazan el acceso, por evidencia previa."""
+    """Fuentes lentas, inaccesibles, o que rechazan el acceso.
+
+    La inaccesible cuesta MAS que una que funciona: `varelanegociosinmobiliarios`
+    consume dos corridas de cien segundos cada una agotando reintentos para no
+    traer nada, y en el canario se llevo doce minutos por delante de las
+    agencias que si tenian algo que decir sobre el codigo.
+
+    Que no responda hoy no la saca del universo: la vuelve a intentar al final,
+    que es donde no le hace perder tiempo a nadie.
+    """
     if resultado.get("status") in SENALES_DE_COLA_LARGA:
         return True
-    return any((corrida or {}).get("presupuesto_agotado")
-               for corrida in (resultado.get("run1"), resultado.get("run2")))
+    corridas = [c or {} for c in (resultado.get("run1"), resultado.get("run2"))]
+    if any(c.get("presupuesto_agotado") for c in corridas):
+        return True
+    inaccesibles = [c for c in corridas
+                    if c.get("estado") in ("ERROR_DISCOVERY", "ERROR_LISTADO")]
+    return len(inaccesibles) == len(corridas) and bool(corridas)
 
 
 def ordenar_para_correr(cola: list[str],

@@ -61,3 +61,33 @@ def test_sin_resultados_previos_el_orden_se_conserva():
     """La primera corrida de la vida no tiene nada que ordenar."""
     cola = ["a", "b", "c"]
     assert ordenar_para_correr(cola, {}) == cola
+
+
+def test_una_fuente_que_no_responde_va_al_final():
+    """Cuesta MÁS que una que funciona: dos corridas de cien segundos agotando
+    reintentos para no traer nada. En el canario se llevó doce minutos por
+    delante de las agencias que sí tenían algo que decir sobre el código.
+
+    Que no responda hoy no la saca del universo: se reintenta al final.
+    """
+    cola = ["viva", "caida"]
+    resultados = {
+        "viva": _res("tokko"),
+        "caida": {"connector_strategy": "generico", "status": "NEEDS_FIX",
+                  "run1": {"estado": "ERROR_DISCOVERY"},
+                  "run2": {"estado": "ERROR_DISCOVERY"}}}
+    assert ordenar_para_correr(cola, resultados) == ["viva", "caida"]
+
+
+def test_una_sola_corrida_inaccesible_no_manda_al_final():
+    """Si una corrida llegó al sitio, el sitio existe: puede haber sido un
+    corte de red nuestro, y castigarla sería perder inventario real."""
+    cola = ["intermitente", "otra"]
+    resultados = {
+        "intermitente": {"connector_strategy": "tokko", "status": "NEEDS_FIX",
+                         "run1": {"estado": "OK"},
+                         "run2": {"estado": "ERROR_DISCOVERY"}},
+        "otra": _res("wordpress")}
+    orden = ordenar_para_correr(cola, resultados)
+    assert orden.index("intermitente") < len(orden)
+    assert set(orden) == {"intermitente", "otra"}
