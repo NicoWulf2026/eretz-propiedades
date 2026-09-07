@@ -712,6 +712,61 @@ un proceso dentro de la línea del otro, en el archivo que es la fuente de
 verdad de las certificaciones. Un STOP transversal escribe una bandera que
 corta a los dos.
 
+### 3.6 Tres cuartos de los defectos propios no lo eran
+
+`EXTRACTION_FAILED` es el único estado de campo que es culpa nuestra, y por eso
+ordena las reparaciones. Estaba inflado, y de tres formas distintas.
+
+| | Defectos |
+|---|---|
+| medido al principio | 11.206 |
+| descontando lo que el tipo de propiedad no tiene | 9.025 |
+| descontando lo que el resolver ya había resuelto | **7.390** |
+
+**Un lote no tiene dormitorios.** La señal de "la fuente publica este campo" se
+agrega por AGENCIA: si una inmobiliaria publica dormitorios en sus
+departamentos, la señal dice que los publica, y después cada terreno sin
+dormitorios se contaba como defecto nuestro. Eran 2.969 —uno de cada cuatro—.
+Lo encontré abriendo una ficha de `aguirre` que figuraba con cuatro campos
+fallados: era un lote de 350 m².
+
+**Tokko publica la ubicación en un solo campo.** Cae en `barrio`, y "Cordoba
+Capital" es una ciudad que está ahí. Mirando la columna `ciudad` vacía, el gate
+reportaba 1.092 propiedades como ciudad no extraída mientras la cobertura
+geográfica decía que la localidad estaba resuelta: **el mismo artefacto
+afirmaba las dos cosas sobre la misma propiedad**.
+
+**El guardián de coherencia anota lo que descarta** —`dormitorios_en_un_terreno`—
+y el contrato leía una tabla de dos motivos. El guardián vio el valor y lo
+rechazó: eso es validación, no un defecto.
+
+Lo que queda, ahora sí, es trabajo real: `superficie_total` (1.875), `barrio`
+(1.033), `ambientes` (948). Y el que encabezaba la lista de prioridades era uno
+de los fantasmas.
+
+### 3.7 Las tres paradas del 7 de septiembre
+
+Una alarma falsa y dos defectos reales. En los tres, el diagnóstico contra la
+fuente real cambió la conclusión que sugería el síntoma.
+
+**`aguirre inmobiliaria`: colapso de inventario del 100 %.** El sitio no tenía
+nada malo —publica sus 38 propiedades y las enumeré sin tocar una línea—. Los
+connectors devolvían `SIN_INVENTARIO` tanto cuando el sitio dice que no tiene
+nada como cuando no se pudo hablar con él, y sesenta segundos malos bastaron
+para parar las dos colas diez horas. La guardia quedó en el RUNNER y no en cada
+connector: cada `discover` tiene varias salidas tempranas —century21 tiene
+cuatro— y una guardia por connector deja justo el camino que nadie miró.
+
+**El corte por lote encontró dos problemas distintos bajo la misma firma.**
+`ventasprop.com` devuelve "Account Suspended": el sitio está muerto y ahora
+cierra `INACTIVE` con evidencia, exigiendo que las dos corridas lo vean.
+`andradeinmobiliaria.com.ar` sí estaba vivo y le perdíamos el inventario: sus
+fichas cuelgan de `/venta/casa/martinez/<slug>` y sus coordenadas viven en un
+mapa Leaflet. Los dos patrones son generales.
+
+Eso es exactamente para lo que el corte por lote existe: la misma firma dos
+veces significa que el radio se estimó mal, no que sea el mismo problema.
+
 ---
 
 ## 4. Defectos
