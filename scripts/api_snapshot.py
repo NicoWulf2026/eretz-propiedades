@@ -71,10 +71,23 @@ create table if not exists propiedades (
 -- por area. Cada uno se justifica con una consulta real o no va.
 create index if not exists ix_operacion on propiedades(operacion);
 create index if not exists ix_tipo on propiedades(tipo_propiedad);
+-- Compuesto porque el filtro mas frecuente del listado son los dos juntos.
+-- Medido: con `ix_operacion` solo, operacion+tipo tardaba 167 ms porque
+-- filtraba 42.536 filas por el segundo campo.
+create index if not exists ix_operacion_tipo
+    on propiedades(operacion, tipo_propiedad);
 create index if not exists ix_precio on propiedades(moneda, precio);
 create index if not exists ix_area on propiedades(area_nivel, area_nombre);
 create index if not exists ix_localidad on propiedades(localidad);
 create index if not exists ix_agencia on propiedades(agency_id);
+
+-- Busqueda por texto. Sin esto, `/buscar` hace un scan completo: 409 ms
+-- medidos sobre las 58.427, que para una caja de busqueda es demasiado.
+-- FTS5 viene con SQLite y no agrega dependencias.
+create virtual table if not exists busqueda using fts5(
+    id unindexed, titulo, descripcion, barrio, area_nombre,
+    tokenize = "unicode61 remove_diacritics 2"
+);
 """
 
 
@@ -142,6 +155,13 @@ def main() -> int:
              documento["geo"].get("estado"),
              json.dumps(documento["alcances"], ensure_ascii=False),
              json.dumps(documento, ensure_ascii=False)))
+        api.execute(
+            "insert into busqueda (id, titulo, descripcion, barrio, area_nombre) "
+            "values (?,?,?,?,?)",
+            (documento["id"], documento["titulo"] or "",
+             documento["descripcion"] or "",
+             documento["geo"]["barrio"]["nombre"] or "",
+             area.get("nombre") or ""))
         filas += 1
     api.commit()
 
