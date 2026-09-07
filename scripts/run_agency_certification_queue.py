@@ -23,6 +23,8 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.preingestion_manifest import base_canonica  # noqa: E402
+from scripts.property_observations import (  # noqa: E402
+    registrar as registrar_observacion)
 from scripts.defect_triage import senales_de_catalogo  # noqa: E402
 from scripts.defect_triage import (STOP, clasificar,  # noqa: E402
                                    debe_cortar_por_lote)
@@ -610,6 +612,14 @@ def main() -> int:
         except Exception as error:  # noqa: BLE001 - una fuente no tumba la cola
             result = runner_error(output, canonical_id, error)
         update_rollups(output, result)
+        # El registro de que se vio y cuando. Sin esto el ciclo de vida no se
+        # puede activar nunca: el checkpoint y el paquete guardan la ultima
+        # corrida y se sobrescriben, asi que cada pasada borraba la evidencia
+        # de la anterior.
+        registrar_observacion(
+            output / "agencies" / hashlib.sha256(
+                canonical_id.encode()).hexdigest()[:16],
+            result, output)
         append_jsonl(output / "AGENCY_MASTER_PROGRESS.jsonl", {
             "canonical_agency_id": canonical_id, "status": result["status"],
             "mode": mode_name, "position": index, "queue_size": len(queue),
