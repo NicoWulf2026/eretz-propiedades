@@ -3928,3 +3928,33 @@ def test_el_descargador_recuerda_de_que_hosts_leyo():
     d.bajar("https://alfa.com.ar/x")
     assert d.hubo_contacto("https://alfa.com.ar/otra") is True
     assert d.hubo_contacto("https://beta.com.ar/x") is False
+
+
+def test_la_operacion_adelante_y_la_ficha_al_fondo():
+    """`andradeinmobiliaria.com.ar` publica en
+    `/venta/casa/martinez/cordoba-al-2900-...`. `RE_FICHA` ya conocía `venta`
+    como sección, pero exige que la ficha cuelgue directamente de ahí, y estos
+    sitios intercalan tipo y zona: sus dos propiedades figuraban como sitio sin
+    inventario.
+
+    Lo delató el corte por lote, no una revisión: la misma firma apareció dos
+    veces y dejó de ser casualidad.
+    """
+    from connectors.generico import GenericoConnector as G
+
+    assert G._es_ficha_url("https://x.com/venta/casa/martinez/"
+                           "cordoba-al-2900-martinez-casa-en-lote-propio")
+    assert G._es_ficha_url("https://x.com/alquiler/departamento/san-isidro/"
+                           "haedo-484-san-isidro-depto-de-2-amb-y-medio")
+
+
+def test_una_categoria_no_es_una_ficha():
+    """El slug final necesita cuatro o más palabras: con menos la ruta es una
+    categoría —`/venta/casa/martinez`— y tomarla por ficha inventaría
+    propiedades que no existen."""
+    from connectors.generico import GenericoConnector as G
+
+    for ruta in ("/venta", "/venta/casa", "/venta/casa/martinez",
+                 "/alquiler/departamento/san-isidro",
+                 "/venta/casa/mar-del-plata"):
+        assert not G._es_ficha_url("https://x.com" + ruta), ruta

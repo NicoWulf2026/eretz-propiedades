@@ -100,6 +100,21 @@ RE_FICHA_ANIDADA = re.compile(
     r"/(?:propiedad(?:es)?|inmueble[s]?|ficha[s]?|listing[s]?|propert(?:y|ies))/"
     r"(?:[a-z0-9-]+/)?\d{2,}/[^/?#]+/?$", re.I)
 
+# La operacion adelante y la ficha al fondo:
+# /venta/casa/martinez/cordoba-al-2900-martinez-casa-en-lote-propio-3-ambientes
+# `RE_FICHA` ya conoce `venta` y `alquiler` como seccion, pero exige que la
+# ficha cuelgue DIRECTAMENTE de ahi, y estos sitios intercalan tipo y zona.
+# `andradeinmobiliaria.com.ar` publica dos propiedades y figuraba sin
+# inventario; el corte por lote lo delato al repetirse la firma.
+#
+# El slug final tiene que tener cuatro o mas palabras: con menos, la ruta es
+# una categoria -/venta/casa/martinez- y tomarla por ficha inventaria
+# propiedades que no existen.
+RE_FICHA_OPERACION = re.compile(
+    r"^/(?:venta|alquiler|alquiler-temporario|venta-alquiler)/"
+    r"(?:[a-z0-9-]+/){1,3}"
+    r"[a-z0-9]+(?:-[a-z0-9]+){3,}/?$", re.I)
+
 RE_FICHA_RAIZ = re.compile(
     r"^/(\d{3,})-[a-z0-9-]*(venta|alquiler|casa|departamento|depto|terreno|"
     r"lote|ph|local|oficina|galpon|campo|cochera|quinta|duplex|chalet)"
@@ -1289,6 +1304,7 @@ class GenericoConnector(Connector):
         return not RE_NO_FICHA.search(ruta) and bool(
             RE_FICHA.search(u) or RE_FICHA_ANIDADA.search(ruta)
             or RE_FICHA_RAIZ.search(ruta)
+            or RE_FICHA_OPERACION.search(ruta)
             or (propia is not None and propia.match(ruta)))
 
     @staticmethod
