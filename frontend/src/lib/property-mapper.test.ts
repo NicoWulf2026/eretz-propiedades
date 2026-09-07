@@ -16,6 +16,23 @@ describe("property mapper", () => {
     expect(property.quality).toEqual(expect.objectContaining({ hasPrice: true, hasImages: true, hasCoordinates: true }));
   });
 
+  it("preserves real zero values instead of turning them into unknown", () => {
+    const property = mapSupabasePropertyToProperty({
+      ...completeRow,
+      precio: 0,
+      ambientes: 0,
+      dormitorios: 0,
+      superficie_total: 0,
+      superficie_cubierta: 0,
+    });
+    expect(property.price).toBe(0);
+    expect(property.rooms).toBe(0);
+    expect(property.bedrooms).toBe(0);
+    expect(property.totalArea).toBe(0);
+    expect(property.coveredArea).toBe(0);
+    expect(property.quality.hasPrice).toBe(true);
+  });
+
   it("uses honest fallbacks and rejects unsafe content", () => {
     const property = mapSupabasePropertyToProperty({
       ...completeRow,

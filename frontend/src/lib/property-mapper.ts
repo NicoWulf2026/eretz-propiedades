@@ -39,9 +39,13 @@ export function cleanText(value: unknown): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
-function positiveNumber(value: unknown): number | null {
+// Cero puede ser un dato real (p. ej. monoambiente, sin dormitorios o una
+// superficie publicada como 0). El mapper de dominio lo preserva; la capa de
+// presentación decide después si ese dato es útil para mostrar.
+function nonNegativeNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
   const number = Number(value);
-  return Number.isFinite(number) && number > 0 ? number : null;
+  return Number.isFinite(number) && number >= 0 ? number : null;
 }
 
 export function normalizeCurrency(value: unknown): PropertyCurrency | null {
@@ -94,7 +98,7 @@ function qualitySignals(item: SupabaseProperty, images: string[]): QualitySignal
     hasValidTitle:
       title.length >= 4 && !/^(propiedad|inmueble)\s+(sin\s+t[ií]tulo|en\s+(venta|alquiler))$/i.test(title),
     hasDescription: cleanText(item.descripcion).length >= 20,
-    hasPrice: positiveNumber(item.precio) !== null,
+    hasPrice: nonNegativeNumber(item.precio) !== null,
     hasCurrency: normalizeCurrency(item.moneda) !== null,
     hasLocation: Boolean(cleanText(item.barrio) || cleanText(item.ciudad) || cleanText(item.provincia)),
     hasCoordinates: hasValidArgentinaCoordinates(item.latitud, item.longitud),
@@ -153,25 +157,25 @@ export function mapSupabasePropertyToProperty(item: SupabaseProperty, pointStats
     sourceUrl: safeExternalUrl(item.url),
     title: quality.hasValidTitle ? cleanText(item.titulo) : "Propiedad sin título",
     description: quality.hasDescription ? cleanText(item.descripcion) : null,
-    price: positiveNumber(item.precio),
+    price: nonNegativeNumber(item.precio),
     currency: normalizeCurrency(item.moneda),
-    priceUsd: positiveNumber(item.precio_usd),
-    priceArs: positiveNumber(item.precio_ars),
-    expenses: positiveNumber(item.expensas),
+    priceUsd: nonNegativeNumber(item.precio_usd),
+    priceArs: nonNegativeNumber(item.precio_ars),
+    expenses: nonNegativeNumber(item.expensas),
     expensesCurrency: normalizeCurrency(item.expensas_moneda),
     propertyType,
     rawPropertyType: rawType,
     operation: normalizeOperation(item.operacion),
-    rooms: positiveNumber(item.ambientes),
-    bedrooms: positiveNumber(item.dormitorios),
-    bathrooms: positiveNumber(item.banos),
-    toilettes: positiveNumber(item.toilettes),
-    garages: positiveNumber(item.cocheras),
-    age: positiveNumber(item.antiguedad),
-    floor: positiveNumber(item.piso),
-    totalArea: positiveNumber(item.superficie_total),
-    coveredArea: positiveNumber(item.superficie_cubierta),
-    landArea: positiveNumber(item.superficie_terreno),
+    rooms: nonNegativeNumber(item.ambientes),
+    bedrooms: nonNegativeNumber(item.dormitorios),
+    bathrooms: nonNegativeNumber(item.banos),
+    toilettes: nonNegativeNumber(item.toilettes),
+    garages: nonNegativeNumber(item.cocheras),
+    age: nonNegativeNumber(item.antiguedad),
+    floor: nonNegativeNumber(item.piso),
+    totalArea: nonNegativeNumber(item.superficie_total),
+    coveredArea: nonNegativeNumber(item.superficie_cubierta),
+    landArea: nonNegativeNumber(item.superficie_terreno),
     address: cleanText(item.direccion) || null,
     neighborhood: cleanText(item.barrio) || null,
     city: cleanText(item.ciudad) || null,
