@@ -52,6 +52,9 @@ def v2(tmp_path, monkeypatch):
             provincia text, barrio text, area_nivel text not null,
             area_nombre text, geo_estado text, alcances text not null,
             documento text not null);
+        create virtual table busqueda using fts5(
+            id unindexed, titulo, descripcion, barrio, area_nombre,
+            tokenize = "unicode61 remove_diacritics 2");
     """)
     filas = [
         (_documento(), "MUNICIPIO", "La Calera", None),
@@ -83,6 +86,9 @@ def v2(tmp_path, monkeypatch):
              doc["geo"]["provincia"]["nombre"], doc["geo"]["barrio"]["nombre"],
              nivel, nombre, estado,
              json.dumps(doc["alcances"]), json.dumps(doc, ensure_ascii=False)))
+        con.execute("insert into busqueda values (?,?,?,?,?)",
+                    (doc["id"], doc["titulo"] or "", doc["descripcion"] or "",
+                     doc["geo"]["barrio"]["nombre"] or "", nombre or ""))
     con.commit()
     con.close()
 
@@ -198,3 +204,41 @@ def test_sin_snapshot_la_api_lo_dice(tmp_path, monkeypatch):
     with pytest.raises(HTTPException) as e:
         modulo.stats()
     assert e.value.status_code == 503
+
+
+def test_la_busqueda_ignora_acentos_y_puntuacion(v2):
+    """"cordoba" y "Córdoba" son la misma búsqueda, y un guión en la caja no
+    puede hacer fallar la consulta con un error de sintaxis de FTS."""
+    from api.v2 import _termino
+
+    assert _termino("San Martin - 450") == '"San" "Martin" "450"'
+    assert _termino("") == '""'
+    assert _termino("***") == '""'
+
+    con_acento = v2.buscar(q="Cordoba", operacion=None, tipo=None,
+                           limit=5, offset=0)["total"]
+    sin_acento = v2.buscar(q="córdoba", operacion=None, tipo=None,
+                           limit=5, offset=0)["total"]
+    assert con_acento == sin_acento
+
+
+def test_una_snapshot_vieja_lo_dice_en_vez_de_romperse(tmp_path, monkeypatch):
+    """Sin el índice de texto la búsqueda fallaba con un `no such table` que no
+    le dice a nadie qué hacer."""
+    import sqlite3 as s
+
+    from fastapi import HTTPException
+
+    ruta = tmp_path / "vieja.sqlite3"
+    con = s.connect(ruta)
+    con.execute("create table propiedades (id text primary key, "
+                "operacion text, tipo_propiedad text, documento text)")
+    con.commit()
+    con.close()
+
+    from api import v2 as modulo
+    monkeypatch.setattr(modulo, "SNAPSHOT", ruta)
+    with pytest.raises(HTTPException) as e:
+        modulo.buscar(q="algo", operacion=None, tipo=None, limit=5, offset=0)
+    assert e.value.status_code == 503
+    assert "api_snapshot" in e.value.detail
