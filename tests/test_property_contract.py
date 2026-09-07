@@ -169,3 +169,29 @@ def test_sin_tipo_no_se_supone_nada():
     """No saber de qué clase de propiedad se trata no autoriza a exonerar."""
     assert estado_de_campo({"tipo_propiedad": None}, "dormitorios",
                            True) == EXTRACTION_FAILED
+
+
+def test_la_ciudad_la_decide_el_resolver_y_no_la_columna_cruda():
+    """Tokko publica la ubicación en un solo campo, que cae en `barrio`:
+    "Cordoba Capital" es una ciudad y está ahí. Mirando la columna `ciudad`
+    vacía, el gate reportaba 1.092 propiedades como ciudad no extraída cuando
+    no había nada que leer en ese campo —y al mismo tiempo la cobertura decía
+    que la localidad estaba resuelta—."""
+    resuelta = estado_de_campo({"ciudad": None}, "ciudad", True,
+                               {"localidad_canonica": "Rosario"})
+    assert resuelta == EXTRACTED
+
+
+def test_un_barrio_publicado_no_es_una_ciudad_que_fallamos():
+    """La fuente publicó un barrio. No fallamos en leer una ciudad: no había."""
+    assert estado_de_campo({}, "ciudad", True,
+                           {"match": "NOT_FOUND"}) == SOURCE_NOT_PROVIDED
+
+
+def test_negarse_a_afirmar_una_ciudad_es_validacion_no_defecto():
+    """La distinción que ordena todo el sistema: `azpropiedades` publica
+    "Caseros" en el Gran Buenos Aires y la única Caseros del catálogo está en
+    Entre Ríos, a 238 km."""
+    for motivo in ("CONTRADICTED_BY_COORDINATES", "AMBIGUOUS"):
+        assert estado_de_campo({}, "ciudad", True,
+                               {"match": motivo}) == REJECTED_BY_VALIDATION

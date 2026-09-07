@@ -36,6 +36,7 @@ No escribe en ninguna base.
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 CONTRATO_VERSION = "property_contract_v3"
@@ -88,6 +89,11 @@ RECHAZOS = {
     "latitud fuera de Argentina": ("latitud", "longitud"),
     "longitud fuera de Argentina": ("latitud", "longitud"),
 }
+# `dormitorios_en_un_terreno`, `superficie_cubierta_en_un_terreno`: el motivo
+# nombra el campo que se descarto. Se lee del motivo en vez de enumerarlos,
+# porque la lista de tipos la decide el guardian y no este contrato.
+RE_DESCARTE_POR_TIPO = re.compile(r"^([a-z_]+?)_en_un_[a-z_]+$")
+
 DESCARTES = {
     "dormitorios>ambientes": ("dormitorios", "ambientes"),
     "cubierta>total": ("superficie_cubierta", "superficie_total"),
@@ -138,18 +144,56 @@ def rechazos_de(fila: dict[str, Any]) -> dict[str, str]:
             afectados[campo] = motivo
     descartado = (fila.get("extra") or {}).get("atributos_descartados")
     if isinstance(descartado, str):
-        for campo in DESCARTES.get(descartado, ()):
-            afectados.setdefault(campo, descartado)
+        # El connector anota varios descartes separados por coma, y algunos
+        # nombran el campo adentro del motivo: `dormitorios_en_un_terreno`.
+        # Leer solo la tabla fija dejaba esos como si no los hubieramos
+        # extraido, cuando el guardian de coherencia VIO el valor y lo
+        # rechazo. Son cosas distintas: una es un defecto nuestro y la otra es
+        # la validacion haciendo su trabajo.
+        for motivo in descartado.split(","):
+            motivo = motivo.strip()
+            if not motivo:
+                continue
+            for campo in DESCARTES.get(motivo, ()):
+                afectados.setdefault(campo, motivo)
+            propio = RE_DESCARTE_POR_TIPO.match(motivo)
+            if propio:
+                afectados.setdefault(propio.group(1), motivo)
     return afectados
 
 
+# Como se lee el resultado del resolver de geografia para el campo `ciudad`.
+# Sin esto, el mismo artefacto decia a la vez "no extrajimos la ciudad" y
+# "localidad canonica: Rosario" de la misma propiedad.
+GEO_A_ESTADO = {
+    # La validacion funciono: vio un nombre y se nego a afirmarlo.
+    "CONTRADICTED_BY_COORDINATES": REJECTED_BY_VALIDATION,
+    "AMBIGUOUS": REJECTED_BY_VALIDATION,
+    # La fuente publico un barrio, no una ciudad. No fallamos en leer nada.
+    "NOT_FOUND": SOURCE_NOT_PROVIDED,
+    "SIN_UBICACION": SOURCE_NOT_PROVIDED,
+}
+
+
 def estado_de_campo(fila: dict[str, Any], campo: str,
-                    fuente_lo_publica: bool | None = None) -> str:
+                    fuente_lo_publica: bool | None = None,
+                    geo: dict[str, Any] | None = None) -> str:
     """El estado de un campo, con la evidencia que haya.
 
     `fuente_lo_publica` viene de la certificacion cuando existe. Sin ella no se
     puede separar `SOURCE_NOT_PROVIDED` de `EXTRACTION_FAILED`, y se dice.
+
+    Para `ciudad` manda el RESOLVER y no la columna cruda. Tokko publica la
+    ubicacion en un solo campo, que cae en `barrio`: "Cordoba Capital" es una
+    ciudad y esta ahi. Mirando la columna `ciudad` vacia, el gate reportaba
+    1.092 propiedades como ciudad no extraida cuando no habia nada que leer en
+    ese campo, y al mismo tiempo la cobertura decia que la localidad estaba
+    resuelta.
     """
+    if campo == "ciudad" and geo is not None:
+        if _presente(geo.get("localidad_canonica")):
+            return EXTRACTED
+        return GEO_A_ESTADO.get(geo.get("match"), SOURCE_NOT_PROVIDED)
     if _presente(fila.get(campo)):
         return EXTRACTED
     rechazado = rechazos_de(fila).get(campo)
@@ -235,7 +279,7 @@ def evaluar(fila: dict[str, Any],
     """El veredicto completo del contrato para una propiedad."""
     fuente = fuente or {}
     permitidos, razones = alcances(fila, geo)
-    estados = {c: estado_de_campo(fila, c, fuente.get(c)) for c in TODOS}
+    estados = {c: estado_de_campo(fila, c, fuente.get(c), geo) for c in TODOS}
     return {
         "contrato_version": CONTRATO_VERSION,
         "publicable": bool(permitidos),
