@@ -216,7 +216,7 @@ def _corrida(tmp_path, monkeypatch, *, ciudad, nivel, valor, estado=None):
     cobertura.write_text(json.dumps({
         "hash_dedup": "h1", "localidad_canonica": None,
         "estado_geografico": estado,
-        "area_busqueda": {"nivel": nivel, "valor": valor}},
+        "area_busqueda": {"nivel": nivel, "nombre": valor}},
         ensure_ascii=False) + "\n", encoding="utf-8")
 
     salida = tmp_path / "out"

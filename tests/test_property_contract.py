@@ -92,7 +92,7 @@ def test_el_veredicto_declara_su_version():
     """Cambiar el contrato tiene que verse en el artefacto; si no, no se puede
     auditar con qué reglas se decidió."""
     geo = {"localidad_canonica": "Rosario",
-           "area_busqueda": {"nivel": "LOCALIDAD", "valor": "Rosario"}}
+           "area_busqueda": {"nivel": "LOCALIDAD", "nombre": "Rosario"}}
     v = evaluar(_propiedad(), geo=geo)
     assert v["contrato_version"] == "property_contract_v3"
     assert v["publicable"] is True
@@ -119,14 +119,14 @@ def test_un_municipio_da_area_de_busqueda_pero_no_localidad():
     pero no puede fingir ser una localidad."""
     v = evaluar(_propiedad(ciudad=None), geo={
         "localidad_canonica": None,
-        "area_busqueda": {"nivel": "MUNICIPIO", "valor": "La Calera"}})
+        "area_busqueda": {"nivel": "MUNICIPIO", "nombre": "La Calera"}})
     assert "AREA_BUSQUEDA" in v["alcances"]
     assert "FILTRO_LOCALIDAD" not in v["alcances"]
 
 
 def test_sin_area_tampoco_se_pierde_la_propiedad():
     v = evaluar(_propiedad(ciudad=None), geo={
-        "area_busqueda": {"nivel": "SIN_AREA", "valor": None}})
+        "area_busqueda": {"nivel": "SIN_AREA", "nombre": None}})
     assert "AREA_BUSQUEDA" not in v["alcances"]
     assert v["publicable"] is True
 
@@ -195,3 +195,25 @@ def test_negarse_a_afirmar_una_ciudad_es_validacion_no_defecto():
     for motivo in ("CONTRADICTED_BY_COORDINATES", "AMBIGUOUS"):
         assert estado_de_campo({}, "ciudad", True,
                                {"match": motivo}) == REJECTED_BY_VALIDATION
+
+
+def test_el_contrato_lee_la_forma_que_la_cobertura_EMITE():
+    """El contrato leía `valor` y la cobertura pasó a emitir `nombre` al
+    unificar la forma. Los tests siguieron pasando porque la fixture también
+    decía `valor`: se rompió el dato real y no el test.
+
+    Este test construye la fila con el MISMO helper que usa la auditoría, así
+    que la fixture no puede volver a divergir de lo que se emite.
+    """
+    from connectors.base import (AREA_MUNICIPIO, Connector, GEO_CANONICAL,
+                                 dimension_geo)
+
+    area = Connector._area_de_busqueda({
+        "localidad": dimension_geo(None),
+        "municipio": dimension_geo("La Calera", procedencia=GEO_CANONICAL),
+        "departamento": dimension_geo(None),
+        "provincia": dimension_geo(None)})
+    assert area["nivel"] == AREA_MUNICIPIO
+
+    permitidos, _ = alcances(_propiedad(), {"area_busqueda": area})
+    assert "AREA_BUSQUEDA" in permitidos

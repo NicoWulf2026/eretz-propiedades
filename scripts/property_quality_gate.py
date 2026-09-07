@@ -39,6 +39,8 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from scripts.property_freshest import (CAMPOS_FUSIONABLES,  # noqa: E402
+                                       fusionar, mas_frescas)
 from scripts.property_contract import (AUSENTE_SIN_DIAGNOSTICO,  # noqa: E402
                                        CONTRATO_VERSION, evaluar)
 
@@ -181,6 +183,7 @@ def main() -> int:
     exigir_base_vigente(args.db)
 
     cobertura = cobertura_por_agencia(Path(args.paquetes))
+    frescas = mas_frescas(Path(args.paquetes))
     propuestas = ciudades_propuestas(Path(args.auditoria_de_ciudad))
     geo_por_hash = geografia_por_propiedad(Path(args.cobertura_geografica))
     conexion = sqlite3.connect(f"file:{Path(args.db).as_posix()}?mode=ro", uri=True)
@@ -202,7 +205,11 @@ def main() -> int:
 
     with destino.open("w", encoding="utf-8") as archivo:
         for crudo, canonical, hash_dedup in conexion.execute(consulta):
-            fila = json.loads(crudo)
+            # La certificacion corre con el codigo de hoy y la preingestion es
+            # del 3 de septiembre: sin fusionar, cada arreglo del extractor se
+            # sigue contando como defecto sin arreglar.
+            fila = fusionar(json.loads(crudo), frescas.get(hash_dedup),
+                            CAMPOS_FUSIONABLES)
             total += 1
             fuente = cobertura.get(canonical)
             if fuente:

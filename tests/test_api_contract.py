@@ -36,7 +36,7 @@ def test_la_localidad_no_se_rellena_con_el_area():
     """Una propiedad sin localidad demostrada NO se muestra con una ciudad
     inventada: se muestra con su área y su nivel."""
     geo = {"localidad_canonica": None, "municipio_canonico": "La Calera",
-           "area_busqueda": {"nivel": "MUNICIPIO", "valor": "La Calera"}}
+           "area_busqueda": {"nivel": "MUNICIPIO", "nombre": "La Calera"}}
     api = fila_de_api(_fila(), geo, ["FICHA", "AREA_BUSQUEDA"])
 
     assert api["geo"]["localidad"]["nombre"] is None
@@ -49,7 +49,7 @@ def test_el_conflicto_geografico_viaja_al_frontend():
     """Si el frontend no sabe que hay conflicto, lo muestra como un dato
     normal."""
     geo = {"estado_geografico": "GEO_CONFLICT",
-           "area_busqueda": {"nivel": "PROVINCIA", "valor": "Cordoba"}}
+           "area_busqueda": {"nivel": "PROVINCIA", "nombre": "Cordoba"}}
     api = fila_de_api(_fila(), geo, ["FICHA"])
     assert api["geo"]["estado"] == "GEO_CONFLICT"
 

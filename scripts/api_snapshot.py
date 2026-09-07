@@ -31,6 +31,8 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.api_contract import CONTRATO_API_VERSION, fila_de_api  # noqa: E402
+from scripts.property_freshest import (CAMPOS_FUSIONABLES,  # noqa: E402
+                                       fusionar, mas_frescas)
 from scripts.preingestion_manifest import (base_canonica,  # noqa: E402
                                            exigir_base_vigente)
 
@@ -131,6 +133,8 @@ def main() -> int:
     exigir_base_vigente(args.db)
 
     geo = _leer_jsonl(Path(args.cobertura))
+    frescas = mas_frescas(Path(
+        r"D:\INMO CAPITAL\ERETZ_AGENCY_CERTIFICATION_20260827gencies"))
     gate = _leer_jsonl(Path(args.gate))
 
     salida = Path(args.salida)
@@ -157,7 +161,9 @@ def main() -> int:
     fichas_sin_foto_propia = 0
     for (crudo,) in origen.execute(
             "select row_json from rows where status = 'CANDIDATE'"):
-        cruda = json.loads(crudo)
+        cruda = fusionar(json.loads(crudo),
+                         frescas.get(json.loads(crudo).get("hash_dedup")),
+                         CAMPOS_FUSIONABLES)
         hash_dedup = cruda.get("hash_dedup")
         canonical = cruda.get("canonical_agency_id")
         propias = [u for u in (cruda.get("imagenes") or [])

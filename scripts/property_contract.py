@@ -259,7 +259,7 @@ def alcances(fila: dict[str, Any],
     # El area de busqueda permite encontrarla sin afirmar que es su ciudad. El
     # nivel viaja con el valor; sin nivel, un municipio se lee como ciudad.
     area = (geo.get("area_busqueda") or {}) if isinstance(geo, dict) else {}
-    if _presente(area.get("valor")) and area.get("nivel") not in (None, "SIN_AREA"):
+    if _presente(area.get("nombre")) and area.get("nivel") not in (None, "SIN_AREA"):
         permitidos.add(AREA_BUSQUEDA)
     else:
         razones.append("sin area de busqueda: no se la puede encontrar por "
