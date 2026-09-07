@@ -130,4 +130,26 @@ describe("API v2 DTO validation and adapters", () => {
       expect(parsed.issues.length).toBeGreaterThan(0);
     }
   });
+
+  it("keeps nine valid properties when a tenth item has no agency_id", () => {
+    const invalid = { ...apiV2FixtureMatrix.ranked } as Partial<typeof apiV2FixtureMatrix.ranked>;
+    delete invalid.agency_id;
+    const response = {
+      contrato: API_V2_CONTRACT,
+      ranking: API_V2_RANKING,
+      consulta: "casa",
+      total: 10,
+      limit: 10,
+      offset: 0,
+      data: [
+        ...Array.from({ length: 9 }, (_, index) => ({ ...apiV2FixtureMatrix.ranked, id: `valid-${index}` })),
+        invalid,
+      ],
+    };
+    const parsed = parseApiV2Page(response, true);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.data).toHaveLength(9);
+    expect(parsed.issues).toContainEqual(expect.objectContaining({ path: "$.data[9].agency_id" }));
+  });
 });

@@ -13,7 +13,7 @@ Contract/version: `eretz_api_property_v1`; technical ranking: `eretz_ranking_tec
 | `/v2/propiedades` | GET | Filtered list | operation/type/currency/price/typed area/locality/neighborhood/agency/rooms/bedrooms + limit/offset | contract, total, limit, offset, property DTOs | Property fields nullable | Future filtered list | PARTIAL: no explicit sort |
 | `/v2/propiedades/mapa` | GET | Coordinate rows | operation/type/limit | total + raw coordinate items | Core values nullable; coordinates selected non-null | Future map input | INCOMPATIBLE with current viewport/cluster API |
 | `/v2/propiedades/{id}` | GET | Detail | id | property DTO; 404 missing | Many property fields nullable | Detail | READY for property data; contact absent |
-| `/v2/areas` | GET | Typed search areas | q/limit | level/name/count | name can be null by stored contract | Area autocomplete/facets | READY |
+| `/v2/areas` | GET | Typed search areas | q/limit | level/name/count | name is filtered non-null | Area autocomplete/facets | READY |
 | `/v2/barrios` | GET | Source neighborhoods | q/limit | `canonizado:false`, name/count | name filtered non-null | Neighborhood suggestions | READY with non-canonical warning |
 | `/v2/filtros` | GET | Real facets/coverage | none | values/counts, price ranges, `sin_dato` | Explicit missing counts | Filter catalog | READY |
 | `/v2/sugerencias` | GET | Area/neighborhood suggestions | q min length 2, limit | type/level/name/count | level null for neighborhood | Autocomplete | READY; current UI DTO differs |
@@ -59,7 +59,7 @@ The domain exposes page/pageSize. `catalogPaginationToOffset` maps it to v2 `lim
 |---|---|---|---|---|
 | `searchProperties` | `/api/properties/search`, counts, home | `/v2/buscar` + `/v2/propiedades` | NO | Split filter/search contracts; sort; cursor cutover |
 | `searchMap` | `/api/properties/map` | `/v2/propiedades/mapa` | NO | No viewport, clusters, confidence or compatible counts |
-| `searchSuggestions` | suggestions route | `/v2/sugerencias`, `/v2/areas`, `/v2/barrios` | YES at data boundary | Presentation/URL migration pending |
+| `searchSuggestions` | suggestions route | `/v2/sugerencias`, `/v2/areas`, `/v2/barrios` | YES: CUT OVER | None for autocomplete; legacy function remains isolated and unused |
 | `getPropertyById` | property detail | `/v2/propiedades/{id}` | PARTIAL | Contact/agency details and presentation mapping absent |
 | `getPropertiesByIds` | favorites/compare/collections | Repeated detail or future batch endpoint | NO | No v2 batch endpoint |
 | Agency directory/profile/inventory | professional routes, claims | None complete | NO | Agency/contact/profile contract missing |
@@ -142,4 +142,55 @@ TEMPORARY_FRONTEND_BEHAVIOR: retain legacy reads; do not fan out unbounded detai
 3. Adapt the existing presentation `Property` without discarding v2 geography or null/zero meaning.
 4. Migrate internal Next routes one at a time, keeping their browser contracts stable where useful.
 5. Replace false-zero/404 fallbacks in UI services with `ApiV2Result` states.
-6. Run real-data and desktop browser acceptance against a configured preview.
+6. Repeat real-data and desktop browser acceptance against the configured preview before promotion.
+
+## First Production Cutover
+
+### Flows migrated
+
+| Flow | Legacy | API v2 | Cutover status |
+|---|---|---|---|
+| Autocomplete / suggestions | `property-db-service.searchSuggestions` | `/v2/sugerencias` through the server-only discovery facade | API_V2 |
+| Areas | Direct PostgreSQL-derived location text | `/v2/areas` validated and adapted | API_V2_INFRASTRUCTURE |
+| Neighborhoods | Direct source rows | `/v2/barrios` with `canonizado:false` preserved | API_V2_INFRASTRUCTURE |
+| Filter metadata | Static/legacy catalog assumptions | `/v2/filtros` validated and adapted | READY_INFRASTRUCTURE |
+| Explorer results | PostgreSQL | Not cut over | LEGACY |
+| Map | PostgreSQL | Not cut over | LEGACY |
+| Detail/contact | PostgreSQL | Not cut over | LEGACY / BLOCKED |
+
+There is no PostgreSQL fallback in the migrated autocomplete route. API failures remain typed failures and the UI distinguishes them from a successful empty response.
+
+### Filter compatibility
+
+| Classification | Current controls/data |
+|---|---|
+| SUPPORTED_NOW | Operation, property type, currency, price range, typed area/locality/neighborhood, agency id, rooms and bedrooms |
+| DISPLAY_ONLY_LEGACY | Existing filter controls remain backed by the legacy result flow until Explorer is migrated |
+| BLOCKED_BY_BACKEND | Bathrooms, surfaces, garages, mortgage state, media, recency, publisher text and user-selected sort |
+| UNUSED | `/v2/filtros.sin_dato` is retained as coverage metadata but does not remove or add controls in this phase |
+
+### Validation and partial-data policy
+
+The response envelope and contract version are response-level invariants: if either is malformed, the response is `INVALID_RESPONSE`. Collection items are validated independently for areas, neighborhoods, suggestions and property pages. Invalid items are omitted, their exact paths are reported, and valid siblings return as `PARTIAL_DATA`. `PARTIAL_DATA` with zero usable autocomplete items is rendered as a recoverable error, never as an empty result.
+
+`agency_id` remains required for an individual property. Evidence: the current snapshot table declares `agency_id text not null`; all 58,427 rows have a non-null, non-empty column value; all 58,427 stored property documents contain a non-empty string; and backend tests construct the same non-null schema. This is a strong current implementation invariant, but it is not formally guaranteed by a committed OpenAPI/response model because API v2 returns raw dictionaries. A single missing `agency_id` invalidates that item, not its page: nine valid siblings plus one invalid item produce nine properties and `PARTIAL_DATA`.
+
+### URL geography preservation
+
+Selections add `area_nivel` and `area_nombre` (plus `area_id` when a future backend supplies one). Municipality, department and locality selections use the existing generic `ubicaciones` parameter for legacy result compatibility and never populate `ciudad`. Province keeps the existing `provincia` parameter. Neighborhoods retain `barrio_canonico=0`. These typed parameters round-trip through the existing filter serializer but do not claim that legacy Explorer execution understands the new hierarchy.
+
+### Base URL strategy
+
+- Local development: start the read-only API locally and set `ERETZ_API_V2_BASE_URL=http://127.0.0.1:<port>` only in the Next.js server process.
+- Tests: inject `baseUrl` and `fetchImpl`; real smoke uses `ERETZ_API_V2_SMOKE_URL`.
+- Preview: configure `ERETZ_API_V2_BASE_URL` as a server environment variable. It is not secret, but it must never use `NEXT_PUBLIC_` because browser calls go through the internal route.
+
+### Real smoke and browser QA
+
+After an unrelated snapshot regeneration released its SQLite lock, the real frontend client passed against the 58,427-row snapshot: `/v2/areas` HTTP 200/SUCCESS with 10 adapted items in about 69 ms; `/v2/barrios` 200/SUCCESS with 20 items in about 440 ms; `/v2/sugerencias` 200/SUCCESS with 8 items in about 456 ms; `/v2/filtros` 200/SUCCESS with one adapted metadata object in about 561 ms. Times are single local observations, not benchmarks.
+
+Focused Playwright QA passed 5/5 against the real local API at 1440, 1366 and 1280 px. It covered accented and partial queries, province/locality/municipality labels, real internal network requests, no Supabase browser requests, empty versus failure feedback, keyboard and mouse selection, Escape/reopen, re-query after selection, non-canonical neighborhoods, typed URL persistence and console errors. The home does not currently use this autocomplete, so its discovery flow was not changed.
+
+### Remaining blockers
+
+Explorer still needs a combined ranked search/filter/sort contract. Map still needs viewport, stable total/truncation semantics and a clustering decision. Detail still needs agency/contact data. Filter metadata is available but intentionally does not drive visual controls until result execution can honor the same contract.

@@ -79,6 +79,40 @@ describe("FilterForm — filtros alineados con datos públicos reales", () => {
     expect(params.get("barrio")).toBe("Palermo");
   });
 
+  it("preserva el nivel de un municipio sin convertirlo en ciudad", () => {
+    const form = new FormData();
+    form.set("ciudad", "Rosario");
+    form.set("barrio", "Centro");
+    form.set("q", "La Calera");
+    form.set("__suggestion_category", "municipio");
+    form.set("__suggestion_value", "La Calera");
+    form.set("__suggestion_kind", "area");
+    form.set("__suggestion_level", "MUNICIPIO");
+    const params = buildFilterSearchParams(form);
+    expect(params.get("q")).toBeNull();
+    expect(params.get("ciudad")).toBeNull();
+    expect(params.get("ubicaciones")).toBe("La Calera");
+    expect(params.get("area_nivel")).toBe("MUNICIPIO");
+    expect(params.get("area_nombre")).toBe("La Calera");
+    expect(params.get("barrio")).toBeNull();
+  });
+
+  it("preserva que un barrio de API v2 no es canónico", () => {
+    const form = new FormData();
+    form.set("provincia", "Córdoba");
+    form.set("area_nivel", "PROVINCIA");
+    form.set("q", "Palermo");
+    form.set("__suggestion_category", "barrio");
+    form.set("__suggestion_value", "Palermo");
+    form.set("__suggestion_kind", "neighborhood");
+    form.set("__suggestion_canonical", "0");
+    const params = buildFilterSearchParams(form);
+    expect(params.get("barrio")).toBe("Palermo");
+    expect(params.get("barrio_canonico")).toBe("0");
+    expect(params.get("provincia")).toBeNull();
+    expect(params.get("area_nivel")).toBeNull();
+  });
+
   it("una búsqueda rápida conserva filtros avanzados y viewport ya aplicados", () => {
     const filtersWithState = parsePropertyFilters({
       ciudad: "Rosario", moneda: "USD", precio_max: "180000",

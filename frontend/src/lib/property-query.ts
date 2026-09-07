@@ -8,6 +8,7 @@ import type {
   PropertyType,
   TriState,
 } from "@/types/property";
+import type { SearchAreaLevel } from "@/domain/catalog-property";
 
 export const MAX_ZONES = 6;
 
@@ -66,6 +67,7 @@ const propertyTypes = new Set<PropertyType>([
   "otro",
 ]);
 const currencies = new Set<PropertyCurrency>(["USD", "ARS", "EUR", "UYU"]);
+const areaLevels = new Set<SearchAreaLevel>(["LOCALIDAD", "MUNICIPIO", "DEPARTAMENTO", "PROVINCIA", "SIN_AREA"]);
 const sorts = new Set<PropertySort>([
   "recent", "price_asc", "price_desc", "area_desc", "rooms_desc", "price_m2_asc", "nearest",
 ]);
@@ -160,14 +162,26 @@ export function parsePropertyFilters(params: SearchParams): PropertyFilters {
   const cursorCandidate = one(params.cursor).slice(0, 420);
   const cursor = /^[A-Za-z0-9_-]+$/.test(cursorCandidate) ? cursorCandidate : "";
   const requestedPage = Math.min(Math.max(1, Math.floor(positive(params.pagina) ?? 1)), 10_000);
+  const selectedAreaLevel = one(params.area_nivel).toUpperCase();
+  const selectedAreaName = text(params.area_nombre, 80);
+  const neighborhood = text(params.barrio);
+  const selectedArea = areaLevels.has(selectedAreaLevel as SearchAreaLevel) && selectedAreaName
+    ? {
+        id: text(params.area_id, 120) || null,
+        name: selectedAreaName,
+        level: selectedAreaLevel as SearchAreaLevel,
+      }
+    : null;
   return {
     q: text(params.q),
     operation: operations.has(operation) ? operation : "",
     propertyType: propertyTypes.has(propertyType) ? propertyType : "",
     province: text(params.provincia),
     city: text(params.ciudad),
-    neighborhood: text(params.barrio),
+    neighborhood,
     locations: parseLocations(params.ubicaciones),
+    selectedArea,
+    neighborhoodCanonical: neighborhood && one(params.barrio_canonico) === "0" ? false : null,
     zones: parseZones(params.zonas),
     minPrice: positive(params.precio_min),
     maxPrice: positive(params.precio_max),
@@ -211,6 +225,10 @@ export function filtersToSearchParams(filters: PropertyFilters) {
     ["ciudad", filters.city],
     ["barrio", filters.neighborhood],
     ["ubicaciones", filters.locations.length ? filters.locations.join(",") : ""],
+    ["area_nivel", filters.selectedArea?.level ?? ""],
+    ["area_nombre", filters.selectedArea?.name ?? ""],
+    ["area_id", filters.selectedArea?.id ?? ""],
+    ["barrio_canonico", filters.neighborhoodCanonical === false ? "0" : ""],
     ["zonas", filters.zones.length ? serializeZones(filters.zones) : ""],
     ["precio_min", filters.minPrice],
     ["precio_max", filters.maxPrice],

@@ -930,7 +930,8 @@ export function searchMap(filters: PropertyFilters, viewport: MapViewport): Prom
 
 // Prioridad de agrupación del autocomplete universal.
 const SUGGESTION_PRIORITY: Record<SearchSuggestion["category"], number> = {
-  id: 0, provincia: 1, ciudad: 2, barrio: 3, dirección: 4, inmobiliaria: 5, agente: 6, tipo: 7,
+  id: 0, provincia: 1, departamento: 2, municipio: 3, localidad: 4, ciudad: 4,
+  barrio: 5, dirección: 6, inmobiliaria: 7, agente: 8, tipo: 9, área: 10,
 };
 
 export function suggestionMatchRank(query: string, label: string | null | undefined): number | null {

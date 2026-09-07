@@ -14,5 +14,4 @@ export {
   getRelatedProperties,
   searchMap,
   searchProperties,
-  searchSuggestions,
 } from "@/lib/property-db-service";

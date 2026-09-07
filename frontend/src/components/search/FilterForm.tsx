@@ -30,7 +30,12 @@ function FilterGroup({ id, prefix, label, hint, count, level, children }: {
   );
 }
 
-const INTERNAL_FIELDS = new Set(["__nl_skip", "__suggestion_category", "__suggestion_value"]);
+const INTERNAL_FIELDS = new Set([
+  "__nl_skip", "__suggestion_category", "__suggestion_value", "__suggestion_kind",
+  "__suggestion_level", "__suggestion_id", "__suggestion_canonical",
+]);
+const VALID_AREA_LEVELS = new Set(["LOCALIDAD", "MUNICIPIO", "DEPARTAMENTO", "PROVINCIA", "SIN_AREA"]);
+const GEOGRAPHY_PARAMS = ["provincia", "ciudad", "barrio", "ubicaciones", "area_nivel", "area_nombre", "area_id", "barrio_canonico"];
 const SUGGESTION_PARAM: Partial<Record<SearchSuggestion["category"], string>> = {
   provincia: "provincia",
   ciudad: "ciudad",
@@ -53,6 +58,28 @@ export function buildFilterSearchParams(form: FormData): URLSearchParams {
   const query = String(form.get("q") ?? "").trim();
   const suggestionCategory = String(form.get("__suggestion_category") ?? "") as SearchSuggestion["category"];
   const suggestionValue = String(form.get("__suggestion_value") ?? "").trim();
+  const suggestionKind = String(form.get("__suggestion_kind") ?? "");
+  const suggestionLevel = String(form.get("__suggestion_level") ?? "");
+  const suggestionId = String(form.get("__suggestion_id") ?? "").trim();
+  const suggestionCanonical = String(form.get("__suggestion_canonical") ?? "");
+  if (suggestionKind === "area" && VALID_AREA_LEVELS.has(suggestionLevel) && suggestionValue) {
+    params.delete("q");
+    GEOGRAPHY_PARAMS.forEach((key) => params.delete(key));
+    params.set("area_nivel", suggestionLevel);
+    params.set("area_nombre", suggestionValue);
+    if (suggestionId) params.set("area_id", suggestionId);
+    else params.delete("area_id");
+    if (suggestionLevel === "PROVINCIA") params.set("provincia", suggestionValue);
+    else params.set("ubicaciones", suggestionValue);
+    return params;
+  }
+  if (suggestionKind === "neighborhood" && suggestionValue) {
+    params.delete("q");
+    GEOGRAPHY_PARAMS.forEach((key) => params.delete(key));
+    params.set("barrio", suggestionValue);
+    if (suggestionCanonical === "0") params.set("barrio_canonico", "0");
+    return params;
+  }
   const suggestionParam = SUGGESTION_PARAM[suggestionCategory];
   if (suggestionParam && suggestionValue) {
     params.delete("q");

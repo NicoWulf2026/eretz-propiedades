@@ -76,7 +76,7 @@ export type ApiV2MapResponseDto = {
 };
 export type ApiV2AreaDto = {
   nivel: ApiV2SearchAreaDto["nivel"];
-  nombre: string | null;
+  nombre: string;
   propiedades: number;
 };
 export type ApiV2AreasResponseDto = { contrato: typeof API_V2_CONTRACT; data: ApiV2AreaDto[] };
@@ -85,12 +85,19 @@ export type ApiV2NeighborhoodsResponseDto = {
   canonizado: false;
   data: Array<{ nombre: string; propiedades: number }>;
 };
-export type ApiV2SuggestionDto = {
-  tipo: "area" | "barrio";
-  nivel: ApiV2SearchAreaDto["nivel"] | null;
-  nombre: string;
-  propiedades: number;
-};
+export type ApiV2SuggestionDto =
+  | {
+      tipo: "area";
+      nivel: ApiV2SearchAreaDto["nivel"];
+      nombre: string;
+      propiedades: number;
+    }
+  | {
+      tipo: "barrio";
+      nivel: null;
+      nombre: string;
+      propiedades: number;
+    };
 export type ApiV2SuggestionsResponseDto = {
   contrato: typeof API_V2_CONTRACT;
   data: ApiV2SuggestionDto[];

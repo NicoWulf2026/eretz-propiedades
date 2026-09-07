@@ -1,5 +1,14 @@
 import type { CatalogProperty } from "@/domain/catalog-property";
-import { API_V2_RANKING, type ApiV2GeographyDto, type ApiV2PropertyDto } from "@/lib/api-v2/dto";
+import {
+  API_V2_CONTRACT,
+  API_V2_RANKING,
+  type ApiV2AreasResponseDto,
+  type ApiV2FiltersResponseDto,
+  type ApiV2GeographyDto,
+  type ApiV2NeighborhoodsResponseDto,
+  type ApiV2PropertyDto,
+  type ApiV2SuggestionsResponseDto,
+} from "@/lib/api-v2/dto";
 
 type GeographyOverrides = Partial<Omit<ApiV2GeographyDto, "localidad" | "area_busqueda">> & {
   localidad?: Partial<ApiV2GeographyDto["localidad"]>;
@@ -146,3 +155,45 @@ export const expectedZeroDomain: Pick<CatalogProperty, "price" | "rooms" | "bedr
   bedrooms: 0,
   surfaces: { total: 0, covered: 0 },
 };
+
+export const apiV2AreasFixture = {
+  contrato: API_V2_CONTRACT,
+  data: [
+    { nivel: "LOCALIDAD", nombre: "Córdoba", propiedades: 1300 },
+    { nivel: "MUNICIPIO", nombre: "La Calera", propiedades: 90 },
+    { nivel: "DEPARTAMENTO", nombre: "Colón", propiedades: 540 },
+    { nivel: "PROVINCIA", nombre: "Santa Fe", propiedades: 2100 },
+  ],
+} satisfies ApiV2AreasResponseDto;
+
+export const apiV2NeighborhoodsFixture = {
+  contrato: API_V2_CONTRACT,
+  canonizado: false,
+  data: [
+    { nombre: "Palermo", propiedades: 850 },
+    { nombre: "Nueva Córdoba", propiedades: 430 },
+  ],
+} satisfies ApiV2NeighborhoodsResponseDto;
+
+export const apiV2SuggestionsFixture = {
+  contrato: API_V2_CONTRACT,
+  data: [
+    { tipo: "area", nivel: "PROVINCIA", nombre: "Córdoba", propiedades: 9000 },
+    { tipo: "area", nivel: "DEPARTAMENTO", nombre: "Capital", propiedades: 3500 },
+    { tipo: "area", nivel: "MUNICIPIO", nombre: "La Calera", propiedades: 90 },
+    { tipo: "area", nivel: "LOCALIDAD", nombre: "Córdoba", propiedades: 1300 },
+    { tipo: "barrio", nivel: null, nombre: "Nueva Córdoba", propiedades: 430 },
+  ],
+} satisfies ApiV2SuggestionsResponseDto;
+
+export const apiV2FiltersFixture = {
+  contrato: API_V2_CONTRACT,
+  filtros: {
+    operacion: [{ valor: "venta", propiedades: 32000 }, { valor: "alquiler", propiedades: 18000 }],
+    tipo_propiedad: [{ valor: "departamento", propiedades: 25000 }],
+    moneda: [{ valor: "USD", propiedades: 40000 }, { valor: "ARS", propiedades: 9000 }],
+    area_nivel: [{ valor: "LOCALIDAD", propiedades: 9600 }, { valor: "MUNICIPIO", propiedades: 12000 }],
+  },
+  rango_de_precio: [{ moneda: "USD", minimo: 0, maximo: 5000000 }],
+  sin_dato: { operacion: 1, tipo_propiedad: 2, precio: 100, localidad: 48000, latitud: 19000 },
+} satisfies ApiV2FiltersResponseDto;

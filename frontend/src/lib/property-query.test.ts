@@ -55,6 +55,19 @@ describe("property query", () => {
     expect(round.locations).toEqual(["Palermo", "Belgrano"]);
   });
 
+  it("round-trips typed area and non-canonical neighborhood metadata", () => {
+    const area = parsePropertyFilters({
+      ubicaciones: "La Calera", area_nivel: "MUNICIPIO", area_nombre: "La Calera", area_id: "area-1",
+    });
+    expect(area.selectedArea).toEqual({ id: "area-1", name: "La Calera", level: "MUNICIPIO" });
+    const areaRoundTrip = parsePropertyFilters(Object.fromEntries(filtersToSearchParams(area)));
+    expect(areaRoundTrip.selectedArea).toEqual(area.selectedArea);
+
+    const neighborhood = parsePropertyFilters({ barrio: "Palermo", barrio_canonico: "0" });
+    expect(neighborhood.neighborhoodCanonical).toBe(false);
+    expect(filtersToSearchParams(neighborhood).get("barrio_canonico")).toBe("0");
+  });
+
   it("sin filtros no produce near, priceMode ni mortgageState", () => {
     const f = parsePropertyFilters({});
     expect(f.near).toBeNull();

@@ -2,10 +2,14 @@ import {
   API_V2_CONTRACT,
   API_V2_RANKING,
   type ApiV2GeographyDto,
+  type ApiV2AreasResponseDto,
+  type ApiV2FiltersResponseDto,
+  type ApiV2NeighborhoodsResponseDto,
   type ApiV2PageDto,
   type ApiV2PropertyDto,
   type ApiV2RankingDto,
   type ApiV2SearchPageDto,
+  type ApiV2SuggestionsResponseDto,
 } from "./dto";
 import type { ApiV2Issue } from "./errors";
 
@@ -23,6 +27,20 @@ function nullableString(value: unknown): value is string | null {
 
 function nullableFiniteNumber(value: unknown): value is number | null {
   return value === null || (typeof value === "number" && Number.isFinite(value));
+}
+
+function nonNegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+function finiteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+const searchAreaLevels = ["LOCALIDAD", "MUNICIPIO", "DEPARTAMENTO", "PROVINCIA", "SIN_AREA"] as const;
+
+function searchAreaLevel(value: unknown): value is (typeof searchAreaLevels)[number] {
+  return typeof value === "string" && searchAreaLevels.includes(value as (typeof searchAreaLevels)[number]);
 }
 
 function issue(issues: ApiV2Issue[], path: string, message: string): false {
@@ -140,4 +158,133 @@ export function parseApiV2Page(value: unknown, search = false): ValidationResult
   });
   const parsed = { ...value, data } as unknown as ApiV2PageDto | ApiV2SearchPageDto;
   return { success: true, data: parsed, issues };
+}
+
+export function parseApiV2Areas(value: unknown): ValidationResult<ApiV2AreasResponseDto> {
+  const issues: ApiV2Issue[] = [];
+  if (!record(value)) return { success: false, issues: [{ path: "$", message: "expected object" }] };
+  if (value.contrato !== API_V2_CONTRACT) issue(issues, "$.contrato", "unexpected API contract");
+  if (!Array.isArray(value.data)) {
+    issue(issues, "$.data", "expected array");
+    return { success: false, issues };
+  }
+  if (value.contrato !== API_V2_CONTRACT) return { success: false, issues };
+  const data: ApiV2AreasResponseDto["data"] = [];
+  value.data.forEach((item, index) => {
+    const path = `$.data[${index}]`;
+    if (!record(item)) { issue(issues, path, "expected object"); return; }
+    let valid = true;
+    if (!searchAreaLevel(item.nivel)) valid = issue(issues, `${path}.nivel`, "unknown search area level");
+    if (typeof item.nombre !== "string" || !item.nombre.trim()) valid = issue(issues, `${path}.nombre`, "expected non-empty string");
+    if (!nonNegativeInteger(item.propiedades)) valid = issue(issues, `${path}.propiedades`, "expected non-negative integer");
+    if (valid) data.push(item as ApiV2AreasResponseDto["data"][number]);
+  });
+  return { success: true, data: { contrato: API_V2_CONTRACT, data }, issues };
+}
+
+export function parseApiV2Neighborhoods(value: unknown): ValidationResult<ApiV2NeighborhoodsResponseDto> {
+  const issues: ApiV2Issue[] = [];
+  if (!record(value)) return { success: false, issues: [{ path: "$", message: "expected object" }] };
+  let envelopeValid = true;
+  if (value.contrato !== API_V2_CONTRACT) envelopeValid = issue(issues, "$.contrato", "unexpected API contract");
+  if (value.canonizado !== false) envelopeValid = issue(issues, "$.canonizado", "expected explicit false");
+  if (!Array.isArray(value.data)) {
+    issue(issues, "$.data", "expected array");
+    return { success: false, issues };
+  }
+  if (!envelopeValid) return { success: false, issues };
+  const data: ApiV2NeighborhoodsResponseDto["data"] = [];
+  value.data.forEach((item, index) => {
+    const path = `$.data[${index}]`;
+    if (!record(item)) { issue(issues, path, "expected object"); return; }
+    let valid = true;
+    if (typeof item.nombre !== "string" || !item.nombre.trim()) valid = issue(issues, `${path}.nombre`, "expected non-empty string");
+    if (!nonNegativeInteger(item.propiedades)) valid = issue(issues, `${path}.propiedades`, "expected non-negative integer");
+    if (valid) data.push(item as ApiV2NeighborhoodsResponseDto["data"][number]);
+  });
+  return { success: true, data: { contrato: API_V2_CONTRACT, canonizado: false, data }, issues };
+}
+
+export function parseApiV2Suggestions(value: unknown): ValidationResult<ApiV2SuggestionsResponseDto> {
+  const issues: ApiV2Issue[] = [];
+  if (!record(value)) return { success: false, issues: [{ path: "$", message: "expected object" }] };
+  if (value.contrato !== API_V2_CONTRACT) issue(issues, "$.contrato", "unexpected API contract");
+  if (!Array.isArray(value.data)) {
+    issue(issues, "$.data", "expected array");
+    return { success: false, issues };
+  }
+  if (value.contrato !== API_V2_CONTRACT) return { success: false, issues };
+  const data: ApiV2SuggestionsResponseDto["data"] = [];
+  value.data.forEach((item, index) => {
+    const path = `$.data[${index}]`;
+    if (!record(item)) { issue(issues, path, "expected object"); return; }
+    let valid = true;
+    if (item.tipo !== "area" && item.tipo !== "barrio") valid = issue(issues, `${path}.tipo`, "expected area or barrio");
+    if (item.tipo === "area" && !searchAreaLevel(item.nivel)) valid = issue(issues, `${path}.nivel`, "area requires a known level");
+    if (item.tipo === "barrio" && item.nivel !== null) valid = issue(issues, `${path}.nivel`, "neighborhood level must be null");
+    if (typeof item.nombre !== "string" || !item.nombre.trim()) valid = issue(issues, `${path}.nombre`, "expected non-empty string");
+    if (!nonNegativeInteger(item.propiedades)) valid = issue(issues, `${path}.propiedades`, "expected non-negative integer");
+    if (valid) data.push(item as ApiV2SuggestionsResponseDto["data"][number]);
+  });
+  return { success: true, data: { contrato: API_V2_CONTRACT, data }, issues };
+}
+
+export function parseApiV2Filters(value: unknown): ValidationResult<ApiV2FiltersResponseDto> {
+  const issues: ApiV2Issue[] = [];
+  if (!record(value)) return { success: false, issues: [{ path: "$", message: "expected object" }] };
+  let envelopeValid = true;
+  if (value.contrato !== API_V2_CONTRACT) envelopeValid = issue(issues, "$.contrato", "unexpected API contract");
+  if (!record(value.filtros)) envelopeValid = issue(issues, "$.filtros", "expected object");
+  if (!Array.isArray(value.rango_de_precio)) envelopeValid = issue(issues, "$.rango_de_precio", "expected array");
+  if (!record(value.sin_dato)) envelopeValid = issue(issues, "$.sin_dato", "expected object");
+  if (!envelopeValid) return { success: false, issues };
+
+  const parseFacets = (key: keyof ApiV2FiltersResponseDto["filtros"]) => {
+    const raw = (value.filtros as Record<string, unknown>)[key];
+    if (!Array.isArray(raw)) { issue(issues, `$.filtros.${key}`, "expected array"); return null; }
+    const valid: ApiV2FiltersResponseDto["filtros"][typeof key] = [];
+    raw.forEach((item, index) => {
+      const path = `$.filtros.${key}[${index}]`;
+      if (!record(item)) { issue(issues, path, "expected object"); return; }
+      const valueValid = typeof item.valor === "string" || finiteNumber(item.valor);
+      const countValid = nonNegativeInteger(item.propiedades);
+      if (!valueValid) issue(issues, `${path}.valor`, "expected string or finite number");
+      if (!countValid) issue(issues, `${path}.propiedades`, "expected non-negative integer");
+      if (valueValid && countValid) valid.push(item as ApiV2FiltersResponseDto["filtros"][typeof key][number]);
+    });
+    return valid;
+  };
+  const operacion = parseFacets("operacion");
+  const tipo_propiedad = parseFacets("tipo_propiedad");
+  const moneda = parseFacets("moneda");
+  const area_nivel = parseFacets("area_nivel");
+  if (!operacion || !tipo_propiedad || !moneda || !area_nivel) return { success: false, issues };
+
+  const rango_de_precio: ApiV2FiltersResponseDto["rango_de_precio"] = [];
+  (value.rango_de_precio as unknown[]).forEach((item, index) => {
+    const path = `$.rango_de_precio[${index}]`;
+    if (!record(item)) { issue(issues, path, "expected object"); return; }
+    let valid = true;
+    if (typeof item.moneda !== "string" || !item.moneda.trim()) valid = issue(issues, `${path}.moneda`, "expected non-empty string");
+    if (!finiteNumber(item.minimo)) valid = issue(issues, `${path}.minimo`, "expected finite number");
+    if (!finiteNumber(item.maximo)) valid = issue(issues, `${path}.maximo`, "expected finite number");
+    if (valid) rango_de_precio.push(item as ApiV2FiltersResponseDto["rango_de_precio"][number]);
+  });
+  const missingKeys = ["operacion", "tipo_propiedad", "precio", "localidad", "latitud"] as const;
+  for (const key of missingKeys) {
+    if (!nonNegativeInteger((value.sin_dato as Record<string, unknown>)[key])) {
+      envelopeValid = issue(issues, `$.sin_dato.${key}`, "expected non-negative integer");
+    }
+  }
+  if (!envelopeValid) return { success: false, issues };
+  return {
+    success: true,
+    data: {
+      contrato: API_V2_CONTRACT,
+      filtros: { operacion, tipo_propiedad, moneda, area_nivel },
+      rango_de_precio,
+      sin_dato: value.sin_dato as ApiV2FiltersResponseDto["sin_dato"],
+    },
+    issues,
+  };
 }

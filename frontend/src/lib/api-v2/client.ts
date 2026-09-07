@@ -2,9 +2,25 @@ import "server-only";
 
 import type { CatalogProperty } from "@/domain/catalog-property";
 import type { CatalogSearchPage, CatalogSearchQuery } from "@/domain/catalog-search";
-import { adaptApiV2Page, adaptApiV2Property, toApiV2SearchRequest } from "./adapters";
+import type { CatalogArea, CatalogFilterMetadata, CatalogNeighborhood, CatalogSuggestion } from "@/domain/catalog-discovery";
+import {
+  adaptApiV2Area,
+  adaptApiV2Filters,
+  adaptApiV2Neighborhood,
+  adaptApiV2Page,
+  adaptApiV2Property,
+  adaptApiV2Suggestion,
+  toApiV2SearchRequest,
+} from "./adapters";
 import { ApiV2Error, type ApiV2Result } from "./errors";
-import { parseApiV2Page, parseApiV2Property } from "./schemas";
+import {
+  parseApiV2Areas,
+  parseApiV2Filters,
+  parseApiV2Neighborhoods,
+  parseApiV2Page,
+  parseApiV2Property,
+  parseApiV2Suggestions,
+} from "./schemas";
 
 export type ApiV2ClientOptions = {
   baseUrl?: string;
@@ -28,6 +44,14 @@ function httpError(status: number, message: string): ApiV2Error {
   if (status === 404) return new ApiV2Error("NOT_FOUND", message, status);
   if (status === 400 || status === 422) return new ApiV2Error("BAD_REQUEST", message, status);
   return new ApiV2Error("SERVER_ERROR", message, status);
+}
+
+function boundedLimit(value: number, maximum: number): number {
+  return Math.min(maximum, Math.max(1, Math.trunc(value)));
+}
+
+function invalidResponse<T>(message: string, issues: ApiV2Error["issues"]): ApiV2Result<T> {
+  return { status: "FAILURE", error: new ApiV2Error("INVALID_RESPONSE", message, null, { issues }) };
 }
 
 export async function fetchApiV2Json(
@@ -111,4 +135,70 @@ export async function searchApiV2Properties(
   if (parsed.issues.length > 0) return { status: "PARTIAL_DATA", data: page, issues: parsed.issues };
   if (page.properties.length === 0) return { status: "SUCCESS_EMPTY", data: page };
   return { status: "SUCCESS", data: page };
+}
+
+export async function getApiV2Areas(
+  query: string | null = null,
+  limit = 20,
+  options: ApiV2ClientOptions = {},
+): Promise<ApiV2Result<CatalogArea[]>> {
+  const params = new URLSearchParams({ limit: String(boundedLimit(limit, 100)) });
+  const clean = query?.trim().slice(0, 80);
+  if (clean) params.set("q", clean);
+  const raw = await fetchApiV2Json("/v2/areas", params, options);
+  if (raw.status === "FAILURE") return raw;
+  const parsed = parseApiV2Areas(raw.data);
+  if (!parsed.success) return invalidResponse("API v2 areas response does not match the contract", parsed.issues);
+  const data = parsed.data.data.map(adaptApiV2Area);
+  if (parsed.issues.length) return { status: "PARTIAL_DATA", data, issues: parsed.issues };
+  return { status: data.length ? "SUCCESS" : "SUCCESS_EMPTY", data };
+}
+
+export async function getApiV2Neighborhoods(
+  query: string | null = null,
+  limit = 50,
+  options: ApiV2ClientOptions = {},
+): Promise<ApiV2Result<CatalogNeighborhood[]>> {
+  const params = new URLSearchParams({ limit: String(boundedLimit(limit, 200)) });
+  const clean = query?.trim().slice(0, 80);
+  if (clean) params.set("q", clean);
+  const raw = await fetchApiV2Json("/v2/barrios", params, options);
+  if (raw.status === "FAILURE") return raw;
+  const parsed = parseApiV2Neighborhoods(raw.data);
+  if (!parsed.success) return invalidResponse("API v2 neighborhoods response does not match the contract", parsed.issues);
+  const data = parsed.data.data.map(adaptApiV2Neighborhood);
+  if (parsed.issues.length) return { status: "PARTIAL_DATA", data, issues: parsed.issues };
+  return { status: data.length ? "SUCCESS" : "SUCCESS_EMPTY", data };
+}
+
+export async function getApiV2Suggestions(
+  query: string,
+  limit = 8,
+  options: ApiV2ClientOptions = {},
+): Promise<ApiV2Result<CatalogSuggestion[]>> {
+  const clean = query.trim().slice(0, 60);
+  if (clean.length < 2) {
+    return { status: "FAILURE", error: new ApiV2Error("BAD_REQUEST", "API v2 suggestions require at least two characters") };
+  }
+  const params = new URLSearchParams({ q: clean, limit: String(boundedLimit(limit, 20)) });
+  const raw = await fetchApiV2Json("/v2/sugerencias", params, options);
+  if (raw.status === "FAILURE") return raw;
+  const parsed = parseApiV2Suggestions(raw.data);
+  if (!parsed.success) return invalidResponse("API v2 suggestions response does not match the contract", parsed.issues);
+  const data = parsed.data.data.map(adaptApiV2Suggestion);
+  if (parsed.issues.length) return { status: "PARTIAL_DATA", data, issues: parsed.issues };
+  return { status: data.length ? "SUCCESS" : "SUCCESS_EMPTY", data };
+}
+
+export async function getApiV2Filters(
+  options: ApiV2ClientOptions = {},
+): Promise<ApiV2Result<CatalogFilterMetadata>> {
+  const raw = await fetchApiV2Json("/v2/filtros", null, options);
+  if (raw.status === "FAILURE") return raw;
+  const parsed = parseApiV2Filters(raw.data);
+  if (!parsed.success) return invalidResponse("API v2 filters response does not match the contract", parsed.issues);
+  const data = adaptApiV2Filters(parsed.data);
+  if (parsed.issues.length) return { status: "PARTIAL_DATA", data, issues: parsed.issues };
+  const empty = !data.operations.length && !data.propertyTypes.length && !data.currencies.length && !data.areaLevels.length;
+  return { status: empty ? "SUCCESS_EMPTY" : "SUCCESS", data };
 }

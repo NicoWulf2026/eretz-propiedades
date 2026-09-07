@@ -12,10 +12,99 @@ import {
   type CatalogSearchPage,
   type CatalogSearchQuery,
 } from "@/domain/catalog-search";
-import { API_V2_RANKING, type ApiV2PageDto, type ApiV2PropertyDto, type ApiV2SearchPageDto } from "./dto";
+import type {
+  CatalogArea,
+  CatalogFilterMetadata,
+  CatalogGeographyContext,
+  CatalogNeighborhood,
+  CatalogSuggestion,
+} from "@/domain/catalog-discovery";
+import {
+  API_V2_RANKING,
+  type ApiV2AreaDto,
+  type ApiV2FiltersResponseDto,
+  type ApiV2NeighborhoodsResponseDto,
+  type ApiV2PageDto,
+  type ApiV2PropertyDto,
+  type ApiV2SearchPageDto,
+  type ApiV2SuggestionDto,
+} from "./dto";
 
 function known<T extends string>(raw: string | null, values: readonly T[]): T | null {
   return raw !== null && values.includes(raw as T) ? (raw as T) : null;
+}
+
+function unavailableGeographyContext(): CatalogGeographyContext {
+  return { province: null, department: null, municipality: null, locality: null };
+}
+
+export function adaptApiV2Area(dto: ApiV2AreaDto): CatalogArea {
+  return {
+    id: null,
+    name: dto.nombre,
+    level: dto.nivel,
+    propertyCount: dto.propiedades,
+    context: unavailableGeographyContext(),
+  };
+}
+
+export function adaptApiV2Neighborhood(
+  dto: ApiV2NeighborhoodsResponseDto["data"][number],
+): CatalogNeighborhood {
+  return {
+    id: null,
+    name: dto.nombre,
+    kind: "NEIGHBORHOOD",
+    canonical: false,
+    propertyCount: dto.propiedades,
+    context: unavailableGeographyContext(),
+  };
+}
+
+export function adaptApiV2Suggestion(dto: ApiV2SuggestionDto): CatalogSuggestion {
+  if (dto.tipo === "barrio") {
+    return {
+      id: null,
+      name: dto.nombre,
+      kind: "NEIGHBORHOOD",
+      level: null,
+      canonical: false,
+      propertyCount: dto.propiedades,
+      context: unavailableGeographyContext(),
+    };
+  }
+  return {
+    id: null,
+    name: dto.nombre,
+    kind: "AREA",
+    level: dto.nivel,
+    canonical: null,
+    propertyCount: dto.propiedades,
+    context: unavailableGeographyContext(),
+  };
+}
+
+export function adaptApiV2Filters(dto: ApiV2FiltersResponseDto): CatalogFilterMetadata {
+  const facets = (values: ApiV2FiltersResponseDto["filtros"]["operacion"]) =>
+    values.map((value) => ({ value: value.valor, propertyCount: value.propiedades }));
+  return {
+    operations: facets(dto.filtros.operacion),
+    propertyTypes: facets(dto.filtros.tipo_propiedad),
+    currencies: facets(dto.filtros.moneda),
+    areaLevels: facets(dto.filtros.area_nivel),
+    priceRanges: dto.rango_de_precio.map((range) => ({
+      currency: range.moneda,
+      minimum: range.minimo,
+      maximum: range.maximo,
+    })),
+    missing: {
+      operation: dto.sin_dato.operacion,
+      propertyType: dto.sin_dato.tipo_propiedad,
+      price: dto.sin_dato.precio,
+      locality: dto.sin_dato.localidad,
+      latitude: dto.sin_dato.latitud,
+    },
+  };
 }
 
 export function adaptApiV2Property(dto: ApiV2PropertyDto): CatalogProperty {

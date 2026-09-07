@@ -102,12 +102,24 @@ export type MapSearchResponse = {
 export type SearchSuggestion = {
   id: string;
   label: string;
-  category: "id" | "provincia" | "ciudad" | "barrio" | "dirección" | "inmobiliaria" | "agente" | "tipo";
+  category:
+    | "id" | "provincia" | "departamento" | "municipio" | "localidad" | "ciudad"
+    | "barrio" | "área" | "dirección" | "inmobiliaria" | "agente" | "tipo";
   query: string;
   // Contexto geográfico o semántico derivado de la misma fila. No se fabrican
   // conteos: el endpoint sólo lo informa cuando dispone de un dato fiable.
   context?: string;
   count?: number;
+  geography?: {
+    kind: "area" | "neighborhood";
+    entityId: string | null;
+    level: "LOCALIDAD" | "MUNICIPIO" | "DEPARTAMENTO" | "PROVINCIA" | "SIN_AREA" | null;
+    canonical: boolean | null;
+    province: string | null;
+    department: string | null;
+    municipality: string | null;
+    locality: string | null;
+  };
   // Navegación directa (p. ej. una coincidencia por ID ERETZ va a la ficha en
   // lugar de rellenar el término de búsqueda).
   href?: string;
@@ -230,6 +242,12 @@ export type PropertyFilters = {
   city: string;
   neighborhood: string;
   locations: string[];
+  selectedArea: {
+    id: string | null;
+    name: string;
+    level: "LOCALIDAD" | "MUNICIPIO" | "DEPARTAMENTO" | "PROVINCIA" | "SIN_AREA";
+  } | null;
+  neighborhoodCanonical: false | null;
   zones: MapZone[];
   minPrice: number | null;
   maxPrice: number | null;

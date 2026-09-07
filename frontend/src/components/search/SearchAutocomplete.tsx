@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
+import type { DiscoveryAutocompleteResponse } from "@/lib/discovery-contract";
 import { interpretNaturalQuery } from "@/lib/nl-search";
 import type { SearchSuggestion } from "@/types/property";
 
@@ -8,9 +9,12 @@ const recentKey = "eretz:recent-searches:v1";
 const suggestionCache = new Map<string, SearchSuggestion[]>();
 
 const CATEGORY_LABELS: Record<SearchSuggestion["category"], string> = {
-  id: "Propiedad", provincia: "Provincia", ciudad: "Ciudad", barrio: "Barrio",
+  id: "Propiedad", provincia: "Provincia", departamento: "Departamento", municipio: "Municipio",
+  localidad: "Localidad", ciudad: "Ciudad", barrio: "Barrio", área: "Área",
   dirección: "Dirección", inmobiliaria: "Inmobiliaria", agente: "Agente", tipo: "Tipo de propiedad",
 };
+
+type SuggestionFeedback = "idle" | "loading" | "empty" | "error";
 
 function readRecent(): SearchSuggestion[] {
   try {
@@ -61,7 +65,7 @@ export function SearchAutocomplete({ defaultValue }: { defaultValue: string }) {
   const [active, setActive] = useState(-1);
   const [ignoredFields, setIgnoredFields] = useState<string[]>([]);
   const [selectedSuggestion, setSelectedSuggestion] = useState<SearchSuggestion | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
+  const [feedback, setFeedback] = useState<SuggestionFeedback>("idle");
   const interpretation = useMemo(() => interpretNaturalQuery(value), [value]);
   const visibleInterpretation = interpretation.interpreted.filter((chip) => !ignoredFields.includes(chip.field));
 
@@ -80,28 +84,47 @@ export function SearchAutocomplete({ defaultValue }: { defaultValue: string }) {
       });
       return () => cancelAnimationFrame(frame);
     }
+    let controller: AbortController | null = null;
     const timer = window.setTimeout(async () => {
       const cached = suggestionCache.get(clean.toLocaleLowerCase("es-AR"));
       if (cached) {
         setSuggestions(cached);
+        setFeedback(cached.length ? "idle" : "empty");
         setActive(-1);
         return;
       }
-      abortRef.current?.abort();
-      const controller = new AbortController();
-      abortRef.current = controller;
+      controller = new AbortController();
+      setFeedback("loading");
       try {
         const response = await fetch(`/api/properties/suggestions?q=${encodeURIComponent(clean)}`, { signal: controller.signal });
-        if (!response.ok) return;
-        const payload = await response.json() as { suggestions: SearchSuggestion[] };
-        suggestionCache.set(clean.toLocaleLowerCase("es-AR"), payload.suggestions);
+        const payload = await response.json() as DiscoveryAutocompleteResponse;
+        if (!response.ok || payload.status === "FAILURE" || !Array.isArray(payload.suggestions)) {
+          setSuggestions([]);
+          setFeedback("error");
+          return;
+        }
+        if (payload.status === "PARTIAL_DATA" && payload.suggestions.length === 0) {
+          setSuggestions([]);
+          setFeedback("error");
+          return;
+        }
+        if (payload.status !== "PARTIAL_DATA") {
+          suggestionCache.set(clean.toLocaleLowerCase("es-AR"), payload.suggestions);
+        }
         setSuggestions(payload.suggestions);
+        setFeedback(payload.suggestions.length ? "idle" : "empty");
         setActive(-1);
-      } catch {
-        // Abort and temporary suggestion failures never block regular form submission.
+      } catch (error) {
+        if ((error as Error).name !== "AbortError") {
+          setSuggestions([]);
+          setFeedback("error");
+        }
       }
     }, 260);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      controller?.abort();
+    };
   }, [open, value]);
 
   function choose(suggestion: SearchSuggestion) {
@@ -142,6 +165,7 @@ export function SearchAutocomplete({ defaultValue }: { defaultValue: string }) {
           setValue(event.target.value);
           setSelectedSuggestion(null);
           setIgnoredFields([]);
+          setFeedback("idle");
           setOpen(true);
         }}
         onKeyDown={(event) => {
@@ -155,6 +179,12 @@ export function SearchAutocomplete({ defaultValue }: { defaultValue: string }) {
       {selectedSuggestion ? <>
         <input type="hidden" name="__suggestion_category" value={selectedSuggestion.category} />
         <input type="hidden" name="__suggestion_value" value={selectedSuggestion.query} />
+        {selectedSuggestion.geography ? <>
+          <input type="hidden" name="__suggestion_kind" value={selectedSuggestion.geography.kind} />
+          <input type="hidden" name="__suggestion_level" value={selectedSuggestion.geography.level ?? ""} />
+          <input type="hidden" name="__suggestion_canonical" value={selectedSuggestion.geography.canonical === false ? "0" : ""} />
+          {selectedSuggestion.geography.entityId ? <input type="hidden" name="__suggestion_id" value={selectedSuggestion.geography.entityId} /> : null}
+        </> : null}
       </> : null}
       {open && suggestions.length > 0 ? (
         <ul id={listId} role="listbox" className="search-suggestions">
@@ -180,6 +210,13 @@ export function SearchAutocomplete({ defaultValue }: { defaultValue: string }) {
             );
           })}
         </ul>
+      ) : null}
+      {open && value.trim().length >= 2 && suggestions.length === 0 && feedback !== "idle" ? (
+        <p className={`search-suggestion-feedback is-${feedback}`} role="status">
+          {feedback === "loading" ? "Buscando sugerencias…"
+            : feedback === "empty" ? "No encontramos sugerencias. Podés buscar igual."
+              : "No pudimos cargar sugerencias. Podés buscar igual."}
+        </p>
       ) : null}
       {value.trim() && (visibleInterpretation.length > 0 || interpretation.notInterpreted.length > 0) ? (
         <div className="search-interpretation" aria-live="polite">
