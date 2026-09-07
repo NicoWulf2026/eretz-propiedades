@@ -29,7 +29,14 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
+from api.ranking import RANKING_VERSION, ordenar
+
 CONTRATO = "eretz_api_property_v1"
+
+# Cuantas filas se puntuan por cada una que se devuelve. Cinco
+# alcanza para que el ranking mande sobre la pagina pedida sin
+# traer la base entera a memoria.
+VENTANA_DE_RANKING = 5
 
 SNAPSHOT = Path(os.environ.get(
     "ERETZ_API_SNAPSHOT",
@@ -305,15 +312,18 @@ def buscar(q: Optional[str] = Query(None),
     try:
         total = con.execute(
             f"select count(*) from propiedades{donde}", valores).fetchone()[0]
-        filas = con.execute(
-            f"select documento from propiedades{donde} "
-            f"order by (precio is null), precio desc, id limit ? offset ?",
-            valores + [limit, offset]).fetchall()
+        # Se puntua una ventana amplia y despues se pagina: ordenar solo la
+        # pagina pedida rankearia 24 filas elegidas por otro criterio, que es
+        # rankear cualquier cosa.
+        crudas = con.execute(
+            f"select documento from propiedades{donde} limit ?",
+            valores + [max(limit + offset, 1) * VENTANA_DE_RANKING]).fetchall()
     finally:
         con.close()
-    return {"contrato": CONTRATO, "consulta": q, "total": total,
-            "limit": limit, "offset": offset,
-            "data": [json.loads(f["documento"]) for f in filas]}
+    ordenadas = ordenar([json.loads(f["documento"]) for f in crudas], q or "")
+    return {"contrato": CONTRATO, "ranking": RANKING_VERSION, "consulta": q,
+            "total": total, "limit": limit, "offset": offset,
+            "data": ordenadas[offset:offset + limit]}
 
 
 @router.get("/stats")
