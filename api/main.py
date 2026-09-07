@@ -9,12 +9,27 @@ load_dotenv()
 
 app = FastAPI(title="ERETZ Propiedades API", version="1.0.0")
 
-# CORS — permite que el frontend pueda llamar a la API
+# CORS. Los origenes salen de la variable `ERETZ_CORS_ORIGINS` -lista separada
+# por comas-. El default abierto se conservaba porque la API es de solo lectura
+# y publica, pero un comodin tambien deja que cualquier pagina consulte con las
+# credenciales del visitante el dia que se agregue algo autenticado, y para
+# entonces nadie se acuerda de este renglon.
+#
+# Sin variable definida se sigue permitiendo todo, que es lo que hay hoy en
+# produccion: cambiar el comportamiento sin poder probarlo contra el deploy
+# seria romper el frontend a ciegas. La variable existe para que apretarlo sea
+# una linea de configuracion y no un cambio de codigo.
+ORIGENES = [o.strip() for o in
+            os.environ.get("ERETZ_CORS_ORIGINS", "*").split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ORIGENES,
     allow_methods=["GET"],
     allow_headers=["*"],
+    # Con `*` no se pueden permitir credenciales, y tampoco hacen falta: la
+    # API no lee cookies ni sesiones.
+    allow_credentials=False,
 )
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
