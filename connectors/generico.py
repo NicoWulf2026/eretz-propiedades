@@ -110,6 +110,35 @@ RE_FICHA_ANIDADA = re.compile(
 # El slug final tiene que tener cuatro o mas palabras: con menos, la ruta es
 # una categoria -/venta/casa/martinez- y tomarla por ficha inventaria
 # propiedades que no existen.
+# Paginas que sirve el HOSTING cuando el sitio dejo de existir: cuenta
+# suspendida, dominio en venta, dominio vencido. No son la web de una
+# inmobiliaria sin propiedades: son la ausencia de la web.
+#
+# `ventasprop.com` devuelve "Account Suspended" con ciento veinte caracteres
+# de texto. Quedaba en NEEDS_FIX para siempre, esperando un arreglo nuestro
+# que no existe, cuando lo que corresponde decir es que la fuente ya no
+# publica.
+RE_FUERA_DE_SERVICIO = re.compile(
+    r"account\s+suspended|cuenta\s+suspendida|this\s+domain\s+(?:is\s+)?"
+    r"(?:for\s+sale|has\s+expired)|dominio\s+(?:en\s+venta|expirado)|"
+    r"site\s+temporarily\s+unavailable|suspended\s+account", re.I)
+
+# Una pagina de baja es CHICA. Un sitio real que mencione "account suspended"
+# en una nota tiene miles de caracteres, y confundirlos daria de baja una
+# inmobiliaria viva.
+TOPE_DE_PAGINA_DE_BAJA = 600
+
+
+def fuera_de_servicio(html: str) -> str | None:
+    """El motivo por el que este host no esta sirviendo un sitio, si lo hay."""
+    cuerpo = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", html or "")
+    texto = re.sub(r"\s+", " ", re.sub(r"(?s)<[^>]+>", " ", cuerpo)).strip()
+    if len(texto) > TOPE_DE_PAGINA_DE_BAJA:
+        return None
+    hallazgo = RE_FUERA_DE_SERVICIO.search(texto)
+    return hallazgo.group(0).lower() if hallazgo else None
+
+
 RE_FICHA_OPERACION = re.compile(
     r"^/(?:venta|alquiler|alquiler-temporario|venta-alquiler)/"
     r"(?:[a-z0-9-]+/){1,3}"
@@ -1080,6 +1109,12 @@ class GenericoConnector(Connector):
         # --- 2. listado en HTML --------------------------------------------
         try:
             html = self.descargador.bajar(fuente.official_url)
+            baja = fuera_de_servicio(html)
+            if baja:
+                # Preguntarle el catalogo a un dominio suspendido es preguntarle
+                # a nadie. Se corta aca y se dice por que.
+                plan["fuera_de_servicio"] = baja
+                return plan
         except (ErrorTransitorio, ErrorPermanente, Bloqueado):
             # No poder LEER la portada no es lo mismo que leerla y que no
             # publique nada. Devolver el plan vacio las hacia indistinguibles:

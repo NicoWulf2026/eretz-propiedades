@@ -309,7 +309,8 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
     r.update({"variante": plan["variante"], "soportada": plan["soportada"],
               "total_declarado": plan["total_declarado"],
               "tokko_client_id": plan.get("tokko_client_id"),
-              "ruta_listado": plan.get("ruta_listado")})
+              "ruta_listado": plan.get("ruta_listado"),
+              "fuera_de_servicio": plan.get("fuera_de_servicio")})
     if not plan["soportada"]:
         # Decir que una fuente no tiene inventario exige haber LEIDO algo de
         # ella. Si ninguna sonda consiguio una sola respuesta, lo unico

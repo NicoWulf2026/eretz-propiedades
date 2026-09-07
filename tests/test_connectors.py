@@ -3958,3 +3958,30 @@ def test_una_categoria_no_es_una_ficha():
                  "/alquiler/departamento/san-isidro",
                  "/venta/casa/mar-del-plata"):
         assert not G._es_ficha_url("https://x.com" + ruta), ruta
+
+
+def test_un_dominio_suspendido_no_es_una_inmobiliaria_sin_propiedades():
+    """`ventasprop.com` devuelve "Account Suspended" con ciento veinte
+    caracteres de texto. Quedaba en NEEDS_FIX para siempre, esperando un
+    arreglo nuestro que no existe, cuando lo que corresponde decir es que la
+    fuente ya no publica."""
+    from connectors.generico import fuera_de_servicio
+
+    assert fuera_de_servicio(
+        "<title>Account Suspended</title><body><h1>Account Suspended</h1>"
+        "<p>This Account has been suspended.</p></body>") == "account suspended"
+    assert fuera_de_servicio("<body>Este dominio expirado</body>")
+    assert fuera_de_servicio("<body>Cuenta suspendida</body>")
+
+
+def test_una_inmobiliaria_viva_no_se_da_de_baja_por_una_frase():
+    """Una página de baja es CHICA. Un sitio real que mencione la frase en una
+    nota tiene miles de caracteres, y confundirlos daría de baja una
+    inmobiliaria viva."""
+    from connectors.generico import fuera_de_servicio
+
+    largo = ("Somos una inmobiliaria con treinta anios en el mercado. " * 30
+             + "account suspended")
+    assert fuera_de_servicio(f"<body>{largo}</body>") is None
+    assert fuera_de_servicio("<body>Casas en venta en Rosario</body>") is None
+    assert fuera_de_servicio("") is None

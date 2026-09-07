@@ -691,8 +691,22 @@ def certification_status(run1: dict[str, Any], run2: dict[str, Any],
                          fields: dict[str, Any]) -> tuple[str, list[str]]:
     reasons: list[str] = []
     states = {run1.get("estado"), run2.get("estado")}
+    # El rechazo se decide PRIMERO: es una respuesta del sitio, no una
+    # ausencia, y confundirlo con una baja daria por muerta a una fuente que
+    # esta viva y solo no nos quiere.
     if states & {"BLOQUEADA"}:
         return "BLOCKED_EXTERNAL", ["official source rejected automated access"]
+    # Un dominio suspendido o vencido no es una inmobiliaria sin propiedades ni
+    # un defecto nuestro: es una fuente que dejo de publicar. Dejarlo en
+    # NEEDS_FIX lo condena a esperar para siempre un arreglo que no existe.
+    #
+    # Se exige que las DOS corridas lo vean: una pagina de baja puede ser un
+    # error momentaneo del hosting, y dar de baja una inmobiliaria viva por una
+    # lectura es peor que revisarla de nuevo manana.
+    bajas = [c.get("fuera_de_servicio") for c in (run1, run2)]
+    if all(bajas):
+        return "INACTIVE", [
+            f"the domain is not serving a website: {bajas[0]}"]
     if (states == {"VARIANTE_NO_SOPORTADA"}
             and enumeration.get("external_catalog_hosts")):
         return "BLOCKED_EXTERNAL", [
