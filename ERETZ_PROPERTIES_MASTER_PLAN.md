@@ -930,6 +930,13 @@ Descubrimiento → Directorio de plataformas → Resolución de identidad
 
 ## 6. Blockers
 
+**Promover no es anotar inmobiliarias en una tabla.** Las 733
+`SAFE_TO_PROMOTE` no están hoy en la cola —ninguna—, y una fuente sin `eretz_id`
+no entra por diseño, porque su inventario no se puede asociar a nadie.
+Promoverlas lleva el universo certificable de **767 a 1.500**, y 280 de ellas ya
+tienen web argentina verificada esperando. El blocker de escritura no frena una
+tarea administrativa: frena la mitad del catálogo.
+
 | Blocker | Qué frena | Necesita |
 |---|---|---|
 | Promoción a `main` | 63.831 propiedades atribuibles (733 inmobiliarias) | Autorización de escritura productiva |
