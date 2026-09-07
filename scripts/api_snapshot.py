@@ -24,6 +24,7 @@ import json
 import sqlite3
 import sys
 import time
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -33,7 +34,22 @@ from scripts.api_contract import CONTRATO_API_VERSION, fila_de_api  # noqa: E402
 from scripts.preingestion_manifest import (base_canonica,  # noqa: E402
                                            exigir_base_vigente)
 
-SNAPSHOT_VERSION = "api_snapshot_v1"
+SNAPSHOT_VERSION = "api_snapshot_v2"
+
+# En cuantas propiedades distintas de la MISMA inmobiliaria puede aparecer una
+# imagen antes de dejar de ser la foto de alguna. Una foto real aparece una
+# vez; cinco propiedades compartiendola quiere decir que es un avatar, un
+# footer, un banner, o la foto de una sola de ellas filtrandose al resto.
+#
+# El connector ya descarta las que aparecen en la MITAD del catalogo, y eso
+# deja pasar mucho: `user-4.png` esta en 58 de 360 fichas de `agostini`, un
+# `footer_0_` en 151 de 320 de `atencio`, y una foto de la propiedad 547588 en
+# 159 fichas que no son esa propiedad.
+#
+# Va aca y no en el connector porque es un agregado CRUZADO entre propiedades:
+# una funcion que ve una ficha por vez no puede calcularlo. Y por estar en la
+# capa de presentacion, cambiar el umbral no invalida ninguna certificacion.
+FICHAS_PARA_SER_COMPARTIDA = 5
 
 ESQUEMA = """
 create table if not exists propiedades (
@@ -124,14 +140,33 @@ def main() -> int:
     destino.unlink(missing_ok=True)
 
     origen = sqlite3.connect(f"file:{Path(args.db).as_posix()}?mode=ro", uri=True)
+
+    # Primera pasada: en cuantas propiedades de cada agencia aparece cada
+    # imagen. Sin esto no se puede distinguir una foto de un logo.
+    apariciones: dict[str, Counter] = defaultdict(Counter)
+    for crudo, canonical in origen.execute(
+            "select row_json, canonical_id from rows where status = 'CANDIDATE'"):
+        for url in set(json.loads(crudo).get("imagenes") or []):
+            apariciones[canonical][url] += 1
+
     api = sqlite3.connect(destino)
     api.executescript(ESQUEMA)
 
     filas = 0
+    imagenes_compartidas = 0
+    fichas_sin_foto_propia = 0
     for (crudo,) in origen.execute(
             "select row_json from rows where status = 'CANDIDATE'"):
         cruda = json.loads(crudo)
         hash_dedup = cruda.get("hash_dedup")
+        canonical = cruda.get("canonical_agency_id")
+        propias = [u for u in (cruda.get("imagenes") or [])
+                   if apariciones[canonical][u] < FICHAS_PARA_SER_COMPARTIDA]
+        imagenes_compartidas += len(cruda.get("imagenes") or []) - len(propias)
+        if cruda.get("imagenes") and not propias:
+            # Se queda sin fotos, no sin propiedad: lo que tenia no era suyo.
+            fichas_sin_foto_propia += 1
+        cruda = dict(cruda, imagenes=propias)
         g = geo.get(hash_dedup)
         documento = fila_de_api(cruda, g, (gate.get(hash_dedup) or {}).get("alcances") or [])
         area = documento["geo"]["area_busqueda"] or {}
@@ -169,6 +204,9 @@ def main() -> int:
         "snapshot_version": SNAPSHOT_VERSION,
         "contrato_api_version": CONTRATO_API_VERSION,
         "propiedades": filas,
+        "imagenes_compartidas_descartadas": imagenes_compartidas,
+        "fichas_que_quedaron_sin_foto_propia": fichas_sin_foto_propia,
+        "fichas_para_ser_compartida": FICHAS_PARA_SER_COMPARTIDA,
         "generada_en": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "origen": str(Path(args.db)),
         "artefacto": destino.name,
