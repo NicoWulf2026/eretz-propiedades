@@ -263,10 +263,14 @@ class WordPressConnector(Connector):
                 return plan
 
         # --- 3. HTML -------------------------------------------------------
+        # No se retorna al fallar: la guardia de abajo tiene que ver TODAS las
+        # salidas sin soporte, y saltearla era dejar el agujero justo en el
+        # camino por el que se llega cuando el sitio no responde.
+        html = ""
         try:
             html = self.descargador.bajar(fuente.official_url)
         except (ErrorTransitorio, ErrorPermanente, Bloqueado):
-            return plan
+            pass
         rutas = {m.group(1).lower() for m in
                  re.finditer(r'href="[^"]*?/([a-z\-]{4,20})/[^"]{3,}"', html)}
         inmo = sorted(r for r in rutas if any(k in r for k in TIPOS_INMO))

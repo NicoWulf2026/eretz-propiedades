@@ -408,6 +408,11 @@ class Descargador:
     def __init__(self, limitador: LimitadorDeRitmo | None = None,
                  timeout: int = 25, reintentos: int = 3, limite_bytes: int = 800_000):
         self.limitador = limitador or LimitadorDeRitmo()
+        # Hosts de los que se pudo leer aunque sea una respuesta. Sirve para
+        # distinguir "el sitio dice que no tiene nada" de "no se pudo hablar
+        # con el sitio", que es la diferencia entre NO_INVENTORY_CONFIRMED y
+        # BLOCKED_EXTERNAL.
+        self._hosts_leidos: set[str] = set()
         self.timeout = timeout
         self.reintentos = reintentos
         self.limite_bytes = limite_bytes
@@ -433,6 +438,22 @@ class Descargador:
             p.scheme, p.netloc,
             urllib.parse.quote(p.path, safe="/%:@&=+$,~()!*'"),
             urllib.parse.quote(p.query, safe="=&%+"), ""))
+
+    def hubo_contacto(self, url: str) -> bool:
+        """Si alguna vez se leyo algo de este host en esta corrida.
+
+        No haber podido leer NADA de un sitio no es haber leido que el sitio
+        no tiene nada. Los connectors devolvian `SIN_INVENTARIO` en las dos
+        situaciones, y `aguirreinmobiliaria.com.ar` -que publica 38
+        propiedades- figuro con inventario cero por sesenta segundos malos:
+        el triage lo leyo como perdida sistematica de radio FAMILIA y paro
+        las dos colas durante diez horas.
+
+        `NO_INVENTORY_CONFIRMED` y `BLOCKED_EXTERNAL` son estados terminales
+        distintos, y esta es la pregunta que los separa.
+        """
+        host = urllib.parse.urlparse(self.url_segura(url)).netloc.lower()
+        return host in self._hosts_leidos
 
     def bajar(self, url: str) -> str:
         url = self.url_segura(url)
@@ -466,6 +487,7 @@ class Descargador:
                     with self._lock:
                         self.pedidos += 1
                         self.bytes_bajados += len(crudo)
+                        self._hosts_leidos.add(host)
                     return crudo.decode(juego, "ignore")
             except urllib.error.HTTPError as e:
                 if e.code in (403, 429):

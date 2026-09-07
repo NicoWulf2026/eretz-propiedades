@@ -63,15 +63,23 @@ Orientacion: Este Disposicion: Contrafrente</div>
 class DescargadorFalso(B.Descargador):
     """Sirve HTML de un diccionario y cuenta los pedidos."""
 
-    def __init__(self, paginas: dict[str, str], fallar: dict[str, Exception] | None = None):
+    def __init__(self, paginas: dict[str, str],
+                 fallar: dict[str, Exception] | None = None,
+                 inalcanzable: bool = False):
         super().__init__(B.LimitadorDeRitmo(0.0))
         self.paginas = paginas
         self.fallar = fallar or {}
+        # El host entero no responde: ninguna sonda consigue una sola lectura.
+        # Es una condicion distinta de "esta url falla", y hay codigo que
+        # depende de poder distinguirlas.
+        self.inalcanzable = inalcanzable
         self.pedidos_urls: list[str] = []
 
     def bajar(self, url: str) -> str:
         self.pedidos_urls.append(url)
         self.pedidos += 1
+        if self.inalcanzable:
+            raise B.ErrorTransitorio("timeout")
         if url in self.fallar:
             e = self.fallar[url]
             if isinstance(e, list):
@@ -81,6 +89,12 @@ class DescargadorFalso(B.Descargador):
         # La mas especifica gana: si "https://alfa.com.ar/" resolviera primero,
         # una ficha devolveria el listado y los tests pasarian por la razon
         # equivocada.
+        #
+        # Y se registra el contacto igual que el descargador real: sin esto el
+        # doble ocultaba justamente la dimension que distingue "el sitio dice
+        # que no tiene nada" de "no se pudo hablar con el sitio".
+        import urllib.parse as _up
+        self._hosts_leidos.add(_up.urlparse(url).netloc.lower())
         for k in sorted(self.paginas, key=len, reverse=True):
             if url.startswith(k):
                 return self.paginas[k]
@@ -3905,3 +3919,12 @@ def test_el_desplegable_no_sale_del_sitio():
       <option value="https://otra.com/p/2.html">B</option>
       <option value="https://otra.com/p/3.html">C</option></select>"""
     assert G._catalogo_de_selector(mixto, "https://x.com/", "https://x.com") == []
+
+
+# ------------------------------- sin contacto no es "no tiene inventario"
+def test_el_descargador_recuerda_de_que_hosts_leyo():
+    d = DescargadorFalso({"https://alfa.com.ar": "<html>hola</html>"})
+    assert d.hubo_contacto("https://alfa.com.ar/x") is False
+    d.bajar("https://alfa.com.ar/x")
+    assert d.hubo_contacto("https://alfa.com.ar/otra") is True
+    assert d.hubo_contacto("https://beta.com.ar/x") is False

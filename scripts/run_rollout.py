@@ -311,6 +311,23 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
               "tokko_client_id": plan.get("tokko_client_id"),
               "ruta_listado": plan.get("ruta_listado")})
     if not plan["soportada"]:
+        # Decir que una fuente no tiene inventario exige haber LEIDO algo de
+        # ella. Si ninguna sonda consiguio una sola respuesta, lo unico
+        # demostrado es que no se pudo hablar con el sitio.
+        #
+        # `aguirreinmobiliaria.com.ar` publica 38 propiedades y figuro con
+        # inventario cero por sesenta segundos malos: el triage lo leyo como
+        # perdida sistematica de radio FAMILIA y paro las dos colas diez horas.
+        #
+        # Va ACA y no adentro de cada connector porque es una regla del
+        # pipeline: cada `discover` tiene varias salidas tempranas -century21
+        # tiene cuatro- y una guardia por connector deja justo el camino que
+        # nadie miro. Aca no hay camino que la esquive, y los connectors que
+        # se escriban despues la heredan.
+        if not con.descargador.hubo_contacto(fuente.official_url):
+            return {**r, "estado": "ERROR_DISCOVERY",
+                    "detalle": "no se pudo leer ninguna respuesta del sitio",
+                    "segundos": round(time.time() - t0, 1), "_props": props}
         return {**r, "estado": "VARIANTE_NO_SOPORTADA",
                 "segundos": round(time.time() - t0, 1), "_props": props}
 

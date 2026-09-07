@@ -166,3 +166,36 @@ def test_un_sitio_que_nos_corta_pide_ritmo_no_abandono():
     assert rama.index("reintentos_diferidos.append(a)") < rama.index("break")
     # Y ceder ritmo no puede ser gratis de auditar.
     assert '"ritmo_cedido"' in cuerpo
+
+
+def test_sin_contacto_no_se_declara_que_una_fuente_no_tiene_inventario():
+    """`aguirreinmobiliaria.com.ar` publica 38 propiedades y figuró con
+    inventario cero por sesenta segundos malos: los connectors devuelven
+    `SIN_INVENTARIO` tanto cuando el sitio dice que no tiene nada como cuando
+    no se pudo hablar con él.
+
+    El triage lo leyó como pérdida sistemática de radio FAMILIA y paró las dos
+    colas durante diez horas. `NO_INVENTORY_CONFIRMED` y `BLOCKED_EXTERNAL` son
+    estados terminales distintos, y ésta es la pregunta que los separa.
+
+    La guardia vive en el runner y no en cada connector porque cada `discover`
+    tiene varias salidas tempranas —century21 tiene cuatro— y una guardia por
+    connector deja justo el camino que nadie miró.
+    """
+    cuerpo = inspect.getsource(sys.modules["scripts.run_rollout"])
+    rama = cuerpo[cuerpo.index('if not plan["soportada"]:'):]
+    rama = rama[:rama.index("avisos = list(")]
+
+    assert "hubo_contacto" in rama
+    assert "ERROR_DISCOVERY" in rama
+    # Y la comprobación va ANTES de declarar la variante no soportada.
+    assert rama.index("hubo_contacto") < rama.index("VARIANTE_NO_SOPORTADA")
+
+
+def test_un_sitio_que_responde_y_no_publica_nada_sigue_siendo_no_soportada():
+    """La guardia no puede tapar el caso real: si el sitio contestó y no
+    publica catálogo, `VARIANTE_NO_SOPORTADA` es la verdad."""
+    cuerpo = inspect.getsource(sys.modules["scripts.run_rollout"])
+    rama = cuerpo[cuerpo.index('if not plan["soportada"]:'):]
+    rama = rama[:rama.index("avisos = list(")]
+    assert "VARIANTE_NO_SOPORTADA" in rama
