@@ -48,6 +48,27 @@ def _jsonl(ruta: Path) -> list[dict[str, Any]]:
     return fuera
 
 
+def _proceso_existe(pid: Any) -> bool | None:
+    """Si ese pid esta corriendo. `None` cuando no se puede saber.
+
+    Sin esto, el reporte decidia por la edad del latido y llamaba huerfano a un
+    worker vivo. La distincion importa porque la accion que sigue -liberar el
+    cerrojo- pone un segundo runner sobre la misma particion.
+    """
+    if not isinstance(pid, int):
+        return None
+    try:
+        import psutil
+    except ImportError:
+        # Sin la libreria no se inventa una respuesta: se dice que no se sabe
+        # y el latido decide, que es lo que habia antes.
+        return None
+    try:
+        return psutil.pid_exists(pid)
+    except Exception:  # noqa: BLE001 - saber esto nunca puede tumbar el reporte
+        return None
+
+
 def _json(ruta: Path) -> dict[str, Any]:
     if not ruta.exists():
         return {}
@@ -74,9 +95,16 @@ def estado_de_la_cola(salida: Path) -> dict[str, Any]:
     for cerrojo in sorted(salida.glob("AGENCY_CERTIFICATION_RUNNER*.lock")):
         datos = _json(cerrojo)
         edad = time.time() - float(datos.get("heartbeat_epoch") or 0)
-        vivo = edad < LATIDO_VENCIDO
+        proceso = _proceso_existe(datos.get("pid"))
+        # El PID manda sobre el latido. Un latido viejo con el proceso VIVO es
+        # un worker atascado en una inmobiliaria lenta, no un huerfano, y
+        # liberar su cerrojo pondria un segundo runner sobre su particion.
+        # Paso de verdad: `abriola propiedades` llevaba una hora y catorce
+        # minutos con el proceso corriendo y ya figuraba vencido.
+        vivo = proceso if proceso is not None else edad < LATIDO_VENCIDO
         cerrojos.append({"archivo": cerrojo.name, "pid": datos.get("pid"),
                          "latido_hace_s": round(edad),
+                         "proceso_existe": proceso,
                          "vivo": vivo})
         if vivo:
             corriendo.append({"cerrojo": cerrojo.name,
@@ -139,8 +167,8 @@ def alertas(cola: dict[str, Any], datos: dict[str, Any]) -> list[dict[str, str]]
         fuera.append({"nivel": "MEDIA",
                       "que": f"cerrojo sin proceso vivo: "
                              f"{', '.join(cola['cerrojos_huerfanos'])}",
-                      "accion": "comprobar que el pid murio y recien ahi "
-                                "liberarlo"})
+                      "accion": "el pid ya se comprobo muerto: se puede "
+                                "liberar el cerrojo"})
     if not cola.get("en_curso") and not cola.get("paro_pedido"):
         fuera.append({"nivel": "MEDIA",
                       "que": "no hay ningun runner en curso",

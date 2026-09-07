@@ -29,7 +29,12 @@ def test_un_progreso_viejo_no_es_un_runner_vivo(tmp_path):
     assert cola["en_curso"] == []
 
 
-def test_el_latido_decide_quien_esta_vivo(tmp_path):
+def test_el_latido_decide_cuando_no_se_puede_ver_el_proceso(tmp_path, monkeypatch):
+    """El latido sigue siendo el criterio de respaldo: cuando no se puede
+    comprobar el pid, decide la edad."""
+    from scripts import operacion_reporte as reporte
+
+    monkeypatch.setattr(reporte, "_proceso_existe", lambda pid: None)
     _cerrojo(tmp_path, "AGENCY_CERTIFICATION_RUNNER.w0.lock", 10)
     _cerrojo(tmp_path, "AGENCY_CERTIFICATION_RUNNER.w1.lock", LATIDO_VENCIDO + 60)
 
@@ -83,3 +88,48 @@ def test_la_cola_parada_es_alerta_alta():
     a = alertas(cola, {"perdidas_por_incompletitud": 0})
     assert a and a[0]["nivel"] == "ALTA"
     assert "transversal" in a[0]["que"]
+
+
+def test_el_pid_manda_sobre_el_latido(tmp_path, monkeypatch):
+    """Un latido viejo con el proceso VIVO es un worker atascado en una
+    inmobiliaria lenta, no un huérfano. La distinción importa porque la acción
+    que sigue —liberar el cerrojo— pone un segundo runner sobre su partición.
+
+    Pasó de verdad: `abriola propiedades` llevaba una hora y catorce minutos
+    con el proceso corriendo y ya figuraba vencido.
+    """
+    from scripts import operacion_reporte as reporte
+
+    _cerrojo(tmp_path, "AGENCY_CERTIFICATION_RUNNER.w0.lock",
+             LATIDO_VENCIDO + 400, pid=4242)
+    monkeypatch.setattr(reporte, "_proceso_existe", lambda pid: True)
+
+    cola = estado_de_la_cola(tmp_path)
+    assert cola["cerrojos_huerfanos"] == []
+    assert len(cola["en_curso"]) == 1
+
+
+def test_un_pid_muerto_con_latido_fresco_igual_es_huerfano(tmp_path, monkeypatch):
+    """Un proceso que murió recién dejó un latido nuevo. El latido no puede
+    ganarle al hecho de que el proceso no está."""
+    from scripts import operacion_reporte as reporte
+
+    _cerrojo(tmp_path, "AGENCY_CERTIFICATION_RUNNER.w0.lock", 5, pid=4242)
+    monkeypatch.setattr(reporte, "_proceso_existe", lambda pid: False)
+
+    cola = estado_de_la_cola(tmp_path)
+    assert cola["cerrojos_huerfanos"] == ["AGENCY_CERTIFICATION_RUNNER.w0.lock"]
+
+
+def test_sin_poder_comprobar_el_pid_decide_el_latido(tmp_path, monkeypatch):
+    """No saber no autoriza a inventar: se vuelve al criterio anterior."""
+    from scripts import operacion_reporte as reporte
+
+    _cerrojo(tmp_path, "AGENCY_CERTIFICATION_RUNNER.w0.lock", 5, pid=4242)
+    monkeypatch.setattr(reporte, "_proceso_existe", lambda pid: None)
+    assert estado_de_la_cola(tmp_path)["cerrojos_huerfanos"] == []
+
+    _cerrojo(tmp_path, "AGENCY_CERTIFICATION_RUNNER.w1.lock",
+             LATIDO_VENCIDO + 100, pid=4243)
+    assert "AGENCY_CERTIFICATION_RUNNER.w1.lock" in \
+        estado_de_la_cola(tmp_path)["cerrojos_huerfanos"]
