@@ -155,3 +155,38 @@ def test_el_veredicto_se_recalcula_y_no_se_lee_del_registro(tmp_path, monkeypatc
     salida = _salida(tmp_path, [con_veredicto_viejo])
 
     assert sin_defectos_abiertos(salida, {"roomix:alfa": {}})[0] is True
+
+
+def test_el_preflight_ve_los_cerrojos_de_los_dos_workers(tmp_path):
+    """Con dos workers los cerrojos se llaman `...RUNNER.w0.lock` y
+    `...RUNNER.w1.lock`. Buscar sólo el nombre de un worker respondía "no hay
+    cerrojo tomado" con dos procesos corriendo: justo lo que este chequeo
+    existe para impedir."""
+    import time
+
+    from scripts.agency_rollout_preflight import sin_otro_runner
+
+    assert sin_otro_runner(tmp_path)[0] is True
+
+    (tmp_path / "AGENCY_CERTIFICATION_RUNNER.w1.lock").write_text(
+        json.dumps({"pid": 123, "heartbeat_epoch": time.time(),
+                    "current_agency": "roomix:alfa"}), encoding="utf-8")
+
+    ok, detalle = sin_otro_runner(tmp_path)
+    assert ok is False
+    assert "w1" in detalle and "123" in detalle
+
+
+def test_un_cerrojo_vencido_no_bloquea(tmp_path):
+    """Un proceso muerto no puede cerrar la cola para siempre."""
+    import time
+
+    from scripts.agency_rollout_preflight import (LATIDO_VENCIDO,
+                                                  sin_otro_runner)
+
+    (tmp_path / "AGENCY_CERTIFICATION_RUNNER.w0.lock").write_text(
+        json.dumps({"pid": 1, "heartbeat_epoch": time.time() - LATIDO_VENCIDO - 60}),
+        encoding="utf-8")
+    ok, detalle = sin_otro_runner(tmp_path)
+    assert ok is True
+    assert "vencido" in detalle

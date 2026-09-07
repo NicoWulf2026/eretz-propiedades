@@ -40,19 +40,33 @@ RAIZ = Path(__file__).resolve().parents[1]
 
 def sin_otro_runner(salida: Path) -> tuple[bool, str]:
     """Un segundo runner se pisa el cursor con el primero y le pide a las
-    mismas fuentes el mismo inventario, al doble del ritmo acordado."""
-    ruta = salida / CERROJO
-    if not ruta.exists():
+    mismas fuentes el mismo inventario, al doble del ritmo acordado.
+
+    Se miran TODOS los cerrojos, no solo el de un worker. Con dos workers los
+    cerrojos se llaman `...RUNNER.w0.lock` y `...RUNNER.w1.lock`, y buscar
+    unicamente el nombre de un worker respondia "no hay cerrojo tomado" con
+    dos procesos corriendo: justo lo que este chequeo existe para impedir.
+    """
+    patron = Path(CERROJO).stem + "*" + Path(CERROJO).suffix
+    cerrojos = sorted(salida.glob(patron))
+    if not cerrojos:
         return True, "no hay cerrojo tomado"
-    try:
-        previo = json.loads(ruta.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return False, f"hay un cerrojo ilegible en {ruta}"
-    edad = time.time() - float(previo.get("heartbeat_epoch") or 0)
-    if edad < LATIDO_VENCIDO:
-        return False, (f"runner activo pid {previo.get('pid')} en "
-                       f"{previo.get('current_agency')}, latido hace {edad:.0f}s")
-    return True, f"cerrojo vencido hace {edad:.0f}s, se puede tomar"
+    activos, vencidos = [], []
+    for ruta in cerrojos:
+        try:
+            previo = json.loads(ruta.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return False, f"hay un cerrojo ilegible en {ruta}"
+        edad = time.time() - float(previo.get("heartbeat_epoch") or 0)
+        if edad < LATIDO_VENCIDO:
+            activos.append(f"{ruta.name}: pid {previo.get('pid')} en "
+                           f"{previo.get('current_agency')}, latido hace "
+                           f"{edad:.0f}s")
+        else:
+            vencidos.append(f"{ruta.name} hace {edad:.0f}s")
+    if activos:
+        return False, "runner activo -- " + "; ".join(activos)
+    return True, f"{len(vencidos)} cerrojo(s) vencido(s): {'; '.join(vencidos)}"
 
 
 def checkpoint_coherente(salida: Path, cola: list[str],
