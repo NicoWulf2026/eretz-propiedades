@@ -57,9 +57,20 @@ def supabase_count(filters: Optional[dict] = None) -> int:
     return int(total)
 
 
+# Los endpoints /v2 sirven el contrato nuevo desde la snapshot local, para
+# que el frontend se pueda construir mientras produccion no responde. Los de
+# esta pagina consultan produccion y quedan como estan hasta que el frontend
+# migre.
+from api.v2 import router as router_v2  # noqa: E402
+
+app.include_router(router_v2)
+
+
 @app.get("/")
 def root():
-    return {"status": "ok", "proyecto": "ERETZ Propiedades API"}
+    return {"status": "ok", "proyecto": "ERETZ Propiedades API",
+            "contratos": {"v1": "produccion (Supabase)",
+                          "v2": "contrato ERETZ, snapshot local"}}
 
 
 @app.get("/propiedades")
