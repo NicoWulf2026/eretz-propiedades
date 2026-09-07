@@ -196,6 +196,18 @@ RE_COORD = re.compile(r'"?(?:latitude|lat)"?\s*[:=]\s*"?(-[23456]\d\.\d{3,})"?'
                       r'.{0,80}?"?(?:longitude|lng|lon)"?\s*[:=]\s*"?(-[567]\d\.\d{3,})"?',
                       re.S | re.I)
 
+# Los mapas de Leaflet no nombran los campos: `L.marker([-34.474951,
+# -58.521113])`. `RE_COORD` exige la clave adelante, asi que
+# `andradeinmobiliaria.com.ar` publicaba la coordenada de sus dos propiedades
+# en el mapa y nosotros la reportabamos como no extraida.
+#
+# Se conservan los mismos rangos que el patron con clave -latitud entre -20 y
+# -60, longitud entre -50 y -79- y el signo obligatorio: con el signo opcional,
+# el patron de WordPress tomo pares como "50.774, 50.7708" y ubico 752
+# propiedades fuera del pais.
+RE_COORD_ARREGLO = re.compile(
+    r"\[\s*(-[23456]\d\.\d{3,})\s*,\s*(-[567]\d\.\d{3,})\s*\]")
+
 # Evidencia de que una pagina publica UNA propiedad. Se usa solo sobre las urls
 # que entraron por la forma verificada de su fuente: la forma dice donde mirar,
 # la pagina dice si hay una propiedad. Una nota del blog habla de venta y de
@@ -1863,7 +1875,7 @@ class GenericoConnector(Connector):
 
         lat, lon = datos.get("lat"), datos.get("lon")
         if lat is None:
-            m = RE_COORD.search(html)
+            m = RE_COORD.search(html) or RE_COORD_ARREGLO.search(html)
             if m:
                 lat, lon = float(m.group(1)), float(m.group(2))
 

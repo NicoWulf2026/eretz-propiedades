@@ -3985,3 +3985,27 @@ def test_una_inmobiliaria_viva_no_se_da_de_baja_por_una_frase():
     assert fuera_de_servicio(f"<body>{largo}</body>") is None
     assert fuera_de_servicio("<body>Casas en venta en Rosario</body>") is None
     assert fuera_de_servicio("") is None
+
+
+def test_el_mapa_de_leaflet_tambien_publica_la_coordenada():
+    """`L.marker([-34.474951, -58.521113])` no nombra los campos, y `RE_COORD`
+    exige la clave adelante: `andradeinmobiliaria.com.ar` publicaba la
+    coordenada de sus dos propiedades en el mapa y la reportábamos como no
+    extraída."""
+    from connectors.generico import RE_COORD_ARREGLO
+
+    m = RE_COORD_ARREGLO.search(
+        "const marker = L.marker([-34.474951, -58.521113]).addTo(map);")
+    assert m and m.groups() == ("-34.474951", "-58.521113")
+    assert RE_COORD_ARREGLO.search("map.setView([-31.4201, -64.1888], 15)")
+
+
+def test_un_par_de_numeros_no_es_una_coordenada():
+    """Con el signo opcional, el patrón de WordPress tomó pares como
+    "50.774, 50.7708" y ubicó 752 propiedades fuera del país. Los rangos y el
+    signo son obligatorios."""
+    from connectors.generico import RE_COORD_ARREGLO
+
+    for basura in ("[50.774, 50.7708]", "[34.474951, 58.521113]",
+                   "[1, 2]", "[-34.47, -58.52]"):
+        assert not RE_COORD_ARREGLO.search(basura), basura
