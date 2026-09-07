@@ -34,10 +34,46 @@ from api.ranking import RANKING_VERSION, ordenar
 
 CONTRATO = "eretz_api_property_v1"
 
-# Cuantas filas se puntuan por cada una que se devuelve. Cinco
-# alcanza para que el ranking mande sobre la pagina pedida sin
-# traer la base entera a memoria.
+# Cuantas filas se puntuan por cada una que se devuelve. Cinco alcanza para que
+# el ranking mande sobre la pagina pedida sin traer la base entera a memoria.
 VENTANA_DE_RANKING = 5
+
+# Tope duro de la ventana. Sin el, la ventana crecia con el offset: pedir
+# `limit=100&offset=5000` puntuaba 25.500 filas y tardaba diez segundos, lo que
+# convierte la busqueda en un boton de denegacion de servicio para cualquiera
+# que sepa escribir un numero grande.
+TOPE_DE_VENTANA = 400
+
+# Hasta donde se puede paginar una busqueda RANKEADA. Mas alla, el ranking
+# dejaria de significar algo -habria que puntuar el resultado entero- y nadie
+# va a la pagina cuarenta de una busqueda. La paginacion profunda tiene su
+# lugar y es `/propiedades`, que ordena por indice y es estable.
+TOPE_DE_OFFSET_RANKEADO = 200
+
+# Lo que el ranking necesita leer de cada fila. Traer el documento completo de
+# cuatrocientas filas para quedarse con veinticuatro es pagar el JSON de las
+# otras trescientas setenta y seis.
+COLUMNAS_DE_RANKING = ("id", "titulo", "descripcion", "barrio", "area_nombre",
+                       "area_nivel", "geo_estado", "precio", "operacion",
+                       "tipo_propiedad", "dormitorios", "superficie_cubierta",
+                       "imagenes_n")
+
+
+def _para_rankear(fila) -> dict[str, Any]:
+    """La forma minima que `api.ranking` sabe puntuar."""
+    return {
+        "id": fila["id"], "titulo": fila["titulo"],
+        "descripcion": fila["descripcion"], "precio": fila["precio"],
+        "operacion": fila["operacion"], "tipo_propiedad": fila["tipo_propiedad"],
+        "dormitorios": fila["dormitorios"],
+        "superficie_cubierta": fila["superficie_cubierta"],
+        # El ranking solo cuenta cuantas fotos hay, no cuales.
+        "imagenes": [None] * (fila["imagenes_n"] or 0),
+        "geo": {"area_busqueda": {"nivel": fila["area_nivel"],
+                                  "nombre": fila["area_nombre"]},
+                "barrio": {"nombre": fila["barrio"]},
+                "estado": fila["geo_estado"]},
+    }
 
 SNAPSHOT = Path(os.environ.get(
     "ERETZ_API_SNAPSHOT",
@@ -327,6 +363,7 @@ def buscar(q: Optional[str] = Query(None),
     """
     donde, valores = _filtros(operacion, tipo, None, None, None, None, None,
                               None, None, None, None, None)
+    otros_filtros = bool(donde)
     # FTS5 en vez de cuatro `LIKE '%...%'`. Medido sobre las 58.427: el scan
     # tardaba 299 ms y el indice tarda 3. Ademas el tokenizador ignora
     # acentos, asi que "cordoba" y "Cordoba" devuelven lo mismo sin que
@@ -343,22 +380,56 @@ def buscar(q: Optional[str] = Query(None),
         union = " and " if donde else " where "
         donde += f"{union}busqueda match ?"
         valores = valores + [_termino(q)]
+    if offset > TOPE_DE_OFFSET_RANKEADO:
+        raise HTTPException(
+            status_code=400,
+            detail=f"la busqueda rankeada pagina hasta offset "
+                   f"{TOPE_DE_OFFSET_RANKEADO}. Para recorrer el catalogo "
+                   f"entero, /v2/propiedades ordena por indice y es estable.")
+
+    ventana = min(max(limit + offset, 1) * VENTANA_DE_RANKING, TOPE_DE_VENTANA)
+    columnas = ", ".join(f"propiedades.{c}" for c in COLUMNAS_DE_RANKING)
     con = conexion()
     try:
-        total = con.execute(
-            f"select count(*) from {tabla}{donde}", valores).fetchone()[0]
+        if q and not otros_filtros:
+            # Contar con el JOIN cuesta 333 ms; contar sobre el indice de texto
+            # solo, 2,2. Cuando la consulta es unicamente texto, la fila de
+            # `propiedades` no aporta nada al conteo y unirla es pagar por
+            # nada.
+            total = con.execute(
+                "select count(*) from busqueda where busqueda match ?",
+                [valores[-1]]).fetchone()[0]
+        else:
+            total = con.execute(
+                f"select count(*) from {tabla}{donde}", valores).fetchone()[0]
         # Se puntua una ventana amplia y despues se pagina: ordenar solo la
         # pagina pedida rankearia 24 filas elegidas por otro criterio, que es
-        # rankear cualquier cosa.
+        # rankear cualquier cosa. Pero se puntua sobre una PROYECCION: traer el
+        # documento completo de cuatrocientas filas para quedarse con
+        # veinticuatro es pagar el JSON de las otras trescientas setenta y seis.
         crudas = con.execute(
-            f"select propiedades.documento from {tabla}{donde} limit ?",
-            valores + [max(limit + offset, 1) * VENTANA_DE_RANKING]).fetchall()
+            f"select {columnas} from {tabla}{donde} limit ?",
+            valores + [ventana]).fetchall()
+        ordenadas = ordenar([_para_rankear(f) for f in crudas], q or "")
+        pagina = ordenadas[offset:offset + limit]
+        # Recien ahora se hidrata: una consulta por la pagina que se devuelve.
+        documentos = {}
+        if pagina:
+            marcas = ",".join("?" * len(pagina))
+            documentos = {
+                f["id"]: json.loads(f["documento"])
+                for f in con.execute(
+                    f"select id, documento from propiedades where id in ({marcas})",
+                    [p["id"] for p in pagina])}
     finally:
         con.close()
-    ordenadas = ordenar([json.loads(f["documento"]) for f in crudas], q or "")
+    data = []
+    for p in pagina:
+        completo = documentos.get(p["id"], {})
+        completo["ranking"] = p["ranking"]
+        data.append(completo)
     return {"contrato": CONTRATO, "ranking": RANKING_VERSION, "consulta": q,
-            "total": total, "limit": limit, "offset": offset,
-            "data": ordenadas[offset:offset + limit]}
+            "total": total, "limit": limit, "offset": offset, "data": data}
 
 
 @router.get("/stats")
