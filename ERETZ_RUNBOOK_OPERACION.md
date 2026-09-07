@@ -95,15 +95,22 @@ host pedirían al doble del ritmo acordado sin que ninguno se entere.
 
 ## 5. Cerrojo huérfano
 
-Un cerrojo sin proceso vivo bloquea la apertura. **Antes de borrarlo hay que
-probar que el PID murió**, no suponerlo:
+Un cerrojo sin proceso vivo bloquea la apertura. El reporte **ya comprueba el
+PID**, así que la alerta sólo enciende cuando el proceso realmente no está: si
+dice huérfano, se puede borrar el `.lock`.
+
+Si el reporte no pudo comprobar el PID —lo dice en `proceso_existe: null`—
+hay que hacerlo a mano antes de borrar nada:
 
 ```bash
 powershell -c "Get-Process -Id <pid> -ErrorAction SilentlyContinue"
 ```
 
-Si no devuelve nada, recién ahí se borra el `.lock`. Borrarlo con el proceso
-vivo pone dos runners sobre el mismo checkpoint.
+**Un latido viejo no es un cerrojo huérfano.** El latido se refresca cada
+minuto desde un hilo aparte, pero una inmobiliaria puede tardar hasta tres
+horas y un worker atascado en una lenta sigue vivo. Borrar su cerrojo pone dos
+runners sobre la misma partición: los dos le piden a los mismos sitios al doble
+del ritmo acordado y se pisan el checkpoint.
 
 ---
 
