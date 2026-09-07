@@ -108,3 +108,66 @@ def test_no_se_permiten_mas_de_dos_workers():
     """Más de dos procesos contra sitios de inmobiliarias chicas deja de ser
     paralelismo y pasa a ser una molestia para ellas."""
     assert WORKERS_MAXIMO == 2
+
+
+def test_el_latido_late_mientras_se_trabaja(tmp_path, monkeypatch):
+    """Antes se refrescaba sólo al empezar cada inmobiliaria, y ese diseño se
+    calibró cuando la corrida más larga de 74 medidas tardaba 927 s. Con
+    presupuesto de 5.400 s por corrida y dos corridas por inmobiliaria, una
+    sola puede tardar tres horas: `abriola propiedades` llevaba una hora y
+    catorce minutos con el proceso VIVO y su cerrojo ya figuraba vencido.
+
+    No es un problema de reporte: `tomar_cerrojo` usa el mismo umbral, así que
+    un segundo runner habría dado por muerto a un worker vivo y tomado su
+    partición.
+    """
+    import json
+    import time as _t
+
+    from scripts import run_agency_certification_queue as cola
+
+    monkeypatch.setattr(cola, "INTERVALO_DE_LATIDO", 0.05)
+    ruta = tmp_path / "x.lock"
+    with cola.Latido(ruta, "roomix:alfa"):
+        primero = json.loads(ruta.read_text(encoding="utf-8"))["heartbeat_epoch"]
+        _t.sleep(0.2)
+        segundo = json.loads(ruta.read_text(encoding="utf-8"))["heartbeat_epoch"]
+
+    assert segundo > primero, "el latido no se refresco durante el trabajo"
+
+
+def test_el_latido_se_detiene_al_terminar(tmp_path, monkeypatch):
+    """Un hilo que sigue latiendo despues de terminar mantendría vivo el
+    cerrojo de un trabajo que ya no existe."""
+    import json
+    import time as _t
+
+    from scripts import run_agency_certification_queue as cola
+
+    monkeypatch.setattr(cola, "INTERVALO_DE_LATIDO", 0.05)
+    ruta = tmp_path / "x.lock"
+    with cola.Latido(ruta, "roomix:alfa"):
+        _t.sleep(0.1)
+    ultimo = json.loads(ruta.read_text(encoding="utf-8"))["heartbeat_epoch"]
+    _t.sleep(0.25)
+    assert json.loads(ruta.read_text(encoding="utf-8"))["heartbeat_epoch"] == ultimo
+
+
+def test_un_fallo_al_escribir_el_latido_no_tumba_la_corrida(tmp_path, monkeypatch):
+    """El cerrojo vencido se detecta solo; perder un latido no puede costar la
+    inmobiliaria que se estaba certificando."""
+    from scripts import run_agency_certification_queue as cola
+
+    monkeypatch.setattr(cola, "INTERVALO_DE_LATIDO", 0.05)
+    llamadas = []
+
+    def rompe(ruta, canonical_id):
+        llamadas.append(1)
+        if len(llamadas) > 1:
+            raise OSError("disco lleno")
+
+    monkeypatch.setattr(cola, "latir", rompe)
+    import time as _t
+    with cola.Latido(tmp_path / "x.lock", "roomix:alfa"):
+        _t.sleep(0.2)
+    assert len(llamadas) > 1

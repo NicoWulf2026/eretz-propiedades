@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import sys
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -58,11 +59,22 @@ BANDERA_DE_PARO = "AGENCY_CERTIFICATION_STOP.json"
 # Tope duro. Mas de dos procesos contra sitios de inmobiliarias chicas deja de
 # ser paralelismo y pasa a ser una molestia para ellas.
 WORKERS_MAXIMO = 2
-# El latido se refresca al terminar cada inmobiliaria. Sobre 74 corridas
-# medidas, la mas larga tardo 927 s, asi que un latido de mas de una hora
-# significa que ese proceso ya no esta: es cuatro veces el peor caso observado,
-# no un numero elegido de la nada.
+# El latido se refresca CADA MINUTO desde un hilo aparte, mientras la
+# inmobiliaria se certifica.
+#
+# Antes se refrescaba solo al empezar cada una, y ese diseno se calibro cuando
+# la corrida mas larga de 74 medidas tardaba 927 s. Con presupuesto de 5.400 s
+# por corrida y dos corridas por inmobiliaria, una sola puede tardar tres
+# horas: `abriola propiedades` llevaba una hora y catorce minutos con el
+# proceso VIVO y su cerrojo ya figuraba vencido.
+#
+# Eso no es un problema de reporte. `tomar_cerrojo` usa el mismo umbral, asi
+# que un segundo runner habria dado por muerto a un worker vivo y tomado su
+# particion: dos procesos pidiendole a los mismos sitios al doble del ritmo
+# acordado y escribiendo el mismo checkpoint, que es exactamente lo que el
+# cerrojo existe para impedir.
 LATIDO_VENCIDO = 3600.0
+INTERVALO_DE_LATIDO = 60.0
 
 
 def latir(ruta: Path, canonical_id: str | None) -> None:
@@ -141,6 +153,39 @@ def sufijado(nombre: str, worker: int, workers: int) -> str:
         return nombre
     raiz, punto, extension = nombre.partition(".")
     return f"{raiz}.w{worker}{punto}{extension}"
+
+
+class Latido:
+    """Mantiene vivo el cerrojo mientras dura el trabajo.
+
+    Un hilo aparte y no un `latir()` adentro del certificador: el certificador
+    no sabe que hay un cerrojo, y ensenarselo lo ataria a como se orquesta la
+    cola. Con un hilo, la unica coordinacion es "empeza" y "para".
+    """
+
+    def __init__(self, ruta: Path, canonical_id: str) -> None:
+        self.ruta = ruta
+        self.canonical_id = canonical_id
+        self._parar = threading.Event()
+        self._hilo = threading.Thread(target=self._latir, daemon=True)
+
+    def _latir(self) -> None:
+        while not self._parar.wait(INTERVALO_DE_LATIDO):
+            try:
+                latir(self.ruta, self.canonical_id)
+            except OSError:
+                # Un fallo al escribir el latido no puede tumbar la corrida:
+                # el cerrojo vencido se detecta solo y el trabajo sigue.
+                pass
+
+    def __enter__(self) -> "Latido":
+        latir(self.ruta, self.canonical_id)
+        self._hilo.start()
+        return self
+
+    def __exit__(self, *_) -> None:
+        self._parar.set()
+        self._hilo.join(timeout=INTERVALO_DE_LATIDO)
 
 
 def tomar_cerrojo(output: Path, worker: int = 0, workers: int = 1) -> Path:
@@ -548,7 +593,6 @@ def main() -> int:
                               "radio": ajeno.get("radio")},
                              ensure_ascii=False), flush=True)
             break
-        latir(cerrojo, canonical_id)
         write_json(progress_path, progress_payload(
             mode=mode_name, universe=len(catalog), queue=queue,
             pending=pending[index - 1:],
@@ -557,9 +601,10 @@ def main() -> int:
             last_terminal_agency=last_terminal,
             current_agency=canonical_id, current_phase="CERTIFY"))
         try:
-            result = certify(canonical_id, catalog, output,
-                             Path(args.preingestion_db), args.interval,
-                             args.max_listings, args.budget)
+            with Latido(cerrojo, canonical_id):
+                result = certify(canonical_id, catalog, output,
+                                 Path(args.preingestion_db), args.interval,
+                                 args.max_listings, args.budget)
         except KeyboardInterrupt:
             raise
         except Exception as error:  # noqa: BLE001 - una fuente no tumba la cola
