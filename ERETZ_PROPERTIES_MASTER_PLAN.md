@@ -666,6 +666,52 @@ alcanzan para resolverlas. Quedan en `UNKNOWN` hasta tenerlas.
 vuelo**, junto al milestone 2: vive en `Connector._resolver_geografia`, o sea
 en `connectors/base.py`, y tocarlo invalida la huella de todas las estrategias.
 
+### 3.5 La ventana semántica del 6 de septiembre
+
+Se aplicaron juntos los tres cambios que compartían radio transversal, porque
+`shared/base` y `shared/geografia` entran en el conjunto de componentes de toda
+estrategia: agrupados cuestan **48 recertificaciones una vez**; separados, tres
+veces eso.
+
+**AMI Propiedades.** Publica sus 27 propiedades en un `<select>` "POR CÓDIGO" y
+en ningún `<a>`. Leyendo sólo `href`, un sitio entero con catálogo declarado
+figuraba como `SIN_INVENTARIO` y el triage lo paró como posible pérdida de
+inventario — que es exactamente lo que era. La solución no es por dominio: un
+`<select>` cuyas opciones apuntan a tres o más documentos del propio sitio **es**
+el índice del catálogo. Lo dice el sitio con su navegación, que es mejor
+evidencia que cualquier patrón de URL. Cerró `CERTIFIED_COMPLETE`, 27,
+idempotente.
+
+**Normalización de texto.** `normalizar_texto_campos` era una tabla escrita a
+mano con cuatro reemplazos: cubría la palabra que alguien recordó el día que la
+vio romperse. Ahora delega en `connectors/texto.py`, que repara el mojibake
+demostrable y reconoce contra un vocabulario declarado los tokens donde la
+fuente ya perdió el byte. Vuelven también `Descripción`, `Antigüedad`,
+`Código`, `Año` y el resto, sin escribir una línea por palabra.
+
+**Un tercer agujero de huella.** `connectors/coherencia.py` —que decide qué
+atributos se descartan— lo importa `generico.py` desde siempre y no era
+componente de ninguna huella: cambiar esa regla habría cambiado lo que se
+extrae sin invalidar una sola certificación. Ya van tres, y en las dos
+direcciones. Ahora hay dos tests que lo detectan solos, comparando **payloads**
+y no nombres: `formularios.py` viaja como `strategy/php_form_transport` y
+buscarlo por nombre lo daría por huérfano cuando está correctamente acotado.
+
+**Orden de la cola.** Canarios por familia, después bulk, y la cola larga —las
+que nos rechazan o agotan el presupuesto— al final. `alta`, `alma di matteo`,
+`altos servicios` y AMI fueron cuatro paradas de la misma clase de problema, y
+cada una costó una ventana. El universo no cambia: cambia el orden.
+
+**Dos workers.** La cola es 99,65 % I/O. El reparto es **por host**, no por
+posición: la cortesía se le debe al sitio y el limitador vive dentro de cada
+proceso, así que dos workers sobre el mismo host pedirían al doble del ritmo
+acordado sin que ninguno se entere. Sobre las 767 hay 765 hosts distintos, y el
+reparto queda 391/376. `append_jsonl` pasó a ser un `os.write` sobre `O_APPEND`
+—una sola llamada al sistema— porque un `write` partido dejaría media línea de
+un proceso dentro de la línea del otro, en el archivo que es la fuente de
+verdad de las certificaciones. Un STOP transversal escribe una bandera que
+corta a los dos.
+
 ---
 
 ## 4. Defectos
