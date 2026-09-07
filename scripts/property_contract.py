@@ -38,7 +38,7 @@ from __future__ import annotations
 
 from typing import Any
 
-CONTRATO_VERSION = "property_contract_v2"
+CONTRATO_VERSION = "property_contract_v3"
 
 EXTRACTED = "EXTRACTED"
 SOURCE_NOT_PROVIDED = "SOURCE_NOT_PROVIDED"
@@ -94,6 +94,38 @@ DESCARTES = {
 }
 
 
+# Un lote no tiene dormitorios, y no tenerlos no es que no los hayamos leido.
+#
+# La senal de "la fuente publica este campo" se agrega POR AGENCIA: si una
+# inmobiliaria publica dormitorios en sus departamentos, la senal dice que los
+# publica, y despues cada terreno sin dormitorios se contaba como defecto
+# NUESTRO. Eran 2.969 de 11.875 -uno de cada cuatro-, y nos habrian mandado a
+# buscar un bug de parser que no existe.
+TIPOS_SIN_HABITACIONES = ("terreno", "lote", "fraccion", "campo", "chacra")
+CAMPOS_DE_VIVIENDA = ("ambientes", "dormitorios", "banos", "superficie_cubierta")
+
+# Estos SI pueden tener banos y ambientes -un local con dos ambientes y un
+# toilette es corriente-, pero no dormitorios.
+TIPOS_SIN_DORMITORIOS = ("cochera", "galpon", "deposito", "local", "oficina")
+
+
+def campo_ajeno_al_tipo(tipo: Any, campo: str) -> bool:
+    """Si este campo NO EXISTE para esta clase de propiedad.
+
+    Conservador a proposito: solo lo que es imposible, no lo que es raro. Un
+    local puede tener ambientes y bano; un terreno no puede tener ninguno de
+    los cuatro.
+    """
+    t = (tipo or "").strip().lower()
+    if not t:
+        return False
+    if any(x in t for x in TIPOS_SIN_HABITACIONES):
+        return campo in CAMPOS_DE_VIVIENDA
+    if any(x in t for x in TIPOS_SIN_DORMITORIOS):
+        return campo == "dormitorios"
+    return False
+
+
 def _presente(valor: Any) -> bool:
     return valor not in (None, "", [], {}, 0)
 
@@ -123,6 +155,10 @@ def estado_de_campo(fila: dict[str, Any], campo: str,
     rechazado = rechazos_de(fila).get(campo)
     if rechazado:
         return REJECTED_BY_VALIDATION
+    # El tipo manda sobre la senal de la agencia: que la inmobiliaria publique
+    # dormitorios en sus departamentos no hace que su terreno tenga.
+    if campo_ajeno_al_tipo(fila.get("tipo_propiedad"), campo):
+        return SOURCE_NOT_PROVIDED
     if fuente_lo_publica is True:
         return EXTRACTION_FAILED
     if fuente_lo_publica is False:

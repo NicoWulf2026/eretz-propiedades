@@ -94,7 +94,7 @@ def test_el_veredicto_declara_su_version():
     geo = {"localidad_canonica": "Rosario",
            "area_busqueda": {"nivel": "LOCALIDAD", "valor": "Rosario"}}
     v = evaluar(_propiedad(), geo=geo)
-    assert v["contrato_version"] == "property_contract_v2"
+    assert v["contrato_version"] == "property_contract_v3"
     assert v["publicable"] is True
     assert v["database_writes"] == 0
     assert set(v["alcances"]) == {"FICHA", "LISTADO", "FILTRO_OPERACION",
@@ -129,3 +129,43 @@ def test_sin_area_tampoco_se_pierde_la_propiedad():
         "area_busqueda": {"nivel": "SIN_AREA", "valor": None}})
     assert "AREA_BUSQUEDA" not in v["alcances"]
     assert v["publicable"] is True
+
+
+def test_un_terreno_sin_dormitorios_no_es_un_defecto_nuestro():
+    """La señal de "la fuente publica este campo" se agrega POR AGENCIA: si una
+    inmobiliaria publica dormitorios en sus departamentos, la señal dice que
+    los publica, y después cada terreno sin dormitorios se contaba como defecto
+    nuestro.
+
+    Eran 2.969 de 11.875 —uno de cada cuatro— y nos habrían mandado a buscar un
+    bug de parser que no existe.
+    """
+    for campo in ("ambientes", "dormitorios", "banos", "superficie_cubierta"):
+        assert estado_de_campo({"tipo_propiedad": "terreno"}, campo,
+                               True) == SOURCE_NOT_PROVIDED
+    assert estado_de_campo({"tipo_propiedad": "Terreno / Lote"}, "banos",
+                           True) == SOURCE_NOT_PROVIDED
+
+
+def test_una_vivienda_sin_dormitorios_si_lo_es():
+    """La regla no puede tapar el defecto real: un departamento sin dormitorios
+    en una agencia que los publica es algo que no leímos."""
+    assert estado_de_campo({"tipo_propiedad": "departamento"}, "dormitorios",
+                           True) == EXTRACTION_FAILED
+
+
+def test_la_regla_es_conservadora():
+    """Sólo lo imposible, no lo raro. Un local puede tener dos ambientes y un
+    toilette; lo que no puede tener es dormitorios."""
+    assert estado_de_campo({"tipo_propiedad": "local"}, "banos",
+                           True) == EXTRACTION_FAILED
+    assert estado_de_campo({"tipo_propiedad": "local"}, "ambientes",
+                           True) == EXTRACTION_FAILED
+    assert estado_de_campo({"tipo_propiedad": "local"}, "dormitorios",
+                           True) == SOURCE_NOT_PROVIDED
+
+
+def test_sin_tipo_no_se_supone_nada():
+    """No saber de qué clase de propiedad se trata no autoriza a exonerar."""
+    assert estado_de_campo({"tipo_propiedad": None}, "dormitorios",
+                           True) == EXTRACTION_FAILED
