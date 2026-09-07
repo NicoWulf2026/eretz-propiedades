@@ -791,6 +791,24 @@ sobre 3.397 propiedades y `tokko` en 14 sobre 3.211, concentrados en pocas
 agencias. El radio es por familia (`connector/wordpress`, `connector/tokko`),
 no transversal, así que pueden ir en la misma ventana sin ampliarla.
 
+El campo que más pesa, `superficie_total` (1.875), está diagnosticado contra la
+fuente y son **dos problemas distintos**:
+
+- **tokko (1.113 propiedades, 12 agencias)**: la superficie de terreno está
+  estructurada y con etiqueta propia —`<li>Terreno: 930 m²</li>`, dentro de
+  `<ul id="lista_superficies">`— y el parser no la mira. Verificado en 12 de 12
+  fichas, con valores sensatos (930, 252, 186, 180, 160 m²). Es dato real
+  recuperable.
+  Una advertencia del muestreo: la primera ficha que abrí decía
+  `Terreno: 180.0 Ha` —180 hectáreas para un dúplex urbano—. Si hubiera
+  concluido con esa sola, habría dado el campo por basura y cerrado el caso al
+  revés. El arreglo necesita una regla de coherencia para la unidad, no sólo
+  leer la etiqueta.
+- **wordpress (374 propiedades, 6 agencias)**: no hay campo estructurado. La
+  superficie aparece **en la prosa de la descripción** —"Tiene una superficie
+  total de 105 m²"—. Leerla de ahí es posible pero es otra clase de extracción,
+  con otro riesgo, y merece su propia decisión.
+
 ---
 
 ## 4. Defectos
