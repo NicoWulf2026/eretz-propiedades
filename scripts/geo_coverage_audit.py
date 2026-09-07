@@ -252,7 +252,13 @@ def main() -> int:
                 "barrio_fuente": fila.get("barrio"),
                 "match": match,
                 "veredicto_de_corroboracion": veredicto,
-                "area_busqueda": {"nivel": nivel, "valor": valor},
+                # La MISMA forma que emite `Connector._area_de_busqueda`.
+                # Dos nombres para el mismo campo obligan al frontend a
+                # manejar los dos, y tarde o temprano maneja uno solo.
+                "area_busqueda": {"nivel": nivel, "nombre": valor,
+                                  "id": localidad_id if corroborada else None,
+                                  "origen": ("localidad" if corroborada
+                                             else nivel.lower())},
                 "geometria": {"provincia": prov_geo, "departamento": depto_geo,
                               "municipio": muni_geo} if punto else None,
                 "estado_geografico": GEO_CONFLICT if conflicto else None,

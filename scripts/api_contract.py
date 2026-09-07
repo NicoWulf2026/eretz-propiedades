@@ -142,7 +142,7 @@ def fila_de_api(fila: dict[str, Any], geo: dict[str, Any] | None,
             "provincia": {"nombre": (geo or {}).get("provincia_canonica")},
             "barrio": {"nombre": (geo or {}).get("barrio_fuente")},
             "area_busqueda": (geo or {}).get("area_busqueda")
-                             or {"nivel": "SIN_AREA", "valor": None},
+                             or {"nivel": "SIN_AREA", "nombre": None},
             "estado": (geo or {}).get("estado_geografico"),
         },
         "alcances": alcances,
