@@ -42,7 +42,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.property_contract import (AUSENTE_SIN_DIAGNOSTICO,  # noqa: E402
                                        CONTRATO_VERSION, evaluar)
 
-GATE_VERSION = "property_quality_gate_v1"
+GATE_VERSION = "property_quality_gate_v2"
+
+# Desde que proporcion de las fichas de una agencia se puede culpar al parser
+# por un campo ausente. Debajo de eso la fuente lo publica en algunas y no en
+# otras, y el agregado no distingue cual es esta.
+#
+# El 20 % de los pares agencia/campo cae en esa franja, y ahi el estado honesto
+# es "no sabemos" y no "es culpa nuestra".
+COBERTURA_PARA_CULPARNOS = 0.8
 
 
 def geografia_por_propiedad(cobertura: Path) -> dict[str, dict[str, Any]]:
@@ -124,10 +132,27 @@ def cobertura_por_agencia(paquetes: Path) -> dict[str, dict[str, bool]]:
                 continue
             provistos = dato.get("source_provided")
             extraidos = dato.get("normalized_present")
-            if isinstance(provistos, int):
-                publica[campo] = (provistos > 0
-                                  or (isinstance(extraidos, int)
-                                      and extraidos > 0))
+            total = dato.get("normalized_total")
+            if not isinstance(provistos, int):
+                continue
+            # Haberlo extraido tambien prueba que la fuente lo publica.
+            efectivos = max(provistos,
+                            extraidos if isinstance(extraidos, int) else 0)
+            if efectivos == 0:
+                publica[campo] = False
+            elif isinstance(total, int) and total > 0 and efectivos / total < COBERTURA_PARA_CULPARNOS:
+                # Cobertura PARCIAL: la fuente lo publica en algunas fichas y
+                # en otras no, y el agregado no dice de cual se trata esta.
+                # `alderinmobiliaria` no publica superficie en ninguna de las
+                # cinco fichas que abri, y 147 propiedades suyas figuraban como
+                # defecto nuestro porque otras si la publican.
+                #
+                # `None` no es una tercera categoria inventada: es el valor que
+                # el contrato ya interpreta como AUSENTE_SIN_DIAGNOSTICO, que
+                # es exactamente lo que pasa aca -no sabemos-.
+                publica[campo] = None
+            else:
+                publica[campo] = True
         if publica:
             fuera[paquete.get("canonical_agency_id")] = publica
     return fuera

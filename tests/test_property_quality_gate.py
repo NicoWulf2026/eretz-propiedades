@@ -234,3 +234,49 @@ def _corrida(tmp_path, monkeypatch, *, ciudad, nivel, valor, estado=None):
         "--cobertura-geografica", str(cobertura)])
     assert gate.main() == 0
     return salida
+
+
+def test_una_cobertura_parcial_no_alcanza_para_culparnos(tmp_path):
+    """`alderinmobiliaria` no publica superficie en ninguna de las cinco fichas
+    que abrí, y 147 propiedades suyas figuraban como defecto nuestro porque
+    otras sí la publican.
+
+    La señal es POR AGENCIA: cuando la fuente lo publica en algunas fichas y en
+    otras no, el agregado no dice de cuál se trata ésta. El estado honesto es
+    "no sabemos".
+    """
+    from scripts.property_quality_gate import cobertura_por_agencia
+
+    _paquete(tmp_path, "roomix:parcial", {
+        "superficie_total": {"source_provided": 30, "normalized_present": 30,
+                             "normalized_total": 100},
+    })
+    assert cobertura_por_agencia(tmp_path)["roomix:parcial"]["superficie_total"] is None
+
+
+def test_una_cobertura_alta_si_alcanza(tmp_path):
+    """Si la fuente lo publica en la enorme mayoría, que falte en una es
+    nuestro."""
+    from scripts.property_quality_gate import cobertura_por_agencia
+
+    _paquete(tmp_path, "roomix:alta", {
+        "precio": {"source_provided": 95, "normalized_present": 95,
+                   "normalized_total": 100}})
+    assert cobertura_por_agencia(tmp_path)["roomix:alta"]["precio"] is True
+
+
+def test_ninguna_la_publica_sigue_siendo_no_provisto(tmp_path):
+    from scripts.property_quality_gate import cobertura_por_agencia
+
+    _paquete(tmp_path, "roomix:cero", {
+        "barrio": {"source_provided": 0, "normalized_present": 0,
+                   "normalized_total": 100}})
+    assert cobertura_por_agencia(tmp_path)["roomix:cero"]["barrio"] is False
+
+
+def test_no_saber_se_traduce_a_ausente_sin_diagnostico():
+    """`None` no es una tercera categoría inventada: es el valor que el
+    contrato ya interpreta como AUSENTE_SIN_DIAGNOSTICO."""
+    from scripts.property_contract import AUSENTE_SIN_DIAGNOSTICO, estado_de_campo
+
+    assert estado_de_campo({}, "superficie_total", None) == AUSENTE_SIN_DIAGNOSTICO
