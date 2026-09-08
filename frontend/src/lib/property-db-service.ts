@@ -56,10 +56,14 @@ type ClassifiedMapCandidate = MapCandidate & { locationConfidence: Exclude<Locat
 type TimedPromise<T> = { expiresAt: number; value: Promise<T> };
 // `failed` separa "la consulta no devolvió nada" de "la consulta no se pudo hacer".
 export type DirectoryResult<T> = { items: T[]; failed: boolean };
+export type PropertyDetailResult =
+  | { status: "FOUND"; property: Property }
+  | { status: "NOT_FOUND" }
+  | { status: "UNAVAILABLE"; reason: "DATABASE_UNCONFIGURED" | "QUALITY_GATE_UNAVAILABLE" | "QUERY_FAILED" };
 
 let client: Sql | null = null;
 const searchCache = new Map<string, TimedPromise<PropertySearchResult>>();
-const detailCache = new Map<string, TimedPromise<Property | null>>();
+const detailCache = new Map<string, TimedPromise<PropertyDetailResult>>();
 const mapCache = new Map<string, TimedPromise<MapSearchResponse>>();
 const suggestionCache = new Map<string, TimedPromise<SearchSuggestion[]>>();
 const countsCache = new Map<string, TimedPromise<{ count: number; mapCount: number }>>();
@@ -475,22 +479,32 @@ export function searchProperties(filters: PropertyFilters): Promise<PropertySear
   );
 }
 
-async function getPropertyByIdUncached(id: string): Promise<Property | null> {
-  if (!databaseUrl() || !/^\d+$/.test(id)) return null;
-  const gate = await getPreviewQualityGate();
-  if (!gate.enabled || !gate.isVisible(id)) return null;
+async function getPropertyByIdUncached(id: string): Promise<PropertyDetailResult> {
+  if (!/^\d+$/.test(id)) return { status: "NOT_FOUND" };
+  if (!databaseUrl()) return { status: "UNAVAILABLE", reason: "DATABASE_UNCONFIGURED" };
   try {
+    const gate = await getPreviewQualityGate();
+    if (!gate.enabled) return { status: "UNAVAILABLE", reason: "QUALITY_GATE_UNAVAILABLE" };
+    if (!gate.isVisible(id)) return { status: "NOT_FOUND" };
     const rows = await readOnly((sql) => sql.unsafe<DbPropertyRow[]>(`SELECT ${projection}, p.id AS __sort_value
       FROM public.propiedades p LEFT JOIN public.inmobiliarias_main i ON i.id = p.inmobiliaria_id
       WHERE p.id = $1 LIMIT 1`, [Number(id)]));
-    return rows[0] ? (await mapRowsToProperties([rows[0]]))[0] : null;
-  } catch {
-    return null;
+    const property = rows[0] ? (await mapRowsToProperties([rows[0]]))[0] : null;
+    return property ? { status: "FOUND", property } : { status: "NOT_FOUND" };
+  } catch (error) {
+    console.error("ERETZ property detail failed", error instanceof Error ? error.message : "unknown error");
+    return { status: "UNAVAILABLE", reason: "QUERY_FAILED" };
   }
 }
 
-export function getPropertyById(id: string): Promise<Property | null> {
-  return cachedQuery(detailCache, id, DETAIL_CACHE_TTL_MS, () => getPropertyByIdUncached(id));
+export function getPropertyByIdResult(id: string): Promise<PropertyDetailResult> {
+  return cachedQuery(
+    detailCache,
+    id,
+    DETAIL_CACHE_TTL_MS,
+    () => getPropertyByIdUncached(id),
+    (result) => result.status !== "UNAVAILABLE",
+  );
 }
 
 // Resumen de un conjunto de ids (favoritos, comparar, recientes). Server-only,

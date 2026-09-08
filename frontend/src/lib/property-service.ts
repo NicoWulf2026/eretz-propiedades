@@ -7,7 +7,7 @@ export {
   getPropertiesByAgency,
   getPropertiesByAgent,
   getPropertiesByIds,
-  getPropertyById,
+  getPropertyByIdResult,
   getRealEstateById,
   realEstateExists,
   getRealEstateDirectory,
@@ -15,3 +15,4 @@ export {
   searchMap,
   searchProperties,
 } from "@/lib/property-db-service";
+export type { PropertyDetailResult } from "@/lib/property-db-service";

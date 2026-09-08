@@ -16,17 +16,39 @@ import { locationConfidenceDescription, locationConfidenceLabel } from "@/lib/ge
 import { propertyDetailGroups, propertyDetailTitle, propertyReturnContext, publicationMatchConfidence } from "@/lib/property-detail";
 import { availabilityLabel, formatDate, operationLabels, propertyLocation, propertyPrice, propertySpecs, typeLabels } from "@/lib/property-presenter";
 import { parsePropertyFilters, type SearchParams } from "@/lib/property-query";
-import { getOtherPublications, getPriceHistory, getPropertyById, getRelatedProperties } from "@/lib/property-service";
+import { getOtherPublications, getPriceHistory, getPropertyByIdResult, getRelatedProperties } from "@/lib/property-service";
 import { siteUrl } from "@/lib/site-url";
 import { entitySlug } from "@/lib/slug";
 import type { PropertySummary } from "@/types/property";
 
 const money = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 });
 
+function PropertyUnavailable({ id }: { id: string }) {
+  return (
+    <SiteShell>
+      <main className="container grid min-h-[60vh] place-items-center py-16 text-center">
+        <div>
+          <p className="eyebrow">Servicio temporalmente no disponible</p>
+          <h1 className="mt-3 text-4xl font-black text-[color:var(--ink)]">No pudimos cargar esta propiedad</h1>
+          <p className="mx-auto mt-4 max-w-lg u-text-muted">No significa que el aviso haya sido retirado. Podés volver a intentar o seguir explorando.</p>
+          <div className="mt-7 flex flex-wrap justify-center gap-3">
+            <Link className="primary-button" href={`/propiedad/${encodeURIComponent(id)}`} prefetch={false}>Reintentar</Link>
+            <Link className="secondary-button" href="/propiedades">Explorar propiedades</Link>
+          </div>
+        </div>
+      </main>
+    </SiteShell>
+  );
+}
+
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
-  const property = await getPropertyById(id);
-  if (!property) notFound();
+  const result = await getPropertyByIdResult(id);
+  if (result.status === "NOT_FOUND") notFound();
+  if (result.status === "UNAVAILABLE") {
+    return { title: "No pudimos cargar esta propiedad", robots: { index: false, follow: false } };
+  }
+  const property = result.property;
   const title = propertyDetailTitle(property);
   const description = `${typeLabels[property.propertyType]} en ${operationLabels[property.operation].toLowerCase()}. ${propertyLocation(property)}. ${propertyPrice(property)}.`;
   const canonical = `${siteUrl}/propiedad/${property.id}`;
@@ -56,8 +78,10 @@ export default async function PropertyPage({ params, searchParams }: { params: P
   const query = await searchParams;
   const returnCandidate = Array.isArray(query.volver) ? query.volver[0] : query.volver;
   const returnTo = returnCandidate?.startsWith("/") && !returnCandidate.startsWith("//") ? returnCandidate.slice(0, 1600) : "/propiedades";
-  const property = await getPropertyById(id);
-  if (!property) notFound();
+  const result = await getPropertyByIdResult(id);
+  if (result.status === "NOT_FOUND") notFound();
+  if (result.status === "UNAVAILABLE") return <PropertyUnavailable id={id} />;
+  const property = result.property;
   const [related, otherPublications, priceHistory] = await Promise.all([
     getRelatedProperties(property),
     getOtherPublications(property),

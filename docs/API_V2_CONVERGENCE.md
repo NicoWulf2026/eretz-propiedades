@@ -160,6 +160,8 @@ TEMPORARY_FRONTEND_BEHAVIOR: retain legacy reads; do not fan out unbounded detai
 
 There is no PostgreSQL fallback in the migrated autocomplete route. API failures remain typed failures and the UI distinguishes them from a successful empty response.
 
+The legacy property-detail loader now also preserves absence versus infrastructure failure. A malformed, hidden or genuinely absent numeric id remains `NOT_FOUND`; missing database configuration, a disabled/unavailable quality gate or a failed query returns `UNAVAILABLE`. The property route renders an explicit, no-index temporary-service state for the latter instead of emitting a false 404. This corrects the lifecycle/error contract without changing the legacy detail data source while API v2 identifiers and fields remain blocked.
+
 Filter metadata is now loaded once by the Explorer through the internal server route. Existing operation, property-type and currency controls remain structurally unchanged; when API v2 reports a matching facet, its real catalog count is appended without changing the submitted legacy value. Unsupported legacy controls remain visible as required. Metadata failure, partial data and valid empty data are distinct UI states and never disable search execution.
 
 ### Filter compatibility
