@@ -162,6 +162,8 @@ There is no PostgreSQL fallback in the migrated autocomplete route. API failures
 
 The legacy property-detail loader now also preserves absence versus infrastructure failure. A malformed, hidden or genuinely absent numeric id remains `NOT_FOUND`; missing database configuration, a disabled/unavailable quality gate or a failed query returns `UNAVAILABLE`. The property route renders an explicit, no-index temporary-service state for the latter instead of emitting a false 404. This corrects the lifecycle/error contract without changing the legacy detail data source while API v2 identifiers and fields remain blocked.
 
+The legacy bounded batch read used by favorites, collections and comparison follows the same rule: an empty valid id set or ids that are no longer visible can produce a successful empty collection, while missing database/gate infrastructure and query failures return HTTP 503 with `no-store`. Existing clients already render that response as a recoverable error, so an outage no longer claims that every saved listing disappeared.
+
 Filter metadata is now loaded once by the Explorer through the internal server route. Existing operation, property-type and currency controls remain structurally unchanged; when API v2 reports a matching facet, its real catalog count is appended without changing the submitted legacy value. Unsupported legacy controls remain visible as required. Metadata failure, partial data and valid empty data are distinct UI states and never disable search execution.
 
 ### Filter compatibility

@@ -9,15 +9,17 @@ export const dynamic = "force-dynamic";
 async function handleGET(request: Request) {
   const url = new URL(request.url);
   const raw = (url.searchParams.get("ids") ?? "").split(",").map((x) => x.trim()).filter(Boolean);
-  try {
-    const properties = await getPropertiesByIds(raw);
+  const result = await getPropertiesByIds(raw);
+  if (result.failed) {
     return NextResponse.json(
-      { properties },
-      { headers: { "Cache-Control": "private, max-age=30, stale-while-revalidate=60" } },
+      { error: "No pudimos cargar las propiedades." },
+      { status: 503, headers: { "Cache-Control": "no-store" } },
     );
-  } catch {
-    return NextResponse.json({ error: "No pudimos cargar las propiedades." }, { status: 503 });
   }
+  return NextResponse.json(
+    { properties: result.properties },
+    { headers: { "Cache-Control": "private, max-age=30, stale-while-revalidate=60" } },
+  );
 }
 
 export const GET = withObservability("/api/properties/by-ids", handleGET);

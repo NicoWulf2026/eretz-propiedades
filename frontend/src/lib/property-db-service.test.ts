@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { getPropertyByIdResult, suggestionMatchRank } from "@/lib/property-db-service";
+import { getPropertiesByIds, getPropertyByIdResult, suggestionMatchRank } from "@/lib/property-db-service";
 
 const originalSupabaseDatabaseUrl = process.env.SUPABASE_DATABASE_URL;
 const originalDatabaseUrl = process.env.DATABASE_URL;
@@ -50,5 +50,19 @@ describe("getPropertyByIdResult", () => {
       status: "UNAVAILABLE",
       reason: "QUALITY_GATE_UNAVAILABLE",
     });
+  });
+});
+
+describe("getPropertiesByIds", () => {
+  it("keeps an empty valid request distinct from unavailable infrastructure", async () => {
+    delete process.env.SUPABASE_DATABASE_URL;
+    delete process.env.DATABASE_URL;
+    await expect(getPropertiesByIds(["invalid"])).resolves.toEqual({ properties: [], failed: false });
+  });
+
+  it("does not report an infrastructure outage as an empty saved list", async () => {
+    delete process.env.SUPABASE_DATABASE_URL;
+    delete process.env.DATABASE_URL;
+    await expect(getPropertiesByIds(["987654323"])).resolves.toEqual({ properties: [], failed: true });
   });
 });

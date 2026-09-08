@@ -60,6 +60,7 @@ export type PropertyDetailResult =
   | { status: "FOUND"; property: Property }
   | { status: "NOT_FOUND" }
   | { status: "UNAVAILABLE"; reason: "DATABASE_UNCONFIGURED" | "QUALITY_GATE_UNAVAILABLE" | "QUERY_FAILED" };
+export type PropertyBatchResult = { properties: PropertySummary[]; failed: boolean };
 
 let client: Sql | null = null;
 const searchCache = new Map<string, TimedPromise<PropertySearchResult>>();
@@ -510,13 +511,13 @@ export function getPropertyByIdResult(id: string): Promise<PropertyDetailResult>
 // Resumen de un conjunto de ids (favoritos, comparar, recientes). Server-only,
 // capado, gate-filtrado y en el orden solicitado. Nunca filtra por estado: el
 // Quality Gate es la autoridad de visibilidad.
-export async function getPropertiesByIds(ids: string[]): Promise<PropertySummary[]> {
-  if (!databaseUrl()) return [];
+export async function getPropertiesByIds(ids: string[]): Promise<PropertyBatchResult> {
   const clean = Array.from(new Set(ids.map(String).filter((x) => /^\d+$/.test(x)))).slice(0, 60);
-  if (clean.length === 0) return [];
-  const gate = await getPreviewQualityGate();
-  if (!gate.enabled) return [];
+  if (clean.length === 0) return { properties: [], failed: false };
+  if (!databaseUrl()) return { properties: [], failed: true };
   try {
+    const gate = await getPreviewQualityGate();
+    if (!gate.enabled) return { properties: [], failed: true };
     const rows = await readOnly((sql) => sql.unsafe<DbPropertyRow[]>(
       `SELECT ${summaryProjection}, p.id AS __sort_value
        FROM public.propiedades p LEFT JOIN public.inmobiliarias_main i ON i.id = p.inmobiliaria_id
@@ -527,10 +528,13 @@ export async function getPropertiesByIds(ids: string[]): Promise<PropertySummary
     for (const property of summaries) {
       byId.set(property.id, property);
     }
-    return clean.map((id) => byId.get(id)).filter((x): x is PropertySummary => Boolean(x));
+    return {
+      properties: clean.map((id) => byId.get(id)).filter((x): x is PropertySummary => Boolean(x)),
+      failed: false,
+    };
   } catch (error) {
     console.error("ERETZ getPropertiesByIds failed", error instanceof Error ? error.message : "unknown error");
-    return [];
+    return { properties: [], failed: true };
   }
 }
 
