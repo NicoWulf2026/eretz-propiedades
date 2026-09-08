@@ -18,6 +18,7 @@ import {
   typeLabels,
 } from "@/lib/property-presenter";
 import type { PropertySummary } from "@/types/property";
+import { track } from "@/lib/analytics";
 
 export type PropertyCardVariant = "compact" | "grid";
 
@@ -93,6 +94,7 @@ export const PropertyCard = memo(function PropertyCard({
         className="focus-ring block"
         aria-label={accessibleName}
         onClick={() => {
+          track("result_opened", { property_id: property.id });
           onCommit?.(property.id);
           try {
             const resultsPane = document.querySelector<HTMLElement>(".explorer-results-pane");

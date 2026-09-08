@@ -6,6 +6,7 @@ import { activeChips } from "@/components/explorer/ActiveChips";
 import { FILTER_GROUPS, filterGroupCounts } from "@/lib/filter-groups";
 import { interpretNaturalQuery } from "@/lib/nl-search";
 import { filtersToSearchParams } from "@/lib/property-query";
+import { track } from "@/lib/analytics";
 import type { DiscoveryFilterMetadataState } from "@/lib/discovery-contract";
 import type { PropertyFilters, SearchSuggestion } from "@/types/property";
 
@@ -122,6 +123,10 @@ function submitFilters(event: React.FormEvent<HTMLFormElement>, action: string) 
   const form = new FormData(event.currentTarget);
   rememberSearch(String(form.get("q") ?? ""));
   const params = buildFilterSearchParams(form);
+  track("search_submitted", { filter_count: params.size });
+  if (params.size) track("filter_applied", { filter_count: params.size });
+  const sort = params.get("orden");
+  if (sort) track("sort_changed", { sort });
   window.location.assign(`${action}${params.size ? `?${params.toString()}` : ""}`);
 }
 

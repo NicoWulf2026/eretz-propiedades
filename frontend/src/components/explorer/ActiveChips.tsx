@@ -2,6 +2,7 @@
 
 import { filtersToSearchParams } from "@/lib/property-query";
 import type { PropertyFilters } from "@/types/property";
+import { track } from "@/lib/analytics";
 
 const OPERATION_LABELS: Record<string, string> = {
   venta: "Comprar", alquiler: "Alquilar", temporario: "Temporario",
@@ -75,7 +76,7 @@ export function ActiveChips({ filters, basePath = "/", onRemoveViewport }: { fil
   return (
     <div className="active-chips" role="group" aria-label="Filtros activos">
       {chips.map((chip) => (
-        <a key={chip.key} className="chip" href={href(chip.next)} aria-label={`Quitar filtro ${chip.label}`}>
+        <a key={chip.key} className="chip" href={href(chip.next)} aria-label={`Quitar filtro ${chip.label}`} onClick={() => track("filter_cleared", { filter: chip.key })}>
           <span>{chip.label}</span>
           <span aria-hidden="true"> ×</span>
           <span className="sr-only"> — quitar filtro</span>
@@ -88,7 +89,7 @@ export function ActiveChips({ filters, basePath = "/", onRemoveViewport }: { fil
           <span className="sr-only"> — quitar filtro del mapa</span>
         </button>
       ) : null}
-      {total > 1 ? <a className="chip chip-clear" href={basePath}>Limpiar todos</a> : null}
+      {total > 1 ? <a className="chip chip-clear" href={basePath} onClick={() => track("filter_cleared", { filter: "all" })}>Limpiar todos</a> : null}
     </div>
   );
 }

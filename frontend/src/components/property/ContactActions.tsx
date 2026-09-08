@@ -22,6 +22,7 @@ export function ContactActions({ property, canonical }: { property: Property; ca
   const shareMessage = propertyShareMessage(property, canonical);
   const shareHref = `https://wa.me/?text=${encodeURIComponent(shareMessage)}`;
   const emailHref = `mailto:${contact?.email ?? ""}?subject=${encodeURIComponent(`Consulta por ${property.title}`)}&body=${message}`;
+  const trackContact = (channel: string) => track("contact_intent", { property_id: property.id, channel });
   async function copy() {
     try {
       await navigator.clipboard.writeText(canonical);
@@ -68,9 +69,9 @@ export function ContactActions({ property, canonical }: { property: Property; ca
       </fieldset>
       ) : null}
       <div className="detail-contact-actions">
-        {whatsappHref && <a className="primary-button justify-center" href={whatsappHref} target="_blank" rel="noopener noreferrer" onClick={() => track("whatsapp_clicked", { property_id: property.id })}>Consultar por WhatsApp</a>}
-        {telephone && <a className={`${whatsappHref ? "secondary-button" : "primary-button"} justify-center`} href={telephone} onClick={() => track("phone_clicked", { property_id: property.id })}>Llamar por teléfono</a>}
-        {contact?.email && <a className={`${whatsappHref || telephone ? "secondary-button" : "primary-button"} justify-center`} href={emailHref} onClick={() => track("email_clicked", { property_id: property.id })}>Enviar correo</a>}
+        {whatsappHref && <a className="primary-button justify-center" href={whatsappHref} target="_blank" rel="noopener noreferrer" onClick={() => { trackContact("whatsapp"); track("whatsapp_clicked", { property_id: property.id }); }}>Consultar por WhatsApp</a>}
+        {telephone && <a className={`${whatsappHref ? "secondary-button" : "primary-button"} justify-center`} href={telephone} onClick={() => { trackContact("phone"); track("phone_clicked", { property_id: property.id }); }}>Llamar por teléfono</a>}
+        {contact?.email && <a className={`${whatsappHref || telephone ? "secondary-button" : "primary-button"} justify-center`} href={emailHref} onClick={() => { trackContact("email"); track("email_clicked", { property_id: property.id }); }}>Enviar correo</a>}
         {contact?.website && <a className="secondary-button justify-center" href={contact.website} target="_blank" rel="noopener noreferrer">Sitio del publicador ↗</a>}
       </div>
       {!whatsappHref && !telephone && !contact?.email && !contact?.website && !property.sourceUrl && <p className="mt-4 rounded-xl u-warn-surface p-3 text-sm u-warn-text">Esta publicación no incluye un contacto público válido.</p>}

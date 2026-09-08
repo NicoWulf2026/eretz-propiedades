@@ -4,6 +4,7 @@ import { useEffect, useId, useMemo, useState } from "react";
 import type { DiscoveryAutocompleteResponse } from "@/lib/discovery-contract";
 import { interpretNaturalQuery } from "@/lib/nl-search";
 import type { SearchSuggestion } from "@/types/property";
+import { track } from "@/lib/analytics";
 
 const recentKey = "eretz:recent-searches:v1";
 const suggestionCache = new Map<string, SearchSuggestion[]>();
@@ -129,6 +130,7 @@ export function SearchAutocomplete({ defaultValue }: { defaultValue: string }) {
 
   function choose(suggestion: SearchSuggestion) {
     rememberSearch(suggestion.query);
+    track("suggestion_selected", { category: suggestion.category });
     setOpen(false);
     if (suggestion.href) { window.location.assign(suggestion.href); return; }
     setValue(suggestion.query);

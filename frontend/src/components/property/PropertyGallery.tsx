@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { PropertyImage } from "@/components/property/PropertyImage";
+import { track } from "@/lib/analytics";
 
 export function PropertyGallery({ images, title }: { images: string[]; title: string }) {
   const [selected, setSelected] = useState(0);
@@ -54,7 +55,7 @@ export function PropertyGallery({ images, title }: { images: string[]; title: st
           el mosaico degrada solo: la principal se expande al ancho disponible. */}
       <div className="ficha-gallery-mosaic">
         {image ? (
-          <button type="button" className="ficha-gallery-main" onClick={() => setModal(true)} aria-label="Ampliar imagen">
+          <button type="button" className="ficha-gallery-main" onClick={() => { track("gallery_interaction", { action: "open", image: selected + 1 }); setModal(true); }} aria-label="Ampliar imagen">
             <PropertyImage src={image} alt={`${title}, imagen ${selected + 1}`} priority />
           </button>
         ) : (
@@ -97,7 +98,7 @@ export function PropertyGallery({ images, title }: { images: string[]; title: st
           </div>
           {images.length > 1 && (
             <div className="gallery-navigation" onClick={(event) => event.stopPropagation()}>
-              <button className="secondary-button" type="button" onClick={() => setSelected((selected - 1 + images.length) % images.length)} aria-label="Ver foto anterior">← Anterior</button>
+              <button className="secondary-button" type="button" onClick={() => { track("gallery_interaction", { action: "previous" }); setSelected((selected - 1 + images.length) % images.length); }} aria-label="Ver foto anterior">← Anterior</button>
               <div className="gallery-modal-thumbs" aria-label="Elegir foto">
                 {images.map((src, index) => (
                   <button key={`${src}-${index}`} type="button" className={index === selected ? "is-current" : ""} onClick={() => setSelected(index)} aria-label={`Ver foto ${index + 1}`} aria-current={index === selected ? "true" : undefined}>
@@ -105,7 +106,7 @@ export function PropertyGallery({ images, title }: { images: string[]; title: st
                   </button>
                 ))}
               </div>
-              <button className="secondary-button" type="button" onClick={() => setSelected((selected + 1) % images.length)} aria-label="Ver foto siguiente">Siguiente →</button>
+              <button className="secondary-button" type="button" onClick={() => { track("gallery_interaction", { action: "next" }); setSelected((selected + 1) % images.length); }} aria-label="Ver foto siguiente">Siguiente →</button>
             </div>
           )}
         </div>

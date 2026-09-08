@@ -15,6 +15,7 @@ import { useLocalValue } from "@/lib/use-local-store";
 import { describeSearch } from "@/lib/search-label";
 import type { DiscoveryFilterMetadataResponse, DiscoveryFilterMetadataState } from "@/lib/discovery-contract";
 import type { ExplorerMode, PropertyFilters, PropertySearchResult } from "@/types/property";
+import { track } from "@/lib/analytics";
 
 function unavailableResult(filters: PropertyFilters): PropertySearchResult {
   return {
@@ -171,6 +172,12 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
       });
     return () => controller.abort();
   }, [filters, mode, requestKey, result]);
+
+  useEffect(() => {
+    if (!result) return;
+    if (result.error) track("frontend_api_error", { flow: "explorer" });
+    else if (result.properties.length === 0) track("zero_results", { flow: "explorer" });
+  }, [requestKey, result]);
 
   useEffect(() => {
     if (mode !== "map_only" || result || mapOnlyCounts?.key === requestKey) return;

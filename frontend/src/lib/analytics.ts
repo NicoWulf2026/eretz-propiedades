@@ -1,5 +1,6 @@
 export type AnalyticsEvent =
   | "search_submitted"
+  | "suggestion_selected"
   | "natural_language_search"
   | "filter_applied"
   | "filter_removed"
@@ -10,6 +11,11 @@ export type AnalyticsEvent =
   | "search_this_area"
   | "draw_zone"
   | "property_opened"
+  | "result_opened"
+  | "property_viewed"
+  | "gallery_interaction"
+  | "contact_intent"
+  | "frontend_api_error"
   | "favorite_added"
   | "compare_added"
   | "property_hidden"
@@ -30,4 +36,3 @@ export function track(event: AnalyticsEvent, properties: Record<string, string |
   if (typeof window === "undefined") return;
   window.dispatchEvent(new CustomEvent("eretz:analytics", { detail: { event, properties } }));
 }
-

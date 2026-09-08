@@ -104,11 +104,18 @@ export default async function PropertyPage({ params, searchParams }: { params: P
     if (publicationMatchConfidence(property, item) === "HIGH_CONFIDENCE") highConfidencePublications.push(item);
     else limitedConfidencePublications.push(item);
   }
+  const structuredAddress = property.address || property.city || property.province || property.country ? {
+    "@type": "PostalAddress",
+    streetAddress: property.address ?? undefined,
+    addressLocality: property.city ?? undefined,
+    addressRegion: property.province ?? undefined,
+    addressCountry: property.country ?? undefined,
+  } : undefined;
   const jsonLd = {
     "@context": "https://schema.org", "@type": "RealEstateListing", name: title, url: canonical,
     description: property.description ?? undefined, image: property.images, dateModified: property.updatedAt ?? undefined,
-    offers: property.price && property.currency ? { "@type": "Offer", price: property.price, priceCurrency: property.currency, availability: "https://schema.org/InStock" } : undefined,
-    address: { "@type": "PostalAddress", addressLocality: property.city ?? undefined, addressRegion: property.province ?? undefined, addressCountry: property.country ?? "AR" },
+    offers: property.price !== null && property.currency ? { "@type": "Offer", price: property.price, priceCurrency: property.currency, availability: "https://schema.org/InStock" } : undefined,
+    address: structuredAddress,
   };
 
   return (
