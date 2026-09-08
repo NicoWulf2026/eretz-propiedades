@@ -2,7 +2,7 @@
 
 ## Source of Truth
 
-Frontend base: `feat/eretz-frontend-phase-a`. API v2 does not exist in that checkout; its verified implementation is `api/v2.py` and `api/ranking.py` in worktree `D:\INMO CAPITAL\Inmo-Capital-main`, inspected read-only at `46f4e672b9`. The latest ranked-search contract change in that lineage is `b73e976b2b`, and the latest snapshot/property contract update is `782685e648`. No committed OpenAPI/schema DTO was found.
+Frontend base: `feat/eretz-frontend-phase-a`. API v2 does not exist in that checkout; its verified implementation is `api/v2.py` and `api/ranking.py` in worktree `D:\INMO CAPITAL\Inmo-Capital-main`, inspected read-only at `46f4e672b9`. The latest API contract change in that release lineage is `b73e976b2b`. The newer snapshot/property work at `782685e648` exists only on `feat/roomix-agency-coverage`, is not an ancestor of the release checkout and is therefore not treated as the current frontend contract. No committed OpenAPI/schema DTO or snapshot generator was found in the inspected release checkout.
 
 Contract/version: `eretz_api_property_v1`; technical ranking: `eretz_ranking_tecnico_v1`. The current source is nine read-only GET endpoints over the real 58,427-row snapshot.
 
