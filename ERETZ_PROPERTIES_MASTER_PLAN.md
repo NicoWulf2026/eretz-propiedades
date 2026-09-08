@@ -813,6 +813,17 @@ fuente y son **dos problemas distintos**:
   `becerrapropiedades` sólo aparece en prosa ambigua —"DOS LOTES de 500 m2",
   que no se sabe si son 500 o 1.000—. No son defectos nuestros.
 
+**La cortesía adaptativa está colgada de una excepción que no llega.**
+`alejandro foster` registra 5 y 9 respuestas `Bloqueado` en sus dos corridas y
+`ritmo_cedido` queda en `false` las dos veces: el connector absorbe el bloqueo y
+devuelve `None`, así que el `except Bloqueado` del runner nunca se ejecuta y la
+concesión de ritmo no ocurre. Es código muerto en ese camino —lo escribí yo—.
+
+El arreglo es mirar los errores que el connector REGISTRA y no sólo los que
+propaga: el bucle ya guarda `errores_antes = len(con.errores)` para el camino
+del `None`, así que la señal está a mano. Toca `shared/runner`, o sea radio
+transversal.
+
 **Una advertencia sobre la lista de prioridades.** Al corregir el agregado de
 cobertura, `tokko/superficie_total` dejó de figurar como defecto propio y pasó
 a `AUSENTE_SIN_DIAGNOSTICO`: el detector de señales de origen tampoco reconoce
