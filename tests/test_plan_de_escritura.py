@@ -34,7 +34,14 @@ def _artefactos(tmp_path):
         json.dumps(f) for f in ({"publicable": True}, {"publicable": True},
                                 {"publicable": False})) + "\n",
         encoding="utf-8")
-    return cert, geo, pre
+    # El directorio de plataformas: de aca sale de quien es cada web. Una
+    # inmobiliaria cuya web cargada es de un tercero no aporta propiedades.
+    directorio = tmp_path / "agency_platform_directory.jsonl"
+    directorio.write_text(
+        json.dumps({"canonical_agency_id": "a",
+                    "web_kind": "OFFICIAL_WEB"}) + "\n",
+        encoding="utf-8")
+    return cert, geo, pre, directorio
 
 
 def test_el_plan_no_escribe_nada(tmp_path):

@@ -102,3 +102,22 @@ def test_se_frena_al_host_que_se_quejo_y_a_nadie_mas():
     assert nuevo > 0.5
     assert limitador.intervalo_de("lento.com.ar") == nuevo
     assert limitador.intervalo_de("otra.com.ar") == 0.5
+
+
+def test_el_bloqueo_propagado_cede_una_vez_y_despues_abandona():
+    """La otra rama: el connector que SI propaga `Bloqueado`. La primera vez es
+    una queja de ritmo y se difiere; si vuelve a cortar despues de haber bajado
+    la velocidad, ahi si es una negativa."""
+    from connectors.base import Bloqueado
+
+    limitador = LimitadorDeRitmo(0.001)
+    con = ConnectorQueAbsorbeElBloqueo(limitador)
+
+    def corta(aviso, fuente):
+        raise Bloqueado("http 403")
+
+    con.normalize = corta
+    resultado = _procesar_con(con, FUENTE, max_fichas=0, observacion=True)
+
+    assert resultado["intervalo_cedido"] is not None
+    assert limitador.intervalo_de("ejemplo.com.ar") > 0.001

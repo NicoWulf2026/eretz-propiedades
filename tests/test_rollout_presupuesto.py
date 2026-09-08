@@ -161,7 +161,11 @@ def test_un_sitio_que_nos_corta_pide_ritmo_no_abandono():
 
     # Primero cede ritmo y difiere; el abandono queda para la segunda vez.
     assert "ritmo_cedido" in rama
-    assert "FACTOR_DE_CORTESIA" in rama
+    # El factor vive en `ceder_ritmo_del_host`, que es el mismo camino que usa
+    # la rama del `None` -por donde pasa casi todo, porque los connectors
+    # absorben el bloqueo-. El comportamiento se prueba corriendo el bucle en
+    # `test_rollout_cortesia.py`; aca solo importa el ORDEN.
+    assert "ceder_ritmo_del_host" in rama
     assert "reintentos_diferidos.append(a)" in rama
     assert rama.index("reintentos_diferidos.append(a)") < rama.index("break")
     # Y ceder ritmo no puede ser gratis de auditar.

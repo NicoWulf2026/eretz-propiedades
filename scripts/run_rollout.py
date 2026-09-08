@@ -273,7 +273,7 @@ def procesar(con, fuente: Fuente, max_fichas: int, observacion: bool,
     return r
 
 
-def ceder_ritmo_del_host(con: Any, fuente: Fuente, a: dict) -> float | None:
+def ceder_ritmo_del_host(con, fuente: Fuente, a: dict) -> float | None:
     """Baja la velocidad para ESE host y devuelve el intervalo nuevo.
 
     Por host y no global: el limitador lo comparten todos los hilos, y frenarlo
