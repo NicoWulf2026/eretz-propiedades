@@ -894,8 +894,9 @@ function clusterMapProperties(valid: ClassifiedMapCandidate[], zoom: number): Ma
 }
 
 async function searchMapUncached(filters: PropertyFilters, viewport: MapViewport): Promise<MapSearchResponse> {
+  if (!databaseUrl()) throw new Error("ERETZ database is not configured");
   const gate = await getPreviewQualityGate();
-  if (!databaseUrl() || !gate.enabled) return { points: [], visibleCount: 0, scannedCount: 0, truncated: false };
+  if (!gate.enabled) throw new Error("ERETZ public quality gate is unavailable");
   const mapFilters = { ...filters, direction: "next" as const, cursor: "", sort: "recent" as const };
   // National views need representative coarse clusters, not thousands of rows
   // that collapse into a handful of markers. Increase density only as users zoom.

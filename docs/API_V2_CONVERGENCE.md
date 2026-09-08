@@ -166,6 +166,8 @@ The legacy bounded batch read used by favorites, collections and comparison foll
 
 The legacy Explorer search and count routes likewise preserve their existing browser payloads but now return HTTP 503 with `no-store` when the service reports an error or the public gate is unavailable. Their existing consumers already convert non-success responses into recoverable result/count error states; failures are no longer cached as successful empty inventory or unknown counts.
 
+The legacy map read no longer converts missing database/gate infrastructure into a successful map with zero points either. It rejects the unavailable read, the internal route returns HTTP 503 with `no-store`, and the existing map UI keeps the listing usable while announcing that the zone could not be updated. A genuinely successful query with no coordinates still remains a valid empty map.
+
 Filter metadata is now loaded once by the Explorer through the internal server route. Existing operation, property-type and currency controls remain structurally unchanged; when API v2 reports a matching facet, its real catalog count is appended without changing the submitted legacy value. Unsupported legacy controls remain visible as required. Metadata failure, partial data and valid empty data are distinct UI states and never disable search execution.
 
 ### Filter compatibility

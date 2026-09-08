@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { getPropertiesByIds, getPropertyByIdResult, suggestionMatchRank } from "@/lib/property-db-service";
+import { getPropertiesByIds, getPropertyByIdResult, searchMap, suggestionMatchRank } from "@/lib/property-db-service";
+import { parsePropertyFilters } from "@/lib/property-query";
 
 const originalSupabaseDatabaseUrl = process.env.SUPABASE_DATABASE_URL;
 const originalDatabaseUrl = process.env.DATABASE_URL;
@@ -64,5 +65,15 @@ describe("getPropertiesByIds", () => {
     delete process.env.SUPABASE_DATABASE_URL;
     delete process.env.DATABASE_URL;
     await expect(getPropertiesByIds(["987654323"])).resolves.toEqual({ properties: [], failed: true });
+  });
+});
+
+describe("searchMap", () => {
+  it("does not represent unavailable infrastructure as a successful empty map", async () => {
+    delete process.env.SUPABASE_DATABASE_URL;
+    delete process.env.DATABASE_URL;
+    const filters = parsePropertyFilters({});
+    await expect(searchMap(filters, { north: -30, east: -55, south: -40, west: -65, zoom: 7 }))
+      .rejects.toThrow("database is not configured");
   });
 });

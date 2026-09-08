@@ -17,7 +17,10 @@ async function handleGET(request: Request) {
       headers: { "Cache-Control": "private, max-age=20, stale-while-revalidate=40" },
     });
   } catch {
-    return NextResponse.json({ error: "No pudimos consultar esta zona." }, { status: 503 });
+    return NextResponse.json(
+      { error: "No pudimos consultar esta zona." },
+      { status: 503, headers: { "Cache-Control": "no-store" } },
+    );
   }
 }
 
