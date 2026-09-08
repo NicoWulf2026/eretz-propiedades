@@ -207,13 +207,18 @@ export function toApiV2SearchRequest(query: CatalogSearchQuery): ApiV2SearchRequ
 export function adaptApiV2Page(dto: ApiV2PageDto | ApiV2SearchPageDto): CatalogSearchPage {
   const pageSize = dto.limit;
   const page = pageSize > 0 ? Math.floor(dto.offset / pageSize) + 1 : 1;
+  const ranked = "ranking" in dto;
+  const hasMoreResults = dto.offset + dto.data.length < dto.total;
+  const nextOffsetAllowed = dto.offset + pageSize <= API_V2_RANKED_MAX_OFFSET;
   return {
     properties: dto.data.map(adaptApiV2Property),
     total: dto.total,
+    reachableSearchWindow: ranked ? Math.min(dto.total, API_V2_RANKED_MAX_OFFSET + pageSize) : null,
+    searchWindowExhausted: ranked && hasMoreResults && !nextOffsetAllowed,
     page,
     pageSize,
     hasPrevious: dto.offset > 0,
-    hasNext: dto.offset + dto.data.length < dto.total,
-    rankingVersion: "ranking" in dto && dto.ranking === API_V2_RANKING ? API_V2_RANKING : null,
+    hasNext: hasMoreResults && (!ranked || nextOffsetAllowed),
+    rankingVersion: ranked && dto.ranking === API_V2_RANKING ? API_V2_RANKING : null,
   };
 }

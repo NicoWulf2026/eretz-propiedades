@@ -32,7 +32,12 @@ export type CatalogSearchQuery = {
 
 export type CatalogSearchPage = {
   properties: CatalogProperty[];
+  /** All matches reported by the backend, including results outside the ranked window. */
   total: number;
+  /** Maximum number of matches addressable through ranked pagination; null for stable catalog pages. */
+  reachableSearchWindow: number | null;
+  /** More matches exist, but the next ranked offset is forbidden by the backend contract. */
+  searchWindowExhausted: boolean;
   page: number;
   pageSize: number;
   hasPrevious: boolean;

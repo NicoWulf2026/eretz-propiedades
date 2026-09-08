@@ -47,6 +47,8 @@ The domain exposes page/pageSize. `catalogPaginationToOffset` maps it to v2 `lim
 
 Ranked search has a backend safety window: `limit` is capped at 100 and offsets above 200 return HTTP 400. The request adapter now enforces the same offset ceiling before any network call. Deep catalog traversal belongs to stable `/v2/propiedades`, not `/v2/buscar`.
 
+`CatalogSearchPage.total` remains the complete match count reported by the backend. `reachableSearchWindow` separately reports how many matches the current ranked page size can address (at most `200 + limit`), and `searchWindowExhausted` becomes true when more matches exist but the next offset is outside the contract. In that state `hasNext` is false because no valid next request can be generated; consumers must explain the window limit rather than claim there are no more matching properties.
+
 ## Ranking / Sorting
 
 `technical_relevance` maps only to `/v2/buscar` and preserves `eretz_ranking_tecnico_v1` plus score parts. User-selected `recent`, `price_asc`, `price_desc` are distinct domain values. They currently fail as unsupported before the network because v2 exposes no explicit sort parameter. The frontend does not create a parallel ranking or use price as relevance.

@@ -95,7 +95,16 @@ describe("API v2 DTO validation and adapters", () => {
       offset: 48,
       data: [apiV2FixtureMatrix.ranked],
     } satisfies ApiV2SearchPageDto;
-    expect(adaptApiV2Page(dto)).toMatchObject({ page: 3, pageSize: 24, hasPrevious: true, hasNext: true, rankingVersion: API_V2_RANKING });
+    expect(adaptApiV2Page(dto)).toMatchObject({
+      total: 50,
+      reachableSearchWindow: 50,
+      searchWindowExhausted: false,
+      page: 3,
+      pageSize: 24,
+      hasPrevious: true,
+      hasNext: true,
+      rankingVersion: API_V2_RANKING,
+    });
   });
 
   it("uses backend technical ranking by default and refuses unsupported user sort", () => {
@@ -120,6 +129,25 @@ describe("API v2 DTO validation and adapters", () => {
     expect(toApiV2SearchRequest({ ...baseQuery, pagination: { page: 10, pageSize: 24 } })).toMatchObject({
       supported: false,
       reason: expect.stringContaining("offset 200"),
+    });
+  });
+
+  it("distinguishes total matches from the reachable ranked-search window", () => {
+    const page = adaptApiV2Page({
+      contrato: API_V2_CONTRACT,
+      ranking: API_V2_RANKING,
+      consulta: "casa",
+      total: 10_000,
+      limit: 24,
+      offset: 192,
+      data: Array.from({ length: 24 }, (_, index) => ({ ...apiV2FixtureMatrix.ranked, id: `ranked-${index}` })),
+    });
+    expect(page).toMatchObject({
+      total: 10_000,
+      reachableSearchWindow: 224,
+      searchWindowExhausted: true,
+      hasNext: false,
+      hasPrevious: true,
     });
   });
 
