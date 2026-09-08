@@ -273,6 +273,20 @@ def procesar(con, fuente: Fuente, max_fichas: int, observacion: bool,
     return r
 
 
+def ceder_ritmo_del_host(con: Any, fuente: Fuente, a: dict) -> float | None:
+    """Baja la velocidad para ESE host y devuelve el intervalo nuevo.
+
+    Por host y no global: el limitador lo comparten todos los hilos, y frenarlo
+    entero castigaria a las inmobiliarias que no se quejaron.
+    """
+    limitador = getattr(con.descargador, "limitador", None)
+    if limitador is None:
+        return None
+    anfitrion = urllib.parse.urlparse(
+        a.get("source_url") or fuente.official_url).netloc
+    return limitador.ceder_ritmo(anfitrion, FACTOR_DE_CORTESIA)
+
+
 def _anotar_ficha_vacia(con, fuente: Fuente, prop) -> None:
     """Rastro de una ficha que no trajo nada, ni siquiera al reintentarla."""
     if not hasattr(con, "descartes"):
@@ -407,14 +421,7 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
             # haber bajado la velocidad, ahi si es una negativa y no una queja.
             if not ritmo_cedido:
                 ritmo_cedido = True
-                limitador = getattr(con.descargador, "limitador", None)
-                if limitador is not None:
-                    # Por host: el limitador lo comparten todos los hilos y
-                    # frenarlo entero castigaria a quien no se quejo.
-                    anfitrion = urllib.parse.urlparse(
-                        a.get("source_url") or fuente.official_url).netloc
-                    r["intervalo_cedido"] = limitador.ceder_ritmo(
-                        anfitrion, FACTOR_DE_CORTESIA)
+                r["intervalo_cedido"] = ceder_ritmo_del_host(con, fuente, a)
                 reintentos_diferidos.append(a)
                 continue
             fallidos += 1
@@ -448,9 +455,17 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
             # ventana inestable. Se difiere hasta terminar el resto del lote:
             # conserva el limite de ritmo, no insiste ante 403/429 y permite
             # recuperar cortes aislados sin repetir toda la inmobiliaria.
-            if (len(con.errores) > errores_antes
-                    and con.errores[-1].get("etapa") in {
-                        "detalle", "detalle_permanente"}):
+            ultimo = (con.errores[-1] if len(con.errores) > errores_antes
+                      else {})
+            if ultimo.get("etapa") in {"detalle", "detalle_permanente"}:
+                # Cuando el connector ABSORBE el bloqueo y devuelve None -que
+                # es lo que hacen casi todos-, la rama `except Bloqueado` de
+                # arriba no corre nunca. Sin esto, el reintento diferido vuelve
+                # a pedirle al sitio a la misma velocidad que provoco el 403, y
+                # la cortesia adaptativa era codigo muerto en el camino comun.
+                if ultimo.get("clase") == "Bloqueado" and not ritmo_cedido:
+                    ritmo_cedido = True
+                    r["intervalo_cedido"] = ceder_ritmo_del_host(con, fuente, a)
                 reintentos_diferidos.append(a)
                 continue
             fallidos += 1
