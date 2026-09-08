@@ -320,3 +320,52 @@ def test_una_sola_corrida_inaccesible_tambien_tiene_nombre():
     assert v["decision"] == CONTINUE
     assert v["componente_sospechoso"] == "fuente_inaccesible"
     assert v["radio_estimado"] == RADIO_AGENCIA
+
+
+def test_una_ficha_que_falla_siempre_por_la_red_no_es_un_defecto_transversal():
+    """`andrea gianfelice` enumeró 153 las dos veces, obtuvo 152 las dos veces,
+    y falló siempre la misma ficha con un error de red. El triage no supo
+    clasificarlo y paró las dos colas por un radio COMPARTIDO que no existía.
+
+    La rama de sitio externo exigía que los inventarios DIFIRIERAN, mientras su
+    propia evidencia decía "el catálogo enumeró igual en las dos corridas": el
+    código y el texto se contradecían. Que coincidan es más evidencia de salud,
+    no menos.
+    """
+    v = clasificar(_resultado(
+        reasons=["one or more listing details failed"],
+        run1={"estado": "OK", "enumeradas": 153, "detalles_fallidos": 1,
+              "errores_por_etapa": {"detalle/ErrorTransitorio": 2}},
+        run2={"estado": "OK", "enumeradas": 153, "detalles_fallidos": 1,
+              "errores_por_etapa": {"detalle/ErrorTransitorio": 2}}))
+
+    assert v["decision"] == CONTINUE
+    assert v["componente_sospechoso"] == "sitio_externo"
+    assert v["radio_estimado"] == RADIO_AGENCIA
+    assert "enumero igual" in v["evidencia"]
+    # Sigue sin certificar: continuar no es cerrar.
+    assert v["certificado"] is False
+
+
+def test_si_los_inventarios_difieren_la_evidencia_lo_dice():
+    """La misma rama sirve para los dos casos, pero no puede afirmar que
+    coincidieron cuando no lo hicieron."""
+    v = clasificar(_resultado(
+        reasons=["run inventories differ"],
+        run1={"estado": "OK", "detalles_fallidos": 2,
+              "errores_por_etapa": {"detalle/ErrorTransitorio": 2}},
+        run2={"estado": "OK", "detalles_fallidos": 0}))
+
+    assert v["decision"] == CONTINUE
+    assert "difieran" in v["evidencia"]
+
+
+def test_un_fallo_sin_error_externo_no_se_perdona():
+    """Si las fichas fallaron y NO hay error de red ni del servidor, la causa
+    es nuestra hasta que se demuestre lo contrario."""
+    v = clasificar(_resultado(
+        reasons=["one or more listing details failed"],
+        run1={"estado": "OK", "detalles_fallidos": 3, "errores_por_etapa": {}},
+        run2={"estado": "OK", "detalles_fallidos": 3, "errores_por_etapa": {}}))
+
+    assert v["decision"] == STOP

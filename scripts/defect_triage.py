@@ -230,12 +230,24 @@ def clasificar(resultado: dict[str, Any]) -> dict[str, Any]:
     detalles_fallidos = sum(int(c.get("detalles_fallidos") or 0)
                             for c in corridas)
 
-    if inventarios_distintos and detalles_fallidos and externos:
+    # Fichas que fallaron por la red o por el servidor del sitio. NO se exige
+    # que los inventarios difieran: la rama pedia eso y su propia evidencia
+    # decia "el catalogo enumero igual en las dos corridas", o sea que el
+    # codigo y el texto se contradecian.
+    #
+    # Que coincidan es MAS evidencia de salud, no menos. `andrea gianfelice`
+    # enumero 153 las dos veces, obtuvo 152 las dos veces, y fallo siempre la
+    # misma ficha con un error de red: el triage no supo clasificarlo y paro
+    # las dos colas por un radio COMPARTIDO que no existia.
+    if detalles_fallidos and externos:
+        coinciden = not inventarios_distintos
         return _veredicto(
             CONTINUE, resultado, "sitio_externo", RADIO_AGENCIA,
             f"{detalles_fallidos} detalles fallaron con errores de red o del "
-            f"servidor ({', '.join(sorted(externos))}); el catalogo enumero "
-            f"igual en las dos corridas")
+            f"servidor ({', '.join(sorted(externos))}); "
+            + ("el catalogo enumero igual en las dos corridas"
+               if coinciden else
+               "y eso explica que los inventarios difieran"))
 
     estados = [c.get("estado") for c in corridas if c.get("estado")]
     if "ENUMERACION_INCOMPLETA" in estados:
