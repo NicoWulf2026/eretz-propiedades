@@ -1049,6 +1049,79 @@ quality gate.
 
 ---
 
+## 7 bis. Lo que el ranking de defectos no puede ver
+
+**El ranking mide una snapshot anterior al código.** Las 58.427 propiedades se
+extrajeron en agosto —la última, el 26— y desde entonces hay 41 commits de
+connectors. El 2026-09-08 se persiguieron dos de los defectos mejor rankeados y
+los dos ya estaban arreglados:
+
+| defecto rankeado | propiedades | qué pasaba de verdad |
+|---|---|---|
+| `tokko/superficie_total` | 376 | el rótulo `Terreno` se lee desde el 2026-09-02 |
+| `generic/html_catalog operacion` | 128 | el cuerpo se lee desde el 2026-08-26 |
+
+`extraction_failures.py` ahora emite `vigencia` con las dos fechas y la
+advertencia. **Antes de trabajar sobre un grupo hay que abrir una ficha real y
+correr el parser de hoy.** No se ocultan grupos: sin correr no se puede saber
+cuál arreglo cubre cuál defecto.
+
+El de tokko escondía además lo contrario de lo anotado. No perdíamos un campo:
+`aagaard.com.ar` publica `Terreno: 50000000 m2` en un dos ambientes de 45 m²
+cubiertos, y otras dos fichas dicen `50.0 Ha` y `180.0 Ha` sobre 45 y 180 metros
+construidos. Al recertificar, esos cincuenta kilómetros cuadrados entraban.
+`coherencia` los descarta ahora por tipo —el tope son diez hectáreas para tipos
+edificados, medido contra el corpus: descarta cuatro propiedades en 58.427— y
+**no los corrige**: que `180.0 Ha` sea probablemente `180 m²` es una sospecha
+razonable y sigue siendo una invención.
+
+**`wordpress/barrio`, 541 propiedades, tampoco es un defecto nuestro.** El tema
+publica un campo rotulado literalmente "Localidad o barrio" cuyo valor repite la
+ciudad, y otro rotulado "Provincia" que dice "Bs.As. G.B.A. Sur" —una zona—.
+Leer cualquiera de los dos sería inventar geografía. Lo que sí se perdía es la
+**ciudad**, que el mismo bloque publica sin ambigüedad y la taxonomía vacía
+tapaba.
+
+## 7 ter. Identidad: de quién es el sitio que tenemos cargado
+
+`arte propiedades` paró la cola el 2026-09-08. Su `official_url` es
+`lujanprop.com.ar/inmobiliaria/arte`: **el perfil en un portal**. Dos corridas
+seguidas enumeraron 17 y 18 fichas **sin una sola en común**, y las tres que se
+abrieron declaraban otras tres inmobiliarias del portal. No era inestabilidad:
+publicábamos propiedades ajenas bajo su nombre.
+
+Las reglas que no alcanzaban, y por qué:
+
+- **La lista de portales escrita a mano** no conoce `lujanprop.com.ar` ni
+  `buscainmueble.com`, que 65 agencias reclaman.
+- **Contar agencias por host** no lo ve: `lujanprop` aloja a 31 inmobiliarias y
+  una sola figura en nuestro padrón.
+- **La forma de la URL** —ruta profunda en un dominio que no lleva el nombre—
+  marcaba 101 filas, y entre ellas `dbj.com.ar`, `chbpropiedades.com.ar`,
+  `lexpropiedades.com.ar` y veinte más que son sitios propios con marca de
+  siglas. Cerrarlas habría borrado inventario real.
+
+Lo que sí separa, en dos pasos:
+
+1. **El comparador de nombres estaba roto.** `marca_de` leía sólo la primera
+   etiqueta del host —`propiedades.moresco.com.ar` daba marca "propiedades"— y
+   `palabras_del_nombre` partía la palabra en el acento —`Cuño` quedaba en "cu"
+   y "o"—. Arreglados, 479 de 578 filas con ruta profunda se reconocen como
+   sitio propio. La marca de iniciales (`vlbprop`, `kepropiedades`) rescata 11
+   más sin tocar la red.
+2. **Preguntarle a la raíz del host cómo se presenta.** Un sitio propio dice el
+   nombre de la inmobiliaria; un portal dice el nombre del portal. Cuando no lo
+   dice, se cuentan las entradas hermanas bajo el mismo prefijo **y se exige que
+   el sitio use su propia palabra para lo que indexa** (`/inmobiliaria/`,
+   `/inmobiliarias/`, `/empresa/`). Sin esa exigencia se marcaban 18 y se
+   confundían hermanas que son agencias con hermanas que son propiedades —que
+   tiene cualquier sitio propio— y con secciones del sitio.
+
+**El certificador no cambió.** Ya clasifica `web_kind != OFFICIAL_WEB` como
+`BLOCKED_EXTERNAL`; lo que faltaba era la evidencia en los datos.
+
+---
+
 ## 8. Barrera de autorización
 
 Requieren autorización humana explícita: escritura o modificación en base
