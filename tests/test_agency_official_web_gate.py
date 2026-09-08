@@ -26,3 +26,53 @@ def test_estar_contenido_no_alcanza():
                                          "https://remax-buro2.com.ar/") is None
     assert nombre_completo_en_el_dominio("ABP Propiedades",
                                          "https://otracosa.com.ar/") is None
+
+
+def test_el_dominio_propio_se_lee_entero_con_subdominios():
+    """`MORESCO REAL ESTATE` publica en `propiedades.moresco.com.ar`. Leyendo
+    solo la primera etiqueta, la marca era "propiedades" -genérica- y la
+    inmobiliaria figuraba sin rastro de su nombre en su propio dominio."""
+    from scripts.agency_official_web_gate import marca_de, nombre_en_el_dominio
+
+    assert marca_de("https://www.propiedades.moresco.com.ar") == "propiedadesmoresco"
+    assert nombre_en_el_dominio("MORESCO REAL ESTATE",
+                                "https://www.propiedades.moresco.com.ar") == "moresco"
+
+
+def test_los_acentos_no_parten_el_nombre_en_pedazos():
+    """`Cuño Propiedades` vive en `cuno.com.ar`. Sin plegar los acentos, la
+    expresión partía "cuño" en "cu" y "o" -las dos por debajo del largo
+    mínimo- y el dominio que ES su nombre quedaba sin rastro."""
+    from scripts.agency_official_web_gate import (nombre_en_el_dominio,
+                                                  palabras_del_nombre)
+
+    assert palabras_del_nombre("Cuño Propiedades") == ["cuno"]
+    assert nombre_en_el_dominio("Cuño Propiedades", "https://www.cuno.com.ar") == "cuno"
+    # Y no deja fragmentos que puedan coincidir con cualquier cosa.
+    assert "berto" not in palabras_del_nombre("Bertoía Propiedades")
+
+
+def test_el_sufijo_del_dominio_no_es_marca_de_nadie():
+    """Sin sacar los sufijos, una inmobiliaria llamada `COMAR` coincidiría con
+    cualquier dominio `.com.ar`."""
+    from scripts.agency_official_web_gate import nombre_en_el_dominio
+
+    assert nombre_en_el_dominio("COMAR Propiedades",
+                                "https://otracosa.com.ar") is None
+
+
+def test_un_dominio_del_estado_no_es_la_web_de_una_inmobiliaria():
+    """`turismo.lacumbre.gob.ar` es la página de turismo de la municipalidad de
+    La Cumbre. Coincide con el nombre de la inmobiliaria por la localidad, y sin
+    esta regla quedaba afirmada como su sitio propio."""
+    from scripts.agency_official_web_gate import dominio_institucional, evaluar
+
+    assert dominio_institucional("https://turismo.lacumbre.gob.ar")
+    assert dominio_institucional("https://boletinoficial.neuquen.gov.ar")
+    assert not dominio_institucional("https://www.cuno.com.ar")
+
+    fila = {"canonical_agency_id": "x", "nombre": "Estudio Inmobiliario Cumbre",
+            "discovered_domain": "https://turismo.lacumbre.gob.ar/"}
+    resultado = evaluar([fila])[0]
+    assert resultado["estado"] == "DOMINIO_INSTITUCIONAL"
+    assert resultado["official_url"] is None

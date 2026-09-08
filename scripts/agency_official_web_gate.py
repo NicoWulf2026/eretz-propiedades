@@ -72,14 +72,42 @@ def origen(url: str) -> str:
     return f"{partes.scheme.lower()}://{partes.netloc.lower()}"
 
 
+# Etiquetas que son sufijo de dominio y no marca de nadie. Es una lista, pero
+# de una clase distinta a la de portales: los sufijos no crecen con el mercado
+# inmobiliario argentino, y olvidarse de uno solo deja una palabra de mas en la
+# comparacion, nunca una decision al reves.
+SUFIJOS = {"com", "net", "org", "ar", "uy", "py", "cl", "br", "es", "info",
+           "io", "co", "gob", "gov", "edu", "tur", "app", "site", "online"}
+
+
 def marca_de(origen_url: str) -> str:
-    """El nombre registrable, sin `www` ni sufijos de dominio."""
+    """El nombre registrable, sin `www`, sin sufijos y CON los subdominios.
+
+    Antes devolvia la primera etiqueta y nada mas. `MORESCO REAL ESTATE`
+    publica en `propiedades.moresco.com.ar` -su dominio, con el catalogo en un
+    subdominio- y la marca leida era "propiedades": generica, descartada, y la
+    inmobiliaria quedaba sin rastro de su nombre en su propio dominio.
+
+    Se conservan todas las etiquetas que no son sufijo porque cualquiera puede
+    ser la marca: esta en la segunda en `propiedades.moresco.com.ar` y en la
+    primera en `cuno.com.ar`.
+    """
     host = urllib.parse.urlparse(origen_url).netloc.removeprefix("www.")
-    return host.split(".")[0]
+    etiquetas = [e for e in host.split(".") if e and e not in SUFIJOS]
+    return "".join(etiquetas)
 
 
 def palabras_del_nombre(nombre: str) -> list[str]:
-    crudo = re.sub(r"[^a-z0-9]+", " ", (nombre or "").lower()).split()
+    """Las palabras que distinguen, ya sin acentos.
+
+    Sin plegar los acentos primero, la expresion parte la palabra en dos por el
+    caracter que no reconoce: `Cuno Propiedades` -escrito con enie- se volvia
+    ["cu", "o"], las dos por debajo del largo minimo, y `cuno.com.ar` -su
+    dominio, literalmente su nombre- figuraba sin rastro. `Bertoia` era peor:
+    quedaba "berto", un pedazo que puede coincidir con cualquier otra cosa.
+    """
+    plano = sin_acentos(nombre or "").lower()
+    crudo = re.sub(r"[^a-z0-9]+", " ", plano).split()
     return [p for p in crudo if len(p) >= LARGO_MINIMO and p not in GENERICAS]
 
 
@@ -103,6 +131,28 @@ def nombre_completo_en_el_dominio(nombre: str, origen_url: str) -> str | None:
     entero = re.sub(r"[^a-z0-9]+", "", sin_acentos(nombre or "").lower())
     marca = re.sub(r"[^a-z0-9]+", "", marca_de(origen_url))
     return entero if entero and entero == marca else None
+
+
+# Sufijos reservados al Estado y a las universidades. Ningun privado puede
+# registrar debajo de estos, asi que el sitio es de otro por definicion y no
+# hace falta mirar el nombre.
+#
+# La regla existe porque el arreglo de acentos y subdominios habilito una
+# coincidencia que antes no pasaba de casualidad: `Estudio Inmobiliario Crespo`
+# quedaba afirmado sobre `turismo.lacumbre.gob.ar` -la pagina de turismo de la
+# municipalidad de La Cumbre- porque el nombre de la localidad contiene
+# "cumbre". Los otros dos hosts del Estado en el universo, `santafe.gob.ar` y
+# `boletinoficial.neuquen.gov.ar`, se salvaban por suerte y no por regla.
+#
+# Es una lista, pero de las que no crecen: los sufijos institucionales estan
+# reservados y no aparecen inmobiliarias nuevas adentro.
+INSTITUCIONALES = re.compile(
+    r"\.(?:gob|gov|gub|mil|edu|int)(?:\.[a-z]{2,3})?$", re.I)
+
+
+def dominio_institucional(origen_url: str) -> bool:
+    host = urllib.parse.urlparse(origen_url).netloc.removeprefix("www.")
+    return bool(INSTITUCIONALES.search(host))
 
 
 def nombre_en_el_dominio(nombre: str, origen_url: str) -> str | None:
@@ -130,6 +180,11 @@ def evaluar(filas: list[dict[str, Any]]) -> list[dict[str, Any]]:
             estado = "AMBIGUO_HOST_COMPARTIDO"
             razon = (f"{reclamos[o]} inmobiliarias distintas apuntan a este host; "
                      f"un host compartido no identifica a ninguna")
+            palabra = None
+        elif dominio_institucional(o):
+            estado = "DOMINIO_INSTITUCIONAL"
+            razon = ("el host esta bajo un sufijo reservado al Estado o a una "
+                     "universidad: no puede ser el sitio propio de una empresa")
             palabra = None
         else:
             palabra = nombre_en_el_dominio(fila.get("nombre") or "", o)
