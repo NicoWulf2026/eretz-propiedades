@@ -4009,3 +4009,53 @@ def test_un_par_de_numeros_no_es_una_coordenada():
     for basura in ("[50.774, 50.7708]", "[34.474951, 58.521113]",
                    "[1, 2]", "[-34.47, -58.52]"):
         assert not RE_COORD_ARREGLO.search(basura), basura
+
+
+def test_el_rotulo_suelto_con_el_valor_en_un_hijo():
+    """`benitezullo.com.ar` publica `<li>Ambientes <span>1</span></li>`. La
+    forma general exige que el rótulo esté SOLO en su propio elemento y no ve
+    ésta, que es de las más comunes."""
+    from connectors.generico import ETIQUETAS_DE_CONTEO as E
+    from connectors.generico import GenericoConnector as G
+
+    marcado = ("<ul><li>Ambientes <span>3</span></li>"
+               "<li>Baños <span>2</span></li>"
+               "<li>Dormitorios <span>2</span></li></ul>")
+    texto = "Ambientes 3 Baños 2 Dormitorios 2"
+
+    assert G._cuenta_de_ficha(marcado, texto, E["ambientes"], None) == 3
+    assert G._cuenta_de_ficha(marcado, texto, E["banos"], None) == 2
+    assert G._cuenta_de_ficha(marcado, texto, E["dormitorios"], None) == 2
+
+
+def test_la_estructura_decide_cuando_la_prosa_no_puede():
+    """En `benitezullo.com.ar` el texto plano NO alcanza, y el lector de prosa
+    hace bien en no contestar: al final de la ficha hay un bloque de
+    propiedades relacionadas —"DEPARTAMENTO ... 1 Dorm 1 Baños"— con sus
+    propios números, así que las apariciones de la etiqueta se contradicen.
+
+    Negarse a elegir es correcto; lo que faltaba era leerlo de donde no hay
+    ambigüedad. La estructura dice qué valor pertenece a qué rótulo.
+    """
+    from connectors.generico import ETIQUETAS_DE_CONTEO as E
+    from connectors.generico import GenericoConnector as G
+
+    con_relacionadas = ("Barrio La Boca Ambientes 1 Baños 1 Estado Excelente "
+                        "DEPARTAMENTO Tomas Liberti 400 VENTA 40,71 m2 "
+                        "1 Dorm 1 Baños CONTACTO")
+    assert G._cuenta(con_relacionadas, E["ambientes"], None) is None
+
+    marcado = "<li>Ambientes <span>1</span></li><li>Baños <span>1</span></li>"
+    assert G._cuenta_de_ficha(marcado, con_relacionadas,
+                              E["ambientes"], None) == 1
+
+
+def test_monoambiente_no_es_la_etiqueta_ambientes():
+    """`\bambientes?\b` no puede matchear adentro de una palabra más larga:
+    "Monoambiente", "semiambiente" y "subambiente" son el tipo de propiedad."""
+    import re
+
+    from connectors.generico import ETIQUETAS_DE_CONTEO as E
+
+    assert not re.search(E["ambientes"], "Departamento Monoambiente", re.I)
+    assert re.search(E["ambientes"], "<li>Ambientes <span>1</span>", re.I)

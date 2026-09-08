@@ -52,10 +52,19 @@ ETIQUETAS_ATRIBUTO = (r"ambientes?|dormitorios?|habitaciones?|ba[nñ]os?"
 # El rotulo con el que cada atributo contable se publica. Vive aca, y no en el
 # auditor, para que la senal de fuente y la extraccion no puedan quedar leyendo
 # etiquetas distintas para el mismo campo.
+# Las etiquetas son PALABRAS ENTERAS. Sin los limites, `ambientes?` matchea
+# adentro de "Monoambiente", y en `benitezullo.com.ar` el primer "ambiente" del
+# cuerpo esta en un `<meta og:title content="Departamento Monoambiente...">`:
+# el lector se quedaba ahi y devolvia nada, con el `<li>Ambientes <span>1</span>`
+# a la vista mas abajo. `Banos` funcionaba solo porque no aparece en ningun
+# meta.
+#
+# "Monoambiente", "semiambiente" y "subambiente" no son la etiqueta
+# "Ambientes": son el tipo de propiedad.
 ETIQUETAS_DE_CONTEO = {
-    "dormitorios": r"dormitorios?|habitaciones?",
-    "banos": r"ba[nñ]os?|toilettes?",
-    "ambientes": r"ambientes?",
+    "dormitorios": r"\b(?:dormitorios?|habitaciones?)\b",
+    "banos": r"\b(?:ba[nñ]os?|toilettes?)\b",
+    "ambientes": r"\bambientes?\b",
 }
 
 # Rutas donde un frontend propio suele exponer el catalogo Tokko.
@@ -2864,6 +2873,20 @@ class GenericoConnector(Connector):
         celda = r"(?:span|div|dd|dt|td|li|p|b|strong|h[1-6]|figure)"
         rotulo = re.search(
             rf"<{celda}[^>]*>\s*(?:{etiqueta})\s*</{celda}>\s*"
+            rf"<{celda}[^>]*>\s*(\d{{1,2}})\s*</{celda}>", marcado, re.I)
+        if rotulo and 1 <= int(rotulo.group(1)) <= 99:
+            return int(rotulo.group(1))
+        # El rotulo suelto adentro de la celda y el valor en un HIJO:
+        # `<li>Ambientes <span>1</span></li>`. La forma de arriba exige que el
+        # rotulo este solo en su propio elemento y no ve esta, que es de las
+        # mas comunes.
+        #
+        # `benitezullo.com.ar` la usa, y el resultado no era solo perder
+        # `ambientes`: al caer al texto plano, que busca el numero ANTES del
+        # rotulo, `banos` leia el valor de AMBIENTES. Ahi valian los dos 1 y
+        # parecia correcto; con "Ambientes 3 Banos 2" habria guardado banos=3.
+        rotulo = re.search(
+            rf"<{celda}[^>]*>\s*(?:{etiqueta})\s*"
             rf"<{celda}[^>]*>\s*(\d{{1,2}})\s*</{celda}>", marcado, re.I)
         if rotulo and 1 <= int(rotulo.group(1)) <= 99:
             return int(rotulo.group(1))
