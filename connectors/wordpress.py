@@ -50,6 +50,34 @@ REST_FIELDS = (
 RE_IMG = re.compile(r'https?://[^\s"\'<>]+?\.(?:jpe?g|png|webp)', re.I)
 
 
+# El bloque de direccion del tema Houzez, con una clase por campo:
+#
+#   <li class="detail-city"><strong>Ciudad</strong> <span>La Plata</span></li>
+#
+# La taxonomia de WordPress puede estar vacia mientras la ficha muestra el dato
+# ahi: en `adrianghiopropiedades.com` lo esta en las 58 fichas, y las 58 quedaban
+# sin ciudad teniendo "La Plata" a la vista. La localidad es el dato mas escaso
+# del proyecto -se puede demostrar en el 16,5 % de las propiedades-, asi que
+# perderla cuando la fuente la publica es de los defectos mas caros.
+#
+# Se leen SOLO `detail-address` y `detail-city`, que son rotulos inequivocos.
+# `detail-state` dice "Bs.As. G.B.A. Sur" -una zona, no una provincia- y
+# `detail-area` esta rotulado "Localidad o barrio" y trae la ciudad repetida.
+# Guardar el primero como provincia o el segundo como barrio seria inventar
+# geografia en el lugar mas dificil de corregir despues. Que esos dos rotulos
+# sean ambiguos es de la fuente, no un defecto nuestro.
+RE_DETALLE_HOUZEZ = (
+    "<li[^>]*class=[\"'][^\"']*detail-{clase}[^\"']*[\"'][^>]*>"
+    ".{{0,160}}?<span[^>]*>(.{{1,120}}?)</span>")
+
+
+def _detalle_houzez(html: str, clase: str) -> str | None:
+    m = re.search(RE_DETALLE_HOUZEZ.format(clase=clase), html or "", re.I | re.S)
+    if not m:
+        return None
+    return limpiar(re.sub(r"<[^>]+>", " ", m.group(1))) or None
+
+
 def _texto(html: str) -> str:
     t = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", html or "", flags=re.S | re.I)
     t = re.sub(r"<[^>]+>", " ", t)
@@ -587,6 +615,9 @@ class WordPressConnector(Connector):
                   else _nombre_taxonomia(crudo, item, "property_city")
                   if item is not None else None)
         provincia = _nombre_taxonomia(crudo, item, "property_state") if item is not None else None
+        # Cuando la taxonomia no trae nada, la ficha suele traerlo igual.
+        ciudad = ciudad or _detalle_houzez(html, "city")
+        direccion = direccion or _detalle_houzez(html, "address")
 
         dormitorios = self._ambientes(texto, r"dormitorios?|habitaciones?")
         banos = self._ambientes(texto, r"ba[nñ]os?")

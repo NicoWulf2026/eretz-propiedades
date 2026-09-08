@@ -4059,3 +4059,19 @@ def test_monoambiente_no_es_la_etiqueta_ambientes():
 
     assert not re.search(E["ambientes"], "Departamento Monoambiente", re.I)
     assert re.search(E["ambientes"], "<li>Ambientes <span>1</span>", re.I)
+
+
+def test_la_ciudad_esta_en_la_ficha_aunque_la_taxonomia_este_vacia():
+    """`adrianghiopropiedades.com` no carga las taxonomías de WordPress y sus
+    58 fichas quedaban sin ciudad teniendo "La Plata" a la vista en el bloque de
+    dirección del tema. La localidad es el dato más escaso del proyecto."""
+    from connectors.wordpress import _detalle_houzez
+
+    bloque = ('<li class="detail-address"><strong>Direcci&oacute;n</strong> '
+              '<span>5 N 2196 e/ 76 y 77</span></li>'
+              '<li class="detail-city"><strong>Ciudad</strong> '
+              '<span>La Plata</span></li>')
+    assert _detalle_houzez(bloque, "city") == "La Plata"
+    assert _detalle_houzez(bloque, "address") == "5 N 2196 e/ 76 y 77"
+    # Y una clase que la ficha no trae no devuelve la del vecino.
+    assert _detalle_houzez(bloque, "state") is None
