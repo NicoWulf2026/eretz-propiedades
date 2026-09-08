@@ -2,7 +2,7 @@
 
 ## Source of Truth
 
-Frontend base: `feat/eretz-frontend-phase-a` at `04e63a2895`. API v2 does not exist in that checkout; its verified implementation is `api/v2.py` and `api/ranking.py` in worktree `D:\INMO CAPITAL\Inmo-Capital-main`, commit `79afe12e` (2026-09-06). Backend source and snapshot were read only. No committed OpenAPI/schema DTO was found.
+Frontend base: `feat/eretz-frontend-phase-a`. API v2 does not exist in that checkout; its verified implementation is `api/v2.py` and `api/ranking.py` in worktree `D:\INMO CAPITAL\Inmo-Capital-main`, inspected read-only at `46f4e672b9`. The latest ranked-search contract change in that lineage is `b73e976b2b`, and the latest snapshot/property contract update is `782685e648`. No committed OpenAPI/schema DTO was found.
 
 Contract/version: `eretz_api_property_v1`; technical ranking: `eretz_ranking_tecnico_v1`. The current source is nine read-only GET endpoints over the real 58,427-row snapshot.
 
@@ -17,7 +17,7 @@ Contract/version: `eretz_api_property_v1`; technical ranking: `eretz_ranking_tec
 | `/v2/barrios` | GET | Source neighborhoods | q/limit | `canonizado:false`, name/count | name filtered non-null | Neighborhood suggestions | READY with non-canonical warning |
 | `/v2/filtros` | GET | Real facets/coverage | none | values/counts, price ranges, `sin_dato` | Explicit missing counts | Filter catalog | READY |
 | `/v2/sugerencias` | GET | Area/neighborhood suggestions | q min length 2, limit | type/level/name/count | level null for neighborhood | Autocomplete | READY; current UI DTO differs |
-| `/v2/buscar` | GET | FTS + technical ranking | q/operation/type/limit/offset | ranked page + ranking version | Incomplete properties remain | Default search | PARTIAL: filter set narrower than list |
+| `/v2/buscar` | GET | FTS + technical ranking | q/operation/type/limit≤100/offset≤200 | ranked page + ranking version | Incomplete properties remain | Default search | PARTIAL: filter set narrower than list; deep pagination rejected |
 | `/v2/stats` | GET | Dataset facts | none | totals/geography/write count | N/A | Diagnostics only | READY |
 
 FastAPI standard errors observed from source/tests: 404 for missing property; 422 for invalid query parameters; 503 for missing/old snapshot; other failures are 5xx. Response bodies use FastAPI `detail`, but the frontend error model relies on status rather than undocumented message text.
@@ -44,6 +44,8 @@ Adapters preserve `null`, `0` and `""` without truthiness conversion. Missing co
 ## Pagination
 
 The domain exposes page/pageSize. `catalogPaginationToOffset` maps it to v2 `limit/offset`; page responses map back to page/hasPrevious/hasNext. No cursor is required from the backend. Existing explorer cursor cutover remains future work.
+
+Ranked search has a backend safety window: `limit` is capped at 100 and offsets above 200 return HTTP 400. The request adapter now enforces the same offset ceiling before any network call. Deep catalog traversal belongs to stable `/v2/propiedades`, not `/v2/buscar`.
 
 ## Ranking / Sorting
 

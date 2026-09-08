@@ -171,6 +171,8 @@ export type ApiV2SearchRequest =
   | { supported: true; path: "/v2/buscar"; params: URLSearchParams }
   | { supported: false; reason: string };
 
+export const API_V2_RANKED_MAX_OFFSET = 200;
+
 /**
  * API v2 currently ranks `/buscar`, but that endpoint accepts only text,
  * operation and property type. Refuse unsupported combinations rather than
@@ -189,6 +191,12 @@ export function toApiV2SearchRequest(query: CatalogSearchQuery): ApiV2SearchRequ
     return { supported: false, reason: "API v2 /buscar does not accept the requested filter set" };
   }
   const { limit, offset } = catalogPaginationToOffset(query.pagination);
+  if (offset > API_V2_RANKED_MAX_OFFSET) {
+    return {
+      supported: false,
+      reason: `API v2 /buscar only supports ranked pagination through offset ${API_V2_RANKED_MAX_OFFSET}`,
+    };
+  }
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   if (query.text) params.set("q", query.text);
   if (query.operation) params.set("operacion", query.operation);

@@ -101,4 +101,14 @@ describe("API v2 client error and success model", () => {
     expect(result).toMatchObject({ status: "FAILURE", error: { kind: "BAD_REQUEST" } });
     expect(fetchImpl).not.toHaveBeenCalled();
   });
+
+  it("does not call the network beyond the ranked-search pagination window", async () => {
+    const fetchImpl = vi.fn() as unknown as typeof fetch;
+    const result = await searchApiV2Properties(
+      { ...query, pagination: { page: 10, pageSize: 24 } },
+      { baseUrl, fetchImpl },
+    );
+    expect(result).toMatchObject({ status: "FAILURE", error: { kind: "BAD_REQUEST" } });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
 });

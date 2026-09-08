@@ -113,6 +113,16 @@ describe("API v2 DTO validation and adapters", () => {
     expect(toApiV2SearchRequest({ ...baseQuery, minSurface: 40 })).toMatchObject({ supported: false });
   });
 
+  it("refuses ranked pagination beyond the backend safety window", () => {
+    expect(toApiV2SearchRequest({ ...baseQuery, pagination: { page: 9, pageSize: 24 } })).toMatchObject({
+      supported: true,
+    });
+    expect(toApiV2SearchRequest({ ...baseQuery, pagination: { page: 10, pageSize: 24 } })).toMatchObject({
+      supported: false,
+      reason: expect.stringContaining("offset 200"),
+    });
+  });
+
   it("reports malformed list items as partial data instead of an empty success", () => {
     const response = {
       contrato: API_V2_CONTRACT,
