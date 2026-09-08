@@ -155,12 +155,56 @@ def dominio_institucional(origen_url: str) -> bool:
     return bool(INSTITUCIONALES.search(host))
 
 
+# La palabra generica con la que una marca de iniciales completa su dominio.
+# `vlbprop`, `kepropiedades`, `asgpropiedades`: las iniciales solas serian dos o
+# tres letras y no probarian nada; pegadas a esta cola forman una marca.
+COLA_GENERICA = re.compile(
+    r"(?:prop|props|propiedades|propiedad|inmob|inmobiliaria|inmuebles|"
+    r"negocios|servicios|bienesraices|realestate|estate)$")
+
+# Cuantas iniciales hacen falta. Con una sola letra mas la cola, `apropiedades`
+# coincidiria con cualquier inmobiliaria cuyo nombre empiece con A.
+INICIALES_MINIMAS = 2
+
+
+def iniciales_en_el_dominio(nombre: str, origen_url: str) -> str | None:
+    """El dominio son las iniciales de la duena, con o sin palabra generica.
+
+    `Vanesa Lorena Barros negocios inmobiliarios` publica en `vlbprop.com` y
+    `Karina Enriquez Propiedades` en `kepropiedades.com.ar`. Ninguna palabra del
+    nombre aparece en el dominio y el nombre entero tampoco: la marca son las
+    iniciales. Sin esta regla las dos figuran sin rastro de su nombre en su
+    propio dominio, y son 62 y 7 propiedades reales.
+
+    Se exige que las iniciales esten al PRINCIPIO y que lo que sobra sea una
+    palabra generica o nada. `lujanprop` empieza con "lu", no con las iniciales
+    de ninguna de las inmobiliarias que lista, y por eso no coincide.
+    """
+    palabras = [p for p in re.sub(r"[^a-z0-9]+", " ", sin_acentos(nombre or "").lower()).split()
+                if p not in GENERICAS]
+    # Cuando el nombre YA es la sigla -`ASG Propiedades SRL` deja una sola
+    # palabra distintiva-, las iniciales de esa palabra son una sola letra y no
+    # prueban nada. La sigla misma es la marca candidata.
+    iniciales = (palabras[0] if len(palabras) == 1
+                 else "".join(p[0] for p in palabras))
+    if len(iniciales) < INICIALES_MINIMAS:
+        return None
+    marca = re.sub(r"[^a-z0-9]+", "", marca_de(origen_url))
+    if not marca.startswith(iniciales):
+        return None
+    resto = marca[len(iniciales):]
+    if resto and not COLA_GENERICA.fullmatch(resto):
+        return None
+    return iniciales
+
+
 def nombre_en_el_dominio(nombre: str, origen_url: str) -> str | None:
     marca = marca_de(origen_url)
     for palabra in palabras_del_nombre(nombre):
         if palabra in marca:
             return palabra
-    return nombre_completo_en_el_dominio(nombre, origen_url)
+    return (nombre_completo_en_el_dominio(nombre, origen_url)
+            or iniciales_en_el_dominio(nombre, origen_url))
 
 
 def evaluar(filas: list[dict[str, Any]]) -> list[dict[str, Any]]:

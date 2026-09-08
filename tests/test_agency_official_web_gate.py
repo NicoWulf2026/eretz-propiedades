@@ -76,3 +76,33 @@ def test_un_dominio_del_estado_no_es_la_web_de_una_inmobiliaria():
     resultado = evaluar([fila])[0]
     assert resultado["estado"] == "DOMINIO_INSTITUCIONAL"
     assert resultado["official_url"] is None
+
+
+def test_la_marca_de_iniciales_es_su_dominio():
+    """`Vanesa Lorena Barros negocios inmobiliarios` publica en `vlbprop.com` y
+    `Karina Enriquez Propiedades` en `kepropiedades.com.ar`. Ni una palabra del
+    nombre ni el nombre entero aparecen: la marca son las iniciales."""
+    from scripts.agency_official_web_gate import iniciales_en_el_dominio
+
+    assert iniciales_en_el_dominio("Vanesa Lorena Barros negocios inmobiliarios",
+                                   "https://vlbprop.com") == "vlb"
+    assert iniciales_en_el_dominio("Karina Enriquez Propiedades",
+                                   "https://www.kepropiedades.com.ar") == "ke"
+    assert iniciales_en_el_dominio("ASG Propiedades SRL",
+                                   "https://asgpropiedades.com.ar") == "asg"
+
+
+def test_las_iniciales_tienen_que_estar_al_principio_y_solas():
+    """`ARTE PROPIEDADES` figura en `lujanprop.com.ar`, que es el portal donde
+    tiene su perfil. Si bastara con que las iniciales aparecieran en cualquier
+    lado, o con cualquier resto detrás, el portal pasaría por sitio propio."""
+    from scripts.agency_official_web_gate import iniciales_en_el_dominio
+
+    assert iniciales_en_el_dominio("ARTE PROPIEDADES",
+                                   "https://lujanprop.com.ar") is None
+    # El resto tiene que ser una palabra genérica, no cualquier cosa.
+    assert iniciales_en_el_dominio("Ana Beatriz Cordero",
+                                   "https://abcinmobiliariaderosario.com") is None
+    # Y una sola inicial no distingue a nadie.
+    assert iniciales_en_el_dominio("Aguirre Inmobiliaria",
+                                   "https://apropiedades.com.ar") is None
