@@ -78,10 +78,10 @@ describe("API v2 DTO validation and adapters", () => {
     });
   });
 
-  it("rejects a missing agency id instead of inventing agency data", () => {
+  it("preserves a missing agency id without inventing agency data", () => {
     const result = parseApiV2Property(invalidMissingAgencyDto);
-    expect(result.success).toBe(false);
-    if (!result.success) expect(result.issues).toContainEqual(expect.objectContaining({ path: "$.agency_id" }));
+    expect(result.success).toBe(true);
+    if (result.success) expect(adaptApiV2Property(result.data).agencyId).toBeNull();
   });
 
   it("adapts page numbers to API offsets and back", () => {
@@ -89,6 +89,7 @@ describe("API v2 DTO validation and adapters", () => {
     const dto = {
       contrato: API_V2_CONTRACT,
       ranking: API_V2_RANKING,
+      sort: "relevance",
       consulta: "casa",
       total: 50,
       limit: 24,
@@ -107,19 +108,22 @@ describe("API v2 DTO validation and adapters", () => {
     });
   });
 
-  it("uses backend technical ranking by default and refuses unsupported user sort", () => {
+  it("uses backend technical ranking by default and forwards supported price sort", () => {
     const request = toApiV2SearchRequest(baseQuery);
     expect(request.supported).toBe(true);
     if (request.supported) {
       expect(request.path).toBe("/v2/buscar");
       expect(request.params.get("offset")).toBe("48");
     }
-    expect(toApiV2SearchRequest({ ...baseQuery, sort: { kind: "user_selected", value: "price_asc" } })).toMatchObject({ supported: false });
+    const sorted = toApiV2SearchRequest({ ...baseQuery, currency: "USD", sort: { kind: "user_selected", value: "price_asc" } });
+    expect(sorted).toMatchObject({ supported: true });
+    if (sorted.supported) expect(sorted.params.get("sort")).toBe("price_asc");
   });
 
-  it("refuses filters that /v2/buscar does not actually accept", () => {
-    expect(toApiV2SearchRequest({ ...baseQuery, area: { level: "MUNICIPIO", name: "La Calera" } })).toMatchObject({ supported: false });
-    expect(toApiV2SearchRequest({ ...baseQuery, minSurface: 40 })).toMatchObject({ supported: false });
+  it("forwards the combined filters now exposed by /v2/buscar", () => {
+    const request = toApiV2SearchRequest({ ...baseQuery, area: { level: "MUNICIPIO", name: "La Calera" }, minSurface: 40 });
+    expect(request).toMatchObject({ supported: true });
+    if (request.supported) expect(Object.fromEntries(request.params)).toMatchObject({ nivel: "MUNICIPIO", area: "La Calera", superficie_min: "40" });
   });
 
   it("refuses ranked pagination beyond the backend safety window", () => {
@@ -136,6 +140,7 @@ describe("API v2 DTO validation and adapters", () => {
     const page = adaptApiV2Page({
       contrato: API_V2_CONTRACT,
       ranking: API_V2_RANKING,
+      sort: "relevance",
       consulta: "casa",
       total: 10_000,
       limit: 24,
@@ -155,11 +160,12 @@ describe("API v2 DTO validation and adapters", () => {
     const response = {
       contrato: API_V2_CONTRACT,
       ranking: API_V2_RANKING,
+      sort: "relevance",
       consulta: null,
       total: 2,
       limit: 24,
       offset: 0,
-      data: [apiV2FixtureMatrix.ranked, invalidMissingAgencyDto],
+      data: [apiV2FixtureMatrix.ranked, { ...apiV2FixtureMatrix.ranked, id: 123 }],
     };
     const parsed = parseApiV2Page(response, true);
     expect(parsed.success).toBe(true);
@@ -169,12 +175,13 @@ describe("API v2 DTO validation and adapters", () => {
     }
   });
 
-  it("keeps nine valid properties when a tenth item has no agency_id", () => {
+  it("keeps nullable agency data without dropping the property", () => {
     const invalid = { ...apiV2FixtureMatrix.ranked } as Partial<typeof apiV2FixtureMatrix.ranked>;
     delete invalid.agency_id;
     const response = {
       contrato: API_V2_CONTRACT,
       ranking: API_V2_RANKING,
+      sort: "relevance",
       consulta: "casa",
       total: 10,
       limit: 10,
@@ -187,7 +194,7 @@ describe("API v2 DTO validation and adapters", () => {
     const parsed = parseApiV2Page(response, true);
     expect(parsed.success).toBe(true);
     if (!parsed.success) return;
-    expect(parsed.data.data).toHaveLength(9);
-    expect(parsed.issues).toContainEqual(expect.objectContaining({ path: "$.data[9].agency_id" }));
+    expect(parsed.data.data).toHaveLength(10);
+    expect(parsed.data.data[9].agency_id).toBeUndefined();
   });
 });

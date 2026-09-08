@@ -17,12 +17,12 @@ import type { DiscoveryFilterMetadataResponse, DiscoveryFilterMetadataState } fr
 import type { ExplorerMode, PropertyFilters, PropertySearchResult } from "@/types/property";
 import { track } from "@/lib/analytics";
 
-function unavailableResult(filters: PropertyFilters): PropertySearchResult {
+function unavailableResult(filters: PropertyFilters, errorKind: PropertySearchResult["errorKind"] = "SERVER_ERROR"): PropertySearchResult {
   return {
     properties: [], count: null, totalCount: null, mapCount: null,
     page: filters.page, pageSize: 24,
     hasNext: false, hasPrevious: filters.page > 1, nextCursor: null, previousCursor: null,
-    source: "error", error: true, invalidCursor: false,
+    source: "error", error: true, invalidCursor: false, errorKind,
   };
 }
 
@@ -161,13 +161,14 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
     resultAbortRef.current = controller;
     void fetch(`/api/properties/search?${filtersToSearchParams(filters)}`, { signal: controller.signal })
       .then(async (response) => {
-        if (!response.ok) throw new Error("property request failed");
-        return response.json() as Promise<PropertySearchResult>;
+        const payload = await response.json() as PropertySearchResult & { errorKind?: PropertySearchResult["errorKind"] };
+        if (!response.ok) throw Object.assign(new Error("property request failed"), { errorKind: payload.errorKind });
+        return payload;
       })
       .then((nextResult) => setResultState({ key: requestKey, result: nextResult }))
       .catch((error: unknown) => {
         if ((error as Error).name !== "AbortError") {
-          setResultState({ key: requestKey, result: unavailableResult(filters) });
+          setResultState({ key: requestKey, result: unavailableResult(filters, (error as { errorKind?: PropertySearchResult["errorKind"] }).errorKind) });
         }
       });
     return () => controller.abort();
@@ -302,7 +303,7 @@ function removeViewport() {
           {!result ? (
             <div className="state-panel" role="status"><span aria-hidden="true">⌛</span><h2>Preparando resultados</h2><p>El mapa ya está disponible. Las propiedades se cargan sólo cuando este listado es visible.</p></div>
           ) : result.error ? (
-            <div className="state-panel" role="alert"><span aria-hidden="true">↻</span><h2>No pudimos cargar las propiedades</h2><p>El servicio puede estar temporalmente ocupado. Tus filtros siguen guardados en la URL.</p><a className="primary-button" href={returnTo}>Reintentar</a></div>
+            <div className="state-panel" role="alert"><span aria-hidden="true">↻</span><h2>{result.errorKind === "BAD_REQUEST" ? "Revisá los filtros de este enlace" : "No pudimos cargar las propiedades"}</h2><p>{result.errorKind === "BAD_REQUEST" ? "La URL contiene un filtro u orden que el catálogo actual no admite. Podés limpiar los filtros y volver a buscar." : "El servicio puede estar temporalmente ocupado. Tus filtros siguen guardados en la URL."}</p><a className="primary-button" href={result.errorKind === "BAD_REQUEST" ? basePath : returnTo}>{result.errorKind === "BAD_REQUEST" ? "Limpiar filtros" : "Reintentar"}</a></div>
           ) : result.properties.length === 0 ? (
             <NoResults filters={currentFilters} basePath={basePath} />
           ) : shownProperties.length === 0 ? (
@@ -322,6 +323,7 @@ function removeViewport() {
               ))}
             </div>
           )}
+          {result?.searchWindowExhausted ? <p className="map-truncated" role="status">Alcanzaste la ventana accesible de esta búsqueda ordenada por relevancia. El total puede incluir más propiedades.</p> : null}
           {result ? <Pagination filters={currentFilters} hasNext={result.hasNext} hasPrevious={result.hasPrevious} nextCursor={result.nextCursor} previousCursor={result.previousCursor} basePath={basePath} /> : null}
         </section>
       </main>

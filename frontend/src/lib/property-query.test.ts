@@ -21,13 +21,13 @@ describe("property query", () => {
   });
 
   it("does not allow global mixed-currency price sorting", () => {
-    expect(parsePropertyFilters({ orden: "price_desc" }).sort).toBe("recent");
+    expect(parsePropertyFilters({ orden: "price_desc" }).sort).toBe("relevance");
   });
 
   it("bounds and sanitizes untrusted params", () => {
     const filters = parsePropertyFilters({ q: "foo),estado.eq.inactiva", pagina: "999999" });
     expect(filters.q).not.toMatch(/[(),]/);
-    expect(filters.page).toBe(1);
+    expect(filters.page).toBe(10_000);
   });
 
   it("normalizes duplicated URL parameters consistently and deterministically", () => {
@@ -105,7 +105,7 @@ describe("property query", () => {
   });
 
   it("orden 'nearest' sólo sobrevive con un punto de referencia válido", () => {
-    expect(parsePropertyFilters({ orden: "nearest" }).sort).toBe("recent"); // sin punto
+    expect(parsePropertyFilters({ orden: "nearest" }).sort).toBe("relevance"); // sin punto
     const near = parsePropertyFilters({ orden: "nearest", cerca_lat: "-34.6", cerca_lng: "-58.4" });
     expect(near.sort).toBe("nearest");
     expect(near.near).toEqual({ lat: -34.6, lng: -58.4 });

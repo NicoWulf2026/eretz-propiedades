@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { CatalogProperty } from "@/domain/catalog-property";
+import type { ApiV2AgencyResponseDto } from "./dto";
 import type { CatalogSearchPage, CatalogSearchQuery } from "@/domain/catalog-search";
 import type { CatalogArea, CatalogFilterMetadata, CatalogNeighborhood, CatalogSuggestion } from "@/domain/catalog-discovery";
 import {
@@ -10,6 +11,7 @@ import {
   adaptApiV2Page,
   adaptApiV2Property,
   adaptApiV2Suggestion,
+  adaptApiV2Map,
   toApiV2SearchRequest,
 } from "./adapters";
 import { ApiV2Error, type ApiV2Result } from "./errors";
@@ -20,6 +22,9 @@ import {
   parseApiV2Page,
   parseApiV2Property,
   parseApiV2Suggestions,
+  parseApiV2Map,
+  parseApiV2Agency,
+  parseApiV2Batch,
 } from "./schemas";
 
 export type ApiV2ClientOptions = {
@@ -57,7 +62,7 @@ function invalidResponse<T>(message: string, issues: ApiV2Error["issues"]): ApiV
 export async function fetchApiV2Json(
   path: string,
   params: URLSearchParams | null,
-  options: ApiV2ClientOptions = {},
+  options: ApiV2ClientOptions & { method?: "GET" | "POST"; body?: unknown } = {},
 ): Promise<ApiV2Result<unknown>> {
   const baseUrl = resolveBaseUrl(options.baseUrl);
   if (!baseUrl) {
@@ -76,8 +81,9 @@ export async function fetchApiV2Json(
 
   try {
     const response = await (options.fetchImpl ?? fetch)(url, {
-      method: "GET",
-      headers: { accept: "application/json" },
+      method: options.method ?? "GET",
+      headers: { accept: "application/json", ...(options.body === undefined ? {} : { "content-type": "application/json" }) },
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
       cache: "no-store",
       signal: controller.signal,
     });
@@ -99,6 +105,36 @@ export async function fetchApiV2Json(
     clearTimeout(timer);
     options.signal?.removeEventListener("abort", abortFromCaller);
   }
+}
+
+export type CatalogMapPage = ReturnType<typeof adaptApiV2Map>;
+
+export async function getApiV2Map(params: URLSearchParams, options: ApiV2ClientOptions = {}): Promise<ApiV2Result<CatalogMapPage>> {
+  const raw = await fetchApiV2Json("/v2/propiedades/mapa", params, options);
+  if (raw.status === "FAILURE") return raw;
+  const parsed = parseApiV2Map(raw.data);
+  if (!parsed.success) return invalidResponse("API v2 map response does not match the contract", parsed.issues);
+  const data = adaptApiV2Map(parsed.data);
+  if (parsed.issues.length) return { status: "PARTIAL_DATA", data, issues: parsed.issues };
+  return { status: data.points.length ? "SUCCESS" : "SUCCESS_EMPTY", data };
+}
+
+export async function getApiV2Agency(id: string, options: ApiV2ClientOptions = {}): Promise<ApiV2Result<ApiV2AgencyResponseDto["data"]>> {
+  const raw = await fetchApiV2Json(`/v2/agencias/${encodeURIComponent(id)}`, null, options);
+  if (raw.status === "FAILURE") return raw;
+  const parsed = parseApiV2Agency(raw.data);
+  if (!parsed.success) return invalidResponse("API v2 agency response does not match the contract", parsed.issues);
+  return { status: "SUCCESS", data: parsed.data.data };
+}
+
+export async function getApiV2PropertiesBatch(ids: string[], options: ApiV2ClientOptions = {}): Promise<ApiV2Result<{ items: CatalogProperty[]; missingIds: string[]; requestedIds: string[] }>> {
+  const raw = await fetchApiV2Json("/v2/propiedades/batch", null, { ...options, method: "POST", body: { ids } });
+  if (raw.status === "FAILURE") return raw;
+  const parsed = parseApiV2Batch(raw.data);
+  if (!parsed.success) return invalidResponse("API v2 batch response does not match the contract", parsed.issues);
+  const data = { items: parsed.data.items.map(adaptApiV2Property), missingIds: parsed.data.missing_ids, requestedIds: parsed.data.requested_ids };
+  if (parsed.issues.length || data.missingIds.length) return { status: "PARTIAL_DATA", data, issues: parsed.issues };
+  return { status: data.items.length ? "SUCCESS" : "SUCCESS_EMPTY", data };
 }
 
 export async function getApiV2Property(id: string, options: ApiV2ClientOptions = {}): Promise<ApiV2Result<CatalogProperty>> {

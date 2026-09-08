@@ -378,13 +378,10 @@ export function PropertyLeafletMap({
   function searchArea() {
     if (!viewport) return;
     setApplyingArea(true);
-    const params = new URLSearchParams(baseSearch);
-    params.set("norte", String(viewport.north));
-    params.set("este", String(viewport.east));
-    params.set("sur", String(viewport.south));
-    params.set("oeste", String(viewport.west));
-    params.set("zoom", String(viewport.zoom));
-    window.location.assign(`${window.location.pathname}?${params.toString()}`);
+    void searchViewport(viewport).finally(() => {
+      setPending(false);
+      setApplyingArea(false);
+    });
   }
 
   const center: [number, number] = initialViewport
@@ -427,7 +424,7 @@ export function PropertyLeafletMap({
           {pending ? (
             <button type="button" className="map-search-area" disabled={applyingArea} onClick={searchArea}>
               <strong>{applyingArea ? "Actualizando propiedades…" : "Buscar en esta zona"}</strong>
-              {!applyingArea ? <small>Los resultados todavía son de la zona anterior</small> : null}
+              {!applyingArea ? <small>Actualiza los puntos visibles; el listado conserva sus filtros</small> : null}
             </button>
           ) : loading ? (
             <span className="map-result-indicator is-updating"><span className="map-status-pulse" aria-hidden="true" />Actualizando mapa…</span>

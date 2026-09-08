@@ -33,8 +33,8 @@ export type ApiV2RankingDto = {
 };
 export type ApiV2PropertyDto = {
   id: string;
-  source_url: string;
-  agency_id: string;
+  source_url?: string | null;
+  agency_id?: string | null;
   titulo: string | null;
   descripcion: string | null;
   operacion: string | null;
@@ -49,9 +49,9 @@ export type ApiV2PropertyDto = {
   imagenes: string[];
   latitud: number | null;
   longitud: number | null;
-  geo: ApiV2GeographyDto;
+  geo?: ApiV2GeographyDto | null;
   alcances: string[];
-  ranking?: ApiV2RankingDto;
+  ranking?: ApiV2RankingDto | null;
 };
 
 export type ApiV2PageDto = {
@@ -62,17 +62,43 @@ export type ApiV2PageDto = {
   data: ApiV2PropertyDto[];
 };
 export type ApiV2SearchPageDto = ApiV2PageDto & {
-  ranking: typeof API_V2_RANKING;
+  ranking: typeof API_V2_RANKING | null;
+  sort: "relevance" | "price_asc" | "price_desc";
   consulta: string | null;
 };
-export type ApiV2MapItemDto = Pick<
-  ApiV2PropertyDto,
-  "id" | "latitud" | "longitud" | "precio" | "moneda" | "operacion" | "tipo_propiedad" | "titulo"
->;
+export type ApiV2MapItemDto = Pick<ApiV2PropertyDto, "id" | "precio" | "moneda" | "operacion" | "tipo_propiedad" | "titulo"> & {
+  latitud: number;
+  longitud: number;
+};
 export type ApiV2MapResponseDto = {
   contrato: typeof API_V2_CONTRACT;
-  total: number;
+  total_matches: number;
+  viewport_matches: number;
+  returned_points: number;
+  truncated: boolean;
+  limit: number;
   data: ApiV2MapItemDto[];
+};
+export type ApiV2AgencyResponseDto = {
+  contrato: typeof API_V2_CONTRACT;
+  data: {
+    agency_id: string;
+    name: string;
+    logo: string | null;
+    website: string | null;
+    contact: {
+      status: "AVAILABLE" | "UNAVAILABLE";
+      phone: string | null;
+      whatsapp: string | null;
+      email: string | null;
+    };
+  };
+};
+export type ApiV2BatchResponseDto = {
+  contrato: typeof API_V2_CONTRACT;
+  items: ApiV2PropertyDto[];
+  missing_ids: string[];
+  requested_ids: string[];
 };
 export type ApiV2AreaDto = {
   nivel: ApiV2SearchAreaDto["nivel"];

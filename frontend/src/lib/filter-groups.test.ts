@@ -36,7 +36,7 @@ describe("filterGroupCounts", () => {
   });
 
   it("el orden por defecto no suma; otro orden sí", () => {
-    expect(filterGroupCounts(parsePropertyFilters({ orden: "recent" })).publicacion).toBe(0);
+    expect(filterGroupCounts(parsePropertyFilters({ orden: "relevance" })).publicacion).toBe(0);
     expect(filterGroupCounts(parsePropertyFilters({ orden: "area_desc" })).publicacion).toBe(1);
   });
 

@@ -162,11 +162,11 @@ export function parsePropertyFilters(params: SearchParams): PropertyFilters {
   const near = parseNear(params);
   let sort = one(params.orden) as PropertySort;
 
-  if (!sorts.has(sort)) sort = "recent";
+  if (!sorts.has(sort)) sort = "relevance";
   if ((sort === "price_asc" || sort === "price_desc" || sort === "price_m2_asc") && !currencies.has(currency)) {
-    sort = "recent";
+    sort = "relevance";
   }
-  if (sort === "nearest" && !near) sort = "recent";
+  if (sort === "nearest" && !near) sort = "relevance";
 
   const cursorCandidate = one(params.cursor).slice(0, 420);
   const cursor = /^[A-Za-z0-9_-]+$/.test(cursorCandidate) ? cursorCandidate : "";
@@ -215,12 +215,12 @@ export function parsePropertyFilters(params: SearchParams): PropertyFilters {
     mortgageState: parseTriState(params.credito),
     sort,
     near,
-    page: cursor ? requestedPage : 1,
+    page: requestedPage,
     cursor,
     direction: cursor && one(params.direccion) === "prev" ? "prev" : "next",
     mode: parseExplorerMode(one(params.modo)),
     viewport: parseViewport(params),
-    selectedId: /^\d+$/.test(one(params.seleccion)) ? one(params.seleccion) : "",
+    selectedId: /^[A-Za-z0-9_-]{1,200}$/.test(one(params.seleccion)) ? one(params.seleccion) : "",
   };
 }
 
@@ -260,7 +260,7 @@ export function filtersToSearchParams(filters: PropertyFilters) {
     ["video", filters.hasVideo ? "1" : ""],
     ["plano", filters.hasFloorPlan ? "1" : ""],
     ["credito", filters.mortgageState],
-    ["orden", filters.sort === "recent" ? "" : filters.sort],
+    ["orden", filters.sort === "relevance" ? "" : filters.sort],
     ["cerca_lat", filters.near?.lat ?? null],
     ["cerca_lng", filters.near?.lng ?? null],
     ["pagina", filters.page > 1 ? filters.page : ""],

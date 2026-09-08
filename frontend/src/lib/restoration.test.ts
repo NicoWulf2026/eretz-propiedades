@@ -34,7 +34,7 @@ describe("restauración por URL (round-trip lossless)", () => {
     const f = parsePropertyFilters({});
     expect(f.operation).toBe("");
     expect(f.mode).toBe("balanced");
-    expect(f.sort).toBe("recent");
+    expect(f.sort).toBe("relevance");
     expect(f.viewport).toBeNull();
   });
 });

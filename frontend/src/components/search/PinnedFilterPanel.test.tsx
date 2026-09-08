@@ -31,6 +31,6 @@ describe("FilterForm — reutilización interna del panel", () => {
     render(<FilterForm filters={parsePropertyFilters({})} pinned />);
     expect(screen.getByText("Provincia")).toBeInTheDocument();
     expect(screen.getByText("Superficie total mín.")).toBeInTheDocument();
-    expect(screen.getByText("Cocheras mín.")).toBeInTheDocument();
+    expect(screen.getByText("Baños mín.")).toBeInTheDocument();
   });
 });

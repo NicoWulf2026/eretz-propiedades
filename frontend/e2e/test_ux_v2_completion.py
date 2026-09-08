@@ -56,7 +56,10 @@ def test_professional_directories_have_clear_real_search(page: Page, path: str, 
 
 
 def test_property_specific_not_found_preserves_a_useful_exit(page: Page) -> None:
-    page.goto(f"{BASE_URL}/propiedad/999999999999", wait_until="domcontentloaded")
+    # Canonical API v2 identifiers have authoritative 404 semantics. Numeric
+    # historical identifiers still depend on the deliberately retained legacy
+    # bridge and an infrastructure failure there must not be asserted as 404.
+    page.goto(f"{BASE_URL}/propiedad/ffffffffffffffffffffffffffffffff", wait_until="domcontentloaded")
     expect(page.get_by_role("heading", name="No encontramos esta propiedad")).to_be_visible()
     expect(page.get_by_role("link", name="Explorar propiedades")).to_be_visible()
 

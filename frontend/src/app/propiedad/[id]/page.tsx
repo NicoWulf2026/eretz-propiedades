@@ -17,11 +17,16 @@ import { propertyDetailGroups, propertyDetailTitle, propertyReturnContext, publi
 import { availabilityLabel, formatDate, operationLabels, propertyLocation, propertyPrice, propertySpecs, typeLabels } from "@/lib/property-presenter";
 import { parsePropertyFilters, type SearchParams } from "@/lib/property-query";
 import { getOtherPublications, getPriceHistory, getPropertyByIdResult, getRelatedProperties } from "@/lib/property-service";
+import { getApiV2DetailForPublicId } from "@/lib/api-v2/property-boundary";
 import { siteUrl } from "@/lib/site-url";
 import { entitySlug } from "@/lib/slug";
 import type { PropertySummary } from "@/types/property";
 
 const money = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 });
+
+function getPublicProperty(id: string) {
+  return /^\d+$/.test(id) ? getPropertyByIdResult(id) : getApiV2DetailForPublicId(id);
+}
 
 function PropertyUnavailable({ id }: { id: string }) {
   return (
@@ -43,7 +48,7 @@ function PropertyUnavailable({ id }: { id: string }) {
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
-  const result = await getPropertyByIdResult(id);
+  const result = await getPublicProperty(id);
   if (result.status === "NOT_FOUND") notFound();
   if (result.status === "UNAVAILABLE") {
     return { title: "No pudimos cargar esta propiedad", robots: { index: false, follow: false } };
@@ -78,15 +83,14 @@ export default async function PropertyPage({ params, searchParams }: { params: P
   const query = await searchParams;
   const returnCandidate = Array.isArray(query.volver) ? query.volver[0] : query.volver;
   const returnTo = returnCandidate?.startsWith("/") && !returnCandidate.startsWith("//") ? returnCandidate.slice(0, 1600) : "/propiedades";
-  const result = await getPropertyByIdResult(id);
+  const result = await getPublicProperty(id);
   if (result.status === "NOT_FOUND") notFound();
   if (result.status === "UNAVAILABLE") return <PropertyUnavailable id={id} />;
   const property = result.property;
-  const [related, otherPublications, priceHistory] = await Promise.all([
-    getRelatedProperties(property),
-    getOtherPublications(property),
-    getPriceHistory(id),
-  ]);
+  const legacyIdentity = /^\d+$/.test(id);
+  const [related, otherPublications, priceHistory] = legacyIdentity ? await Promise.all([
+    getRelatedProperties(property), getOtherPublications(property), getPriceHistory(id),
+  ]) : [[], [], []];
   const canonical = `${siteUrl}/propiedad/${property.id}`;
   const title = propertyDetailTitle(property);
   const updated = formatDate(property.updatedAt);
@@ -178,7 +182,7 @@ export default async function PropertyPage({ params, searchParams }: { params: P
                 <p className="eyebrow">Quién publica</p><h2>{property.publisher?.name ?? property.agentName}</h2>
                 {property.publisher?.verified ? <p className="detail-verified">Identidad verificada en ERETZ</p> : null}
                 {property.agentName && property.agentName !== property.publisher?.name ? <p className="detail-description">Agente: {property.agentName}</p> : null}
-                {property.publisher?.id ? <Link href={`/inmobiliaria/${entitySlug(property.publisher.id, property.publisher.name)}`} className="inline-action">Ver perfil y publicaciones →</Link> : null}
+                {legacyIdentity && property.publisher?.id ? <Link href={`/inmobiliaria/${entitySlug(property.publisher.id, property.publisher.name)}`} className="inline-action">Ver perfil y publicaciones →</Link> : null}
               </section>
             ) : null}
             <section id="transparencia" className="detail-panel detail-transparency scroll-mt-24">

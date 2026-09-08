@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { CatalogSearchQuery } from "@/domain/catalog-search";
-import { apiV2FixtureMatrix, invalidMissingAgencyDto } from "@/test/api-v2-fixtures";
+import { apiV2FixtureMatrix } from "@/test/api-v2-fixtures";
 import { API_V2_CONTRACT, API_V2_RANKING } from "./dto";
 import { fetchApiV2Json, getApiV2Property, searchApiV2Properties } from "./client";
 
@@ -50,6 +50,7 @@ describe("API v2 client error and success model", () => {
     const emptyFetch = vi.fn(async () => jsonResponse({
       contrato: API_V2_CONTRACT,
       ranking: API_V2_RANKING,
+      sort: "relevance",
       consulta: "none",
       total: 0,
       limit: 24,
@@ -70,7 +71,7 @@ describe("API v2 client error and success model", () => {
   });
 
   it("returns INVALID_RESPONSE for malformed property detail instead of NOT_FOUND", async () => {
-    const fetchImpl = vi.fn(async () => jsonResponse(invalidMissingAgencyDto)) as unknown as typeof fetch;
+    const fetchImpl = vi.fn(async () => jsonResponse({ ...apiV2FixtureMatrix.complete, id: 123 })) as unknown as typeof fetch;
     expect(await getApiV2Property("property", { baseUrl, fetchImpl })).toMatchObject({ status: "FAILURE", error: { kind: "INVALID_RESPONSE" } });
   });
 
@@ -78,17 +79,18 @@ describe("API v2 client error and success model", () => {
     const fetchImpl = vi.fn(async () => jsonResponse({
       contrato: API_V2_CONTRACT,
       ranking: API_V2_RANKING,
+      sort: "relevance",
       consulta: "casa",
       total: 2,
       limit: 24,
       offset: 0,
-      data: [apiV2FixtureMatrix.ranked, invalidMissingAgencyDto],
+      data: [apiV2FixtureMatrix.ranked, { ...apiV2FixtureMatrix.ranked, id: 123 }],
     })) as unknown as typeof fetch;
     const result = await searchApiV2Properties(query, { baseUrl, fetchImpl });
     expect(result).toMatchObject({ status: "PARTIAL_DATA", data: { total: 2 } });
     if (result.status === "PARTIAL_DATA") {
       expect(result.data.properties).toHaveLength(1);
-      expect(result.issues).toContainEqual(expect.objectContaining({ path: "$.data[1].agency_id" }));
+      expect(result.issues).toContainEqual(expect.objectContaining({ path: "$.data[1].id" }));
     }
   });
 

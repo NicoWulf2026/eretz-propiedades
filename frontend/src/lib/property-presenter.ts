@@ -38,8 +38,8 @@ export function propertyPrice(property: Pick<Property, "price" | "currency">) {
   return `${property.currency} ${money.format(property.price)}`;
 }
 
-export function propertyLocation(property: Pick<Property, "neighborhood" | "city" | "province">) {
-  const values = [property.neighborhood, property.city, property.province].filter(
+export function propertyLocation(property: Pick<Property, "neighborhood" | "city" | "province"> & Pick<Partial<Property>, "municipality" | "department">) {
+  const values = [property.neighborhood, property.city, property.municipality, property.department, property.province].filter(
     (value, index, all): value is string => Boolean(value) && all.indexOf(value) === index,
   );
   return values.length ? values.join(", ") : "Ubicación no especificada";

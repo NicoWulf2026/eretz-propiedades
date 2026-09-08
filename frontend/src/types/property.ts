@@ -215,6 +215,9 @@ export type Property = {
   address: string | null;
   neighborhood: string | null;
   city: string | null;
+  /** Canonical municipality is distinct from locality/city. */
+  municipality?: string | null;
+  department?: string | null;
   province: string | null;
   country: string | null;
   latitude: number | null;
@@ -294,6 +297,8 @@ export type PropertySearchResult = {
   source: "database" | "fixture" | "unconfigured" | "error";
   error: boolean;
   invalidCursor: boolean;
+  searchWindowExhausted?: boolean;
+  errorKind?: "BAD_REQUEST" | "NETWORK_ERROR" | "TIMEOUT" | "SERVER_ERROR" | "INVALID_RESPONSE" | "UNCONFIGURED";
 };
 
 export type PropertySummary = Pick<
@@ -303,6 +308,7 @@ export type PropertySummary = Pick<
   | "bathrooms" | "garages" | "totalArea" | "coveredArea" | "address"
   | "toilettes" | "landArea" | "expenses" | "expensesCurrency"
   | "neighborhood" | "city" | "province" | "country" | "latitude" | "longitude"
+  | "municipality" | "department"
   | "locationConfidence"
   | "images" | "publishedAt" | "updatedAt" | "status" | "mortgageEligible"
   | "description" | "amenities"

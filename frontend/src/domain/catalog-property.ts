@@ -82,9 +82,9 @@ export type TechnicalRanking = {
 
 export type CatalogProperty = {
   id: string;
-  sourceUrl: string;
+  sourceUrl: string | null;
   /** API v2 exposes the identifier, not agency details or contact channels. */
-  agencyId: string;
+  agencyId: string | null;
   title: string | null;
   description: string | null;
   operation: CatalogOperation | null;

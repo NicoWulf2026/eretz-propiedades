@@ -157,21 +157,16 @@ function QuickSelectors({ filters, onOpenGroup, filterMetadata }: { filters: Pro
         <option value="venta">{optionLabel("Comprar", facetCount(filterMetadata, "operations", "venta"))}</option>
         <option value="alquiler">{optionLabel("Alquilar", facetCount(filterMetadata, "operations", "alquiler"))}</option>
         <option value="temporario">{optionLabel("Temporario", facetCount(filterMetadata, "operations", ["alquiler_temporario", "temporario"]))}</option>
-        <option value="venta_y_alquiler">{optionLabel("Venta y alquiler", facetCount(filterMetadata, "operations", "venta_y_alquiler"))}</option>
-        <option value="consultar">{optionLabel("Consultar", facetCount(filterMetadata, "operations", "consultar"))}</option>
       </select>
       <select aria-label="Tipo de propiedad" name="tipo" defaultValue={filters.propertyType}>
         <option value="">Tipo</option>
         <option value="departamento">{optionLabel("Departamento", facetCount(filterMetadata, "propertyTypes", "departamento"))}</option>
         <option value="casa">{optionLabel("Casa", facetCount(filterMetadata, "propertyTypes", "casa"))}</option>
-        <option value="ph">{optionLabel("PH", facetCount(filterMetadata, "propertyTypes", "ph"))}</option>
         <option value="terreno">{optionLabel("Terreno", facetCount(filterMetadata, "propertyTypes", "terreno"))}</option>
         <option value="oficina">{optionLabel("Oficina", facetCount(filterMetadata, "propertyTypes", "oficina"))}</option>
         <option value="local">{optionLabel("Local", facetCount(filterMetadata, "propertyTypes", "local"))}</option>
         <option value="cochera">{optionLabel("Cochera", facetCount(filterMetadata, "propertyTypes", "cochera"))}</option>
         <option value="galpon">{optionLabel("Galpón", facetCount(filterMetadata, "propertyTypes", "galpon"))}</option>
-        <option value="campo">{optionLabel("Campo", facetCount(filterMetadata, "propertyTypes", "campo"))}</option>
-        <option value="otro">{optionLabel("Otro", facetCount(filterMetadata, "propertyTypes", "otro"))}</option>
       </select>
       <button className="quick-filter-button" type="button" onClick={() => onOpenGroup("precio")}>{price}</button>
       <button className="quick-filter-button" type="button" onClick={() => onOpenGroup("caracteristicas")}>
@@ -183,39 +178,32 @@ function QuickSelectors({ filters, onOpenGroup, filterMetadata }: { filters: Pro
 
 export function AdvancedFilterFields({ filters, idPrefix = "filter-group", filterMetadata = null }: { filters: PropertyFilters; idPrefix?: string; filterMetadata?: DiscoveryFilterMetadataState | null }) {
   const counts = filterGroupCounts(filters);
+  const priceNeedsCurrency = filters.minPrice !== null
+    || filters.maxPrice !== null
+    || filters.sort === "price_asc"
+    || filters.sort === "price_desc";
   return (
     <>
-      <FilterGroup id="ubicacion" prefix={idPrefix} label={FILTER_GROUPS[0].label} hint="Una ubicación o varias, siempre con jerarquía explícita" count={counts.ubicacion} level="Jerarquía geográfica">
+      <FilterGroup id="ubicacion" prefix={idPrefix} label={FILTER_GROUPS[0].label} hint="Una ubicación, siempre con jerarquía explícita" count={counts.ubicacion} level="Jerarquía geográfica">
         <Field label="Provincia"><input name="provincia" defaultValue={filters.province} placeholder="Buenos Aires" /></Field>
-        <Field label="Ciudad"><input name="ciudad" defaultValue={filters.city} placeholder="Córdoba" /></Field>
-        <Field label="Barrio o localidad"><input name="barrio" defaultValue={filters.neighborhood} placeholder="Palermo" /></Field>
-        <Field label="Varias ubicaciones (separadas por comas)"><input name="ubicaciones" defaultValue={filters.locations.join(", ")} placeholder="Palermo, Belgrano, Núñez" /></Field>
+        <Field label="Localidad"><input name="ciudad" defaultValue={filters.city} placeholder="Córdoba" /></Field>
+        <Field label="Barrio"><input name="barrio" defaultValue={filters.neighborhood} placeholder="Palermo" /></Field>
       </FilterGroup>
       <FilterGroup id="precio" prefix={idPrefix} label={FILTER_GROUPS[1].label} hint="La falta de precio nunca se interpreta como cero" count={counts.precio} level="Acceso rápido">
-        <Field label="Moneda"><select name="moneda" defaultValue={filters.currency}><option value="">Cualquiera</option><option value="USD">{optionLabel("USD", facetCount(filterMetadata, "currencies", "USD"))}</option><option value="ARS">{optionLabel("ARS", facetCount(filterMetadata, "currencies", "ARS"))}</option><option value="EUR">{optionLabel("EUR", facetCount(filterMetadata, "currencies", "EUR"))}</option><option value="UYU">{optionLabel("UYU", facetCount(filterMetadata, "currencies", "UYU"))}</option></select></Field>
+        <Field label="Moneda"><select name="moneda" defaultValue={filters.currency} required={priceNeedsCurrency}><option value="">Cualquiera</option><option value="USD">{optionLabel("USD", facetCount(filterMetadata, "currencies", "USD"))}</option><option value="ARS">{optionLabel("ARS", facetCount(filterMetadata, "currencies", "ARS"))}</option></select></Field>
         <Field label="Desde"><input name="precio_min" inputMode="numeric" type="number" min="0" defaultValue={filters.minPrice ?? ""} /></Field>
         <Field label="Hasta"><input name="precio_max" inputMode="numeric" type="number" min="0" defaultValue={filters.maxPrice ?? ""} /></Field>
-        <Field label="Estado del precio"><select name="precio" defaultValue={filters.priceMode}><option value="">Todos, incluso a consultar</option><option value="with">Con precio publicado</option><option value="consult">Sólo a consultar</option></select></Field>
       </FilterGroup>
       <FilterGroup id="caracteristicas" prefix={idPrefix} label={FILTER_GROUPS[2].label} hint="Los criterios más usados, sin atributos vacíos del catálogo" count={counts.caracteristicas} level="Acceso rápido">
         <Field label="Ambientes mín."><input name="ambientes" type="number" min="1" max="30" defaultValue={filters.minRooms ?? ""} /></Field>
         <Field label="Dormitorios mín."><input name="dormitorios" type="number" min="1" max="30" defaultValue={filters.minBedrooms ?? ""} /></Field>
         <Field label="Baños mín."><input name="banos" type="number" min="1" max="20" defaultValue={filters.minBathrooms ?? ""} /></Field>
-        <Field label="Cocheras mín."><input name="cocheras" type="number" min="1" max="20" defaultValue={filters.minGarages ?? ""} /></Field>
         <Field label="Superficie total mín."><input name="superficie" type="number" min="1" defaultValue={filters.minArea ?? ""} /></Field>
-        <Field label="Superficie total máx."><input name="superficie_max" type="number" min="1" defaultValue={filters.maxArea ?? ""} /></Field>
-        <Field label="Apto crédito"><select name="credito" defaultValue={filters.mortgageState}><option value="">Sin filtrar</option><option value="si">Sí</option><option value="no">No</option><option value="sininfo">Sin información</option></select></Field>
-        <div className="filter-checks">
-          <label className="check"><input name="imagenes" value="1" type="checkbox" defaultChecked={filters.hasImages} /> Con imágenes</label>
-          <label className="check"><input name="ubicacion" value="1" type="checkbox" defaultChecked={filters.hasLocation} /> Con ubicación en mapa</label>
-        </div>
       </FilterGroup>
-      <FilterGroup id="publicacion" prefix={idPrefix} label={FILTER_GROUPS[3].label} hint="Publicador, vigencia y orden del listado" count={counts.publicacion} level="Más filtros">
-        <Field label="Inmobiliaria o publicador"><input name="publicador" defaultValue={filters.publisher} placeholder="Nombre" /></Field>
-        <Field label="Publicado"><select name="reciente" defaultValue={filters.recentDays ?? ""}><option value="">Cualquier fecha</option><option value="1">Últimas 24 horas</option><option value="7">Últimos 7 días</option><option value="30">Últimos 30 días</option><option value="90">Últimos 90 días</option></select></Field>
-        <Field label="Orden"><select name="orden" defaultValue={filters.sort}><option value="recent">Incorporadas recientemente</option><option value="price_asc" disabled={!filters.currency}>Menor precio</option><option value="price_desc" disabled={!filters.currency}>Mayor precio</option><option value="area_desc">Mayor superficie</option><option value="rooms_desc">Más ambientes</option><option value="price_m2_asc" disabled={!filters.currency}>Menor precio por m²</option>{filters.near ? <option value="nearest">Más cercanas</option> : null}</select></Field>
+      <FilterGroup id="publicacion" prefix={idPrefix} label={FILTER_GROUPS[3].label} hint="Orden contractual del catálogo" count={counts.publicacion} level="Más filtros">
+        <Field label="Orden"><select name="orden" defaultValue={filters.sort}><option value="relevance">Relevancia</option><option value="price_asc" disabled={!filters.currency}>Menor precio</option><option value="price_desc" disabled={!filters.currency}>Mayor precio</option></select></Field>
       </FilterGroup>
-      {!filters.currency && (filters.sort === "price_asc" || filters.sort === "price_desc" || filters.sort === "price_m2_asc") ? <p className="filter-warning">Elegí una moneda para comparar precios sin mezclar unidades.</p> : null}
+      {!filters.currency && priceNeedsCurrency ? <p className="filter-warning">Elegí una moneda para filtrar u ordenar precios sin mezclar unidades.</p> : null}
       {filterMetadata?.status === "FAILURE" ? <p className="filter-data-note" role="alert">No pudimos actualizar las cantidades del catálogo. Los filtros existentes siguen disponibles.</p>
         : filterMetadata?.status === "SUCCESS_EMPTY" ? <p className="filter-data-note" role="status">El catálogo no informó cantidades para estos filtros.</p>
           : filterMetadata?.status === "PARTIAL_DATA" ? <p className="filter-data-note" role="status">Algunas cantidades del catálogo no están disponibles.</p>
@@ -227,8 +215,7 @@ export function AdvancedFilterFields({ filters, idPrefix = "filter-group", filte
 const QUICK_NAMES = new Set(["q", "operacion", "tipo"]);
 const RESET_NAMES = new Set(["pagina", "cursor", "direccion"]);
 const ADVANCED_NAMES = new Set([
-  "provincia", "ciudad", "barrio", "ubicaciones", "precio_min", "precio_max", "moneda", "ambientes", "dormitorios", "banos",
-  "cocheras", "superficie", "superficie_max", "credito", "publicador", "reciente", "imagenes", "precio", "ubicacion", "orden",
+  "provincia", "ciudad", "barrio", "precio_min", "precio_max", "moneda", "ambientes", "dormitorios", "banos", "superficie", "orden",
 ]);
 
 function HiddenFilterState({ filters, includeAdvanced }: { filters: PropertyFilters; includeAdvanced: boolean }) {

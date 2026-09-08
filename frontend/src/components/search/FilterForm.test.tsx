@@ -11,10 +11,12 @@ import { apiV2FiltersFixture } from "@/test/api-v2-fixtures";
 describe("FilterForm — filtros alineados con datos públicos reales", () => {
   const filters = parsePropertyFilters({});
 
-  it("ofrece operación Consultar y tipo Otro (valores reales del catálogo)", () => {
+  it("ofrece únicamente operaciones y tipos aceptados por API v2", () => {
     render(<FilterForm filters={filters} />);
-    expect(screen.getByRole("option", { name: "Consultar" })).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "Otro" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Temporario" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Galpón" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Consultar" })).toBeNull();
+    expect(screen.queryByRole("option", { name: "Otro" })).toBeNull();
   });
 
   it("muestra cantidades reales de API v2 sin cambiar los valores enviados", () => {
@@ -39,9 +41,8 @@ describe("FilterForm — filtros alineados con datos públicos reales", () => {
     const { container } = render(<FilterForm filters={filters} />);
     fireEvent.click(container.querySelector('[aria-controls="advanced-filters"]') as HTMLElement);
     expect(screen.getByText("Superficie total mín.")).toBeInTheDocument();
-    expect(screen.getByText("Con imágenes")).toBeInTheDocument();
-    expect(screen.getByText("Con ubicación en mapa")).toBeInTheDocument();
     expect(screen.getByText("Baños mín.")).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Relevancia" })).toBeInTheDocument();
   });
 
   it("oculta los filtros que siguen sin respaldo suficiente", () => {
@@ -55,14 +56,11 @@ describe("FilterForm — filtros alineados con datos públicos reales", () => {
     expect(screen.queryByText(/Con plano/)).toBeNull();
   });
 
-  it("expone cochera y apto crédito porque el catálogo actual ya tiene datos, con tri-state explícito", () => {
+  it("no expone filtros que el endpoint combinado todavía no acepta", () => {
     const { container } = render(<FilterForm filters={filters} />);
     fireEvent.click(container.querySelector('[aria-controls="advanced-filters"]') as HTMLElement);
-    expect(screen.getByText("Cocheras mín.")).toBeInTheDocument();
-    const credit = screen.getByLabelText("Apto crédito");
-    expect(credit).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "Sin filtrar" })).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "Sin información" })).toBeInTheDocument();
+    expect(screen.queryByText("Cocheras mín.")).toBeNull();
+    expect(screen.queryByLabelText("Apto crédito")).toBeNull();
   });
 
   it("unifica una frase natural en filtros verificables y conserva nl=", () => {

@@ -4,6 +4,9 @@ import {
   type ApiV2GeographyDto,
   type ApiV2AreasResponseDto,
   type ApiV2FiltersResponseDto,
+  type ApiV2MapResponseDto,
+  type ApiV2AgencyResponseDto,
+  type ApiV2BatchResponseDto,
   type ApiV2NeighborhoodsResponseDto,
   type ApiV2PageDto,
   type ApiV2PropertyDto,
@@ -23,6 +26,10 @@ function record(value: unknown): value is Record<string, unknown> {
 
 function nullableString(value: unknown): value is string | null {
   return value === null || typeof value === "string";
+}
+
+function optionalNullableString(value: unknown): value is string | null | undefined {
+  return value === undefined || nullableString(value);
 }
 
 function nullableFiniteNumber(value: unknown): value is number | null {
@@ -104,8 +111,9 @@ export function parseApiV2Property(value: unknown, path = "$"): ValidationResult
   const issues: ApiV2Issue[] = [];
   if (!record(value)) return { success: false, issues: [{ path, message: "expected object" }] };
   let valid = true;
-  for (const key of ["id", "source_url", "agency_id"] as const) {
-    if (typeof value[key] !== "string" || value[key].length === 0) valid = issue(issues, `${path}.${key}`, "expected non-empty string");
+  if (typeof value.id !== "string" || value.id.length === 0) valid = issue(issues, `${path}.id`, "expected non-empty string");
+  for (const key of ["source_url", "agency_id"] as const) {
+    if (!optionalNullableString(value[key])) valid = issue(issues, `${path}.${key}`, "expected string, null or absent");
   }
   for (const key of ["titulo", "descripcion", "operacion", "tipo_propiedad", "moneda"] as const) {
     if (!nullableString(value[key])) valid = issue(issues, `${path}.${key}`, "expected string or null");
@@ -119,8 +127,8 @@ export function parseApiV2Property(value: unknown, path = "$"): ValidationResult
   if (!Array.isArray(value.alcances) || !value.alcances.every((item) => typeof item === "string")) {
     valid = issue(issues, `${path}.alcances`, "expected string array");
   }
-  if (!geography(value.geo, `${path}.geo`, issues)) valid = false;
-  if (value.ranking !== undefined && !ranking(value.ranking, `${path}.ranking`, issues)) valid = false;
+  if (value.geo !== null && value.geo !== undefined && !geography(value.geo, `${path}.geo`, issues)) valid = false;
+  if (value.ranking !== undefined && value.ranking !== null && !ranking(value.ranking, `${path}.ranking`, issues)) valid = false;
   return valid ? { success: true, data: value as ApiV2PropertyDto, issues } : { success: false, issues };
 }
 
@@ -139,7 +147,8 @@ export function parseApiV2Page(value: unknown, search = false): ValidationResult
     envelopeValid = issue(issues, "$.limit", "expected positive integer");
   }
   if (search) {
-    if (value.ranking !== API_V2_RANKING) envelopeValid = issue(issues, "$.ranking", "unexpected ranking version");
+    if (value.ranking !== API_V2_RANKING && value.ranking !== null) envelopeValid = issue(issues, "$.ranking", "unexpected ranking version");
+    if (!["relevance", "price_asc", "price_desc"].includes(String(value.sort))) envelopeValid = issue(issues, "$.sort", "unexpected sort");
     if (!nullableString(value.consulta)) envelopeValid = issue(issues, "$.consulta", "expected string or null");
   }
   if (!Array.isArray(value.data)) {
@@ -151,13 +160,63 @@ export function parseApiV2Page(value: unknown, search = false): ValidationResult
   const data: ApiV2PropertyDto[] = [];
   value.data.forEach((item, index) => {
     const parsed = parseApiV2Property(item, `$.data[${index}]`);
-    if (parsed.success && search && parsed.data.ranking === undefined) {
+    if (parsed.success && search && value.ranking === API_V2_RANKING && parsed.data.ranking === undefined) {
       issue(issues, `$.data[${index}].ranking`, "search result requires technical ranking");
     } else if (parsed.success) data.push(parsed.data);
     else issues.push(...parsed.issues);
   });
   const parsed = { ...value, data } as unknown as ApiV2PageDto | ApiV2SearchPageDto;
   return { success: true, data: parsed, issues };
+}
+
+export function parseApiV2Map(value: unknown): ValidationResult<ApiV2MapResponseDto> {
+  const issues: ApiV2Issue[] = [];
+  if (!record(value)) return { success: false, issues: [{ path: "$", message: "expected object" }] };
+  let valid = value.contrato === API_V2_CONTRACT || issue(issues, "$.contrato", "unexpected API contract");
+  for (const key of ["total_matches", "viewport_matches", "returned_points"] as const) {
+    if (!nonNegativeInteger(value[key])) valid = issue(issues, `$.${key}`, "expected non-negative integer");
+  }
+  if (!nonNegativeInteger(value.limit) || value.limit < 1) valid = issue(issues, "$.limit", "expected positive integer");
+  if (typeof value.truncated !== "boolean") valid = issue(issues, "$.truncated", "expected boolean");
+  if (!Array.isArray(value.data)) return { success: false, issues: [...issues, { path: "$.data", message: "expected array" }] };
+  const data: ApiV2MapResponseDto["data"] = [];
+  value.data.forEach((item, index) => {
+    const path = `$.data[${index}]`;
+    if (!record(item)) { issue(issues, path, "expected object"); return; }
+    let itemValid = typeof item.id === "string" && item.id.length > 0;
+    if (!itemValid) issue(issues, `${path}.id`, "expected non-empty string");
+    for (const key of ["latitud", "longitud"] as const) if (!finiteNumber(item[key])) itemValid = issue(issues, `${path}.${key}`, "expected finite number");
+    if (!nullableFiniteNumber(item.precio)) itemValid = issue(issues, `${path}.precio`, "expected finite number or null");
+    for (const key of ["moneda", "operacion", "tipo_propiedad", "titulo"] as const) if (!nullableString(item[key])) itemValid = issue(issues, `${path}.${key}`, "expected string or null");
+    if (itemValid) data.push(item as ApiV2MapResponseDto["data"][number]);
+  });
+  if (!valid) return { success: false, issues };
+  return { success: true, data: { ...value, data } as ApiV2MapResponseDto, issues };
+}
+
+export function parseApiV2Agency(value: unknown): ValidationResult<ApiV2AgencyResponseDto> {
+  const issues: ApiV2Issue[] = [];
+  if (!record(value) || value.contrato !== API_V2_CONTRACT || !record(value.data) || !record(value.data.contact)) {
+    return { success: false, issues: [{ path: "$", message: "invalid agency envelope" }] };
+  }
+  const data = value.data;
+  const contact = data.contact as Record<string, unknown>;
+  let valid = true;
+  for (const key of ["agency_id", "name"] as const) if (typeof data[key] !== "string" || !data[key]) valid = issue(issues, `$.data.${key}`, "expected non-empty string");
+  for (const key of ["logo", "website"] as const) if (!nullableString(data[key])) valid = issue(issues, `$.data.${key}`, "expected string or null");
+  if (contact.status !== "AVAILABLE" && contact.status !== "UNAVAILABLE") valid = issue(issues, "$.data.contact.status", "unexpected contact status");
+  for (const key of ["phone", "whatsapp", "email"] as const) if (!nullableString(contact[key])) valid = issue(issues, `$.data.contact.${key}`, "expected string or null");
+  return valid ? { success: true, data: value as ApiV2AgencyResponseDto, issues } : { success: false, issues };
+}
+
+export function parseApiV2Batch(value: unknown): ValidationResult<ApiV2BatchResponseDto> {
+  const issues: ApiV2Issue[] = [];
+  if (!record(value) || value.contrato !== API_V2_CONTRACT) return { success: false, issues: [{ path: "$", message: "invalid batch envelope" }] };
+  if (!Array.isArray(value.items) || !Array.isArray(value.missing_ids) || !Array.isArray(value.requested_ids)) return { success: false, issues: [{ path: "$", message: "invalid batch arrays" }] };
+  if (![...value.missing_ids, ...value.requested_ids].every((id) => typeof id === "string")) return { success: false, issues: [{ path: "$", message: "batch ids must be strings" }] };
+  const items: ApiV2PropertyDto[] = [];
+  value.items.forEach((item, index) => { const parsed = parseApiV2Property(item, `$.items[${index}]`); if (parsed.success) items.push(parsed.data); else issues.push(...parsed.issues); });
+  return { success: true, data: { ...value, items } as ApiV2BatchResponseDto, issues };
 }
 
 export function parseApiV2Areas(value: unknown): ValidationResult<ApiV2AreasResponseDto> {
