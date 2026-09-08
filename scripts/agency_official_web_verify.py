@@ -106,7 +106,7 @@ def texto_visible(html: str) -> str:
     # puede sacar, y entonces el CSS pasa por texto visible: `biglieri.com.ar`
     # inyecta Bootstrap en linea y entregaba 396.077 caracteres de hoja de
     # estilos donde el nombre de la inmobiliaria se ahogaba.
-    abierto = re.search(r"<(?:script|style|noscript)[^>]*>(?![\s\S]*</)",
+    abierto = re.search(r"<(?:script|style|noscript)\b[^>]*>(?![\s\S]*</)",
                         t, re.I)
     if abierto:
         t = t[:abierto.start()]

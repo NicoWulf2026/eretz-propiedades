@@ -31,6 +31,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.api_contract import CONTRATO_API_VERSION, fila_de_api  # noqa: E402
+from scripts.plan_de_escritura import agencias_con_web_ajena  # noqa: E402
 from scripts.property_freshest import (CAMPOS_FUSIONABLES,  # noqa: E402
                                        fusionar, mas_frescas)
 from scripts.preingestion_manifest import (base_canonica,  # noqa: E402
@@ -128,13 +129,21 @@ def main() -> int:
                     default=str(base_canonica().parent / "PROPERTY_QUALITY_GATE.jsonl"))
     ap.add_argument("--cobertura",
                     default=r"D:\INMO CAPITAL\ERETZ_GEO\GEO_COVERAGE_AUDIT.jsonl")
+    ap.add_argument("--directorio",
+                    default=str(Path("D:/INMO CAPITAL/agency_platform_directory.jsonl")))
     ap.add_argument("--salida", default=r"D:\INMO CAPITAL\ERETZ_API_CONTRACT")
     args = ap.parse_args()
     exigir_base_vigente(args.db)
 
+    # Una propiedad leida en la web de OTRO no es de esta inmobiliaria, y el
+    # buscador es donde se veria: `Barreira Bienes Raices` tiene cargada la
+    # pagina de socios de una asociacion que comparten tres inmobiliarias, y
+    # 729 propiedades leidas de ahi. La misma retencion que aplica el plan de
+    # escritura tiene que aplicar el indice de lectura.
+    ajenas = agencias_con_web_ajena(Path(args.directorio))
     geo = _leer_jsonl(Path(args.cobertura))
     frescas = mas_frescas(Path(
-        r"D:\INMO CAPITAL\ERETZ_AGENCY_CERTIFICATION_20260827gencies"))
+        r"D:\INMO CAPITAL\ERETZ_AGENCY_CERTIFICATION_20260827\agencies"))
     gate = _leer_jsonl(Path(args.gate))
 
     salida = Path(args.salida)
@@ -150,6 +159,8 @@ def main() -> int:
     apariciones: dict[str, Counter] = defaultdict(Counter)
     for crudo, canonical in origen.execute(
             "select row_json, canonical_id from rows where status = 'CANDIDATE'"):
+        if canonical in ajenas:
+            continue
         for url in set(json.loads(crudo).get("imagenes") or []):
             apariciones[canonical][url] += 1
 
@@ -157,6 +168,7 @@ def main() -> int:
     api.executescript(ESQUEMA)
 
     filas = 0
+    ajenas_omitidas = 0
     imagenes_compartidas = 0
     fichas_sin_foto_propia = 0
     for (crudo,) in origen.execute(
@@ -166,6 +178,9 @@ def main() -> int:
                          CAMPOS_FUSIONABLES)
         hash_dedup = cruda.get("hash_dedup")
         canonical = cruda.get("canonical_agency_id")
+        if canonical in ajenas:
+            ajenas_omitidas += 1
+            continue
         propias = [u for u in (cruda.get("imagenes") or [])
                    if apariciones[canonical][u] < FICHAS_PARA_SER_COMPARTIDA]
         imagenes_compartidas += len(cruda.get("imagenes") or []) - len(propias)
@@ -210,6 +225,7 @@ def main() -> int:
         "snapshot_version": SNAPSHOT_VERSION,
         "contrato_api_version": CONTRATO_API_VERSION,
         "propiedades": filas,
+        "omitidas_por_web_ajena": ajenas_omitidas,
         "imagenes_compartidas_descartadas": imagenes_compartidas,
         "fichas_que_quedaron_sin_foto_propia": fichas_sin_foto_propia,
         "fichas_para_ser_compartida": FICHAS_PARA_SER_COMPARTIDA,
