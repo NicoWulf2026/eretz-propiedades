@@ -37,6 +37,13 @@ NO_ES_FOTO = re.compile(
     r"|no[-_]?imagen|sin[-_]?imagen|no[-_]?image|nofoto|img\.youtube\.com)", re.I)
 
 SUPERFICIES = ("superficie_total", "superficie_cubierta")
+
+# Tipos donde una superficie de hectareas es el dato correcto y no un error.
+TIPOS_DE_TIERRA = {"terreno", "lote", "campo", "chacra", "quinta", "fraccion",
+                   "isla", "estancia", "loteo"}
+
+# Diez hectareas. Ver la explicacion en `revisar`.
+SUPERFICIE_EDIFICADA_MAXIMA = 100_000
 ATRIBUTOS_DE_VIVIENDA = ("dormitorios", "banos", "ambientes",
                          "superficie_cubierta")
 
@@ -84,6 +91,27 @@ def revisar(p: dict) -> list[str]:
     if cub and tot and cub > tot:
         p["superficie_cubierta"] = p["superficie_total"] = None
         fuera.append("cubierta>total")
+
+    # Una superficie enorme es normal en el campo y absurda en un
+    # departamento. `aagaard.com.ar` publica `Terreno: 50000000 m2` en un dos
+    # ambientes de 45 m2 cubiertos -cincuenta kilometros cuadrados- y otras dos
+    # fichas dicen `Terreno: 50.0 Ha` y `180.0 Ha` sobre 45 y 180 metros
+    # construidos. Son datos cargados mal en el backoffice de la inmobiliaria,
+    # no una lectura nuestra: la ficha los muestra asi.
+    #
+    # No se corrige el valor. Que `180.0 Ha` sea probablemente `180 m2` es una
+    # sospecha razonable y sigue siendo una invencion; se descarta y se anota.
+    #
+    # El tope se eligio con el corpus: entre los tipos edificados el maximo real
+    # son 20.000 m2 de un departamento y el percentil 99 de `casa` es 8.700. Con
+    # diez hectareas se descartan cuatro propiedades en 58.427.
+    #
+    # Sin tipo no se decide nada: un tipo desconocido puede ser un campo.
+    tipo = str(p.get("tipo_propiedad") or "").lower()
+    tot = _num(p.get("superficie_total"))
+    if tot and tipo and tipo not in TIPOS_DE_TIERRA and tot > SUPERFICIE_EDIFICADA_MAXIMA:
+        p["superficie_total"] = None
+        fuera.append("superficie_total_absurda_para_el_tipo")
 
     if p.get("tipo_propiedad") == "terreno":
         for campo in ATRIBUTOS_DE_VIVIENDA:

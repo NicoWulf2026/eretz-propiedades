@@ -385,11 +385,19 @@ class TokkoConnector(Connector):
             r"\s*:?\s*([\d.,]+)\s*m", texto, re.I)
         if ms:
             sup_cub = a_numero(ms.group(1))
+        # La unidad se lee, no se supone. Tokko publica el terreno en hectareas
+        # cuando la propiedad es rural -`Terreno: 50.0 Ha`- y exigiendo `m` esas
+        # fichas quedaban sin superficie y sin motivo anotado. Convertida, el
+        # valor entra si es coherente con el tipo y lo descarta `coherencia` si
+        # no lo es: un departamento con cincuenta hectareas de terreno no se
+        # publica ni corregido ni como esta.
         ms = re.search(
-            r"(?:Superficie total|Total terreno|Terreno)\s*:?\s*([\d.,]+)\s*m",
-            texto, re.I)
+            r"(?:Superficie total|Total terreno|Terreno)\s*:?\s*"
+            r"([\d.,]+)\s*(ha|m)(?![a-z])", texto, re.I)
         if ms:
             sup_tot = a_numero(ms.group(1))
+            if sup_tot is not None and ms.group(2).lower() == "ha":
+                sup_tot *= 10_000
 
         direccion = _campo(texto, "Dirección") or _campo(texto, "Direccion")
         ubicacion = _campo(texto, "Ubicación") or _campo(texto, "Ubicacion")

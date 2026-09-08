@@ -117,3 +117,48 @@ def test_en_pesos_el_umbral_es_otro():
     """Mil millones de pesos si puede ser un precio; mil millones de dolares no."""
     p = {"precio": 111111111, "moneda": "ARS"}
     assert revisar(p) == [] and p["precio"] == 111111111
+
+
+def test_una_superficie_de_hectareas_en_un_departamento_no_se_publica():
+    """`aagaard.com.ar` publica `Terreno: 50000000 m2` en un dos ambientes de
+    45 m² cubiertos: cincuenta kilómetros cuadrados. Es un dato cargado mal en
+    el backoffice de la inmobiliaria y la ficha lo muestra así."""
+    from connectors.coherencia import revisar
+
+    p = {"tipo_propiedad": "departamento", "superficie_cubierta": 45.0,
+         "superficie_total": 50_000_000.0}
+    assert "superficie_total_absurda_para_el_tipo" in revisar(p)
+    assert p["superficie_total"] is None
+    # Lo cubierto no se toca: ese dato no está en discusión.
+    assert p["superficie_cubierta"] == 45.0
+
+
+def test_no_se_corrige_la_superficie_absurda_se_descarta():
+    """Que `180.0 Ha` sobre una casa de 180 m² construidos sea probablemente
+    `180 m²` es una sospecha razonable y sigue siendo una invención."""
+    from connectors.coherencia import revisar
+
+    p = {"tipo_propiedad": "casa", "superficie_cubierta": 180.0,
+         "superficie_total": 1_800_000.0}
+    revisar(p)
+    assert p["superficie_total"] is None
+
+
+def test_en_el_campo_las_hectareas_son_el_dato_correcto():
+    """Un campo de 50 hectáreas son 500.000 m² y es exactamente lo que se
+    publica. La regla mira el tipo, no el número."""
+    from connectors.coherencia import revisar
+
+    p = {"tipo_propiedad": "campo", "superficie_total": 500_000.0}
+    assert revisar(p) == []
+    assert p["superficie_total"] == 500_000.0
+
+
+def test_sin_tipo_no_se_descarta_ninguna_superficie():
+    """Un tipo desconocido puede ser un campo. Descartar sobre esa duda borra
+    datos buenos."""
+    from connectors.coherencia import revisar
+
+    p = {"tipo_propiedad": None, "superficie_total": 4_000_000.0}
+    assert revisar(p) == []
+    assert p["superficie_total"] == 4_000_000.0
