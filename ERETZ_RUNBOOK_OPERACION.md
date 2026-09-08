@@ -79,6 +79,42 @@ recertificación. Ver §8.
 
 ---
 
+## 3 bis. "Postgres no responde" (PGRST002)
+
+**No es una caída.** Diagnosticado el 2026-09-08: PostgREST se conecta bien a la
+base —los registros dicen `Successfully connected to PostgreSQL 17.6`— y falla
+después, al construir el cache de esquemas:
+
+```
+Failed to load the schema cache using db-schemas=pg_pgrst_no_exposed_schemas
+{"code":"3F000","message":"schema \"pg_pgrst_no_exposed_schemas\" does not exist"}
+```
+
+Ese nombre es el marcador que pone Supabase cuando la lista de **esquemas
+expuestos** de la API quedó vacía. El proyecto figura `ACTIVE_HEALTHY`, la base
+tiene sus datos —`public.propiedades` 257.804 filas, `public.inmobiliarias_main`
+7.004— y PostgREST reintenta cada 32 segundos desde hace días.
+
+Se arregla en **Settings → API → Exposed schemas**. Es un cambio de
+configuración productiva: requiere autorización explícita (§8 del plan).
+
+**Antes de reponerlo hay que mirar RLS.** Doce tablas tienen Row Level Security
+deshabilitado, y hoy no se alcanzan sólo porque no hay esquema expuesto:
+
+| dónde | qué |
+|---|---|
+| `internal_scraping` (10 tablas) | todo el pipeline interno: `propiedades_raw`, `publish_queue`, `data_quality_issues` |
+| `public.backup_propiedades_url_normalizada_20260729_235540` | 129.572 filas |
+| `public.spatial_ref_sys` | tabla de PostGIS |
+
+Exponer sólo `public` deja `internal_scraping` fuera del alcance de la API, que
+es lo que corresponde: es interno y no lo consume el frontend. La tabla de
+backup en `public` sí queda alcanzable con la anon key en cuanto se reponga el
+ajuste, así que conviene habilitarle RLS —sin políticas, o sea sin acceso—
+antes o junto con el cambio.
+
+---
+
 ## 4. Dos workers
 
 El reparto es **por host**, no por posición: la cortesía se le debe al sitio y
