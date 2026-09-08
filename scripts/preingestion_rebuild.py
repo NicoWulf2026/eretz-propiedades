@@ -27,6 +27,7 @@ from connectors.base import (  # noqa: E402
     detectar_tipo,
     normalizar_url,
 )
+from scripts.write_eligibility import NO_SON_WEB_PROPIA  # noqa: E402
 from scripts.input_universe import ENTRADAS, RAIZ, UNIVERSE_VERSION  # noqa: E402
 from scripts.write_eligibility import motivo_rechazo  # noqa: E402
 
@@ -516,6 +517,29 @@ def rebuild(args: argparse.Namespace) -> dict[str, Any]:
         )
     """)
     db.commit()
+    # Una propiedad leida en la web de OTRO no es de esta inmobiliaria.
+    #
+    # La regla existia en `write_eligibility.py` y se perdio al reconstruir: el
+    # rebuild marcaba escribible TODA fila CANDIDATE sin mirar `web_kind`. El
+    # plan de escritura preparado tenia adentro 729 propiedades de `Barreira
+    # Bienes Raices`, cuya web cargada es
+    # `comunidadinmobiliaria.com.ar/web/miembros/` -la pagina de socios de una
+    # asociacion que comparten tres inmobiliarias-, y 73 de `arte propiedades`,
+    # que es un perfil en el portal `lujanprop.com.ar`. Publicarlas le habria
+    # atribuido a una el inventario de las otras.
+    #
+    # No se borran: quedan con su motivo, igual que las otras retenciones. Lo
+    # que no puede pasar es que se escriban.
+    ajenas = [f["canonical_agency_id"] for f in read_jsonl(Path(args.platform_directory))
+              if f.get("web_kind") in NO_SON_WEB_PROPIA]
+    for lote in range(0, len(ajenas), 400):
+        parte = ajenas[lote:lote + 400]
+        db.execute(
+            "update rows set status='WEB_NO_PROPIA', reason='WEB_NO_PROPIA' "
+            "where status='CANDIDATE' and canonical_id in "
+            f"({','.join('?' * len(parte))})", parte)
+    db.commit()
+
     db.execute("create unique index eligible_hash on rows(hash_dedup) where status='CANDIDATE'")
     db.execute("create unique index eligible_url on rows(url_normalized) where status='CANDIDATE'")
     db.commit()
@@ -534,6 +558,7 @@ def rebuild(args: argparse.Namespace) -> dict[str, Any]:
         "AGENCY_ID_UNRESOLVED": "AGENCY_ID_UNRESOLVED.jsonl",
         "INVALID_OR_REJECTED": "INVALID_OR_REJECTED.jsonl",
         "DUPLICATE_OR_CONFLICT": "DUPLICATE_OR_CONFLICT.jsonl",
+        "WEB_NO_PROPIA": "WEB_NO_PROPIA.jsonl",
     }
     counts: dict[str, int] = {}
     for status, filename in outputs.items():

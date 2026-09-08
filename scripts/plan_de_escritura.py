@@ -31,8 +31,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from scripts.write_eligibility import NO_SON_WEB_PROPIA  # noqa: E402
 
 PLAN_VERSION = "plan_de_escritura_v1"
 
@@ -68,7 +73,35 @@ def _ultimos_por_clave(ruta: Path, clave: str) -> dict[str, dict[str, Any]]:
     return fuera
 
 
-def construir(certificacion: Path, geo: Path, preingestion: Path) -> dict[str, Any]:
+def agencias_con_web_ajena(directorio: Path) -> set[str]:
+    """Las inmobiliarias cuya web cargada NO es suya.
+
+    Una propiedad leida en la web de otro no es de esta inmobiliaria.
+    `Barreira Bienes Raices` tiene cargada
+    `comunidadinmobiliaria.com.ar/web/miembros/` -la pagina de socios de una
+    asociacion que comparten tres inmobiliarias- y 729 propiedades leidas de
+    ahi; `arte propiedades` tiene un perfil en el portal `lujanprop.com.ar` y
+    73. Publicarlas le atribuiria a una el inventario de las otras.
+
+    Es defensa en profundidad: la retencion tambien vive en la preingestion.
+    Aca se cuenta aparte porque este es el artefacto que se lee ANTES de
+    autorizar la escritura, y el numero que se autoriza tiene que ser el que se
+    va a escribir.
+    """
+    if not directorio.exists():
+        return set()
+    fuera = set()
+    for linea in directorio.read_text(encoding="utf-8").splitlines():
+        if not linea.strip():
+            continue
+        fila = json.loads(linea)
+        if fila.get("web_kind") in NO_SON_WEB_PROPIA:
+            fuera.add(fila["canonical_agency_id"])
+    return fuera
+
+
+def construir(certificacion: Path, geo: Path, preingestion: Path,
+              directorio: Path) -> dict[str, Any]:
     promocion = _ultimos_por_clave(certificacion / "AGENCY_PROMOTION_GATE.jsonl",
                                    "canonical_agency_id")
     seguras = [f for f in promocion.values()
@@ -84,8 +117,15 @@ def construir(certificacion: Path, geo: Path, preingestion: Path) -> dict[str, A
     vinculos = _contar_jsonl(certificacion / "AGENCY_MAIN_LINK_DRYRUN.jsonl")
     ciudades = _contar_jsonl(geo / "CIUDAD_DRYRUN_AUDIT.jsonl",
                              lambda f: f.get("apta_para_escritura"))
-    publicables = _contar_jsonl(preingestion / "PROPERTY_QUALITY_GATE.jsonl",
-                                lambda f: f.get("publicable"))
+    ajenas = agencias_con_web_ajena(directorio)
+    publicables = _contar_jsonl(
+        preingestion / "PROPERTY_QUALITY_GATE.jsonl",
+        lambda f: (f.get("publicable")
+                   and f.get("canonical_agency_id") not in ajenas))
+    retenidas_por_web_ajena = _contar_jsonl(
+        preingestion / "PROPERTY_QUALITY_GATE.jsonl",
+        lambda f: (f.get("publicable")
+                   and f.get("canonical_agency_id") in ajenas))
 
     pasos = [
         {
@@ -149,6 +189,11 @@ def construir(certificacion: Path, geo: Path, preingestion: Path) -> dict[str, A
             "invariante": "una propiedad real incompleta se escribe igual: lo "
                           "que falta le quita alcance, no existencia",
             "rollback": "borrar por hash_dedup las de este lote",
+            "retenidas_por_web_ajena": retenidas_por_web_ajena,
+            "por_que_se_retienen": (
+                "su inmobiliaria tiene cargada la web de un tercero -un portal, "
+                "un directorio o la pagina de socios de una asociacion-, asi "
+                "que lo leido ahi no es su inventario"),
             "por_que_primero": "depende de los pasos 1 y 2; sin ellos las "
                                "propiedades no se pueden asociar.",
         },
@@ -196,11 +241,13 @@ def main() -> int:
     ap.add_argument("--geo", default=r"D:\INMO CAPITAL\ERETZ_GEO")
     ap.add_argument("--preingestion",
                     default=r"D:\INMO CAPITAL\ERETZ_PREINGESTION_REBUILD_20260903")
+    ap.add_argument("--directorio",
+                    default=r"D:\INMO CAPITAL\agency_platform_directory.jsonl")
     ap.add_argument("--salida", default=r"D:\INMO CAPITAL\ERETZ_OPERACION")
     args = ap.parse_args()
 
     plan = construir(Path(args.certificacion), Path(args.geo),
-                     Path(args.preingestion))
+                     Path(args.preingestion), Path(args.directorio))
     salida = Path(args.salida)
     salida.mkdir(parents=True, exist_ok=True)
     (salida / "ERETZ_PLAN_DE_ESCRITURA.json").write_text(
