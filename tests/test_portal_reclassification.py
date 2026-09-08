@@ -155,3 +155,23 @@ def test_www_no_convierte_un_host_en_dos():
     por_host = agencias_por_host(filas)
     assert list(por_host) == ["alquenia.com"]
     assert clasificar(filas[0]["domain"], por_host, "A")[0] == PERFIL_PORTAL
+
+
+def test_la_raiz_del_host_manda_sobre_la_cuenta_de_agencias():
+    """`lujanprop.com.ar` aloja a 31 inmobiliarias y una sola figura en nuestro
+    padrón, así que la señal estructural -contar cuántas entidades reclaman el
+    host- no lo ve. La raíz se presenta como el portal y publica doce entradas
+    más bajo `/inmobiliaria/`."""
+    from scripts.reclassify_portal_profiles import PERFIL_PORTAL, clasificar
+
+    url = "https://lujanprop.com.ar/inmobiliaria/arte"
+    # Sin la evidencia de la raíz, el host pasa por dominio propio.
+    tipo, _ = clasificar(url, {"lujanprop.com.ar": ["ARTE PROPIEDADES"]},
+                         "ARTE PROPIEDADES")
+    assert tipo != PERFIL_PORTAL
+
+    tipo, motivo = clasificar(
+        url, {"lujanprop.com.ar": ["ARTE PROPIEDADES"]}, "ARTE PROPIEDADES",
+        perfil={"motivo": "el host publica 12 entradas mas bajo '/inmobiliaria'"})
+    assert tipo == PERFIL_PORTAL
+    assert "12 entradas" in motivo

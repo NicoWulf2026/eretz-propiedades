@@ -67,3 +67,61 @@ def test_la_presentacion_no_lee_el_cuerpo_entero():
         "<li>Arte Propiedades</li><li>Otra Propiedades</li></ul></body>")
     assert "Arte Propiedades" not in dicho
     assert se_presenta_como("Arte Propiedades", dicho) is None
+
+
+def test_el_host_que_indexa_inmobiliarias_enlaza_a_las_hermanas():
+    """`lujanprop.com.ar/inmobiliaria/arte` convive en el host con
+    `/inmobiliaria/46`, `/27` y `/33`: está organizado por inmobiliaria y la
+    url cargada es una entrada de esa lista, no un sitio."""
+    from scripts.agency_root_identity_probe import hermanos_de_perfil
+
+    html = ('<a href="/inmobiliaria/46">A</a><a href="/inmobiliaria/27">B</a>'
+            '<a href="/inmobiliaria/33">C</a><a href="/inmobiliaria/arte">yo</a>')
+    assert hermanos_de_perfil(html, "/inmobiliaria/arte") == ["27", "33", "46"]
+
+
+def test_las_secciones_del_sitio_propio_no_son_hermanas():
+    """`cuno.com.ar/Venta` tiene `/Alquiler` y `/Contacto` al lado, que son
+    secciones de su propio sitio. Se exige profundidad dos: el último tramo
+    tiene que ser un item ADENTRO de una colección nombrada."""
+    from scripts.agency_root_identity_probe import hermanos_de_perfil
+
+    propio = ('<a href="/Alquiler">x</a><a href="/Contacto">y</a>'
+              '<a href="/Nosotros">z</a>')
+    assert hermanos_de_perfil(propio, "/Venta") == []
+
+
+def test_una_coleccion_de_otra_profundidad_no_cuenta():
+    """Las fichas de propiedades de un sitio propio cuelgan de un prefijo
+    distinto: `/propiedad/123` no es hermana de `/inmobiliaria/arte`."""
+    from scripts.agency_root_identity_probe import hermanos_de_perfil
+
+    html = ('<a href="/propiedad/123">a</a><a href="/propiedad/124">b</a>'
+            '<a href="/propiedad/125">c</a>')
+    assert hermanos_de_perfil(html, "/inmobiliaria/arte") == []
+
+
+def test_solo_cuentan_las_hermanas_cuando_el_sitio_dice_que_son_inmobiliarias():
+    """Contar hermanas sin mirar la palabra confunde tres cosas: hermanas que
+    son agencias -la evidencia-, hermanas que son propiedades -que tiene
+    cualquier sitio propio- y hermanas que son secciones del sitio."""
+    from scripts.agency_root_identity_probe import indexa_inmobiliarias
+
+    assert indexa_inmobiliarias("/inmobiliaria/arte", ["46", "27", "33"])
+    assert indexa_inmobiliarias("/cordoba/inmobiliarias/kunze",
+                                ["boiago", "contigiani", "hosteria"])
+    # Las fichas de propiedades de un sitio propio no prueban nada.
+    assert not indexa_inmobiliarias(
+        "/propiedades/516284-x", ["516285-y", "516286-z", "516287-w"])
+    # Ni las secciones del sitio.
+    assert not indexa_inmobiliarias(
+        "/portal/agency_profile", ["home", "search", "favorites"])
+
+
+def test_la_paginacion_de_un_perfil_no_son_hermanas():
+    """`infocasas` numera las páginas del MISMO perfil: `.../pagina44`. Contadas
+    como hermanas, el perfil se delataría a sí mismo."""
+    from scripts.agency_root_identity_probe import indexa_inmobiliarias
+
+    assert not indexa_inmobiliarias("/inmobiliarias/caetano",
+                                    ["pagina44", "pagina45", "pagina46"])

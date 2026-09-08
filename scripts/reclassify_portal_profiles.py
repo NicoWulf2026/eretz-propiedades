@@ -141,7 +141,8 @@ def mismo_negocio(a: str, b: str) -> bool:
 
 
 def clasificar(url: str, por_host: dict, nombre: str,
-               observado: dict | None = None) -> tuple[str, str]:
+               observado: dict | None = None,
+               perfil: dict | None = None) -> tuple[str, str]:
     """Que ES esa url para esa inmobiliaria.
 
     `por_host` y `nombre` son obligatorios a proposito. Cuando eran opcionales,
@@ -154,6 +155,14 @@ def clasificar(url: str, por_host: dict, nombre: str,
     # Lo que se vio en el sitio manda sobre cualquier regla sobre el dominio.
     if observado:
         return NO_INMOBILIARIA, observado.get("motivo") or "el sitio no publica inmuebles"
+    # Y lo que se leyo en la RAIZ del host manda sobre la cuenta de agencias:
+    # `lujanprop.com.ar` aloja a 31 inmobiliarias y una sola figura en nuestro
+    # padron, asi que la senal estructural no lo ve. La raiz se presenta como
+    # el portal, no como la inmobiliaria, y publica 12 entradas mas bajo
+    # `/inmobiliaria/`. Ver `agency_root_identity_probe`.
+    if perfil:
+        return PERFIL_PORTAL, perfil.get("motivo") or (
+            "la raiz del host indexa inmobiliarias y la url cargada es una")
     if PORTALES.match(h):
         return PERFIL_PORTAL, f"{h} es un portal, directorio o red social"
     if REDES.match(h):
@@ -204,6 +213,9 @@ def main() -> int:
                     default=r"D:\INMO CAPITAL\RESIDUAL_SHAPES_FINAL.jsonl",
                     help="artefacto con las webs que se comprobo que no "
                          "publican inmuebles")
+    ap.add_argument("--raiz",
+                    default=r"D:\INMO CAPITAL\ERETZ_AGENCY_DATA\AGENCY_ROOT_IDENTITY.jsonl",
+                    help="evidencia leida en la raiz de cada host")
     ap.add_argument("--aplicar", action="store_true",
                     help="sin esto solo informa, no reescribe el directorio")
     a = ap.parse_args()
@@ -214,11 +226,16 @@ def main() -> int:
     for x in leer(Path(a.no_inmobiliarias)):
         if x.get("estado_final") == "WEB_NO_INMOBILIARIA":
             observadas[x["canonical_agency_id"]] = x
+    perfiles = {}
+    for x in leer(Path(a.raiz)):
+        if str(x.get("decision") or "").startswith("PERFIL_EN_UN_HOST"):
+            perfiles[x["canonical_agency_id"]] = x
     cambios = []
     for f in filas:
         tipo, motivo = clasificar(f.get("domain") or "", por_host,
                                   f.get("agency_name") or f["canonical_agency_id"],
-                                  observadas.get(f["canonical_agency_id"]))
+                                  observadas.get(f["canonical_agency_id"]),
+                                  perfiles.get(f["canonical_agency_id"]))
         anterior = f.get("web_kind")
         f["web_kind"] = tipo
         # El motivo viaja con la clasificacion. Sin el, el directorio dice que

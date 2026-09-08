@@ -60,6 +60,7 @@ from scripts.agency_official_web_gate import (GENERICAS,  # noqa: E402
 VERSION = "root_identity_probe_v1"
 
 PROPIO = "SITIO_PROPIO"
+PERFIL = "PERFIL_EN_UN_HOST_QUE_INDEXA_INMOBILIARIAS"
 NO_AFIRMABLE = "NO_SE_AFIRMA_QUE_SEA_SUYO"
 SIN_RESPUESTA = "LA_RAIZ_NO_RESPONDE"
 
@@ -68,6 +69,78 @@ SIN_RESPUESTA = "LA_RAIZ_NO_RESPONDE"
 # de pagina, los avisos y los nombres de todas las inmobiliarias listadas, que
 # es justamente lo que no se quiere leer.
 LARGO_DE_PRESENTACION = 600
+
+
+# Cuantas hermanas hacen falta para que la ruta sea un indice y no una pagina.
+# Con una es un sitio propio con una seccion; con tres el host esta organizado
+# por inmobiliaria, y la que cargamos es una entrada de esa lista.
+HERMANOS_PARA_SER_INDICE = 3
+
+# La palabra con la que el propio sitio nombra lo que indexa. Contar hermanas
+# sin mirarla confunde tres cosas distintas: hermanas que son AGENCIAS -que es
+# la evidencia-, hermanas que son PROPIEDADES -que tiene cualquier sitio
+# propio- y hermanas que son SECCIONES del sitio.
+#
+# Medido sobre las 18 que la cuenta sola marcaba: `realchatia.com/sunset/
+# propiedades/venta/...` y `redtuinmobiliaria.com/propiedades/...` tienen de
+# hermanas otras propiedades, y `turismomardelplata.gob.ar/ASP/SP/...` tiene
+# otras paginas del sitio. Ninguna de las tres prueba que el host aloje
+# inmobiliarias. Exigiendo la palabra quedan cinco, y las cinco se verifican a
+# mano: `micasamiento.com.ar/cordoba/inmobiliarias/kunze-asociados` es
+# directamente la pagina de OTRA inmobiliaria.
+#
+# Es una lista, pero de las que no crecen con el mercado: son las palabras que
+# significan "inmobiliaria" en una ruta, no los nombres de los portales.
+COLECCION_DE_INMOBILIARIAS = re.compile(
+    r"^(?:inmobiliaria|inmobiliarias|agencia|agencias|agency|agencies|"
+    r"agente|agentes|agents?|corredor|corredores|corretor|empresa|empresas|"
+    r"oficina|oficinas|broker|brokers)$", re.I)
+
+# `infocasas` numera las paginas del MISMO perfil: `.../caetano.../pagina44`.
+# Contadas como hermanas, el perfil se delataria a si mismo.
+PAGINACION = re.compile(r"^(?:p|pag|pagina|page)[-_]?\d+$", re.I)
+
+
+def indexa_inmobiliarias(ruta: str, hermanos: list[str]) -> bool:
+    """El sitio dice con su propia palabra que lo que lista son inmobiliarias."""
+    tramos = [s for s in ruta.split("/") if s]
+    if len(tramos) < 2:
+        return False
+    if not COLECCION_DE_INMOBILIARIAS.match(tramos[-2]):
+        return False
+    reales = [h for h in hermanos if not PAGINACION.match(h)]
+    return len(reales) >= HERMANOS_PARA_SER_INDICE
+
+
+def hermanos_de_perfil(html: str, ruta: str) -> list[str]:
+    """Otras entradas de la MISMA coleccion que la url cargada.
+
+    `lujanprop.com.ar/inmobiliaria/arte` tiene como prefijo `/inmobiliaria`, y
+    la pagina enlaza `/inmobiliaria/46`, `/27` y `/33`: el host esta organizado
+    por inmobiliaria. `cuno.com.ar/Venta` no tiene prefijo -su ruta es de un
+    solo tramo- y por eso no se le pregunta nada: sus hermanas serian `/Alquiler`
+    y `/Contacto`, que son secciones de su propio sitio y no otras agencias.
+
+    De ahi que se exija profundidad dos: el ultimo tramo tiene que ser un item
+    ADENTRO de una coleccion nombrada, no una seccion colgada de la raiz.
+    """
+    tramos = [s for s in ruta.split("/") if s]
+    if len(tramos) < 2:
+        return []
+    prefijo = "/" + "/".join(tramos[:-1])
+    propio = tramos[-1].lower()
+    vistos: set[str] = set()
+    for m in re.finditer(r'href=["\']([^"\']{1,400})', html or "", re.I):
+        camino = urllib.parse.urlparse(urllib.parse.urljoin("http://h/", m.group(1))).path
+        partes = [s for s in camino.split("/") if s]
+        if len(partes) != len(tramos):
+            continue
+        if "/" + "/".join(partes[:-1]) != prefijo:
+            continue
+        ultimo = partes[-1].lower()
+        if ultimo and ultimo != propio:
+            vistos.add(ultimo)
+    return sorted(vistos)
 
 
 def presentacion(html: str) -> str:
@@ -168,14 +241,33 @@ def main() -> int:
             continue
         dicho = presentacion(cuerpo)
         coincide = se_presenta_como(nombre, dicho)
+        # Las hermanas solo se buscan si la raiz NO dijo ser de esta
+        # inmobiliaria: en su propio sitio, una coleccion con muchas entradas
+        # son sus propiedades, no otras agencias.
+        hermanos: list[str] = []
+        if not coincide:
+            hermanos = hermanos_de_perfil(cuerpo, p.path)
+            if not indexa_inmobiliarias(p.path, hermanos):
+                try:    # la raiz puede no listar el indice; la pagina si
+                    hermanos = sorted(set(hermanos) | set(
+                        hermanos_de_perfil(descargador.bajar(f["domain"]), p.path)))
+                except Exception:
+                    pass
+        es_indice = indexa_inmobiliarias(p.path, hermanos)
         resultados.append({
             "canonical_agency_id": f["canonical_agency_id"],
             "agency_name": nombre, "url_cargada": f["domain"], "origen": origen,
-            "decision": PROPIO if coincide else NO_AFIRMABLE,
+            "decision": PROPIO if coincide else (PERFIL if es_indice else NO_AFIRMABLE),
             "presentacion": dicho,
             "coincidencia": coincide,
+            "hermanos": hermanos[:12],
+            "hermanos_contados": len(hermanos),
             "motivo": (f"la raiz se presenta con '{coincide}'" if coincide else
-                       "la raiz no se presenta con el nombre de esta inmobiliaria"),
+                       (f"el host publica {len(hermanos)} entradas mas bajo "
+                        f"'{p.path.strip('/').rsplit('/', 1)[0]}': lo que "
+                        f"indexa son inmobiliarias y la url cargada es una de "
+                        f"ellas" if es_indice else
+                        "la raiz no se presenta con el nombre de esta inmobiliaria")),
             "propiedades_extraidas": f.get("properties_normalized"),
             "version": VERSION, "database_writes": 0})
 
