@@ -25,7 +25,7 @@ ORIGENES = [o.strip() for o in
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ORIGENES,
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
     # Con `*` no se pueden permitir credenciales, y tampoco hacen falta: la
     # API no lee cookies ni sesiones.

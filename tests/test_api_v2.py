@@ -1,4 +1,5 @@
 """API v2: la forma del contrato y las dos reglas que la API hace cumplir."""
+
 from __future__ import annotations
 
 import json
@@ -14,21 +15,35 @@ sys.path.insert(0, str(RAIZ))
 
 def _documento(**cambios):
     base = {
-        "id": "h1", "source_url": "https://alfa.com.ar/p/1",
-        "agency_id": "roomix:alfa", "titulo": "Casa en Venta",
-        "descripcion": "Muy linda", "operacion": "venta",
-        "tipo_propiedad": "casa", "precio": 100000.0, "moneda": "USD",
-        "ambientes": 4, "dormitorios": 3, "banos": 2,
-        "superficie_total": None, "superficie_cubierta": 120.0,
-        "imagenes": [], "latitud": -31.4, "longitud": -64.2,
+        "id": "h1",
+        "source_url": "https://alfa.com.ar/p/1",
+        "agency_id": "roomix:alfa",
+        "titulo": "Casa en Venta",
+        "descripcion": "Muy linda",
+        "operacion": "venta",
+        "tipo_propiedad": "casa",
+        "precio": 100000.0,
+        "moneda": "USD",
+        "ambientes": 4,
+        "dormitorios": 3,
+        "banos": 2,
+        "superficie_total": None,
+        "superficie_cubierta": 120.0,
+        "imagenes": [],
+        "latitud": -31.4,
+        "longitud": -64.2,
         "geo": {
             "localidad": {"nombre": None, "id": None, "procedencia": "UNKNOWN"},
             "municipio": {"nombre": "La Calera"},
             "departamento": {"nombre": "Colon"},
             "provincia": {"nombre": "Cordoba"},
             "barrio": {"nombre": "Chacra del Norte"},
-            "area_busqueda": {"nivel": "MUNICIPIO", "nombre": "La Calera",
-                              "id": None, "origen": "municipio"},
+            "area_busqueda": {
+                "nivel": "MUNICIPIO",
+                "nombre": "La Calera",
+                "id": None,
+                "origen": "municipio",
+            },
             "estado": None,
         },
         "alcances": ["FICHA", "LISTADO", "AREA_BUSQUEDA", "FILTRO_PRECIO"],
@@ -58,41 +73,98 @@ def v2(tmp_path, monkeypatch):
     """)
     filas = [
         (_documento(), "MUNICIPIO", "La Calera", None),
-        (_documento(id="h2", titulo="Depto en Alquiler", operacion="alquiler",
-                    precio=None, moneda=None,
-                    geo=dict(_documento()["geo"],
-                             localidad={"nombre": "Rosario", "id": "82084010",
-                                        "procedencia": "CANONICAL_NORMALIZED"},
-                             area_busqueda={"nivel": "LOCALIDAD",
-                                            "nombre": "Rosario", "id": "82084010",
-                                            "origen": "localidad"})),
-         "LOCALIDAD", "Rosario", None),
-        (_documento(id="h3", titulo="Lote", operacion=None, precio=None,
-                    moneda=None, latitud=None, longitud=None,
-                    geo=dict(_documento()["geo"], estado="GEO_CONFLICT")),
-         "MUNICIPIO", "La Calera", "GEO_CONFLICT"),
+        (
+            _documento(
+                id="h2",
+                titulo="Depto en Alquiler",
+                operacion="alquiler",
+                precio=None,
+                moneda=None,
+                geo=dict(
+                    _documento()["geo"],
+                    localidad={
+                        "nombre": "Rosario",
+                        "id": "82084010",
+                        "procedencia": "CANONICAL_NORMALIZED",
+                    },
+                    area_busqueda={
+                        "nivel": "LOCALIDAD",
+                        "nombre": "Rosario",
+                        "id": "82084010",
+                        "origen": "localidad",
+                    },
+                ),
+            ),
+            "LOCALIDAD",
+            "Rosario",
+            None,
+        ),
+        (
+            _documento(
+                id="h3",
+                titulo="Lote",
+                operacion=None,
+                precio=None,
+                moneda=None,
+                latitud=None,
+                longitud=None,
+                geo=dict(_documento()["geo"], estado="GEO_CONFLICT"),
+            ),
+            "MUNICIPIO",
+            "La Calera",
+            "GEO_CONFLICT",
+        ),
     ]
     for doc, nivel, nombre, estado in filas:
         con.execute(
             "insert into propiedades values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,"
             "?,?,?,?,?,?,?,?,?,?,?)",
-            (doc["id"], doc["agency_id"], doc["source_url"], doc["titulo"],
-             doc["descripcion"], doc["operacion"], doc["tipo_propiedad"],
-             doc["precio"], doc["moneda"], doc["ambientes"], doc["dormitorios"],
-             doc["banos"], doc["superficie_total"], doc["superficie_cubierta"],
-             len(doc["imagenes"]), doc["latitud"], doc["longitud"],
-             doc["geo"]["localidad"]["nombre"], doc["geo"]["localidad"].get("id"),
-             doc["geo"]["municipio"]["nombre"], doc["geo"]["departamento"]["nombre"],
-             doc["geo"]["provincia"]["nombre"], doc["geo"]["barrio"]["nombre"],
-             nivel, nombre, estado,
-             json.dumps(doc["alcances"]), json.dumps(doc, ensure_ascii=False)))
-        con.execute("insert into busqueda values (?,?,?,?,?)",
-                    (doc["id"], doc["titulo"] or "", doc["descripcion"] or "",
-                     doc["geo"]["barrio"]["nombre"] or "", nombre or ""))
+            (
+                doc["id"],
+                doc["agency_id"],
+                doc["source_url"],
+                doc["titulo"],
+                doc["descripcion"],
+                doc["operacion"],
+                doc["tipo_propiedad"],
+                doc["precio"],
+                doc["moneda"],
+                doc["ambientes"],
+                doc["dormitorios"],
+                doc["banos"],
+                doc["superficie_total"],
+                doc["superficie_cubierta"],
+                len(doc["imagenes"]),
+                doc["latitud"],
+                doc["longitud"],
+                doc["geo"]["localidad"]["nombre"],
+                doc["geo"]["localidad"].get("id"),
+                doc["geo"]["municipio"]["nombre"],
+                doc["geo"]["departamento"]["nombre"],
+                doc["geo"]["provincia"]["nombre"],
+                doc["geo"]["barrio"]["nombre"],
+                nivel,
+                nombre,
+                estado,
+                json.dumps(doc["alcances"]),
+                json.dumps(doc, ensure_ascii=False),
+            ),
+        )
+        con.execute(
+            "insert into busqueda values (?,?,?,?,?)",
+            (
+                doc["id"],
+                doc["titulo"] or "",
+                doc["descripcion"] or "",
+                doc["geo"]["barrio"]["nombre"] or "",
+                nombre or "",
+            ),
+        )
     con.commit()
     con.close()
 
     from api import v2 as modulo
+
     monkeypatch.setattr(modulo, "SNAPSHOT", ruta)
     return modulo
 
@@ -100,10 +172,22 @@ def v2(tmp_path, monkeypatch):
 def test_una_propiedad_incompleta_se_devuelve_igual(v2):
     """Lo que falta le quita ALCANCE, no existencia. El frontend esconde el
     filtro, nunca la propiedad."""
-    r = v2.listar(operacion=None, tipo=None, moneda=None, precio_min=None,
-                  precio_max=None, area=None, nivel=None, localidad=None,
-                  barrio=None, agencia=None, ambientes=None, dormitorios=None,
-                  limit=24, offset=0)
+    r = v2.listar(
+        operacion=None,
+        tipo=None,
+        moneda=None,
+        precio_min=None,
+        precio_max=None,
+        area=None,
+        nivel=None,
+        localidad=None,
+        barrio=None,
+        agencia=None,
+        ambientes=None,
+        dormitorios=None,
+        limit=24,
+        offset=0,
+    )
     assert r["total"] == 3
     sin_precio = [p for p in r["data"] if p["precio"] is None]
     assert sin_precio, "las propiedades sin precio tienen que seguir viniendo"
@@ -112,10 +196,22 @@ def test_una_propiedad_incompleta_se_devuelve_igual(v2):
 def test_el_area_siempre_viaja_con_su_nivel(v2):
     """Un municipio devuelto sin decir que es un municipio se lee como una
     ciudad, y ahí es donde se inventa geografía."""
-    r = v2.listar(operacion=None, tipo=None, moneda=None, precio_min=None,
-                  precio_max=None, area=None, nivel=None, localidad=None,
-                  barrio=None, agencia=None, ambientes=None, dormitorios=None,
-                  limit=24, offset=0)
+    r = v2.listar(
+        operacion=None,
+        tipo=None,
+        moneda=None,
+        precio_min=None,
+        precio_max=None,
+        area=None,
+        nivel=None,
+        localidad=None,
+        barrio=None,
+        agencia=None,
+        ambientes=None,
+        dormitorios=None,
+        limit=24,
+        offset=0,
+    )
     for propiedad in r["data"]:
         assert propiedad["geo"]["area_busqueda"]["nivel"]
 
@@ -138,10 +234,22 @@ def test_las_areas_se_ordenan_de_mas_precisa_a_menos(v2):
 def test_el_filtro_por_precio_exige_moneda(v2):
     """Un precio sin moneda no es un precio: filtrar por rango sin exigirla
     mezclaría 90.000 dólares con 90.000 pesos."""
-    r = v2.listar(operacion=None, tipo=None, moneda=None, precio_min=1,
-                  precio_max=None, area=None, nivel=None, localidad=None,
-                  barrio=None, agencia=None, ambientes=None, dormitorios=None,
-                  limit=24, offset=0)
+    r = v2.listar(
+        operacion=None,
+        tipo=None,
+        moneda=None,
+        precio_min=1,
+        precio_max=None,
+        area=None,
+        nivel=None,
+        localidad=None,
+        barrio=None,
+        agencia=None,
+        ambientes=None,
+        dormitorios=None,
+        limit=24,
+        offset=0,
+    )
     assert all(p["moneda"] for p in r["data"])
 
 
@@ -155,14 +263,38 @@ def test_la_busqueda_no_depende_de_la_localidad(v2):
 def test_la_paginacion_no_repite_ni_saltea(v2):
     """Sin un desempate por id, dos páginas consecutivas pueden repetir o
     saltear una propiedad."""
-    a = v2.listar(operacion=None, tipo=None, moneda=None, precio_min=None,
-                  precio_max=None, area=None, nivel=None, localidad=None,
-                  barrio=None, agencia=None, ambientes=None, dormitorios=None,
-                  limit=2, offset=0)
-    b = v2.listar(operacion=None, tipo=None, moneda=None, precio_min=None,
-                  precio_max=None, area=None, nivel=None, localidad=None,
-                  barrio=None, agencia=None, ambientes=None, dormitorios=None,
-                  limit=2, offset=2)
+    a = v2.listar(
+        operacion=None,
+        tipo=None,
+        moneda=None,
+        precio_min=None,
+        precio_max=None,
+        area=None,
+        nivel=None,
+        localidad=None,
+        barrio=None,
+        agencia=None,
+        ambientes=None,
+        dormitorios=None,
+        limit=2,
+        offset=0,
+    )
+    b = v2.listar(
+        operacion=None,
+        tipo=None,
+        moneda=None,
+        precio_min=None,
+        precio_max=None,
+        area=None,
+        nivel=None,
+        localidad=None,
+        barrio=None,
+        agencia=None,
+        ambientes=None,
+        dormitorios=None,
+        limit=2,
+        offset=2,
+    )
     ids = [p["id"] for p in a["data"]] + [p["id"] for p in b["data"]]
     assert len(ids) == len(set(ids)) == 3
 
@@ -190,6 +322,7 @@ def test_los_filtros_dicen_cuantas_faltan(v2):
 
 def test_una_propiedad_inexistente_es_404(v2):
     from fastapi import HTTPException
+
     with pytest.raises(HTTPException) as e:
         v2.detalle("no-existe")
     assert e.value.status_code == 404
@@ -200,6 +333,7 @@ def test_sin_snapshot_la_api_lo_dice(tmp_path, monkeypatch):
     from fastapi import HTTPException
 
     from api import v2 as modulo
+
     monkeypatch.setattr(modulo, "SNAPSHOT", tmp_path / "no-existe.sqlite3")
     with pytest.raises(HTTPException) as e:
         modulo.stats()
@@ -207,7 +341,7 @@ def test_sin_snapshot_la_api_lo_dice(tmp_path, monkeypatch):
 
 
 def test_la_busqueda_ignora_acentos_y_puntuacion(v2):
-    """"cordoba" y "Córdoba" son la misma búsqueda, y un guión en la caja no
+    """ "cordoba" y "Córdoba" son la misma búsqueda, y un guión en la caja no
     puede hacer fallar la consulta con un error de sintaxis de FTS."""
     from api.v2 import _termino
 
@@ -215,10 +349,8 @@ def test_la_busqueda_ignora_acentos_y_puntuacion(v2):
     assert _termino("") == '""'
     assert _termino("***") == '""'
 
-    con_acento = v2.buscar(q="Cordoba", operacion=None, tipo=None,
-                           limit=5, offset=0)["total"]
-    sin_acento = v2.buscar(q="córdoba", operacion=None, tipo=None,
-                           limit=5, offset=0)["total"]
+    con_acento = v2.buscar(q="Cordoba", operacion=None, tipo=None, limit=5, offset=0)["total"]
+    sin_acento = v2.buscar(q="córdoba", operacion=None, tipo=None, limit=5, offset=0)["total"]
     assert con_acento == sin_acento
 
 
@@ -231,14 +363,199 @@ def test_una_snapshot_vieja_lo_dice_en_vez_de_romperse(tmp_path, monkeypatch):
 
     ruta = tmp_path / "vieja.sqlite3"
     con = s.connect(ruta)
-    con.execute("create table propiedades (id text primary key, "
-                "operacion text, tipo_propiedad text, documento text)")
+    con.execute(
+        "create table propiedades (id text primary key, "
+        "operacion text, tipo_propiedad text, documento text)"
+    )
     con.commit()
     con.close()
 
     from api import v2 as modulo
+
     monkeypatch.setattr(modulo, "SNAPSHOT", ruta)
     with pytest.raises(HTTPException) as e:
         modulo.buscar(q="algo", operacion=None, tipo=None, limit=5, offset=0)
     assert e.value.status_code == 503
     assert "api_snapshot" in e.value.detail
+
+
+def _buscar_combinado(v2, **changes):
+    args = dict(
+        q=None,
+        operacion=None,
+        tipo=None,
+        moneda=None,
+        precio_min=None,
+        precio_max=None,
+        area=None,
+        nivel=None,
+        localidad=None,
+        municipio=None,
+        departamento=None,
+        provincia=None,
+        barrio=None,
+        ambientes=None,
+        dormitorios=None,
+        banos=None,
+        superficie_min=None,
+        sort="relevance",
+        limit=24,
+        offset=0,
+    )
+    args.update(changes)
+    return v2.buscar(**args)
+
+
+def test_explorer_combina_texto_filtros_geografia_y_total(v2):
+    result = _buscar_combinado(
+        v2,
+        q="Casa",
+        operacion="venta",
+        tipo="casa",
+        area="La Calera",
+        nivel="MUNICIPIO",
+        dormitorios=3,
+        banos=2,
+        superficie_min=100,
+    )
+    assert result["total"] == 1
+    assert result["data"][0]["id"] == "h1"
+    assert result["sort"] == "relevance"
+
+
+def test_explorer_ordena_precio_sin_convertirlo_en_ranking(v2):
+    asc = _buscar_combinado(v2, moneda="USD", sort="price_asc")
+    desc = _buscar_combinado(v2, moneda="USD", sort="price_desc")
+    assert [item["precio"] for item in asc["data"]] == [100000.0]
+    assert [item["precio"] for item in desc["data"]] == [100000.0]
+    assert asc["ranking"] is None and desc["ranking"] is None
+
+
+def test_explorer_rechaza_sort_y_geografia_invalidos(v2):
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as error:
+        _buscar_combinado(v2, sort="inventado")
+    assert error.value.status_code == 400
+    with pytest.raises(HTTPException) as error:
+        _buscar_combinado(v2, area="Rosario", nivel="CIUDAD")
+    assert error.value.status_code == 400
+    with pytest.raises(HTTPException) as error:
+        _buscar_combinado(v2, sort="price_asc")
+    assert error.value.status_code == 400
+
+
+def test_mapa_aplica_viewport_filtros_y_declara_truncamiento(v2):
+    args = dict(
+        north=-30.0,
+        south=-33.0,
+        east=-63.0,
+        west=-65.0,
+        q=None,
+        operacion=None,
+        tipo=None,
+        moneda=None,
+        precio_min=None,
+        precio_max=None,
+        area=None,
+        nivel=None,
+        localidad=None,
+        municipio=None,
+        departamento=None,
+        provincia=None,
+        barrio=None,
+        ambientes=None,
+        dormitorios=None,
+        banos=None,
+        superficie_min=None,
+    )
+    result = v2.mapa(**args, limit=1)
+    assert result["total_matches"] == 3
+    assert result["viewport_matches"] == 2
+    assert result["returned_points"] == 1
+    assert result["truncated"] is True
+    assert result["data"][0]["id"] == "h1"
+    empty = v2.mapa(**dict(args, north=-40, south=-41), limit=1)
+    assert empty["viewport_matches"] == 0 and empty["data"] == []
+
+
+def test_detail_resuelve_alias_publico_sin_cambiar_id_canonico(v2):
+    con = sqlite3.connect(v2.SNAPSHOT)
+    con.execute("create table property_aliases(alias text primary key, property_id text not null)")
+    con.execute("insert into property_aliases values ('123', 'h1')")
+    con.commit()
+    con.close()
+    assert v2.detalle("123")["id"] == "h1"
+
+
+def test_agencia_publica_no_inventa_contacto(v2):
+    result = v2.agencia_detalle("roomix:alfa")["data"]
+    assert result["name"] == "alfa"
+    assert result["contact"] == {
+        "status": "UNAVAILABLE",
+        "phone": None,
+        "whatsapp": None,
+        "email": None,
+    }
+
+
+def test_batch_preserva_orden_deduplica_y_declara_faltantes(v2):
+    result = v2.propiedades_batch(v2.BatchRequest(ids=["h2", "missing", "h1", "h2"]))
+    assert [item["id"] for item in result["items"]] == ["h2", "h1"]
+    assert result["requested_ids"] == ["h2", "missing", "h1"]
+    assert result["missing_ids"] == ["missing"]
+
+
+def test_openapi_formaliza_cutovers_y_valida_respuestas(v2):
+    from fastapi.testclient import TestClient
+    from api.main import app
+
+    client = TestClient(app)
+    search = client.get("/v2/buscar", params={"q": "Casa", "limit": 2})
+    assert search.status_code == 200
+    assert search.json()["sort"] == "relevance"
+    map_response = client.get(
+        "/v2/propiedades/mapa",
+        params={"north": -30, "south": -33, "east": -63, "west": -65, "limit": 1},
+    )
+    assert map_response.status_code == 200
+    batch = client.post("/v2/propiedades/batch", json={"ids": ["h2", "missing"]})
+    assert batch.status_code == 200
+    assert batch.json()["missing_ids"] == ["missing"]
+
+    schema = client.get("/openapi.json").json()
+    assert schema["paths"]["/v2/buscar"]["get"]["responses"]["200"]["content"]
+    assert schema["paths"]["/v2/propiedades/mapa"]["get"]["responses"]["200"]["content"]
+    assert schema["paths"]["/v2/propiedades/batch"]["post"]["responses"]["200"]["content"]
+
+
+def test_batch_rechaza_payload_sobredimensionado(v2):
+    from fastapi.testclient import TestClient
+    from api.main import app
+
+    response = TestClient(app).post(
+        "/v2/propiedades/batch", json={"ids": [f"id-{index}" for index in range(101)]}
+    )
+    assert response.status_code == 422
+
+
+def test_http_rechaza_sort_bounds_y_combinaciones_abusivas(v2):
+    from fastapi.testclient import TestClient
+    from api.main import app
+
+    client = TestClient(app)
+    assert client.get("/v2/buscar", params={"sort": "random"}).status_code == 422
+    assert client.get("/v2/buscar", params={"sort": "price_asc"}).status_code == 400
+    assert client.get("/v2/buscar", params={"nivel": "CIUDAD"}).status_code == 400
+    assert (
+        client.get(
+            "/v2/propiedades/mapa", params={"north": 91, "south": -35, "east": -58, "west": -59}
+        ).status_code
+        == 422
+    )
+    assert (
+        client.get(
+            "/v2/propiedades/mapa", params={"north": -35, "south": -34, "east": -58, "west": -59}
+        ).status_code
+        == 400
+    )
