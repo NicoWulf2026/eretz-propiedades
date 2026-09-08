@@ -16,6 +16,12 @@ async function handleGET(request: Request) {
       searchProperties({ ...filters, cursor: "", page: 1 }),
       getPreviewQualityGate(),
     ]);
+    if (result.error || !gate.enabled) {
+      return NextResponse.json(
+        { error: "No pudimos obtener los conteos." },
+        { status: 503, headers: { "Cache-Control": "no-store" } },
+      );
+    }
     return NextResponse.json(
       {
         totalCount: gate.visibleCount,
@@ -28,7 +34,10 @@ async function handleGET(request: Request) {
       { headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=120" } },
     );
   } catch {
-    return NextResponse.json({ error: "No pudimos obtener los conteos." }, { status: 503 });
+    return NextResponse.json(
+      { error: "No pudimos obtener los conteos." },
+      { status: 503, headers: { "Cache-Control": "no-store" } },
+    );
   }
 }
 

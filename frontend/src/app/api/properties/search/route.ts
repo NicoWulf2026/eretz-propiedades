@@ -10,6 +10,9 @@ async function handleGET(request: Request) {
   const filters = parsePropertyFilters(Object.fromEntries(url.searchParams.entries()));
   try {
     const result = await searchProperties(filters);
+    if (result.error) {
+      return NextResponse.json(result, { status: 503, headers: { "Cache-Control": "no-store" } });
+    }
     return NextResponse.json(result, {
       headers: { "Cache-Control": "private, max-age=20, stale-while-revalidate=40" },
     });
