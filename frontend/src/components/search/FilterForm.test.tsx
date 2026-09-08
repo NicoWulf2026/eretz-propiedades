@@ -133,6 +133,19 @@ describe("FilterForm — filtros alineados con datos públicos reales", () => {
     expect(params.get("area_nivel")).toBeNull();
   });
 
+  it("descarta metadata de área obsoleta cuando cambia la geografía manual", () => {
+    const form = new FormData();
+    form.set("area_nivel", "MUNICIPIO");
+    form.set("area_nombre", "La Calera");
+    form.set("area_id", "area-1");
+    form.set("ubicaciones", "Rosario");
+    const params = buildFilterSearchParams(form);
+    expect(params.get("ubicaciones")).toBe("Rosario");
+    expect(params.get("area_nivel")).toBeNull();
+    expect(params.get("area_nombre")).toBeNull();
+    expect(params.get("area_id")).toBeNull();
+  });
+
   it("una búsqueda rápida conserva filtros avanzados y viewport ya aplicados", () => {
     const filtersWithState = parsePropertyFilters({
       ciudad: "Rosario", moneda: "USD", precio_max: "180000",

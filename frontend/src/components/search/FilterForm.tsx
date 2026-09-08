@@ -88,6 +88,20 @@ export function buildFilterSearchParams(form: FormData): URLSearchParams {
     return params;
   }
 
+  const currentAreaLevel = params.get("area_nivel");
+  const currentAreaName = params.get("area_nombre");
+  if (currentAreaLevel && currentAreaName) {
+    const mirroredValue = currentAreaLevel === "PROVINCIA" ? params.get("provincia") : params.get("ubicaciones");
+    const mirrorsSelectedArea = mirroredValue?.toLocaleLowerCase("es-AR") === currentAreaName.toLocaleLowerCase("es-AR");
+    if (!mirrorsSelectedArea) {
+      params.delete("area_nivel");
+      params.delete("area_nombre");
+      params.delete("area_id");
+    }
+  }
+
+  if (params.has("barrio_canonico") && !params.has("barrio")) params.delete("barrio_canonico");
+
   if (!query) return params;
   const interpreted = interpretNaturalQuery(query);
   const skipped = new Set(form.getAll("__nl_skip").map(String));

@@ -47,6 +47,15 @@ const triStates = new Set<TriState>(["si", "no", "sininfo"]);
 
 export type SearchParams = Record<string, string | string[] | undefined>;
 
+export function urlSearchParamsToSearchParams(params: URLSearchParams): SearchParams {
+  const normalized: SearchParams = {};
+  for (const key of new Set(params.keys())) {
+    const values = params.getAll(key);
+    normalized[key] = values.length > 1 ? values : values[0];
+  }
+  return normalized;
+}
+
 const operations = new Set<PropertyOperation>([
   "venta",
   "alquiler",

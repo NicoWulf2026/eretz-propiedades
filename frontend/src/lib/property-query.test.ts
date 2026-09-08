@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { filtersToSearchParams, parsePropertyFilters } from "@/lib/property-query";
+import { filtersToSearchParams, parsePropertyFilters, urlSearchParamsToSearchParams } from "@/lib/property-query";
 
 describe("property query", () => {
   it("parses and serializes shareable filters", () => {
@@ -28,6 +28,13 @@ describe("property query", () => {
     const filters = parsePropertyFilters({ q: "foo),estado.eq.inactiva", pagina: "999999" });
     expect(filters.q).not.toMatch(/[(),]/);
     expect(filters.page).toBe(1);
+  });
+
+  it("normalizes duplicated URL parameters consistently and deterministically", () => {
+    const params = new URLSearchParams("operacion=venta&operacion=alquiler&ubicaciones=Palermo&ubicaciones=Belgrano");
+    const filters = parsePropertyFilters(urlSearchParamsToSearchParams(params));
+    expect(filters.operation).toBe("venta");
+    expect(filters.locations).toEqual(["Palermo", "Belgrano"]);
   });
 
   it("round-trips viewport, map mode and supported data filters", () => {

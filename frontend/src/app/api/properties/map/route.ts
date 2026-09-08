@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { parsePropertyFilters } from "@/lib/property-query";
+import { parsePropertyFilters, urlSearchParamsToSearchParams } from "@/lib/property-query";
 import { searchMap } from "@/lib/property-service";
 import { withObservability } from "@/lib/observability/route";
 
@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 async function handleGET(request: Request) {
   const url = new URL(request.url);
-  const filters = parsePropertyFilters(Object.fromEntries(url.searchParams.entries()));
+  const filters = parsePropertyFilters(urlSearchParamsToSearchParams(url.searchParams));
   if (!filters.viewport) {
     return NextResponse.json({ error: "La zona del mapa no es válida." }, { status: 400 });
   }
