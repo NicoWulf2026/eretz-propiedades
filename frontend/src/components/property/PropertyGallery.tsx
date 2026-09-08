@@ -71,7 +71,7 @@ export function PropertyGallery({ images, title }: { images: string[]; title: st
         {images.length > 1 && (
           <div className="ficha-gallery-side" aria-hidden="true">
             {images.slice(1, 5).map((src, index) => (
-              <button key={src} type="button" className="ficha-gallery-tile"
+              <button key={`${src}-${index}`} type="button" className="ficha-gallery-tile"
                       onClick={() => { setSelected(index + 1); setModal(true); }} tabIndex={-1}>
                 <PropertyImage src={src} alt="" />
               </button>

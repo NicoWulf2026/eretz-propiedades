@@ -64,6 +64,23 @@ describe("PropertyCard", () => {
     expect(screen.getByRole("img", { name: "Imagen no disponible" })).toBeInTheDocument();
   });
 
+  it("renders known zero values instead of replacing them with unknown fallbacks", () => {
+    const property = mapSupabasePropertyToProperty({
+      ...completeRow,
+      precio: 0,
+      ambientes: null,
+      dormitorios: 0,
+      banos: 0,
+      cocheras: null,
+      superficie_total: 0,
+    });
+    render(<PropertyCard property={property} />);
+    expect(document.querySelector(".card-price")?.textContent?.replace(/\s+/g, " ").trim()).toBe("USD 0");
+    expect(screen.getByText("0 dorm.")).toBeInTheDocument();
+    expect(screen.getByText("0 baños")).toBeInTheDocument();
+    expect(screen.getByText("0 m² tot.")).toBeInTheDocument();
+  });
+
   it("separa la previsualización por hover de la selección intencional", () => {
     const onPreview = vi.fn();
     const onCommit = vi.fn();

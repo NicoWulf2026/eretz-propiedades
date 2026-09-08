@@ -16,7 +16,7 @@ export function PriceTag({
   consultLabel?: string;
 }) {
   const text = propertyPrice(property);
-  if (!property.price || !property.currency) {
+  if (property.price === null || !property.currency) {
     return <p className={`price price-consult ${className}`.trim()}>{consultLabel ?? text}</p>;
   }
   const amount = text.slice(property.currency.length).trim();
