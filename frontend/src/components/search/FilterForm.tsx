@@ -6,6 +6,7 @@ import { activeChips } from "@/components/explorer/ActiveChips";
 import { FILTER_GROUPS, filterGroupCounts } from "@/lib/filter-groups";
 import { interpretNaturalQuery } from "@/lib/nl-search";
 import { filtersToSearchParams } from "@/lib/property-query";
+import type { DiscoveryFilterMetadataState } from "@/lib/discovery-contract";
 import type { PropertyFilters, SearchSuggestion } from "@/types/property";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -115,7 +116,17 @@ function quickLabel(prefix: string, values: Array<number | null>, fallback: stri
   return chosen.length ? `${prefix}: ${chosen.join(" / ")}+` : fallback;
 }
 
-function QuickSelectors({ filters, onOpenGroup }: { filters: PropertyFilters; onOpenGroup: (group: string) => void }) {
+function facetCount(state: DiscoveryFilterMetadataState | null, facet: "operations" | "propertyTypes" | "currencies", value: string | string[]): number | null {
+  const accepted = (Array.isArray(value) ? value : [value]).map((item) => item.toLocaleLowerCase("es-AR"));
+  const match = state?.metadata?.[facet].find((item) => accepted.includes(String(item.value).toLocaleLowerCase("es-AR")));
+  return match?.propertyCount ?? null;
+}
+
+function optionLabel(label: string, count: number | null): string {
+  return count === null ? label : `${label} (${count.toLocaleString("es-AR")})`;
+}
+
+function QuickSelectors({ filters, onOpenGroup, filterMetadata }: { filters: PropertyFilters; onOpenGroup: (group: string) => void; filterMetadata: DiscoveryFilterMetadataState | null }) {
   const price = filters.minPrice !== null || filters.maxPrice !== null
     ? [filters.currency || null, filters.minPrice !== null ? `desde ${filters.minPrice.toLocaleString("es-AR")}` : null, filters.maxPrice !== null ? `hasta ${filters.maxPrice.toLocaleString("es-AR")}` : null].filter(Boolean).join(" ")
     : "Precio";
@@ -124,24 +135,24 @@ function QuickSelectors({ filters, onOpenGroup }: { filters: PropertyFilters; on
       <SearchAutocomplete defaultValue={filters.q} />
       <select aria-label="Operación" name="operacion" defaultValue={filters.operation}>
         <option value="">Operación</option>
-        <option value="venta">Comprar</option>
-        <option value="alquiler">Alquilar</option>
-        <option value="temporario">Temporario</option>
-        <option value="venta_y_alquiler">Venta y alquiler</option>
-        <option value="consultar">Consultar</option>
+        <option value="venta">{optionLabel("Comprar", facetCount(filterMetadata, "operations", "venta"))}</option>
+        <option value="alquiler">{optionLabel("Alquilar", facetCount(filterMetadata, "operations", "alquiler"))}</option>
+        <option value="temporario">{optionLabel("Temporario", facetCount(filterMetadata, "operations", ["alquiler_temporario", "temporario"]))}</option>
+        <option value="venta_y_alquiler">{optionLabel("Venta y alquiler", facetCount(filterMetadata, "operations", "venta_y_alquiler"))}</option>
+        <option value="consultar">{optionLabel("Consultar", facetCount(filterMetadata, "operations", "consultar"))}</option>
       </select>
       <select aria-label="Tipo de propiedad" name="tipo" defaultValue={filters.propertyType}>
         <option value="">Tipo</option>
-        <option value="departamento">Departamento</option>
-        <option value="casa">Casa</option>
-        <option value="ph">PH</option>
-        <option value="terreno">Terreno</option>
-        <option value="oficina">Oficina</option>
-        <option value="local">Local</option>
-        <option value="cochera">Cochera</option>
-        <option value="galpon">Galpón</option>
-        <option value="campo">Campo</option>
-        <option value="otro">Otro</option>
+        <option value="departamento">{optionLabel("Departamento", facetCount(filterMetadata, "propertyTypes", "departamento"))}</option>
+        <option value="casa">{optionLabel("Casa", facetCount(filterMetadata, "propertyTypes", "casa"))}</option>
+        <option value="ph">{optionLabel("PH", facetCount(filterMetadata, "propertyTypes", "ph"))}</option>
+        <option value="terreno">{optionLabel("Terreno", facetCount(filterMetadata, "propertyTypes", "terreno"))}</option>
+        <option value="oficina">{optionLabel("Oficina", facetCount(filterMetadata, "propertyTypes", "oficina"))}</option>
+        <option value="local">{optionLabel("Local", facetCount(filterMetadata, "propertyTypes", "local"))}</option>
+        <option value="cochera">{optionLabel("Cochera", facetCount(filterMetadata, "propertyTypes", "cochera"))}</option>
+        <option value="galpon">{optionLabel("Galpón", facetCount(filterMetadata, "propertyTypes", "galpon"))}</option>
+        <option value="campo">{optionLabel("Campo", facetCount(filterMetadata, "propertyTypes", "campo"))}</option>
+        <option value="otro">{optionLabel("Otro", facetCount(filterMetadata, "propertyTypes", "otro"))}</option>
       </select>
       <button className="quick-filter-button" type="button" onClick={() => onOpenGroup("precio")}>{price}</button>
       <button className="quick-filter-button" type="button" onClick={() => onOpenGroup("caracteristicas")}>
@@ -151,7 +162,7 @@ function QuickSelectors({ filters, onOpenGroup }: { filters: PropertyFilters; on
   );
 }
 
-export function AdvancedFilterFields({ filters, idPrefix = "filter-group" }: { filters: PropertyFilters; idPrefix?: string }) {
+export function AdvancedFilterFields({ filters, idPrefix = "filter-group", filterMetadata = null }: { filters: PropertyFilters; idPrefix?: string; filterMetadata?: DiscoveryFilterMetadataState | null }) {
   const counts = filterGroupCounts(filters);
   return (
     <>
@@ -162,7 +173,7 @@ export function AdvancedFilterFields({ filters, idPrefix = "filter-group" }: { f
         <Field label="Varias ubicaciones (separadas por comas)"><input name="ubicaciones" defaultValue={filters.locations.join(", ")} placeholder="Palermo, Belgrano, Núñez" /></Field>
       </FilterGroup>
       <FilterGroup id="precio" prefix={idPrefix} label={FILTER_GROUPS[1].label} hint="La falta de precio nunca se interpreta como cero" count={counts.precio} level="Acceso rápido">
-        <Field label="Moneda"><select name="moneda" defaultValue={filters.currency}><option value="">Cualquiera</option><option>USD</option><option>ARS</option><option>EUR</option><option>UYU</option></select></Field>
+        <Field label="Moneda"><select name="moneda" defaultValue={filters.currency}><option value="">Cualquiera</option><option value="USD">{optionLabel("USD", facetCount(filterMetadata, "currencies", "USD"))}</option><option value="ARS">{optionLabel("ARS", facetCount(filterMetadata, "currencies", "ARS"))}</option><option value="EUR">{optionLabel("EUR", facetCount(filterMetadata, "currencies", "EUR"))}</option><option value="UYU">{optionLabel("UYU", facetCount(filterMetadata, "currencies", "UYU"))}</option></select></Field>
         <Field label="Desde"><input name="precio_min" inputMode="numeric" type="number" min="0" defaultValue={filters.minPrice ?? ""} /></Field>
         <Field label="Hasta"><input name="precio_max" inputMode="numeric" type="number" min="0" defaultValue={filters.maxPrice ?? ""} /></Field>
         <Field label="Estado del precio"><select name="precio" defaultValue={filters.priceMode}><option value="">Todos, incluso a consultar</option><option value="with">Con precio publicado</option><option value="consult">Sólo a consultar</option></select></Field>
@@ -186,7 +197,10 @@ export function AdvancedFilterFields({ filters, idPrefix = "filter-group" }: { f
         <Field label="Orden"><select name="orden" defaultValue={filters.sort}><option value="recent">Incorporadas recientemente</option><option value="price_asc" disabled={!filters.currency}>Menor precio</option><option value="price_desc" disabled={!filters.currency}>Mayor precio</option><option value="area_desc">Mayor superficie</option><option value="rooms_desc">Más ambientes</option><option value="price_m2_asc" disabled={!filters.currency}>Menor precio por m²</option>{filters.near ? <option value="nearest">Más cercanas</option> : null}</select></Field>
       </FilterGroup>
       {!filters.currency && (filters.sort === "price_asc" || filters.sort === "price_desc" || filters.sort === "price_m2_asc") ? <p className="filter-warning">Elegí una moneda para comparar precios sin mezclar unidades.</p> : null}
-      <p className="filter-data-note">ERETZ sólo muestra filtros respaldados por el catálogo actual. Los datos desconocidos no se convierten en “No”.</p>
+      {filterMetadata?.status === "FAILURE" ? <p className="filter-data-note" role="alert">No pudimos actualizar las cantidades del catálogo. Los filtros existentes siguen disponibles.</p>
+        : filterMetadata?.status === "SUCCESS_EMPTY" ? <p className="filter-data-note" role="status">El catálogo no informó cantidades para estos filtros.</p>
+          : filterMetadata?.status === "PARTIAL_DATA" ? <p className="filter-data-note" role="status">Algunas cantidades del catálogo no están disponibles.</p>
+            : <p className="filter-data-note">ERETZ sólo muestra filtros respaldados por el catálogo actual. Los datos desconocidos no se convierten en “No”.</p>}
     </>
   );
 }
@@ -216,6 +230,7 @@ export function FilterForm({
   onPin,
   onUnpin,
   onOpenChange,
+  filterMetadata = null,
 }: {
   filters: PropertyFilters;
   action?: string;
@@ -223,6 +238,7 @@ export function FilterForm({
   onPin?: () => void;
   onUnpin?: () => void;
   onOpenChange?: (open: boolean) => void;
+  filterMetadata?: DiscoveryFilterMetadataState | null;
 }) {
   const [open, setOpen] = useState(false);
   const [draftVersion, setDraftVersion] = useState(0);
@@ -303,8 +319,8 @@ export function FilterForm({
           <div><p className="eyebrow">Análisis</p><h2>Filtros fijados</h2></div>
           {onUnpin ? <button type="button" className="secondary-button" onClick={onUnpin}>Desfijar</button> : null}
         </div>
-        <div className="explorer-primary-search is-stacked"><QuickSelectors filters={filters} onOpenGroup={openGroup} /></div>
-        <AdvancedFilterFields filters={filters} idPrefix={`${instanceId}-group`} />
+        <div className="explorer-primary-search is-stacked"><QuickSelectors filters={filters} onOpenGroup={openGroup} filterMetadata={filterMetadata} /></div>
+        <AdvancedFilterFields filters={filters} idPrefix={`${instanceId}-group`} filterMetadata={filterMetadata} />
         <div className="filter-panel-actions">
           <a href={action} className="secondary-button">Limpiar</a>
           <button className="primary-button" type="submit">{cta}</button>
@@ -317,7 +333,7 @@ export function FilterForm({
     <form ref={formRef} action={action} className="explorer-filter-form" onSubmit={(event) => submitFilters(event, action)} onChange={() => { if (open) setDraftVersion((current) => current + 1); }}>
       <HiddenFilterState filters={filters} includeAdvanced={!open} />
       <div className="explorer-primary-search">
-        <QuickSelectors filters={filters} onOpenGroup={openGroup} />
+        <QuickSelectors filters={filters} onOpenGroup={openGroup} filterMetadata={filterMetadata} />
         <button ref={toggleRef} className="filter-toggle" type="button" aria-expanded={open} aria-controls={panelId} onClick={() => openGroup("ubicacion")}>
           <span>{activeCount ? `Más filtros (${activeCount})` : "Más filtros"}</span>
           <span aria-hidden="true" className="filter-toggle-icon">+</span>
@@ -337,7 +353,7 @@ export function FilterForm({
             </div>
           </div>
           <div className="filter-panel-content">
-            <AdvancedFilterFields filters={filters} idPrefix={`${instanceId}-group`} />
+            <AdvancedFilterFields filters={filters} idPrefix={`${instanceId}-group`} filterMetadata={filterMetadata} />
           </div>
           <div className="filter-panel-actions">
             <a href={action} className="secondary-button">Limpiar todo</a>

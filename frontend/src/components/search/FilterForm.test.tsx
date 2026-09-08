@@ -2,6 +2,8 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { buildFilterSearchParams, FilterForm } from "@/components/search/FilterForm";
 import { parsePropertyFilters } from "@/lib/property-query";
+import { adaptApiV2Filters } from "@/lib/api-v2/adapters";
+import { apiV2FiltersFixture } from "@/test/api-v2-fixtures";
 
 // Fase A: los filtros visibles deben estar respaldados por datos reales del
 // catálogo público (193.615). Los campos ~100% NULL se ocultan para no producir
@@ -13,6 +15,24 @@ describe("FilterForm — filtros alineados con datos públicos reales", () => {
     render(<FilterForm filters={filters} />);
     expect(screen.getByRole("option", { name: "Consultar" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "Otro" })).toBeInTheDocument();
+  });
+
+  it("muestra cantidades reales de API v2 sin cambiar los valores enviados", () => {
+    const metadata = { status: "SUCCESS" as const, metadata: adaptApiV2Filters(apiV2FiltersFixture) };
+    const { container } = render(<FilterForm filters={filters} filterMetadata={metadata} />);
+    expect(screen.getByRole("option", { name: "Comprar (42.536)" })).toHaveValue("venta");
+    expect(screen.getByRole("option", { name: "Temporario (303)" })).toHaveValue("temporario");
+    expect(screen.getByRole("option", { name: "Departamento (20.700)" })).toHaveValue("departamento");
+    fireEvent.click(container.querySelector('[aria-controls="advanced-filters"]') as HTMLElement);
+    expect(screen.getByRole("option", { name: "USD (46.361)" })).toHaveValue("USD");
+  });
+
+  it("distingue metadata no disponible sin ocultar controles legacy", () => {
+    const unavailable = { status: "FAILURE" as const, metadata: null, error: { kind: "NETWORK_ERROR" as const } };
+    const { container } = render(<FilterForm filters={filters} filterMetadata={unavailable} />);
+    expect(screen.getByRole("option", { name: "Comprar" })).toHaveValue("venta");
+    fireEvent.click(container.querySelector('[aria-controls="advanced-filters"]') as HTMLElement);
+    expect(screen.getByRole("alert")).toHaveTextContent("No pudimos actualizar las cantidades del catálogo");
   });
 
   it("conserva los filtros con respaldo de datos", () => {

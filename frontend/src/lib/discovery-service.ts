@@ -1,8 +1,9 @@
 import "server-only";
 
 import type { CatalogSuggestion } from "@/domain/catalog-discovery";
-import { getApiV2Suggestions, type ApiV2ClientOptions } from "@/lib/api-v2/client";
+import { getApiV2Filters, getApiV2Suggestions, type ApiV2ClientOptions } from "@/lib/api-v2/client";
 import type { DiscoveryAutocompleteResponse } from "@/lib/discovery-contract";
+import type { DiscoveryFilterMetadataResponse } from "@/lib/discovery-contract";
 import type { SearchSuggestion } from "@/types/property";
 
 const CATEGORY_BY_LEVEL: Record<
@@ -61,4 +62,18 @@ export async function searchDiscoverySuggestions(
     return { status: "PARTIAL_DATA", suggestions, issues: result.issues };
   }
   return { status: result.status, suggestions };
+}
+
+export async function loadDiscoveryFilterMetadata(
+  options: ApiV2ClientOptions = {},
+): Promise<DiscoveryFilterMetadataResponse> {
+  const result = await getApiV2Filters(options);
+  if (result.status === "FAILURE") {
+    return { status: "FAILURE", metadata: null, error: { kind: result.error.kind } };
+  }
+  if (result.status === "SUCCESS_EMPTY") return { status: "SUCCESS_EMPTY", metadata: null };
+  if (result.status === "PARTIAL_DATA") {
+    return { status: "PARTIAL_DATA", metadata: result.data, issues: result.issues };
+  }
+  return { status: "SUCCESS", metadata: result.data };
 }

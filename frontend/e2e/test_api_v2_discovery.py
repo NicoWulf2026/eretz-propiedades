@@ -91,7 +91,10 @@ def test_mouse_keyboard_close_requery_and_typed_url(page: Page) -> None:
     search.blur()
     search.focus()
     expect(municipality).to_be_visible()
-    municipality.click()
+    # Selection is intentionally handled on mousedown so the input cannot blur
+    # before the option is chosen. Dispatch that contract directly; a full click
+    # can race React replacing the highlighted list item after focus is restored.
+    municipality.dispatch_event("mousedown")
     page.get_by_role("button", name="Buscar", exact=True).click()
     page.wait_for_url("**/propiedades?**")
     params = query_url(page)
@@ -130,3 +133,41 @@ def test_empty_error_and_noncanonical_neighborhood_are_distinct(page: Page) -> N
     params = query_url(page)
     assert params["barrio"] == ["Palermo"]
     assert params["barrio_canonico"] == ["0"]
+
+
+def test_filter_metadata_enriches_existing_controls_without_changing_values(page: Page) -> None:
+    with page.expect_response(lambda response: "/api/properties/filter-metadata" in response.url) as response_info:
+        open_explorer(page)
+    assert response_info.value.status == 200
+
+    operation = page.locator('select[name="operacion"]')
+    expect(operation.locator('option[value="venta"]')).to_have_text("Comprar (42.536)")
+    expect(operation.locator('option[value="temporario"]')).to_have_text("Temporario (303)")
+    operation.select_option("venta")
+    expect(operation).to_have_value("venta")
+
+    page.get_by_role("button", name="Más filtros").click()
+    currency = page.locator('select[name="moneda"]')
+    expect(currency.locator('option[value="USD"]')).to_have_text("USD (46.361)")
+    currency.select_option("USD")
+    expect(currency).to_have_value("USD")
+
+
+def test_filter_metadata_error_keeps_legacy_controls_usable(page: Page) -> None:
+    page.route(
+        "**/api/properties/filter-metadata",
+        lambda route: route.fulfill(
+            status=503,
+            content_type="application/json",
+            body='{"status":"FAILURE","metadata":null,"error":{"kind":"NETWORK_ERROR"}}',
+        ),
+    )
+    open_explorer(page)
+    operation = page.locator('select[name="operacion"]')
+    expect(operation.locator('option[value="venta"]')).to_have_text("Comprar")
+    operation.select_option("venta")
+    expect(operation).to_have_value("venta")
+    page.get_by_role("button", name="Más filtros").click()
+    expect(page.locator(".filter-data-note[role='alert']")).to_contain_text(
+        "No pudimos actualizar las cantidades del catálogo"
+    )

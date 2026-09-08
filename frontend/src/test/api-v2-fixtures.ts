@@ -189,11 +189,23 @@ export const apiV2SuggestionsFixture = {
 export const apiV2FiltersFixture = {
   contrato: API_V2_CONTRACT,
   filtros: {
-    operacion: [{ valor: "venta", propiedades: 32000 }, { valor: "alquiler", propiedades: 18000 }],
-    tipo_propiedad: [{ valor: "departamento", propiedades: 25000 }],
-    moneda: [{ valor: "USD", propiedades: 40000 }, { valor: "ARS", propiedades: 9000 }],
-    area_nivel: [{ valor: "LOCALIDAD", propiedades: 9600 }, { valor: "MUNICIPIO", propiedades: 12000 }],
+    operacion: [{ valor: "venta", propiedades: 42536 }, { valor: "alquiler", propiedades: 4672 }, { valor: "alquiler_temporario", propiedades: 303 }],
+    tipo_propiedad: [
+      { valor: "departamento", propiedades: 20700 }, { valor: "casa", propiedades: 16555 },
+      { valor: "terreno", propiedades: 10509 }, { valor: "local", propiedades: 2499 },
+      { valor: "cochera", propiedades: 1117 }, { valor: "oficina", propiedades: 1021 },
+      { valor: "galpon", propiedades: 320 },
+    ],
+    moneda: [{ valor: "USD", propiedades: 46361 }, { valor: "ARS", propiedades: 6833 }],
+    area_nivel: [
+      { valor: "MUNICIPIO", propiedades: 32428 }, { valor: "PROVINCIA", propiedades: 15749 },
+      { valor: "LOCALIDAD", propiedades: 9619 }, { valor: "SIN_AREA", propiedades: 492 },
+      { valor: "DEPARTAMENTO", propiedades: 139 },
+    ],
   },
-  rango_de_precio: [{ moneda: "USD", minimo: 0, maximo: 5000000 }],
-  sin_dato: { operacion: 1, tipo_propiedad: 2, precio: 100, localidad: 48000, latitud: 19000 },
+  rango_de_precio: [
+    { moneda: "ARS", minimo: 65, maximo: 325909932 },
+    { moneda: "USD", minimo: 1, maximo: 75000000 },
+  ],
+  sin_dato: { operacion: 10916, tipo_propiedad: 5706, precio: 5339, localidad: 48808, latitud: 15928 },
 } satisfies ApiV2FiltersResponseDto;

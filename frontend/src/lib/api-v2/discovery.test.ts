@@ -72,9 +72,16 @@ describe("API v2 discovery contracts", () => {
     expect(parsed.success).toBe(true);
     if (!parsed.success) return;
     expect(adaptApiV2Filters(parsed.data)).toMatchObject({
-      operations: [{ value: "venta", propertyCount: 32000 }, { value: "alquiler", propertyCount: 18000 }],
-      priceRanges: [{ currency: "USD", minimum: 0, maximum: 5000000 }],
-      missing: { operation: 1, propertyType: 2, price: 100, locality: 48000, latitude: 19000 },
+      operations: [
+        { value: "venta", propertyCount: 42536 },
+        { value: "alquiler", propertyCount: 4672 },
+        { value: "alquiler_temporario", propertyCount: 303 },
+      ],
+      priceRanges: [
+        { currency: "ARS", minimum: 65, maximum: 325909932 },
+        { currency: "USD", minimum: 1, maximum: 75000000 },
+      ],
+      missing: { operation: 10916, propertyType: 5706, price: 5339, locality: 48808, latitude: 15928 },
     });
   });
 

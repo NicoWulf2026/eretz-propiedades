@@ -22,7 +22,7 @@ describe("API v2 discovery client", () => {
       status: "SUCCESS",
       data: expect.arrayContaining([expect.objectContaining({ canonical: false })]),
     });
-    await expect(getApiV2Filters({ baseUrl, fetchImpl })).resolves.toMatchObject({ status: "SUCCESS", data: { missing: { locality: 48000 } } });
+    await expect(getApiV2Filters({ baseUrl, fetchImpl })).resolves.toMatchObject({ status: "SUCCESS", data: { missing: { locality: 48808 } } });
     const urls = vi.mocked(fetchImpl).mock.calls.map((call) => new URL(String(call[0])));
     expect(urls.map((url) => url.pathname)).toEqual(["/v2/areas", "/v2/barrios", "/v2/filtros"]);
     expect(urls[0].searchParams.get("q")).toBe("cór");

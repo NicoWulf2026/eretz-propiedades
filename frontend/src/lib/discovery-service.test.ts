@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { apiV2SuggestionsFixture } from "@/test/api-v2-fixtures";
-import { searchDiscoverySuggestions } from "./discovery-service";
+import { apiV2FiltersFixture, apiV2SuggestionsFixture } from "@/test/api-v2-fixtures";
+import { loadDiscoveryFilterMetadata, searchDiscoverySuggestions } from "./discovery-service";
 
 const baseUrl = "https://api.example.test";
 
@@ -62,5 +62,30 @@ describe("API v2 autocomplete facade", () => {
       expect(result.suggestions).toHaveLength(apiV2SuggestionsFixture.data.length);
       expect(result.issues).not.toHaveLength(0);
     }
+  });
+
+  it("exposes filter metadata through a serializable facade", async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse(apiV2FiltersFixture)) as unknown as typeof fetch;
+    const result = await loadDiscoveryFilterMetadata({ baseUrl, fetchImpl });
+    expect(result).toMatchObject({
+      status: "SUCCESS",
+      metadata: { operations: expect.arrayContaining([{ value: "venta", propertyCount: 42536 }]) },
+    });
+    expect(JSON.parse(JSON.stringify(result))).toEqual(result);
+  });
+
+  it("preserves empty and failure metadata states instead of inventing facets", async () => {
+    const emptyFetch = vi.fn(async () => jsonResponse({
+      ...apiV2FiltersFixture,
+      filtros: { operacion: [], tipo_propiedad: [], moneda: [], area_nivel: [] },
+    })) as unknown as typeof fetch;
+    await expect(loadDiscoveryFilterMetadata({ baseUrl, fetchImpl: emptyFetch })).resolves.toEqual({
+      status: "SUCCESS_EMPTY", metadata: null,
+    });
+
+    const networkFetch = vi.fn(async () => { throw new TypeError("offline"); }) as unknown as typeof fetch;
+    await expect(loadDiscoveryFilterMetadata({ baseUrl, fetchImpl: networkFetch })).resolves.toEqual({
+      status: "FAILURE", metadata: null, error: { kind: "NETWORK_ERROR" },
+    });
   });
 });

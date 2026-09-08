@@ -13,6 +13,7 @@ import { filtersToSearchParams } from "@/lib/property-query";
 import { addRecentSearch, getVisited } from "@/lib/local-store";
 import { useLocalValue } from "@/lib/use-local-store";
 import { describeSearch } from "@/lib/search-label";
+import type { DiscoveryFilterMetadataResponse, DiscoveryFilterMetadataState } from "@/lib/discovery-contract";
 import type { ExplorerMode, PropertyFilters, PropertySearchResult } from "@/types/property";
 
 function unavailableResult(filters: PropertyFilters): PropertySearchResult {
@@ -24,12 +25,23 @@ function unavailableResult(filters: PropertyFilters): PropertySearchResult {
   };
 }
 
+function isFilterMetadataResponse(value: unknown): value is DiscoveryFilterMetadataResponse {
+  if (!value || typeof value !== "object") return false;
+  const payload = value as Record<string, unknown>;
+  if (payload.status === "SUCCESS_EMPTY") return payload.metadata === null;
+  if (payload.status === "SUCCESS" || payload.status === "PARTIAL_DATA") {
+    return Boolean(payload.metadata && typeof payload.metadata === "object");
+  }
+  return payload.status === "FAILURE" && payload.metadata === null && Boolean(payload.error && typeof payload.error === "object");
+}
+
 export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters; basePath: string }) {
   const initialSearch = filtersToSearchParams(filters);
   const initialReturnTo = `${basePath}${initialSearch.toString() ? `?${initialSearch}` : ""}`;
   const [mode, setMode] = useState<ExplorerMode>(filters.mode);
   const [hideVisited, setHideVisited] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filterMetadata, setFilterMetadata] = useState<DiscoveryFilterMetadataState>({ status: "LOADING", metadata: null });
   const visited = useLocalValue(getVisited, [] as string[]);
   const [selectedId, setSelectedId] = useState(filters.selectedId);
   const [previewId, setPreviewId] = useState<string | null>(null);
@@ -45,6 +57,25 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
   const pendingUntilRef = useRef<number>(0);
   const resultsPaneRef = useRef<HTMLElement | null>(null);
   const currentFilters = useMemo(() => ({ ...filters, mode, selectedId }), [filters, mode, selectedId]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch("/api/properties/filter-metadata", { signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json() as unknown;
+        if (!isFilterMetadataResponse(payload)) throw new Error("invalid filter metadata response");
+        if (payload.status === "FAILURE") return payload;
+        if (!response.ok) throw new Error("filter metadata unavailable");
+        return payload;
+      })
+      .then(setFilterMetadata)
+      .catch((error: unknown) => {
+        if ((error as Error).name !== "AbortError") {
+          setFilterMetadata({ status: "FAILURE", metadata: null, error: { kind: "INVALID_RESPONSE" } });
+        }
+      });
+    return () => controller.abort();
+  }, []);
 
   // Registra la búsqueda actual (sin paginación ni selección) en "búsquedas
   // recientes" cuando hay al menos un filtro significativo.
@@ -224,7 +255,7 @@ function removeViewport() {
             <ViewModeSelector mode={mode} onChange={chooseMode} />
           </div>
           <div className="explorer-search-card">
-            <FilterForm filters={currentFilters} action={basePath} onOpenChange={setFiltersOpen} />
+            <FilterForm filters={currentFilters} action={basePath} onOpenChange={setFiltersOpen} filterMetadata={filterMetadata} />
           </div>
           <ActiveChips filters={currentFilters} basePath={basePath} onRemoveViewport={removeViewport} />
         </div>

@@ -153,12 +153,14 @@ TEMPORARY_FRONTEND_BEHAVIOR: retain legacy reads; do not fan out unbounded detai
 | Autocomplete / suggestions | `property-db-service.searchSuggestions` | `/v2/sugerencias` through the server-only discovery facade | API_V2 |
 | Areas | Direct PostgreSQL-derived location text | `/v2/areas` validated and adapted | API_V2_INFRASTRUCTURE |
 | Neighborhoods | Direct source rows | `/v2/barrios` with `canonizado:false` preserved | API_V2_INFRASTRUCTURE |
-| Filter metadata | Static/legacy catalog assumptions | `/v2/filtros` validated and adapted | READY_INFRASTRUCTURE |
+| Filter metadata | Static/legacy catalog assumptions | `/v2/filtros` validated, adapted and exposed through the existing controls | API_V2 |
 | Explorer results | PostgreSQL | Not cut over | LEGACY |
 | Map | PostgreSQL | Not cut over | LEGACY |
 | Detail/contact | PostgreSQL | Not cut over | LEGACY / BLOCKED |
 
 There is no PostgreSQL fallback in the migrated autocomplete route. API failures remain typed failures and the UI distinguishes them from a successful empty response.
+
+Filter metadata is now loaded once by the Explorer through the internal server route. Existing operation, property-type and currency controls remain structurally unchanged; when API v2 reports a matching facet, its real catalog count is appended without changing the submitted legacy value. Unsupported legacy controls remain visible as required. Metadata failure, partial data and valid empty data are distinct UI states and never disable search execution.
 
 ### Filter compatibility
 
@@ -187,10 +189,12 @@ Selections add `area_nivel` and `area_nombre` (plus `area_id` when a future back
 
 ### Real smoke and browser QA
 
-After an unrelated snapshot regeneration released its SQLite lock, the real frontend client passed against the 58,427-row snapshot: `/v2/areas` HTTP 200/SUCCESS with 10 adapted items in about 69 ms; `/v2/barrios` 200/SUCCESS with 20 items in about 440 ms; `/v2/sugerencias` 200/SUCCESS with 8 items in about 456 ms; `/v2/filtros` 200/SUCCESS with one adapted metadata object in about 561 ms. Times are single local observations, not benchmarks.
+After an unrelated snapshot regeneration released its SQLite lock, the real frontend client passed against the 58,427-row snapshot: `/v2/areas` HTTP 200/SUCCESS with 10 adapted items in about 144 ms; `/v2/barrios` 200/SUCCESS with 20 items in about 542 ms; `/v2/sugerencias` 200/SUCCESS with 8 items in about 473 ms; `/v2/filtros` 200/SUCCESS with one adapted metadata object in about 608 ms. Times are single local observations, not benchmarks.
 
-Focused Playwright QA passed 5/5 against the real local API at 1440, 1366 and 1280 px. It covered accented and partial queries, province/locality/municipality labels, real internal network requests, no Supabase browser requests, empty versus failure feedback, keyboard and mouse selection, Escape/reopen, re-query after selection, non-canonical neighborhoods, typed URL persistence and console errors. The home does not currently use this autocomplete, so its discovery flow was not changed.
+Focused Playwright QA passed 7/7 against the real local API at 1440, 1366 and 1280 px. It covered accented and partial queries, province/locality/municipality labels, real internal network requests, no Supabase browser requests, empty versus failure feedback, keyboard and mouse selection, Escape/reopen, re-query after selection, non-canonical neighborhoods, typed URL persistence, filter-count enrichment, metadata failure fallback and console errors. The home does not currently use this autocomplete, so its discovery flow was not changed.
 
 ### Remaining blockers
 
-Explorer still needs a combined ranked search/filter/sort contract. Map still needs viewport, stable total/truncation semantics and a clustering decision. Detail still needs agency/contact data. Filter metadata is available but intentionally does not drive visual controls until result execution can honor the same contract.
+Explorer still needs a combined ranked search/filter/sort contract. Map still needs viewport, stable total/truncation semantics and a clustering decision. Detail still needs agency/contact data. Filter metadata enriches existing choices with catalog counts but intentionally does not add, remove or disable controls until result execution can honor the same contract.
+
+The detail cutover also needs an identifier bridge: current public routes use numeric PostgreSQL ids, while the local API snapshot exposes `hash_dedup` identifiers. The API detail payload lacks address, expenses, lifecycle timestamps/status, amenities and contact/publisher data used by the existing page. Cutting over before those contracts converge would silently degrade the current product.
