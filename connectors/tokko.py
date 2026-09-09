@@ -101,6 +101,21 @@ ETIQUETAS = (
 _STOP = "|".join(re.escape(e) for e in sorted(ETIQUETAS, key=len, reverse=True))
 
 
+# El rastro de ubicacion que el tema pone debajo del titulo, con el partido
+# entre parentesis al final. Ver el uso, mas abajo.
+RE_RASTRO_DE_UBICACION = re.compile(
+    r"<h2[^>]*>.{0,300}?</h2>\s*<p[^>]*>([^<]{0,200})</p>", re.S | re.I)
+
+
+def _partido_del_rastro(html: str) -> str | None:
+    """El partido entre parentesis, cuando la ficha no trae ubicacion."""
+    rastro = RE_RASTRO_DE_UBICACION.search(html or "")
+    if not rastro:
+        return None
+    partido = re.search(r"\(([^)]{2,40})\)\s*$", rastro.group(1).strip())
+    return limpiar(partido.group(1)) if partido else None
+
+
 def _campo(texto: str, etiqueta: str) -> str | None:
     """Lee un campo de la ficha, con o sin dos puntos.
 
@@ -401,6 +416,21 @@ class TokkoConnector(Connector):
 
         direccion = _campo(texto, "Dirección") or _campo(texto, "Direccion")
         ubicacion = _campo(texto, "Ubicación") or _campo(texto, "Ubicacion")
+        # Cuando la ficha no trae el campo, el rastro debajo del titulo:
+        #
+        #   <p> Los Puentes | Nordelta | Countries/B.Cerrado (Tigre) </p>
+        #
+        # `gruponortepropiedades.com.ar` no llena ubicacion y publica solo
+        # esto: sus 192 propiedades quedaban sin geografia de ningun nivel.
+        #
+        # Se toma UNICAMENTE lo que va entre parentesis, que es el partido.
+        # Los otros dos tramos son barrio y zona -"Los Puentes", "Nordelta"-
+        # y ninguno es una localidad censal: guardarlos como ubicacion los
+        # mandaria a competir con el catalogo por un lugar que no existe.
+        # Esto es un CANDIDATO y lo arbitra el catalogo despues, igual que
+        # el campo `Ubicacion`: `Tigre` resuelve, `Nordelta` no.
+        if not ubicacion:
+            ubicacion = _partido_del_rastro(html)
 
         # La descripcion esta en la ficha que ya se bajo: extraerla no cuesta
         # una peticion adicional. Se corta el encabezado y el pie, que repiten

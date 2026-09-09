@@ -71,6 +71,32 @@ RE_DETALLE_HOUZEZ = (
     ".{{0,160}}?<span[^>]*>(.{{1,120}}?)</span>")
 
 
+# El rotulo explicito en el cuerpo de la ficha:
+#
+#   <li class="prop-overview__item"> Localidad: Merlo </li>
+#   <li class="prop-overview__item"> Provincia: San Luis </li>
+#
+# `inmobiliariacip.com.ar` y `nicorapropiedades.com.ar` lo publican asi y
+# tienen las taxonomias vacias: sus 300 propiedades quedaban SIN NINGUNA
+# geografia -ni provincia, ni ciudad, ni barrio, ni coordenada- teniendo
+# "Localidad: Merlo" y "Provincia: San Luis" a la vista. Eran, junto a las
+# 192 de `gruponortepropiedades`, las unicas 492 de las 58.427 que quedaban
+# sin area de busqueda de ningun nivel: las unicas imposibles de encontrar.
+#
+# El valor se corta en la etiqueta siguiente o en una barra: sin cortar,
+# `Localidad: Merlo Provincia: San Luis` entraria entero como si la
+# localidad se llamara asi.
+RE_ROTULO_DE_UBICACION = (
+    "(?:^|>|\\|)\\s*{rotulo}\\s*:\\s*([^<>|]{{2,60}}?)\\s*(?:<|\\||$)")
+
+
+def _rotulo_de_ubicacion(texto: str, rotulo: str) -> str | None:
+    """Lo que la ficha dice despues de `Localidad:` o `Provincia:`."""
+    m = re.search(RE_ROTULO_DE_UBICACION.format(rotulo=rotulo),
+                  texto or "", re.I)
+    return (limpiar(m.group(1)) or None) if m else None
+
+
 def _detalle_houzez(html: str, clase: str) -> str | None:
     m = re.search(RE_DETALLE_HOUZEZ.format(clase=clase), html or "", re.I | re.S)
     if not m:
@@ -618,6 +644,9 @@ class WordPressConnector(Connector):
         # Cuando la taxonomia no trae nada, la ficha suele traerlo igual.
         ciudad = ciudad or _detalle_houzez(html, "city")
         direccion = direccion or _detalle_houzez(html, "address")
+        # Y otros temas lo publican con el rotulo escrito al lado.
+        ciudad = ciudad or _rotulo_de_ubicacion(html, "Localidad")
+        provincia = provincia or _rotulo_de_ubicacion(html, "Provincia")
 
         dormitorios = self._ambientes(texto, r"dormitorios?|habitaciones?")
         banos = self._ambientes(texto, r"ba[nñ]os?")

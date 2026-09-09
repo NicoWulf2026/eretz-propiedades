@@ -4111,3 +4111,52 @@ def test_un_sitio_vivo_que_menciona_la_frase_no_se_da_de_baja():
             "<p>La pagina no disponible del municipio nos obligo a mudarnos. </p>"
             + "<p>Casa en venta en el centro. </p>" * 40)
     assert fuera_de_servicio(vivo) is None
+
+
+def test_la_localidad_con_el_rotulo_escrito_en_la_ficha():
+    """`inmobiliariacip.com.ar` publica `<li>Localidad: Merlo</li>` y
+    `<li>Provincia: San Luis</li>` con las taxonomías vacías. Sus 196 fichas
+    quedaban sin NINGUNA geografía: ni provincia, ni ciudad, ni barrio, ni
+    coordenada."""
+    from connectors.wordpress import _rotulo_de_ubicacion
+
+    ficha = ('<li class="prop-overview__item"> Tipo de operacion: Venta </li>'
+             '<li class="prop-overview__item"> Localidad: Merlo </li>'
+             '<li class="prop-overview__item"> Provincia: San Luis </li>')
+    assert _rotulo_de_ubicacion(ficha, "Localidad") == "Merlo"
+    assert _rotulo_de_ubicacion(ficha, "Provincia") == "San Luis"
+
+
+def test_el_valor_del_rotulo_se_corta_en_el_siguiente():
+    """Sin cortar, `Localidad: Merlo | Provincia: San Luis` entraría entero
+    como si la localidad se llamara así."""
+    from connectors.wordpress import _rotulo_de_ubicacion
+
+    assert _rotulo_de_ubicacion("Localidad: Merlo | Provincia: San Luis",
+                                "Localidad") == "Merlo"
+
+
+def test_sin_el_rotulo_no_se_inventa_ubicacion():
+    from connectors.wordpress import _rotulo_de_ubicacion
+
+    assert _rotulo_de_ubicacion("<p>Casa en venta en el centro</p>",
+                                "Localidad") is None
+
+
+def test_el_partido_del_rastro_cuando_la_ficha_no_trae_ubicacion():
+    """`gruponortepropiedades.com.ar` no llena el campo y publica sólo el
+    rastro debajo del título. Se toma únicamente el paréntesis: los otros dos
+    tramos son barrio y zona -"Los Puentes", "Nordelta"- y ninguno es una
+    localidad censal."""
+    from connectors.tokko import _partido_del_rastro
+
+    ficha = ('<h2 class="mt10">Terreno en venta al lago central en Nordelta.</h2>'
+             '<p> Los Puentes | Nordelta | Countries/B.Cerrado (Tigre) </p>')
+    assert _partido_del_rastro(ficha) == "Tigre"
+
+
+def test_un_rastro_sin_parentesis_no_aporta_ubicacion():
+    """Un rastro que no nombra el partido no se convierte en uno."""
+    from connectors.tokko import _partido_del_rastro
+
+    assert _partido_del_rastro('<h2>Casa</h2><p> Centro | Rosario </p>') is None
