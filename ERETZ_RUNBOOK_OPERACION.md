@@ -148,6 +148,31 @@ una recertificación.
 
 ---
 
+## 3 ter. Fuentes que sirven el catálogo por JavaScript
+
+Un sitio hecho con React o con un módulo de listado client-side devuelve un
+cascarón: el HTML tiene el menú y el buscador, pero **ninguna URL propia**.
+Diagnosticadas el 2026-09-09:
+
+| agencia | qué devuelve |
+|---|---|
+| `armaninonegociosinmobiliarios.com.ar` | 657 bytes, "You need to enable JavaScript to run this app" |
+| `attaguile.com` | 213 KB de Elementor, 1.310 caracteres de texto, y la única URL propia en todo el HTML es la home |
+
+No son un defecto del parser ni una fuente sin inventario, y **no hay estado
+terminal para ellas**: quedan en `NEEDS_FIX` esperando un arreglo que no es un
+arreglo sino otra forma de leer. Hoy el triage las deja pasar —radio
+`ESTRATEGIA`, no para la cola— así que no bloquean, pero tampoco cierran.
+
+Antes de decidir si vale un camino con navegador hay que saber cuántas son. La
+primera medición sobre 150 agencias dio 31, y **estaba mal**: contaba sólo los
+enlaces que empiezan con `/` y se perdía los relativos, así que metió en la
+bolsa a `aconcaguaprop.com.ar`, que esa misma noche certificó COMPLETE con 78
+propiedades. La lección es del método, no del número: un heurístico sobre HTML
+hay que contrastarlo contra una fuente que ya sabemos leer.
+
+---
+
 ## 4. Dos workers
 
 El reparto es **por host**, no por posición: la cortesía se le debe al sitio y
