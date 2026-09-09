@@ -1255,6 +1255,38 @@ como regresión.** El informe dice dónde mirar, no qué pasó.
 
 ---
 
+## 7 sexies. SOM: una plataforma entera que no soportamos
+
+Encontrada el 2026-09-09 al diagnosticar por qué `amud propiedades` certificaba
+sin inventario. Su sitio es estático y chico —11 KB— y sus páginas de catálogo,
+`venta.html` y `alquiler.html`, traen **190 caracteres de texto y un botón
+"Cargar más resultados"**: el listado lo inyecta jQuery.
+
+Contra qué: `https://apmovil.som.com.ar/BusquedaServiceV2.aspx?token=…`. El pie
+del sitio lo dice —"Desarrollado por SOM"— y es una plataforma inmobiliaria como
+Tokko o Wasi.
+
+**Y sirve HTML.** `sistema.som.com.ar/inmuebles-LMA-00-2-venta-alquiler.html`
+devuelve 30 KB con quince enlaces a fichas
+—`propiedades-LMA-00-LMA00127101970-departamentos-venta-…html`— y paginación
+propia. No hace falta un navegador: hace falta una estrategia.
+
+| agencia | url cargada | propiedades hoy |
+|---|---|---|
+| `lmabroker` | `sistema.som.com.ar/inmuebles-LMA-00-2-…` | 0 |
+| `marcelo candel propiedades` | `sistema.som.com.ar/inmuebles-MCP-00-…` | 0 |
+| `pablo otto negocios inmobiliarios` | `sistema.som.com.ar/inmuebles-OTO-01-2-…` | 0 |
+| `rodriguez drimal negocios inmobiliarios` | `sistema.som.com.ar/inmuebles-RDR-00-2-…` | 0 |
+| `rossi propiedades` | `rsi.som.com.ar` | 0 |
+| `amud propiedades` | dominio propio, API de SOM | 0 |
+
+**Va después de la pasada.** Una estrategia nueva toca `discover`, que vive en
+`generic/common` y entra en la huella de todas las familias genéricas:
+agregarla ahora invalida la certificación entera. El diagnóstico ya está hecho
+y la forma de las URLs es regular, así que el trabajo es acotado.
+
+---
+
 ## 8. Barrera de autorización
 
 Requieren autorización humana explícita: escritura o modificación en base
