@@ -57,6 +57,48 @@ CERROJO = "AGENCY_CERTIFICATION_RUNNER.lock"
 # La bandera que corta a TODOS los workers. Un defecto transversal lo es para
 # los dos: si uno para por radio FAMILIA y el otro sigue, el segundo certifica
 # con el mismo codigo sospechado y hay que rehacer su trabajo igual.
+# Defectos ya diagnosticados que NO se van a arreglar en esta pasada.
+#
+# El corte por lote existe para que cinco defectos sueltos obliguen a una
+# tanda de diagnostico, y esta bien. Pero cuenta tambien los que ya
+# tuvieron su tanda: `armanino` y `attaguile` sirven el catalogo por
+# JavaScript y `andrea gianfelice` pierde una ficha de 147 cuya url el
+# propio sitio no sirve. Los tres estan diagnosticados y ninguno se
+# arregla sin un cambio que invalida la pasada entera, asi que se quedan
+# en la lista de pendientes y hacen saltar el umbral de las 12 horas una y
+# otra vez, sin que haya nada nuevo que mirar.
+#
+# Diferir NO es ocultar: el defecto se sigue anotando entero en
+# `AGENCY_DEFECT_QUEUE.jsonl` y la agencia sigue cerrando `NEEDS_FIX`. Lo
+# unico que cambia es que deja de contar para el corte por LOTE.
+#
+# Y no alcanza para tapar nada: solo se difiere lo que el triage ya decidio
+# CONTINUE. Un defecto de radio transversal para las dos colas igual, este
+# o no en la lista.
+DIFERIDOS = "AGENCY_DEFECTS_DIFERIDOS.jsonl"
+
+
+def diferidos(output: Path) -> dict[str, str]:
+    """Que agencias tienen su defecto diagnosticado y postergado, y por que."""
+    ruta = output / DIFERIDOS
+    if not ruta.exists():
+        return {}
+    fuera: dict[str, str] = {}
+    for linea in ruta.read_text(encoding="utf-8").splitlines():
+        if not linea.strip():
+            continue
+        try:
+            fila = json.loads(linea)
+        except ValueError:
+            continue
+        # Sin diagnostico escrito no se difiere: la lista tiene que costar
+        # algo, o se vuelve el lugar donde van a parar los defectos
+        # incomodos.
+        if fila.get("canonical_agency_id") and fila.get("diagnostico"):
+            fuera[fila["canonical_agency_id"]] = fila["diagnostico"]
+    return fuera
+
+
 BANDERA_DE_PARO = "AGENCY_CERTIFICATION_STOP.json"
 # Tope duro. Mas de dos procesos contra sitios de inmobiliarias chicas deja de
 # ser paralelismo y pasa a ser una molestia para ellas.
@@ -583,6 +625,7 @@ def main() -> int:
     (output / BANDERA_DE_PARO).unlink(missing_ok=True)
     stopped_on: str | None = None
     defectos_pendientes: list[dict[str, Any]] = []
+    pospuestos = diferidos(output)
     for index, canonical_id in enumerate(pending, 1):
         # Un defecto transversal lo es para los dos workers. Se mira ANTES de
         # empezar la siguiente, que es el unico momento en que parar no
@@ -661,7 +704,15 @@ def main() -> int:
             triage = clasificar(result)
             triage.update({"position": index, "queue_size": len(queue),
                            "epoch": time.time()})
-            defectos_pendientes.append(triage)
+            # Un defecto que ya tuvo su tanda de diagnostico y se posterga a
+            # conciencia se sigue anotando, pero no vuelve a hacer saltar el
+            # corte por lote cada doce horas. Solo aplica a los que el triage
+            # dejo en CONTINUE: un radio transversal para igual.
+            postergado = pospuestos.get(canonical_id)
+            if postergado and triage["decision"] != STOP:
+                triage["diferido_por"] = postergado
+            else:
+                defectos_pendientes.append(triage)
             append_jsonl(output / "AGENCY_DEFECT_QUEUE.jsonl", {
                 **triage,
                 "reasons": result.get("reasons", []),
