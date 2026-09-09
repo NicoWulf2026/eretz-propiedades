@@ -1041,11 +1041,45 @@ tarea administrativa: frena la mitad del catálogo.
      retiene 6.890 propuestas sin perder el dato —queda en el artefacto y se
      recupera con una coordenada o una provincia— y el costo asimétrico se paga
      una sola vez, en el único lugar donde una ciudad falsa se vuelve pública.
-   - **Decidir qué significa `ciudad` cuando sólo hay una coordenada** (§2.8).
-     Son 35.644 propiedades, tres de cada cuatro de las que quedarían sin
-     ciudad. No es técnica: el plan ya descartó `municipios` como nivel
-     canónico, y recuperarlas obliga a revisar esa decisión o a dejarlas en
-     `UNKNOWN`.
+   - ~~**Decidir qué significa `ciudad` cuando sólo hay una coordenada.**~~
+     **Ya está resuelto por el `area_busqueda`**, y el texto anterior era
+     anterior a esa capa. Medido el 2026-09-09 sobre las 58.427:
+
+     | nivel del área de búsqueda | propiedades |
+     |---|---|
+     | MUNICIPIO | 32.428 |
+     | PROVINCIA | 15.749 |
+     | LOCALIDAD | 9.619 |
+     | DEPARTAMENTO | 139 |
+     | **SIN_AREA** | **492** |
+
+     La localidad sigue siendo demostrable sólo en el 16,5 %, y eso no cambió:
+     lo que cambió es que **encontrar** una propiedad no depende de afirmar su
+     localidad. Sólo 492 —el 0,84 %— quedan sin ningún nivel.
+
+     **Y esas 492 no son ausencia en la fuente.** Son tres agencias, y dos de
+     ellas publican la ubicación con todas las letras:
+
+     | agencia | propiedades | qué publica la ficha |
+     |---|---|---|
+     | `gruponortepropiedades` (Tokko) | 192 | `Los Puentes \| Nordelta \| Countries/B.Cerrado (Tigre)` bajo el título |
+     | `inmobiliariacip` (WordPress) | 196 | `<li>Localidad: Merlo</li>` y `<li>Provincia: San Luis</li>` |
+     | `nicorapropiedades` (WordPress) | 104 | nada estructurado; a veces el lugar está en el título en prosa |
+
+     De `gruponortepropiedades` se toma **sólo el paréntesis**: `Tigre` es una
+     localidad censal y resuelve, mientras que `Nordelta` y `Los Puentes` no lo
+     son. De `inmobiliariacip` se recupera la provincia —`Merlo` + `San Luis` no
+     resuelve, porque el catálogo tiene `Villa de Merlo` en San Luis y `Merlo`
+     en Buenos Aires, y el resolver se niega correctamente—. Las 104 de
+     `nicorapropiedades` quedan: sacar la localidad de un título en prosa es
+     inferir geografía.
+
+   - **Una regla que se midió y se descartó.** Cuando la provincia declarada
+     contradice al catálogo, se podría buscar en ESA provincia una localidad
+     cuyo nombre contenga al publicado. Recupera 132 propiedades, y los
+     ejemplos la desmienten: `Crespo` + Santa Fe → `Gobernador Crespo` —Crespo
+     es de Entre Ríos— y `Sarmiento` + Tucumán → `Los Sarmiento`. Por el 0,23 %
+     no vale mandar a alguien a la ciudad equivocada.
 3. ~~Cablear las webs verificadas y la base canónica.~~ **Hecho.**
    `AGENCY_OFFICIAL_WEB_VERIFIED.jsonl` entra por `load_catalog` y
    `resolve_identity` lo prefiere al directorio; el default de la base sale del
