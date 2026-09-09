@@ -1173,6 +1173,31 @@ Lo que sí separa, en dos pasos:
 
 ---
 
+## 7 quater. Listo para la próxima ventana sin certificación en vuelo
+
+Diagnosticado y verificado contra la fuente el 2026-09-09; no aplicado para no
+volver a detener la cola. Cada uno cambia una huella, así que van juntos.
+
+**`inmobiliariacip.com.ar` (WordPress).** Al leer `Localidad:` y `Provincia:`
+la certificación pasó de cero geografía a 132 de 192 con ciudad y provincia, y
+el audit de campos delató lo que sigue sin leerse en la misma ficha:
+
+| campo | dónde está |
+|---|---|
+| `superficie_total` | `<li class="prop-overview__item"> Superficie terreno: 760 m<sup>2</sup> </li>` |
+| `descripcion` | `<h2>Descripción.</h2> <div class="text-format"><p>…</p>` |
+
+El valor de la superficie trae el `<sup>`, así que el lector de rótulos
+devuelve `760 m` y hay que pasarlo por `a_numero`.
+
+**Lo que NO hay que leer de ahí.** La descripción dice "en el ingreso a la
+**Villa de Merlo**", que es exactamente la localidad que el catálogo tiene y
+que `Localidad: Merlo` no alcanza a resolver. Sacarla de la prosa sería
+inferir geografía: la coordenada del mapa ya resuelve ese caso por el camino
+correcto.
+
+---
+
 ## 8. Barrera de autorización
 
 Requieren autorización humana explícita: escritura o modificación en base
