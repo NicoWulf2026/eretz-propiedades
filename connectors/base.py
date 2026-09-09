@@ -1315,8 +1315,26 @@ def ficha_sin_contenido(prop: "PropiedadNormalizada") -> bool:
     if any(valor not in (None, "", 0) for valor in publicados):
         return False
     titulo = _palabras(prop.titulo)
+    if not titulo:
+        return False
+    # El sitio se titula con la MARCA DE SU DOMINIO, no con el nombre que
+    # figura en el padron. `agianfeliceprop.com.ar` devolvio, para una ficha
+    # cuya url tiene una barra sin codificar en el slug -"Calle Tejedor e/
+    # Francia", donde "e/" es "entre"-, una pagina titulada "agianfeliceprop -
+    # Venta y Alquiler de Propiedades" con todos los campos vacios. Comparando
+    # solo contra "Andrea Gianfelice Inmobiliaria" no coincidia nada, el
+    # cascaron se guardo como propiedad y las dos corridas dejaron de ser
+    # idempotentes por una ficha que el propio sitio no sirve.
+    #
+    # Se exige cinco letras: una marca de tres puede aparecer adentro de una
+    # palabra cualquiera del titulo de un aviso legitimo.
+    marca = re.sub(r"[^a-z0-9]+", "",
+                   urllib.parse.urlparse(prop.source_url or "").netloc
+                   .removeprefix("www.").split(".")[0].lower())
+    if len(marca) >= 5 and marca in titulo:
+        return True
     agencia = _palabras(str(prop.canonical_agency_id or "").split(":", 1)[-1])
-    if not titulo or not agencia:
+    if not agencia:
         return False
     return titulo <= agencia or agencia <= titulo
 

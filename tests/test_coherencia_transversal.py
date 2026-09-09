@@ -76,3 +76,43 @@ def test_no_pisa_los_descartes_que_ya_traia_el_connector():
     descartados = p.extra["atributos_descartados"].split(",")
     assert "ambientes" in descartados
     assert "dormitorios_en_un_terreno" in descartados
+
+
+def _shell(**campos):
+    from connectors.base import PropiedadNormalizada
+
+    base = dict(canonical_agency_id="roomix:andrea gianfelice inmobiliaria",
+                source_listing_id="1", connector="generico",
+                source_url="https://www.agianfeliceprop.com.ar/p/4957216-Terreno")
+    return PropiedadNormalizada(**{**base, **campos})
+
+
+def test_el_cascaron_se_titula_con_la_marca_del_dominio():
+    """`agianfeliceprop.com.ar` devolvió, para una ficha cuya url tiene una
+    barra sin codificar en el slug -"Calle Tejedor e/ Francia", donde "e/" es
+    "entre"-, una página titulada con el nombre del SITIO y todos los campos
+    vacíos. Comparando sólo contra "Andrea Gianfelice Inmobiliaria" no
+    coincidía nada: el cascarón se guardó como propiedad y las dos corridas
+    dejaron de ser idempotentes por una ficha que el propio sitio no sirve."""
+    from connectors.base import ficha_sin_contenido
+
+    cascaron = _shell(
+        titulo="agianfeliceprop - Venta y Alquiler de Propiedades en Lobos",
+        operacion="venta")
+    assert ficha_sin_contenido(cascaron)
+
+
+def test_una_ficha_con_datos_nunca_es_un_cascaron():
+    """La condición de datos manda: aunque el título nombre al sitio."""
+    from connectors.base import ficha_sin_contenido
+
+    assert not ficha_sin_contenido(
+        _shell(titulo="agianfeliceprop - Terreno", precio=28000.0))
+
+
+def test_un_lote_que_solo_publica_titulo_se_conserva():
+    """254 lotes y terrenos reales publican sólo título y fotos. Descartarlos
+    perdería inventario que la fuente sí ofrece."""
+    from connectors.base import ficha_sin_contenido
+
+    assert not ficha_sin_contenido(_shell(titulo="Terreno en Roque Perez"))
