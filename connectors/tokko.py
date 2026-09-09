@@ -108,12 +108,31 @@ RE_RASTRO_DE_UBICACION = re.compile(
 
 
 def _partido_del_rastro(html: str) -> str | None:
-    """El partido entre parentesis, cuando la ficha no trae ubicacion."""
+    """La ubicacion del rastro, cuando la ficha no trae el campo.
+
+    El rastro viene en dos formas, y las dos aparecen en el mismo sitio:
+
+      Los Puentes | Nordelta | Countries/B.Cerrado (Tigre)
+      Loma Verde  | Escobar  | G.B.A. Zona Norte
+
+    Cuando el ultimo tramo trae un parentesis, ahi esta el partido y es lo mas
+    confiable que hay. Cuando no, se toma el PRIMER tramo, que es el lugar mas
+    fino que el sitio nombra: `Loma Verde` es una localidad censal de Escobar,
+    y afirmarla es mas preciso que subir un nivel.
+
+    Nunca se afirma nada por esto: lo que sale de aca es un candidato y lo
+    arbitra el catalogo. `Loma Verde` resuelve; `Los Puentes` -que es un barrio-
+    no, y se queda donde estaba, que es lo correcto.
+    """
     rastro = RE_RASTRO_DE_UBICACION.search(html or "")
     if not rastro:
         return None
-    partido = re.search(r"\(([^)]{2,40})\)\s*$", rastro.group(1).strip())
-    return limpiar(partido.group(1)) if partido else None
+    texto = rastro.group(1).strip()
+    partido = re.search(r"\(([^)]{2,40})\)\s*$", texto)
+    if partido:
+        return limpiar(partido.group(1))
+    tramos = [x.strip() for x in texto.split("|") if x.strip()]
+    return limpiar(tramos[0]) if len(tramos) >= 2 else None
 
 
 def _campo(texto: str, etiqueta: str) -> str | None:

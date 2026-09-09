@@ -4155,11 +4155,20 @@ def test_el_partido_del_rastro_cuando_la_ficha_no_trae_ubicacion():
     assert _partido_del_rastro(ficha) == "Tigre"
 
 
-def test_un_rastro_sin_parentesis_no_aporta_ubicacion():
-    """Un rastro que no nombra el partido no se convierte en uno."""
+def test_el_rastro_sin_parentesis_aporta_el_tramo_mas_fino():
+    """El rastro viene en dos formas y las dos aparecen en el mismo sitio:
+    `Los Puentes | Nordelta | Countries/B.Cerrado (Tigre)` y
+    `Loma Verde | Escobar | G.B.A. Zona Norte`. Sin paréntesis se toma el
+    primer tramo, que es el lugar más fino que el sitio nombra: `Loma Verde` es
+    una localidad censal de Escobar, y afirmarla es más preciso que subir un
+    nivel. Lo que sale de acá es un candidato y lo arbitra el catálogo."""
     from connectors.tokko import _partido_del_rastro
 
-    assert _partido_del_rastro('<h2>Casa</h2><p> Centro | Rosario </p>') is None
+    assert _partido_del_rastro(
+        '<h2>Terreno</h2><p> Loma Verde | Escobar | G.B.A. Zona Norte </p>'
+    ) == "Loma Verde"
+    # Con un solo tramo no hay rastro de ubicación que leer.
+    assert _partido_del_rastro('<h2>Casa</h2><p> Casa en venta </p>') is None
 
 
 def test_la_coordenada_del_marcador_del_mapa():
