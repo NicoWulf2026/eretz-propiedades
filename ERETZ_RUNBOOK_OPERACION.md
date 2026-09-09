@@ -182,6 +182,34 @@ contrastarlo contra una fuente que ya sabemos leer.
 
 ---
 
+## 3 quater. Cuándo NO arreglar algo durante la pasada
+
+Hay una tensión que conviene tener escrita, porque no es obvia y se paga cara:
+**la cola revela defectos, y arreglarlos invalida la cola**. Cualquier cambio en
+un connector o en `shared/*` cambia la huella y obliga a rehacer todo lo
+certificado desde que empezó la pasada.
+
+Medido el 2026-09-09: ~5,5 minutos por inmobiliaria, o sea unas 36 horas por
+worker para las 764. A las dos horas de pasada ya hay ~50 agencias hechas, y un
+cambio de huella tira 4,5 horas de máquina. A las diez horas tira veinte.
+
+**La regla, entonces:** durante una pasada sólo se aplican los cambios que
+
+1. **detienen la cola** —un defecto de radio transversal no se puede esperar—, o
+2. **corrompen datos** —una superficie de cincuenta kilómetros cuadrados que se
+   iba a publicar—, o
+3. **cierran una agencia que si no queda en `NEEDS_FIX` para siempre**.
+
+Todo lo demás se **diagnostica contra la fuente, se escribe, y se aplica junto**
+en la próxima ventana. Un campo que falta en 196 propiedades puede esperar; tirar
+cinco horas de certificación para recuperarlo, no.
+
+El corolario incómodo: la primera pasada produce datos **mejores que los
+anteriores pero no óptimos**, y eso está bien. Lo que no está bien es reiniciarla
+cada vez que el audit encuentra un rótulo más.
+
+---
+
 ## 4. Dos workers
 
 El reparto es **por host**, no por posición: la cortesía se le debe al sitio y
