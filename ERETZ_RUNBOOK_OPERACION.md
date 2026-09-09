@@ -164,12 +164,21 @@ terminal para ellas**: quedan en `NEEDS_FIX` esperando un arreglo que no es un
 arreglo sino otra forma de leer. Hoy el triage las deja pasar —radio
 `ESTRATEGIA`, no para la cola— así que no bloquean, pero tampoco cierran.
 
-Antes de decidir si vale un camino con navegador hay que saber cuántas son. La
-primera medición sobre 150 agencias dio 31, y **estaba mal**: contaba sólo los
-enlaces que empiezan con `/` y se perdía los relativos, así que metió en la
-bolsa a `aconcaguaprop.com.ar`, que esa misma noche certificó COMPLETE con 78
-propiedades. La lección es del método, no del número: un heurístico sobre HTML
-hay que contrastarlo contra una fuente que ya sabemos leer.
+**Son cerca del 2 %: unas quince de las 764.** Medido sobre una muestra de 150
+de la cola: 141 sirven HTML navegable, 5 no respondieron y 4 quedaron marcadas,
+de las cuales una —`loscerrospropiedades.com`, con menú y 59 enlaces— es un
+falso positivo de la señal `__NEXT_DATA__`. Las genuinas son constructores de
+sitios que renderizan entero del lado del cliente: `arnoldipropiedades.com.ar`
+devuelve 274 KB **sin un solo `href`**.
+
+Con quince agencias, un camino con navegador no se paga hoy. Vuelve a mirarse
+si el número sube.
+
+La primera medición dio 31 y **estaba mal**: contaba sólo los enlaces que
+empiezan con `/` y se perdía los relativos, así que metió en la bolsa a
+`aconcaguaprop.com.ar`, que esa misma noche certificó COMPLETE con 78
+propiedades. La lección es del método: un heurístico sobre HTML hay que
+contrastarlo contra una fuente que ya sabemos leer.
 
 ---
 
