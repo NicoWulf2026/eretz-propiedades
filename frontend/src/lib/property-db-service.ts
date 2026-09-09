@@ -1011,8 +1011,3 @@ export function searchSuggestions(query: string): Promise<SearchSuggestion[]> {
   const key = normalizeSearch(query.trim().slice(0, 60));
   return cachedQuery(suggestionCache, key, DETAIL_CACHE_TTL_MS, () => searchSuggestionsUncached(query));
 }
-
-export async function getHomeInventory() {
-  const result = await searchProperties(parsePropertyFilters({}));
-  return { count: result.count ?? 0, recent: result.properties.slice(0, 6), error: result.error };
-}

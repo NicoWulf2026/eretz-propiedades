@@ -1,5 +1,48 @@
 # ERETZ API v2 Frontend Convergence
 
+> Final cutover update (2026-09-08): this section supersedes the historical
+> matrices below. Verified backend source is the clean isolated worktree
+> `D:\INMO CAPITAL\Inmo-Capital-api-v2-cutovers` at `806d5a5928`, including
+> Pydantic/OpenAPI models, implementation, tests and the prepared 58,427-row
+> snapshot. Backend was inspected and exercised read-only, never modified.
+
+## Final public-read matrix
+
+| Flow | API v2 contract | Frontend state | Legacy retained and why |
+|---|---|---|---|
+| Explorer | `/v2/buscar`: combined filters, three sorts, real total, ranked offset <= 200 | CUT OVER | None in search/count routes |
+| Map | `/v2/propiedades/mapa`: required viewport, bounded points, totals/truncation | PARTIAL CUTOVER | Frontend route and degradation are complete, but backend HEAD `806d5a5928` fails for `q + viewport` with ambiguous SQL column `titulo` |
+| Canonical detail | `/v2/propiedades/{id}` plus `/v2/agencias/{agency_id}` | CUT OVER | Related/history omitted because v2 has no contract |
+| Historical numeric detail | Optional verified alias table is empty | BLOCKED | Numeric PostgreSQL lookup preserves public URLs without guessing aliases |
+| Saved lists | `POST /v2/propiedades/batch`, maximum 100, ordered items plus missing IDs | HYBRID | Canonical IDs use batch; numeric historical IDs retain one bounded legacy batch read |
+| Contact | Agency contact status is `UNAVAILABLE`; no action endpoint | DISPLAY ONLY | Canonical detail links only to the verified source URL when present |
+
+The external boundary is `DTO -> runtime schema -> catalog domain ->
+presentation adapter`. `source_url`, `agency_id` and `geo` are nullable or
+optional as formalized by OpenAPI. Invalid collection items produce
+`PARTIAL_DATA`; zero values remain zero. Locality, municipality and department
+remain separate.
+
+Explorer exposes only filters the combined endpoint accepts. Unsupported
+manual enums return controlled `BAD_REQUEST`, not a silently broadened search.
+Price sorting and ranges require currency. `recent` is not offered because the
+snapshot has no contractual publication timestamp. The UI distinguishes the
+complete total from the reachable ranked window.
+
+Map requests are viewport-aware and cancellable in the existing Leaflet
+component. Panning refreshes visible points without pretending the listing
+endpoint supports bounds. Missing or zero coordinates never become markers.
+The frontend keeps the list usable and exposes a retry when the map contract
+fails; it does not silently drop `q` to hide the backend defect.
+
+Local real-data observations against the prepared snapshot: combined text
+search returned 17,108 matches and a 24-item page; a national viewport without
+text search returned 2,000 points with `truncated:true`, then clustered in
+Leaflet. The same map request with `q=casa` returned HTTP 500 due to
+`sqlite3.OperationalError: ambiguous column name: titulo`. Canonical detail
+and agency display rendered successfully. These are local observations, not
+production SLOs.
+
 ## Source of Truth
 
 Frontend base: `feat/eretz-frontend-phase-a`. API v2 does not exist in that checkout; its verified implementation is `api/v2.py` and `api/ranking.py` in worktree `D:\INMO CAPITAL\Inmo-Capital-main`, inspected read-only at `46f4e672b9`. The latest API contract change in that release lineage is `b73e976b2b`. The newer snapshot/property work at `782685e648` exists only on `feat/roomix-agency-coverage`, is not an ancestor of the release checkout and is therefore not treated as the current frontend contract. No committed OpenAPI/schema DTO or snapshot generator was found in the inspected release checkout.

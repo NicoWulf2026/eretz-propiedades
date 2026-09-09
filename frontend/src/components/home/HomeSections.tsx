@@ -3,13 +3,15 @@ import { PropertyImage } from "@/components/property/PropertyImage";
 import { PriceTag } from "@/components/property/PriceTag";
 import { propertyLocation, typeLabels } from "@/lib/property-presenter";
 import { displayableImages } from "@/lib/image-quality";
-import type { CityBlock, Carousel } from "@/lib/home-data";
-import type { RealEstateSummary } from "@/types/property";
+import type { PropertySummary, RealEstateSummary } from "@/types/property";
+
+type CityBlock = { name: string; count: number };
+type Carousel = { title: string; href: string; properties: PropertySummary[] };
 
 const number = new Intl.NumberFormat("es-AR");
 
 // Tarjeta de lugar: misma geometría que la referencia (288x216, radio 16) pero
-// tipográfica. Ver el comentario en home-data.ts: no hay dataset curado de
+// tipográfica. No hay un dataset curado de
 // imagen por ciudad y usar la foto de un aviso terminaba mostrando el logo de
 // una inmobiliaria como portada.
 export function PlaceCard({ block }: { block: CityBlock }) {

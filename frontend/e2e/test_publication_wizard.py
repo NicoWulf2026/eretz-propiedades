@@ -54,7 +54,11 @@ def page(browser: Browser):
 def wizard(page: Page) -> Page:
     """Open the wizard, or skip if the flag is off in this environment."""
     response = page.goto(app_url(WIZARD_PATH), wait_until="domcontentloaded")
-    if response is not None and response.status == 404:
+    # App Router can stream the route-specific 404 shell with an HTTP 200 after
+    # headers were committed, so the visible not-found state is authoritative.
+    heading = page.locator("h1")
+    heading.wait_for(state="visible")
+    if (response is not None and response.status == 404) or "No encontramos" in (heading.text_content() or ""):
         pytest.skip("wizard flag is off; nothing to exercise")
     expect(page.get_by_role("heading", name="Publicar una propiedad")).to_be_visible()
     return page

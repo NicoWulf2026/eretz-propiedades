@@ -1,7 +1,6 @@
 export {
   getAgentBySlug,
   getAgentDirectory,
-  getHomeInventory,
   getOtherPublications,
   getPriceHistory,
   getPropertiesByAgency,
@@ -12,7 +11,5 @@ export {
   realEstateExists,
   getRealEstateDirectory,
   getRelatedProperties,
-  searchMap,
-  searchProperties,
 } from "@/lib/property-db-service";
 export type { PropertyDetailResult } from "@/lib/property-db-service";
