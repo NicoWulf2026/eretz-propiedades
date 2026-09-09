@@ -238,6 +238,33 @@ transversales, que son los que atajaron `arte`, `alder` y `arbini`.
 
 ---
 
+## 3 sexies. Una señal más laxa que su extractor fabrica defectos
+
+Pasó dos veces el 2026-09-09 y las dos pararon las dos colas. Conviene tenerlo
+como regla y no como anécdota.
+
+El audit de campos compara dos cosas: **la señal** —"¿la ficha publica este
+campo?"— y **la extracción** —"¿lo sacamos?"—. Cuando la señal dice sí y la
+extracción no, es un defecto nuestro, y si el campo lo lee código compartido el
+triage lo escala a radio `FAMILIA` y detiene todo.
+
+Eso está bien **siempre que las dos pregunten lo mismo**. Cuando la señal es más
+laxa, no reporta un defecto: lo inventa.
+
+| agencia | la señal veía | la ficha tenía |
+|---|---|---|
+| `arbinipropiedades.com.ar` | `Terreno 127 m` | `127 m x 50 m`, que es una **medida**, no un área |
+| `inmobiliariacip.com.ar` | el atributo `data-lat` | `data-lat=""`, el contenedor del mapa **vacío** |
+
+En los dos casos el extractor tenía razón en negarse, y en los dos el arreglo
+fue **acercar la señal a la pregunta del extractor**, no relajar el extractor.
+
+**Al escribir o tocar un extractor, mirar su señal en el mismo movimiento.** Si
+el extractor gana una guarda —una unidad, un formato, un valor mínimo— la señal
+necesita la misma, o el próximo sitio que caiga en el hueco para la cola.
+
+---
+
 ## 4. Dos workers
 
 El reparto es **por host**, no por posición: la cortesía se le debe al sitio y
