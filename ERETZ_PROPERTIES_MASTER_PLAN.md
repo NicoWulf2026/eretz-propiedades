@@ -1196,6 +1196,23 @@ que `Localidad: Merlo` no alcanza a resolver. Sacarla de la prosa sería
 inferir geografía: la coordenada del mapa ya resuelve ese caso por el camino
 correcto.
 
+**Una ficha que la fuente enlaza y no sirve.** `andrea gianfelice inmobiliaria`
+cierra `NEEDS_FIX` en cada pasada por una sola ficha de 147: su URL tiene una
+barra sin codificar en el slug —`Calle Tejedor e/ Francia`, donde "e/" es
+"entre"— y el sitio no la sirve por ninguna vía; se comprobaron la cruda, la
+codificada, la cortada y la del id. Las dos corridas coinciden en perderla.
+
+El certificador ya descuenta los 404 que aparecen en las dos corridas, con el
+argumento correcto —"un 404 sobre una ficha que la fuente sigue enlazando no es
+una lectura fallida: es una inconsistencia de la fuente"—. Esto es lo mismo con
+otro código de estado: el sitio responde 200 con una página genérica.
+
+**Se arregla después de la pasada, no durante.** Es un cambio en el runner, y
+recertificar esa agencia sola cuesta minutos mientras invalidar la pasada
+cuesta horas. La condición es acotada: una URL que en la PRIMERA lectura dio
+cascarón y que después falla, cuenta como desaparecida y no como lectura
+fallida nuestra.
+
 ---
 
 ## 7 quinquies. Qué gana la recertificación
