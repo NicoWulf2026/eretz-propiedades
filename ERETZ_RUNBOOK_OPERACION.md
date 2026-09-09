@@ -113,6 +113,39 @@ backup en `public` sí queda alcanzable con la anon key en cuanto se reponga el
 ajuste, así que conviene habilitarle RLS —sin políticas, o sea sin acceso—
 antes o junto con el cambio.
 
+### Los dos pasos, en orden
+
+**1. Cerrar la tabla de backup** (antes de exponer nada). En el SQL Editor:
+
+```sql
+ALTER TABLE "public"."backup_propiedades_url_normalizada_20260729_235540"
+  ENABLE ROW LEVEL SECURITY;
+```
+
+Sin políticas no la lee nadie por la API, que es lo que se quiere: es un
+backup, no la consume la aplicación. Las otras once tablas sin RLS viven en
+`internal_scraping` o son de PostGIS y quedan fuera del alcance mientras no se
+exponga ese esquema.
+
+**2. Reponer el esquema expuesto.** Settings → API → Exposed schemas: dejar
+`public` (y `graphql_public` si estaba). **No agregar `internal_scraping`.**
+
+PostgREST reintenta solo cada 32 segundos, así que la API vuelve sin reiniciar
+nada. Para comprobarlo:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}
+" -H "apikey: $SUPABASE_ANON_KEY" "$SUPABASE_URL/rest/v1/"
+```
+
+`200` es que volvió; `503` con `PGRST002` es que sigue sin esquema.
+
+**Qué NO hay que hacer**: no correr el `ALTER TABLE ... ENABLE ROW LEVEL
+SECURITY` sobre las diez tablas de `internal_scraping`. Ahí escribe el pipeline
+con la service role key —que se salta RLS— pero habilitarlo sin políticas es un
+cambio productivo que no hace falta para esto, y el pipeline está en medio de
+una recertificación.
+
 ---
 
 ## 4. Dos workers
