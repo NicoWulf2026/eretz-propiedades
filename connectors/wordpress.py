@@ -247,7 +247,18 @@ def _nombre_taxonomia(crudo: dict[str, Any], item: dict[str, Any],
         nombre = termino.get("name") or termino.get("slug")
         if nombre:
             nombres.append(str(nombre))
-    return " ".join(nombres) or None
+    # El ORDEN se ordena. La API devuelve los terminos sin orden fijo, y como
+    # el valor entra en la huella de contenido, la misma propiedad sin tocar
+    # volvia MODIFICADA: `ancarolapropiedades.com.ar` daba "Turdera Adrogue
+    # Llavallol" en una corrida y "Llavallol Turdera Adrogue" en la otra, y la
+    # agencia quedo en NEEDS_FIX por no ser idempotente. Es el mismo problema
+    # que ya se habia resuelto en la descripcion y en las fotos.
+    #
+    # Queda pendiente algo distinto y mas de fondo: juntar tres terminos en un
+    # nombre geografico no significa nada -esos tres son localidades, no un
+    # barrio-. Ordenarlos lo vuelve estable, no lo vuelve cierto. El resolver
+    # ya se niega a afirmar esa cadena, asi que el dato no se publica igual.
+    return " ".join(sorted(nombres)) or None
 
 
 def _texto_taxonomia(crudo: dict[str, Any], item: dict[str, Any],

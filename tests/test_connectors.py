@@ -4233,3 +4233,27 @@ def test_una_medida_no_es_una_superficie():
     # Y no se pierde una forma legítima de escribirlo.
     assert G._sup("Superficie total: 300 m2", r"total|terreno") == 300.0
     assert G._sup("Superficie total 300 metros cuadrados", r"total|terreno") == 300.0
+
+
+def test_los_terminos_de_una_taxonomia_tienen_orden_estable():
+    """La API de WordPress devuelve los términos sin orden fijo, y el valor
+    entra en la huella de contenido: `ancarolapropiedades.com.ar` daba "Turdera
+    Adrogué Llavallol" en una corrida y "Llavallol Turdera Adrogué" en la otra,
+    y la agencia quedó en NEEDS_FIX por no ser idempotente."""
+    from connectors.wordpress import _nombre_taxonomia
+
+    mapa = {"taxonomy_terms": {"property_area": {
+        "1": {"name": "Turdera"}, "2": {"name": "Adrogue"},
+        "3": {"name": "Llavallol"}}}}
+    uno = _nombre_taxonomia(mapa, {"property_area": [1, 2, 3]}, "property_area")
+    otro = _nombre_taxonomia(mapa, {"property_area": [3, 1, 2]}, "property_area")
+    assert uno == otro == "Adrogue Llavallol Turdera"
+
+
+def test_un_solo_termino_se_conserva_tal_cual():
+    """Ordenar no puede cambiar el caso normal, que es un término solo."""
+    from connectors.wordpress import _nombre_taxonomia
+
+    mapa = {"taxonomy_terms": {"property_city": {"7": {"name": "Villa Devoto"}}}}
+    assert _nombre_taxonomia(mapa, {"property_city": [7]},
+                             "property_city") == "Villa Devoto"
