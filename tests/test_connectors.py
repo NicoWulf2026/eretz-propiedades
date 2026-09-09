@@ -4257,3 +4257,14 @@ def test_un_solo_termino_se_conserva_tal_cual():
     mapa = {"taxonomy_terms": {"property_city": {"7": {"name": "Villa Devoto"}}}}
     assert _nombre_taxonomia(mapa, {"property_city": [7]},
                              "property_city") == "Villa Devoto"
+
+
+def test_superficie_construida_en_femenino():
+    """`inmobiliariacip.com.ar` publica "Superficie construida: 150 m2" en 38
+    fichas y `construidos?` no la alcanzaba por una letra."""
+    from connectors.wordpress import WordPressConnector as W
+
+    patron = r"superficie cubierta|sup\.?\s*cubierta|cubierta|construid[oa]s?"
+    assert W._superficie("Superficie construida: 150 m2", patron) == "150"
+    assert W._superficie("Superficie cubierta: 150 m2", patron) == "150"
+    assert W._superficie("Total construido 150 m2", patron) == "150"

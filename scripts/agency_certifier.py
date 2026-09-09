@@ -102,8 +102,20 @@ SOURCE_SIGNALS = {
     "banos": re.compile(r"(?:\b[1-9]\d?\s*(?:ba[nñ]os?|toilettes?)|(?:ba[nñ]os?|toilettes?)\s*:?\s*[1-9]\d?)", re.I),
     "superficie_total": re.compile(r"(?:superficie\s+total|sup\.?\s*total)[^\d]{0,18}[\d.,]+\s*m", re.I),
     "superficie_cubierta": re.compile(r"(?:superficie\s+cubierta|sup\.?\s*cubierta)[^\d]{0,18}[\d.,]+\s*m", re.I),
-    "latitud": re.compile(r"(?:\blat(?:itude|itud)?\b|data-lat)", re.I),
-    "longitud": re.compile(r"(?:\bl(?:ng|on|ongitude|ongitud)\b|data-lng)", re.I),
+    # Con un NUMERO al lado. `inmobiliariacip.com.ar` publica el contenedor
+    # del mapa sin coordenada -`data-lat="" data-lng=""`- en 49 de sus 192
+    # fichas: la senal se conformaba con el nombre del atributo, decia que
+    # la fuente provee la coordenada, el extractor -con razon- no sacaba
+    # nada, y el triage leyo esas 49 como extraccion fallida de radio
+    # FAMILIA y paro las dos colas.
+    #
+    # Es el mismo modo de falla que `arbinipropiedades.com.ar`: una senal
+    # mas laxa que su extractor no reporta defectos, los fabrica.
+    "latitud": re.compile(
+        r"(?:\blat(?:itude|itud)?\b|data-lat)[\"'\s:=]{1,6}-?\d{1,3}\.\d{3,}", re.I),
+    "longitud": re.compile(
+        r"(?:\bl(?:ng|on|ongitude|ongitud)\b|data-lng)[\"'\s:=]{1,6}-?\d{1,3}\.\d{3,}",
+        re.I),
     "imagenes": re.compile(r"(?:og:image[^>]+prop_new|prop_new[^\"']+\.(?:jpe?g|png|webp))", re.I),
 }
 

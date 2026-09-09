@@ -116,3 +116,21 @@ def test_un_lote_que_solo_publica_titulo_se_conserva():
     from connectors.base import ficha_sin_contenido
 
     assert not ficha_sin_contenido(_shell(titulo="Terreno en Roque Perez"))
+
+
+def test_un_marcador_de_mapa_vacio_no_es_una_coordenada_publicada():
+    """`inmobiliariacip.com.ar` publica el contenedor del mapa sin coordenada
+    -`data-lat="" data-lng=""`- en 49 de sus 192 fichas. La señal se conformaba
+    con el nombre del atributo, decía que la fuente provee la coordenada, el
+    extractor -con razón- no sacaba nada, y el triage leyó esas 49 como
+    extracción fallida de radio FAMILIA y paró las dos colas."""
+    from scripts.agency_certifier import SOURCE_SIGNALS
+
+    vacio = '<div class="marker" data-lat="" data-lng=""></div>'
+    lleno = '<div class="marker" data-lat="-32.345566" data-lng="-65.030261"></div>'
+    assert not SOURCE_SIGNALS["latitud"].search(vacio)
+    assert not SOURCE_SIGNALS["longitud"].search(vacio)
+    assert SOURCE_SIGNALS["latitud"].search(lleno)
+    assert SOURCE_SIGNALS["longitud"].search(lleno)
+    # Y la palabra suelta en un encabezado tampoco es una coordenada.
+    assert not SOURCE_SIGNALS["latitud"].search("<h2>Ubicacion y latitud</h2>")

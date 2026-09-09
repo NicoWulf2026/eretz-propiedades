@@ -720,7 +720,13 @@ class WordPressConnector(Connector):
         superficie_total = a_numero(self._superficie(
             texto, r"superficie total|sup\.?\s*total|[aá]rea del terreno|terreno"))
         superficie_cubierta = a_numero(self._superficie(
-            texto, r"superficie cubierta|sup\.?\s*cubierta|cubierta|construidos?"))
+            texto, r"superficie cubierta|sup\.?\s*cubierta|cubierta|"
+                   # `Superficie construida` es la forma que usan varios
+                   # temas, y `construidos?` no la alcanza por una letra:
+                   # `inmobiliariacip.com.ar` publica "Superficie
+                   # construida: 150 m2" en 38 fichas y quedaban sin
+                   # superficie cubierta.
+                   r"construid[oa]s?"))
         if item is not None:
             dormitorios = dormitorios or a_entero(_primero(meta, "fave_property_bedrooms"))
             banos = banos or a_entero(_primero(meta, "fave_property_bathrooms"))
@@ -756,7 +762,7 @@ class WordPressConnector(Connector):
                     texto, r"superficie total|sup\.?\s*total|[aá]rea del terreno|terreno") or
                     _meta_presente(meta, "fave_property_land")),
                 "superficie_cubierta": bool(self._superficie(
-                    texto, r"superficie cubierta|sup\.?\s*cubierta|cubierta|construidos?") or
+                    texto, r"superficie cubierta|sup\.?\s*cubierta|cubierta|construid[oa]s?") or
                     _meta_presente(meta, "fave_property_size")),
                 "latitud": _meta_presente(meta, "houzez_geolocation_lat") or
                             _meta_presente(meta, "fave_property_location"),
