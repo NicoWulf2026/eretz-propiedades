@@ -210,6 +210,34 @@ cada vez que el audit encuentra un rótulo más.
 
 ---
 
+## 3 quinquies. Diferir un defecto ya diagnosticado
+
+El corte por lote para la cola con cinco defectos sueltos, con dos que comparten
+firma, con uno de radio compartido o de familia, o **a las 12 horas del primero
+pendiente**. Los tres primeros son buenos. El cuarto se vuelve una molestia
+cuando los pendientes son defectos que ya tuvieron su tanda de diagnóstico y no
+se van a arreglar en esta pasada: la cola para, se mira lo mismo, se reabre, y
+doce horas después vuelve a parar.
+
+`AGENCY_DEFECTS_DIFERIDOS.jsonl`, en el directorio de certificación, es la
+respuesta. Una fila por agencia:
+
+```json
+{"canonical_agency_id": "roomix:…", "diagnostico": "…", "por_que_se_difiere": "…"}
+```
+
+**Diferir no es ocultar.** El defecto se sigue anotando entero en
+`AGENCY_DEFECT_QUEUE.jsonl`, la agencia sigue cerrando `NEEDS_FIX`, y la fila
+**exige un `diagnostico` escrito** para valer —sin eso la lista se vuelve el
+lugar donde van a parar los defectos incómodos—. Lo único que cambia es que deja
+de contar para el corte por lote, y sólo si el triage ya decidió `CONTINUE`: un
+radio transversal para las dos colas igual, esté o no en la lista.
+
+**No usar `--continue-after-fix` para esto**: apaga también los STOP
+transversales, que son los que atajaron `arte`, `alder` y `arbini`.
+
+---
+
 ## 4. Dos workers
 
 El reparto es **por host**, no por posición: la cortesía se le debe al sitio y
