@@ -38,6 +38,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Iterator
 
+from .coherencia import revisar
+
 CONNECTOR_API_VERSION = "connector_v1"
 
 # Claves de `extra` que NO son contenido y por lo tanto no entran en la huella.
@@ -193,6 +195,33 @@ GEO_AMBIGUA = "AMBIGUOUS"
 # --------------------------------------------------------------------------
 # Representacion normalizada comun
 # --------------------------------------------------------------------------
+# Lo que mira la aritmetica de inmuebles. Se declara aca y no se deduce del
+# modulo: si `coherencia` agrega una regla sobre un campo nuevo, que falle al
+# leerlo es mejor que aplicarla a medias sin que nadie se entere.
+CAMPOS_DE_COHERENCIA = (
+    "tipo_propiedad", "superficie_total", "superficie_cubierta",
+    "dormitorios", "ambientes", "banos", "latitud", "longitud",
+    "precio", "moneda",
+)
+
+# `imagenes` queda AFUERA a proposito, y no por olvido.
+#
+# `coherencia` tiene un filtro de imagenes que no es una foto -logo, avatar,
+# placeholder-, y resulta que nunca corrio: `generico` llama a `revisar` con un
+# diccionario que no incluye `imagenes`. Al aplicarlo aca por primera vez se vio
+# lo que hacia: borro `WhatsApp-Image-depto.jpg`, que es la foto de un
+# departamento subida desde el telefono, porque el patron incluye "whatsapp"
+# para atrapar el icono de compartir.
+#
+# Y no compra nada: sobre 1.271.000 urls de imagen de las 58.427 propiedades el
+# patron no saca ni una sola. Los connectors ya filtran lo suyo -Wasi descarta
+# `/empresas/`, `/perfiles/` y `/publicidad/`- y la snapshot descarta lo que se
+# repite en cinco o mas fichas de la misma inmobiliaria.
+#
+# Activarlo de arrastre, adentro de un arreglo sobre superficies, seria meter un
+# cambio de comportamiento que nadie pidio y que empeora el dato.
+
+
 @dataclass
 class PropiedadNormalizada:
     """Lo que TODO connector produce, venga de donde venga.
@@ -245,6 +274,39 @@ class PropiedadNormalizada:
             self.operacion = self.operacion.lower().strip()
         if self.moneda:
             self.moneda = self.moneda.upper().strip()
+        self._aplicar_coherencia()
+
+    def _aplicar_coherencia(self) -> None:
+        """Descartar lo que no puede ser cierto, venga del connector que venga.
+
+        `revisar` vivia SOLO adentro de `generico.py`. Tokko, Wasi, WordPress y
+        Century21 nunca pasaban por ahi, asi que certificaban combinaciones
+        imposibles sin que nada las mirara: `aagaard.com.ar` cerro
+        CERTIFIED_COMPLETE con un departamento de 95 m2 cubiertos y 50.000.000
+        m2 de terreno -cincuenta kilometros cuadrados-, y otras dos fichas con
+        180 y 50 hectareas sobre 180 y 45 metros construidos.
+
+        Va en la construccion y no en cada connector por la misma razon por la
+        que la guardia de `discover` se movio al runner: cada connector tiene
+        sus caminos -century21 tiene cuatro salidas tempranas- y una guardia
+        por connector deja justo el que nadie miro. Aca no hay construccion que
+        la esquive, y los connectors que se escriban despues la heredan.
+
+        Es idempotente: `generico` la sigue llamando antes de construir, y
+        sobre datos ya limpios `revisar` no descarta nada.
+        """
+        campos = {c: getattr(self, c) for c in CAMPOS_DE_COHERENCIA}
+        fuera = revisar(campos)
+        if not fuera:
+            return
+        for nombre, valor in campos.items():
+            setattr(self, nombre, valor)
+        # El motivo viaja con el dato. Sin el, la propiedad aparece sin
+        # superficie y no se puede distinguir de una que la fuente no publica.
+        previos = [x for x in
+                   str(self.extra.get("atributos_descartados") or "").split(",") if x]
+        self.extra["atributos_descartados"] = ",".join(
+            previos + [x for x in fuera if x not in previos])
 
     @property
     def hash_dedup(self) -> str:
