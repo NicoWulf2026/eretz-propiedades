@@ -127,10 +127,21 @@ RE_FICHA_ANIDADA = re.compile(
 # de texto. Quedaba en NEEDS_FIX para siempre, esperando un arreglo nuestro
 # que no existe, cuando lo que corresponde decir es que la fuente ya no
 # publica.
+#
+# Y no siempre es el hosting: la PLATAFORMA tambien da de baja la pagina de su
+# cliente y sirve su propio aviso en el dominio de la inmobiliaria.
+# `alderinmobiliaria.com` devuelve 866 bytes que dicen "Pagina no disponible en
+# Wasi - La pagina que solicitaste no existe o no se encuentra disponible". Eso
+# no es una variante que no sepamos leer: es una fuente que dejo de publicar.
+#
+# Estas formas son mas generales que las de arriba y por eso dependen del tope
+# de texto: un sitio vivo nunca tiene menos de 600 caracteres visibles.
 RE_FUERA_DE_SERVICIO = re.compile(
     r"account\s+suspended|cuenta\s+suspendida|this\s+domain\s+(?:is\s+)?"
     r"(?:for\s+sale|has\s+expired)|dominio\s+(?:en\s+venta|expirado)|"
-    r"site\s+temporarily\s+unavailable|suspended\s+account", re.I)
+    r"site\s+temporarily\s+unavailable|suspended\s+account|"
+    r"p[aá]gina\s+no\s+disponible|no\s+se\s+encuentra\s+disponible|"
+    r"page\s+(?:is\s+)?(?:not|no\s+longer)\s+available", re.I)
 
 # Una pagina de baja es CHICA. Un sitio real que mencione "account suspended"
 # en una nota tiene miles de caracteres, y confundirlos daria de baja una
@@ -138,11 +149,21 @@ RE_FUERA_DE_SERVICIO = re.compile(
 TOPE_DE_PAGINA_DE_BAJA = 600
 
 
+# Un sitio hecho con un framework sirve un cascaron minimo y un `<noscript>`
+# que suele decir exactamente "esta pagina no esta disponible sin JavaScript".
+# Es texto corto y contiene la frase, o sea que entra por las dos condiciones
+# nuevas, y dar de baja una inmobiliaria VIVA es el mas caro de los dos
+# errores posibles.
+RE_PIDE_JAVASCRIPT = re.compile(r"javascript|habilit\w*\s+js\b", re.I)
+
+
 def fuera_de_servicio(html: str) -> str | None:
     """El motivo por el que este host no esta sirviendo un sitio, si lo hay."""
     cuerpo = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", html or "")
     texto = re.sub(r"\s+", " ", re.sub(r"(?s)<[^>]+>", " ", cuerpo)).strip()
     if len(texto) > TOPE_DE_PAGINA_DE_BAJA:
+        return None
+    if RE_PIDE_JAVASCRIPT.search(texto):
         return None
     hallazgo = RE_FUERA_DE_SERVICIO.search(texto)
     return hallazgo.group(0).lower() if hallazgo else None

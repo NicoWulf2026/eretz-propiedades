@@ -4075,3 +4075,39 @@ def test_la_ciudad_esta_en_la_ficha_aunque_la_taxonomia_este_vacia():
     assert _detalle_houzez(bloque, "address") == "5 N 2196 e/ 76 y 77"
     # Y una clase que la ficha no trae no devuelve la del vecino.
     assert _detalle_houzez(bloque, "state") is None
+
+
+def test_la_plataforma_tambien_da_de_baja_la_pagina_de_su_cliente():
+    """`alderinmobiliaria.com` devuelve 866 bytes que dicen "Página no
+    disponible en Wasi". No es una variante que no sepamos leer: es una fuente
+    que dejó de publicar, y dejarla en NEEDS_FIX la condena a esperar para
+    siempre un arreglo nuestro que no existe."""
+    from connectors.generico import fuera_de_servicio
+
+    aviso = ("<title>Pagina no disponible en Wasi</title>"
+             "<p>La pagina que solicitaste no existe o no se encuentra "
+             "disponible. Si deseas activarla de nuevo puedes contactarnos "
+             "en: www.wasi.co</p>")
+    assert fuera_de_servicio(aviso) == "pagina no disponible"
+
+
+def test_un_sitio_que_pide_javascript_no_esta_de_baja():
+    """Un sitio hecho con un framework sirve un cascarón mínimo y un
+    `<noscript>` que dice casi la misma frase. Entra por las dos condiciones
+    -texto corto y la frase- y dar de baja una inmobiliaria VIVA es el más caro
+    de los dos errores posibles."""
+    from connectors.generico import fuera_de_servicio
+
+    spa = ('<div id="root"></div>'
+           "<noscript>Esta pagina no esta disponible sin JavaScript</noscript>")
+    assert fuera_de_servicio(spa) is None
+
+
+def test_un_sitio_vivo_que_menciona_la_frase_no_se_da_de_baja():
+    """El tope de texto es la guarda: una página de baja es CHICA."""
+    from connectors.generico import fuera_de_servicio
+
+    vivo = ("<h1>Inmobiliaria</h1>"
+            "<p>La pagina no disponible del municipio nos obligo a mudarnos. </p>"
+            + "<p>Casa en venta en el centro. </p>" * 40)
+    assert fuera_de_servicio(vivo) is None

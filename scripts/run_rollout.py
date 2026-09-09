@@ -320,8 +320,14 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
         return {**r, "estado": "ERROR_DISCOVERY", "detalle": str(e)[:80],
                 "segundos": round(time.time() - t0, 1), "_props": props}
 
+    # `total_declarado` con `.get`: un plan puede no declarar total, y de hecho
+    # la mayoria de los sitios no lo declara. Leerlo con corchetes acoplaba la
+    # corrida entera a que TODOS los caminos de TODOS los discover pusieran la
+    # clave, y el que no la ponia -el retorno temprano `NO_ES_WASI` de wasi-
+    # tiraba `KeyError` y paraba las dos colas: `alderinmobiliaria.com` dejo de
+    # servir su sitio y el runner exploto en vez de decirlo.
     r.update({"variante": plan["variante"], "soportada": plan["soportada"],
-              "total_declarado": plan["total_declarado"],
+              "total_declarado": plan.get("total_declarado"),
               "tokko_client_id": plan.get("tokko_client_id"),
               "ruta_listado": plan.get("ruta_listado"),
               "fuera_de_servicio": plan.get("fuera_de_servicio")})

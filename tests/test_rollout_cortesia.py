@@ -121,3 +121,19 @@ def test_el_bloqueo_propagado_cede_una_vez_y_despues_abandona():
 
     assert resultado["intervalo_cedido"] is not None
     assert limitador.intervalo_de("ejemplo.com.ar") > 0.001
+
+
+def test_un_plan_sin_total_declarado_no_hace_estallar_la_corrida():
+    """`total_declarado` es opcional: la mayoría de los sitios no lo declara.
+    Leerlo con corchetes acoplaba la corrida a que TODOS los caminos de TODOS
+    los discover pusieran la clave, y el retorno temprano `NO_ES_WASI` no la
+    ponía: `alderinmobiliaria.com` dejó de servir su sitio, el runner tiró
+    KeyError y paró las dos colas."""
+    limitador = LimitadorDeRitmo(0.001)
+    con = ConnectorQueAbsorbeElBloqueo(limitador)
+    con.discover = lambda fuente: {"variante": "NO_ES_WASI", "soportada": False}
+
+    resultado = _procesar_con(con, FUENTE, max_fichas=0, observacion=True)
+
+    assert resultado["total_declarado"] is None
+    assert resultado["estado"] == "VARIANTE_NO_SOPORTADA"

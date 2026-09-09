@@ -41,6 +41,7 @@ from html import unescape
 from pathlib import Path
 from typing import Any, Iterator
 
+from .generico import fuera_de_servicio
 from .base import (Bloqueado, Connector, ErrorPermanente, ErrorTransitorio,
                    Fuente, PropiedadNormalizada, a_entero, a_numero,
                    detectar_operacion, detectar_tipo, limpiar)
@@ -170,6 +171,16 @@ class WasiConnector(Connector):
             # devuelve cero en silencio, que es la forma mas cara de fallar.
             plan["variante"] = "NO_ES_WASI"
             plan["soportada"] = False
+            plan["total_declarado"] = None
+            # Puede no ser Wasi porque la PLATAFORMA dio de baja la pagina y
+            # sirve su propio aviso en el dominio de la inmobiliaria. Decirlo
+            # cambia el cierre: una fuente que dejo de publicar es INACTIVE, y
+            # no una variante que no sabemos leer esperando un arreglo nuestro
+            # que no existe. `alderinmobiliaria.com` devuelve 866 bytes que
+            # dicen "Pagina no disponible en Wasi".
+            baja = fuera_de_servicio(html)
+            if baja:
+                plan["fuera_de_servicio"] = baja
             return plan
 
         decl = inventario_declarado(html)
