@@ -3065,7 +3065,18 @@ class GenericoConnector(Connector):
 
     @staticmethod
     def _sup(texto: str, etiqueta: str) -> float | None:
-        m = re.search(rf"(?:{etiqueta})[^\d]{{0,18}}([\d.,]{{2,9}})\s*m", texto, re.I) or \
+        # `Terreno 127 m x 50 m` es una MEDIDA, no un area: leer el primer
+        # numero guarda el ANCHO del lote como si fuera su superficie.
+        # `arbinipropiedades.com.ar` lo publica asi en la prosa, y ademas de
+        # ensuciar el dato hacia que la senal de fuente dijera que la ficha
+        # publica superficie_total cuando el extractor -con razon- se negaba.
+        # El triage leyo esa discrepancia como defecto de radio FAMILIA y
+        # paro las dos colas.
+        #
+        # La guarda es sobre la DIMENSION y no sobre cualquier letra: asi no
+        # se pierde "300 metros cuadrados", que es legitimo.
+        m = re.search(rf"(?:{etiqueta})[^\d]{{0,18}}([\d.,]{{2,9}})\s*m"
+                      rf"(?!\s*[x×]\s*\d)", texto, re.I) or \
             re.search(rf"([\d.,]{{2,9}})\s*m[²2]\s*(?:{etiqueta})", texto, re.I)
         if not m:
             return None

@@ -121,6 +121,26 @@ def _rotulo_de_ubicacion(texto: str, rotulo: str) -> str | None:
     return (limpiar(m.group(1)) or None) if m else None
 
 
+# La descripcion bajo su propio encabezado:
+#
+#   <h2 class="text-section">Descripcion.</h2>
+#   <div class="text-format"><p>Venta de lote de 760 mts2...</p></div>
+#
+# Se ancla en el ENCABEZADO y no en la clase del contenedor: `text-format`
+# es un nombre de estilo y aparece en otros bloques de la misma pagina.
+RE_DESCRIPCION_ROTULADA = re.compile(
+    r"<h[1-6][^>]*>\s*Descripci.n\s*\.?\s*</h[1-6]>\s*"
+    r"<div[^>]*>(.{40,4000}?)</div>", re.S | re.I)
+
+
+def _descripcion_rotulada(html: str) -> str | None:
+    """El cuerpo que sigue al encabezado `Descripcion`."""
+    m = RE_DESCRIPCION_ROTULADA.search(html or "")
+    if not m:
+        return None
+    return limpiar(re.sub(r"<[^>]+>", " ", m.group(1))) or None
+
+
 def _detalle_houzez(html: str, clase: str) -> str | None:
     m = re.search(RE_DETALLE_HOUZEZ.format(clase=clase), html or "", re.I | re.S)
     if not m:
@@ -671,11 +691,13 @@ class WordPressConnector(Connector):
         # Y otros temas lo publican con el rotulo escrito al lado.
         ciudad = ciudad or _rotulo_de_ubicacion(html, "Localidad")
         provincia = provincia or _rotulo_de_ubicacion(html, "Provincia")
-        # El mismo bloque trae la operacion y el tipo con su rotulo.
+        # El mismo bloque trae la operacion y el tipo con su rotulo, y la
+        # descripcion cuelga de su propio encabezado.
         operacion = operacion or detectar_operacion(
             _rotulo_de_ubicacion(html, "Tipo de operaci.n"))
         tipo = tipo or detectar_tipo(
             _rotulo_de_ubicacion(html, "Tipo de inmueble"))
+        descripcion = descripcion or _descripcion_rotulada(html)
         if lat is None or lon is None:
             marcador = _coordenada_del_marcador(html)
             if marcador:
@@ -696,6 +718,12 @@ class WordPressConnector(Connector):
                 _primero(meta, "fave_property_land"))
             superficie_cubierta = superficie_cubierta or a_numero(
                 _primero(meta, "fave_property_size"))
+
+        # El rotulo explicito, cuando ni el texto ni la meta lo dieron.
+        # El valor trae el `<sup>` del m2, asi que el lector devuelve
+        # "760 m" y lo que importa es el numero.
+        superficie_total = superficie_total or a_numero(
+            _rotulo_de_ubicacion(html, "Superficie terreno"))
 
         source_fields = {}
         descartados: list[str] = []

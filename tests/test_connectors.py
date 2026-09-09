@@ -4194,3 +4194,42 @@ def test_la_operacion_y_el_tipo_con_el_rotulo_escrito():
              '<li class="prop-overview__item"> Tipo de operacion: Venta </li>')
     assert _rotulo_de_ubicacion(ficha, "Tipo de operaci.n") == "Venta"
     assert _rotulo_de_ubicacion(ficha, "Tipo de inmueble") == "Terrenos"
+
+
+def test_la_descripcion_cuelga_de_su_encabezado():
+    """`inmobiliariacip.com.ar` la publica bajo `<h2>Descripción.</h2>`. Se
+    ancla en el ENCABEZADO y no en la clase del contenedor: `text-format` es un
+    nombre de estilo y aparece en otros bloques de la misma página."""
+    from connectors.wordpress import _descripcion_rotulada
+
+    ficha = ('<h2 class="text-section mb-2">Descripcion.</h2>'
+             '<div class="text-format"><p><strong>Venta de lote de 760 mts2 en '
+             'Loteo Sauzalito en el ingreso a la Villa de Merlo.</strong></p></div>')
+    assert _descripcion_rotulada(ficha).startswith("Venta de lote de 760")
+    assert _descripcion_rotulada("<div class='text-format'>corto</div>") is None
+
+
+def test_la_superficie_rotulada_trae_el_sup_del_metro():
+    """El valor viene como `760 m<sup>2</sup>`, así que el lector de rótulos
+    corta en el `<` y devuelve "760 m". Lo que importa es el número."""
+    from connectors.base import a_numero
+    from connectors.wordpress import _rotulo_de_ubicacion
+
+    fila = '<li class="prop-overview__item"> Superficie terreno: 760 m<sup>2</sup> </li>'
+    assert a_numero(_rotulo_de_ubicacion(fila, "Superficie terreno")) == 760.0
+
+
+def test_una_medida_no_es_una_superficie():
+    """`arbinipropiedades.com.ar` publica en la prosa "Terreno 127 mx 50 m
+    6.350 m2". Leer el primer número guarda el ANCHO del lote como si fuera su
+    superficie, y además hacía que la señal de fuente dijera que la ficha
+    publica `superficie_total` cuando el extractor -con razón- se negaba: el
+    triage leyó esa discrepancia como defecto de radio FAMILIA y paró las dos
+    colas."""
+    from connectors.generico import GenericoConnector as G
+
+    assert G._sup("Terreno 127 mx 50 m 6.350 m2", r"total|terreno") is None
+    assert G._sup("Terreno 127 m x 50 m", r"total|terreno") is None
+    # Y no se pierde una forma legítima de escribirlo.
+    assert G._sup("Superficie total: 300 m2", r"total|terreno") == 300.0
+    assert G._sup("Superficie total 300 metros cuadrados", r"total|terreno") == 300.0

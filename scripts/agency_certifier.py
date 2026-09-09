@@ -189,12 +189,18 @@ def tokko_source_signals(body: str, url: str = "") -> dict[str, bool]:
     money = re.search(
         r"(?:VENTA|ALQUILER[A-ZÁ ]*|TEMPORARIO)\s*"
         r"(?:USD|U\$S|US\$|\$)\s*[\d.,]{3,15}", text, re.I)
+    # La senal pregunta EXACTAMENTE lo que pregunta el extractor, incluida la
+    # guarda de unidad. Sin ella, `arbinipropiedades.com.ar` -que en la prosa
+    # dice "Terreno 127 mx 50 m 6.350 m2"- daba superficie_total como provista
+    # leyendo el ANCHO del lote como si fuera el area, el extractor se negaba
+    # -correctamente- y el triage lo leyo como un defecto de radio FAMILIA y
+    # paro las dos colas. Una senal mas laxa que su extractor fabrica defectos.
     total = re.search(
-        r"(?:Superficie total|Total terreno|Terreno)\s*:?\s*[\d.,]+\s*m",
-        text, re.I)
+        r"(?:Superficie total|Total terreno|Terreno)\s*:?\s*[\d.,]+\s*"
+        r"(?:ha|m)(?![a-z])", text, re.I)
     covered = re.search(
         r"(?:Total construido|Superficie cubierta|Cubierta|Total Built)"
-        r"\s*:?\s*[\d.,]+\s*m", text, re.I)
+        r"\s*:?\s*[\d.,]+\s*m(?![a-z])", text, re.I)
     return {
         "titulo": bool(title),
         "descripcion": bool(description),
