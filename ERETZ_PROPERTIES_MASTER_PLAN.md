@@ -1198,6 +1198,46 @@ correcto.
 
 ---
 
+## 7 quinquies. Qué gana la recertificación
+
+La pregunta que justifica decenas de horas de cola, respondida con números.
+Medido el 2026-09-09 sobre las **67 agencias ya recertificadas**: 3.429
+propiedades comparables por `hash_dedup`, más **2.197 que no estaban en la
+snapshot**.
+
+| campo | gana | pierde | pierde con motivo |
+|---|---|---|---|
+| `superficie_total` | 912 | 68 | 86 |
+| `barrio` | 786 | 0 | 148 |
+| `ciudad` | 511 | 0 | 9 |
+| `operacion` | 507 | 0 | 0 |
+| `direccion` | 372 | 0 | 0 |
+| `banos` | 235 | 182 | 13 |
+| `superficie_cubierta` | 222 | 48 | 0 |
+| `dormitorios` | 193 | 37 | 11 |
+| `ambientes` | 184 | 4 | 32 |
+| `provincia` | 173 | 0 | 0 |
+| `latitud` / `longitud` | 171 | 0 | 0 |
+| `precio` | 1 | 1 | 0 |
+
+**En `ciudad`, `operacion`, `direccion`, `provincia` y las coordenadas se pierde
+cero.** Son los campos que deciden si una propiedad se puede encontrar.
+
+**Las 182 pérdidas de `banos` son correcciones, no regresiones.** Se abrieron
+contra la fuente:
+
+- `alaspropiedades.com`: el valor viejo, `banos=5`, salía del desplegable del
+  buscador —"Habitaciones Min. Cualquiera 1 2 3 4 5 **Baños** Min…"—, leyendo
+  el número *antes* del rótulo.
+- `agostiniinmobiliaria.com`: salía del bloque de propiedades relacionadas al
+  pie. Era la cantidad de baños del vecino.
+
+De ahí la advertencia que quedó escrita en `recertification_gain.py`: **una
+columna de pérdidas sin motivo hay que abrirla contra la fuente antes de leerla
+como regresión.** El informe dice dónde mirar, no qué pasó.
+
+---
+
 ## 8. Barrera de autorización
 
 Requieren autorización humana explícita: escritura o modificación en base
