@@ -1020,10 +1020,27 @@ tarea administrativa: frena la mitad del catálogo.
    para los connectors, y el quality gate ahora consulta las propuestas aptas y
    reporta el alcance proyectado aparte del real. Lo que queda son dos cosas
    distintas:
-   - **Corregir el resolver** para que un nombre que sale del campo `barrio` no
-     resuelva a una localidad de otra provincia sin corroboración (§3.4). Vive
-     en `connectors/base.py`, así que necesita un punto sin certificación en
-     vuelo: tocarlo cambia la huella de todas las estrategias.
+   - ~~**Corregir el resolver** para que exija corroboración.~~ **Se probó y
+     se revirtió el 2026-09-08.** La regla se implementó, se validó contra las
+     29.048 propuestas —reproducía el corte exacto: 6.890 dejaban de afirmarse,
+     18.383 seguían resolviendo— y aun así es incorrecta, porque el resolver no
+     tiene con qué distinguir los dos casos:
+
+     | nombre | alias | candidatas por nombre |
+     |---|---|---|
+     | `Villa del Parque` (barrio de CABA) | no | 1 |
+     | `Mar del Plata` (ciudad real) | no | 1 |
+     | `Rosario` (ciudad real) | no | 1 |
+
+     Son la misma forma. Exigir corroboración en el resolver deja de promover
+     `Mar del Plata` desde el campo `barrio`, que son las 11.440 propiedades de
+     Tokko que el plan cuenta como recuperadas, y de resolver `Rosario` a secas.
+     Lo detectaron siete pruebas que ya existían.
+
+     **La corroboración vive donde ya está: en la auditoría de escritura.** Ahí
+     retiene 6.890 propuestas sin perder el dato —queda en el artefacto y se
+     recupera con una coordenada o una provincia— y el costo asimétrico se paga
+     una sola vez, en el único lugar donde una ciudad falsa se vuelve pública.
    - **Decidir qué significa `ciudad` cuando sólo hay una coordenada** (§2.8).
      Son 35.644 propiedades, tres de cada cuatro de las que quedarían sin
      ciudad. No es técnica: el plan ya descartó `municipios` como nivel
