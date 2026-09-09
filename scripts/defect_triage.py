@@ -268,7 +268,7 @@ def clasificar(resultado: dict[str, Any]) -> dict[str, Any]:
                 f"el sitio publica catalogo y no lo pudimos enumerar: "
                 f"{'; '.join(senales)}")
         return _veredicto(
-            CONTINUE, resultado, "variante_no_soportada", RADIO_ESTRATEGIA,
+            CONTINUE, resultado, COMPONENTE_VARIANTE, RADIO_ESTRATEGIA,
             "el connector no reconoce la forma de este sitio y no se hallaron "
             "senales de catalogo publicado")
     if "BLOQUEADA" in estados:
@@ -326,6 +326,10 @@ def _veredicto(decision: str, resultado: dict[str, Any], componente: str,
 # --------------------------------------------------------------------------
 # Corte por lote
 # --------------------------------------------------------------------------
+# El componente que se anota cuando no reconocimos la forma del sitio. Es
+# un sintoma con tantas causas como formas de sitio hay, no un patron.
+COMPONENTE_VARIANTE = "variante_no_soportada"
+
 DEFECTOS_PARA_CORTAR = 5
 HORAS_PARA_CORTAR = 12
 
@@ -347,6 +351,25 @@ def debe_cortar_por_lote(pendientes: list[dict[str, Any]],
 
     firmas: dict[str, int] = {}
     for defecto in pendientes:
+        # `variante_no_soportada` no es un patron: es un sintoma. La firma se
+        # arma con conector, estrategia, componente y razones, y para "no
+        # reconoci la forma del sitio" esas cuatro cosas son identicas siempre,
+        # asi que agrupa causas que no tienen nada que ver. Medido sobre las
+        # que compartian la firma ef05c0690dea:
+        #
+        #   armanino   una SPA de React
+        #   amud       jQuery contra la API de la plataforma SOM
+        #   bergo      HTTP 200 con el cuerpo VACIO
+        #   bottai     un catalogo real con una forma de url que no conocemos
+        #   alta       16 propiedades detras de un /buscador (ya arreglada)
+        #
+        # Cinco causas, una firma. La regla -"dos con la misma firma dejo de
+        # ser casualidad"- es buena justamente porque la firma identifica un
+        # patron; donde no lo identifica, para la cola por nada. Estas siguen
+        # contando para el umbral de cinco y para el radio, que no dependen de
+        # que la firma signifique algo.
+        if defecto.get("componente_sospechoso") == COMPONENTE_VARIANTE:
+            continue
         clave = defecto.get("firma_del_patron")
         if clave:
             firmas[clave] = firmas.get(clave, 0) + 1

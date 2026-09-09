@@ -52,3 +52,40 @@ def test_una_linea_rota_no_tira_la_cola(tmp_path):
         + json.dumps({"canonical_agency_id": "roomix:x", "diagnostico": "y"})
         + "\n", encoding="utf-8")
     assert diferidos(tmp_path) == {"roomix:x": "y"}
+
+
+def test_la_firma_de_una_variante_no_soportada_no_corta_por_repetida():
+    """`variante_no_soportada` no es un patrón: es un síntoma. La firma se arma
+    con conector, estrategia, componente y razones, y para "no reconocí la
+    forma del sitio" esas cuatro cosas son idénticas siempre. Bajo la misma
+    firma `ef05c0690dea` convivían una SPA de React, un sitio que consume la
+    API de SOM, un host que devuelve HTTP 200 con el cuerpo vacío y un catálogo
+    real con una forma de url desconocida."""
+    from scripts.defect_triage import COMPONENTE_VARIANTE, debe_cortar_por_lote
+
+    dos = [{"componente_sospechoso": COMPONENTE_VARIANTE,
+            "firma_del_patron": "misma", "radio_estimado": "ESTRATEGIA"}] * 2
+    corta, _ = debe_cortar_por_lote(dos)
+    assert not corta
+
+
+def test_una_firma_repetida_de_verdad_sigue_cortando():
+    """Donde la firma sí identifica un patrón, la regla se conserva entera."""
+    from scripts.defect_triage import debe_cortar_por_lote
+
+    dos = [{"componente_sospechoso": "extraccion_transversal_de_atributos",
+            "firma_del_patron": "misma", "radio_estimado": "AGENCIA"}] * 2
+    corta, motivo = debe_cortar_por_lote(dos)
+    assert corta and "misma firma" in motivo
+
+
+def test_las_variantes_siguen_contando_para_el_umbral_de_cinco():
+    """Se las excluye de la regla de la firma, no del recuento: cinco defectos
+    sueltos siguen justificando una tanda de diagnóstico."""
+    from scripts.defect_triage import COMPONENTE_VARIANTE, debe_cortar_por_lote
+
+    cinco = [{"componente_sospechoso": COMPONENTE_VARIANTE,
+              "firma_del_patron": f"f{i}", "radio_estimado": "ESTRATEGIA"}
+             for i in range(5)]
+    corta, motivo = debe_cortar_por_lote(cinco)
+    assert corta and "5 defectos" in motivo
