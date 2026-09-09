@@ -90,6 +90,30 @@ RE_ROTULO_DE_UBICACION = (
     "(?:^|>|\\|)\\s*{rotulo}\\s*:\\s*([^<>|]{{2,60}}?)\\s*(?:<|\\||$)")
 
 
+# El campo de mapa de ACF -el plugin de campos a medida mas usado en
+# WordPress- pone la coordenada en dos atributos del marcador:
+#
+#   <div class="marker" data-lat="-32.3455" data-lng="-65.0302"></div>
+#
+# El respaldo que ya existia busca los dos numeros PEGADOS, asi que este no
+# lo veia. Y la coordenada no solo ubica: es lo que permite contradecir un
+# nombre. `inmobiliariacip.com.ar` publica "Localidad: Merlo, Provincia:
+# San Luis" y el catalogo tiene `Merlo` en Buenos Aires y `Villa de Merlo`
+# en San Luis; con la coordenada, el resolver descarta la de Buenos Aires
+# en vez de afirmarla a 700 km.
+RE_MARCADOR_ACF = re.compile(
+    r'data-lat=["\'](-?\d{1,2}\.\d{3,})["\'][^>]{0,80}?'
+    r'data-lng=["\'](-?\d{1,3}\.\d{3,})["\']', re.I)
+
+
+def _coordenada_del_marcador(html: str) -> tuple[float, float] | None:
+    """La coordenada del marcador del mapa, si la ficha trae una."""
+    m = RE_MARCADOR_ACF.search(html or "")
+    if not m:
+        return None
+    return float(m.group(1)), float(m.group(2))
+
+
 def _rotulo_de_ubicacion(texto: str, rotulo: str) -> str | None:
     """Lo que la ficha dice despues de `Localidad:` o `Provincia:`."""
     m = re.search(RE_ROTULO_DE_UBICACION.format(rotulo=rotulo),
@@ -647,6 +671,15 @@ class WordPressConnector(Connector):
         # Y otros temas lo publican con el rotulo escrito al lado.
         ciudad = ciudad or _rotulo_de_ubicacion(html, "Localidad")
         provincia = provincia or _rotulo_de_ubicacion(html, "Provincia")
+        # El mismo bloque trae la operacion y el tipo con su rotulo.
+        operacion = operacion or detectar_operacion(
+            _rotulo_de_ubicacion(html, "Tipo de operaci.n"))
+        tipo = tipo or detectar_tipo(
+            _rotulo_de_ubicacion(html, "Tipo de inmueble"))
+        if lat is None or lon is None:
+            marcador = _coordenada_del_marcador(html)
+            if marcador:
+                lat, lon = marcador
 
         dormitorios = self._ambientes(texto, r"dormitorios?|habitaciones?")
         banos = self._ambientes(texto, r"ba[nñ]os?")

@@ -4160,3 +4160,28 @@ def test_un_rastro_sin_parentesis_no_aporta_ubicacion():
     from connectors.tokko import _partido_del_rastro
 
     assert _partido_del_rastro('<h2>Casa</h2><p> Centro | Rosario </p>') is None
+
+
+def test_la_coordenada_del_marcador_del_mapa():
+    """El campo de mapa de ACF pone la coordenada en dos atributos del
+    marcador. El respaldo que ya existía busca los dos números PEGADOS, así que
+    éste no lo veía: `inmobiliariacip.com.ar` publicaba la coordenada y sus 196
+    propiedades quedaban sin ella."""
+    from connectors.wordpress import _coordenada_del_marcador
+
+    mapa = ('<div class="acf-map"><div class="marker" data-lat="-32.345566561379"'
+            ' data-lng="-65.030261887311"></div></div>')
+    assert _coordenada_del_marcador(mapa) == (-32.345566561379, -65.030261887311)
+    assert _coordenada_del_marcador("<div class='marker'></div>") is None
+
+
+def test_la_operacion_y_el_tipo_con_el_rotulo_escrito():
+    """El mismo bloque que trae `Localidad:` trae también `Tipo de operación:` y
+    `Tipo de inmueble:`. El acento llega roto en el HTML de varios sitios, y por
+    eso el rótulo se escribe con un comodín."""
+    from connectors.wordpress import _rotulo_de_ubicacion
+
+    ficha = ('<li class="prop-overview__item"> Tipo de inmueble: Terrenos </li>'
+             '<li class="prop-overview__item"> Tipo de operacion: Venta </li>')
+    assert _rotulo_de_ubicacion(ficha, "Tipo de operaci.n") == "Venta"
+    assert _rotulo_de_ubicacion(ficha, "Tipo de inmueble") == "Terrenos"
