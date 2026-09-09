@@ -1287,6 +1287,26 @@ y la forma de las URLs es regular, así que el trabajo es acotado.
 
 ---
 
+## 7 septies. Un 200 con el cuerpo vacío es un sitio muerto
+
+`eduardobergo.com.ar` responde **HTTP 200, `Content-Type: text/html`, cero
+bytes**, y lo hace igual en `https`, en `www` y en `http`. No es un corte del
+momento: el host no sirve un sitio.
+
+Hoy eso termina en `NEEDS_FIX` con "zero inventory was not exhaustively proven",
+que es exactamente el estado que condena a una agencia a esperar para siempre un
+arreglo que no existe. El detector de bajas no lo ve porque busca un texto
+—"cuenta suspendida", "página no disponible"— y acá no hay texto que buscar.
+
+**La regla que falta:** un cuerpo vacío o de sólo espacios, visto en las dos
+corridas, es una fuente que dejó de publicar. Va con las mismas cautelas que ya
+tiene el detector —las dos corridas, no una— porque dar de baja una inmobiliaria
+viva es el error caro.
+
+Vive en `generic/common` y por eso espera a la próxima ventana.
+
+---
+
 ## 8. Barrera de autorización
 
 Requieren autorización humana explícita: escritura o modificación en base
