@@ -29,9 +29,10 @@ from scripts.agency_fingerprints import (FINGERPRINT_SCHEMA_VERSION,
                                          strategy_fingerprint_v1, strategy_for)
 from scripts.run_agency_certification_queue import (CERROJO, LATIDO_VENCIDO,
                                                     TERMINAL, choose_connector,
-                                                    full_queue,
+                                                    diferidos, full_queue,
                                                     is_current_result,
                                                     latest_results,
+                                                    paro_ya_diagnosticado,
                                                     queue_fingerprint,
                                                     ready_queue)
 
@@ -186,21 +187,35 @@ def sin_defectos_abiertos(salida: Path,
     momento, y si el triage cambio -como cambio al dejar de leer un sitio
     inaccesible como perdida sistematica- el registro viejo ya no dice la
     verdad. Es el mismo criterio que las huellas.
+
+    **Y tampoco bloquea el que ya se difirio con firma.** Si el runner va a
+    atravesar ese paro -porque alguien escribio el diagnostico, el componente y
+    el radio en la lista de diferidas-, exigir que este resuelto para reabrir
+    reintroduce el mismo deadlock por otra puerta: el preflight cerraria la cola
+    esperando un arreglo que la propia politica decidio postergar. Las dos
+    puertas tienen que leer la misma lista.
     """
     resultados = latest_results(salida)
-    abiertos, vencidos, acotados = [], [], []
+    pospuestos = diferidos(salida)
+    abiertos, vencidos, acotados, postergados = [], [], [], []
     for clave, resultado in resultados.items():
         if resultado.get("status") != "NEEDS_FIX":
             continue
+        triage = clasificar(resultado)
         if clave in catalogo and not huella_vigente(resultado, catalogo[clave]):
             vencidos.append(clave)
-        elif clasificar(resultado).get("decision") == CONTINUE:
+        elif triage.get("decision") == CONTINUE:
             acotados.append(clave)
+        elif paro_ya_diagnosticado(pospuestos.get(clave), triage):
+            postergados.append(clave)
         else:
             abiertos.append(clave)
     if abiertos:
         return False, f"{len(abiertos)} sin resolver: {abiertos[:5]}"
     detalle = "ninguno que detenga la cola"
+    if postergados:
+        detalle += (f"; {len(postergados)} con el paro diagnosticado y "
+                    f"diferido: {postergados[:3]}")
     if vencidos:
         detalle += (f"; {len(vencidos)} con huella vencida que la cola vuelve "
                     f"a evaluar: {vencidos[:3]}")

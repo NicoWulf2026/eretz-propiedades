@@ -34,7 +34,10 @@ def test_se_lee_el_diagnostico_de_cada_agencia(tmp_path):
 
     fuera = diferidos(tmp_path)
     assert set(fuera) == {"roomix:armanino", "roomix:attaguile"}
-    assert "JavaScript" in fuera["roomix:armanino"]
+    assert "JavaScript" in fuera["roomix:armanino"]["diagnostico"]
+    # Sin firma: difieren del corte por lote y de nada mas.
+    assert fuera["roomix:armanino"]["componente"] == ""
+    assert fuera["roomix:armanino"]["radio"] == ""
 
 
 def test_sin_diagnostico_escrito_no_se_difiere(tmp_path):
@@ -51,7 +54,8 @@ def test_una_linea_rota_no_tira_la_cola(tmp_path):
         "{esto no es json\n"
         + json.dumps({"canonical_agency_id": "roomix:x", "diagnostico": "y"})
         + "\n", encoding="utf-8")
-    assert diferidos(tmp_path) == {"roomix:x": "y"}
+    assert diferidos(tmp_path) == {
+        "roomix:x": {"diagnostico": "y", "componente": "", "radio": ""}}
 
 
 def test_la_firma_de_una_variante_no_soportada_no_corta_por_repetida():

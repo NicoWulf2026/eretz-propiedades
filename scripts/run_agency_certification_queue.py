@@ -72,18 +72,32 @@ CERROJO = "AGENCY_CERTIFICATION_RUNNER.lock"
 # `AGENCY_DEFECT_QUEUE.jsonl` y la agencia sigue cerrando `NEEDS_FIX`. Lo
 # unico que cambia es que deja de contar para el corte por LOTE.
 #
-# Y no alcanza para tapar nada: solo se difiere lo que el triage ya decidio
-# CONTINUE. Un defecto de radio transversal para las dos colas igual, este
-# o no en la lista.
+# Y no alcanza para tapar nada. Hay dos grados de diferimiento, y el segundo
+# cuesta mas caro de escribir:
+#
+#   SIN FIRMA   la entrada trae solo `diagnostico`. Difiere del corte por
+#               LOTE y nada mas; un radio transversal para igual. Es el caso
+#               de `armanino`, `attaguile` y `andrea gianfelice`.
+#
+#   CON FIRMA   la entrada trae ademas `componente` y `radio`. Entonces
+#               tambien atraviesa el PARO, pero unicamente si el defecto que
+#               aparece es EXACTAMENTE ese: mismo componente y mismo radio.
+#
+# La firma es lo que evita que esto sea un interruptor de apagado. Si una
+# agencia diferida vuelve con OTRO componente -o con el mismo y un radio
+# mayor- el paro se dispara igual, porque eso ya no es el defecto que alguien
+# miro y decidio postergar: es uno nuevo. `--continue-after-fix`, en cambio,
+# apaga el corte para cualquier cosa que aparezca, incluida una corrupcion, y
+# por eso no sirve para sostener una pasada entera.
 DIFERIDOS = "AGENCY_DEFECTS_DIFERIDOS.jsonl"
 
 
-def diferidos(output: Path) -> dict[str, str]:
+def diferidos(output: Path) -> dict[str, dict[str, str]]:
     """Que agencias tienen su defecto diagnosticado y postergado, y por que."""
     ruta = output / DIFERIDOS
     if not ruta.exists():
         return {}
-    fuera: dict[str, str] = {}
+    fuera: dict[str, dict[str, str]] = {}
     for linea in ruta.read_text(encoding="utf-8").splitlines():
         if not linea.strip():
             continue
@@ -95,8 +109,29 @@ def diferidos(output: Path) -> dict[str, str]:
         # algo, o se vuelve el lugar donde van a parar los defectos
         # incomodos.
         if fila.get("canonical_agency_id") and fila.get("diagnostico"):
-            fuera[fila["canonical_agency_id"]] = fila["diagnostico"]
+            fuera[fila["canonical_agency_id"]] = {
+                "diagnostico": fila["diagnostico"],
+                "componente": fila.get("componente") or "",
+                "radio": fila.get("radio") or "",
+            }
     return fuera
+
+
+def paro_ya_diagnosticado(postergado: dict[str, str] | None,
+                          triage: dict[str, Any]) -> bool:
+    """El paro que aparece, ¿es el mismo que alguien ya miro y posterga?
+
+    Exige las dos mitades de la firma. Sin firma completa la respuesta es que
+    no, y el paro se respeta.
+    """
+    if not postergado:
+        return False
+    componente = postergado.get("componente")
+    radio = postergado.get("radio")
+    if not componente or not radio:
+        return False
+    return (triage.get("componente_sospechoso") == componente
+            and triage.get("radio_estimado") == radio)
 
 
 BANDERA_DE_PARO = "AGENCY_CERTIFICATION_STOP.json"
@@ -706,11 +741,14 @@ def main() -> int:
                            "epoch": time.time()})
             # Un defecto que ya tuvo su tanda de diagnostico y se posterga a
             # conciencia se sigue anotando, pero no vuelve a hacer saltar el
-            # corte por lote cada doce horas. Solo aplica a los que el triage
-            # dejo en CONTINUE: un radio transversal para igual.
+            # corte cada doce horas. Un paro transversal solo se atraviesa si
+            # la entrada diferida trae la firma del defecto y coincide.
             postergado = pospuestos.get(canonical_id)
-            if postergado and triage["decision"] != STOP:
-                triage["diferido_por"] = postergado
+            paro_conocido = paro_ya_diagnosticado(postergado, triage)
+            if postergado and (triage["decision"] != STOP or paro_conocido):
+                triage["diferido_por"] = postergado["diagnostico"]
+                if paro_conocido:
+                    triage["paro_diferido"] = True
             else:
                 defectos_pendientes.append(triage)
             append_jsonl(output / "AGENCY_DEFECT_QUEUE.jsonl", {
@@ -725,7 +763,17 @@ def main() -> int:
                           "agency": canonical_id, "status": result["status"]}), flush=True)
         if triage is not None and not args.continue_after_fix:
             corta, motivo_lote = debe_cortar_por_lote(defectos_pendientes)
-            if triage["decision"] == STOP:
+            if triage.get("paro_diferido"):
+                # El paro es el que ya se miro y se posterga. Se anota entero
+                # -la agencia igual cierra NEEDS_FIX y el defecto queda en la
+                # cola- pero no detiene a nadie.
+                print(json.dumps({
+                    "paro_diferido": canonical_id,
+                    "componente": triage["componente_sospechoso"],
+                    "radio": triage["radio_estimado"],
+                    "diagnostico": triage["diferido_por"]},
+                    ensure_ascii=False), flush=True)
+            elif triage["decision"] == STOP:
                 stopped_on = canonical_id
                 # El otro worker no puede enterarse solo: un defecto
                 # transversal lo es para los dos, y si sigue certificando con
