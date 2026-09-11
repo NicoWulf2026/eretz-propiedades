@@ -97,7 +97,17 @@ def diferidos(output: Path) -> dict[str, dict[str, str]]:
     ruta = output / DIFERIDOS
     if not ruta.exists():
         return {}
-    fuera: dict[str, dict[str, str]] = {}
+    # Una agencia puede tener VARIAS entradas, y todas valen.
+    #
+    # `carlos castano` lo mostro el 2026-09-11: estaba diferida por no leer
+    # unos atributos, y despues su sitio entro en obra y aparecio un defecto
+    # distinto -colapso de inventario-. Con una sola entrada por agencia la
+    # segunda pisaba a la primera, asi que la agencia quedaba cubierta para el
+    # defecto nuevo y descubierta para el viejo, sin que nadie lo decidiera.
+    #
+    # Guardarlas todas no afloja nada: cada firma sigue teniendo que coincidir
+    # entera con el defecto que aparece.
+    fuera: dict[str, list[dict[str, str]]] = {}
     for linea in ruta.read_text(encoding="utf-8").splitlines():
         if not linea.strip():
             continue
@@ -109,29 +119,36 @@ def diferidos(output: Path) -> dict[str, dict[str, str]]:
         # algo, o se vuelve el lugar donde van a parar los defectos
         # incomodos.
         if fila.get("canonical_agency_id") and fila.get("diagnostico"):
-            fuera[fila["canonical_agency_id"]] = {
+            fuera.setdefault(fila["canonical_agency_id"], []).append({
                 "diagnostico": fila["diagnostico"],
                 "componente": fila.get("componente") or "",
                 "radio": fila.get("radio") or "",
-            }
+            })
     return fuera
 
 
-def paro_ya_diagnosticado(postergado: dict[str, str] | None,
-                          triage: dict[str, Any]) -> bool:
-    """El paro que aparece, ¿es el mismo que alguien ya miro y posterga?
+def diagnostico_de(postergadas: list[dict[str, str]] | None) -> str:
+    """Lo que se anota en el log. Con varias, la ultima escrita."""
+    return postergadas[-1]["diagnostico"] if postergadas else ""
 
-    Exige las dos mitades de la firma. Sin firma completa la respuesta es que
-    no, y el paro se respeta.
+
+def paro_ya_diagnosticado(postergadas: list[dict[str, str]] | None,
+                          triage: dict[str, Any]) -> dict[str, str] | None:
+    """¿Alguna de las firmas de esta agencia es el paro que aparece?
+
+    Devuelve la entrada que coincide -para poder anotar SU diagnostico y no
+    el de otra- o None. Cada firma exige sus dos mitades: sin componente y
+    radio no cubre nada, y el paro se respeta.
     """
-    if not postergado:
-        return False
-    componente = postergado.get("componente")
-    radio = postergado.get("radio")
-    if not componente or not radio:
-        return False
-    return (triage.get("componente_sospechoso") == componente
-            and triage.get("radio_estimado") == radio)
+    for postergado in postergadas or []:
+        componente = postergado.get("componente")
+        radio = postergado.get("radio")
+        if not componente or not radio:
+            continue
+        if (triage.get("componente_sospechoso") == componente
+                and triage.get("radio_estimado") == radio):
+            return postergado
+    return None
 
 
 BANDERA_DE_PARO = "AGENCY_CERTIFICATION_STOP.json"
@@ -743,11 +760,15 @@ def main() -> int:
             # conciencia se sigue anotando, pero no vuelve a hacer saltar el
             # corte cada doce horas. Un paro transversal solo se atraviesa si
             # la entrada diferida trae la firma del defecto y coincide.
-            postergado = pospuestos.get(canonical_id)
-            paro_conocido = paro_ya_diagnosticado(postergado, triage)
-            if postergado and (triage["decision"] != STOP or paro_conocido):
-                triage["diferido_por"] = postergado["diagnostico"]
-                if paro_conocido:
+            postergadas = pospuestos.get(canonical_id)
+            coincide = paro_ya_diagnosticado(postergadas, triage)
+            if postergadas and (triage["decision"] != STOP or coincide):
+                # El diagnostico que se anota es el de la firma que coincidio;
+                # si no coincidio ninguna -defecto continuable- alcanza con el
+                # ultimo escrito.
+                triage["diferido_por"] = (coincide or {}).get(
+                    "diagnostico") or diagnostico_de(postergadas)
+                if coincide:
                     triage["paro_diferido"] = True
             else:
                 defectos_pendientes.append(triage)
