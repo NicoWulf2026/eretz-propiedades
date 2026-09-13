@@ -27,6 +27,7 @@ No escribe en ninguna base.
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 import time
 from typing import Any
@@ -150,6 +151,72 @@ def firma(resultado: dict[str, Any], componente: str) -> str:
     return hashlib.sha256("::".join(partes).encode("utf-8")).hexdigest()[:12]
 
 
+# Hasta cuanto un defecto de campo se considera "una ficha rara" y no un
+# problema del parser compartido.
+#
+# Son DOS condiciones y hay que cumplir las dos, porque cada una sola miente:
+# el porcentaje solo deja pasar 40 fichas de 2.000, y el tope solo deja pasar
+# 4 de 4 -o sea el 100 %-.
+#
+# Los numeros salen del historial, no de la intuicion. En esta pasada pararon
+# las dos colas: `conti` 1 de 275, `civeira` 1 de 163, `cocucci` 1 de 152.
+# Tres ciclos completos de diagnostico y relanzamiento por tres fichas. Del
+# otro lado, lo que hay que seguir atajando empieza mucho mas arriba: `blanco`
+# pierde 1.207 precios de 1.211 y `bardi` 48 ambientes de 59.
+#
+# Entre 1 ficha y 48 hay lugar de sobra para un umbral, y este se pone cerca
+# del piso a proposito: ante la duda, parar.
+#
+# Los dos topes son INCLUSIVOS. En el borde exacto -4 fichas de 200, que es
+# justo el 2 %- el que manda es el tope absoluto: cuatro propiedades son
+# cuatro propiedades, y discutir si el 2,0 % entra o no entra por un decimal
+# no cambia nada del mundo real. El quinto caso ya no pasa ni por el tope de
+# fichas ni por el porcentual.
+TOPE_DE_FICHAS_MENORES = 4
+TOPE_PORCENTUAL_MENOR = 0.02
+
+COMPONENTE_MENOR = "extraccion_de_baja_magnitud"
+
+
+def _es_de_baja_magnitud(resultado: dict[str, Any],
+                         fallidos: list[str]) -> bool:
+    """¿Los campos que fallaron fallaron en poquisimas fichas?
+
+    Se exige campo por campo: alcanza con que UNO exceda para que el conjunto
+    deje de ser menor. Si `christian arce` pierde una ficha de ambientes pero
+    nueve de operacion, lo que manda son las nueve.
+
+    Sin `source_provided` no se puede calcular proporcion, y sin proporcion no
+    se difiere: la respuesta es que no es menor.
+    """
+    if not fallidos:
+        return False
+    if os.environ.get("ERETZ_TRIAGE_SIN_BAJA_MAGNITUD"):
+        return False
+    cobertura = resultado.get("field_coverage") or {}
+    for campo in fallidos:
+        dato = cobertura.get(campo)
+        if not isinstance(dato, dict):
+            return False
+        fallas = int(dato.get("extraction_failed") or 0)
+        provistos = int(dato.get("source_provided") or 0)
+        if fallas > TOPE_DE_FICHAS_MENORES or not provistos:
+            return False
+        if fallas / provistos > TOPE_PORCENTUAL_MENOR:
+            return False
+    return True
+
+
+def _detalle_menor(resultado: dict[str, Any], fallidos: list[str]) -> str:
+    cobertura = resultado.get("field_coverage") or {}
+    partes = []
+    for campo in fallidos:
+        dato = cobertura.get(campo) or {}
+        partes.append(f"{campo} {dato.get('extraction_failed')} de "
+                      f"{dato.get('source_provided')}")
+    return "; ".join(partes)
+
+
 def clasificar(resultado: dict[str, Any]) -> dict[str, Any]:
     """STOP o CONTINUE, con la evidencia que lo justifica."""
     razones = list(resultado.get("reasons") or [])
@@ -161,8 +228,45 @@ def clasificar(resultado: dict[str, Any]) -> dict[str, Any]:
     fallidos = _campos_con_extraccion_fallida(resultado)
     externos = _errores_externos(resultado)
 
+    # ------- STOP: una corrida vio inventario que la otra no --------------
+    #
+    # Va PRIMERO, antes que cualquier CONTINUE, porque es la unica familia de
+    # falla que puede terminar en un COMPLETE falso.
+    #
+    # `carames` lo mostro el 2026-09-13: run1 enumero 207 urls y run2 177, con
+    # 30 faltantes, y el triage lo dejo pasar como `sitio_externo` afirmando
+    # "el catalogo enumero igual en las dos corridas". No enumero igual.
+    #
+    # El error era leer el RELATO en vez del DATO: la diferencia de inventario
+    # se deducia buscando las frases "inventories differ" o "not idempotent"
+    # entre las razones, y ese resultado traia otra razon -se quedo sin
+    # presupuesto de tiempo-, asi que la deduccion dijo que no habia
+    # diferencia mientras `comparison.missing_in_run2` decia 30.
+    #
+    # Ahora se mira el numero. Que a una corrida le falte tiempo explica POR
+    # QUE faltan; no vuelve seguro publicar lo que quedo.
+    faltantes = int(comparacion.get("missing_in_run2") or 0)
+    if faltantes:
+        return _veredicto(
+            STOP, resultado, "inventario_inestable_entre_corridas",
+            RADIO_FAMILIA,
+            f"{faltantes} propiedades que la primera corrida vio no "
+            f"aparecieron en la segunda ({comparacion.get('run1_urls')} "
+            f"contra {comparacion.get('run2_urls')} urls); mientras no se "
+            f"sepa por que, publicar la corrida corta seria declarar completo "
+            f"un inventario que no lo esta")
+
     # ---------------- STOP: evidencia de radio transversal ----------------
-    if fallidos:
+    #
+    # Un defecto de campo minusculo no puede parar las dos colas, pero tampoco
+    # puede taparle el paso a un diagnostico mas grave: este chequeo era el
+    # PRIMERO de la funcion, asi que una ficha con un campo ilegible devolvia
+    # antes de mirar colisiones de identidad, enumeracion o inventario.
+    #
+    # Por eso lo menor NO devuelve CONTINUE aca: cae al resto de los chequeos,
+    # y solo si ninguno encuentra nada termina en CONTINUE, al final.
+    menor = _es_de_baja_magnitud(resultado, fallidos)
+    if fallidos and not menor:
         # La fuente publica el campo y no lo leimos. El que lee es el parser, y
         # el parser lo comparten todas las agencias de la familia.
         return _veredicto(
@@ -294,6 +398,21 @@ def clasificar(resultado: dict[str, Any]) -> dict[str, Any]:
         return _veredicto(
             CONTINUE, resultado, "inventario_chico", RADIO_AGENCIA,
             "inventario muy chico y ningun campo con extraccion fallida")
+
+    # ------- CONTINUE: el defecto menor, ya que ningun otro aparecio -------
+    #
+    # Se llega aca solo despues de haber pasado por TODOS los chequeos de
+    # arriba sin que ninguno encontrara nada. O sea: lo unico que hay es un
+    # campo ilegible en una o dos fichas.
+    #
+    # Sigue anotandose entero en la cola de defectos y la agencia sigue
+    # cerrando NEEDS_FIX. Lo unico que cambia es que no detiene a los dos
+    # workers.
+    if menor:
+        return _veredicto(
+            CONTINUE, resultado, COMPONENTE_MENOR, RADIO_AGENCIA,
+            f"la extraccion fallo en poquisimas fichas y ningun otro chequeo "
+            f"encontro nada: {_detalle_menor(resultado, fallidos)}")
 
     # ---------------- Sin evidencia para acotar: se para ------------------
     return _veredicto(
