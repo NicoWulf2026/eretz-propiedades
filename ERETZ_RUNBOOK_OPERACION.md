@@ -569,6 +569,57 @@ cuatro de esas seis ya tienen vía declarada hoy.
 
 ---
 
+## 8 quater. Las dos reglas que más pagan, medidas
+
+Diagnosticar en tanda las 15 agencias que emitían `variante_no_soportada`
+—en vez de esperar a que el corte por lote las fuera trayendo de a cinco—
+dejó ver que **no son quince problemas**. Son dos reglas y un resto.
+
+### Regla 1: marcador en el slug
+
+Ya son tres agencias grandes con la misma forma y marcadores distintos:
+
+| agencia | marcador | propiedades |
+|---|---|---:|
+| `bottai` | `/inmueble_1070` | **333** |
+| `baron` | `…-ficha-ibnXXXX` | 193 |
+| `estela d onofrio` | `…-ficha-edp2409` | 26 |
+| `crestale` | slug terminado en id: `…-quinquela-plaza-13355` | — |
+
+**552 propiedades identificadas**, y las cuatro se reconocen sin abrir una sola
+ficha. Es la regla que más paga por línea escrita en toda la ventana. Nota para
+quien la escriba: `crestale` entra sólo si se mira **el final del slug** en vez
+de buscar una palabra fija — su marcador es posicional, no léxico.
+
+### Regla 2: ficha PHP con el id en query
+
+| agencia | forma | propiedades |
+|---|---|---:|
+| `coldwell banker andes` | `/ficha.php?id=6699459` | 17 |
+| `corporacion` | `/detalle.php?id=p1549-i554` | 25 |
+| `cometto` | `/propiedades_ver2.php`, `/inmueble_ver.php` | — |
+
+Tres agencias, un solo cambio: el descubrimiento genérico descarta las rutas
+con id en query.
+
+### El resto
+
+Cuatro arman el catálogo en el cliente y son §3 ter (`armanino` SPA de React,
+`cecilia sarro` 228 KB con 210 caracteres de texto, `dacal` 3 KB con 28,
+`attaguile`). Tres no son defecto de extracción sino preguntas previas:
+`bergo` contesta 200 con el cuerpo vacío, `chenlo` está registrada en la
+**página de agentes de un portal ajeno**, y de `chambouleyron` no se pudo
+establecer desde el HTML si publica catálogo.
+
+### Una advertencia sobre los marcadores de plataforma
+
+Buscando familias creí ver seis agencias sobre una plataforma llamada SOM.
+No existe: el detector buscaba el substring `som` de tres letras y encontraba
+`fontawesome` y **`somos`**. Un marcador de plataforma de menos de cinco
+letras no sirve; hay que verificar el contexto antes de agrupar.
+
+---
+
 ## 8 ter. Enumerar la vitrina en vez del catálogo
 
 El defecto que se disfraza de éxito. Lo encontró `blangiforti` y el barrido
