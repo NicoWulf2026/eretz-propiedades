@@ -21,6 +21,13 @@ Dos preguntas por agencia, las dos contra la fuente:
     ROTA     pedir la misma pagina dos veces, ¿da el mismo conjunto de fichas?
     MAS      ¿algun listado por operacion ofrece bastante mas que la home?
 
+Lo que el sondeo NO distingue bien: en sitios chicos, la heuristica de "el
+prefijo mas poblado" cuenta rutas de navegacion junto con las fichas y sale
+optimista. `espina propiedades` figuro como HAY MAS con mejor=11 contra enum=5,
+y recorrido el listado tiene exactamente 5 -3 en venta y 2 en alquiler-: los
+otros seis enlaces eran repeticiones y menu. Un HAY MAS sobre menos de ~15 se
+confirma a mano antes de anotarlo como defecto.
+
 Uso:
     python scripts/sondeo_superficie.py --estrategia generic/html_catalog
     python scripts/sondeo_superficie.py --web https://blangiforti.com.ar
