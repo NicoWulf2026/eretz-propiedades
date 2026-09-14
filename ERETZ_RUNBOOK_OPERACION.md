@@ -787,6 +787,44 @@ la única que paró la cola fue la que no tenía ninguno.
 
 ---
 
+## 8 sexies. El contador declarado confunde alturas de calle con totales
+
+El chequeo de catálogo corto (§8 ter) compara lo que la fuente declara contra
+lo que enumeramos. La regla es correcta. **Su insumo no siempre lo es.**
+
+Medido el 2026-09-14 sobre los cinco casos que el chequeo marca:
+
+| agencia | techo leído | qué era | hueco real |
+|---|---:|---|---:|
+| `bardi` | 101 | real: 86 venta + 14 alquiler + 1 | **11** |
+| `alberti` | 168 | **`Congreso 1687`**, una altura | **56** (el total real es 158) |
+| `civile` | 3.250 | **`Aizpurua 3250`**, una altura | **0** |
+| `eckert` | 39 | señal independiente, sin verificar | ? |
+| `calma` | 108 | señal independiente, sin verificar | ? |
+
+**Dos de cinco techos eran números de calle.** En `civile` el error era total —no
+falta nada—; en `alberti` el techo estaba mal pero el hueco existía igual, sólo
+que de 56 y no de 66.
+
+### Cómo no repetirlo
+
+1. **El contador del sitio se verifica por operación, no en la home.** Los
+   listados `?operation=N` publican su propio total y ésos son fiables: en
+   `bardi` y en `alberti` los tres sumaron exactamente lo que el sitio dice.
+2. **Un número pegado a la palabra "Propiedades" no es un contador.** En el HTML
+   una dirección —"Aizpurua 3250"— queda al lado del rótulo y el patrón la lee
+   como total.
+3. **`declared_total` igual a lo enumerado no es un hueco.** En `eckert` y
+   `calma` el techo sale sólo de `independent_max_inventory_signal`, que es otra
+   señal y necesita su propia verificación antes de llamar a nada falso
+   COMPLETE.
+
+El arreglo del lector de contadores es código con huella y va a la ventana. El
+chequeo se queda como está: marcar de más y verificar es barato; no marcar es lo
+que produce un COMPLETE falso.
+
+---
+
 ## 9. Regenerar los artefactos de datos
 
 En este orden, porque cada uno consume al anterior:
