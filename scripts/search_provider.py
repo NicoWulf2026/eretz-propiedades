@@ -116,6 +116,10 @@ class Brave(Proveedor):
 
         params = urllib.parse.urlencode({
             "q": consulta, "country": pais, "search_lang": idioma,
+            # `ui_lang` cambia como Brave ordena y rotula para un usuario de
+            # ese pais. Buscando inmobiliarias argentinas, pedirlo en es-AR no
+            # es cosmetico: mueve el ranking hacia dominios .ar.
+            "ui_lang": "es-AR" if pais.upper() == "AR" else f"{idioma}-{pais.upper()}",
             "count": max(1, min(cantidad, 20)), "safesearch": "off",
         })
         req = urllib.request.Request(
