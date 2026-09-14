@@ -464,8 +464,20 @@ def debe_cortar_por_lote(pendientes: list[dict[str, Any]],
     if not pendientes:
         return False, ""
 
-    if len(pendientes) >= DEFECTOS_PARA_CORTAR:
-        return True, (f"{len(pendientes)} defectos pendientes sin resolver "
+    # Los de baja magnitud no cuentan para el umbral. El corte junta defectos
+    # para diagnosticarlos de a tanda, y un defecto clasificado por magnitud es
+    # justamente uno que decidimos no diagnosticar: una ficha de 163, o cuatro
+    # de 300. Sumarlos hacia que cinco defectos de UNA ficha pararan las dos
+    # colas, que es lo que la politica de magnitud vino a evitar.
+    #
+    # Siguen contando para el radio y para la regla de firma repetida: si cinco
+    # agencias fallan el mismo campo por poco, eso ya no es magnitud, es un
+    # patron, y esas dos reglas lo ven.
+    computables = [d for d in pendientes
+                   if d.get("componente_sospechoso") != COMPONENTE_MENOR]
+
+    if len(computables) >= DEFECTOS_PARA_CORTAR:
+        return True, (f"{len(computables)} defectos pendientes sin resolver "
                       f"(umbral {DEFECTOS_PARA_CORTAR})")
 
     firmas: dict[str, int] = {}

@@ -202,3 +202,55 @@ def test_sin_defectos_no_inventa_uno_menor():
 ])
 def test_tabla_de_casos_reales(campos, esperado):
     assert clasificar(resultado(campos))["decision"] == esperado
+
+
+# --- K a N: el corte por lote no lo pide un defecto de una ficha -------
+
+from scripts.defect_triage import (COMPONENTE_MENOR,  # noqa: E402
+                                   debe_cortar_por_lote)
+
+
+def pendiente(componente, radio=RADIO_AGENCIA, firma=None):
+    return {"componente_sospechoso": componente, "radio_estimado": radio,
+            "firma_del_patron": firma, "epoch": 0}
+
+
+def test_cinco_defectos_de_una_ficha_no_cortan():
+    """La politica de magnitud seria inutil si el umbral los juntara igual.
+
+    Cinco agencias con una ficha ilegible cada una no justifican parar las dos
+    colas: son cinco cosas que ya decidimos no diagnosticar.
+    """
+    cortar, motivo = debe_cortar_por_lote(
+        [pendiente(COMPONENTE_MENOR, firma=f"f{i}") for i in range(5)],
+        ahora=0)
+    assert not cortar, motivo
+
+
+def test_cinco_defectos_de_verdad_si_cortan():
+    cortar, motivo = debe_cortar_por_lote(
+        [pendiente("variante_no_soportada", firma=f"f{i}") for i in range(5)],
+        ahora=0)
+    assert cortar
+    assert "5 defectos" in motivo
+
+
+def test_los_menores_no_inflan_el_umbral():
+    """Cuatro menores y uno real son cinco entradas y un solo defecto."""
+    pendientes = [pendiente(COMPONENTE_MENOR, firma=f"m{i}") for i in range(4)]
+    pendientes.append(pendiente("variante_no_soportada", firma="real"))
+    cortar, motivo = debe_cortar_por_lote(pendientes, ahora=0)
+    assert not cortar, motivo
+
+
+def test_pero_dos_menores_con_la_misma_firma_siguen_cortando():
+    """Si el mismo campo falla poco en dos agencias, dejo de ser magnitud.
+
+    Es un patron, y la regla de firma repetida tiene que verlo aunque cada caso
+    por separado sea chico.
+    """
+    cortar, motivo = debe_cortar_por_lote(
+        [pendiente(COMPONENTE_MENOR, firma="misma"),
+         pendiente(COMPONENTE_MENOR, firma="misma")], ahora=0)
+    assert cortar
+    assert "misma firma" in motivo
