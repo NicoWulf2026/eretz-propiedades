@@ -569,6 +569,61 @@ cuatro de esas seis ya tienen vía declarada hoy.
 
 ---
 
+## 8 ter. Enumerar la vitrina en vez del catálogo
+
+El defecto que se disfraza de éxito. Lo encontró `blangiforti` y el barrido
+midió cuánto se repite.
+
+**El caso.** Su home y su `/propiedades` muestran una **selección rotativa** de
+~24 fichas: dos pedidos separados por cuatro segundos comparten seis. El
+catálogo real vive en `/ventas`, que devuelve 180 estables sin paginado.
+Enumerábamos 41 de 183 — el 22 %, y un 22 % distinto cada vez. Lo delató que
+las dos corridas no coincidieran; **si la rotación hubiera sido estable, habría
+certificado `CERTIFIED_COMPLETE` sobre una quinta parte del inventario.**
+
+**Producción no sirve de vara.** Blangiforti tiene 44 filas productivas, o sea
+que viene arrastrando la misma vitrina desde la preingestión. Comparar contra
+producción le daría 82 % y pasaría limpio. Hay que preguntarle a la fuente:
+
+```bash
+python scripts/sondeo_superficie.py --estrategia generic/html_catalog
+```
+
+**Rotar no alcanza.** `adrian mitre` rota igual —0,75— pero enumeró 46 cuando
+el listado más grande visible tiene 12: el conector llegó más hondo y la
+rotación no le quita nada. El defecto es que lo enumerado **se parezca al
+tamaño de la vitrina**, o que un listado ofrezca bastante más.
+
+### Lo que el barrido encontró de nuevo
+
+Sobre las 35 agencias de `generic/html_catalog`: una sola vitrina real
+(`blangiforti`) y un caso distinto, `cavacini`, con una causa que no está en el
+conector.
+
+Su web registrada **es una página interna con estado de paginado**:
+`…/site/properties/sale?opType=sale&page=3`. Certificamos 3 propiedades, las dos
+corridas idénticas y sin errores — nada en el resultado delata el problema. El
+listado completo tiene 54 en venta y 4 en alquiler: **58, y vemos 3.**
+
+Eso abrió la pregunta general, y la respuesta acota el susto:
+
+| forma de la web registrada | cuántas | ¿pierde inventario? |
+|---|---:|---|
+| con query string | 5 (3 aún `IDENTITY_PENDING`) | sí: `cavacini` 3 de 58, `casagrande` 0 |
+| con ruta interna, sin query | 36 | **no** |
+
+La segunda fila es la que importa y conviene no confundir con la primera.
+`agostini` está registrada en `/estado/alquiler/` y aun así enumeró 361, que es
+exactamente lo que el sitio declara sumando sus dos filtros: 21 de alquiler y
+340 de venta. El conector sale del filtro de ruta. Lo que no atraviesa es el
+paginado en query.
+
+El arreglo, entonces, no es del conector: es normalizar la url declarada
+—sacarle paginado y filtros antes de usarla como punto de partida—, y eso es
+resolución de identidad.
+
+---
+
 ## 9. Regenerar los artefactos de datos
 
 En este orden, porque cada uno consume al anterior:
