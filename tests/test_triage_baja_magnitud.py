@@ -300,3 +300,91 @@ def test_sin_el_dato_de_cobertura_se_mantiene_el_corte():
     t = clasificar(con_imagenes(800, None))
     assert t["decision"] == STOP
     assert t["componente_sospechoso"] == "imagenes_compartidas"
+
+
+# --- S a V: una muestra de uno no es el 100 % -----------------------------
+
+from scripts.defect_triage import MUESTRA_MINIMA  # noqa: E402
+
+
+def con_inventario(campos, enumeradas):
+    r = resultado(campos)
+    r["enumeration_audit"] = {"enumerated": enumeradas, "review_reasons": []}
+    return r
+
+
+def test_una_pagina_de_una_sobre_un_inventario_grande_no_para():
+    """`baron`: banos falla 1 de 1, y hay 182 propiedades enumeradas.
+
+    Esa unica pagina era /emprendimientos/imperio-baron, un proyecto de 24
+    pisos que no tiene un valor unico de banos. Uno sobre 182 es 0,5 %.
+    """
+    t = clasificar(con_inventario({"banos": (1, 1)}, 182))
+    assert t["decision"] == CONTINUE
+    assert t["componente_sospechoso"] == "extraccion_de_baja_magnitud"
+
+
+def test_pero_si_el_inventario_tambien_es_chico_para():
+    """Uno de uno sobre cinco propiedades sigue siendo el 20 %."""
+    t = clasificar(con_inventario({"banos": (1, 1)}, 5))
+    assert t["decision"] == STOP
+
+
+def test_sin_inventario_conocido_no_se_afloja():
+    """Sin con que comparar, la muestra chica se trata como antes."""
+    t = clasificar(con_inventario({"banos": (1, 1)}, 0))
+    assert t["decision"] == STOP
+
+
+def test_la_muestra_grande_sigue_usando_su_propia_proporcion():
+    """Con la senyal viendo el campo en muchas fichas, el denominador es ese.
+
+    3 de 5 seria el 60 %, pero con MUESTRA_MINIMA fichas vistas la proporcion
+    ya es informativa y no hay que ir a buscar el inventario.
+    """
+    t = clasificar(con_inventario({"ambientes": (3, MUESTRA_MINIMA + 5)}, 500))
+    assert t["decision"] == STOP, "3 sobre 15 es el 20 %: no es menor"
+
+
+# --- W a Z: lo que la fuente dice que tiene ------------------------------
+
+def con_techo(enumeradas, declarado, campos=None):
+    r = resultado(campos)
+    r["run1"]["enumeradas"] = enumeradas
+    r["run2"]["enumeradas"] = enumeradas
+    r["enumeration_audit"] = {"enumerated": enumeradas,
+                              "declared_total": declarado,
+                              "review_reasons": []}
+    return r
+
+
+def test_un_catalogo_corto_para_aunque_no_falle_ningun_campo():
+    """`alberti`: 102 de 168 declaradas, y habia cerrado CERTIFIED_COMPLETE."""
+    t = clasificar(con_techo(102, 168))
+    assert t["decision"] == STOP
+    assert t["componente_sospechoso"] == "catalogo_declarado_mayor_que_el_enumerado"
+    assert "168" in t["evidencia"] and "102" in t["evidencia"]
+
+
+def test_un_defecto_menor_no_tapa_el_catalogo_corto():
+    """El orden importa: el hueco se mira antes que el campo."""
+    t = clasificar(con_techo(102, 168, {"banos": (1, 1)}))
+    assert t["decision"] == STOP
+    assert t["componente_sospechoso"] == "catalogo_declarado_mayor_que_el_enumerado"
+
+
+def test_una_diferencia_chica_no_para():
+    """`abriola`: 264 de 274. Un techo declarado suele incluir despublicadas."""
+    t = clasificar(con_techo(264, 274))
+    assert t["componente_sospechoso"] != "catalogo_declarado_mayor_que_el_enumerado"
+
+
+def test_pocas_invisibles_en_un_catalogo_grande_no_paran():
+    """Diez sobre tres mil es el 0,3 %: las dos condiciones se exigen juntas."""
+    t = clasificar(con_techo(2990, 3000))
+    assert t["componente_sospechoso"] != "catalogo_declarado_mayor_que_el_enumerado"
+
+
+def test_enumerar_todo_lo_declarado_no_para():
+    t = clasificar(con_techo(182, 182))
+    assert t["componente_sospechoso"] != "catalogo_declarado_mayor_que_el_enumerado"

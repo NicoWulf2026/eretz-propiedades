@@ -35,7 +35,14 @@ DEBEN_PARAR = {
     "roomix:blanco propiedades": "99,7 % de los precios perdidos",
     "roomix:carames bienes raices lanus este": "estrategia distinta por corrida",
     "roomix:diego malizia estudio inmobiliario": "paginacion que se declara completa",
-    "roomix:baron inmobiliaria": "192 propiedades invisibles",
+    # `baron inmobiliaria` estuvo aca por "192 propiedades invisibles" y se
+    # retira el 2026-09-14: su resultado guardado ya no tiene ese defecto.
+    # Hoy enumera 182, declara 182, independent_gap 0 y las dos corridas
+    # ven el mismo conjunto. El control vigilaba un fixture que cambio.
+    #
+    # La garantia no se pierde, se muda: vive en
+    # test_un_catalogo_corto_para_aunque_no_falle_ningun_campo, donde el
+    # fixture es sintetico y no puede envejecer.
     "roomix:civile propiedades": "colapso aparente de inventario",
     "roomix:carlos castano propiedades": "enumeracion contaminada / sitio en obra",
 }

@@ -176,6 +176,15 @@ TOPE_DE_FICHAS_MENORES = 4
 TOPE_PORCENTUAL_MENOR = 0.02
 
 COMPONENTE_MENOR = "extraccion_de_baja_magnitud"
+# Debajo de esta cantidad de fichas vistas, la proporcion sobre
+# `source_provided` deja de ser informativa y se mide contra el inventario.
+MUESTRA_MINIMA = 10
+
+# Cuanto hueco entre lo declarado y lo enumerado deja de ser ruido. Las dos
+# condiciones se exigen juntas: diez propiedades invisibles sobre tres mil no
+# son un defecto, y el 20 % de un catalogo de diez tampoco.
+INVISIBLES_MINIMAS = 10
+TOPE_DE_HUECO = 0.10
 
 
 # Con cuanta cobertura de imagenes se acepta que la regla acerto. No es 1,0
@@ -237,7 +246,22 @@ def _es_de_baja_magnitud(resultado: dict[str, Any],
         provistos = int(dato.get("source_provided") or 0)
         if fallas > TOPE_DE_FICHAS_MENORES or not provistos:
             return False
-        if fallas / provistos > TOPE_PORCENTUAL_MENOR:
+        # Con una muestra chiquita la proporcion no mide lo que se quiere
+        # medir. `baron` fallo `banos` 1 de 1 -100 %- sobre 182 propiedades
+        # enumeradas, y esa unica pagina era /emprendimientos/imperio-baron,
+        # un proyecto de 24 pisos que no tiene un valor unico de banos.
+        #
+        # La proporcion existe para atrapar "3 de 5", donde el campo falla en
+        # casi todo lo que hay. Cuando la senyal vio el campo en menos de
+        # `MUESTRA_MINIMA` paginas, lo que hay que preguntarse es otra cosa:
+        # cuanto pesa la falla sobre el inventario real.
+        denominador = provistos
+        if provistos < MUESTRA_MINIMA:
+            enumeradas = int((resultado.get("enumeration_audit") or {}).get(
+                "enumerated") or 0)
+            if enumeradas > provistos:
+                denominador = enumeradas
+        if fallas / denominador > TOPE_PORCENTUAL_MENOR:
             return False
     return True
 
@@ -280,6 +304,35 @@ def clasificar(resultado: dict[str, Any]) -> dict[str, Any]:
     #
     # Ahora se mira el numero. Que a una corrida le falte tiempo explica POR
     # QUE faltan; no vuelve seguro publicar lo que quedo.
+    # Lo que la fuente DICE que tiene contra lo que pudimos ver. Va antes que
+    # cualquier defecto de campo porque es de otro orden: un campo que falla
+    # ensucia una ficha, un catalogo corto declara completo lo que no lo esta.
+    #
+    # El triage no miraba esto. Medido el 2026-09-14 sobre la pasada, 59
+    # agencias declaran mas de lo que enumeramos y tres ya habian cerrado
+    # CERTIFIED_COMPLETE asi: `alberti` 102 de 168, `eckert` 29 de 39, `calma`
+    # 90 de 108.
+    #
+    # El umbral tiene dos mitades a proposito. Un techo declarado suele incluir
+    # unidades despublicadas o contadas distinto, asi que una diferencia de
+    # tres sobre doscientas no dice nada; una de sesenta sobre ciento sesenta y
+    # ocho si.
+    auditoria = resultado.get("enumeration_audit") or {}
+    enumeradas = int(auditoria.get("enumerated") or 0)
+    techo = max(int(auditoria.get("declared_total") or 0),
+                int(auditoria.get("independent_max_inventory_signal") or 0))
+    if enumeradas and techo > enumeradas:
+        invisibles = techo - enumeradas
+        proporcion = invisibles / techo
+        if invisibles >= INVISIBLES_MINIMAS and proporcion >= TOPE_DE_HUECO:
+            return _veredicto(
+                STOP, resultado, "catalogo_declarado_mayor_que_el_enumerado",
+                RADIO_FAMILIA,
+                f"la fuente declara {techo} y enumeramos {enumeradas}: "
+                f"{invisibles} propiedades ({proporcion:.1%}) que existen y no "
+                f"vimos. Certificar esto como completo seria afirmar que el "
+                f"catalogo termina donde termino nuestra enumeracion")
+
     faltantes = int(comparacion.get("missing_in_run2") or 0)
     if faltantes:
         return _veredicto(
