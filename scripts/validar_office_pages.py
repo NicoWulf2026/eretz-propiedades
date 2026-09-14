@@ -44,7 +44,15 @@ CERT = Path(r"D:\INMO CAPITAL\ERETZ_AGENCY_CERTIFICATION_20260827")
 BREAKDOWN = CERT / "ERETZ_STAGING_BREAKDOWN.jsonl"
 SALIDA = CERT / "ERETZ_OFFICE_PAGES_VALIDADAS.jsonl"
 
-UA = {"User-Agent": "Mozilla/5.0 (compatible; ERETZ/1.0)", "Accept-Encoding": "gzip"}
+# El mismo user-agent que usa el resto del pipeline de discovery.
+#
+# No es cosmetico: con `ERETZ/1.0` los dominios de las redes devuelven HTTP 403
+# y con uno de navegador devuelven 200. La primera corrida de este script uso
+# el cortes y dio 95 paginas "no encontradas" con 20.146 avisos detras, que en
+# realidad nunca se llegaron a leer. No poder mirar no es haber mirado.
+UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
+      "Accept-Encoding": "gzip", "Accept-Language": "es-AR,es;q=0.9"}
 
 
 def bajar(url: str, timeout: float = 20) -> v2.Sitio:
