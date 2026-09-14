@@ -299,3 +299,24 @@ def test_la_regla_no_se_come_un_sitio_propio_con_ruta_parecida():
     """`/propiedades/` en el sitio propio NO es una seccion de terceros."""
     s = sitio("https://blancopropiedades.com/propiedades/casas", "Blanco")
     assert clasificar_sitio(s) == REAL_ESTATE_OFFICIAL_SITE
+
+
+def test_un_2xx_con_cuerpo_vacio_es_un_desafio_no_un_dominio_parkeado():
+    """`global.remax.com` y `remax.com.ar` devuelven 202 con cero bytes.
+
+    La pagina existe y probablemente es correcta; lo que falta es un navegador
+    que ejecute el desafio. Llamarlas parkeadas descartaba 100 oficinas con
+    20.919 avisos, el grupo de mayor inventario del universo.
+    """
+    s = Sitio(url="https://www.remax.com.ar/titanium", titulo="", texto="",
+              http=202, html_bytes=0)
+    assert clasificar_sitio(s) != PARKED_DOMAIN
+    v = verificar(agencia("RE/MAX TITANIUM"), [s])
+    assert v.clase not in (OFFICIAL_WEB, OFFICIAL_OFFICE_PAGE)
+
+
+def test_pero_un_2xx_con_poco_html_y_poco_texto_si_es_parkeado():
+    """La distincion es el tamanyo del HTML, no la ausencia de texto."""
+    s = Sitio(url="https://mizrahi.com", titulo="mizrahi.com",
+              texto="mizrahi.com", http=200, html_bytes=2048)
+    assert clasificar_sitio(s) == PARKED_DOMAIN

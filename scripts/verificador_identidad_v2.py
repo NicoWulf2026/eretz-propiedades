@@ -274,6 +274,16 @@ def clasificar_sitio(sitio: Sitio, entidad: dict | None = None) -> str:
         return DESCONOCIDO
     if sitio.http >= 400:
         return DESCONOCIDO
+    # Un 2xx con el cuerpo VACIO no es una pagina: es un desafio anti-bot.
+    # `global.remax.com` y `remax.com.ar` devuelven HTTP 202 con cero bytes a
+    # cualquier cliente que no ejecute JavaScript. Llamarlas parkeadas —que es
+    # lo que hacia la regla de texto corto— descartaba 100 oficinas con 20.919
+    # avisos, o sea el grupo de mayor inventario del universo.
+    #
+    # La pagina existe y probablemente es correcta. Lo que no tenemos es una
+    # forma de leerla sin navegador, y eso se dice asi.
+    if not (sitio.texto or "").strip() and sitio.html_bytes == 0:
+        return DESCONOCIDO
 
     partes = urlsplit(sitio.url or "")
     host = partes.netloc.lower().removeprefix("www.")
