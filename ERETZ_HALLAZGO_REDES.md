@@ -108,6 +108,43 @@ y buscarle el catálogo a cada una, se recorre un catálogo y se reparte entre l
 
 ---
 
+## 4 bis. Medido el 2026-09-15: lo que se sostiene y lo que no
+
+Sondeo sobre 120 fichas tomadas al azar de las 74.529 publicadas.
+
+**Se sostiene:**
+
+| | |
+|---|---|
+| fichas publicadas en el sitemap | **74.529** |
+| atribución cuando la ficha se lee | **prácticamente el 100 %** |
+| oficinas distintas vistas en la muestra | 38 |
+| de esas, en nuestro padrón | **33 (87 %)** |
+
+**No se sostiene, y era mío:**
+
+1. **"El dominio propio de la oficina viene en el payload."** Falso. El campo
+   `description` es texto de marketing —*"Todas las propiedades que figuran en
+   mi perfil…"*, *"Agentes Excelentes, Resultados Excelentes"*—. De las 38
+   oficinas de la muestra, **cero** traen un dominio parseable. Lo afirmé
+   generalizando desde `REMAX Net`, que puso su URL en su descripción por
+   casualidad.
+
+2. **"62.521 avisos".** Sólo el **34 % de las fichas sirve HTML**; el resto
+   devuelve 202 con cero bytes. Y es **determinístico por URL**, no un límite de
+   ritmo: la misma ficha devuelve vacío con 2 s y con 6 s de pausa, mientras
+   otra sirve 382 KB siempre. Así que lo directamente legible son **~25.000
+   fichas**, no 74.529.
+
+**El premio real, entonces:** unas 25.000 propiedades con atribución fiable a
+las oficinas. Sigue siendo más que las 18.934 de toda la cola READY actual, y
+sigue sin necesitar navegador ni búsqueda paga. Pero es un tercio de lo que
+dije, y no resuelve el descubrimiento de webs de las oficinas.
+
+**Un subproducto que sí apareció:** 5 de las 38 oficinas vistas —`REMAX
+Diagonal II`, `REMAX Uno`, `REMAX Uno IV` y otras— **no están en nuestro
+padrón**. El sitemap también descubre agencias que no sabíamos que existían.
+
 ## 5. Qué falta comprobar antes de implementarlo
 
 No está medido todavía, y conviene no prometerlo hasta tenerlo:
