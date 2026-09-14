@@ -499,3 +499,24 @@ def verificar(entidad: dict, candidatas: list[Sitio]) -> VeredictoV2:
     return VeredictoV2(clase=NO_OFFICIAL_WEB_FOUND, confianza=MEDIA,
                        razon="ninguna candidata es un sitio inmobiliario propio; "
                              f"vistas: {', '.join(vistos[:4])}")
+
+
+def es_portal_url(url: str) -> bool:
+    """¿La url es de un portal, un directorio, un medio o una red?
+
+    Existe para que otros pasos puedan descartar candidatas sin bajarlas. No
+    reemplaza a `clasificar_sitio`, que necesita el contenido: esto mira la url
+    y nada mas, y por eso solo se usa para NO gastar una peticion.
+    """
+    from urllib.parse import urlsplit
+    partes = urlsplit(url if "://" in url else "https://" + url)
+    host = partes.netloc.lower().removeprefix("www.")
+    reg = registrable(host)
+    if reg in SOCIALES:
+        return True
+    if any(s in reg for s in MEDIOS) or any(s in reg for s in DIRECTORIOS):
+        return True
+    if any(p in host for p in PORTALES):
+        return True
+    return bool(RUTA_DE_TERCEROS.search(partes.path or "")
+                or RUTA_DE_NOTA.search(partes.path or ""))
