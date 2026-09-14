@@ -89,7 +89,11 @@ def fichas(html: str | None, base: str) -> set[str]:
 
 
 def sondear(web: str) -> dict:
-    base = web.rstrip("/")
+    # Las rutas candidatas cuelgan del ORIGEN, no del path registrado. Varias
+    # webs estan anotadas como https://x.com.ar/Venta, y pegarle /ventas encima
+    # da /Venta/ventas, que no existe en ningun lado.
+    partes = urlsplit(web if "://" in web else "https://" + web)
+    base = f"{partes.scheme}://{partes.netloc}"
     a = fichas(traer(base + "/"), base)
     time.sleep(CORTESIA)
     b = fichas(traer(base + "/"), base)
@@ -157,6 +161,11 @@ def main() -> int:
         atrapados = enumeradas and r["home"] and enumeradas <= r["home"] * 2
         if rota and atrapados:
             marca = "  <-- VITRINA"
+        elif not enumeradas and r["mejor"] >= MINIMO_PARA_OPINAR:
+            # Enumerar cero mientras el sitio muestra fichas es la senal mas
+            # fuerte que hay, y la version anterior la dejaba pasar en silencio
+            # porque pedia `enumeradas` distinto de cero para mirarla.
+            marca = "  <-- CERO Y HAY"
         elif enumeradas and r["mejor"] > enumeradas * 1.3:
             marca = "  <-- HAY MAS"
         elif rota:
