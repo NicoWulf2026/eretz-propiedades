@@ -523,7 +523,7 @@ tres que ya se midieron contra la fuente y **no** sirven:
 
 | Regla tentadora | Dónde se rompe |
 |---|---|
-| "leer `/wp-json/wp/v2/posts`" | contesta en 1 de las 7. attaguile y d'onofrio 404, carlos castaño 403, pozzobon 401; cintia fonzo y csgestion contestan 0 |
+| "leer `/wp-json/wp/v2/posts`" | contesta en 1 de las 7. attaguile y d'onofrio 404, pozzobon 401; cintia fonzo y csgestion contestan 0 |
 | "leer el `post-sitemap`" | existe en 4 de 7 — y en csgestion sus 105 entradas son **el blog**, no el catálogo |
 | "las entradas (`post`) son las fichas" | cierto en córdoba, falso en csgestion, misma plataforma y mismo síntoma |
 
@@ -536,9 +536,27 @@ Empezar por ésas paga varias agencias sin pedir criterio nuevo; los slugs
 realmente pelados —`/san-luis-1038-venta/` de córdoba, `/montevideo-745-casa-3-dormitorios`
 de urbanorosario— son los que obligan a decidir por contenido y van después.
 
-Ninguna de las 7 tiene filas productivas hoy salvo `carlos castaño` (39), así
-que la familia entera es inventario que todavía no está, no inventario en
-riesgo de romperse.
+### Son seis, no siete, y la séptima es otra cosa
+
+Al medir contra el directorio de plataformas del 25-ago aparece la diferencia
+que importa: **seis de las siete ya figuraban como `WORDPRESS_SIN_INVENTARIO`
+desde agosto** — nunca enumeramos nada ahí, y el hueco es nuestro.
+
+`carlos castaño` no. En agosto figuraba `WORDPRESS_SITEMAP`, con 104
+enumeradas y 39 normalizadas. Hoy su home son 7 KB con un solo enlace y el
+bundle que la arma es `cliksi-saas-base.s3.amazonaws.com/build/assets/app-*.js`,
+con el template `101` y el sitio `1618` en CloudFront. O sea: **la inmobiliaria
+rehízo el sitio en otra plataforma entre el 25-ago y el 13-sep**. Su
+`VARIANTE_NO_SOPORTADA` es la respuesta correcta de un conector de WordPress
+apuntado a algo que ya no es WordPress, y su familia real es la del §3 ter
+—catálogo por JavaScript—, no ésta.
+
+Meterla en la misma bolsa haría escribir la regla equivocada: se estaría
+"arreglando" un conector que no está roto.
+
+Sus 39 filas productivas no corren riesgo igual: el fresco devuelve 0, y por la
+política de merge un vacío nuevo nunca pisa un valor productivo. Quedan como
+están, que es lo correcto mientras la fuente no vuelva a ser enumerable.
 
 ---
 
