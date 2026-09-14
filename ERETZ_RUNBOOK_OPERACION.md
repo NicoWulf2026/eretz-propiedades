@@ -715,6 +715,48 @@ resolución de identidad.
 
 ---
 
+## 8 quinquies. `imagenes_compartidas` significa tres cosas distintas
+
+El paro de `fdc` obligó a mirar las 33 agencias donde la regla de imágenes
+compartidas descartó algo, y **lo que apareció es peor que el paro**: dos
+agencias con `CERTIFIED_COMPLETE` y cero fotos en todas sus fichas.
+
+| agencia | descartadas | cobertura | qué pasa de verdad |
+|---|---:|---:|---|
+| `coldwell banker de la vera cruz` | 516 | **0,0** de 258 | la regla borra las fotos reales |
+| `belvedere` | 252 | **0,0** de 126 | las fotos no están en el HTML: las trae JS |
+| `blangiforti` | 249 | 0,29 de 45 | la regla borra las propias por miniaturas ajenas |
+| `fdc` | 1.616 | **1,0** de 202 | la regla acierta; el paro es falso positivo |
+| resto (29) | — | ≥ 0,96 | sin problema |
+
+**El discriminador ya está en el resultado y no se usa.** `imagenes.coverage`
+separa los casos sin ambigüedad: 0,0 y 0,29 son destrucción, 1,0 es una regla
+funcionando. El triage corta por el **número crudo de descartadas**, que es
+justo el que no informa — `fdc` descarta 1.616, seis veces más que vera cruz,
+y no pierde nada.
+
+### Por qué cada uno es distinto
+
+- **vera cruz** — su ficha `cbdelaveracruz.ar/p/8411346-prop` sirve **56
+  imágenes**, con fotos de propiedad de Tokko. Guardamos cero para las 258.
+  Tiene **253 filas productivas**. No hay riesgo de destruirlas: la política de
+  merge sólo **completa** imágenes y nunca las pisa. El problema es que la
+  certificación dice COMPLETE sobre un campo vacío.
+- **`fdc`** — kiteprop, organización uniland. La ficha 564580 sirve 11
+  imágenes `lg` que son suyas y 4 `sm` que son de otras propiedades: las
+  miniaturas de la barra lateral. La regla descarta exactamente esas 4 por
+  ficha (4 × 202 = 808 por corrida) y la galería propia, en `lg`, queda
+  intacta. También descarta bien el logo, el sello de AFIP y un avatar.
+- **`belvedere`** — xintel. Sus fichas pesan 163 KB y traen **5 imágenes, las
+  cinco chatarra**: el botón de turnos, dos banderas de idioma y dos logos. Las
+  fotos las pone JavaScript. La regla acertó; el hueco es del §3 ter.
+  Agruparla con vera cruz llevaría a tocar código sano.
+
+**El patrón, otra vez:** dos agencias certificaron COMPLETE sobre un defecto, y
+la única que paró la cola fue la que no tenía ninguno.
+
+---
+
 ## 9. Regenerar los artefactos de datos
 
 En este orden, porque cada uno consume al anterior:
