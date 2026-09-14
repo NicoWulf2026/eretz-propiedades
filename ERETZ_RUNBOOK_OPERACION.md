@@ -611,6 +611,26 @@ Cuatro arman el catálogo en el cliente y son §3 ter (`armanino` SPA de React,
 **página de agentes de un portal ajeno**, y de `chambouleyron` no se pudo
 establecer desde el HTML si publica catálogo.
 
+### Regla 3: el directorio de plataformas decide, y a veces decide mal
+
+Dos agencias lo muestran desde los dos lados, y en las dos el arreglo empieza
+por `agency_platform_directory.jsonl`, no por el conector:
+
+| agencia | el directorio dice | el sitio es | qué elige el conector |
+|---|---|---|---|
+| `coldwell banker andes` | TOKKO | PHP plano, `/ficha.php?id=…` | `tokko` → 0 de 17 |
+| `facundo furne` | UNKNOWN | web a medida que **consume la API de Tokko** | `generic/no_inventory` → 0 |
+
+`furne` sirve 25 KB que dicen "Cargando" y carga `/js/tokko-api.js` y
+`/js/tokko-config.js`, que llaman a `developers.tokkobroker.com`. Su
+configuración trae una `apiKey` de la inmobiliaria: **no hace falta leerla para
+diagnosticar, y no se leyó.**
+
+Junto con `etcheverry` —frontend propio de Tokko, TFW sitio 9980— son tres
+agencias cuyo inventario está en Tokko y no lo sacamos, cuando ya leemos Tokko
+para otras 74. Es la regla con mejor relación entre trabajo y propiedades
+recuperadas después de la del marcador.
+
 ### Una advertencia sobre los marcadores de plataforma
 
 Buscando familias creí ver seis agencias sobre una plataforma llamada SOM.
