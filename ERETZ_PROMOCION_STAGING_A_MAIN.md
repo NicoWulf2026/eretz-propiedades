@@ -108,6 +108,56 @@ autorización de escritura.
 
 ---
 
+## 4 bis. Resultado de los controles, y un defecto del plan
+
+Los controles se corrieron el 2026-09-14. Encontraron algo que el plan de la
+sección 5, tal como lo escribí primero, **no cubría**.
+
+| control | resultado |
+|---|---|
+| staging sin nombre / sin id | **0** — nada que descartar |
+| colisión por nombre con `main` | **332** — el `not exists` las frena |
+| nombres repetidos **dentro** de staging | **152 nombres, 327 filas**, peor caso ×10 |
+| propiedades huérfanas hoy | **0** |
+
+**El defecto.** El `not exists` compara contra `main` *antes* del insert, así
+que no ve los duplicados que vienen dentro del mismo lote. Con el plan
+original, las 10 filas llamadas `Tizado` habrían entrado las 10, y las 5
+llamadas **"Sucursal - Prueba Zonaprop"** —filas de prueba— también.
+
+Hay que deduplicar por nombre normalizado dentro del lote, no sólo contra main.
+
+### Lo que sí y lo que no cae en el alcance A
+
+La basura peor **no está en el alcance A**: `Tizado` ×10, `Prueba Zonaprop` ×5
+y las filas que son sólo un nombre de pila (`alberto`, `marcelo`) no tienen
+inmobiliaria canónica que las reclame, así que el alcance las deja fuera solo.
+Es una propiedad del alcance A que conviene tener escrita: **es más seguro que
+el alcance C precisamente por esto.**
+
+Dentro del alcance A quedan **20 nombres normalizados con más de una canónica,
+40 filas en total**:
+
+```
+L.A PROPIEDADES            / L.A SERVICIOS INMOBILIARIOS
+GUERRERO INMOBILIARIA      / Guerrero Propiedades
+Alfa Propiedades           / ALFA Bienes Raíces
+GD Brokers Inmobiliarios   / GD Negocios Inmobiliarios
+Santos Propiedades         / Santos Inmobiliaria
+Greco Propiedades          / Inmobiliaria Greco Propiedades
+CAS.AS PROPIEDADES         / CasasPropiedades
+MS PROPIEDADES             / M.S. PROPIEDADES
+```
+
+Algunas son la misma inmobiliaria cargada dos veces en Roomix —`MS` y `M.S.`,
+`CAS.AS` y `CasasPropiedades`—. Otras podrían ser dos firmas distintas: `GD
+Brokers` y `GD Negocios` no son obviamente la misma.
+
+**No se resuelve automáticamente.** Promover las dos crea dos agencias y parte
+sus propiedades entre dos `inmobiliaria_id`; fusionarlas a ciegas atribuye a una
+inmobiliaria propiedades de otra, que es el error más caro de todos. Son 20
+casos: se miran a mano en una sentada.
+
 ## 5. Forma de la escritura
 
 ```sql
@@ -118,6 +168,13 @@ insert into public.inmobiliarias_main (nombre, /* ...32 columnas compartidas... 
 select s.nombre, /* ... */, s.id
 from public.inmobiliarias_staging s
 where s.id = any (:ids_del_alcance_A)
+  -- Una sola fila por nombre normalizado DENTRO del lote. Sin esto entran las
+  -- diez filas llamadas `Tizado`, porque el `not exists` de abajo solo mira
+  -- main y no ve a sus propias companyeras de lote.
+  and s.id = (select min(s2.id) from public.inmobiliarias_staging s2
+               where s2.id = any (:ids_del_alcance_A)
+                 and lower(regexp_replace(s2.nombre,'[^a-zA-Z0-9]','','g'))
+                   = lower(regexp_replace(s.nombre,'[^a-zA-Z0-9]','','g')))
   and not exists (
       select 1 from public.inmobiliarias_main m
       where m.staging_id_origen = s.id
