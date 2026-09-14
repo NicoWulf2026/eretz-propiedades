@@ -263,3 +263,39 @@ def test_una_candidata_que_no_responde_no_resuelve_nada():
 def test_sin_candidatas_no_hay_veredicto_positivo():
     v = verificar(agencia("Cualquiera Propiedades"), [])
     assert v.clase not in (OFFICIAL_WEB, OFFICIAL_OFFICE_PAGE)
+
+
+# --- K: la ruta que enumera terceros (canario V2) -----------------------
+
+@pytest.mark.parametrize("url,caso", [
+    ("https://www.gopunta.uy/inmobiliarias/beba-paez-vilaro-20/pagina",
+     "portal uruguayo con seccion de inmobiliarias"),
+    ("https://www.infocasas.com.uy/inmobiliarias/perfil/1712",
+     "perfil dentro de un portal"),
+    ("https://www.bullano.com.ar/anunciantes/tienda/SITUAR-REALTY",
+     "tienda de un anunciante en un marketplace"),
+    ("https://puntoclick.com.ar/empresa/sol-llabres-dts-propiedades",
+     "empresa dentro de un portal"),
+])
+def test_un_host_con_seccion_de_terceros_no_es_una_inmobiliaria(url, caso):
+    """Los cuatro salieron del canario V2 y no comparten host.
+
+    Lo que comparten es la forma: la ruta enumera terceros. Un sitio que tiene
+    una seccion de 'inmobiliarias' o de 'anunciantes' no es una inmobiliaria,
+    es donde varias se publican. La regla reemplaza media lista negra.
+    """
+    s = sitio(url, "x")
+    assert clasificar_sitio(s) in (EXTERNAL_PORTAL, PROPERTY_DETAIL_PAGE), caso
+
+
+def test_una_nota_se_reconoce_por_la_ruta_aunque_el_medio_no_este_en_la_lista():
+    """`Remax Roble` -> 0221.com.ar/nota/2022-1-11-..., un diario de La Plata
+    que no figura en ninguna lista de medios."""
+    s = sitio("https://www.0221.com.ar/nota/2022-1-11-10-45-0-re-max-roble", "x")
+    assert clasificar_sitio(s) == NEWS_MEDIA
+
+
+def test_la_regla_no_se_come_un_sitio_propio_con_ruta_parecida():
+    """`/propiedades/` en el sitio propio NO es una seccion de terceros."""
+    s = sitio("https://blancopropiedades.com/propiedades/casas", "Blanco")
+    assert clasificar_sitio(s) == REAL_ESTATE_OFFICIAL_SITE

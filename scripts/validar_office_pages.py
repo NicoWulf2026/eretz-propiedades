@@ -73,7 +73,8 @@ def bajar(url: str, timeout: float = 20) -> v2.Sitio:
             titulo = re.sub(r"\s+", " ", m.group(1)).strip()
         texto = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", cuerpo)
         texto = re.sub(r"\s+", " ", re.sub(r"(?s)<[^>]+>", " ", texto))[:8000]
-        return v2.Sitio(url=final, titulo=titulo, texto=texto, http=200)
+        return v2.Sitio(url=final, titulo=titulo, texto=texto, http=200,
+                        html_bytes=len(cuerpo))
     except urllib.error.HTTPError as e:
         return v2.Sitio(url=url, http=e.code)
     except Exception:

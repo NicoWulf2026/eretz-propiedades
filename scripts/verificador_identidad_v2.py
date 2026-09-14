@@ -142,6 +142,24 @@ RUTA_FICHA = re.compile(
     r"(?i)/(propiedades?|inmuebles?|fichas?|listings?|property|properties)"
     r"[/-][^/]*\d|/ficha(/|$)")
 
+# Rutas que ENUMERAN TERCEROS. Es la regla que reemplaza a media lista negra:
+# un host que tiene una seccion de "inmobiliarias", de "anunciantes" o de
+# "perfiles" no es una inmobiliaria — es el lugar donde varias se publican.
+#
+# Sale de cuatro falsos positivos del canario V2 que no compartian host pero si
+# esta forma:
+#   gopunta.uy/inmobiliarias/beba-paez-vilaro/...
+#   infocasas.com.uy/inmobiliarias/perfil/17...
+#   bullano.com.ar/anunciantes/tienda/SITUAR...
+#   puntoclick.com.ar/empresa/sol-llabres-dts...
+RUTA_DE_TERCEROS = re.compile(
+    r"(?i)/(inmobiliarias?|anunciantes?|empresas?|agencias?|perfil(es)?|"
+    r"tiendas?|comercios?|profesionales?|directorio)/[^/]")
+# Rutas de nota periodistica. `0221.com.ar/nota/2022-1-11-...` no esta en
+# ninguna lista de medios y aun asi es una nota.
+RUTA_DE_NOTA = re.compile(
+    r"(?i)/(nota|noticias?|articulo|blog|prensa|news)[/-]")
+
 PAIS_AR = re.compile(
     r"(?i)argentin|buenos aires|c[oó]rdoba|rosario|mendoza|santa fe|"
     r"tucum[aá]n|salta|neuqu[eé]n|bariloche|mar del plata|la plata|\bCABA\b|"
@@ -206,11 +224,19 @@ def red_de(nombre_o_url: str) -> str | None:
 
 @dataclass
 class Sitio:
-    """Lo que se pudo leer de una candidata. `texto` vacío = no se pudo abrir."""
+    """Lo que se pudo leer de una candidata. `texto` vacío = no se pudo abrir.
+
+    `html_bytes` existe para separar dos cosas que se parecen y no lo son: un
+    dominio parkeado sirve poco HTML y poco texto; una aplicación JavaScript
+    sirve MUCHO HTML y poco texto, porque el contenido lo pone el navegador.
+    Sin este dato, las páginas de las redes inmobiliarias —que son SPAs— se
+    clasificaban como parkeadas.
+    """
     url: str
     titulo: str = ""
     texto: str = ""
     http: int | None = None
+    html_bytes: int = 0
 
 
 @dataclass
@@ -261,17 +287,32 @@ def clasificar_sitio(sitio: Sitio, entidad: dict | None = None) -> str:
     if PARKING_TEXTO.search(completo):
         return PARKED_DOMAIN
     if len((sitio.texto or "").strip()) < 120:
-        # Sin texto no hay sitio. `mizrahi.com` devolvia su propio dominio como
-        # titulo y nada mas.
+        # Poco texto tiene DOS causas distintas y confundirlas sale caro.
+        #
+        # `mizrahi.com` servia 2 KB con su propio dominio como titulo: eso es
+        # un dominio parkeado. Las paginas de RE/MAX y Century 21 sirven 200 KB
+        # de HTML con casi nada de texto porque el contenido lo pone
+        # JavaScript: eso es una aplicacion que no pudimos ejecutar.
+        #
+        # Llamar parkeadas a las segundas descarto 129 oficinas con 35.710
+        # avisos en la primera corrida de este validador.
+        if sitio.html_bytes >= 50_000:
+            return DESCONOCIDO
         return PARKED_DOMAIN
 
     reg = registrable(host)
     if reg in SOCIALES:
         return SOCIAL_PROFILE
-    if any(s in reg for s in MEDIOS):
+    if any(s in reg for s in MEDIOS) or RUTA_DE_NOTA.search(ruta):
         return NEWS_MEDIA
     if any(s in reg for s in DIRECTORIOS):
         return BUSINESS_DIRECTORY
+
+    # Un host con seccion de terceros no es una inmobiliaria: es donde varias
+    # se publican. Se pregunta ANTES que la red, porque un portal puede hablar
+    # de RE/MAX sin ser RE/MAX.
+    if RUTA_DE_TERCEROS.search(ruta):
+        return PROPERTY_DETAIL_PAGE if RUTA_FICHA.search(ruta) else EXTERNAL_PORTAL
 
     red_host = red_de(host)
     if red_host:

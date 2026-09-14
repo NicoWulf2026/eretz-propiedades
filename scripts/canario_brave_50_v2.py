@@ -54,7 +54,12 @@ SALIDA = DATOS / "BRAVE_CANARIO_50_V2.jsonl"
 
 USD_POR_MIL = 5.0
 CONSULTAS_MAXIMAS = 3
-UA = {"User-Agent": "Mozilla/5.0 (compatible; ERETZ/1.0)", "Accept-Encoding": "gzip"}
+# El de navegador, no el cortes: con `ERETZ/1.0` los dominios de las redes
+# devuelven 403 y despues eso se lee como "no tiene web", que es una afirmacion
+# sobre la inmobiliaria y no sobre nuestras herramientas.
+UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
+      "Accept-Encoding": "gzip", "Accept-Language": "es-AR,es;q=0.9"}
 
 
 def bajar(url: str, timeout: float = 20) -> v2.Sitio:
@@ -75,7 +80,8 @@ def bajar(url: str, timeout: float = 20) -> v2.Sitio:
             titulo = re.sub(r"\s+", " ", m.group(1)).strip()
         texto = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", cuerpo)
         texto = re.sub(r"\s+", " ", re.sub(r"(?s)<[^>]+>", " ", texto))[:8000]
-        return v2.Sitio(url=final, titulo=titulo, texto=texto, http=200)
+        return v2.Sitio(url=final, titulo=titulo, texto=texto, http=200,
+                        html_bytes=len(cuerpo))
     except urllib.error.HTTPError as e:
         return v2.Sitio(url=url, http=e.code)
     except Exception:
