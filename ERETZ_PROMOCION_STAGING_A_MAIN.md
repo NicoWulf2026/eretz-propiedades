@@ -158,6 +158,37 @@ sus propiedades entre dos `inmobiliaria_id`; fusionarlas a ciegas atribuye a una
 inmobiliaria propiedades de otra, que es el error más caro de todos. Son 20
 casos: se miran a mano en una sentada.
 
+## 4 ter. Los 20 duplicados hay que resolverlos ANTES, no después
+
+Verificado contra producción el 2026-09-14, comparando el valor guardado
+contra el calculado en dos filas reales:
+
+```
+hash_dedup = left( sha256( inmobiliaria_id || '|url|' || url_normalizada ), 32 )
+```
+
+**El hash depende del `inmobiliaria_id`.** Eso cambia por completo el costo de
+equivocarse con los 20 nombres duplicados.
+
+Si se promueven las dos filas, se escriben sus propiedades, y más adelante se
+descubre que eran la misma inmobiliaria y se fusionan, **cada propiedad cambia
+de `inmobiliaria_id` y por lo tanto de `hash_dedup`**. Ninguna de las dos
+defensas la para:
+
+- `propiedades_hash_dedup_key` no la ve, porque el hash es *otro*;
+- `idx_propiedades_unique_inmobiliaria_url_normalizada` tampoco, porque el
+  `inmobiliaria_id` es *otro*.
+
+Resultado: el catálogo se duplica entero para esa inmobiliaria, en silencio.
+
+Las dos defensas son correctas y están bien construidas —lo verifiqué, existen
+y son `UNIQUE`—. Simplemente ninguna protege contra un cambio de identidad
+posterior, porque las dos usan la identidad como parte de la llave.
+
+**Conclusión operativa:** los 20 casos se miran antes de promover. Es media
+hora de trabajo manual ahora, contra una limpieza de duplicados en producción
+después.
+
 ## 5. Forma de la escritura
 
 ```sql
