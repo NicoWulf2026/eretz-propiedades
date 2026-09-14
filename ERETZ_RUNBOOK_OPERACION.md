@@ -294,6 +294,36 @@ el extractor gana una guarda —una unidad, un formato, un valor mínimo, un
 límite de palabra— la señal necesita la misma, o el próximo sitio que caiga en
 el hueco para la cola.
 
+### Tercer caso: el menú de navegación (2026-09-14)
+
+`cuini propiedades` paró con `ambientes` fallando 16 de 16. La ficha publica un
+bloque rotulado completo —*"Operación: Venta | Ciudad: ROSARIO | Tipo de
+propiedad: Departamento | Cantidad de dormitorios: 2 | Baños: 2 | Superficie
+total: 112m2"*— y **no tiene campo de ambientes**: el sitio cuenta dormitorios.
+
+La señal contó 16 porque la palabra aparece en el **menú de filtros**, donde
+"Departamento Monoambiente" es un tipo de propiedad al lado de "1 dormitorio" y
+"2 dormitorios". La señal lee el documento entero; el extractor lee la ficha.
+
+Lo que distingue a este caso de los otros dos: acá **no hay dato que
+recuperar**. En `constant` las coordenadas existen dentro de `initMap()` y se
+pueden sacar; acá `ambientes` no existe en la fuente, así que ningún arreglo lo
+va a producir. Lo único que se gana es dejar de parar la cola.
+
+**Antes de abrir el sitio, mirar `AGENCY_DEFECTS_DIFERIDOS.jsonl`.** El
+2026-09-14 rediagnostiqué `casablanca` entero —el JSON de marcadores con
+`"latitud"` entrecomillada— para descubrir que estaba escrito desde el 10-sep,
+con la misma evidencia. El archivo de diferidas es lo primero que se consulta,
+no lo último.
+
+### Cuántos son, medido
+
+De los 39 campos con fallas de extracción en toda la pasada, **10 fallan el
+100 %** de lo que la señal declara. No es un discriminador limpio —entre esos
+10 hay falsos positivos (`cuini`, `christian arce`) y defectos reales y
+recuperables (`constant`, `casablanca`, `ente`)—, pero es una población chica y
+hoy está entera diagnosticada.
+
 ### Cómo distinguirlo en treinta segundos
 
 Un `NEEDS_FIX` por `source fields not extracted` puede ser un hueco real del
