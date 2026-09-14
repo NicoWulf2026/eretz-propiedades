@@ -375,6 +375,26 @@ así que la deducción dijo que no había diferencia mientras
 Ahora se mira el número. Que a una corrida le falte tiempo explica **por qué**
 faltan; no vuelve seguro publicar lo que quedó.
 
+### El `pendientes` del log no es el número que corta
+
+El log imprime el **largo crudo** de la lista de defectos pendientes; el portón
+compara sólo los **computables**, que desde el 14-sep excluyen los de baja
+magnitud. Los dos números divergen en cuanto se acumula un defecto menor:
+
+```
+brunetti   extraccion_de_baja_magnitud   pend=1    <- suma al log, no al umbral
+cocucci    extraccion_de_baja_magnitud   pend=2    <- idem
+cometto    variante_no_soportada         pend=2    <- diferida: no suma a ninguno
+```
+
+Leer `"pendientes": 4` y concluir que falta uno para cortar es un error. Para
+saber el número real hay que descontar los `extraccion_de_baja_magnitud`.
+
+Lo otro que se ve en esa traza: **una agencia con diferida deja el contador
+quieto**, aunque no aparezca ninguna línea `paro_diferido`. Esa línea sólo se
+escribe cuando la firma coincide con un STOP; un defecto que ya venía como
+CONTINUE se excluye igual, en silencio.
+
 ### Cómo revalidar el umbral
 
 ```bash
