@@ -511,52 +511,61 @@ de la huella produce certificaciones falsamente vigentes, y ya pasó tres veces.
 
 ---
 
-## 8 bis. La familia "slugs en la raíz", medida antes de escribir la regla
+## 8 bis. WordPress sin plugin: no hay una regla, hay una cascada
 
-Es la que más diferidas acumula y la que más fácil se arregla mal. El síntoma
-es siempre el mismo: WordPress sin plugin inmobiliario, el conector cierra
-`VARIANTE_NO_SOPORTADA`, enumera 0, y el sitio **sí** publica catálogo. Las
-fichas cuelgan de la raíz, al lado de `/contacto/` y `/nosotros/`.
+El síntoma: WordPress sin plugin inmobiliario, el conector cierra
+`VARIANTE_NO_SOPORTADA`, enumera 0, y el sitio **sí** publica catálogo. Siete
+agencias lo tenían el 13-sep.
 
-Al abrir la ventana va a dar ganas de escribir una regla corta. Estas son las
-tres que ya se midieron contra la fuente y **no** sirven:
+La primera lectura fue que la familia es cara porque hay que abrir cada ficha
+para saber cuál lo es. **Esa lectura era falsa, y en parte la produjo un filtro
+mío**: al listar los tipos de contenido yo descartaba `product` como ruido,
+dando por hecho que algo llamado producto no puede ser una ficha. `cintia
+fonzo` publica sus 76 propiedades exactamente así, como productos de
+WooCommerce, en `/producto/av-marcelo-t-de-alvear-4630-ciudadela`. Estuvieron
+declaradas y accesibles todo el tiempo.
 
-| Regla tentadora | Dónde se rompe |
-|---|---|
-| "leer `/wp-json/wp/v2/posts`" | contesta en 1 de las 7. attaguile y d'onofrio 404, pozzobon 401; cintia fonzo y csgestion contestan 0 |
-| "leer el `post-sitemap`" | existe en 4 de 7 — y en csgestion sus 105 entradas son **el blog**, no el catálogo |
-| "las entradas (`post`) son las fichas" | cierto en córdoba, falso en csgestion, misma plataforma y mismo síntoma |
+Lo que hay no es una regla única sino **cuatro vías, y hay que preguntarle al
+sitio cuál contesta**. En ese orden, que importa:
 
-Lo que queda es mirar la ficha, y por eso la familia es cara.
+| # | vía | cómo se reconoce | quién contesta |
+|---|---|---|---|
+| 1 | `TIPO_PROPIO` | un post type que no es ruido de WordPress y trae filas | `cintia fonzo` — 76 como `product` |
+| 2 | `TAXONOMIA` | el sitemap declara `tipo-de-propiedad`, `locacion`, `operacion` | `cristina pozzobon` — 80 entradas |
+| 3 | `MARCADOR` | el slug lleva algo reconocible sin abrir nada | `estela d onofrio` — `-ficha-` en 24 urls |
+| 4 | `ENTRADAS` | las entradas comunes son las fichas | `córdoba` — 11 |
 
-Hay una sub-variante que sí es barata y conviene hacer primero, separada: la de
-los slugs **con marcador**. En `estela d onofrio` la ruta lleva `-ficha-` adentro
-(`/casa-en-venta-en-colegiales-ficha-edp2409`), que se reconoce sin abrir nada.
-Empezar por ésas paga varias agencias sin pedir criterio nuevo; los slugs
-realmente pelados —`/san-luis-1038-venta/` de córdoba, `/montevideo-745-casa-3-dormitorios`
-de urbanorosario— son los que obligan a decidir por contenido y van después.
+El paso 4 va **último a propósito**: es cierto en córdoba y falso en
+`csgestion`, cuyas 100 entradas son artículos de blog
+(`/si-se-rompe-algo-al-alquilar-quien-paga...`), con la misma plataforma y el
+mismo síntoma. La cascada lo marca como `VERIFICAR que no sean un blog` en vez
+de afirmarlo. Los pasos 1 a 3 no tienen ese problema: un blog no declara
+`tipo-de-propiedad` ni pone `-ficha-` en la ruta.
 
-### Son seis, no siete, y la séptima es otra cosa
+```bash
+python scripts/sondeo_wordpress.py --familia
+```
 
-Al medir contra el directorio de plataformas del 25-ago aparece la diferencia
-que importa: **seis de las siete ya figuraban como `WORDPRESS_SIN_INVENTARIO`
-desde agosto** — nunca enumeramos nada ahí, y el hueco es nuestro.
+### Las dos que no son de esta familia
 
-`carlos castaño` no. En agosto figuraba `WORDPRESS_SITEMAP`, con 104
-enumeradas y 39 normalizadas. Hoy su home son 7 KB con un solo enlace y el
-bundle que la arma es `cliksi-saas-base.s3.amazonaws.com/build/assets/app-*.js`,
-con el template `101` y el sitio `1618` en CloudFront. O sea: **la inmobiliaria
-rehízo el sitio en otra plataforma entre el 25-ago y el 13-sep**. Su
+Conviene sacarlas antes de la ventana, porque agruparlas lleva a "arreglar" un
+conector que no está roto.
+
+**`carlos castaño`** — en agosto figuraba `WORDPRESS_SITEMAP` con 104
+enumeradas y 39 normalizadas. Hoy su home son 7 KB que arma un bundle de
+`cliksi-saas-base`, template `101`, sitio `1618`. La inmobiliaria rehízo el
+sitio en otra plataforma entre el 25-ago y el 13-sep. Su
 `VARIANTE_NO_SOPORTADA` es la respuesta correcta de un conector de WordPress
-apuntado a algo que ya no es WordPress, y su familia real es la del §3 ter
-—catálogo por JavaScript—, no ésta.
+apuntado a algo que ya no lo es. Sus 39 filas productivas no corren riesgo: el
+fresco devuelve 0 y un vacío nuevo no pisa un valor productivo.
 
-Meterla en la misma bolsa haría escribir la regla equivocada: se estaría
-"arreglando" un conector que no está roto.
+**`attaguile`** — su HTML trae las plantillas de cliente sin resolver
+(`/${ficha.amigable}`) y el listado es facetado
+(`/propiedades?p=0&ope=All&tipo=All&loc=merlo`). El catálogo lo arma JavaScript
+desde un feed.
 
-Sus 39 filas productivas no corren riesgo igual: el fresco devuelve 0, y por la
-política de merge un vacío nuevo nunca pisa un valor productivo. Quedan como
-están, que es lo correcto mientras la fuente no vuelva a ser enumerable.
+Las dos son del **§3 ter**, no de ésta. Quedan seis con el síntoma real, y
+cuatro de esas seis ya tienen vía declarada hoy.
 
 ---
 
