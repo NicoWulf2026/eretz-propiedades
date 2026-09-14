@@ -254,3 +254,49 @@ def test_pero_dos_menores_con_la_misma_firma_siguen_cortando():
          pendiente(COMPONENTE_MENOR, firma="misma")], ahora=0)
     assert cortar
     assert "misma firma" in motivo
+
+
+# --- O a R: descartar imagenes compartidas no es perderlas ---------------
+
+def con_imagenes(descartadas, cobertura, present=None, total=None):
+    r = resultado()
+    r["run1"]["imagenes_compartidas_descartadas"] = descartadas
+    r["run2"]["imagenes_compartidas_descartadas"] = descartadas
+    if cobertura is not None:
+        r["field_coverage"]["imagenes"] = {
+            "state": "EXTRACTED", "coverage": cobertura,
+            "normalized_present": present, "normalized_total": total}
+    return r
+
+
+def test_descartar_miniaturas_ajenas_no_para():
+    """`fdc`: 1.616 descartadas y las 202 fichas con fotos.
+
+    Son las cuatro miniaturas de OTRAS propiedades que kiteprop pone en la
+    barra lateral; la galeria propia va en tamanyo lg y no se toca.
+    """
+    t = clasificar(con_imagenes(1616, 1.0, 202, 202))
+    assert t["componente_sospechoso"] != "imagenes_compartidas"
+
+
+def test_borrar_las_fotos_si_para():
+    """`coldwell banker de la vera cruz`: 516 descartadas, cero fotos en 258."""
+    t = clasificar(con_imagenes(516, 0.0, 0, 258))
+    assert t["decision"] == STOP
+    assert t["componente_sospechoso"] == "imagenes_compartidas"
+    assert "0.0" in t["evidencia"]
+
+
+def test_el_numero_de_descartadas_no_ordena_nada():
+    """La que mas descarta es justamente la unica que no pierde."""
+    sana = clasificar(con_imagenes(1616, 1.0, 202, 202))
+    rota = clasificar(con_imagenes(249, 0.2889, 13, 45))
+    assert sana["componente_sospechoso"] != "imagenes_compartidas"
+    assert rota["decision"] == STOP
+
+
+def test_sin_el_dato_de_cobertura_se_mantiene_el_corte():
+    """No poder mirar no es haber mirado y no haber encontrado nada."""
+    t = clasificar(con_imagenes(800, None))
+    assert t["decision"] == STOP
+    assert t["componente_sospechoso"] == "imagenes_compartidas"

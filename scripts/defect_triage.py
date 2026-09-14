@@ -178,6 +178,41 @@ TOPE_PORCENTUAL_MENOR = 0.02
 COMPONENTE_MENOR = "extraccion_de_baja_magnitud"
 
 
+# Con cuanta cobertura de imagenes se acepta que la regla acerto. No es 1,0
+# porque una ficha sin fotos publicadas es normal; si es alta, lo descartado
+# era ajeno.
+COBERTURA_DE_IMAGENES_SANA = 0.95
+
+
+def _cobertura_de_imagenes(resultado: dict[str, Any]) -> float | None:
+    dato = (resultado.get("field_coverage") or {}).get("imagenes")
+    if not isinstance(dato, dict):
+        return None
+    cobertura = dato.get("coverage")
+    return float(cobertura) if isinstance(cobertura, (int, float)) else None
+
+
+def _galeria_intacta(resultado: dict[str, Any]) -> bool:
+    """¿Descartar imagenes compartidas dejo a las fichas con sus fotos?
+
+    Separar "descarto" de "perdio" es toda la diferencia. Medido el 2026-09-14
+    sobre las 33 agencias donde la regla descarto algo:
+
+        fdc             1.616 descartadas, cobertura 1,0     sana
+        vera cruz         516 descartadas, cobertura 0,0     destruida
+        belvedere         252 descartadas, cobertura 0,0     destruida
+        blangiforti       249 descartadas, cobertura 0,29    destruida
+
+    El numero de descartadas no ordena nada: la que mas descarta es la unica
+    que no pierde. La cobertura si, y ya venia en el resultado.
+
+    Sin el dato se devuelve False y el corte se mantiene: no poder mirar no es
+    haber mirado y no haber encontrado nada.
+    """
+    cobertura = _cobertura_de_imagenes(resultado)
+    return cobertura is not None and cobertura >= COBERTURA_DE_IMAGENES_SANA
+
+
 def _es_de_baja_magnitud(resultado: dict[str, Any],
                          fallidos: list[str]) -> bool:
     """¿Los campos que fallaron fallaron en poquisimas fichas?
@@ -297,11 +332,13 @@ def clasificar(resultado: dict[str, Any]) -> dict[str, Any]:
             return _veredicto(
                 STOP, resultado, "enumeracion_compartida", RADIO_FAMILIA,
                 "la paginacion se interrumpio: la enumeracion es compartida")
-        if corrida.get("imagenes_compartidas_descartadas"):
+        if (corrida.get("imagenes_compartidas_descartadas")
+                and not _galeria_intacta(resultado)):
             return _veredicto(
                 STOP, resultado, "imagenes_compartidas", RADIO_FAMILIA,
                 f"{corrida['imagenes_compartidas_descartadas']} imagenes "
-                f"compartidas descartadas; la regla es compartida")
+                f"compartidas descartadas y la cobertura de imagenes quedo en "
+                f"{_cobertura_de_imagenes(resultado)}; la regla es compartida")
 
     # Antes de leer un colapso como perdida sistematica hay que haber podido
     # LEER el sitio. `varelanegociosinmobiliarios.com` no respondio en 102 s en
