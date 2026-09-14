@@ -94,9 +94,9 @@ estable, slug y, en varios casos, **el dominio propio de la oficina**.
 | | |
 |---|---|
 | enumeración | el sitemap, sin navegador |
-| extracción | HTML plano en cada ficha |
+| extracción | HTML plano — pero sólo en **el 34 %** de las fichas (ver §4 bis) |
 | **atribución** | el `office.id` de cada ficha, que es lo más caro de conseguir |
-| web de la oficina | viene en `office.description` |
+| ~~web de la oficina~~ | ~~viene en `office.description`~~ — **falso, ver §4 bis** |
 
 La atribución es lo que lo vuelve valioso. Normalmente hay que demostrar que un
 catálogo es de una inmobiliaria y no de otra; acá **la fuente lo declara en
@@ -189,12 +189,18 @@ anterior sigue vigente.
 
 Contra las otras dos vías de discovery:
 
-| vía | agencias | avisos | costo |
-|---|---:|---:|---|
-| **sitemap de RE/MAX** | **190** | **62.521** | una estrategia nueva |
-| Brave sobre `NO_WEB` | 2.216 | 11.404 | ~USD 35 + verificación |
-| verificar candidatas ya pagas | 1.354 | 34.809 | gratis, ya corriendo |
+Con las cifras ya corregidas por la medición del §4 bis:
 
-**Por propiedades recuperadas por unidad de trabajo, el sitemap de RE/MAX es lo
-que más rinde de todo lo que hay sobre la mesa**, y es la única de las tres que
-no depende de decidir bien una identidad dudosa: la fuente la declara.
+| vía | agencias | propiedades alcanzables | costo |
+|---|---:|---:|---|
+| **sitemap de RE/MAX** | ~190 | **~25.000** (34 % de 74.529) | una estrategia nueva |
+| verificar candidatas ya pagas | 1.354 | 34.809 avisos | gratis, ya corriendo |
+| Brave sobre `NO_WEB` | 2.216 | 11.404 avisos | ~USD 35 + verificación |
+
+El sitemap ya no es el más grande en volumen bruto —la verificación de
+candidatas lo supera—, pero sigue siendo **el único que no depende de decidir
+bien una identidad dudosa**: la fuente la declara con un id estable, y eso es
+justamente lo que en las otras dos vías cuesta caro y sale mal.
+
+Y las ~25.000 propiedades son de agencias que **hoy no están en ninguna cola**:
+no compiten con las 18.934 de READY, se suman.
