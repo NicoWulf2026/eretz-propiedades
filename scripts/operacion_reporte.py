@@ -142,6 +142,130 @@ def estado_de_los_datos(gate: Path, cobertura: Path) -> dict[str, Any]:
     }
 
 
+
+# El vigilante corre cada 5 minutos por tarea programada. Si deja de escribir su
+# estado, la cola puede estar parada y nadie enterarse: eso ya paso el
+# 2026-09-16, cuando el vigilante fallo dos horas en silencio.
+#
+# Se comprueba contra el archivo que EL escribe, no contra la tarea: una tarea
+# que arranca y revienta figura como "corrio". Lo que importa es si el estado
+# esta fresco.
+VIGILANTE_VENCIDO = 20 * 60
+
+
+def salud_del_vigilante(salida: Path) -> dict[str, Any]:
+    """§33. Sin infinitos vigilantes vigilando vigilantes: una sola pregunta.
+
+    ¿Cuando fue la ultima vez que el vigilante dejo constancia?
+    """
+    estado = _json(salida / "ERETZ_QUEUE_WATCH_STATUS.json")
+    if not estado:
+        return {"estado": "WATCHDOG_SIN_ARTEFACTO",
+                "detalle": "nunca escribio su archivo de estado"}
+    visto = estado.get("checked_at")
+    try:
+        edad = time.time() - time.mktime(
+            time.strptime(str(visto)[:19], "%Y-%m-%dT%H:%M:%S"))
+    except (ValueError, TypeError):
+        return {"estado": "WATCHDOG_UNHEALTHY",
+                "detalle": f"fecha ilegible en el estado: {visto!r}"}
+    sano = edad <= VIGILANTE_VENCIDO
+    return {
+        "estado": "OK" if sano else "WATCHDOG_UNHEALTHY",
+        "ultimo_chequeo": visto,
+        "edad_minutos": round(edad / 60, 1),
+        "umbral_minutos": VIGILANTE_VENCIDO / 60,
+        "stop_state": estado.get("stop_state"),
+        "ultimo_aviso": estado.get("last_alert_at"),
+        "error_al_avisar": estado.get("alert_error"),
+        "detalle": None if sano else (
+            f"el vigilante no deja constancia hace {edad/60:.0f} min. "
+            f"Puede estar fallando en silencio: mirar vigilante.log"),
+    }
+
+
+def rendimiento(certificacion: Path, horas: float = 24.0) -> dict[str, Any]:
+    """§52 y §53. Tres caudales distintos, que no son el mismo numero.
+
+    Confundirlos lleva a optimizar lo que no importa: una agencia puede tardar
+    tres horas y aportar 800 propiedades, y otra tardar diez minutos y aportar
+    cero. `agencias/hora` sola premia a la segunda.
+    """
+    corte = time.time() - horas * 3600
+    terminales = {"CERTIFIED_COMPLETE", "CERTIFIED_BEST_AVAILABLE",
+                  "NO_INVENTORY_CONFIRMED", "BLOCKED_EXTERNAL"}
+    vistas: set[str] = set()
+    corridas = nuevas = 0
+    props_nuevas = 0
+    segundos = 0.0
+    for r in _jsonl(certificacion / "AGENCY_CERTIFICATION_RESULTS.jsonl"):
+        a = r.get("canonical_agency_id")
+        if not a:
+            continue
+        primera = a not in vistas
+        vistas.add(a)
+        try:
+            cuando = time.mktime(time.strptime(
+                str(r.get("checked_at"))[:19], "%Y-%m-%dT%H:%M:%S"))
+        except (ValueError, TypeError):
+            continue
+        if cuando < corte:
+            continue
+        corridas += 1
+        segundos += (r.get("operational_metrics") or {}).get("duration_seconds") or 0
+        if primera:
+            nuevas += 1
+            if r.get("status") in terminales:
+                props_nuevas += (r.get("enumeration_audit") or {}).get("enumerated") or 0
+    return {
+        "ventana_horas": horas,
+        # Cuantas veces corrimos algo. Incluye repeticiones.
+        "raw_throughput_corridas_por_hora": round(corridas / horas, 1),
+        # Cuantas agencias vimos por primera vez. Esto es avance real.
+        "certified_throughput_agencias_nuevas_por_hora": round(nuevas / horas, 2),
+        # Cuantas propiedades entraron al catalogo. Esto es lo que se publica.
+        "useful_throughput_propiedades_por_hora": round(props_nuevas / horas, 1),
+        "agencias_nuevas": nuevas,
+        "corridas": corridas,
+        "propiedades_nuevas": props_nuevas,
+        "horas_de_worker_gastadas": round(segundos / 3600, 1),
+        "nota": ("`raw` incluye repeticiones y no es avance. `certified` son "
+                 "agencias nuevas. `useful` son propiedades que entraron al "
+                 "catalogo, que es lo unico que ve un usuario."),
+    }
+
+
+def eta(cola: dict[str, Any], rend: dict[str, Any]) -> dict[str, Any]:
+    """§52: ETA dinamica, calculada con el caudal de AHORA.
+
+    No se guarda una fecha historica: si el ritmo cambia, la fecha cambia, y
+    una ETA que no se mueve cuando el ritmo se derrumba es peor que ninguna.
+    """
+    # Lo que falta NO es "las que estan en la cola de hoy": es el universo
+    # canonico menos lo que ya llego a un estado terminal. Usar la cola actual
+    # daria una fecha optimista que ignora las 6.000 que todavia no entraron.
+    UNIVERSO = 6597
+    pendientes = max(0, UNIVERSO - (cola.get("terminales") or 0))
+    por_hora = rend.get("certified_throughput_agencias_nuevas_por_hora") or 0
+    if not pendientes or por_hora <= 0:
+        return {"estado": "SIN_ETA",
+                "porque": ("no hay avance medible en la ventana: con cero "
+                           "agencias nuevas por hora, cualquier fecha seria "
+                           "inventada")}
+    horas = pendientes / por_hora
+    return {
+        "pendientes": pendientes,
+        "agencias_nuevas_por_hora": por_hora,
+        "horas_estimadas": round(horas, 1),
+        "fecha_estimada": time.strftime(
+            "%Y-%m-%d", time.localtime(time.time() + horas * 3600)),
+        "eta_6h": round(por_hora * 6, 1),
+        "eta_24h": round(por_hora * 24, 1),
+        "nota": "calculada con el caudal de las ultimas horas, no con una "
+                "cifra guardada",
+    }
+
+
 def alertas(cola: dict[str, Any], datos: dict[str, Any]) -> list[dict[str, str]]:
     """Solo lo que pide una accion humana."""
     fuera: list[dict[str, str]] = []
@@ -169,6 +293,20 @@ def alertas(cola: dict[str, Any], datos: dict[str, Any]) -> list[dict[str, str]]
                              f"{', '.join(cola['cerrojos_huerfanos'])}",
                       "accion": "el pid ya se comprobo muerto: se puede "
                                 "liberar el cerrojo"})
+    vig = datos.get("_vigilante") or {}
+    if vig.get("estado") not in (None, "OK"):
+        fuera.append({"nivel": "ALTA",
+                      "que": f"el vigilante de paros no esta sano: "
+                             f"{vig.get('estado')}",
+                      "detalle": vig.get("detalle") or "",
+                      "accion": "sin vigilante sano, un paro puede dormir "
+                                "horas. Mirar vigilante.log y LastTaskResult"})
+    if vig.get("error_al_avisar"):
+        fuera.append({"nivel": "MEDIA",
+                      "que": "el vigilante detecto pero NO pudo avisar",
+                      "detalle": str(vig.get("error_al_avisar")),
+                      "accion": "el estado igual quedo escrito; revisar el "
+                                "canal de notificacion"})
     if not cola.get("en_curso") and not cola.get("paro_pedido"):
         fuera.append({"nivel": "MEDIA",
                       "que": "no hay ningun runner en curso",
@@ -198,11 +336,17 @@ def main() -> int:
 
     cola = estado_de_la_cola(Path(args.certificacion))
     datos = estado_de_los_datos(Path(args.gate), Path(args.cobertura))
+    vigilante = salud_del_vigilante(Path(args.certificacion))
+    rend = rendimiento(Path(args.certificacion))
+    datos["_vigilante"] = vigilante
     reporte = {
         "reporte_version": REPORTE_VERSION,
         "generado_en": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "cola": cola,
-        "datos": datos,
+        "datos": {k: v for k, v in datos.items() if k != "_vigilante"},
+        "vigilante": vigilante,
+        "rendimiento": rend,
+        "eta": eta(cola, rend),
         "alertas": alertas(cola, datos),
         "database_writes": 0,
     }
