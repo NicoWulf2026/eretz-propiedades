@@ -150,6 +150,168 @@ def main() -> int:
     for score, firma, n, af, peso in sorted(filas2, reverse=True):
         print(f"{firma[:40]:42} {n:5} {af:7,} {peso:6} {score:9,}")
 
+
+    # ---------------- Qué arreglar, no qué firma ----------------
+    #
+    # El bucket por firma agrupa demasiado: `extraccion_transversal_de_atributos`
+    # junta 16 agencias, y una sola de ellas puede ser la mitad del total. Esto
+    # baja al par (agencia, campo), que es la unidad en la que efectivamente se
+    # escribe un arreglo.
+    # Pares (agencia, campo) donde `source_provided` esta INFLADO y por eso el
+    # "recuperable" es falso. No se infieren: se verificaron descargando una
+    # ficha de cada una el 2026-09-15.
+    #
+    # El patron de `ambientes` del certificador no exige limite de palabra
+    # antes de "ambientes", asi que encuentra "ambiente 1" adentro de
+    # **MONO**ambiente. Y "Monoambiente" es una opcion de menu que esta en
+    # TODAS las paginas de esos sitios, no un atributo de la propiedad. Por eso
+    # el delator es `source_provided == total`: una senal que aparece en el
+    # 100 % de las fichas suele ser del sitio, no de la propiedad.
+    #
+    # `espina propiedades` da 100 % tambien y NO esta aca: se descargo su ficha
+    # y su "Ambientes 2" es un atributo real. La lista es de casos
+    # verificados, no de sospechas.
+    ARTEFACTOS = {
+        ("roomix:blanco propiedades", "ambientes"):
+            "el patron encuentra 'ambiente 1' en MONOambiente, del menu de "
+            "filtros; la ficha publica 'Cantidad de dormitorios'",
+        ("roomix:bartolelli maini propiedades", "ambientes"):
+            "'Monoambiente 1 dormitorio' en el menu de navegacion",
+        ("roomix:cuini propiedades", "ambientes"):
+            "'Monoambiente 1 dormitorio' en el menu de navegacion",
+    }
+
+    pares = []
+    descontado = 0
+    for agencia, r in ult.items():
+        if r.get("status") != "NEEDS_FIX":
+            continue
+        for campo, d in (r.get("field_coverage") or {}).items():
+            perdidas = (d.get("extraction_failed") or 0)
+            provistas = (d.get("source_provided") or 0)
+            # Solo cuenta si la FUENTE lo publica: si no lo publica, no hay
+            # nada que recuperar y arreglarlo no agrega una sola ficha.
+            if perdidas and provistas:
+                if (agencia, campo) in ARTEFACTOS:
+                    descontado += min(perdidas, provistas)
+                    continue
+                pares.append((min(perdidas, provistas), agencia, campo,
+                              d.get("normalized_total") or 0,
+                              r.get("connector_strategy") or ""))
+
+    print("\n" + "=" * 66)
+    print("QUE ARREGLAR PRIMERO — por (agencia, campo), no por firma")
+    print("=" * 66)
+    print(f"{'agencia':30} {'campo':18} {'recup':>7} {'de':>6}  estrategia")
+    total = sum(p[0] for p in pares)
+    acumulado = 0
+    for recup, agencia, campo, tot, est in sorted(pares, reverse=True)[:12]:
+        acumulado += recup
+        print(f"{agencia.split(':')[-1][:28]:30} {campo[:16]:18} {recup:7,} "
+              f"{tot:6,}  {est}")
+    print(f"\n  fichas con un campo recuperable: {total:,} sobre "
+          f"{len({p[1] for p in pares})} agencias")
+    if total:
+        print(f"  los 12 de arriba son el {acumulado/total:.0%} del total")
+    print("  'recup' = fichas donde la fuente publica el campo y nuestra")
+    print("  extraccion falla. Si la fuente no lo publica, no se cuenta.")
+    if descontado:
+        print("")
+        print(f"  DESCONTADAS {descontado:,} fichas que este ranking contaba")
+        print("  de mas, sobre "
+              f"{len({a for a, _ in ARTEFACTOS})} agencias:")
+        for (a, campo), porque in ARTEFACTOS.items():
+            print(f"     {a.split(':')[-1][:24]:26} {campo:11} {porque[:44]}")
+        print("  No son arreglos pendientes: la fuente no publica ese campo y")
+        print("  el patron del certificador lo cuenta mal. Arreglarlo toca")
+        print("  `shared/certifier`, que esta bajo freeze.")
+
+
+    # ---------------- Vista B: por arreglo, no por campo ----------------
+    #
+    # Un cluster es "un arreglo": la unidad que se escribe, se testea y se
+    # despliega junta. NO se arma sumando campos que fallan parecido, porque
+    # eso promete un ROI que no existe: `blanco` perdia precio, moneda Y
+    # ambientes, y los tres parecian un solo problema. Precio y moneda si lo
+    # son -misma causa, se arreglan juntos-. `ambientes` no era un defecto:
+    # la fuente no lo publica y el certificador lo contaba mal.
+    #
+    # Cada cluster lleva su causa verificada contra la fuente y su radio
+    # medido. Los que no tienen causa verificada NO entran: quedan en la vista
+    # A hasta que alguien los diagnostique.
+    CLUSTERS = [
+        {
+            "cluster": "JSONLD_PRICE_SIN_CURRENCY",
+            "causa": ("el JSON-LD publica price y no publica priceCurrency; "
+                      "el parser toma el precio de ahi y por eso NO baja al "
+                      "texto, que es donde esta la moneda; despues la guarda "
+                      "'un numero sin moneda no es un precio' anula el precio"),
+            "agencias": ["blanco propiedades"],
+            "campos": ["precio", "moneda"],
+            "valores_recuperables": 1206 + 1185,
+            "propiedades_afectadas": 1206,
+            "costo": "BAJO — una rama nueva de 4 lineas; la guarda no se toca",
+            "radio": "generic/common: 14 estrategias, 57 agencias, 3.748 props",
+            "riesgo": ("BAJO para el dato; ALTO para la cola: invalida 57 "
+                       "certificaciones y hay que recertificarlas"),
+            "verificado": "12 de 12 fichas reales, prediccion falsable",
+        },
+        {
+            "cluster": "OPERACION_SOLO_EN_TITLE",
+            "causa": ("la operacion se lee del titulo editorial que carga la "
+                      "inmobiliaria; cuando ese titulo no trae la palabra, el "
+                      "campo queda vacio aunque el titulo del documento la diga"),
+            "agencias": ["fenix inmobiliaria"],
+            "campos": ["operacion"],
+            "valores_recuperables": 179,
+            "propiedades_afectadas": 179,
+            "costo": "BAJO — un fallback de 3 lineas",
+            "radio": "generic/common: mismo radio que el anterior",
+            "riesgo": ("BAJO: TRUE_RECOVERY 20/20 y FALSE_OPERATION_RISK 0 "
+                       "sobre 35 fichas conocidas, 20 venta y 15 alquiler"),
+            "verificado": "35 fichas reales, incluido el caso caro venta/alquiler",
+        },
+        {
+            "cluster": "CATEGORY_PAGE_AS_PROPERTY",
+            "causa": ("el enumerador admite vistas filtradas del catalogo como "
+                      "si fueran fichas; una url de ALQUILER entro como venta"),
+            "agencias": ["fenix inmobiliaria", "baron inmobiliaria",
+                         "brunetti propiedades"],
+            "campos": ["(no es un campo: es inventario falso)"],
+            "valores_recuperables": 0,
+            "propiedades_afectadas": 8,
+            "costo": "MEDIO — regla de cuatro condiciones, hay que calibrarla",
+            "radio": "enumeracion, no extraccion: radio distinto del anterior",
+            "riesgo": ("MEDIO: descarta paginas. Se probo contra 378 agencias "
+                       "y marca 8; con una condicion menos marcaba 395"),
+            "verificado": "las 8 revisadas una por una contra la fuente",
+        },
+    ]
+
+    print("\n" + "=" * 66)
+    print("VISTA B — FIX_CLUSTER_RANKING: que arreglo escribir, y que cuesta")
+    print("=" * 66)
+    for c in sorted(CLUSTERS, key=lambda x: -x["valores_recuperables"]):
+        print(f"\n{c['cluster']}")
+        print(f"   valores recuperables   {c['valores_recuperables']:,}")
+        print(f"   propiedades afectadas  {c['propiedades_afectadas']:,}")
+        print(f"   agencias               {len(c['agencias'])}: "
+              f"{', '.join(c['agencias'])}")
+        print(f"   campos                 {', '.join(c['campos'])}")
+        print(f"   costo                  {c['costo']}")
+        print(f"   radio                  {c['radio']}")
+        print(f"   riesgo                 {c['riesgo']}")
+        print(f"   verificado             {c['verificado']}")
+    print("\n   Los dos primeros comparten radio pero NO causa: se escriben y")
+    print("   se despliegan por separado. Unirlos ataria dos arreglos a un")
+    print("   solo rollback.")
+    print("\n   NO entra a esta vista `blanco/ambientes`, que figuraba con")
+    print("   1.089 recuperables. La fuente no publica ambientes: el patron")
+    print("   del certificador encuentra 'ambiente 1' adentro de la palabra")
+    print("   MONOambiente, que es una opcion del menu de filtros y esta")
+    print("   igual en las 1.213 fichas. Era un error de medicion, no un")
+    print("   arreglo pendiente.")
+
     print("\n" + "=" * 66)
     print("LECTURA")
     print("=" * 66)
