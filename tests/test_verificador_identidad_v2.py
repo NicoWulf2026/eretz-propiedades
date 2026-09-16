@@ -11,6 +11,8 @@ más; un falso positivo le asigna a una inmobiliaria el catálogo de otra.
 """
 import pytest
 
+from scripts import verificador_identidad_v2 as v2
+
 from scripts.verificador_identidad_v2 import (
     BUSINESS_DIRECTORY, EXTERNAL_PORTAL, EXTERNAL_PORTAL_PROFILE,
     IDENTITY_AMBIGUOUS, NETWORK_DIRECTORY, NETWORK_OFFICE_PAGE, NEWS_MEDIA,
@@ -320,3 +322,43 @@ def test_pero_un_2xx_con_poco_html_y_poco_texto_si_es_parkeado():
     s = Sitio(url="https://mizrahi.com", titulo="mizrahi.com",
               texto="mizrahi.com", http=200, html_bytes=2048)
     assert clasificar_sitio(s) == PARKED_DOMAIN
+
+
+# --- los cinco falsos positivos de la corrida de 250, como reglas ---------
+#
+# Los cinco declaraban OFFICIAL_WEB -"su sitio propio"- sobre el sitio de un
+# tercero. No eran cinco problemas: era uno solo, que la lista de hosts no los
+# conocia. Se fijan por separado para que si alguien saca uno de la lista, el
+# test diga cual.
+
+@pytest.mark.parametrize("url,quien", [
+    ("https://realedo.com/uruguay/profile/agency/156/inmobiliaria-colmena",
+     "Colmena Uruguay"),
+    ("https://realedo.com/uruguay/profile/agency/257/leonardo-giar",
+     "Inmobiliaria Leonardo Giar"),
+    ("https://ar.computrabajo.com/trabajo-de-corredor-inmobiliario",
+     "FULLINMO SAS"),
+    ("https://misionesonline.net/2024/03/21/origen-propiedades-innovacion",
+     "ORIGO"),
+    ("https://mudafy.com.ar/", "Mudafy Lhouse"),
+])
+def test_los_cinco_hosts_ajenos_no_son_web_propia(url, quien):
+    assert v2.es_portal_url(url) is True, quien
+
+
+def test_una_bolsa_de_trabajo_no_es_el_sitio_de_la_inmobiliaria():
+    """Publica avisos de empleo, no propiedades."""
+    sitio = v2.Sitio(url="https://ar.computrabajo.com/trabajo-de-corredor",
+                     titulo="Trabajo de corredor inmobiliario | Ofertas 2026",
+                     texto="ofertas laborales " * 40, http=200, html_bytes=90_000)
+    assert v2.clasificar_sitio(sitio) == v2.EXTERNAL_PORTAL
+
+
+def test_agregar_hosts_no_toca_a_las_inmobiliarias_de_verdad():
+    """La lista crecio; ninguno de los nuevos puede alcanzar a un sitio propio."""
+    for url in ("https://www.brunettipropiedades.com/",
+                "https://civeirabienesraices.com.ar/",
+                "https://estudioelhelou.com.ar/",
+                "https://www.cocucci.com.ar/",
+                "https://remax-premium.com.ar/premium-ii/"):
+        assert v2.es_portal_url(url) is False, url

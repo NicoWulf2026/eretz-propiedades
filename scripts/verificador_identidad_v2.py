@@ -113,13 +113,27 @@ PORTALES = (
     "remax.com", "century21", "coldwellbanker", "toctocventas", "navent",
     "clasificados", "yably", "slideprop", "comunidadinmobiliaria",
     "redinmosoft", "choza.ai", "agroads", "inmoclick",
+    # Los tres que se colaron en la corrida de 250 del 2026-09-14, medidos:
+    # `realedo.com` dos veces -es el portal uruguayo, y la url era
+    # /uruguay/profile/agency/156-, y `mudafy.com.ar` una. Los tres se habian
+    # declarado OFFICIAL_WEB, o sea "su sitio propio".
+    "realedo", "mudafy", "apuntavamos",
 )
+# No venden propiedades: publican avisos de empleo. Se mira aparte de
+# PORTALES porque no son lo mismo, pero el desenlace es el mismo: NO es el
+# sitio de la inmobiliaria. `FULLINMO SAS` resolvio a
+# ar.computrabajo.com/trabajo-de-corredor-inmobiliario.
+BOLSAS_DE_TRABAJO = ("computrabajo", "bumeran", "zonajobs", "indeed")
 DIRECTORIOS = ("cuitonline", "dateas", "universidad", "paginasamarillas",
                "guiaempresas", "informacion-empresas", "opendata", "nosis",
                "einforma", "empresite")
 MEDIOS = ("lanacion", "clarin", "infobae", "pagina12", "eldia", "lavoz",
           "perfil.com", "ambito.com", "cronista", "iprofesional", "telam",
-          "diario", "noticias")
+          "diario", "noticias",
+          # `ORIGO` resolvio a misionesonline.net/2024/03/21/origen-... , una
+          # nota. El host no trae "diario" ni "noticias", asi que ninguna de
+          # las dos reglas de arriba lo alcanzaba.
+          "misionesonline", "elonce", "eldiarioar", "rosario3")
 # Por dominio registrable, NO por substring: "x.com" como substring convierte
 # a `remax.com.ar` en un perfil social, que fue exactamente el bug.
 SOCIALES = {"facebook.com", "instagram.com", "twitter.com", "x.com",
@@ -342,6 +356,8 @@ def clasificar_sitio(sitio: Sitio, entidad: dict | None = None) -> str:
                 return NETWORK_DIRECTORY
         return NETWORK_OFFICE_PAGE
 
+    if any(p in host for p in BOLSAS_DE_TRABAJO):
+        return EXTERNAL_PORTAL
     if any(p in host for p in PORTALES):
         return PROPERTY_DETAIL_PAGE if RUTA_FICHA.search(ruta) else EXTERNAL_PORTAL
     if RUTA_FICHA.search(ruta) and _parece_agregador(sitio):
@@ -516,7 +532,7 @@ def es_portal_url(url: str) -> bool:
         return True
     if any(s in reg for s in MEDIOS) or any(s in reg for s in DIRECTORIOS):
         return True
-    if any(p in host for p in PORTALES):
+    if any(p in host for p in PORTALES) or any(p in host for p in BOLSAS_DE_TRABAJO):
         return True
     return bool(RUTA_DE_TERCEROS.search(partes.path or "")
                 or RUTA_DE_NOTA.search(partes.path or ""))
