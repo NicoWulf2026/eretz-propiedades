@@ -55,8 +55,11 @@ def test_una_linea_rota_no_tira_la_cola(tmp_path):
         "{esto no es json\n"
         + json.dumps({"canonical_agency_id": "roomix:x", "diagnostico": "y"})
         + "\n", encoding="utf-8")
+    # `cuando` se suma a la proyeccion desde el 2026-09-14: el TTL de
+    # `diferida_vigente` lo necesita, y sin el campo ninguna diferida vale.
     assert diferidos(tmp_path) == {
-        "roomix:x": [{"diagnostico": "y", "componente": "", "radio": ""}]}
+        "roomix:x": [{"diagnostico": "y", "componente": "", "radio": "",
+                      "cuando": ""}]}
 
 
 def test_la_firma_de_una_variante_no_soportada_no_corta_por_repetida():

@@ -92,6 +92,16 @@ CERROJO = "AGENCY_CERTIFICATION_RUNNER.lock"
 DIFERIDOS = "AGENCY_DEFECTS_DIFERIDOS.jsonl"
 
 
+def _fecha(iso: str | None) -> float | None:
+    """ISO-8601 a epoch. `None` si no se puede leer: sin fecha no hay TTL."""
+    if not iso:
+        return None
+    try:
+        return time.mktime(time.strptime(str(iso)[:19], "%Y-%m-%dT%H:%M:%S"))
+    except (ValueError, TypeError):
+        return None
+
+
 def diferidos(output: Path) -> dict[str, dict[str, str]]:
     """Que agencias tienen su defecto diagnosticado y postergado, y por que."""
     ruta = output / DIFERIDOS
@@ -123,6 +133,8 @@ def diferidos(output: Path) -> dict[str, dict[str, str]]:
                 "diagnostico": fila["diagnostico"],
                 "componente": fila.get("componente") or "",
                 "radio": fila.get("radio") or "",
+                # Sin la fecha, el TTL no puede vencer nunca ni valer nunca.
+                "cuando": fila.get("cuando") or "",
             })
     return fuera
 
@@ -377,8 +389,77 @@ def progress_payload(*, mode: str, universe: int, queue: list[str],
     }
 
 
+# Cuánto vale una diferida antes de volver a mirar la fuente.
+#
+# No es eterna, y el motivo tiene nombre: `baron inmobiliaria` pasó de enumerar
+# 0 a enumerar 182 sin que tocáramos una línea. Una fuente cambia sola, y una
+# diferida permanente convertiría ese cambio en invisible.
+TTL_DIFERIDA_HORAS = 72
+# Los defectos que, si el diagnóstico envejece mal, publican algo falso. Se
+# revisan tres veces más seguido.
+TTL_CRITICO_HORAS = 24
+FIRMAS_CRITICAS = {
+    "inventario_inestable_entre_corridas",
+    "posible_perdida_de_inventario",
+    "perdida_sistematica_de_inventario",
+    "catalogo_declarado_mayor_que_el_enumerado",
+    "enumeracion_compartida",
+}
+
+
+def diferida_vigente(previous: dict[str, Any],
+                     postergadas: list[dict[str, str]] | None,
+                     ahora: float | None = None) -> bool:
+    """¿Hay una diferida firmada, sin vencer, para el defecto de ESTE resultado?
+
+    Las tres condiciones se exigen juntas y cada una cubre un riesgo distinto:
+    la firma prueba que alguien miró el defecto contra la fuente, el TTL
+    impide que ese diagnóstico valga para siempre, y el llamador comprueba
+    aparte que la huella no cambió.
+
+    El TTL se mide contra **la última vez que miramos la agencia**, no contra
+    la fecha de la firma. La diferencia se midió sobre 24 h de historial real:
+    anclado en la firma, una diferida de hace 200 h queda vencida para siempre
+    y su agencia vuelve a correrse en cada pasada de la cola. Eran 112
+    corridas sobre 20 agencias, 14,6 h de worker, y 108 de esas 112 terminaron
+    idénticas -mismo estado, misma huella, mismo enumerado-. Las otras 4
+    movieron entre 1 y 4 avisos, que es rotación de catálogo y no un hallazgo.
+
+    Anclado en la última observación, el TTL hace lo que se le pidió: obliga a
+    volver a mirar cada 72 h -24 h si la firma es crítica-, una vez por
+    ventana en lugar de una vez por pasada. ``previous`` es siempre una
+    corrida realmente ejecutada, porque las salteadas no escriben resultado,
+    así que su ``checked_at`` es la fecha de la última mirada.
+    """
+    if not postergadas:
+        return False
+    ahora = time.time() if ahora is None else ahora
+    observada = _fecha(previous.get("checked_at"))
+    for postergada in postergadas:
+        firma = postergada.get("componente")
+        if not firma or not postergada.get("radio"):
+            continue
+        # Sin fecha no se puede saber si vencio, y una diferida sin fecha no
+        # puede valer indefinidamente.
+        emitida = _fecha(postergada.get("cuando"))
+        if emitida is None:
+            continue
+        # El ancla es la ultima mirada real. Una fecha futura no se usa:
+        # renovaria el TTL sin haber mirado nada.
+        ancla = emitida
+        if observada is not None and emitida <= observada <= ahora:
+            ancla = observada
+        tope = (TTL_CRITICO_HORAS if firma in FIRMAS_CRITICAS
+                else TTL_DIFERIDA_HORAS)
+        if (ahora - ancla) > tope * 3600:
+            continue
+        return True
+    return False
+
+
 def is_current_result(previous: dict[str, Any],
-                      record: dict[str, dict[str, Any]]) -> bool:
+                      record: dict[str, dict[str, Any]],
+                      postergadas: list[dict[str, str]] | None = None) -> bool:
     """Decide si un cierre persistido sigue vigente.
 
     ``IDENTITY_PENDING`` y los bloqueos resueltos antes de elegir conector no
@@ -387,8 +468,38 @@ def is_current_result(previous: dict[str, Any],
     hacía que cada reanudación repitiera miles de cierres terminales. Los
     resultados que sí usaron un conector mantienen la comparación estricta de
     fingerprint.
+
+    Y desde el 2026-09-15, un ``NEEDS_FIX`` YA DIAGNOSTICADO tambien cuenta
+    como vigente mientras su diferida no venza.
+
+    El motivo se midio con replay sobre el historial real de 24 h: 350
+    certificaciones, de las cuales 19 fueron trabajo nuevo y 331 repeticiones.
+    La politica nueva evita 229 de esas repeticiones -48 agencias- y baja el
+    dia de 41,6 h de worker a 22,8. El NEW_WORK_RATIO pasa de 5,4 % a 15,7 %.
+
+    Esas cifras son del replay, no de una estimacion: cada repeticion se
+    volvio a juzgar con el estado que el sistema tenia EN ESE MOMENTO, y se
+    sumo su duracion medida. Una diferida escrita despues de una corrida no
+    podria haberla evitado, y por eso no se cuenta a favor.
+
+    El diseño original era correcto cuando cada paro terminaba en un arreglo:
+    reejecutar comprobaba si el arreglo funciono. Bajo el freeze no se arregla
+    nada, asi que reejecutar comprueba que nada cambio.
+
+    Esto NO cambia ningun resultado de certificacion: solo evita volver a
+    ejecutar trabajo cuyo diagnostico ya esta escrito.
     """
     status = previous.get("status")
+    if status == "NEEDS_FIX" and diferida_vigente(previous, postergadas):
+        # La huella se comprueba igual, mas abajo: si el codigo cambio, hay que
+        # rehacerla aunque el defecto este diagnosticado.
+        connector = previous.get("connector")
+        firma = previous.get("strategy_fingerprint")
+        if connector and firma:
+            strategy = previous.get("connector_strategy") or strategy_for(
+                connector, previous.get("publication_mechanism"))
+            return firma == strategy_fingerprint(connector, strategy)
+        return False
     if status not in TERMINAL:
         return False
     if status == "IDENTITY_PENDING" or (
@@ -638,8 +749,13 @@ def main() -> int:
         print(f"### worker {args.worker} de {args.workers}: "
               f"{len(queue)} de {len(cola_completa)} inmobiliarias ###",
               flush=True)
+    # Las diferidas se leen ANTES de armar la cola, no despues: son parte de
+    # decidir que entra, no solo de decidir si un paro detiene.
+    diferidas_al_armar = diferidos(output)
+
     def current(key: str) -> bool:
-        return is_current_result(existing.get(key, {}), catalog[key])
+        return is_current_result(existing.get(key, {}), catalog[key],
+                                 diferidas_al_armar.get(key))
 
     stale = [key for key in queue if key in existing and not current(key)
              and existing[key].get("status") in TERMINAL]
