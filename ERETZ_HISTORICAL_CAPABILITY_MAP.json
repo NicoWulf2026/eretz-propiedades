@@ -1,0 +1,131 @@
+{
+ "generado_en": "2026-09-16",
+ "repo": "NicoWulf2026/eretz-propiedades",
+ "head_local": "4569cfe5ec",
+ "branch_local": "feat/roomix-agency-coverage",
+ "metodo": "git fetch de refs remotos + git show/diff/log/cat-file. Sin checkout, sin reset, sin cherry-pick, sin merge. El worktree activo no se movio y los workers no se detuvieron.",
+ "database_writes": 0,
+ "hallazgo_estructural": "origin/main y origin/release/eretz-private-preview estan integramente contenidas en el HEAD local, que va 614 commits. Las seis ramas de 1 commit son las versiones pre-squash de sus PR. El unico codigo historico realmente ausente del HEAD es el heartbeat.",
+ "capabilities": [
+  {
+   "CAPABILITY": "detail URL detection",
+   "HISTORICAL_COMMIT": "9aa299bde9f7bc410b010be1387566269f551145",
+   "HISTORICAL_BRANCH": "feat/parser-detail-url-detection / main",
+   "FILES": ["scraper/playwright_scraper.py", "scripts/validate_detail_quality_07d.py", "scripts/validate_parser_fix_07b.py", "tests/test_parser_detail_url_candidates.py"],
+   "BEHAVIOR": "urls relativas, cards sin href valido, query params, onclick, data-href/data-url/data-link, JSON embebido, patrones WordPress Real Estate",
+   "METRICS": "reporte historico: 413 fuentes, 93 recuperadas de 0 a >0, 3.588 -> 4.628 links",
+   "TESTS": "16 en el historico, 47 hoy, 0 invariantes historicas borradas, 47 pasan",
+   "CURRENT_EQUIVALENT": "los cuatro archivos presentes en HEAD",
+   "STATUS": "PRESENT_BETTER",
+   "EVIDENCIA": "git diff de la suite: 354 inserciones y 1 sola linea borrada. Ninguna funcion de test historica desaparecio."
+  },
+  {
+   "CAPABILITY": "manifest runner: preflight de deduplicacion",
+   "HISTORICAL_COMMIT": "fc896b1360bc358f83ce96b17d23a3bea212e0d9",
+   "HISTORICAL_BRANCH": "pr-be-prod-09e-manifest-runner-hardening / main",
+   "FILES": ["scripts/run_manifest.py", "tests/test_run_manifest.py"],
+   "BEHAVIOR": "el historico tolera un error HTTP de PostgREST y sigue sin las URLs de esa inmobiliaria",
+   "METRICS": "1 consulta por inmobiliaria, limit 10000 sin paginar",
+   "TESTS": "64 en el historico, 84 hoy, 2 invariantes historicas borradas",
+   "CURRENT_EQUIVALENT": "_load_existing_urls_by_inmobiliaria() con lotes de 50, paginacion por offset y RuntimeError ante error",
+   "STATUS": "PRESENT_BETTER",
+   "EVIDENCIA": "reejecutada la invariante historica contra el codigo actual: lanza RuntimeError. El cambio es real, pero el historico se saltaba en silencio la agencia que fallaba y su llamador trataba todas sus propiedades como nuevas: duplicacion silenciosa. Ademas truncaba a 10.000 filas por agencia sin avisar."
+  },
+  {
+   "CAPABILITY": "MAX_EXECUTE_LIMIT como compuerta de corrida",
+   "HISTORICAL_COMMIT": "fc896b1360bc358f83ce96b17d23a3bea212e0d9",
+   "HISTORICAL_BRANCH": "pr-be-prod-09e-manifest-runner-hardening",
+   "FILES": ["tests/test_run_manifest.py"],
+   "BEHAVIOR": "test_max_execute_limit_is_892() exigia la constante en 892 para autorizar la corrida 09e",
+   "METRICS": null,
+   "TESTS": "1, borrado",
+   "CURRENT_EQUIVALENT": "MAX_EXECUTE_LIMIT = 7004, universo DB completo",
+   "STATUS": "SUPERSEDED",
+   "EVIDENCIA": "fijaba el alcance de una corrida puntual, no una invariante durable. Borrarlo fue correcto."
+  },
+  {
+   "CAPABILITY": "navegacion de catalogo escrita en location.href",
+   "HISTORICAL_COMMIT": "9aa299bde9f7bc410b010be1387566269f551145",
+   "HISTORICAL_BRANCH": "main",
+   "FILES": ["scraper/playwright_scraper.py::_onclick_urls"],
+   "BEHAVIOR": "el legacy lee URLs dentro del ATRIBUTO onclick. No sigue una funcion definida en un script.",
+   "METRICS": "medido contra davidrodriguezprop.com: 0 candidatos por documento, 0 propiedades por parse_cards, en la home y en propiedades.php",
+   "TESTS": "test_parse_cards_accepts_relative_ficha_in_location_href_fixture (cubre el caso inline, no el indirecto)",
+   "CURRENT_EQUIVALENT": "el descubridor del certificador solo cosecha href=",
+   "STATUS": "IRRELEVANT_TO_CURRENT_ARCHITECTURE",
+   "EVIDENCIA": "no es capacidad perdida: el historico tampoco la tenia. Es un hueco nuevo, medido en 4 de 35 agencias SIN_INVENTARIO."
+  },
+  {
+   "CAPABILITY": "extraccion de ambientes desde texto plano etiquetado",
+   "HISTORICAL_COMMIT": "9aa299bde9f7bc410b010be1387566269f551145",
+   "HISTORICAL_BRANCH": "main (sigue vivo en HEAD dentro del scraper legacy)",
+   "FILES": ["scraper/playwright_scraper.py::enrich_detail::_extract_num"],
+   "BEHAVIOR": "regex de dos ramas sobre el texto aplanado: (\\d+)\\s*amb  |  amb[^0-9]{0,15}(\\d+)",
+   "METRICS": "5 de 5 fichas reales de bottegapropiedades.com.ar con valor correcto y contexto limpio 'Ambientes N'",
+   "TESTS": "sin test dedicado historico",
+   "CURRENT_EQUIVALENT": "el certificador tiene SENAL que si dispara sobre 'Ambientes 5', pero cierra EXTRACTION_FAILED con cobertura 0.41",
+   "STATUS": "REGRESSION_CONFIRMED",
+   "EVIDENCIA": "el dato esta en la pagina, la senal lo ve, y el extractor no lo saca. Es desalineacion senal/extractor (§39). PERO la regla historica fabrica ambientes=1 desde el menu 'Monoambiente 1 dormitorio', igual que la senal actual: se porta ADAPTADA con limite de palabra, no tal cual."
+  },
+  {
+   "CAPABILITY": "heartbeat remoto de telemetria",
+   "HISTORICAL_COMMIT": "5e51042541b2df00187868d4f3ccf95f4ed0839b",
+   "HISTORICAL_BRANCH": "claude/roomix-agency-universe-ndvrfu",
+   "FILES": ["migrations/phase_roomix_agency_crawl_status.sql", "scraper/roomix_agency_heartbeat.py", "tests/test_roomix_agency_heartbeat.py"],
+   "BEHAVIOR": "JSONL local durable primero, tabla best-effort despues, conexion efimera aislada, ningun metodo propaga excepciones, throttling por intervalo y delta, ETA por ventana movil, solo contadores conocidos",
+   "METRICS": "931 lineas, 24 tests",
+   "TESTS": "24, ausentes de HEAD",
+   "CURRENT_EQUIVALENT": "scripts/vigilante_de_paros.py cumple 6 de los 7 principios",
+   "STATUS": "NEEDS_PORT",
+   "EVIDENCIA": "el principio que falta -espejo remoto- es justo el que la medicion de tiempo perdido senala como el 80% del costo: 9 de 58 paros se llevan 82,4 de 102,8 h. Bloqueado por §19/§20/§21: necesita migracion, rol nuevo y escrituras a Supabase."
+  },
+  {
+   "CAPABILITY": "timeouts de item/estrategia configurables por env",
+   "HISTORICAL_COMMIT": "8df9c21ddcb2aa1d12532a3145de75b20a4bd928",
+   "HISTORICAL_BRANCH": "feat/scraper-timeout-configurable-env",
+   "FILES": [".env.example", "scraper/scraper_propiedades.py", "tests/test_timeout_env_config.py"],
+   "BEHAVIOR": "timeouts por variable de entorno con default sin cambios",
+   "METRICS": null,
+   "TESTS": "7 en el historico, 7 hoy, 0 borrados",
+   "CURRENT_EQUIVALENT": "los tres archivos presentes en HEAD",
+   "STATUS": "PRESENT_EQUIVALENT",
+   "EVIDENCIA": "contenido llegado por otra via; la rama solo conserva la version pre-squash."
+  },
+  {
+   "CAPABILITY": "run de reintento desde items con error",
+   "HISTORICAL_COMMIT": "d81279212092aa5c12c84da0ee9967b8e06da4a6",
+   "HISTORICAL_BRANCH": "feat/retry-run-from-error-items",
+   "FILES": ["scripts/create_retry_run_from_error_items.py", "tests/test_create_retry_run_from_error_items.py"],
+   "BEHAVIOR": "crea un run de reintento a partir de scraping_run_items en error",
+   "METRICS": null,
+   "TESTS": "11 en el historico, 11 hoy, 0 borrados",
+   "CURRENT_EQUIVALENT": "los dos archivos presentes en HEAD",
+   "STATUS": "PRESENT_EQUIVALENT",
+   "EVIDENCIA": "sin diferencias de invariante."
+  },
+  {
+   "CAPABILITY": "publish robusto con retry y reclaim, error logger redactado",
+   "HISTORICAL_COMMIT": "e57d4020c7a1be99d5d96ea73c2ec9ebcf6fee98",
+   "HISTORICAL_BRANCH": "feat/fase-b1-publish-robustez",
+   "FILES": ["scripts/publish_to_supabase.py", "scraper/error_logger.py", "scripts/build_publish_queue.py", "tests/test_publish_robustez.py", "tests/test_sprint_a_operacion.py"],
+   "BEHAVIOR": "modelo de publicacion con reintento y reclamo, logger de errores con JSONL + tabla",
+   "METRICS": "56 commits no contenidos ancestralmente en HEAD",
+   "TESTS": "presentes en HEAD",
+   "CURRENT_EQUIVALENT": "todos los archivos presentes en HEAD",
+   "STATUS": "PRESENT_EQUIVALENT",
+   "EVIDENCIA": "de todos los archivos de la rama, los unicos dos que HEAD no tiene son scraper/checkpoint_desarrolladoras.txt y scraper/checkpoint_inmobiliarias.txt, que son estado generado y no codigo."
+  },
+  {
+   "CAPABILITY": "heuristicas geograficas inseguras",
+   "HISTORICAL_COMMIT": null,
+   "HISTORICAL_BRANCH": "varias",
+   "FILES": [],
+   "BEHAVIOR": "nearest-centroid locality, provincia inferida por palabra aislada, barrio/localidad mezclados",
+   "METRICS": null,
+   "TESTS": null,
+   "CURRENT_EQUIVALENT": "ausentes",
+   "STATUS": "SUPERSEDED_BY_SAFER_MODEL",
+   "EVIDENCIA": "busqueda en todo el codigo actual: las dos unicas apariciones de 'centroide' son un comentario que explica por que NO se usan."
+  }
+ ]
+}
