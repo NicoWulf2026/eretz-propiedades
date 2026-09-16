@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Casa en Venta - Ejemplo | Fixture</title>
+<!--
+  Fixture reducida de una ficha real de generic/sitemap, 2026-09-15.
+
+  Lo único que importa acá está en el JSON-LD de abajo: publica `price` y NO
+  publica `priceCurrency`. Esa combinación es la que rompe la extracción, y es
+  la forma en que la publica el sitio de verdad -se copió tal cual, sólo se
+  recortó el resto de la página y se cambiaron los datos identificatorios-.
+
+  El menú de filtros del principio tampoco es decorativo: la palabra
+  "Monoambiente" que aparece ahí es la que el certificador confunde con un
+  atributo de la propiedad. Sacarla haría que la fixture dejara de reproducir
+  el segundo defecto.
+-->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "RealEstateListing",
+  "name": "",
+  "description": "Excelente propiedad de 2 plantas.",
+  "url": "https://ejemplo.test/propiedades/618",
+  "image": "https://ejemplo.test/foto.jpg",
+  "offers": {
+    "@type": "Offer",
+    "price": "180000"
+  }
+}
+</script>
+</head>
+<body>
+
+<form class="buscador">
+  <span>Cant. de Domitorios</span>
+  <label>Monoambiente</label>
+  <label>1 Dorm.</label>
+  <label>2 Dorm.</label>
+  <label>3 Dorm o M&aacute;s</label>
+  <span>Cant. de Ba&ntilde;os</span>
+  <label>1 Ba&ntilde;o.</label>
+  <label>2 Ba&ntilde;os.</label>
+  <span>Moneda</span>
+  <label>$</label>
+  <label>U$S</label>
+  <button>APLICAR FILTROS</button>
+</form>
+
+<main>
+  <h1>Venta - LOCALIDAD - BARRIO - ID: 618</h1>
+  <div class="precio">U$S 180.000</div>
+
+  <section>
+    <h2>DATOS GENERALES</h2>
+    <ul>
+      <li>Operaci&oacute;n: Venta</li>
+      <li>Tipo de propiedad: CONDOMINIOS</li>
+      <li>Localidad/Barrio: LOCALIDAD - BARRIO</li>
+      <li>Cantidad de dormitorios: 2</li>
+      <li>Ba&ntilde;os: 2</li>
+      <li>Superficie Terreno: 171 m2</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Descripci&oacute;n</h2>
+    <p>Excelente propiedad de 2 plantas. P.B: living-comedor con hogar,
+       cocina, toilette. P.A: 2 dormitorios con ba&ntilde;o completo.
+       Exterior: jard&iacute;n, parrilla.</p>
+  </section>
+</main>
+
+</body>
+</html>

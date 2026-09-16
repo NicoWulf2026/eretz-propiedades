@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<!--
+  Fixture reducida de una URL que el sitemap publica y que NO es una ficha:
+  es la vista filtrada "venta / casas / ciudad".
+
+  Las cuatro senales que la delatan, y que estan todas aca:
+    1. el titulo del documento es el INSTITUCIONAL del sitio, no el de una
+       propiedad;
+    2. ese mismo titulo aparece en otras paginas enumeradas de la agencia;
+    3. no hay un precio propio;
+    4. la url no termina en un id numerico.
+
+  Con menos de las cuatro la regla marcaba fichas duplicadas legitimas: se
+  midio sobre las 378 agencias certificadas y con tres condiciones marcaba 395
+  paginas, casi todas duplicados reales. Con las cuatro marca 8.
+
+  Los comentarios de una fixture no nombran etiquetas con sus simbolos: un
+  lector que busca la primera etiqueta la encontraria aca adentro y leeria el
+  comentario como si fuera el contenido. Paso dos veces el mismo dia.
+-->
+<title>Inmobiliaria Ejemplo en Ciudad | Ventas y Alquileres</title>
+</head>
+<body>
+<main>
+  <h1>Propiedades</h1>
+  <form><button>APLICAR FILTROS</button></form>
+  <p>Encontra tu proxima propiedad en Ciudad.</p>
+</main>
+</body>
+</html>
