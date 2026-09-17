@@ -74,12 +74,14 @@ def vigencia(db: Path) -> dict[str, Any]:
         finally:
             conexion.close()
     try:
+        git = ["git", "-c", f"safe.directory={RAIZ.as_posix()}"]
         codigo = subprocess.run(
-            ["git", "log", "-1", "--format=%cI", "--", "connectors"],
-            cwd=RAIZ, capture_output=True, text=True, timeout=30).stdout.strip()
+            git + ["log", "-1", "--format=%cI", "--", "connectors"],
+            cwd=RAIZ, capture_output=True, text=True, timeout=30,
+            check=True).stdout.strip()
         posteriores = subprocess.run(
-            ["git", "log", "--format=%h", f"--since={datos}", "--", "connectors"],
-            cwd=RAIZ, capture_output=True, text=True, timeout=30
+            git + ["log", "--format=%h", f"--since={datos}", "--", "connectors"],
+            cwd=RAIZ, capture_output=True, text=True, timeout=30, check=True
         ).stdout.split() if datos else []
     except (OSError, subprocess.SubprocessError):
         codigo, posteriores = "", []

@@ -382,8 +382,9 @@ def mapa(
             f"select count(*) from {tabla}{viewport_where}", viewport_values
         ).fetchone()[0]
         filas = con.execute(
-            f"select propiedades.id, latitud, longitud, precio, moneda, operacion, "
-            f"tipo_propiedad, titulo from {tabla}{viewport_where} "
+            f"select propiedades.id, propiedades.latitud, propiedades.longitud, "
+            f"propiedades.precio, propiedades.moneda, propiedades.operacion, "
+            f"propiedades.tipo_propiedad, propiedades.titulo from {tabla}{viewport_where} "
             f"order by propiedades.id limit ?",
             viewport_values + [limit],
         ).fetchall()

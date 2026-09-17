@@ -193,6 +193,25 @@ def test_una_propiedad_incompleta_se_devuelve_igual(v2):
     assert sin_precio, "las propiedades sin precio tienen que seguir viniendo"
 
 
+def test_mapa_combina_fts_viewport_y_filtros(v2):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    app = FastAPI()
+    app.include_router(v2.router)
+    response = TestClient(app).get('/v2/propiedades/mapa', params={
+        'q': 'Casa', 'north': -30, 'south': -32, 'east': -63,
+        'west': -65, 'operacion': 'venta', 'limit': 1,
+    })
+    assert response.status_code == 200
+    result = response.json()
+    assert result['total_matches'] == result['viewport_matches'] == 1
+    assert result['returned_points'] == 1
+    assert result['truncated'] is False
+    assert result['data'][0]['id'] == 'h1'
+    assert result['data'][0]['titulo'] == 'Casa en Venta'
+
+
 def test_el_area_siempre_viaja_con_su_nivel(v2):
     """Un municipio devuelto sin decir que es un municipio se lee como una
     ciudad, y ahí es donde se inventa geografía."""
