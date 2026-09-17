@@ -278,6 +278,32 @@ def eta(cola: dict[str, Any], rend: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def caudal_por_ventana(certificacion: Path,
+                       horas: tuple[int, ...] = (6, 12, 24, 48, 168),
+                       ) -> dict[str, float]:
+    """Agencias vistas por PRIMERA vez por hora, en varias ventanas.
+
+    Se cuenta la primera aparición de cada agencia y no las corridas: una
+    agencia que se repite no es avance. Y se miran varias ventanas porque el
+    ritmo varía mucho, y esa variación es información, no ruido.
+    """
+    vistas: set[str] = set()
+    primeras: list[float] = []
+    for fila in _jsonl(certificacion / "AGENCY_CERTIFICATION_RESULTS.jsonl"):
+        agencia, cuando = fila.get("canonical_agency_id"), fila.get("checked_at")
+        if not agencia or not cuando or agencia in vistas:
+            continue
+        vistas.add(agencia)
+        try:
+            primeras.append(time.mktime(
+                time.strptime(str(cuando)[:19], "%Y-%m-%dT%H:%M:%S")))
+        except (ValueError, TypeError):
+            continue
+    ahora = time.time()
+    return {f"{h}h": round(sum(1 for p in primeras if p >= ahora - h * 3600) / h, 2)
+            for h in horas}
+
+
 def eta_por_poblacion(certificacion: Path, datos_dir: Path,
                       rend: dict[str, Any]) -> dict[str, Any]:
     """§70: no una fecha para 6.597 agencias que no están en la misma cola.
@@ -325,17 +351,41 @@ def eta_por_poblacion(certificacion: Path, datos_dir: Path,
                  for f in _jsonl(datos_dir / "scrape_source_technology_map.jsonl")
                  if f.get("requires_js") is True and f.get("canonical_agency_id")}
 
+    # El caudal medido en varias ventanas, porque varía mucho y una sola fecha
+    # esconde esa variación.
+    #
+    # Medido el 2026-09-17: 2,67 nuevas/h en las últimas 6 h, 2,83 en 12 h,
+    # 1,54 en 24 h, 1,04 en 48 h y 1,12 en 7 días. Dos veces y media de
+    # diferencia según qué ventana se mire, y no es ruido: las ventanas cortas
+    # son con alguien relanzando la cola después de cada paro, y las largas
+    # incluyen las horas en que estuvo detenida sin que nadie mirara.
+    #
+    # Dar una sola fecha con ese spread es la falsa precisión que el §33 pide
+    # evitar. Se da un rango, y el rango mismo dice cuánto vale atender la cola.
+    ritmos = caudal_por_ventana(certificacion)
+
     def fechar(pendientes: int) -> dict[str, Any]:
         if pendientes <= 0:
             return {"pendientes": 0, "estado": "COMPLETA"}
-        if por_hora <= 0:
+        utiles = [r for r in ritmos.values() if r and r > 0]
+        if not utiles:
             return {"pendientes": pendientes, "estado": "SIN_ETA",
-                    "porque": "cero agencias nuevas por hora en la ventana"}
-        horas = pendientes / por_hora
-        return {"pendientes": pendientes,
-                "horas_estimadas": round(horas, 1),
-                "fecha_estimada": time.strftime(
-                    "%Y-%m-%d", time.localtime(time.time() + horas * 3600))}
+                    "porque": "cero agencias nuevas por hora en toda ventana"}
+        rapido, lento = max(utiles), min(utiles)
+        return {
+            "pendientes": pendientes,
+            "ritmos_por_ventana": ritmos,
+            "fecha_optimista": time.strftime(
+                "%Y-%m-%d",
+                time.localtime(time.time() + pendientes / rapido * 3600)),
+            "fecha_pesimista": time.strftime(
+                "%Y-%m-%d",
+                time.localtime(time.time() + pendientes / lento * 3600)),
+            "nota": (f"entre {lento:.2f} y {rapido:.2f} agencias nuevas por "
+                     f"hora segun la ventana. Las ventanas cortas son con "
+                     f"alguien relanzando tras cada paro; las largas incluyen "
+                     f"las horas detenida sin que nadie mirara"),
+        }
 
     en_cola = progreso.get("queue_size") or 0
     pendientes_cola = progreso.get("pending_count")

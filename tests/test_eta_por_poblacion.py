@@ -2,8 +2,13 @@
 """Una fecha para 6.597 agencias que esperan cosas distintas no es una fecha.
 
 La ETA agregada daba **2027-04-20**. Separada por población, el bulk actual
-cierra el **2026-10-11**: siete meses de diferencia, y la culpa no era del
-cálculo sino de la mezcla.
+cierra entre el **2026-09-27** y el **2026-10-17**: meses de diferencia, y la
+culpa no era del cálculo sino de la mezcla.
+
+Y es un rango y no una fecha porque el caudal varía 2,5 veces según la ventana
+que se mire —2,83 nuevas/h en las últimas 6 h contra 1,06 en 48 h—. Esa
+variación no es ruido: las ventanas cortas son con alguien relanzando la cola
+tras cada paro. El ancho del rango es, literalmente, lo que vale atenderla.
 
 De las 6.597 del universo, **4.267 no tienen entrada en el registro de fuentes**.
 No esperan caudal de scraping —esperan que alguien les descubra una fuente, que
@@ -73,12 +78,19 @@ def test_MUERDE_el_universo_completo_no_recibe_una_fecha(tmp_path):
     assert universo["sin_registro_de_fuente"] == 6597 - 2330
 
 
-def test_el_bulk_actual_si_recibe_fecha(tmp_path):
-    """Es la única población con un proceso corriendo y midiéndose."""
+def test_el_bulk_actual_si_recibe_fecha(tmp_path, monkeypatch):
+    """Es la única población con un proceso corriendo y midiéndose.
+
+    Recibe un RANGO, no una fecha: el caudal varía 2,5 veces según la ventana
+    y una sola fecha escondería esa variación.
+    """
+    import operacion_reporte as reporte
+    monkeypatch.setattr(reporte, "caudal_por_ventana",
+                        lambda c, **k: {"6h": 2.83, "168h": 1.12})
     cert, datos = montar(tmp_path)
-    bulk = eta_por_poblacion(cert, datos, REND)["ETA_CURRENT_BULK"]
+    bulk = reporte.eta_por_poblacion(cert, datos, REND)["ETA_CURRENT_BULK"]
     assert bulk["pendientes"] == 766
-    assert "fecha_estimada" in bulk
+    assert "fecha_optimista" in bulk and "fecha_pesimista" in bulk
 
 
 def test_el_backlog_de_identidad_no_recibe_fecha(tmp_path):
@@ -121,3 +133,63 @@ def test_las_poblaciones_no_se_solapan_de_manera_absurda(tmp_path):
     """
     salida = eta_por_poblacion(*montar(tmp_path), REND)
     assert salida["ETA_READY_STATIC"]["pendientes"] == 2330 - 194 - 140 - 11
+
+
+# --------------------------------------------------------------------------
+# El caudal varía 2,5 veces según la ventana que se mire, y esa variación no es
+# ruido: las ventanas cortas son con alguien relanzando la cola tras cada paro,
+# y las largas incluyen las horas detenida sin que nadie mirara. Medido el
+# 2026-09-17: 2,83/h en 6 h, 1,06/h en 48 h.
+#
+# Dar una sola fecha con ese spread es la falsa precisión del §33. Y el rango
+# mismo contesta cuánto vale atender la cola: veinte días de diferencia.
+# --------------------------------------------------------------------------
+
+def test_MUERDE_la_eta_da_un_rango_y_no_una_fecha(tmp_path, monkeypatch):
+    import operacion_reporte as reporte
+    cert, datos = montar(tmp_path)
+    monkeypatch.setattr(reporte, "caudal_por_ventana",
+                        lambda c, **k: {"6h": 2.83, "48h": 1.06})
+    bulk = reporte.eta_por_poblacion(cert, datos, REND)["ETA_CURRENT_BULK"]
+    assert "fecha_optimista" in bulk and "fecha_pesimista" in bulk
+    # Una sola fecha esconderia que hay 2,7 veces de diferencia entre ritmos.
+    assert "fecha_estimada" not in bulk
+    assert bulk["fecha_optimista"] < bulk["fecha_pesimista"]
+
+
+def test_el_rango_usa_el_ritmo_mas_rapido_y_el_mas_lento(tmp_path, monkeypatch):
+    """No el promedio de los ritmos: los extremos son el rango.
+
+    Promediar ventanas de distinto largo mezcla mediciones que no son
+    comparables y produce un numero que no corresponde a ninguna situacion
+    real.
+    """
+    import operacion_reporte as reporte
+    cert, datos = montar(tmp_path, pendientes_cola=100)
+    monkeypatch.setattr(reporte, "caudal_por_ventana",
+                        lambda c, **k: {"a": 10.0, "b": 1.0, "c": 5.0})
+    bulk = reporte.eta_por_poblacion(cert, datos, REND)["ETA_CURRENT_BULK"]
+    assert "1.00 y 10.00" in bulk["nota"]
+
+
+def test_un_ritmo_en_cero_no_arrastra_el_rango(tmp_path, monkeypatch):
+    """Una ventana sin avance no puede volver infinita la fecha pesimista.
+
+    Si la cola estuvo parada las ultimas 6 h, el ritmo de esa ventana es cero y
+    dividir por el daria una fecha imposible.
+    """
+    import operacion_reporte as reporte
+    cert, datos = montar(tmp_path)
+    monkeypatch.setattr(reporte, "caudal_por_ventana",
+                        lambda c, **k: {"6h": 0.0, "168h": 1.12})
+    bulk = reporte.eta_por_poblacion(cert, datos, REND)["ETA_CURRENT_BULK"]
+    assert "fecha_pesimista" in bulk
+
+
+def test_sin_ningun_ritmo_util_no_hay_fecha(tmp_path, monkeypatch):
+    import operacion_reporte as reporte
+    cert, datos = montar(tmp_path)
+    monkeypatch.setattr(reporte, "caudal_por_ventana",
+                        lambda c, **k: {"6h": 0.0, "24h": 0.0})
+    bulk = reporte.eta_por_poblacion(cert, datos, REND)["ETA_CURRENT_BULK"]
+    assert bulk["estado"] == "SIN_ETA"
