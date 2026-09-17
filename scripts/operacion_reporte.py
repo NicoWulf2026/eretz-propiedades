@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import time
 from collections import Counter
 from pathlib import Path
@@ -377,6 +378,97 @@ def eta_por_poblacion(certificacion: Path, datos_dir: Path,
     }
 
 
+def capacidad_de_reinicio() -> dict[str, Any]:
+    """¿Existe algo que vuelva a levantar la cola cuando se cae?
+
+    Sólo lee el Programador de tareas. **No crea ni modifica nada**, y la
+    contención es deliberada: ponerle un disparador a estas tareas equivale a
+    reiniciar la cola después de **cualquier** parada, incluida una no
+    diagnosticada, y eso está explícitamente prohibido —un STOP nuevo se avisa,
+    no se reinicia—.
+
+    Lo que se descubrió el 2026-09-16: `ERETZ_cola_w0` y `ERETZ_cola_w1`
+    existen, apuntan a `.bat` que funcionan, **tienen disparador** —la primera
+    lectura dijo que no y era mía, no del sistema— y sin embargo su
+    `NextRunTime` está **vacío**: no vuelven a correr nunca. Su último arranque
+    fue el 2026-09-09, a mano, con código 2. `ERETZ_cola_certificacion` sí tiene
+    próxima ejecución, para septiembre de **2027**.
+
+    Por eso lo que se mira acá es la próxima ejecución y no la existencia de un
+    disparador: contar disparadores daba verde sobre un sistema que no se
+    reinicia solo.
+
+    O sea que hoy la cola avanza únicamente mientras alguien la relanza. Eso
+    explica el mecanismo detrás del número que más duele del tablero: 9 de 58
+    paros se llevaron el 80% de las horas perdidas, con máximos de 15, 17 y 18
+    horas. No es que el diagnóstico tarde —la mediana es de 8 minutos—: es que
+    después de resolverlo hay que estar para volver a encenderla.
+
+    Es un hecho para decidir, no para arreglar solo.
+    """
+    tareas = ("ERETZ_cola_w0", "ERETZ_cola_w1", "ERETZ_cola_certificacion")
+    guion = (
+        "$r=@(); foreach($n in @('" + "','".join(tareas) + "')){"
+        " try{ $t=Get-ScheduledTask -TaskName $n -ErrorAction Stop;"
+        " $i=Get-ScheduledTaskInfo -TaskName $n;"
+        " $r+=[pscustomobject]@{nombre=$n; disparadores=@($t.Triggers).Count;"
+        " ultima=[string]$i.LastRunTime; resultado=$i.LastTaskResult;"
+        " proxima=[string]$i.NextRunTime} }catch{"
+        " $r+=[pscustomobject]@{nombre=$n; disparadores=-1} } };"
+        " $r | ConvertTo-Json -Compress")
+    try:
+        salida = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", guion],
+            capture_output=True, text=True, timeout=30)
+        filas = json.loads(salida.stdout or "[]")
+    except Exception as e:  # noqa: BLE001 - saber esto no puede tumbar el reporte
+        return {"estado": "NO_SE_PUDO_COMPROBAR",
+                "detalle": f"{type(e).__name__}: {e}"}
+    if isinstance(filas, dict):
+        filas = [filas]
+
+    # Lo que decide NO es si la tarea tiene disparador: las tres lo tienen.
+    # Decide si hay una PROXIMA EJECUCION. `ERETZ_cola_w0` y `w1` tienen
+    # disparador y `NextRunTime` vacio -no vuelve a correr nunca-, y
+    # `ERETZ_cola_certificacion` lo tiene para septiembre de 2027.
+    #
+    # La primera version de esta funcion miraba la cantidad de disparadores y
+    # concluia "OK". Estaba mirando el campo equivocado y por eso daba verde
+    # sobre un sistema que no se reinicia solo.
+    def _programada(fila: dict[str, Any]) -> bool:
+        proxima = str(fila.get("proxima") or "").strip()
+        if not proxima:
+            return False
+        # Una proxima ejecucion a mas de un mes no es un reinicio: es un
+        # disparador olvidado.
+        for formato in ("%m/%d/%Y %H:%M:%S", "%d/%m/%Y %H:%M:%S"):
+            try:
+                cuando = time.mktime(time.strptime(proxima, formato))
+            except ValueError:
+                continue
+            return (cuando - time.time()) < 30 * 24 * 3600
+        return False
+
+    sin_programar = [f for f in filas if not _programada(f)]
+    ausentes = [f for f in filas if f.get("disparadores") == -1]
+    return {
+        "estado": ("SIN_REINICIO_AUTOMATICO"
+                   if len(sin_programar) >= 2 else "OK"),
+        "tareas": filas,
+        "sin_proxima_ejecucion": [f["nombre"] for f in sin_programar],
+        "ausentes": [f["nombre"] for f in ausentes],
+        "que_significa": ("la cola avanza solo mientras alguien la relanza a "
+                          "mano: las tareas tienen disparador pero ninguna "
+                          "tiene una proxima ejecucion util"),
+        "por_que_no_se_arregla_aca": ("ponerle un disparador reiniciaria la "
+                                      "cola despues de CUALQUIER parada, "
+                                      "incluida una no diagnosticada, y eso "
+                                      "esta prohibido: un STOP nuevo se avisa, "
+                                      "no se reinicia. Es una decision, no un "
+                                      "arreglo"),
+    }
+
+
 def integridad(certificacion: Path) -> dict[str, Any]:
     """Dos defectos que ya sabemos que existen y que nadie vería si no se miran.
 
@@ -510,6 +602,7 @@ def main() -> int:
         "eta_por_poblacion": eta_por_poblacion(
             Path(args.certificacion), Path(args.datos), rend),
         "integridad": integridad(Path(args.certificacion)),
+        "capacidad_de_reinicio": capacidad_de_reinicio(),
         "alertas": alertas(cola, datos),
         "database_writes": 0,
     }
