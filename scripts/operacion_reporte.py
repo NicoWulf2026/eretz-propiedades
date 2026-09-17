@@ -24,6 +24,17 @@ from typing import Any
 
 REPORTE_VERSION = "operacion_reporte_v1"
 
+# El universo canonico. Se lee del checkpoint cuando esta; esto es el
+# respaldo para cuando no.
+UNIVERSO_CANONICO = 6597
+
+# Terminal de verdad: la agencia no vuelve a la cola. `NEEDS_FIX` NO esta,
+# porque vuelve cuando vence su diferida.
+TERMINALES_DE_VERDAD = frozenset({
+    "CERTIFIED_COMPLETE", "CERTIFIED_BEST_AVAILABLE",
+    "NO_INVENTORY_CONFIRMED", "BLOCKED_EXTERNAL",
+})
+
 # El mismo umbral que usa el runner para decidir si un cerrojo quedo huerfano.
 LATIDO_VENCIDO = 3600.0
 
@@ -266,6 +277,106 @@ def eta(cola: dict[str, Any], rend: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def eta_por_poblacion(certificacion: Path, datos_dir: Path,
+                      rend: dict[str, Any]) -> dict[str, Any]:
+    """§70: no una fecha para 6.597 agencias que no están en la misma cola.
+
+    La ETA agregada que este mismo archivo venía dando —una sola fecha para
+    `universo − terminales`— es la que el §70 pide dejar de dar, y no por
+    prolijidad. Medido hoy:
+
+        universo canónico                     6.597
+        con entrada en el registro de fuentes 2.330
+        **sin registro de fuentes**           4.267
+
+    Esas 4.267 no esperan caudal de scraping: esperan que alguien les descubra
+    una fuente, que es otro proceso, con otro ritmo, que hoy no está corriendo.
+    Dividirlas por `agencias certificadas por hora` produce una fecha que no
+    significa nada, y peor, que se mueve cuando mejora un caudal que no las
+    toca.
+
+    Lo mismo con las `IDENTITY_PENDING`: están frenadas antes del scraping, en
+    la resolución de identidad.
+
+    Donde no hay un proceso midiéndose, la respuesta honesta es `SIN_ETA` con
+    el motivo, no una fecha.
+    """
+    por_hora = rend.get("certified_throughput_agencias_nuevas_por_hora") or 0
+
+    resultados = _jsonl(certificacion / "AGENCY_CERTIFICATION_RESULTS.jsonl")
+    ultimo: dict[str, dict] = {}
+    for fila in resultados:
+        agencia = fila.get("canonical_agency_id")
+        if agencia:
+            ultimo[agencia] = fila
+    registro = {f.get("canonical_agency_id")
+                for f in _jsonl(datos_dir / "scrape_source_technology_map.jsonl")
+                if f.get("canonical_agency_id")}
+    progreso = _json(certificacion / "AGENCY_CERTIFICATION_PROGRESS.json")
+
+    universo = progreso.get("universe") or UNIVERSO_CANONICO
+    con_fuente = len(registro)
+    terminales = {a for a, r in ultimo.items()
+                  if r.get("status") in TERMINALES_DE_VERDAD}
+    identidad = {a for a, r in ultimo.items()
+                 if r.get("status") == "IDENTITY_PENDING"}
+    navegador = {f.get("canonical_agency_id")
+                 for f in _jsonl(datos_dir / "scrape_source_technology_map.jsonl")
+                 if f.get("requires_js") is True and f.get("canonical_agency_id")}
+
+    def fechar(pendientes: int) -> dict[str, Any]:
+        if pendientes <= 0:
+            return {"pendientes": 0, "estado": "COMPLETA"}
+        if por_hora <= 0:
+            return {"pendientes": pendientes, "estado": "SIN_ETA",
+                    "porque": "cero agencias nuevas por hora en la ventana"}
+        horas = pendientes / por_hora
+        return {"pendientes": pendientes,
+                "horas_estimadas": round(horas, 1),
+                "fecha_estimada": time.strftime(
+                    "%Y-%m-%d", time.localtime(time.time() + horas * 3600))}
+
+    en_cola = progreso.get("queue_size") or 0
+    pendientes_cola = progreso.get("pending_count")
+    if pendientes_cola is None:
+        pendientes_cola = max(0, en_cola - len(terminales))
+
+    listas_estaticas = max(0, con_fuente - len(terminales) - len(identidad)
+                           - len(navegador))
+
+    return {
+        "por_que_separadas": ("una sola fecha para 6.597 agencias mezcla "
+                              "poblaciones que esperan procesos distintos"),
+        "agencias_nuevas_por_hora": por_hora,
+        "ETA_CURRENT_BULK": {**fechar(pendientes_cola),
+                             "poblacion": en_cola,
+                             "que_es": "la cola de esta corrida"},
+        "ETA_READY_STATIC": {**fechar(listas_estaticas),
+                             "que_es": "con fuente registrada, sin navegador y "
+                                       "sin bloqueo de identidad"},
+        "ETA_READY_BROWSER": {
+            "pendientes": len(navegador), "estado": "SIN_ETA",
+            "que_es": "requires_js=True",
+            "porque": ("no hay ventana de navegador abierta: el §25 la prohibe "
+                       "con bulk activo, asi que su ritmo es cero por decision "
+                       "y no por falta de capacidad")},
+        "ETA_IDENTITY_BACKLOG": {
+            "pendientes": len(identidad), "estado": "SIN_ETA",
+            "que_es": "cerraron IDENTITY_PENDING",
+            "porque": ("estan frenadas ANTES del scraping, en la resolucion de "
+                       "identidad. El caudal de certificacion no las mueve")},
+        "ETA_FULL_UNIVERSE": {
+            "pendientes": max(0, universo - len(terminales)),
+            "sin_registro_de_fuente": max(0, universo - con_fuente),
+            "estado": "SIN_ETA",
+            "porque": (f"{max(0, universo - con_fuente)} agencias del universo "
+                       f"no tienen entrada en el registro de fuentes. No "
+                       f"esperan caudal de scraping: esperan descubrimiento de "
+                       f"fuente, que hoy no esta corriendo. Dividirlas por "
+                       f"agencias/hora daria una fecha inventada")},
+    }
+
+
 def integridad(certificacion: Path) -> dict[str, Any]:
     """Dos defectos que ya sabemos que existen y que nadie vería si no se miran.
 
@@ -375,6 +486,8 @@ def main() -> int:
                             r"\PROPERTY_QUALITY_GATE_SUMMARY.json")
     ap.add_argument("--cobertura",
                     default=r"D:\INMO CAPITAL\ERETZ_GEO\GEO_COVERAGE_AUDIT_SUMMARY.json")
+    ap.add_argument("--datos",
+                    default=r"D:\INMO CAPITAL\ERETZ_AGENCY_DATA")
     ap.add_argument("--salida", default=r"D:\INMO CAPITAL\ERETZ_OPERACION")
     args = ap.parse_args()
 
@@ -390,7 +503,12 @@ def main() -> int:
         "datos": {k: v for k, v in datos.items() if k != "_vigilante"},
         "vigilante": vigilante,
         "rendimiento": rend,
-        "eta": eta(cola, rend),
+        "eta_agregada": {**eta(cola, rend),
+                         "advertencia": "mezcla poblaciones que esperan "
+                                        "procesos distintos; usar "
+                                        "`eta_por_poblacion` (§70)"},
+        "eta_por_poblacion": eta_por_poblacion(
+            Path(args.certificacion), Path(args.datos), rend),
         "integridad": integridad(Path(args.certificacion)),
         "alertas": alertas(cola, datos),
         "database_writes": 0,
