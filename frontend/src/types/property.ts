@@ -41,6 +41,7 @@ export type TriState = "" | "si" | "no" | "sininfo";
 export type PriceMode = "" | "with" | "consult";
 
 export type GeoPoint = { lat: number; lng: number };
+export type LocationConfidence = "high" | "approximate" | "doubtful" | "none";
 
 // Zonas de búsqueda dibujadas en el mapa. OR entre zonas, AND con el resto.
 // (Polígono libre se difiere: requiere PostGIS point-in-polygon validado contra
@@ -49,7 +50,7 @@ export type MapZone =
   | { kind: "box"; north: number; east: number; south: number; west: number }
   | { kind: "radius"; lat: number; lng: number; km: number };
 
-export type ExplorerMode = "map" | "balanced" | "results" | "map_only" | "results_only" | "analysis";
+export type ExplorerMode = "balanced" | "map_only" | "results_only";
 
 export type PropertyPublisher = {
   id: string | null;
@@ -77,8 +78,10 @@ export type MapMarker = {
   longitude: number;
   price: number | null;
   currency: PropertyCurrency | null;
+  propertyType: PropertyType;
   title: string;
   location: string;
+  locationConfidence: Exclude<LocationConfidence, "none">;
 };
 
 export type MapCluster = {
@@ -99,8 +102,24 @@ export type MapSearchResponse = {
 export type SearchSuggestion = {
   id: string;
   label: string;
-  category: "id" | "provincia" | "ciudad" | "barrio" | "dirección" | "inmobiliaria" | "agente" | "tipo";
+  category:
+    | "id" | "provincia" | "departamento" | "municipio" | "localidad" | "ciudad"
+    | "barrio" | "área" | "dirección" | "inmobiliaria" | "agente" | "tipo";
   query: string;
+  // Contexto geográfico o semántico derivado de la misma fila. No se fabrican
+  // conteos: el endpoint sólo lo informa cuando dispone de un dato fiable.
+  context?: string;
+  count?: number;
+  geography?: {
+    kind: "area" | "neighborhood";
+    entityId: string | null;
+    level: "LOCALIDAD" | "MUNICIPIO" | "DEPARTAMENTO" | "PROVINCIA" | "SIN_AREA" | null;
+    canonical: boolean | null;
+    province: string | null;
+    department: string | null;
+    municipality: string | null;
+    locality: string | null;
+  };
   // Navegación directa (p. ej. una coincidencia por ID ERETZ va a la ficha en
   // lugar de rellenar el término de búsqueda).
   href?: string;
@@ -196,10 +215,14 @@ export type Property = {
   address: string | null;
   neighborhood: string | null;
   city: string | null;
+  /** Canonical municipality is distinct from locality/city. */
+  municipality?: string | null;
+  department?: string | null;
   province: string | null;
   country: string | null;
   latitude: number | null;
   longitude: number | null;
+  locationConfidence: LocationConfidence;
   images: string[];
   videoUrl: string | null;
   floorPlanUrl: string | null;
@@ -210,7 +233,7 @@ export type Property = {
   createdAt: string | null;
   updatedAt: string | null;
   status: PropertyStatus;
-  mortgageEligible: boolean;
+  mortgageEligible: boolean | null;
   quality: QualitySignals;
 };
 
@@ -222,6 +245,12 @@ export type PropertyFilters = {
   city: string;
   neighborhood: string;
   locations: string[];
+  selectedArea: {
+    id: string | null;
+    name: string;
+    level: "LOCALIDAD" | "MUNICIPIO" | "DEPARTAMENTO" | "PROVINCIA" | "SIN_AREA";
+  } | null;
+  neighborhoodCanonical: false | null;
   zones: MapZone[];
   minPrice: number | null;
   maxPrice: number | null;
@@ -268,6 +297,8 @@ export type PropertySearchResult = {
   source: "database" | "fixture" | "unconfigured" | "error";
   error: boolean;
   invalidCursor: boolean;
+  searchWindowExhausted?: boolean;
+  errorKind?: "BAD_REQUEST" | "NETWORK_ERROR" | "TIMEOUT" | "SERVER_ERROR" | "INVALID_RESPONSE" | "UNCONFIGURED";
 };
 
 export type PropertySummary = Pick<
@@ -275,7 +306,10 @@ export type PropertySummary = Pick<
   | "id" | "agencyId" | "publisher" | "title" | "price" | "currency"
   | "propertyType" | "rawPropertyType" | "operation" | "rooms" | "bedrooms"
   | "bathrooms" | "garages" | "totalArea" | "coveredArea" | "address"
+  | "toilettes" | "landArea" | "expenses" | "expensesCurrency"
   | "neighborhood" | "city" | "province" | "country" | "latitude" | "longitude"
+  | "municipality" | "department"
+  | "locationConfidence"
   | "images" | "publishedAt" | "updatedAt" | "status" | "mortgageEligible"
   | "description" | "amenities"
 >;
@@ -295,7 +329,17 @@ export type RealEstateProfile = RealEstateSummary & {
   email: string | null;
 };
 
-export type ClaimStatus = "pending" | "approved" | "rejected" | "needs_review";
+// Estado con el que un reclamo entra por `/api/claims`, y que se escribe en
+// `public.perfil_claims.estado`. Los valores en minúscula son el formato que ya
+// tiene esa columna: se conservan tal cual.
+//
+// Se llamaba `ClaimStatus`, igual que el estado del modelo de dominio
+// (`domain/claim.ts`), que tiene otros miembros y otra caja. Dos tipos con el
+// mismo nombre y distinto contenido es el error que se descubre tarde: alguien
+// importa el que no era y el compilador no se queja, porque los dos son uniones
+// de string. El del dominio es el canónico; éste es el formato de entrada del
+// endpoint tal como existe hoy.
+export type ClaimIntakeStatus = "pending" | "approved" | "rejected" | "needs_review";
 
 export type AgentSummary = {
   slug: string;

@@ -1,55 +1,82 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FilterForm } from "@/components/search/FilterForm";
 import { ContextBar } from "@/components/explorer/ContextBar";
 import { ActiveChips } from "@/components/explorer/ActiveChips";
 import { NoResults } from "@/components/explorer/NoResults";
+import { ViewModeSelector } from "@/components/explorer/ViewModeSelector";
 import { Pagination } from "@/components/search/Pagination";
 import { PropertyMap } from "@/components/map/PropertyMap";
 import { PropertyCard } from "@/components/property/PropertyCard";
-import { NaturalLanguageSearch } from "@/components/search/NaturalLanguageSearch";
 import { filtersToSearchParams } from "@/lib/property-query";
 import { addRecentSearch, getVisited } from "@/lib/local-store";
 import { useLocalValue } from "@/lib/use-local-store";
 import { describeSearch } from "@/lib/search-label";
+import type { DiscoveryFilterMetadataResponse, DiscoveryFilterMetadataState } from "@/lib/discovery-contract";
 import type { ExplorerMode, PropertyFilters, PropertySearchResult } from "@/types/property";
+import { track } from "@/lib/analytics";
 
-const modeLabels: Array<[ExplorerMode, string]> = [
-  ["balanced", "Exploración"],
-  ["analysis", "Análisis"],
-  ["results", "Resultados amplios"],
-  ["map", "Mapa protagonista"],
-  ["results_only", "Solo resultados"],
-  ["map_only", "Solo mapa"],
-];
-
-function unavailableResult(filters: PropertyFilters): PropertySearchResult {
+function unavailableResult(filters: PropertyFilters, errorKind: PropertySearchResult["errorKind"] = "SERVER_ERROR"): PropertySearchResult {
   return {
     properties: [], count: null, totalCount: null, mapCount: null,
     page: filters.page, pageSize: 24,
     hasNext: false, hasPrevious: filters.page > 1, nextCursor: null, previousCursor: null,
-    source: "error", error: true, invalidCursor: false,
+    source: "error", error: true, invalidCursor: false, errorKind,
   };
+}
+
+function isFilterMetadataResponse(value: unknown): value is DiscoveryFilterMetadataResponse {
+  if (!value || typeof value !== "object") return false;
+  const payload = value as Record<string, unknown>;
+  if (payload.status === "SUCCESS_EMPTY") return payload.metadata === null;
+  if (payload.status === "SUCCESS" || payload.status === "PARTIAL_DATA") {
+    return Boolean(payload.metadata && typeof payload.metadata === "object");
+  }
+  return payload.status === "FAILURE" && payload.metadata === null && Boolean(payload.error && typeof payload.error === "object");
 }
 
 export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters; basePath: string }) {
   const initialSearch = filtersToSearchParams(filters);
   const initialReturnTo = `${basePath}${initialSearch.toString() ? `?${initialSearch}` : ""}`;
   const [mode, setMode] = useState<ExplorerMode>(filters.mode);
-  const [density, setDensity] = useState<"compact" | "full">("compact");
   const [hideVisited, setHideVisited] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filterMetadata, setFilterMetadata] = useState<DiscoveryFilterMetadataState>({ status: "LOADING", metadata: null });
   const visited = useLocalValue(getVisited, [] as string[]);
   const [selectedId, setSelectedId] = useState(filters.selectedId);
+  const [previewId, setPreviewId] = useState<string | null>(null);
   const [returnTo, setReturnTo] = useState(initialReturnTo);
   const requestKey = filtersToSearchParams(filters).toString();
   const [resultState, setResultState] = useState<{ key: string; result: PropertySearchResult } | null>(null);
   const result = resultState?.key === requestKey ? resultState.result : null;
+  const [mapOnlyCounts, setMapOnlyCounts] = useState<{ key: string; count: number | null; mapCount: number | null } | null>(null);
   const resultAbortRef = useRef<AbortController | null>(null);
   // Scroll pendiente de restaurar al volver de una ficha (ver efectos abajo).
   const pendingScrollRef = useRef<number | null>(null);
+  const pendingScrollTargetRef = useRef<"window" | "results">("window");
   const pendingUntilRef = useRef<number>(0);
+  const resultsPaneRef = useRef<HTMLElement | null>(null);
   const currentFilters = useMemo(() => ({ ...filters, mode, selectedId }), [filters, mode, selectedId]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch("/api/properties/filter-metadata", { signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json() as unknown;
+        if (!isFilterMetadataResponse(payload)) throw new Error("invalid filter metadata response");
+        if (payload.status === "FAILURE") return payload;
+        if (!response.ok) throw new Error("filter metadata unavailable");
+        return payload;
+      })
+      .then(setFilterMetadata)
+      .catch((error: unknown) => {
+        if ((error as Error).name !== "AbortError") {
+          setFilterMetadata({ status: "FAILURE", metadata: null, error: { kind: "INVALID_RESPONSE" } });
+        }
+      });
+    return () => controller.abort();
+  }, []);
 
   // Registra la búsqueda actual (sin paginación ni selección) en "búsquedas
   // recientes" cuando hay al menos un filtro significativo.
@@ -64,10 +91,8 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
   useEffect(() => {
     if (filters.mode === "balanced") {
       const saved = localStorage.getItem("eretz:explorer-mode") as ExplorerMode | null;
-      if (saved && modeLabels.some(([value]) => value === saved)) requestAnimationFrame(() => setMode(saved));
+      if (saved === "balanced" || saved === "results_only" || saved === "map_only") requestAnimationFrame(() => setMode(saved));
     }
-    const savedDensity = localStorage.getItem("eretz:card-density");
-    if (savedDensity === "full" || savedDensity === "compact") requestAnimationFrame(() => setDensity(savedDensity));
     if (localStorage.getItem("eretz:hide-visited") === "1") requestAnimationFrame(() => setHideVisited(true));
     try {
       // La clave se busca por la URL REAL y por la normalizada: `selectProperty`
@@ -78,13 +103,13 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
       const rawReturnTo = `${window.location.pathname}${window.location.search}`;
       const stored = sessionStorage.getItem(`eretz:return:${rawReturnTo}`)
         ?? sessionStorage.getItem(`eretz:return:${initialReturnTo}`);
-      const state = JSON.parse(stored ?? "null") as { scrollY?: number; selectedId?: string } | null;
+      const state = JSON.parse(stored ?? "null") as { scrollY?: number; scrollTarget?: "window" | "results"; selectedId?: string } | null;
       if (state?.selectedId) requestAnimationFrame(() => setSelectedId(state.selectedId ?? ""));
-      // El scroll NO se restaura acá: el listado carga async y, sin altura de
-      // documento, el navegador recorta el scroll a 0. Se difiere al efecto de
-      // abajo, que espera a que la página tenga altura suficiente.
+      // El scroll NO se restaura acá: el listado carga async y el destino todavía
+      // no tiene altura suficiente. Se difiere al efecto de abajo.
       if (typeof state?.scrollY === "number") {
         pendingScrollRef.current = state.scrollY;
+        pendingScrollTargetRef.current = state.scrollTarget ?? "window";
         pendingUntilRef.current = Date.now() + 10_000; // ventana para que cargue el listado
       }
     } catch {
@@ -95,9 +120,8 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
     return () => window.removeEventListener("eretz:explorer-url-change", onUrl);
   }, [filters.mode, initialReturnTo]);
 
-  // Restauración de scroll diferida: espera a que el documento tenga altura
-  // suficiente (el listado llega por fetch). Si el usuario ya scrolleó por su
-  // cuenta, se cancela para no pelearle la posición.
+  // Restauración diferida: espera a que el documento o el rail tengan altura
+  // suficiente (el listado llega por fetch).
   useEffect(() => {
     if (pendingScrollRef.current === null) return;
     let frame = 0;
@@ -109,10 +133,15 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
       // se re-verifica un momento: el router puede resetear el scroll a 0 al
       // completar la navegación, después de nuestra restauración.
       if (Date.now() > pendingUntilRef.current) { pendingScrollRef.current = null; return; }
-      const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+      const resultsPane = pendingScrollTargetRef.current === "results" ? resultsPaneRef.current : null;
+      const maxScroll = resultsPane
+        ? resultsPane.scrollHeight - resultsPane.clientHeight
+        : document.documentElement.scrollHeight - window.innerHeight;
       if (maxScroll >= target - 4) {
-        if (Math.abs(window.scrollY - target) > 8) {
-          window.scrollTo({ top: target, behavior: "instant" });
+        const currentScroll = resultsPane?.scrollTop ?? window.scrollY;
+        if (Math.abs(currentScroll - target) > 8) {
+          if (resultsPane) resultsPane.scrollTo({ top: target, behavior: "instant" });
+          else window.scrollTo({ top: target, behavior: "instant" });
           if (!appliedAt) appliedAt = Date.now();
         }
         if (appliedAt && Date.now() - appliedAt > 1200) { pendingScrollRef.current = null; return; }
@@ -121,7 +150,7 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
     };
     frame = requestAnimationFrame(attempt);
     return () => cancelAnimationFrame(frame);
-  }, [result, density, mode]);
+  }, [result, mode]);
 
   useEffect(() => {
     const desktop = window.matchMedia("(min-width: 768px)").matches;
@@ -132,27 +161,49 @@ export function ExplorerClient({ filters, basePath }: { filters: PropertyFilters
     resultAbortRef.current = controller;
     void fetch(`/api/properties/search?${filtersToSearchParams(filters)}`, { signal: controller.signal })
       .then(async (response) => {
-        if (!response.ok) throw new Error("property request failed");
-        return response.json() as Promise<PropertySearchResult>;
+        const payload = await response.json() as PropertySearchResult & { errorKind?: PropertySearchResult["errorKind"] };
+        if (!response.ok) throw Object.assign(new Error("property request failed"), { errorKind: payload.errorKind });
+        return payload;
       })
       .then((nextResult) => setResultState({ key: requestKey, result: nextResult }))
       .catch((error: unknown) => {
         if ((error as Error).name !== "AbortError") {
-          setResultState({ key: requestKey, result: unavailableResult(filters) });
+          setResultState({ key: requestKey, result: unavailableResult(filters, (error as { errorKind?: PropertySearchResult["errorKind"] }).errorKind) });
         }
       });
     return () => controller.abort();
   }, [filters, mode, requestKey, result]);
 
+  useEffect(() => {
+    if (!result) return;
+    if (result.error) track("frontend_api_error", { flow: "explorer" });
+    else if (result.properties.length === 0) track("zero_results", { flow: "explorer" });
+  }, [requestKey, result]);
+
+  useEffect(() => {
+    if (mode !== "map_only" || result || mapOnlyCounts?.key === requestKey) return;
+    const controller = new AbortController();
+    void fetch(`/api/properties/counts?${filtersToSearchParams(filters)}`, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("count request failed");
+        return response.json() as Promise<{ count: number | null; mapCount: number | null }>;
+      })
+      .then((counts) => setMapOnlyCounts({ key: requestKey, count: counts.count, mapCount: counts.mapCount }))
+      .catch((error: unknown) => {
+        if ((error as Error).name !== "AbortError") setMapOnlyCounts({ key: requestKey, count: null, mapCount: null });
+      });
+    return () => controller.abort();
+  }, [filters, mapOnlyCounts?.key, mode, requestKey, result]);
+
   function chooseMode(next: ExplorerMode) {
-  setMode(next);
-  localStorage.setItem("eretz:explorer-mode", next);
-  const url = new URL(window.location.href);
-  if (next === "balanced") url.searchParams.delete("modo"); else url.searchParams.set("modo", next);
-  const nextUrl = `${url.pathname}${url.search ? url.search : ""}`;
-  window.history.replaceState(window.history.state, "", nextUrl);
-  setReturnTo(nextUrl);
-}
+    setMode(next);
+    localStorage.setItem("eretz:explorer-mode", next);
+    const url = new URL(window.location.href);
+    if (next === "balanced") url.searchParams.delete("modo"); else url.searchParams.set("modo", next);
+    const nextUrl = `${url.pathname}${url.search ? url.search : ""}`;
+    window.history.replaceState(window.history.state, "", nextUrl);
+    setReturnTo(nextUrl);
+  }
 
 function removeViewport() {
   // Clear viewport filter and update URL
@@ -164,11 +215,6 @@ function removeViewport() {
 }
 
 
-  function chooseDensity(next: "compact" | "full") {
-    setDensity(next);
-    try { localStorage.setItem("eretz:card-density", next); } catch { /* opcional */ }
-  }
-
   function toggleHideVisited() {
     setHideVisited((current) => {
       const next = !current;
@@ -177,14 +223,25 @@ function removeViewport() {
     });
   }
 
-  function selectProperty(id: string) {
+  const selectProperty = useCallback((id: string, revealCard = false) => {
     setSelectedId(id);
+    setPreviewId(null);
     const url = new URL(window.location.href);
     url.searchParams.set("seleccion", id);
     const nextUrl = `${url.pathname}?${url.searchParams.toString()}`;
     window.history.replaceState(window.history.state, "", nextUrl);
     setReturnTo(nextUrl);
-  }
+    if (revealCard) {
+      requestAnimationFrame(() => {
+        const card = [...document.querySelectorAll<HTMLElement>("[data-property-id]")]
+          .find((element) => element.dataset.propertyId === id);
+        if (!card) return;
+        const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        card.scrollIntoView({ block: "nearest", inline: "nearest", behavior: reducedMotion ? "auto" : "smooth" });
+      });
+    }
+  }, []);
+  const selectPropertyFromMap = useCallback((id: string) => selectProperty(id, true), [selectProperty]);
 
   const resetCursor = filtersToSearchParams({ ...filters, cursor: "", page: 1, direction: "next" });
 
@@ -193,6 +250,9 @@ function removeViewport() {
   const pageProperties = result?.properties ?? [];
   const visitedInPage = pageProperties.reduce((n, p) => (visitedSet.has(String(p.id)) ? n + 1 : n), 0);
   const shownProperties = hideVisited ? pageProperties.filter((p) => !visitedSet.has(String(p.id))) : pageProperties;
+  const mapViewCount = result?.count ?? (mapOnlyCounts?.key === requestKey ? mapOnlyCounts.count : null);
+  const mapViewLocatedCount = result?.mapCount ?? (mapOnlyCounts?.key === requestKey ? mapOnlyCounts.mapCount : null);
+  const activePropertyId = previewId ?? selectedId;
 
   return (
     <div className="explorer-page">
@@ -200,28 +260,32 @@ function removeViewport() {
         <div className="container">
           <div className="explorer-heading-row">
             <div><p className="eyebrow">Explorador nacional</p><h1>Encontrá propiedades en el mapa</h1></div>
-            <div className="view-mode-tabs" role="group" aria-label="Modo de visualización">
-              {modeLabels.map(([value, label]) => <button key={value} type="button" className={mode === value ? "is-active" : ""} aria-pressed={mode === value} onClick={() => chooseMode(value)}><span className="desktop-mode-label">{label}</span><span className="mobile-mode-label">{value.includes("map") ? "Mapa" : "Resultados"}</span></button>)}
-            </div>
+            <ViewModeSelector mode={mode} onChange={chooseMode} />
           </div>
-          <NaturalLanguageSearch basePath={basePath} />
-          <FilterForm filters={currentFilters} action={basePath} onPin={() => chooseMode("analysis")} />
+          <div className="explorer-search-card">
+            <FilterForm filters={currentFilters} action={basePath} onOpenChange={setFiltersOpen} filterMetadata={filterMetadata} />
+          </div>
           <ActiveChips filters={currentFilters} basePath={basePath} onRemoveViewport={removeViewport} />
         </div>
       </header>
 
       {result?.invalidCursor ? <div className="container py-4"><div className="alert alert-warning" role="alert"><strong>Este enlace de paginación venció o no es válido.</strong><span> Podés volver al inicio de estos resultados sin perder tus filtros.</span><a href={`${basePath}?${resetCursor}`}>Volver a la primera página</a></div></div> : null}
 
-      <main className={`explorer-workspace mode-${mode}`}>
-        {mode === "analysis" ? (
-          <aside className="explorer-filters-pane" aria-label="Filtros fijados">
-            <FilterForm filters={currentFilters} action={basePath} pinned onUnpin={() => chooseMode("balanced")} />
-          </aside>
-        ) : null}
+      <main className={`explorer-workspace mode-${mode}${filtersOpen ? " filters-open" : ""}`}>
         <section className="explorer-map-pane" aria-label="Explorar en el mapa">
-          <PropertyMap properties={result?.properties ?? []} filters={currentFilters} selectedId={selectedId} onSelect={selectProperty} returnTo={returnTo} />
+          <PropertyMap
+            properties={result?.properties ?? []}
+            filters={currentFilters}
+            selectedId={activePropertyId}
+            onSelect={selectPropertyFromMap}
+            onPreview={setPreviewId}
+            resultCount={mapViewCount}
+            mapCount={mapViewLocatedCount}
+            onShowResults={() => chooseMode("results_only")}
+            returnTo={returnTo}
+          />
         </section>
-        <section className="explorer-results-pane" aria-label="Resultados de propiedades">
+        <section ref={resultsPaneRef} className="explorer-results-pane" aria-label="Resultados de propiedades">
           <ContextBar
             totalCount={result?.totalCount ?? null}
             count={result?.count ?? null}
@@ -231,10 +295,7 @@ function removeViewport() {
             viewportApplied={!!filters.viewport}
             onRemoveViewport={removeViewport}
           />
-          <div className="density-toggle" role="group" aria-label="Densidad de tarjetas">
-            <span className="density-label">Tarjetas</span>
-            <button type="button" className={density === "compact" ? "is-active" : ""} aria-pressed={density === "compact"} onClick={() => chooseDensity("compact")}>Compactas</button>
-            <button type="button" className={density === "full" ? "is-active" : ""} aria-pressed={density === "full"} onClick={() => chooseDensity("full")}>Completas</button>
+          <div className="results-list-tools">
             <button type="button" className={`hide-visited-toggle ${hideVisited ? "is-active" : ""}`} aria-pressed={hideVisited} onClick={toggleHideVisited} disabled={!hideVisited && visitedInPage === 0}>
               {hideVisited ? `Mostrar visitadas (${visitedInPage})` : `Ocultar visitadas (${visitedInPage})`}
             </button>
@@ -242,16 +303,27 @@ function removeViewport() {
           {!result ? (
             <div className="state-panel" role="status"><span aria-hidden="true">⌛</span><h2>Preparando resultados</h2><p>El mapa ya está disponible. Las propiedades se cargan sólo cuando este listado es visible.</p></div>
           ) : result.error ? (
-            <div className="state-panel" role="alert"><span aria-hidden="true">↻</span><h2>No pudimos cargar las propiedades</h2><p>El servicio puede estar temporalmente ocupado. Tus filtros siguen guardados en la URL.</p><a className="primary-button" href={returnTo}>Reintentar</a></div>
+            <div className="state-panel" role="alert"><span aria-hidden="true">↻</span><h2>{result.errorKind === "BAD_REQUEST" ? "Revisá los filtros de este enlace" : "No pudimos cargar las propiedades"}</h2><p>{result.errorKind === "BAD_REQUEST" ? "La URL contiene un filtro u orden que el catálogo actual no admite. Podés limpiar los filtros y volver a buscar." : "El servicio puede estar temporalmente ocupado. Tus filtros siguen guardados en la URL."}</p><a className="primary-button" href={result.errorKind === "BAD_REQUEST" ? basePath : returnTo}>{result.errorKind === "BAD_REQUEST" ? "Limpiar filtros" : "Reintentar"}</a></div>
           ) : result.properties.length === 0 ? (
             <NoResults filters={currentFilters} basePath={basePath} />
           ) : shownProperties.length === 0 ? (
             <div className="state-panel" role="status"><span aria-hidden="true">✓</span><h2>Ya viste todas las de esta página</h2><p>Ocultaste las propiedades visitadas. Podés mostrarlas de nuevo o pasar a la siguiente página.</p><button type="button" className="secondary-button" onClick={toggleHideVisited}>Mostrar visitadas</button></div>
           ) : (
-            <div className={`explorer-card-list density-${density}`} id="property-results">
-              {shownProperties.map((property) => <PropertyCard key={property.id} property={property} variant={density} returnTo={returnTo} selected={selectedId === property.id} onSelect={selectProperty} />)}
+            <div className="explorer-card-list" id="property-results" data-view={mode}>
+              {shownProperties.map((property) => (
+                <PropertyCard
+                  key={property.id}
+                  property={property}
+                  variant={mode === "results_only" ? "grid" : "compact"}
+                  returnTo={returnTo}
+                  selected={activePropertyId === property.id}
+                  onPreview={setPreviewId}
+                  onCommit={selectProperty}
+                />
+              ))}
             </div>
           )}
+          {result?.searchWindowExhausted ? <p className="map-truncated" role="status">Alcanzaste la ventana accesible de esta búsqueda ordenada por relevancia. El total puede incluir más propiedades.</p> : null}
           {result ? <Pagination filters={currentFilters} hasNext={result.hasNext} hasPrevious={result.hasPrevious} nextCursor={result.nextCursor} previousCursor={result.previousCursor} basePath={basePath} /> : null}
         </section>
       </main>

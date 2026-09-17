@@ -27,11 +27,8 @@ const sortLabels: Record<PropertySort, string> = {
 };
 
 const modeLabels: Record<ExplorerMode, string> = {
-  balanced: "Exploración",
-  analysis: "Análisis",
-  results: "Resultados amplios",
-  map: "Mapa protagonista",
-  results_only: "Solo resultados",
+  balanced: "Mapa + propiedades",
+  results_only: "Solo propiedades",
   map_only: "Solo mapa",
 };
 
@@ -56,8 +53,8 @@ export function ContextBar({
     count !== null && mapCount !== null ? Math.max(0, count - mapCount) : null;
 
   return (
-    <div className="context-bar">
-      <div className="container context-bar-inner">
+    <div className="context-bar" aria-live="polite">
+      <div className="context-bar-inner">
         {/* Left: counts */}
         <div className="context-bar-counts">
           {totalCount !== null && (
@@ -72,12 +69,12 @@ export function ContextBar({
           </div>
           {count !== null && mapCount !== null && (
             <div className="context-bar-breakdown">
-              <span>{mapCount.toLocaleString("es-AR")} visibles en el mapa</span>
+              <span>{mapCount.toLocaleString("es-AR")} con coordenadas en el mapa</span>
               {withoutLocation !== null && withoutLocation > 0 && (
                 <span className="context-bar-separator">·</span>
               )}
               {withoutLocation !== null && withoutLocation > 0 && (
-                <span>{withoutLocation.toLocaleString("es-AR")} sin ubicación exacta</span>
+                <span>{withoutLocation.toLocaleString("es-AR")} sin coordenadas disponibles</span>
               )}
             </div>
           )}
@@ -97,7 +94,7 @@ export function ContextBar({
             </span>
             <span className="context-bar-tag">
               <span className="context-bar-tag-label">Vista</span>
-              <span className="context-bar-tag-value">{modeLabels[mode] || "Exploración"}</span>
+              <span className="context-bar-tag-value">{modeLabels[mode] || "Mapa + propiedades"}</span>
             </span>
           </div>
           {viewportApplied && (

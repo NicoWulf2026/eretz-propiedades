@@ -34,24 +34,23 @@ export function filterGroupCounts(filters: PropertyFilters): Record<FilterGroupI
   for (const value of [filters.province, filters.city, filters.neighborhood, filters.locations]) {
     if (on(value)) counts.ubicacion += 1;
   }
-  // "Cerca de" es un filtro de ubicación aunque no tenga campo de texto propio.
   if (filters.near) counts.ubicacion += 1;
+  // "Cerca de" es un filtro de ubicación aunque no tenga campo de texto propio.
 
   for (const value of [filters.currency, filters.minPrice, filters.maxPrice, filters.priceMode]) {
     if (on(value)) counts.precio += 1;
   }
 
   for (const value of [
-    filters.minRooms, filters.minBedrooms, filters.minBathrooms,
-    filters.minArea, filters.maxArea, filters.hasLocation, filters.hasImages,
+    filters.minRooms, filters.minBedrooms, filters.minBathrooms, filters.minGarages,
+    filters.minArea, filters.maxArea, filters.hasLocation, filters.hasImages, filters.mortgageState,
   ]) {
     if (on(value)) counts.caracteristicas += 1;
   }
 
   if (on(filters.publisher)) counts.publicacion += 1;
   if (on(filters.recentDays)) counts.publicacion += 1;
-  // "recent" es el orden por defecto: sólo cuenta si el usuario eligió otro.
-  if (on(filters.sort) && filters.sort !== "recent") counts.publicacion += 1;
+  if (on(filters.sort) && filters.sort !== "relevance") counts.publicacion += 1;
 
   return counts;
 }

@@ -34,12 +34,12 @@ export const typeLabels: Record<PropertyType, string> = {
 const money = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 });
 
 export function propertyPrice(property: Pick<Property, "price" | "currency">) {
-  if (!property.price || !property.currency) return "Precio a consultar";
+  if (property.price === null || !property.currency) return "Precio a consultar";
   return `${property.currency} ${money.format(property.price)}`;
 }
 
-export function propertyLocation(property: Pick<Property, "neighborhood" | "city" | "province">) {
-  const values = [property.neighborhood, property.city, property.province].filter(
+export function propertyLocation(property: Pick<Property, "neighborhood" | "city" | "province"> & Pick<Partial<Property>, "municipality" | "department">) {
+  const values = [property.neighborhood, property.city, property.municipality, property.department, property.province].filter(
     (value, index, all): value is string => Boolean(value) && all.indexOf(value) === index,
   );
   return values.length ? values.join(", ") : "Ubicación no especificada";
@@ -47,12 +47,12 @@ export function propertyLocation(property: Pick<Property, "neighborhood" | "city
 
 export function propertySpecs(property: Pick<Property, "rooms" | "bedrooms" | "bathrooms" | "garages" | "totalArea" | "coveredArea">) {
   const specs: string[] = [];
-  if (property.rooms) specs.push(`${property.rooms} amb.`);
-  if (property.bedrooms) specs.push(`${property.bedrooms} dorm.`);
-  if (property.bathrooms) specs.push(`${property.bathrooms} baño${property.bathrooms > 1 ? "s" : ""}`);
-  if (property.garages) specs.push(`${property.garages} coch.`);
-  if (property.totalArea) specs.push(`${money.format(property.totalArea)} m² tot.`);
-  else if (property.coveredArea) specs.push(`${money.format(property.coveredArea)} m² cub.`);
+  if (property.rooms !== null) specs.push(`${property.rooms} amb.`);
+  if (property.bedrooms !== null) specs.push(`${property.bedrooms} dorm.`);
+  if (property.bathrooms !== null) specs.push(`${property.bathrooms} baño${property.bathrooms === 1 ? "" : "s"}`);
+  if (property.garages !== null) specs.push(`${property.garages} coch.`);
+  if (property.totalArea !== null) specs.push(`${money.format(property.totalArea)} m² tot.`);
+  else if (property.coveredArea !== null) specs.push(`${money.format(property.coveredArea)} m² cub.`);
   return specs;
 }
 

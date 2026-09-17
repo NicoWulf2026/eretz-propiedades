@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { insertSignal, persistenceRequired } from "@/lib/db-writer";
 import { realEstateExists } from "@/lib/property-service";
-import type { ClaimStatus } from "@/types/property";
+import type { ClaimIntakeStatus } from "@/types/property";
+import { withObservability } from "@/lib/observability/route";
+import { CUOTA_RECLAMOS, revisarAbuso } from "@/lib/abuse/guard";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +28,7 @@ function clean(value: unknown, max: number): string {
   return typeof value === "string" ? value.replace(/[<>]/g, "").trim().slice(0, max) : "";
 }
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   let body: ClaimInput;
   try {
     body = (await request.json()) as ClaimInput;
@@ -52,6 +54,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Completá nombre y un email válido." }, { status: 422 });
   }
 
+  // Antes de consultar la base: un reclamo repetido no debe costar una query,
+  // y la cuota se gasta sólo con una entrada ya validada.
+  const veredicto = revisarAbuso(request, {
+    endpoint: "claims",
+    limite: CUOTA_RECLAMOS.limite,
+    ventanaMs: CUOTA_RECLAMOS.ventanaMs,
+    huella: [tipo, entidadId, email],
+    dedupeMs: CUOTA_RECLAMOS.dedupeMs,
+  });
+  if (veredicto.tipo === "limitado") return veredicto.respuesta;
+  if (veredicto.tipo === "duplicado") {
+    // Reclamar dos veces el mismo perfil con el mismo email no abre un segundo
+    // expediente. Se responde como la primera vez: sigue pendiente.
+    return NextResponse.json({ status: "pending", tipo, persisted: false, deduplicated: true });
+  }
+
   // El perfil reclamado tiene que existir. Sin esta comprobación cualquier id
   // numérico entraba en la cola de revisión. Un fallo de base no puede leerse
   // como "no existe": ahí devolvemos 503 para no rechazar un reclamo legítimo.
@@ -68,7 +86,7 @@ export async function POST(request: Request) {
   }
 
   // Sin teléfono ni rol el reclamo entra con menos señales de confianza.
-  const status: ClaimStatus = telefono && rol ? "pending" : "needs_review";
+  const status: ClaimIntakeStatus = telefono && rol ? "pending" : "needs_review";
 
   // Persiste como señal en public.perfil_claims vía el rol writer dedicado (si
   // está configurado). Nunca auto-aprueba ni modifica el perfil. Si no hay writer
@@ -82,3 +100,5 @@ export async function POST(request: Request) {
   }
   return NextResponse.json({ status, tipo, persisted });
 }
+
+export const POST = withObservability("/api/claims", handlePOST);

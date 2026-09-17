@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { POST } from "@/app/api/claims/route";
 import * as writer from "@/lib/db-writer";
 import * as service from "@/lib/property-service";
+import { _reiniciarAlmacenPorDefecto } from "@/lib/abuse/rate-limit";
 
 vi.mock("@/lib/db-writer", () => ({
   insertSignal: vi.fn(async () => ({ persisted: false, reason: "no_writer" as const })),
@@ -23,6 +24,9 @@ function post(body: unknown) {
 const validBody = { entidadId: "10", nombre: "Juan Pérez", email: "j@x.com", telefono: "111", rol: "Titular" };
 
 beforeEach(() => {
+  // Cada caso arranca con el freno de abuso en cero: sin esto, el segundo
+  // envio identico se deduplica y el caso mide otra cosa.
+  _reiniciarAlmacenPorDefecto();
   vi.clearAllMocks();
   vi.mocked(writer.insertSignal).mockResolvedValue({ persisted: false, reason: "no_writer" });
   vi.mocked(writer.persistenceRequired).mockReturnValue(false);

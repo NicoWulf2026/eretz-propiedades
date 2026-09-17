@@ -8,6 +8,7 @@ import type {
   PropertyType,
   TriState,
 } from "@/types/property";
+import type { SearchAreaLevel } from "@/domain/catalog-property";
 
 export const MAX_ZONES = 6;
 
@@ -46,6 +47,15 @@ const triStates = new Set<TriState>(["si", "no", "sininfo"]);
 
 export type SearchParams = Record<string, string | string[] | undefined>;
 
+export function urlSearchParamsToSearchParams(params: URLSearchParams): SearchParams {
+  const normalized: SearchParams = {};
+  for (const key of new Set(params.keys())) {
+    const values = params.getAll(key);
+    normalized[key] = values.length > 1 ? values : values[0];
+  }
+  return normalized;
+}
+
 const operations = new Set<PropertyOperation>([
   "venta",
   "alquiler",
@@ -66,10 +76,17 @@ const propertyTypes = new Set<PropertyType>([
   "otro",
 ]);
 const currencies = new Set<PropertyCurrency>(["USD", "ARS", "EUR", "UYU"]);
+const areaLevels = new Set<SearchAreaLevel>(["LOCALIDAD", "MUNICIPIO", "DEPARTAMENTO", "PROVINCIA", "SIN_AREA"]);
 const sorts = new Set<PropertySort>([
   "recent", "price_asc", "price_desc", "area_desc", "rooms_desc", "price_m2_asc", "nearest",
 ]);
-const modes = new Set(["map", "balanced", "results", "map_only", "results_only", "analysis"] as const);
+function parseExplorerMode(value: string): PropertyFilters["mode"] {
+  if (value === "map_only") return "map_only";
+  if (value === "results_only" || value === "results") return "results_only";
+  // Compatibilidad con URLs históricas: `map` y `analysis` vuelven a la vista
+  // combinada, sin reintroducir los seis modos en la interfaz.
+  return "balanced";
+}
 
 function one(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
@@ -145,24 +162,35 @@ export function parsePropertyFilters(params: SearchParams): PropertyFilters {
   const near = parseNear(params);
   let sort = one(params.orden) as PropertySort;
 
-  if (!sorts.has(sort)) sort = "recent";
+  if (!sorts.has(sort)) sort = "relevance";
   if ((sort === "price_asc" || sort === "price_desc" || sort === "price_m2_asc") && !currencies.has(currency)) {
-    sort = "recent";
+    sort = "relevance";
   }
-  if (sort === "nearest" && !near) sort = "recent";
+  if (sort === "nearest" && !near) sort = "relevance";
 
   const cursorCandidate = one(params.cursor).slice(0, 420);
   const cursor = /^[A-Za-z0-9_-]+$/.test(cursorCandidate) ? cursorCandidate : "";
   const requestedPage = Math.min(Math.max(1, Math.floor(positive(params.pagina) ?? 1)), 10_000);
-  const modeCandidate = one(params.modo) as PropertyFilters["mode"];
+  const selectedAreaLevel = one(params.area_nivel).toUpperCase();
+  const selectedAreaName = text(params.area_nombre, 80);
+  const neighborhood = text(params.barrio);
+  const selectedArea = areaLevels.has(selectedAreaLevel as SearchAreaLevel) && selectedAreaName
+    ? {
+        id: text(params.area_id, 120) || null,
+        name: selectedAreaName,
+        level: selectedAreaLevel as SearchAreaLevel,
+      }
+    : null;
   return {
     q: text(params.q),
     operation: operations.has(operation) ? operation : "",
     propertyType: propertyTypes.has(propertyType) ? propertyType : "",
     province: text(params.provincia),
     city: text(params.ciudad),
-    neighborhood: text(params.barrio),
+    neighborhood,
     locations: parseLocations(params.ubicaciones),
+    selectedArea,
+    neighborhoodCanonical: neighborhood && one(params.barrio_canonico) === "0" ? false : null,
     zones: parseZones(params.zonas),
     minPrice: positive(params.precio_min),
     maxPrice: positive(params.precio_max),
@@ -187,12 +215,12 @@ export function parsePropertyFilters(params: SearchParams): PropertyFilters {
     mortgageState: parseTriState(params.credito),
     sort,
     near,
-    page: cursor ? requestedPage : 1,
+    page: requestedPage,
     cursor,
     direction: cursor && one(params.direccion) === "prev" ? "prev" : "next",
-    mode: modes.has(modeCandidate as never) ? modeCandidate : "balanced",
+    mode: parseExplorerMode(one(params.modo)),
     viewport: parseViewport(params),
-    selectedId: /^\d+$/.test(one(params.seleccion)) ? one(params.seleccion) : "",
+    selectedId: /^[A-Za-z0-9_-]{1,200}$/.test(one(params.seleccion)) ? one(params.seleccion) : "",
   };
 }
 
@@ -206,6 +234,10 @@ export function filtersToSearchParams(filters: PropertyFilters) {
     ["ciudad", filters.city],
     ["barrio", filters.neighborhood],
     ["ubicaciones", filters.locations.length ? filters.locations.join(",") : ""],
+    ["area_nivel", filters.selectedArea?.level ?? ""],
+    ["area_nombre", filters.selectedArea?.name ?? ""],
+    ["area_id", filters.selectedArea?.id ?? ""],
+    ["barrio_canonico", filters.neighborhoodCanonical === false ? "0" : ""],
     ["zonas", filters.zones.length ? serializeZones(filters.zones) : ""],
     ["precio_min", filters.minPrice],
     ["precio_max", filters.maxPrice],
@@ -228,7 +260,7 @@ export function filtersToSearchParams(filters: PropertyFilters) {
     ["video", filters.hasVideo ? "1" : ""],
     ["plano", filters.hasFloorPlan ? "1" : ""],
     ["credito", filters.mortgageState],
-    ["orden", filters.sort === "recent" ? "" : filters.sort],
+    ["orden", filters.sort === "relevance" ? "" : filters.sort],
     ["cerca_lat", filters.near?.lat ?? null],
     ["cerca_lng", filters.near?.lng ?? null],
     ["pagina", filters.page > 1 ? filters.page : ""],

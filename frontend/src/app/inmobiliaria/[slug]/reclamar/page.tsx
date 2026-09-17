@@ -20,14 +20,14 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
   return (
     <SiteShell>
       <div className="container py-8">
-        <nav aria-label="Migas de pan" className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
+        <nav aria-label="Migas de pan" className="flex flex-wrap items-center gap-2 text-sm u-text-muted">
           <Link href={`/inmobiliaria/${agency.slug}`} className="font-bold text-[color:var(--accent-soft)]">← {agency.name}</Link>
           <span aria-hidden="true">/</span>
           <span aria-current="page">Reclamar perfil</span>
         </nav>
         <header className="mt-6 mb-6">
           <h1 className="text-3xl font-black tracking-[-0.03em] text-[color:var(--ink)]">Reclamar {agency.name}</h1>
-          <p className="mt-2 max-w-2xl text-sm text-slate-600">
+          <p className="mt-2 max-w-2xl text-sm u-text-muted">
             Completá tus datos para reclamar la gestión de este perfil. La solicitud queda pendiente de
             verificación humana; no se aprueba automáticamente ni se modifica el perfil hasta confirmar.
           </p>

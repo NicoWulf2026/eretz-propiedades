@@ -60,8 +60,8 @@ export function ClaimForm({ tipo, entidadId, entidadNombre }: { tipo: "inmobilia
       <label className="field"><span>Teléfono</span><input name="telefono" type="tel" maxLength={40} /></label>
       <label className="field"><span>Tu rol en la inmobiliaria</span><input name="rol" maxLength={80} placeholder="Titular, responsable, agente…" /></label>
       <label className="field"><span>Mensaje (opcional)</span><textarea name="mensaje" maxLength={1000} rows={4} /></label>
-      {state === "error" ? <p role="alert" className="text-sm font-semibold text-red-700">{message}</p> : null}
-      <p className="text-xs text-slate-500">
+      {state === "error" ? <p role="alert" className="text-sm font-semibold u-bad-text">{message}</p> : null}
+      <p className="text-xs u-text-faint">
         Al enviar, tu solicitud queda pendiente de verificación humana. ERETZ no comparte estos datos
         con terceros y los usa sólo para validar el reclamo.
       </p>

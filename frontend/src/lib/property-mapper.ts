@@ -9,6 +9,7 @@ import type {
   SupabaseProperty,
 } from "@/types/property";
 import { safeExternalUrl } from "@/lib/safe-url";
+import { assessLocationConfidence, hasValidArgentinaCoordinates, type GeoPointStats } from "@/lib/geo-confidence";
 
 // Preserva el estado real de scraping. No inventa disponibilidad: cualquier estado
 // distinto de "activa" que el Quality Gate autorice se conserva como no confirmado.
@@ -38,9 +39,13 @@ export function cleanText(value: unknown): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
-function positiveNumber(value: unknown): number | null {
+// Cero puede ser un dato real (p. ej. monoambiente, sin dormitorios o una
+// superficie publicada como 0). El mapper de dominio lo preserva; la capa de
+// presentación decide después si ese dato es útil para mostrar.
+function nonNegativeNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
   const number = Number(value);
-  return Number.isFinite(number) && number > 0 ? number : null;
+  return Number.isFinite(number) && number >= 0 ? number : null;
 }
 
 export function normalizeCurrency(value: unknown): PropertyCurrency | null {
@@ -75,19 +80,6 @@ export function normalizePropertyType(value: unknown): PropertyType {
   return "otro";
 }
 
-function validCoordinates(latitude: unknown, longitude: unknown) {
-  const lat = Number(latitude);
-  const lng = Number(longitude);
-  return (
-    Number.isFinite(lat) &&
-    Number.isFinite(lng) &&
-    lat >= -55.2 &&
-    lat <= -21.7 &&
-    lng >= -73.7 &&
-    lng <= -53.5
-  );
-}
-
 function validImage(value: unknown): value is string {
   const url = safeExternalUrl(value);
   if (!url) return false;
@@ -106,15 +98,15 @@ function qualitySignals(item: SupabaseProperty, images: string[]): QualitySignal
     hasValidTitle:
       title.length >= 4 && !/^(propiedad|inmueble)\s+(sin\s+t[ií]tulo|en\s+(venta|alquiler))$/i.test(title),
     hasDescription: cleanText(item.descripcion).length >= 20,
-    hasPrice: positiveNumber(item.precio) !== null,
+    hasPrice: nonNegativeNumber(item.precio) !== null,
     hasCurrency: normalizeCurrency(item.moneda) !== null,
     hasLocation: Boolean(cleanText(item.barrio) || cleanText(item.ciudad) || cleanText(item.provincia)),
-    hasCoordinates: validCoordinates(item.latitud, item.longitud),
+    hasCoordinates: hasValidArgentinaCoordinates(item.latitud, item.longitud),
     hasImages: images.length > 0,
   };
 }
 
-export function mapSupabasePropertyToProperty(item: SupabaseProperty): Property {
+export function mapSupabasePropertyToProperty(item: SupabaseProperty, pointStats?: GeoPointStats | null): Property {
   // `rawImages` conserva el dato de origen tal cual llegó. `images` es lo que se
   // muestra: se descartan los recursos que no representan la propiedad (tiles de
   // mapa, Open Graph del home, samples de theme, logos del publicador...), que el
@@ -130,6 +122,15 @@ export function mapSupabasePropertyToProperty(item: SupabaseProperty): Property 
     normalizedTitle.includes("edificio comercial")
       ? "otro"
       : normalizePropertyType(item.tipo_propiedad);
+  const locationConfidence = assessLocationConfidence({
+    latitude: item.latitud,
+    longitude: item.longitud,
+    address: item.direccion,
+    neighborhood: item.barrio,
+    city: item.ciudad,
+    province: item.provincia,
+    pointStats,
+  }).level;
 
   return {
     id: String(item.id),
@@ -156,25 +157,25 @@ export function mapSupabasePropertyToProperty(item: SupabaseProperty): Property 
     sourceUrl: safeExternalUrl(item.url),
     title: quality.hasValidTitle ? cleanText(item.titulo) : "Propiedad sin título",
     description: quality.hasDescription ? cleanText(item.descripcion) : null,
-    price: positiveNumber(item.precio),
+    price: nonNegativeNumber(item.precio),
     currency: normalizeCurrency(item.moneda),
-    priceUsd: positiveNumber(item.precio_usd),
-    priceArs: positiveNumber(item.precio_ars),
-    expenses: positiveNumber(item.expensas),
+    priceUsd: nonNegativeNumber(item.precio_usd),
+    priceArs: nonNegativeNumber(item.precio_ars),
+    expenses: nonNegativeNumber(item.expensas),
     expensesCurrency: normalizeCurrency(item.expensas_moneda),
     propertyType,
     rawPropertyType: rawType,
     operation: normalizeOperation(item.operacion),
-    rooms: positiveNumber(item.ambientes),
-    bedrooms: positiveNumber(item.dormitorios),
-    bathrooms: positiveNumber(item.banos),
-    toilettes: positiveNumber(item.toilettes),
-    garages: positiveNumber(item.cocheras),
-    age: positiveNumber(item.antiguedad),
-    floor: positiveNumber(item.piso),
-    totalArea: positiveNumber(item.superficie_total),
-    coveredArea: positiveNumber(item.superficie_cubierta),
-    landArea: positiveNumber(item.superficie_terreno),
+    rooms: nonNegativeNumber(item.ambientes),
+    bedrooms: nonNegativeNumber(item.dormitorios),
+    bathrooms: nonNegativeNumber(item.banos),
+    toilettes: nonNegativeNumber(item.toilettes),
+    garages: nonNegativeNumber(item.cocheras),
+    age: nonNegativeNumber(item.antiguedad),
+    floor: nonNegativeNumber(item.piso),
+    totalArea: nonNegativeNumber(item.superficie_total),
+    coveredArea: nonNegativeNumber(item.superficie_cubierta),
+    landArea: nonNegativeNumber(item.superficie_terreno),
     address: cleanText(item.direccion) || null,
     neighborhood: cleanText(item.barrio) || null,
     city: cleanText(item.ciudad) || null,
@@ -182,6 +183,7 @@ export function mapSupabasePropertyToProperty(item: SupabaseProperty): Property 
     country: cleanText(item.pais) || null,
     latitude: quality.hasCoordinates ? Number(item.latitud) : null,
     longitude: quality.hasCoordinates ? Number(item.longitud) : null,
+    locationConfidence,
     images,
     videoUrl: safeExternalUrl(item.video_url),
     floorPlanUrl: safeExternalUrl(item.plano_url),
@@ -192,7 +194,7 @@ export function mapSupabasePropertyToProperty(item: SupabaseProperty): Property 
     createdAt: item.created_at,
     updatedAt: item.updated_at,
     status: normalizeStatus(item.estado),
-    mortgageEligible: item.apto_credito === true,
+    mortgageEligible: item.apto_credito == null ? null : item.apto_credito === true,
     quality,
   };
 }

@@ -35,4 +35,16 @@ describe("ActiveChips", () => {
     const { container } = render(<ActiveChips filters={parsePropertyFilters({})} basePath="/" />);
     expect(container.firstChild).toBeNull();
   });
+
+  it("presenta moneda y límite como un único concepto sin duplicar el dato", () => {
+    const filters = parsePropertyFilters({ moneda: "USD", precio_max: "200000" });
+    const chips = activeChips(filters);
+    expect(chips.map((chip) => chip.label)).toContain("Hasta USD 200.000");
+    expect(chips.some((chip) => chip.key === "mon")).toBe(false);
+  });
+
+  it("representa cochera y crédito tri-state como filtros eliminables", () => {
+    const filters = parsePropertyFilters({ cocheras: "1", credito: "no" });
+    expect(activeChips(filters).map((chip) => chip.label)).toEqual(expect.arrayContaining(["1+ cocheras", "No apto crédito"]));
+  });
 });

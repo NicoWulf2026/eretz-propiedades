@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { filtersToSearchParams, parsePropertyFilters } from "@/lib/property-query";
+import { filtersToSearchParams, parsePropertyFilters, urlSearchParamsToSearchParams } from "@/lib/property-query";
 
 describe("property query", () => {
   it("parses and serializes shareable filters", () => {
@@ -21,13 +21,20 @@ describe("property query", () => {
   });
 
   it("does not allow global mixed-currency price sorting", () => {
-    expect(parsePropertyFilters({ orden: "price_desc" }).sort).toBe("recent");
+    expect(parsePropertyFilters({ orden: "price_desc" }).sort).toBe("relevance");
   });
 
   it("bounds and sanitizes untrusted params", () => {
     const filters = parsePropertyFilters({ q: "foo),estado.eq.inactiva", pagina: "999999" });
     expect(filters.q).not.toMatch(/[(),]/);
-    expect(filters.page).toBe(1);
+    expect(filters.page).toBe(10_000);
+  });
+
+  it("normalizes duplicated URL parameters consistently and deterministically", () => {
+    const params = new URLSearchParams("operacion=venta&operacion=alquiler&ubicaciones=Palermo&ubicaciones=Belgrano");
+    const filters = parsePropertyFilters(urlSearchParamsToSearchParams(params));
+    expect(filters.operation).toBe("venta");
+    expect(filters.locations).toEqual(["Palermo", "Belgrano"]);
   });
 
   it("round-trips viewport, map mode and supported data filters", () => {
@@ -41,11 +48,31 @@ describe("property query", () => {
     expect(filtersToSearchParams(filters).get("publicador")).toBe("Acme");
   });
 
+  it("normaliza los seis modos históricos a las tres vistas desktop V2", () => {
+    expect(parsePropertyFilters({ modo: "map" }).mode).toBe("balanced");
+    expect(parsePropertyFilters({ modo: "analysis" }).mode).toBe("balanced");
+    expect(parsePropertyFilters({ modo: "results" }).mode).toBe("results_only");
+    expect(parsePropertyFilters({ modo: "map_only" }).mode).toBe("map_only");
+  });
+
   it("parsea, deduplica y limita multi-ubicación; ida y vuelta por URL", () => {
     const filters = parsePropertyFilters({ ubicaciones: "Palermo, Belgrano ,palermo" });
     expect(filters.locations).toEqual(["Palermo", "Belgrano"]); // dedup case-insensitive
     const round = parsePropertyFilters(Object.fromEntries(filtersToSearchParams(filters)));
     expect(round.locations).toEqual(["Palermo", "Belgrano"]);
+  });
+
+  it("round-trips typed area and non-canonical neighborhood metadata", () => {
+    const area = parsePropertyFilters({
+      ubicaciones: "La Calera", area_nivel: "MUNICIPIO", area_nombre: "La Calera", area_id: "area-1",
+    });
+    expect(area.selectedArea).toEqual({ id: "area-1", name: "La Calera", level: "MUNICIPIO" });
+    const areaRoundTrip = parsePropertyFilters(Object.fromEntries(filtersToSearchParams(area)));
+    expect(areaRoundTrip.selectedArea).toEqual(area.selectedArea);
+
+    const neighborhood = parsePropertyFilters({ barrio: "Palermo", barrio_canonico: "0" });
+    expect(neighborhood.neighborhoodCanonical).toBe(false);
+    expect(filtersToSearchParams(neighborhood).get("barrio_canonico")).toBe("0");
   });
 
   it("sin filtros no produce near, priceMode ni mortgageState", () => {
@@ -78,7 +105,7 @@ describe("property query", () => {
   });
 
   it("orden 'nearest' sólo sobrevive con un punto de referencia válido", () => {
-    expect(parsePropertyFilters({ orden: "nearest" }).sort).toBe("recent"); // sin punto
+    expect(parsePropertyFilters({ orden: "nearest" }).sort).toBe("relevance"); // sin punto
     const near = parsePropertyFilters({ orden: "nearest", cerca_lat: "-34.6", cerca_lng: "-58.4" });
     expect(near.sort).toBe("nearest");
     expect(near.near).toEqual({ lat: -34.6, lng: -58.4 });

@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { insertSignal, persistenceRequired } from "@/lib/db-writer";
+import { withObservability } from "@/lib/observability/route";
+import { CUOTA_REPORTES, revisarAbuso } from "@/lib/abuse/guard";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +16,7 @@ function clean(value: unknown, max: number): string {
   return typeof value === "string" ? value.replace(/[<>]/g, "").trim().slice(0, max) : "";
 }
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   let body: { propiedadId?: string | number; motivo?: string; detalle?: string; email?: string };
   try {
     body = await request.json();
@@ -33,6 +35,24 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "El email no es válido." }, { status: 422 });
   }
 
+  // Recién acá, con la entrada ya validada: no se gasta cuota en un cuerpo
+  // malformado, y la huella se calcula sobre el contenido ya limpio.
+  const veredicto = revisarAbuso(request, {
+    endpoint: "reports",
+    limite: CUOTA_REPORTES.limite,
+    ventanaMs: CUOTA_REPORTES.ventanaMs,
+    huella: [propiedadId, motivo, detalle],
+    dedupeMs: CUOTA_REPORTES.dedupeMs,
+  });
+  if (veredicto.tipo === "limitado") return veredicto.respuesta;
+  if (veredicto.tipo === "duplicado") {
+    // El mismo reporte otra vez no es un error de quien lo manda -un doble
+    // clic, un reintento- y no tiene sentido guardarlo dos veces. Se acusa
+    // recibo igual: decirle "duplicado" a alguien que reporta un problema real
+    // suena a que no se le dio curso.
+    return NextResponse.json({ status: "received", motivo, persisted: false, deduplicated: true });
+  }
+
   // Persiste como señal (estado 'nuevo') vía el rol writer dedicado si está
   // configurado; nunca modifica ni oculta la publicación. Sin writer, acusa recibo.
   const { persisted } = await insertSignal("reportes_publicacion", {
@@ -44,3 +64,5 @@ export async function POST(request: Request) {
   }
   return NextResponse.json({ status: "received", motivo, persisted });
 }
+
+export const POST = withObservability("/api/reports", handlePOST);
