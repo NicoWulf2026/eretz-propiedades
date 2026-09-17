@@ -142,18 +142,47 @@ La conclusión importa más que el número: **no hay que reescribir el conector 
 Tokko**. Hay que entender qué tienen de distinto esos cuatro sitios respecto de
 los 78 que sí se leen.
 
-Y los cuatro **no son el mismo caso**, que es una corrección a lo primero que
-escribí acá. `ya_lo_vimos.py` lo sacó a la luz al buscar precedentes de
-`di santo`: `coldwell banker andes bienes raices` figura como
-`TOKKO_FRONTEND_PROPIO` y **su sitio no es Tokko**. Es PHP plano —
-`cbandesbienesraices.com.ar/index.php` sirve 37 KB y enlaza **17 fichas** de la
-forma `/ficha.php?id=6699459`, con los precios a la vista en el listado—. Ahí no
-falla el conector: falla la clasificación de plataforma, y son 17 propiedades
-recuperables por una corrección de datos.
+Y los cuatro **no son el mismo caso**. `ya_lo_vimos.py` lo sacó a la luz al
+buscar precedentes de `di santo`, y verificarlo obligó a corregir dos veces lo
+que yo mismo había escrito.
 
-Quedan entonces tres con el contenedor vacío
-—`<ul id="propiedades" class="resultados-list">` que rellena JavaScript— y una
-mal clasificada.
+`coldwell banker andes bienes raices` figura como `TOKKO_FRONTEND_PROPIO`.
+Primero escribí que **su sitio no es Tokko**, repitiendo su propia diferida, que
+decía "PHP plano". Al comprobarlo contra la fuente resultó medio cierto y medio
+falso, y la mitad falsa era la mía:
+
+- **es Tokko de verdad.** Sus imágenes salen de
+  `static.tokkobroker.com/thumbs/<id>_...` y esos ids coinciden con los de las
+  fichas. La clasificación de plataforma está **bien**;
+- **pero su frontend es PHP a medida**, no TFW: las fichas viven en
+  `ficha.php?id=6699459`, no en las rutas del producto de Tokko. Son **17**, con
+  los precios a la vista en el listado.
+
+Lo que está mal entonces no es la plataforma sino el mecanismo:
+`TOKKO_FRONTEND_PROPIO` mete en la misma bolsa *"datos de Tokko"* y *"el
+frontend propio de Tokko"*, que son cosas distintas. El conector espera lo
+segundo y este sitio es lo primero sobre un frontend ajeno.
+
+Y el arreglo es barato, porque el catálogo está en HTML plano: ya existe
+`generic/php_query_catalog`, hoy usada por una sola agencia.
+
+Y la cuarta tampoco es lo que parecía. `fios consultoria inmobiliaria` tiene
+como fuente registrada:
+
+    https://www.fios.com.ar/emprendimiento-64427-condominio-en-fisherton
+
+Es **la página de un solo emprendimiento**, no el catálogo. La raíz del sitio
+—`fios.com.ar/`— enlaza a `propiedades` y está viva. Es la misma clase que
+`danisa robledo`, cuya fuente declarada era una ficha suelta dentro de un
+marketplace: no falla nada del pipeline, apunta al lugar equivocado.
+
+**Se corrige en el registro de fuentes, sin tocar una huella.**
+
+Así que de los cuatro "TFW que no se leen" queda **uno solo** que de verdad lo
+es y de verdad no se lee —`etcheverry`, con el contenedor vacío—, más `di santo`
+con el mismo síntoma, uno que necesita otra estrategia y uno que necesita otra
+URL. Contarlos como un grupo de cuatro habría llevado a escribir un arreglo de
+conector para problemas que en dos casos son de datos.
 
 Es también el primer caso donde el banco de firmas pagó: `etcheverry` se había
 diagnosticado el 2026-09-14 y `di santo` se cerró reconociendo la firma en vez
@@ -173,6 +202,7 @@ de investigando de cero.
 | | motivo |
 |---|---|
 | re-detección masiva con el detector v2 | acierta **1 de 4**, y ese 1 rutea a la estrategia que ya falla |
+| re-detección **dirigida** a las que enumeran cero | se hizo, sobre las 14 con plataforma declarada y cero enumeradas: **1 desacuerdo** (`carlos castaño`, WORDPRESS → LARAVEL). Las otras 13 coinciden, `coldwell banker` incluida con 0,9 de confianza. La plataforma casi nunca es el problema |
 | ampliar la lista de hosts-portal | `365litoralargentino` lo usa 1 agencia; 3 de 4 hosts compartidos ya cerrados |
 | alinear detector con conector | 19 desacuerdos, 7 de ellos `CERTIFIED_COMPLETE`; no cuesta inventario |
 | reinicio automático tras corte por lote | 5 cortes contra 62 paros: recupera el 7% |
