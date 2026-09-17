@@ -266,6 +266,50 @@ def eta(cola: dict[str, Any], rend: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def integridad(certificacion: Path) -> dict[str, Any]:
+    """Dos defectos que ya sabemos que existen y que nadie vería si no se miran.
+
+    Los dos comparten forma: son **silenciosos**. No detienen la cola, no
+    ensucian un log y no bajan ningún número visible. Aparecen sólo si se los
+    busca, y por eso entran al reporte en vez de quedar en un artefacto que hay
+    que acordarse de abrir.
+
+    El primero: agencias donde el id estable colapsa. `baron inmobiliaria`
+    tiene el id `300` en 36 propiedades distintas —el extractor lo sacó del
+    número de calle del slug— y el campo `identity_collisions` del mismo
+    registro declara 0.
+
+    El segundo: agencias terminales buenas con la calidad degradada. Hoy se
+    publican como si estuvieran enteras, que es lo que el §32 pide dejar de
+    hacer.
+    """
+    resumen: dict[str, Any] = {}
+
+    colisiones = _json(certificacion / "ERETZ_COLISION_DE_IDS.json")
+    if colisiones:
+        resumen["ids_estables_colapsados"] = {
+            "agencias": colisiones.get("agencias_con_ids_colapsados"),
+            "de_esas_certified_complete":
+                colisiones.get("de_esas_certified_complete"),
+            "de_esas_con_identity_collisions_cero":
+                colisiones.get("de_esas_con_identity_collisions_cero"),
+            "nota": "el inventario NO esta afectado -enumerated cuenta urls-; "
+                    "lo que esta roto es la señal",
+        }
+
+    gates = _jsonl(certificacion / "ERETZ_GATES_INDEPENDIENTES.jsonl")
+    if gates:
+        desacuerdos = [g for g in gates if g.get("shadow_disagreement")]
+        resumen["calidad_degradada_en_terminales_buenas"] = {
+            "agencias": len(desacuerdos),
+            "de": len(gates),
+            "modo": "SHADOW: la regla observa y no decide",
+            "nota": "falsos positivos SIN medir: hay verdad de campo sobre una "
+                    "sola agencia",
+        }
+    return resumen
+
+
 def alertas(cola: dict[str, Any], datos: dict[str, Any]) -> list[dict[str, str]]:
     """Solo lo que pide una accion humana."""
     fuera: list[dict[str, str]] = []
@@ -347,6 +391,7 @@ def main() -> int:
         "vigilante": vigilante,
         "rendimiento": rend,
         "eta": eta(cola, rend),
+        "integridad": integridad(Path(args.certificacion)),
         "alertas": alertas(cola, datos),
         "database_writes": 0,
     }
