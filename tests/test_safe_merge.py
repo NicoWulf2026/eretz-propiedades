@@ -86,7 +86,7 @@ def test_new_property_uses_explicit_unknown_operation_state():
     plan = build_merge_plan(incoming(operacion=None), [], source_id="10")
 
     assert plan["status"] == "insert"
-    assert plan["payload"]["operacion"] == "consultar"
+    assert plan["payload"]["operacion"] == "desconocida"
 
 
 def test_new_property_does_not_persist_operation_as_title():

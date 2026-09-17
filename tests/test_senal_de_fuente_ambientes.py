@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """`MONOambiente` no es un ambiente.
 
-**Rojo a propósito. El arreglo NO está aplicado** y toca `shared/certifier`,
-que está bajo freeze. Marcado `xfail(strict=True)`: el día que se aplique, la
-suite se rompe y obliga a sacar el marcador.
+Regresion de medicion corregida en el candidato unificado. La modificacion
+toca shared/certifier e invalida sus certificaciones anteriores: no se aplica
+al codigo de workers originales ni se renueva evidencia automaticamente.
 
 Esto NO es un arreglo de inventario ni de extracción: es un arreglo de
 **medición**. No recupera una sola propiedad ni un solo campo. Lo que corrige
@@ -55,8 +55,6 @@ def test_los_ambientes_de_verdad_se_siguen_reconociendo(texto):
 
 # --- el rojo -------------------------------------------------------------
 
-@pytest.mark.xfail(strict=True, reason="defecto abierto en shared/certifier: "
-                                       "el patron no exige limite de palabra")
 @pytest.mark.parametrize("texto", [
     "Cant. de Domitorios Monoambiente 1 Dorm. 2 Dorm.",
     "Propiedades Departamentos Ver todo Monoambiente 1 dormitorio",

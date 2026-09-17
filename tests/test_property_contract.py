@@ -84,8 +84,8 @@ def test_no_se_adivina_por_que_falta_un_campo():
 
 def test_un_campo_presente_esta_extraido():
     assert estado_de_campo(_propiedad(), "precio") == EXTRACTED
-    # El cero no es un valor para estos campos: 0 dormitorios no se publica.
-    assert estado_de_campo(_propiedad(dormitorios=0), "dormitorios") != EXTRACTED
+    # Un cero aceptado por normalizacion no equivale a un campo ausente.
+    assert estado_de_campo(_propiedad(dormitorios=0), "dormitorios") == EXTRACTED
 
 
 def test_el_veredicto_declara_su_version():
@@ -94,7 +94,7 @@ def test_el_veredicto_declara_su_version():
     geo = {"localidad_canonica": "Rosario",
            "area_busqueda": {"nivel": "LOCALIDAD", "nombre": "Rosario"}}
     v = evaluar(_propiedad(), geo=geo)
-    assert v["contrato_version"] == "property_contract_v3"
+    assert v["contrato_version"] == "property_contract_v4"
     assert v["publicable"] is True
     assert v["database_writes"] == 0
     assert set(v["alcances"]) == {"FICHA", "LISTADO", "FILTRO_OPERACION",

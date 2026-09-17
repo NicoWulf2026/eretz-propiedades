@@ -97,7 +97,7 @@ SOURCE_SIGNALS = {
         r"(?:class=[\"'][^\"']*(?:ciudad|localidad)[^\"']*[\"']|"
         r"[\"'](?:ciudad|localidad|addressLocality)[\"']\s*:)", re.I),
     "provincia": re.compile(r"\bprovincia\s*:?", re.I),
-    "ambientes": re.compile(r"(?:\b[1-9]\d?\s*(?:ambientes?|amb\.)|(?:ambientes?|amb\.)\s*:?\s*[1-9]\d?)", re.I),
+    "ambientes": re.compile(r"(?:\b[1-9]\d?\s*\b(?:ambientes?\b|amb\.)|\b(?:ambientes?\b|amb\.)\s*:?\s*[1-9]\d?\b)", re.I),
     "dormitorios": re.compile(r"(?:\b[1-9]\d?\s*(?:dormitorios?|habitaciones?)|(?:dormitorios?|habitaciones?)\s*:?\s*[1-9]\d?)", re.I),
     "banos": re.compile(r"(?:\b[1-9]\d?\s*(?:ba[nñ]os?|toilettes?)|(?:ba[nñ]os?|toilettes?)\s*:?\s*[1-9]\d?)", re.I),
     "superficie_total": re.compile(r"(?:superficie\s+total|sup\.?\s*total)[^\d]{0,18}[\d.,]+\s*m", re.I),
@@ -308,7 +308,7 @@ def write_jsonl(path: Path, rows: Iterable[dict[str, Any]]) -> None:
 
 
 def host(url: str | None) -> str:
-    return urllib.parse.urlparse(url or "").netloc.lower().removeprefix("www.")
+    return (urllib.parse.urlparse(url or "").hostname or "").lower().removeprefix("www.")
 
 
 def external_portal(url: str | None) -> bool:
@@ -438,6 +438,10 @@ def load_catalog(v2: Path, data_dir: Path, platform_directory: Path) -> dict[str
 
 
 def choose_connector(record: dict[str, dict[str, Any]]) -> str:
+    if selected_source(record)[1] == "verified_recovery":
+        # Technology/pattern evidence from a rejected portal does not describe
+        # the recovered official website. Discover it with the generic family.
+        return "generico"
     platform = record["platform"]
     named = str(platform.get("connector") or "").lower()
     if named in CONNECTORS:
@@ -471,16 +475,39 @@ def baseline_inventory(record: dict[str, dict[str, Any]], pre_db: Path,
              "preingestion_rows": prior})
 
 
+def selected_source(record: dict[str, dict[str, Any]]) -> tuple[str | None, str]:
+    """Single effective selection used by identity and connector choice.
+
+    Keep explicit operational overrides. Recover a rejected portal only from
+    an existing, agency-keyed, actually verified Argentine official website.
+    No name/URL heuristic or discovery candidate can authorize this recovery.
+    """
+    candidates = (
+        (record.get("platform", {}).get("domain"), "platform"),
+        (record.get("source", {}).get("official_url"), "source"),
+        (record.get("resolution", {}).get("official_domain"), "resolution"),
+        (record.get("verificada", {}).get("official_url"), "verified"),
+        (record.get("directory", {}).get("official_url"), "directory"),
+    )
+    url, origin = next(((url, origin) for url, origin in candidates if url), (None, "none"))
+    verified = record.get("verificada") or {}
+    recovered = verified.get("official_url")
+    if (url and external_portal(url) and recovered
+            and verified.get("verificacion") == "VERIFICADA_ARGENTINA"
+            and not external_portal(recovered)):
+        parsed = urllib.parse.urlparse(recovered)
+        if parsed.scheme in {"http", "https"} and parsed.hostname and not parsed.username:
+            return recovered, "verified_recovery"
+    return url, origin
+
+
 def resolve_identity(record: dict[str, dict[str, Any]], canonical_id: str) -> dict[str, Any]:
     resolution, live = record["resolution"], record["live"]
     source, platform, directory = record["source"], record["platform"], record["directory"]
-    verificada = record.get("verificada") or {}
     eretz_id = resolution.get("eretz_id") or live.get("eretz_id") or platform.get("eretz_id")
     # La web leida va ANTES del directorio: evidencia que alguien abrio le gana
     # a un puntaje calculado sobre la cadena de la url sin visitarla.
-    official = (platform.get("domain") or source.get("official_url")
-                or resolution.get("official_domain")
-                or verificada.get("official_url") or directory.get("official_url"))
+    official, source_origin = selected_source(record)
     name = (resolution.get("agency_name") or source.get("agency_name")
             or platform.get("agency_name") or directory.get("agency_name") or canonical_id)
     status = "READY"
@@ -497,7 +524,8 @@ def resolve_identity(record: dict[str, dict[str, Any]], canonical_id: str) -> di
     if official and external_portal(official):
         status = "BLOCKED_EXTERNAL"
         reasons.append("source points to an external property portal")
-    if platform.get("web_kind") not in (None, "OFFICIAL_WEB"):
+    if (source_origin != "verified_recovery"
+            and platform.get("web_kind") not in (None, "OFFICIAL_WEB")):
         status = "BLOCKED_EXTERNAL"
         reasons.append(f"web_kind={platform.get('web_kind')}")
     return {"canonical_agency_id": canonical_id, "eretz_id": eretz_id,
@@ -505,7 +533,10 @@ def resolve_identity(record: dict[str, dict[str, Any]], canonical_id: str) -> di
             "identity_status": status, "identity_reasons": reasons,
             "identity_evidence": {"resolution_status": resolution.get("resolution_status"),
                                   "live_validation": live.get("validation_status"),
-                                  "web_kind": platform.get("web_kind")}}
+                                  "web_kind": ("OFFICIAL_WEB" if source_origin == "verified_recovery"
+                                               else platform.get("web_kind")),
+                                  "source_origin": source_origin,
+                                  "selection_version": "effective_source_v2"}}
 
 
 class AuditDownloader(Descargador):
@@ -837,15 +868,17 @@ def certify(canonical_id: str, catalog: dict[str, dict[str, Any]], output: Path,
         return result
 
     connector_name = choose_connector(record)
+    recovered_source = selected_source(record)[1] == "verified_recovery"
     baseline, baseline_evidence = baseline_inventory(record, pre_db, canonical_id)
     source = Fuente(canonical_agency_id=canonical_id,
                     agency_name=str(identity["agency_name"]),
                     official_url=str(identity["official_url"]),
                     inmobiliaria_id=int(identity["eretz_id"]),
-                    detected_platform=record["source"].get("detected_platform"),
+                    detected_platform=(None if recovered_source else record["source"].get("detected_platform")),
                     extra={"city": record["directory"].get("city"),
                            "province": record["directory"].get("province"),
-                           "patron_ficha": record["platform"].get("pattern_ficha")})
+                           "patron_ficha": (None if recovered_source
+                                            else record["platform"].get("pattern_ficha"))})
     checkpoint = Checkpoint(packet_dir / "checkpoint.json")
     try:
         run1, download1 = run_once(connector_name, source, checkpoint, interval,
@@ -870,7 +903,7 @@ def certify(canonical_id: str, catalog: dict[str, dict[str, Any]], output: Path,
         effective_connector, run2.get("variante"))
     result = {
         **base_result, "status": status, "reasons": reasons,
-        "platform": record["source"].get("detected_platform"),
+        "platform": (None if recovered_source else record["source"].get("detected_platform")),
         "publication_mechanism": run2.get("variante"),
         "connector": effective_connector,
         "connector_version": version_del_codigo(effective_connector),

@@ -33,7 +33,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-FRESCURA_VERSION = "property_freshest_v1"
+FRESCURA_VERSION = "property_freshest_v2"
 
 # Estados en los que el inventario del paquete es confiable y completo.
 CIERRES_CONFIABLES = ("CERTIFIED_COMPLETE", "CERTIFIED_BEST_AVAILABLE")
@@ -127,11 +127,16 @@ def fusionar(vieja: dict[str, Any], fresca: dict[str, Any] | None,
                 continue
             rechazados.add(motivo.split("_en_un_")[0])
             rechazados.update(re.split(r"[>,]", motivo))
-    salida = dict(fresca)
+    # The allowlist must govern the actual merge, not only its documentation.
+    # Starting from fresca used to replace source_url and agency identity too.
+    salida = dict(vieja)
+    for metadata in ('extra', '_certificado_en'):
+        if metadata in fresca:
+            salida[metadata] = fresca[metadata]
     for campo in campos:
-        if salida.get(campo) in (None, "", [], 0) and campo not in rechazados:
-            if vieja.get(campo) not in (None, "", [], 0):
-                salida[campo] = vieja[campo]
+        valor = fresca.get(campo)
+        if valor not in (None, "", []) or campo in rechazados:
+            salida[campo] = valor
     return salida
 
 
@@ -169,8 +174,8 @@ def main() -> int:
             comunes += 1
             vieja = json.loads(crudo)
             for campo in campos:
-                nuevo = fresca.get(campo) not in (None, "", [], 0)
-                anterior = vieja.get(campo) not in (None, "", [], 0)
+                nuevo = fresca.get(campo) not in (None, "", [])
+                anterior = vieja.get(campo) not in (None, "", [])
                 if nuevo and not anterior:
                     gana[campo] += 1
                 elif anterior and not nuevo:

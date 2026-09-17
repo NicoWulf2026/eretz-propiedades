@@ -71,6 +71,20 @@ def test_la_identidad_no_se_fusiona():
     assert "hash_dedup" not in CAMPOS_FUSIONABLES
     assert "source_url" not in CAMPOS_FUSIONABLES
     assert "canonical_agency_id" not in CAMPOS_FUSIONABLES
+    vieja = dict(hash_dedup='original', source_url='https://own.test/p/1',
+                 canonical_agency_id='own', source_listing_id='1', titulo='Casa vieja')
+    fresca = dict(hash_dedup='changed', source_url='https://other.test/p/2',
+                  canonical_agency_id='other', source_listing_id='2', titulo='Casa nueva')
+    merged = fusionar(vieja, fresca, CAMPOS_FUSIONABLES)
+    for field in ('hash_dedup', 'source_url', 'canonical_agency_id', 'source_listing_id'):
+        assert merged[field] == vieja[field]
+    assert merged['titulo'] == fresca['titulo']
+
+
+def test_accepted_zero_is_not_replaced_with_historical_nonzero():
+    assert fusionar({'banos': 3, 'precio': 99}, {'banos': 0, 'precio': 0},
+                   CAMPOS_FUSIONABLES)['banos'] == 0
+    assert fusionar({'precio': 99}, {'precio': 0}, CAMPOS_FUSIONABLES)['precio'] == 0
 
 
 def test_solo_se_leen_paquetes_que_cerraron_bien(tmp_path):

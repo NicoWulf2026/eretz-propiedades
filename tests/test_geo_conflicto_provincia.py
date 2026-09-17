@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """Una fuente que se contradice a sí misma no decide la provincia.
 
-**Rojo a propósito. El arreglo NO está aplicado** y toca código semántico: va a
-la ventana.
+La frontera del candidato unificado ya rechaza afirmaciones ante conflictos
+DETECTADOS. La deteccion universal de contradicciones entre JSON-LD y prosa
+continua pendiente; esta prueba no pretende demostrarla.
 
 EL CASO, medido el 2026-09-16 sobre `analia requena propiedades`:
 
@@ -74,9 +75,6 @@ def test_no_opina_cuando_la_provincia_es_otra():
     assert hay_conflicto(None, FICHA) is False
 
 
-@pytest.mark.xfail(strict=True, reason="defecto abierto: ante un GEO_CONFLICT "
-                                       "la provincia se toma igual en vez de "
-                                       "quedar en blanco con su evidencia")
 def test_ROJO_una_provincia_en_conflicto_no_se_publica():
     """Lo que el §45 pide y hoy no pasa.
 
@@ -84,8 +82,14 @@ def test_ROJO_una_provincia_en_conflicto_no_se_publica():
     nadie la contrasta con el cuerpo. Poner el contraste adentro del test lo
     haria pasar, y entonces probaria la solucion en vez del defecto.
     """
-    de_la_fuente = "Ciudad Autónoma de Buenos Aires"   # addressRegion del JSON-LD
-    provincia_publicada = de_la_fuente                 # <-- falta el contraste
+    from scripts.api_contract import fila_de_api
+    de_la_fuente = "Ciudad Autónoma de Buenos Aires"
+    documento = fila_de_api({}, {
+        'estado_geografico': 'GEO_CONFLICT',
+        'provincia_canonica': de_la_fuente,
+        'conflicto': {'publicado': de_la_fuente, 'texto': FICHA},
+    }, ['FICHA', 'LISTADO'])
+    provincia_publicada = documento['geo']['provincia']['nombre']
     assert provincia_publicada is None, (
         "se publica CABA para una propiedad de Mar Chiquita; el §45 pide "
         "dejarla vacia y guardar las dos evidencias, no elegir")

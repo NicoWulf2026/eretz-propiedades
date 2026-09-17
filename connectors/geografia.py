@@ -63,6 +63,25 @@ NORMALIZADA_CANONICA = "CANONICAL_NORMALIZED"
 APOYADA_EN_COORDENADA = "COORDINATE_SUPPORTED"
 DESCONOCIDA = "UNKNOWN"
 
+
+def geografia_publicable(geo: dict[str, Any] | None) -> dict[str, Any]:
+    """Never turn a detected source/geometry conflict into public assertions.
+
+    Operates on the geo coverage artifact, preserving both pieces of evidence.
+    It does not choose coordinates over the source, nor discard the property.
+    Legacy artifacts may still contain canonical dimensions despite conflict.
+    """
+    result = dict(geo or {})
+    if result.get('estado_geografico') != 'GEO_CONFLICT':
+        return result
+    for field in ('provincia_canonica', 'departamento_canonico',
+                  'municipio_canonico', 'localidad_canonica', 'localidad_id'):
+        result[field] = None
+    result['area_busqueda'] = {
+        'nivel': 'SIN_AREA', 'nombre': None, 'id': None, 'origen': None,
+    }
+    return result
+
 # Caja de Argentina continental mas el sector antartico e islas. Sirve para
 # descartar coordenadas invertidas o de otro pais, no para afirmar precision.
 CAJA_ARGENTINA = (-90.0, -21.0, -74.0, -53.0)

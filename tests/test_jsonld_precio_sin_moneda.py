@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
 """Un precio de JSON-LD sin moneda no puede tapar la moneda del texto.
 
-**Estos tests están en rojo a propósito y el arreglo NO está aplicado.**
-Van marcados `xfail(strict=True)`, que en pytest significa: se espera que
-fallen, y si algún día pasan **la suite se pone en rojo**. Eso es deliberado. El
-día que se aplique el parche, esta suite va a romperse y quien lo aplique va a
-tener que venir acá a sacar los marcadores. Un test rojo que nadie ve es un
-test que no existe.
+Corregido en el candidato unificado. Las pruebas llaman normalize() real;
+no replican el defecto dentro del test. La guarda de precio sin moneda sigue
+activa y una moneda visible solo completa la cifra estructurada si coincide.
+El diagnostico historico que sigue describe el estado PRE-unificacion.
 
 EL DEFECTO, medido el 2026-09-15 sobre `blanco propiedades` -1.213 fichas,
 `generic/sitemap`-:
@@ -87,46 +85,26 @@ def test_la_moneda_esta_en_el_texto_visible(texto):
 
 # --- los dos rojos ------------------------------------------------------
 
-@pytest.mark.xfail(strict=True, reason="defecto abierto: la busqueda de moneda "
-                                       "esta atada a que falte el precio")
 def test_ROJO_la_moneda_se_completa_desde_el_texto(html, texto):
     """Cuando el JSON-LD trae precio y no trae moneda, la moneda tiene que
     salir del texto igual."""
-    datos = GenericoConnector._de_json_ld(html)
-
-    # El camino REAL de `normalize()`, copiado tal cual y sin arreglar. Poner
-    # la solucion adentro del test lo haria pasar, y entonces no probaria el
-    # defecto sino la solucion: seria un test que se aprueba a si mismo.
-    precio = datos.get("precio")
-    moneda = datos.get("moneda")
-    if precio is None:                      # <-- la condicion que sobra
-        m = RE_PRECIO.search(texto)
-        if m:
-            moneda = moneda or m.group(1)
-            precio = m.group(2)
-
-    assert moneda is not None, ("la moneda quedo vacia teniendola en el texto: "
-                                "la busqueda solo corre si FALTA el precio")
+    prop = _normalizar(html)
+    assert prop is not None
+    assert prop.moneda == 'USD'
 
 
-@pytest.mark.xfail(strict=True, reason="defecto abierto: el precio se anula "
-                                       "por falta de una moneda que si estaba")
 def test_ROJO_el_precio_sobrevive_a_la_guarda_de_moneda(html, texto):
     """El desenlace que importa: hoy la guarda anula un precio correcto."""
-    datos = GenericoConnector._de_json_ld(html)
-    precio = datos.get("precio")
-    moneda = datos.get("moneda")
-    if precio is None:
-        m = RE_PRECIO.search(texto)
-        if m:
-            moneda = moneda or m.group(1)
-            precio = m.group(2)
-    # La guarda real de `normalize()`, copiada tal cual. No se toca: entre
-    # pesos y dolares hay un factor de mil.
-    if precio is not None and not moneda:
-        precio = None
-    assert precio == 180000.0, ("el precio se perdio, y la fuente lo publica "
-                                "en el JSON-LD y cuatro veces en el texto")
+    prop = _normalizar(html)
+    assert prop is not None
+    assert prop.precio == 180000.0
+
+
+def _normalizar(html):
+    from connectors.base import Fuente
+    return GenericoConnector(type('Cached', (), {'bajar': lambda self, url: html})()).normalize(
+        {'source_listing_id': '618', 'source_url': 'https://ejemplo.test/propiedades/618'},
+        Fuente('audit:agency', 'Ejemplo', 'https://ejemplo.test'))
 
 
 # --- ambientes NO va acá, y el motivo importa ---------------------------

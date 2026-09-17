@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """La operación está en el `<title>` de la página, no sólo en el título editorial.
 
-**Rojo a propósito. El arreglo NO está aplicado.** Marcado `xfail(strict=True)`:
-el día que se aplique el parche, este test va a pasar y la suite se va a poner
-en rojo, obligando a sacar el marcador. Un test rojo que nadie ve no existe.
+Corregido en el candidato unificado; el replay ahora llama normalize() real.
+El diagnostico que sigue describe el estado previo. El fallback al titulo del
+documento nunca pisa una operacion afirmada por la ficha.
 
 EL DEFECTO, medido el 2026-09-15 sobre `fenix inmobiliaria` —499 fichas,
 `generic/sitemap`—: `operacion` falla en **179 de 499**, y la fuente la publica
@@ -81,18 +81,18 @@ def test_el_title_del_html_SI_la_dice(html):
 
 # --- el rojo ------------------------------------------------------------
 
-@pytest.mark.xfail(strict=True, reason="defecto abierto: la operacion sale del "
-                                       "titulo editorial y no cae al <title>")
 def test_ROJO_la_operacion_cae_al_title_cuando_el_editorial_no_la_trae(html):
     """El camino real de hoy, copiado sin arreglar.
 
     Poner el fallback adentro del test lo haría pasar, y entonces probaría la
     solución en vez del defecto.
     """
-    operacion = GenericoConnector._operacion_en_la_ficha(encabezado(html))
-    # <-- acá falta el `if operacion is None: mirar el <title>`
-    assert operacion == "venta", ("quedo sin operacion teniendola en el "
-                                  "<title> de la propia pagina")
+    from connectors.base import Fuente
+    prop = GenericoConnector(type('Cached', (), {'bajar': lambda self, url: html})()).normalize(
+        {'source_listing_id': '4750557', 'source_url': 'https://ejemplo.test/propiedades/4750557'},
+        Fuente('audit:agency', 'Ejemplo', 'https://ejemplo.test'))
+    assert prop is not None
+    assert prop.operacion == 'venta'
 
 
 # --- lo que el arreglo NO puede hacer -----------------------------------

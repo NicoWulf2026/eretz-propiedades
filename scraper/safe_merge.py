@@ -14,7 +14,10 @@ import re
 import unicodedata
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
-from models import _compute_hash_dedup, _normalize_url_for_hash
+if __package__:
+    from .models import _compute_hash_dedup, _normalize_url_for_hash
+else:  # Existing source-checkout command-line entry points.
+    from models import _compute_hash_dedup, _normalize_url_for_hash
 
 ACCEPTED_INSERT = "ACCEPTED_INSERT"
 ACCEPTED_IMPROVEMENT = "ACCEPTED_IMPROVEMENT"
@@ -634,10 +637,11 @@ def prepare_insert_payload(incoming: Mapping[str, Any]) -> Dict[str, Any]:
         payload["moneda"] = None
     elif payload.get("moneda"):
         payload["moneda"] = str(payload["moneda"]).upper()
-    if payload.get("precio") is not None and not _positive_number(payload.get("precio")):
+    price = _number(payload.get("precio"))
+    if payload.get("precio") is not None and (price is None or not 0 <= price <= 1e15):
         payload["precio"] = None
     operation = _plain(payload.get("operacion")).replace(" ", "_")
-    payload["operacion"] = operation if operation in _VALID_OPERATIONS else "consultar"
+    payload["operacion"] = operation if operation in _VALID_OPERATIONS else "desconocida"
     property_type = _plain(payload.get("tipo_propiedad")).replace(" ", "_")
     payload["tipo_propiedad"] = property_type if property_type in _VALID_TYPES else "otro"
     if not _valid_coordinate_pair(payload.get("latitud"), payload.get("longitud")):

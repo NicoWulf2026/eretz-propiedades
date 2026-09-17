@@ -109,8 +109,7 @@ ALLOWED_MONEDAS = {"ARS", "USD"}
 # - desconocida: no se pudo determinar la operacion (FASE 4). No es lo mismo que
 #   "consultar": antes ambos casos colapsaban y un aviso que decia "Consultar"
 #   quedaba indistinguible de uno sin operacion detectable. Aca solo puntua la
-#   completitud del registro; el efecto duro esta en safe_merge (que si no la
-#   reconoce la degrada a "consultar") y en las colas de publicacion.
+#   completitud del registro; safe_merge también conserva esta distinción.
 # - venta_y_alquiler: propiedad publicada simultáneamente como venta y alquiler
 ALLOWED_OPERACIONES = {
     "venta",
@@ -196,14 +195,18 @@ class Propiedad:
         return payload
 
     def is_valid(self) -> bool:
-        if not self.url or not self.url.startswith("http"):
+        try:
+            parsed = urlparse(self.url or "")
+        except ValueError:
+            return False
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
             return False
         if not self.titulo or len(self.titulo.strip()) < 3:
             return False
         if _is_generic_title(self.titulo):
             return False
-        if not self.direccion and not self.barrio:
-            return False
+        # Missing location restricts geographic scopes, not existence. Source
+        # ownership and detail verification belong to the discovery boundary.
         if self.tipo_propiedad not in ALLOWED_PROPERTY_TYPES:
             return False
         if self.moneda and self.moneda not in ALLOWED_MONEDAS:

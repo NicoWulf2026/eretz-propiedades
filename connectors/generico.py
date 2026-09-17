@@ -1835,7 +1835,7 @@ class GenericoConnector(Connector):
 
         precio = mapaprop.get("precio", datos.get("precio"))
         moneda = mapaprop.get("moneda") or datos.get("moneda")
-        if precio is None:
+        if precio is None or moneda is None:
             # Solo con moneda explicita al lado. Un numero suelto en el texto
             # puede ser cualquier cosa, y un precio equivocado se publica sin
             # que nadie lo note.
@@ -1844,8 +1844,13 @@ class GenericoConnector(Connector):
             m = re.search(r"(USD|U\$S|US\$|\$|ARS)\s*([\d][\d.,]{2,15})",
                           texto, re.I)
             if m:
-                moneda = moneda or detectar_moneda(m.group(1))
-                precio = a_numero(m.group(2))
+                visible = a_numero(m.group(2))
+                # La moneda de otra cifra (expensas, otra unidad) no puede
+                # completar un precio estructurado. Se exige concordancia.
+                if precio is None or visible == a_numero(precio):
+                    moneda = moneda or detectar_moneda(m.group(1))
+                    if precio is None:
+                        precio = visible
 
         gallery_images = (_imagenes_galeria_wordpress(principal, url)
                           if crudo.get("wordpress_category_catalog") else
@@ -1916,7 +1921,8 @@ class GenericoConnector(Connector):
             "moneda": moneda,
             "operacion": (detectar_operacion(f"{titulo or ''} {url}")
                           or crudo.get("operacion_catalogo")
-                          or self._operacion_en_la_ficha(texto_campos)),
+                          or self._operacion_en_la_ficha(texto_campos)
+                          or self._operacion_desde_title(html)),
             # El tipo tambien puede estar solo en el cuerpo. Se mira el
             # arranque de la ficha: mas abajo empiezan las "propiedades
             # relacionadas" y el tipo del vecino no es el de esta.
@@ -2613,6 +2619,13 @@ class GenericoConnector(Connector):
         return next((c for c in candidatos if c), None)
 
     @staticmethod
+    def _operacion_desde_title(html: str) -> str | None:
+        """Fallback acotado al titulo del documento, nunca al menu del sitio."""
+        title = re.search(r"<title\b[^>]*>(.*?)</title>", html or "", re.I | re.S)
+        return (GenericoConnector._operacion_en_la_ficha(_texto(title.group(1)))
+                if title else None)
+
+    @staticmethod
     def _operacion_en_la_ficha(texto: str) -> str | None:
         """La operacion cuando el titulo y la url no la dicen.
 
@@ -2891,7 +2904,7 @@ class GenericoConnector(Connector):
         # Los encabezados y `figure` tambien se usan como celda de rotulo y de
         # valor: alejoandresen.com.ar publica <h6>Baños</h6><figure>2</figure>,
         # que es la misma pareja estructural con otras etiquetas.
-        celda = r"(?:span|div|dd|dt|td|li|p|b|strong|h[1-6]|figure)"
+        celda = r"(?:span|div|dd|dt|td|th|li|p|b|strong|h[1-6]|figure)"
         rotulo = re.search(
             rf"<{celda}[^>]*>\s*(?:{etiqueta})\s*</{celda}>\s*"
             rf"<{celda}[^>]*>\s*(\d{{1,2}})\s*</{celda}>", marcado, re.I)
@@ -3041,7 +3054,7 @@ class GenericoConnector(Connector):
         # `Baños`: el portal la sirve con la enye rota y la etiqueta no
         # coincidia, asi que una tabla real pasaba por prosa.
         marcado = normalizar_texto_campos(unescape(marcado or ""))
-        celda = r"(?:span|div|dd|dt|td|li|p|b|strong|h[1-6]|figure)"
+        celda = r"(?:span|div|dd|dt|td|th|li|p|b|strong|h[1-6]|figure)"
         return bool(re.search(
             rf"<{celda}[^>]*>\s*(?:{ETIQUETAS_ATRIBUTO_COMPUESTO})\s*"
             rf"</{celda}>\s*<{celda}[^>]*>\s*\d{{1,2}}\s*</{celda}>",
@@ -3050,7 +3063,7 @@ class GenericoConnector(Connector):
     @staticmethod
     def _rotulo_compuesto(marcado: str, etiqueta: str) -> bool:
         """Si la etiqueta vive en una celda junto a OTRO atributo conocido."""
-        celda = r"(?:span|div|dd|dt|td|li|p|b|strong|h[1-6]|figure)"
+        celda = r"(?:span|div|dd|dt|td|th|li|p|b|strong|h[1-6]|figure)"
         for bloque in re.finditer(
                 rf"<{celda}[^>]*>([^<>]{{1,60}})</{celda}>", marcado or "",
                 re.I):

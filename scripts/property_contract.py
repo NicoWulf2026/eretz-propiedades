@@ -37,9 +37,12 @@ No escribe en ninguna base.
 from __future__ import annotations
 
 import re
+import math
 from typing import Any
 
-CONTRATO_VERSION = "property_contract_v3"
+from connectors.geografia import CAJA_ARGENTINA, geografia_publicable
+
+CONTRATO_VERSION = "property_contract_v4"
 
 EXTRACTED = "EXTRACTED"
 SOURCE_NOT_PROVIDED = "SOURCE_NOT_PROVIDED"
@@ -133,7 +136,21 @@ def campo_ajeno_al_tipo(tipo: Any, campo: str) -> bool:
 
 
 def _presente(valor: Any) -> bool:
-    return valor not in (None, "", [], {}, 0)
+    # This boundary sees normalized data. Placeholder rejection belongs to
+    # source-specific normalization; accepted numeric zero is not missing.
+    return valor is not None and valor != "" and valor != [] and valor != {}
+
+
+def _coordenadas_validas(lat: Any, lon: Any) -> bool:
+    if isinstance(lat, bool) or isinstance(lon, bool):
+        return False
+    try:
+        lat, lon = float(lat), float(lon)
+    except (TypeError, ValueError, OverflowError):
+        return False
+    south, north, west, east = CAJA_ARGENTINA
+    return (math.isfinite(lat) and math.isfinite(lon)
+            and south <= lat <= north and west <= lon <= east)
 
 
 def rechazos_de(fila: dict[str, Any]) -> dict[str, str]:
@@ -190,6 +207,8 @@ def estado_de_campo(fila: dict[str, Any], campo: str,
     ese campo, y al mismo tiempo la cobertura decia que la localidad estaba
     resuelta.
     """
+    if campo in ('ciudad', 'provincia') and (geo or {}).get('estado_geografico') == 'GEO_CONFLICT':
+        return REJECTED_BY_VALIDATION
     if campo == "ciudad" and geo is not None:
         if _presente(geo.get("localidad_canonica")):
             return EXTRACTED
@@ -249,7 +268,7 @@ def alcances(fila: dict[str, Any],
     # La localidad solo se afirma con evidencia canonica corroborada. Que la
     # fuente haya escrito algo en el campo `ciudad` no alcanza: `Villa del
     # Parque` es un barrio de CABA y resolvia a una localidad de Rio Negro.
-    geo = geo or {}
+    geo = geografia_publicable(geo)
     if _presente(geo.get("localidad_canonica")):
         permitidos.add(FILTRO_LOCALIDAD)
     else:
@@ -265,7 +284,8 @@ def alcances(fila: dict[str, Any],
         razones.append("sin area de busqueda: no se la puede encontrar por "
                        "ubicacion")
 
-    if _presente(fila.get("latitud")) and _presente(fila.get("longitud")):
+    if (geo.get('estado_geografico') != 'GEO_CONFLICT'
+            and _coordenadas_validas(fila.get("latitud"), fila.get("longitud"))):
         permitidos.add(MAPA)
     else:
         razones.append("sin coordenadas: no se puede ubicar en el mapa")

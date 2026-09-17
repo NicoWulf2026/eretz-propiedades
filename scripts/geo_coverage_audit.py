@@ -54,7 +54,7 @@ from connectors.base import Connector, PropiedadNormalizada  # noqa: E402
 from connectors.texto import plegar  # noqa: E402
 from connectors.geografia import geografia  # noqa: E402
 
-COBERTURA_VERSION = "geo_coverage_audit_v2"
+COBERTURA_VERSION = "geo_coverage_audit_v3"
 
 GEO_CONFLICT = "GEO_CONFLICT"
 
@@ -189,20 +189,6 @@ def main() -> int:
             provincia_final = (fila.get("provincia")
                                or getattr(localidad, "provincia", None))
 
-            if corroborada:
-                demostrable["localidad"] += 1
-            else:
-                motivos_sin_localidad[
-                    veredicto if prop.ciudad else (match or "SIN_TEXTO_DE_UBICACION")] += 1
-            if _presente(departamento_id):
-                demostrable["departamento"] += 1
-            if _presente(municipio_id):
-                demostrable["municipio"] += 1
-            if _presente(provincia_final):
-                demostrable["provincia"] += 1
-            if _presente(fila.get("barrio")):
-                demostrable["barrio_texto"] += 1
-
             # La geometria oficial, si este punto ya fue resuelto.
             punto = geometria.get(clave_de(fila.get("latitud"),
                                            fila.get("longitud")) or "")
@@ -219,6 +205,23 @@ def main() -> int:
                 and _plegado(prov_geo) != _plegado(fila.get("provincia")))
             if conflicto:
                 conflictos["provincia_geometrica_vs_publicada"] += 1
+                corroborada = False
+                provincia_final = None
+                departamento_nombre = departamento_id = None
+                municipio_nombre = municipio_id = None
+
+            if corroborada:
+                demostrable["localidad"] += 1
+            else:
+                motivos_sin_localidad[
+                    GEO_CONFLICT if conflicto else
+                    (veredicto if prop.ciudad else (match or "SIN_TEXTO_DE_UBICACION"))] += 1
+            for dimension, valor_demostrado in (
+                ("departamento", departamento_id), ("municipio", municipio_id),
+                ("provincia", provincia_final), ("barrio_texto", fila.get("barrio")),
+            ):
+                if _presente(valor_demostrado):
+                    demostrable[dimension] += 1
 
             # El area de busqueda baja de nivel, nunca miente sobre cual es.
             if corroborada:
