@@ -57,22 +57,20 @@ def test_operacion_alquiler_temporario():
     print("✓ operacion=alquiler_temporario → alquiler_temporario")
 
 
-def test_operacion_none_es_consultar():
-    """Propiedad sin operación (None) → aceptada como 'consultar' (no rechazada)."""
-    assert normalize_operation(None) == "consultar"
-    assert normalize_operation("") == "consultar"
-    assert normalize_operation("   ") == "consultar"
-    print("✓ operacion=None → consultar (no rechazada)")
+def test_operacion_none_es_desconocida():
+    """Sin operacion no significa que la fuente haya publicado consultar."""
+    assert normalize_operation(None) == "desconocida"
+    assert normalize_operation("") == "desconocida"
+    assert normalize_operation("   ") == "desconocida"
 
 
-def test_operacion_desconocida_es_consultar():
-    """Propiedad con operación desconocida → aceptada como 'consultar'."""
-    assert normalize_operation("emprendimiento") == "consultar"
-    assert normalize_operation("transferencia") == "consultar"
-    assert normalize_operation("otro") == "consultar"
-    assert normalize_operation("xyz_valor_raro") == "consultar"
-    assert normalize_operation("0") == "consultar"
-    print("✓ operacion=desconocida → consultar (no rechazada)")
+def test_operacion_desconocida_no_inventa_consultar():
+    """La propiedad sobrevive sin inventar una operación publicada."""
+    assert normalize_operation("emprendimiento") == "desconocida"
+    assert normalize_operation("transferencia") == "desconocida"
+    assert normalize_operation("otro") == "desconocida"
+    assert normalize_operation("xyz_valor_raro") == "desconocida"
+    assert normalize_operation("0") == "desconocida"
 
 
 def test_operacion_consultar_explicita():
@@ -176,8 +174,8 @@ if __name__ == "__main__":
         test_operacion_venta,
         test_operacion_alquiler,
         test_operacion_alquiler_temporario,
-        test_operacion_none_es_consultar,
-        test_operacion_desconocida_es_consultar,
+        test_operacion_none_es_desconocida,
+        test_operacion_desconocida_no_inventa_consultar,
         test_operacion_consultar_explicita,
         test_operacion_venta_y_alquiler,
         test_allowed_operaciones_incluye_nuevos_valores,

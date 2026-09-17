@@ -322,32 +322,36 @@ def collapse_spaces(value: Any) -> Optional[str]:
 
 
 def to_float(value: Any) -> Optional[float]:
-    if value is None:
+    import math
+    if value is None or isinstance(value, bool):
         return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    raw = str(value).strip()
-    if not raw:
+    try:
+        if isinstance(value, (int, float)):
+            number = float(value)
+        else:
+            raw = str(value).strip()
+            normalized = raw.replace(".", "").replace(",", ".") if "," in raw else raw
+            number = float(normalized)
+    except (TypeError, ValueError, OverflowError):
         return None
-    normalized = raw.replace(".", "").replace(",", ".") if "," in raw else raw
-    return float(normalized)
+    return number if math.isfinite(number) else None
 
 
-_VALID_OPERATIONS = {"venta", "alquiler", "alquiler_temporario", "consultar", "venta_y_alquiler"}
+_VALID_OPERATIONS = {"venta", "alquiler", "alquiler_temporario", "consultar", "venta_y_alquiler", "desconocida"}
 
 
 def normalize_operation(value: Any) -> str:
     """Normaliza la operacion de una propiedad.
 
     FASE 1 — Sprint A: nunca retorna None.
-    - Valor vacío/None → "consultar"
+    - Valor vacío/None → "desconocida"
     - Valor reconocido por OPERACION_MAP → mapped value
     - Señales de venta Y alquiler simultáneos → "venta_y_alquiler"
-    - Valor no reconocido → "consultar"  (antes: hard reject — eliminado por política FASE 1)
+    - Valor no reconocido → "desconocida"; consultar requiere una señal explícita
     """
     cleaned = clean_text(value)
     if not cleaned:
-        return "consultar"
+        return "desconocida"
     key = re.sub(r"\s+", " ", cleaned.lower())
     # Valores canónicos directos (incluyendo los nuevos)
     if key in _VALID_OPERATIONS:
@@ -361,7 +365,7 @@ def normalize_operation(value: Any) -> str:
     _has_alquiler = any(k in key for k in ("alquiler", "rent", "rental", "en alquiler", "for rent"))
     if _has_venta and _has_alquiler:
         return "venta_y_alquiler"
-    return "consultar"
+    return "desconocida"
 
 
 GARBAGE_ADDRESS_PATTERNS = [
@@ -679,11 +683,12 @@ def build_validation(cur, row: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]]
     if precio_present:
         try:
             precio = to_float(precio_raw)
-            if precio is None or precio <= 0:
-                raise ValueError("non_positive")
+            if precio is None or precio < 0:
+                raise ValueError("invalid_price")
         except Exception:
             invalid_price_present = True
-            hard_issues.append(issue("invalid_price", f"precio={precio_raw}"))
+            precio = None
+            soft_issues.append(issue("invalid_price", f"precio={precio_raw}; campo retenido"))
     if precio is None and not invalid_price_present:
         inferred_price, inferred_currency, price_inference = infer_price_from_text(row)
         if inferred_price is not None:
@@ -693,18 +698,19 @@ def build_validation(cur, row: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]]
     if precio is not None and not moneda and price_inference:
         _, inferred_currency, _ = infer_price_from_text(row)
         moneda = inferred_currency
-    if precio is not None and moneda not in {"ARS", "USD"}:
-        hard_issues.append(issue("invalid_currency", f"moneda={moneda}"))
+    if (moneda is not None or precio is not None) and moneda not in {"ARS", "USD"}:
+        soft_issues.append(issue("invalid_currency", f"moneda={moneda}; campo retenido"))
+        moneda = None
 
     operacion = normalize_operation(row.get("operacion"))
     # FASE 1 — Sprint A: normalize_operation() nunca retorna None/vacío.
-    # Si la operacion original es desconocida, se normaliza a "consultar" (no se rechaza).
+    # Si falta la operacion queda desconocida, no una afirmacion de consultar.
     # Se registra como soft issue para auditoría.
     _operacion_original = clean_text(row.get("operacion"))
-    if operacion == "consultar" and _operacion_original and _operacion_original.lower() != "consultar":
+    if operacion == "desconocida":
         soft_issues.append(issue(
-            "operacion_normalizada_consultar",
-            f"original={_operacion_original!r} no reconocida → consultar",
+            "operacion_desconocida",
+            f"original={_operacion_original!r} no reconocida → desconocida",
         ))
     elif operacion == "venta_y_alquiler":
         soft_issues.append(issue(
@@ -718,6 +724,18 @@ def build_validation(cur, row: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]]
 
     validation_score = 100
     ciudad, provincia, barrio, location_inference = infer_location_from_signals(row)
+    extra = row.get('datos_extra') or {}
+    if isinstance(extra, str):
+        try:
+            extra = json.loads(extra)
+        except ValueError:
+            extra = {}
+    geo = (extra.get('geo') or {}) if isinstance(extra, dict) else {}
+    geo = geo if isinstance(geo, dict) else {}
+    geo_conflict = geo.get('estado_geografico', geo.get('estado')) == 'GEO_CONFLICT'
+    if geo_conflict:
+        ciudad = provincia = location_inference = None
+        soft_issues.append(issue('geo_conflict', 'geografia y coordenadas retenidas; ficha preservada'))
     if not ciudad and not provincia:
         validation_score -= 15
         soft_issues.append(issue("missing_location", "sin ciudad ni provincia"))
@@ -770,6 +788,8 @@ def build_validation(cur, row: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]]
 
     latitud = to_float(row.get("latitud"))
     longitud = to_float(row.get("longitud"))
+    if geo_conflict:
+        latitud = longitud = None
     if latitud is not None or longitud is not None:
         if not valid_argentina_coordinates(latitud, longitud):
             latitud = None
@@ -777,6 +797,13 @@ def build_validation(cur, row: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]]
             validation_score -= 10
             soft_issues.append(issue("invalid_coordinates", "coordenadas fuera de Argentina"))
 
+    surfaces = {}
+    for field in ('superficie_total', 'superficie_cubierta'):
+        value = to_float(row.get(field))
+        if value is not None and value < 0:
+            value = None
+            soft_issues.append(issue('invalid_surface', f'{field} retenida'))
+        surfaces[field] = value
     all_issues = hard_issues + soft_issues
     if hard_issues:
         return None, all_issues, duplicate
@@ -786,11 +813,11 @@ def build_validation(cur, row: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]]
         "inmobiliaria_id": inmobiliaria_id,
         "hash_dedup": hash_dedup,
         "titulo": titulo,
-        "descripcion": (clean_text(row.get("descripcion")) or "")[:1000],
+        "descripcion": (clean_text(row.get("descripcion")) or "")[:100_000],
         "precio": precio,
         "moneda": moneda,
-        "superficie_total": to_float(row.get("superficie_total")),
-        "superficie_cubierta": to_float(row.get("superficie_cubierta")),
+        "superficie_total": surfaces['superficie_total'],
+        "superficie_cubierta": surfaces['superficie_cubierta'],
         "tipo_propiedad": tipo_propiedad,
         "operacion": operacion,
         "url": url,
@@ -804,7 +831,7 @@ def build_validation(cur, row: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]]
         "longitud": longitud,
         "imagenes": imagenes,
         "geocoding_status": (
-            "done"
+            "skipped" if geo_conflict else "done"
             if latitud is not None and longitud is not None
             else "skipped"
             if not direccion_normalizada and (ciudad or provincia)

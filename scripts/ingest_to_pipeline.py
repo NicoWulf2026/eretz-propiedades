@@ -81,7 +81,7 @@ def a_fila_raw(p: dict) -> dict:
         "superficie_total": p.get("superficie_total"),
         "superficie_cubierta": p.get("superficie_cubierta"),
         "tipo_propiedad": p.get("tipo_propiedad"),
-        "operacion": p.get("operacion") or "consultar",
+        "operacion": p.get("operacion") or "desconocida",
         "url": p.get("source_url"),
         "url_normalizada": normalizar_url(p.get("source_url")),
         "direccion_raw": p.get("direccion"),
@@ -109,7 +109,7 @@ def rechazos(p: dict) -> list[str]:
     iid = p.get("inmobiliaria_id")
     if iid is None:
         r.append("sin inmobiliaria_id")
-    elif not (-2_147_483_648 <= iid <= 2_147_483_647):
+    elif isinstance(iid, bool) or not isinstance(iid, int) or not (0 < iid <= 2_147_483_647):
         # La columna es INTEGER. Un id fuera de rango no da error de datos:
         # aborta la transaccion entera y se lleva puesto el lote completo.
         r.append("inmobiliaria_id fuera del rango INTEGER")
@@ -117,13 +117,13 @@ def rechazos(p: dict) -> list[str]:
         r.append("sin url")
     if p.get("moneda") and p["moneda"] not in MONEDAS_VALIDAS:
         r.append("moneda invalida")
-    op = p.get("operacion") or "consultar"
+    op = p.get("operacion") or "desconocida"
     if op not in OPERACIONES_VALIDAS:
         r.append("operacion invalida")
     if p.get("tipo_propiedad") and p["tipo_propiedad"] not in TIPOS_VALIDOS:
         r.append("tipo invalido")
-    if p.get("precio") is not None and p["precio"] <= 0:
-        r.append("precio no positivo")
+    # Raw preserves optional source values for the validator to accept or
+    # withhold field-by-field. A bad price must not erase a real property.
     return r
 
 
@@ -136,7 +136,7 @@ def main() -> int:
     ap.add_argument("--limite", type=int, default=0)
     a = ap.parse_args()
 
-    props = [json.loads(l) for l in Path(a.entrada).open(encoding="utf-8") if l.strip()]
+    props = [json.loads(line) for line in Path(a.entrada).open(encoding="utf-8") if line.strip()]
     if a.limite:
         props = props[:a.limite]
 
@@ -201,7 +201,7 @@ def main() -> int:
                             ya_estaban += 1
                 print(f"    {min(i + a.lote, len(aptas))}/{len(aptas)}", flush=True)
     except Exception as e:
-        print(f"\n  ERROR de base: {type(e).__name__}: {str(e)[:160]}")
+        print(f"\n  ERROR de base: {type(e).__name__}; detalle omitido para proteger credenciales")
         print(f"  insertadas antes del fallo: {insertadas:,}")
         return 3
 
