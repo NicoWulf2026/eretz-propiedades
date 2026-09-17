@@ -34,6 +34,7 @@ from pydantic import BaseModel, Field
 
 from api.ranking import RANKING_VERSION, ordenar
 from api.models_v2 import AgencyResponse, BatchResponse, MapResponse, SearchResponse
+from api.property_visibility import public_document
 
 CONTRATO = "eretz_api_property_v1"
 SORTS = {"relevance", "price_asc", "price_desc"}
@@ -215,6 +216,10 @@ def _filtros(
             "coalesce(propiedades.superficie_total, propiedades.superficie_cubierta) >= ?"
         )
         valores.append(superficie_min)
+    if any(v not in (None, "") for v in
+           (area, nivel, localidad, municipio, departamento, provincia)):
+        condiciones.append("(propiedades.geo_estado is null or propiedades.geo_estado != ?)")
+        valores.append("GEO_CONFLICT")
     return (" where " + " and ".join(condiciones) if condiciones else ""), valores
 
 
@@ -255,7 +260,14 @@ def _tabla_y_where(q: Optional[str], donde: str, valores: list[Any]) -> tuple[st
                 status_code=503,
                 detail="la snapshot no tiene el indice de busqueda; correr scripts/api_snapshot.py",
             )
-        tabla = "propiedades join busqueda on busqueda.id = propiedades.id"
+        con = conexion()
+        try:
+            linked = bool(con.execute("select 1 from sqlite_master where name='search_property_ids'").fetchone())
+        finally:
+            con.close()
+        tabla = ("busqueda join search_property_ids si on si.search_rowid=busqueda.rowid "
+                 "join propiedades on propiedades.id=si.property_id" if linked else
+                 "propiedades join busqueda on busqueda.id = propiedades.id")
         donde += (" and " if donde else " where ") + "busqueda match ?"
         valores = valores + [_termino(q)]
     return tabla, donde, valores
@@ -313,7 +325,7 @@ def listar(
         "total": total,
         "limit": limit,
         "offset": offset,
-        "data": [json.loads(f["documento"]) for f in filas],
+        "data": [public_document(json.loads(f["documento"])) for f in filas],
     }
 
 
@@ -368,7 +380,8 @@ def mapa(
     tabla, donde, valores = _tabla_y_where(q, donde, valores)
     total_matches_where = donde
     viewport = (
-        "latitud is not null and longitud is not null and latitud != 0 and longitud != 0 "
+        "coalesce(propiedades.geo_estado, '') != 'GEO_CONFLICT' and "
+        "latitud between -90 and -21 and longitud between -74 and -53 "
         "and latitud <= ? and latitud >= ? and longitud <= ? and longitud >= ?"
     )
     viewport_where = donde + (" and " if donde else " where ") + viewport
@@ -421,7 +434,7 @@ def detalle(propiedad_id: str) -> dict[str, Any]:
         con.close()
     if not fila:
         raise HTTPException(status_code=404, detail="propiedad inexistente")
-    return json.loads(fila["documento"])
+    return public_document(json.loads(fila["documento"]))
 
 
 @router.get("/agencias/{agency_id}", response_model=AgencyResponse)
@@ -467,14 +480,14 @@ def propiedades_batch(payload: BatchRequest = Body(...)) -> dict[str, Any]:
         rows = con.execute(
             f"select id, documento from propiedades where id in ({marks})", ordered
         ).fetchall()
-        documents = {row["id"]: json.loads(row["documento"]) for row in rows}
+        documents = {row["id"]: public_document(json.loads(row["documento"])) for row in rows}
         if con.execute("select 1 from sqlite_master where name='property_aliases'").fetchone():
             aliases = con.execute(
                 f"select a.alias, p.documento from property_aliases a join propiedades p "
                 f"on p.id=a.property_id where a.alias in ({marks})",
                 ordered,
             ).fetchall()
-            documents.update({row["alias"]: json.loads(row["documento"]) for row in aliases})
+            documents.update({row["alias"]: public_document(json.loads(row["documento"])) for row in aliases})
     finally:
         con.close()
     return {
@@ -696,7 +709,9 @@ def buscar(
             f"entero, /v2/propiedades ordena por indice y es estable.",
         )
 
-    ventana = min(max(limit + offset, 1) * VENTANA_DE_RANKING, TOPE_DE_VENTANA)
+    # One bounded candidate set for every page of the same query. Growing it
+    # with offset reorders preceding pages and repeats/skips real properties.
+    ventana = TOPE_DE_VENTANA
     columnas = ", ".join(f"propiedades.{c}" for c in COLUMNAS_DE_RANKING)
     con = conexion()
     try:
@@ -716,9 +731,14 @@ def buscar(
         # documento completo de cuatrocientas filas para quedarse con
         # veinticuatro es pagar el JSON de las otras trescientas setenta y seis.
         if sort == "relevance":
-            crudas = con.execute(
-                f"select {columnas} from {tabla}{donde} limit ?", valores + [ventana]
-            ).fetchall()
+            candidates = con.execute(
+                f"select propiedades.id from {tabla}{donde} order by propiedades.id limit ?",
+                valores + [ventana]).fetchall()
+            crudas = []
+            if candidates:
+                marks = ','.join('?' for _ in candidates)
+                crudas = con.execute(f"select {columnas} from propiedades where id in ({marks})",
+                                     [row['id'] for row in candidates]).fetchall()
             pagina = ordenar([_para_rankear(f) for f in crudas], q or "")[offset : offset + limit]
         else:
             direction = "asc" if sort == "price_asc" else "desc"
@@ -737,7 +757,7 @@ def buscar(
         if pagina:
             marcas = ",".join("?" * len(pagina))
             documentos = {
-                f["id"]: json.loads(f["documento"])
+                f["id"]: public_document(json.loads(f["documento"]))
                 for f in con.execute(
                     f"select id, documento from propiedades where id in ({marcas})",
                     [p["id"] for p in pagina],

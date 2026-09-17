@@ -578,3 +578,47 @@ def test_http_rechaza_sort_bounds_y_combinaciones_abusivas(v2):
         ).status_code
         == 400
     )
+def test_detected_conflict_is_withheld_even_from_an_old_snapshot(v2):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    con = sqlite3.connect(v2.SNAPSHOT)
+    con.execute("update propiedades set latitud=-31.4, longitud=-64.2 where id='h3'")
+    con.commit()
+    con.close()
+    app = FastAPI()
+    app.include_router(v2.router)
+    client = TestClient(app)
+    for doc in (client.get('/v2/propiedades/h3').json(),
+                client.post('/v2/propiedades/batch', json={'ids': ['h3']}).json()['items'][0]):
+        assert doc['geo']['estado'] == 'GEO_CONFLICT'
+        assert doc['geo']['municipio']['nombre'] is None
+        assert doc['geo']['area_busqueda']['nivel'] == 'SIN_AREA'
+        assert doc['geo']['area_busqueda']['id'] is None
+        assert doc['geo']['area_busqueda']['origen'] == 'sin_area'
+        assert doc['latitud'] is None
+    result = client.get('/v2/propiedades/mapa', params={
+        'north': -30, 'south': -33, 'east': -63, 'west': -65}).json()
+    assert result['total_matches'] == 3  # property still exists in the list
+    assert 'h3' not in [p['id'] for p in result['data']]
+    assert 'h3' not in [p['id'] for p in _buscar_combinado(v2, municipio='La Calera')['data']]
+
+
+def test_relevance_pages_are_slices_of_one_fixed_ranked_window(v2):
+    # Low-quality early rows followed by higher-quality rows used to move
+    # previously returned results when offset increased the candidate set.
+    con = sqlite3.connect(v2.SNAPSHOT)
+    for n in range(1, 31):
+        doc = _documento(id=f'a{n:03}', descripcion='Casa' if n > 15 else None,
+                         imagenes=['https://official.test/photo.jpg'] if n > 15 else [])
+        con.execute("insert into propiedades select ?,agency_id,source_url,titulo,?,operacion,"
+                    "tipo_propiedad,precio,moneda,ambientes,dormitorios,banos,superficie_total,"
+                    "superficie_cubierta,?,latitud,longitud,localidad,localidad_id,municipio,"
+                    "departamento,provincia,barrio,area_nivel,area_nombre,geo_estado,alcances,? "
+                    "from propiedades where id='h1'", (doc['id'], doc['descripcion'],
+                     len(doc['imagenes']), json.dumps(doc)))
+    con.commit()
+    con.close()
+    combined = _buscar_combinado(v2, limit=10)['data']
+    first = _buscar_combinado(v2, limit=5)['data']
+    second = _buscar_combinado(v2, limit=5, offset=5)['data']
+    assert [p['id'] for p in first + second] == [p['id'] for p in combined]

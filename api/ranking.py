@@ -33,6 +33,12 @@ No escribe en ninguna base.
 from __future__ import annotations
 
 from typing import Any
+import unicodedata
+
+# Same Unicode semantics as filtering category Mn character-by-character,
+# but translation runs in C. The finite table is built once, not per request.
+_COMBINING_MARKS = dict.fromkeys(
+    n for n in range(0x110000) if unicodedata.category(chr(n)) == 'Mn')
 
 RANKING_VERSION = "eretz_ranking_tecnico_v1"
 
@@ -65,11 +71,11 @@ FOTOS_UTILES = 6
 
 
 def _plegar(texto: Any) -> str:
-    import unicodedata
     if not isinstance(texto, str):
         return ""
-    sin = "".join(c for c in unicodedata.normalize("NFD", texto)
-                  if unicodedata.category(c) != "Mn")
+    if texto.isascii():
+        return texto.casefold()
+    sin = unicodedata.normalize("NFD", texto).translate(_COMBINING_MARKS)
     return sin.casefold()
 
 

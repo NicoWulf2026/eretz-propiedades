@@ -15,9 +15,14 @@ def test_prepare_snapshot_preserves_source_and_loads_verified_aliases(tmp_path: 
     connection.execute(
         "create table propiedades (id text primary key, latitud real, longitud real, "
         "provincia text, departamento text, municipio text, operacion text, "
-        "tipo_propiedad text, moneda text, precio real)"
+        "tipo_propiedad text, moneda text, precio real, titulo text, localidad text, "
+        "ambientes integer, dormitorios integer, banos integer, superficie_total real, "
+        "superficie_cubierta real, geo_estado text, area_nivel text, area_id text, "
+        "area_nombre text, barrio text)"
     )
     connection.execute("insert into propiedades(id) values ('canonical-1')")
+    connection.execute('create virtual table busqueda using fts5(id unindexed, titulo)')
+    connection.execute("insert into busqueda values ('canonical-1', 'Casa')")
     connection.commit()
     connection.close()
     with aliases.open("w", encoding="utf-8", newline="") as target:
@@ -46,7 +51,12 @@ def test_prepare_snapshot_preserves_source_and_loads_verified_aliases(tmp_path: 
     )
     original.close()
     prepared = sqlite3.connect(output)
+    assert prepared.execute('select property_id from search_property_ids').fetchall() == [('canonical-1',)]
     assert prepared.execute("select alias, property_id from property_aliases").fetchall() == [
         ("123", "canonical-1")
     ]
     prepared.close()
+    result = subprocess.run([sys.executable, 'scripts/prepare_api_v2_snapshot.py',
+                             str(source), str(output)], capture_output=True)
+    assert result.returncode != 0
+    assert b'output already exists' in result.stderr

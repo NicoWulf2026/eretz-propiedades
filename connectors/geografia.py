@@ -78,7 +78,7 @@ def geografia_publicable(geo: dict[str, Any] | None) -> dict[str, Any]:
                   'municipio_canonico', 'localidad_canonica', 'localidad_id'):
         result[field] = None
     result['area_busqueda'] = {
-        'nivel': 'SIN_AREA', 'nombre': None, 'id': None, 'origen': None,
+        'nivel': 'SIN_AREA', 'nombre': None, 'id': None, 'origen': 'sin_area',
     }
     return result
 

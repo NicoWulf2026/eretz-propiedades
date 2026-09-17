@@ -99,3 +99,10 @@ def test_una_propiedad_sin_nada_igual_puntua_y_no_desaparece():
     ordenadas = ordenar([pobre, _prop()], "rosario")
     assert len(ordenadas) == 2
     assert ordenadas[-1]["ranking"]["total"] >= 0
+def test_fast_unicode_fold_preserves_original_semantics():
+    import unicodedata
+    from api.ranking import _plegar
+    for value in ('Córdoba', 'MUÑOZ', 'áéíóú', 'a\u1ab0', 'العربية', 'Straße', 'ASCII', None):
+        expected = '' if not isinstance(value, str) else ''.join(
+            c for c in unicodedata.normalize('NFD', value) if unicodedata.category(c) != 'Mn').casefold()
+        assert _plegar(value) == expected
