@@ -25,13 +25,21 @@ Cómo empareja, y por qué no usa el texto
 Por campos, nunca por prosa. El §30 lo prohíbe y además el texto de un
 diagnóstico está escrito para un humano, no para emparejar.
 
-    1. misma firma MEDIDA contra el sitio        (la más fuerte)
+    1. misma firma MEDIDA contra el sitio        (fuerte)
+    1. misma PLATAFORMA, por el host             (fuerte)
     2. mismo mecanismo de publicación + misma forma de fallo
     3. mismo componente de triage + misma estrategia de conector
 
 Cada coincidencia dice **por qué** coincidió y con qué fuerza. Una coincidencia
 débil presentada como certeza sería peor que no buscar: haría cerrar un caso
 nuevo con la explicación de otro.
+
+La señal de plataforma se agregó después, y también por un caso concreto: la
+cola paró en `diaz collins` —`dcnegociosinmobiliarios21.kitepropcrm.com`— y este
+módulo no la emparejó con `cavacini` —`mercedescavacini.kitepropcrm.com`—, que
+es la misma plataforma y el mismo defecto de `ambientes` que el §50 ya nombra.
+Dos inmobiliarias sobre el mismo SaaS comparten sus defectos, y no mirarlo
+desperdiciaba la señal más barata que hay.
 
 Uso:
     python scripts/ya_lo_vimos.py                    # lee la bandera de paro
@@ -43,6 +51,7 @@ import argparse
 import json
 import textwrap
 from pathlib import Path
+from urllib.parse import urlparse
 from typing import Any
 
 CERT = Path(r"D:\INMO CAPITAL\ERETZ_AGENCY_CERTIFICATION_20260827")
@@ -77,6 +86,36 @@ def ultimos() -> dict[str, dict]:
 def firmas_medidas() -> dict[str, str]:
     return {f["agency_id"]: f["firma"] for f in _jsonl(FIRMAS)
             if f.get("agency_id") and f.get("firma")}
+
+
+# Sufijos que NO son una plataforma: si el resto del host queda en uno de
+# estos, dos agencias cualesquiera de Argentina parecerían compartir hosting.
+# Sin esta guarda, `www.fios.com.ar` y `www.yacopino.com.ar` quedarían los dos
+# en `com.ar` y emparejarían con medio padrón.
+SUFIJOS_PUBLICOS = frozenset({
+    "com", "com.ar", "ar", "net", "org", "net.ar", "org.ar", "app", "co",
+    "io", "es", "info", "biz", "tur.ar", "web.ar",
+})
+
+
+def plataforma_del_host(url: str) -> str | None:
+    """El host de la plataforma cuando la agencia vive en un subdominio suyo.
+
+    `dcnegociosinmobiliarios21.kitepropcrm.com` y
+    `mercedescavacini.kitepropcrm.com` son dos inmobiliarias sobre **Kiteprop**,
+    y comparten el defecto de `ambientes` que el §50 ya nombra. La primera
+    versión de este módulo no las emparejó porque no miraba el host, y fue el
+    caso de `diaz collins` el que lo mostró.
+
+    Devuelve `None` para un dominio propio: `fios.com.ar` no es la plataforma
+    de nadie.
+    """
+    host = urlparse(url or "").netloc.lower().removeprefix("www.")
+    etiquetas = [e for e in host.split(".") if e]
+    if len(etiquetas) < 3:
+        return None
+    resto = ".".join(etiquetas[1:])
+    return None if resto in SUFIJOS_PUBLICOS else resto
 
 
 def forma_de_fallo(resultado: dict[str, Any]) -> str:
@@ -127,7 +166,22 @@ def parecidos(agencia: str, resultado: dict[str, Any],
         if mi_firma and medidas.get(otra) == mi_firma:
             razones.append(f"misma firma medida contra el sitio: {mi_firma}")
             fuerza += 3
-        if mi_mecanismo and suyo.get("publication_mechanism") == mi_mecanismo \
+        # Dos inmobiliarias sobre la MISMA plataforma comparten sus defectos.
+        # Es una señal fuerte y barata, y la unica que habria emparejado
+        # `diaz collins` con `cavacini`: los dos sobre kitepropcrm.com.
+        mi_plataforma = plataforma_del_host(resultado.get("official_url") or "")
+        if mi_plataforma and plataforma_del_host(
+                suyo.get("official_url") or "") == mi_plataforma:
+            razones.append(f"misma plataforma: {mi_plataforma}")
+            fuerza += 3
+        # `OTRA` es el cajón de descarte y no empareja con nada. Dos casos
+        # etiquetados "otra cosa" no tienen nada en común, y dejarlos coincidir
+        # devolvía nueve precedentes para `diaz collins` que no explicaban
+        # nada. Una lista larga de coincidencias irrelevantes es peor que una
+        # vacía: la vacía dice "diagnosticá", la larga hace perder el tiempo
+        # leyendo.
+        if mi_mecanismo and mi_forma != "OTRA" \
+                and suyo.get("publication_mechanism") == mi_mecanismo \
                 and forma_de_fallo(suyo) == mi_forma:
             razones.append(f"mismo mecanismo ({mi_mecanismo}) y misma forma de "
                            f"fallo ({mi_forma})")

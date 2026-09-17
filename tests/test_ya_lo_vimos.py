@@ -23,7 +23,11 @@ from pathlib import Path
 RAIZ = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RAIZ / "scripts"))
 
-from ya_lo_vimos import forma_de_fallo, parecidos  # noqa: E402
+import pytest  # noqa: E402
+
+from ya_lo_vimos import (  # noqa: E402
+    forma_de_fallo, parecidos, plataforma_del_host,
+)
 
 
 def resultado(mecanismo: str, estrategia: str, enumeradas, base=None,
@@ -111,3 +115,77 @@ def test_el_colapso_y_el_cero_son_formas_distintas():
     colapso = resultado("TOKKO_FRONTEND_PROPIO", "tokko", 5, base=300)
     assert forma_de_fallo(colapso) == "COLAPSO_MAYOR_AL_80"
     assert forma_de_fallo(colapso) != forma_de_fallo(DI_SANTO)
+
+
+# --------------------------------------------------------------------------
+# La señal de plataforma, agregada después y también por un caso real: la cola
+# paró en `diaz collins` —`dcnegociosinmobiliarios21.kitepropcrm.com`— y el
+# buscador no la emparejó con `cavacini` —`mercedescavacini.kitepropcrm.com`—,
+# que corre sobre el mismo SaaS y tiene el mismo defecto de `ambientes`.
+# --------------------------------------------------------------------------
+
+DIAZ = {**resultado("LISTADO_HTML", "generic/html_catalog", 10, base=11),
+        "official_url": "https://dcnegociosinmobiliarios21.kitepropcrm.com"}
+CAVACINI = {**resultado("LISTADO_HTML", "generic/html_catalog", 3, base=54),
+            "official_url": "https://mercedescavacini.kitepropcrm.com"}
+
+
+def test_MUERDE_dos_agencias_del_mismo_saas_se_emparejan():
+    todos = {"roomix:diaz": DIAZ, "roomix:cavacini": CAVACINI}
+    diferidas = {"roomix:cavacini": [{"componente": "x",
+                                      "cuando": "2026-09-14T00:00:00"}]}
+    casos = parecidos("roomix:diaz", DIAZ, todos, {}, diferidas)
+    assert [c["agencia"] for c in casos] == ["roomix:cavacini"]
+    assert casos[0]["fuerza"] >= 3
+    assert any("kitepropcrm.com" in r for r in casos[0]["porque"])
+
+
+@pytest.mark.parametrize("url,esperado", [
+    ("https://dcnegociosinmobiliarios21.kitepropcrm.com", "kitepropcrm.com"),
+    ("https://mercedescavacini.kitepropcrm.com", "kitepropcrm.com"),
+    ("https://aimaropropiedades.tuinmobiliaria.com.ar/", "tuinmobiliaria.com.ar"),
+])
+def test_un_subdominio_de_plataforma_se_reconoce(url, esperado):
+    assert plataforma_del_host(url) == esperado
+
+
+@pytest.mark.parametrize("url", [
+    "https://www.fios.com.ar/",
+    "https://www.yacopino.com/",
+    "https://disantoni.com",
+    "https://www.century21.com.ar/x",
+])
+def test_MUERDE_un_dominio_propio_no_es_una_plataforma(url):
+    """La guarda que evita emparejar medio padrón entre sí.
+
+    Sin ella, `www.fios.com.ar` quedaría en `com.ar` tras sacarle el `www`, y
+    cualquier otra agencia argentina "compartiría plataforma" con ella. Una
+    señal que empareja con todo no es una señal.
+    """
+    assert plataforma_del_host(url) is None
+
+
+def test_dos_dominios_propios_distintos_no_se_emparejan():
+    fios = {**resultado("LISTADO_HTML", "generic/html_catalog", 0),
+            "official_url": "https://www.fios.com.ar/"}
+    yaco = {**resultado("LISTADO_HTML", "generic/html_catalog", 0),
+            "official_url": "https://www.yacopino.com/"}
+    todos = {"a": fios, "b": yaco}
+    diferidas = {"b": [{"componente": "x", "cuando": "2026-09-14T00:00:00"}]}
+    casos = parecidos("a", fios, todos, {}, diferidas)
+    assert not any("plataforma" in r for c in casos for r in c["porque"])
+
+
+def test_la_forma_OTRA_no_empareja_con_nada():
+    """`OTRA` es el cajón de descarte.
+
+    Dejarla coincidir devolvía nueve precedentes para `diaz collins` que no
+    explicaban nada. Una lista larga de coincidencias irrelevantes es peor que
+    una vacía: la vacía dice "diagnosticá", la larga hace perder el tiempo.
+    """
+    uno = resultado("LISTADO_HTML", "generic/html_catalog", 10, base=11)
+    otro = resultado("LISTADO_HTML", "generic/html_catalog", 40, base=41)
+    assert forma_de_fallo(uno) == forma_de_fallo(otro) == "OTRA"
+    todos = {"a": uno, "b": otro}
+    diferidas = {"b": [{"componente": "x", "cuando": "2026-09-14T00:00:00"}]}
+    assert parecidos("a", uno, todos, {}, diferidas) == []
