@@ -86,10 +86,69 @@ FAMILIAS = [
 ]
 
 
-def familia_de(texto: str) -> str:
+# Firmas MEDIDAS contra el sitio, que le ganan a cualquier regex sobre prosa.
+#
+# La clasificación por texto es frágil y este archivo ya lo pagó: la primera
+# versión decía `slug` en singular y doce agencias con la misma causa quedaron
+# SIN_CLASIFICAR. Cuando existe una señal que salió de abrir el sitio, esa
+# manda, porque no depende de cómo redacté el diagnóstico.
+FIRMA_MEDIDA_A_FAMILIA = {
+    "FUENTE_ES_PORTAL_AJENO": "PORTAL_COMO_FUENTE",
+    "CATALOGO_POR_POST": "CATALOGO_PEDIDO_POR_POST",
+    "NAVEGACION_SOLO_JAVASCRIPT": "NAVEGACION_SOLO_JAVASCRIPT",
+    "SITEMAP_CON_FICHAS": "SITEMAP_IGNORADO_POR_LA_ESTRATEGIA",
+    "API_DE_TERCEROS": "PLATAFORMA_MAL_CLASIFICADA",
+    "CONTENEDOR_VACIO_JS": "CATALOGO_QUE_RELLENA_JAVASCRIPT",
+}
+
+# Estas NO son diagnósticos y no deben tratarse como tales.
+#
+# `SIN_RASTRO_DE_CATALOGO` significa que fuimos al sitio y no se ve catálogo.
+# Es **evidencia**, y por eso merece su propio cajón, pero no explica nada: la
+# pregunta que abre no es "qué conector hay que arreglar" sino la del §71,
+# "¿esta agencia tiene inventario, y si no, cuál es su estado terminal
+# justificable?". Meterlas entre las familias diagnosticadas convertiría un
+# hueco de evidencia en progreso aparente, que es peor que dejar el hueco.
+FIRMA_MEDIDA_SIN_DIAGNOSTICO = {
+    "SIN_RASTRO_DE_CATALOGO": "SIN_CATALOGO_VISIBLE_FALTA_DECIDIR_TERMINAL",
+    "SIN_CONTENIDO": "SIN_CATALOGO_VISIBLE_FALTA_DECIDIR_TERMINAL",
+    "NO_RESPONDE": "FUENTE_NO_RESPONDE",
+}
+
+
+def firmas_medidas() -> dict[str, str]:
+    """Lo que `firma_navegacion_javascript.py` midió abriendo cada sitio."""
+    ruta = CERT / "ERETZ_FIRMA_NAVEGACION_JS.jsonl"
+    medidas: dict[str, str] = {}
+    if not ruta.exists():
+        return medidas
+    for linea in ruta.open(encoding="utf-8", errors="replace"):
+        linea = linea.strip()
+        if not linea:
+            continue
+        try:
+            fila = json.loads(linea)
+        except ValueError:
+            continue
+        agencia, firma = fila.get("agency_id"), fila.get("firma")
+        if agencia and firma:
+            medidas[agencia.split(":")[-1].lower()] = firma
+    return medidas
+
+
+def familia_de(texto: str, agencia: str = "",
+               medidas: dict[str, str] | None = None) -> str:
+    """La señal medida primero; el texto sólo si no hay medición útil."""
+    firma = (medidas or {}).get((agencia or "").split(":")[-1].lower())
+    if firma in FIRMA_MEDIDA_A_FAMILIA:
+        return FIRMA_MEDIDA_A_FAMILIA[firma]
     for nombre, patron in FAMILIAS:
         if re.search(patron, texto or ""):
             return nombre
+    # Recién acá, cuando ni la medición diagnóstica ni el texto alcanzaron, se
+    # usa el cajón honesto de la medición.
+    if firma in FIRMA_MEDIDA_SIN_DIAGNOSTICO:
+        return FIRMA_MEDIDA_SIN_DIAGNOSTICO[firma]
     return "SIN_CLASIFICAR"
 
 
@@ -124,12 +183,14 @@ def main() -> int:
             except ValueError:
                 continue
 
+    medidas = firmas_medidas()
+
     firmas: dict[str, dict] = {}
     for f in difs:
         a = f.get("canonical_agency_id")
         r = ult.get(a) or {}
         texto = (f.get("diagnostico") or "") + " " + (f.get("por_que_se_difiere") or "")
-        familia = familia_de(texto)
+        familia = familia_de(texto, a or "", medidas)
         comp = f.get("componente") or "(sin firma)"
         est = r.get("connector_strategy") or "(sin estrategia)"
         sid = firma_id(familia, comp, est)

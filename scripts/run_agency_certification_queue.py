@@ -457,9 +457,15 @@ def diferida_vigente(previous: dict[str, Any],
     return False
 
 
+def _sin_barra(url: str | None) -> str:
+    """Normaliza lo justo para comparar dos urls: espacios y barra final."""
+    return (url or "").strip().rstrip("/")
+
+
 def is_current_result(previous: dict[str, Any],
                       record: dict[str, dict[str, Any]],
-                      postergadas: list[dict[str, str]] | None = None) -> bool:
+                      postergadas: list[dict[str, str]] | None = None,
+                      fuente_de_hoy: str | None = None) -> bool:
     """Decide si un cierre persistido sigue vigente.
 
     ``IDENTITY_PENDING`` y los bloqueos resueltos antes de elegir conector no
@@ -489,6 +495,23 @@ def is_current_result(previous: dict[str, Any],
     Esto NO cambia ningun resultado de certificacion: solo evita volver a
     ejecutar trabajo cuyo diagnostico ya esta escrito.
     """
+    # Antes que cualquier huella: ¿el resultado salió de la MISMA fuente que
+    # usaríamos hoy?
+    #
+    # Esto faltaba, y no se notó hasta que hizo falta. El 2026-09-16 se movió
+    # la fuente de tres agencias de un perfil de portal ajeno a su dominio
+    # propio, y el cambio habría quedado **inerte**: `emir elhelou` tiene una
+    # diferida vigente y su huella de estrategia no cambió, así que la cola la
+    # daba por vigente y la salteaba. El canario habría parecido estar
+    # corriendo sin correr nunca.
+    #
+    # La regla es evidente una vez enunciada: una certificación describe lo que
+    # vimos en una url. Si la url es otra, no dice nada sobre la fuente de hoy,
+    # por más que el código no haya cambiado.
+    anterior = _sin_barra(previous.get("official_url"))
+    if anterior and fuente_de_hoy and anterior != _sin_barra(fuente_de_hoy):
+        return False
+
     status = previous.get("status")
     if status == "NEEDS_FIX" and diferida_vigente(previous, postergadas):
         # La huella se comprueba igual, mas abajo: si el codigo cambio, hay que
@@ -754,8 +777,15 @@ def main() -> int:
     diferidas_al_armar = diferidos(output)
 
     def current(key: str) -> bool:
+        # La fuente de hoy se resuelve con la misma precedencia que usa el
+        # certificador, llamando a `resolve_identity`: no se reimplementa acá,
+        # porque dos copias de una precedencia terminan divergiendo.
+        try:
+            fuente = (resolve_identity(catalog[key], key) or {}).get("official_url")
+        except Exception:
+            fuente = None
         return is_current_result(existing.get(key, {}), catalog[key],
-                                 diferidas_al_armar.get(key))
+                                 diferidas_al_armar.get(key), fuente)
 
     stale = [key for key in queue if key in existing and not current(key)
              and existing[key].get("status") in TERMINAL]
