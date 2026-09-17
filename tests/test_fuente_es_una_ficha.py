@@ -92,22 +92,54 @@ def test_MUERDE_la_raiz_de_un_marketplace_no_se_propone(monkeypatch):
     assert "no nombra a la agencia" in señal["porque"]
 
 
-def test_la_raiz_propia_si_se_propone(monkeypatch):
-    """El otro lado: si la raíz es suya y tiene catálogo, se propone.
+def test_si_hay_un_catalogo_que_declara_inventario_si_se_propone(monkeypatch):
+    """El otro lado: la herramienta tiene que poder proponer algo.
 
-    Una herramienta que nunca propone nada es tan inútil como una que propone
-    cualquier cosa.
+    Una que nunca propone nada es tan inútil como una que propone cualquier
+    cosa. Lo que se propone es el CATÁLOGO, no la raíz.
     """
     import fuente_es_una_ficha as modulo
 
-    html = ('<title>FIOS Inmobiliaria</title>'
-            '<a href="propiedades">Propiedades</a>')
+    paginas = {
+        "https://www.fios.com.ar/": ('<title>FIOS Inmobiliaria</title>'
+                                     '<a href="propiedades">Propiedades</a>'),
+        "https://www.fios.com.ar/propiedades": "<p>266 propiedades</p>",
+    }
     monkeypatch.setattr(modulo, "bajar",
-                        lambda u, limite=0: (200, "https://www.fios.com.ar/", html))
+                        lambda u, limite=0: (200, u, paginas.get(u, "")))
     señal = modulo.verificar_raiz(
         "https://www.fios.com.ar/emprendimiento-64427-condominio-en-fisherton",
         "FIOS Consultoria Inmobiliaria")
-    assert señal["propuesta"] == "https://www.fios.com.ar/"
+    assert señal["propuesta"] == "https://www.fios.com.ar/propiedades"
+
+
+def test_MUERDE_sin_catalogo_que_declare_nada_no_se_propone_la_raiz(monkeypatch):
+    """La regresión que metí y que llegó a APLICARSE sobre `barnes`.
+
+    Al aflojar el patrón de enlaces, sitios como `barnes` pasaron a tener rutas
+    candidatas y dejaron de caer en la guarda de "no hay ninguna". La rama de
+    respaldo proponía la raíz igual, y así `barnes` recibió su propia raíz como
+    fuente —una página que no publica nada— y se dio el caso por corregido.
+
+    Si ninguna candidata declara inventario, no sabemos dónde está el catálogo.
+    """
+    import fuente_es_una_ficha as modulo
+
+    paginas = {
+        "https://barnes-buenosaires.com/": (
+            '<title>Barnes Buenos Aires</title>'
+            '<a href="/en/properties">Properties</a>'
+            '<a href="/es/propiedades">Propiedades</a>'),
+        "https://barnes-buenosaires.com/en/properties": "<p>sin resultados</p>",
+        "https://barnes-buenosaires.com/es/propiedades": "<p>sin resultados</p>",
+    }
+    monkeypatch.setattr(modulo, "bajar",
+                        lambda u, limite=0: (200, u, paginas.get(u, "")))
+    señal = modulo.verificar_raiz(
+        "https://barnes-buenosaires.com/en/property/8509350/",
+        "Barnes International Realty")
+    assert señal["propuesta"] is None
+    assert "NINGUNA declara inventario" in señal["porque"]
 
 
 def test_una_raiz_sin_catalogo_no_se_propone(monkeypatch):
@@ -126,3 +158,72 @@ def test_una_raiz_sin_catalogo_no_se_propone(monkeypatch):
         "Barnes International Realty")
     assert señal["propuesta"] is None
     assert "no se le ve catalogo" in señal["porque"]
+
+
+# --------------------------------------------------------------------------
+# Lo que se aprendió al APLICAR las correcciones, que es donde se vio que no
+# alcanzaba con sacar la fuente de la ficha: también hay que acertarle al
+# catálogo.
+#
+# `fios` se recertificó contra la raíz que yo había propuesto y siguió
+# enumerando CERO, porque `fios.com.ar/` declara literalmente "0 Propiedades"
+# mientras `fios.com.ar/propiedades` declara 266. Enlazar a un catálogo no es
+# ser uno.
+# --------------------------------------------------------------------------
+
+def test_MUERDE_la_palabra_puede_ir_en_cualquier_parte_de_la_url():
+    """Tercera vez que la misma suposición muerde a este proyecto.
+
+    `bottai` enlaza `inmueble_6067` sin barra, `fios` enlaza `propiedades`
+    relativo, y `yacopino` enlaza `busqueda-de-propiedades-en-venta`, donde la
+    palabra va precedida de un guion. Exigir que abra un segmento pierde
+    candidatas que ni siquiera llegan a evaluarse.
+    """
+    html = ('<a href="busqueda-de-propiedades-en-venta">Venta</a>'
+            '<a href="propiedades">Todas</a>'
+            '<a href="/listado.php?tipo=1">Listado</a>')
+    encontrados = RE_FICHA_EN_RAIZ.findall(html)
+    assert "busqueda-de-propiedades-en-venta" in encontrados
+    assert "propiedades" in encontrados
+
+
+def test_se_elige_la_candidata_que_mas_declara_y_no_la_primera(monkeypatch):
+    """`yacopino` enlaza `/emprendimientos` ANTES que su catálogo de venta.
+
+    Cortar en la primera candidata aceptable es quedarse con el orden del menú:
+    elegía la que declara CERO teniendo al lado una que declara 85.
+    """
+    import fuente_es_una_ficha as modulo
+
+    paginas = {
+        "https://yacopino.com.ar/": ('<title>Yacopino</title>'
+                           '<a href="emprendimientos">Emprendimientos</a>'
+                           '<a href="busqueda-de-propiedades-en-venta">Venta</a>'),
+        "https://yacopino.com.ar/emprendimientos": "<p>0 propiedades</p>" + "<a href='/propiedad/1'>x</a>" * 17,
+        "https://yacopino.com.ar/busqueda-de-propiedades-en-venta": "<p>85 propiedades</p>",
+    }
+    monkeypatch.setattr(modulo, "bajar",
+                        lambda u, limite=0: (200, u, paginas.get(u, "")))
+    señal = modulo.verificar_raiz("https://yacopino.com.ar/propiedad-123-casa", "Yacopino")
+    assert señal["propuesta"].endswith("busqueda-de-propiedades-en-venta")
+    assert "declara 85" in señal["porque"]
+
+
+def test_una_raiz_que_declara_cero_no_se_propone_si_hay_algo_mejor(monkeypatch):
+    """El caso `fios`, exacto.
+
+    La raíz enlazaba al catálogo y por eso se propuso; pero declaraba cero y la
+    agencia siguió enumerando cero después de "corregirla". Enlazar a un
+    catálogo no es ser uno.
+    """
+    import fuente_es_una_ficha as modulo
+
+    paginas = {
+        "https://fios.com.ar/": '<title>FIOS</title><a href="propiedades">Propiedades</a>',
+        "https://fios.com.ar/propiedades": "<p>266 propiedades</p>",
+    }
+    monkeypatch.setattr(modulo, "bajar",
+                        lambda u, limite=0: (200, u, paginas.get(u, "")))
+    señal = modulo.verificar_raiz("https://fios.com.ar/emprendimiento-64427-condominio",
+                                  "FIOS Consultoria")
+    assert señal["propuesta"] == "https://fios.com.ar/propiedades"

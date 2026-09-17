@@ -92,13 +92,29 @@ def _sin_barra(url: str | None) -> str:
 
 
 def correcciones_pendientes() -> dict[str, dict[str, Any]]:
-    """Lo que ya se decidió y quedó escrito, de los dos rastros."""
+    """Lo que hay que aplicar, leyendo los rastros EN ORDEN.
+
+    Un rastro de auditoría es una **historia**, no una lista de estados
+    deseados, y tratarlo como lo segundo ya salió mal: una propuesta retirada
+    —la raíz de `barnes`, generada por una regresión— seguía escrita ahí, y el
+    corrector la reaplicó después de que yo la revirtiera a mano. Revertir el
+    destino no alcanza si el origen la vuelve a emitir.
+
+    Por eso una fila con `retirada: true` cancela lo pendiente de esa agencia.
+    La fila retirada NO se borra del rastro: el §11 pide conservar evidencia, y
+    una decisión equivocada que se retira es parte de la historia.
+    """
     pendientes: dict[str, dict[str, Any]] = {}
     for rastro in RASTROS:
         for fila in _jsonl(rastro):
             agencia = fila.get("canonical_agency_id")
+            if not agencia:
+                continue
+            if fila.get("retirada"):
+                pendientes.pop(agencia, None)
+                continue
             destino = fila.get("a")
-            if agencia and destino:
+            if destino:
                 pendientes[agencia] = {
                     "a": destino, "de": fila.get("de"),
                     "porque": (fila.get("evidencia_del_canario")

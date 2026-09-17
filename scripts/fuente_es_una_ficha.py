@@ -88,15 +88,22 @@ FICHA = re.compile(r"""(?ix)
 
 # Enlaces que delatan un catálogo en la raíz del sitio.
 #
-# El `(?:/|^)` en vez de `/` a secas: `fios.com.ar` enlaza su catálogo como
-# `href="propiedades"`, **relativo y sin barra inicial**, y la primera versión
-# no lo veía. Es la tercera vez que este proyecto tropieza con lo mismo —la
-# primera fue `bottai inmobiliaria`, cuyo conteo dio 0 porque sus enlaces son
-# `href="inmueble_6067"`—. Exigir la barra es asumir una convención que medio
-# internet no sigue.
+# La palabra puede estar en CUALQUIER parte de la url, no al principio de un
+# segmento. Tres veces tropezó este proyecto con la misma suposición:
+#
+#   `bottai`    enlaza sus fichas como  href="inmueble_6067"   (sin barra)
+#   `fios`      enlaza su catálogo como href="propiedades"     (relativo)
+#   `yacopino`  lo enlaza como  href="busqueda-de-propiedades-en-venta"
+#               y ahí `propiedades` va precedida de un guion
+#
+# Exigir que la palabra abra un segmento es asumir una convención que medio
+# internet no sigue. Lo que separa un catálogo de una ficha no es dónde cae la
+# palabra sino si hay un IDENTIFICADOR, y de eso se encarga `es_una_ficha()`,
+# que filtra después. Aflojar acá y filtrar allá es el orden correcto: de lo
+# contrario se pierden candidatas que ni siquiera llegan a evaluarse.
 RE_FICHA_EN_RAIZ = re.compile(
-    r'href="((?:[^"]*/)?(?:propiedad|propiedades|inmueble|inmuebles|'
-    r'emprendimiento|ficha|listing)[^"]*)"', re.I)
+    r'href="([^"]*(?:propiedad|propiedades|inmueble|inmuebles|'
+    r'emprendimiento|ficha|listing|listado)[^"]*)"', re.I)
 
 GENERICAS = {"propiedades", "inmobiliaria", "inmobiliarias", "bienes", "raices",
              "negocios", "inmobiliarios", "servicios", "estudio", "real",
@@ -188,10 +195,68 @@ def verificar_raiz(url_ficha: str, nombre: str) -> dict[str, Any]:
         return {"propuesta": None, "http": http,
                 "porque": "la raiz responde pero no se le ve catalogo: "
                           "proponerla convertiria un error visible en uno mudo"}
-    return {"propuesta": raiz, "http": http,
+
+    # La raíz NO es la respuesta si enlaza a una ruta de catálogo: esa ruta lo
+    # es. Y hay que ir a verla.
+    #
+    # `fios.com.ar/` enlaza a `/propiedades` y con eso la primera versión la
+    # propuso. Pero la raíz declara literalmente **"0 Propiedades"** y
+    # `/propiedades` declara **266**. La corrección sacó la fuente del
+    # emprendimiento suelto —bien— y la dejó en una página que no publica nada,
+    # así que `fios` siguió enumerando cero después de corregirla.
+    #
+    # La regla vieja pedía "la raíz enlaza a un catálogo" y nunca preguntaba si
+    # la raíz misma tenía inventario. Enlazar a un catálogo no es ser uno.
+    # Se miran TODAS las candidatas y se elige la mejor, no la primera que
+    # pase. `yacopino.com` enlaza `/emprendimientos` antes que `/propiedades`,
+    # y cortar en la primera que pasara el umbral elegía la que declara CERO.
+    # Quedarse con la primera aceptable es quedarse con el orden del menú.
+    puntuadas = []
+    for candidata in propias[:4]:
+        time.sleep(0.8)
+        try:
+            _, final_c, html_c = bajar(candidata)
+        except Exception:
+            continue
+        plano = re.sub(r"\s+", " ", re.sub(
+            r"(?s)<(script|style)[^>]*>.*?</\1>", " ",
+            re.sub(r"(?s)<[^>]+>", " ", html_c)))
+        contadores = [int(m.group(1)) for m in re.finditer(
+            r"(?<![%\w])(\d{1,5})\s*(?:propiedades|inmuebles|resultados)",
+            plano, re.I)]
+        declara = max(contadores) if contadores else 0
+        enlaces = len({urljoin(final_c, u)
+                       for u in RE_FICHA_EN_RAIZ.findall(html_c)})
+        if declara > 0 or enlaces >= 10:
+            # Lo declarado manda sobre la cantidad de enlaces: un menú con
+            # veinte filtros enlaza mucho y no publica nada.
+            puntuadas.append((declara, enlaces, candidata))
+
+    if puntuadas:
+        puntuadas.sort(reverse=True)
+        declara, enlaces, mejor = puntuadas[0]
+        evidencia = (f"{mejor} declara {declara} y enlaza {enlaces} rutas; "
+                     f"es la mejor de {len(puntuadas)} candidata(s) y la raiz "
+                     f"no declara nada")
+    else:
+        # NO se propone la raíz como consuelo. Si ninguna candidata declara
+        # inventario, no sabemos dónde está el catálogo, y proponer la raíz es
+        # el mismo error que ya cometí con `fios`: mover la fuente a una página
+        # que no publica nada y dar el caso por corregido.
+        #
+        # Esta rama existe porque aflojar el patrón de enlaces hizo que sitios
+        # como `barnes` pasaran a tener candidatas, salteando la guarda de más
+        # arriba —que sólo miraba si NO había ninguna—. Con la guarda rota,
+        # `barnes` recibió su propia raíz como propuesta y se aplicó.
+        return {"propuesta": None, "http": http,
+                "rutas_de_catalogo": propias[:5],
+                "porque": (f"la raiz enlaza {len(propias)} ruta(s) de catalogo "
+                           f"pero NINGUNA declara inventario: no sabemos donde "
+                           f"esta el catalogo y proponer la raiz seria mover la "
+                           f"fuente a una pagina que no publica nada")}
+    return {"propuesta": mejor, "http": http,
             "rutas_de_catalogo": propias[:5], "fichas_en_la_raiz": len(fichas),
-            "porque": (f"la raiz enlaza {len(propias)} ruta(s) de catalogo y "
-                       f"{len(fichas)} ficha(s)")}
+            "porque": evidencia}
 
 
 def main() -> int:
