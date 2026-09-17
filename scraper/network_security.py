@@ -9,6 +9,9 @@ from __future__ import annotations
 
 import ipaddress
 import socket
+import ssl
+import urllib.request
+import zlib
 from collections.abc import Iterable
 from collections.abc import Mapping
 from typing import Any, Protocol
@@ -47,6 +50,51 @@ class OutboundResolutionError(OutboundSecurityError):
 
 class OutboundResponseError(OutboundSecurityError):
     """Raised when redirects, response size or content violate policy."""
+
+
+class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """The standard-library transport uses the same destination policy."""
+    max_redirections = DEFAULT_MAX_REDIRECTS
+
+    def redirect_request(self, req: Any, fp: Any, code: int, msg: str,
+                         headers: Any, newurl: str) -> Any:
+        target = validate_outbound_url(urljoin(req.full_url, newurl))
+        return super().redirect_request(req, fp, code, msg, headers, target)
+
+
+def secure_urlopen(request: urllib.request.Request | str, *, timeout: float,
+                   context: ssl.SSLContext | None = None) -> Any:
+    """GET/form transport with verified TLS and checked redirect destinations."""
+    validate_outbound_url(request.full_url if isinstance(request, urllib.request.Request) else request)
+    tls = context or ssl.create_default_context()
+    if tls.verify_mode != ssl.CERT_REQUIRED or not tls.check_hostname:
+        raise OutboundSecurityError("TLS verification cannot be disabled")
+    opener = urllib.request.build_opener(
+        SafeRedirectHandler(), urllib.request.HTTPSHandler(context=tls))
+    return opener.open(request, timeout=timeout)
+
+
+def read_bounded_response(response: Any, limit: int) -> bytes:
+    """Never parse a silently truncated body or an unbounded gzip expansion."""
+    if limit <= 0:
+        raise OutboundResponseError("response size limit must be positive")
+    raw = response.read(limit + 1)
+    if len(raw) > limit:
+        raise OutboundResponseError("outbound response exceeds size limit")
+    if response.headers.get("Content-Encoding", "").lower() == "gzip":
+        decoder = zlib.decompressobj(16 + zlib.MAX_WBITS)
+        try:
+            body = decoder.decompress(raw, limit + 1)
+        except zlib.error as error:
+            raise OutboundResponseError("invalid gzip response") from error
+        if len(body) > limit or decoder.unconsumed_tail:
+            raise OutboundResponseError("decoded response exceeds size limit")
+        if not decoder.eof:
+            raise OutboundResponseError("truncated gzip response")
+        if decoder.unused_data:
+            raise OutboundResponseError("gzip response contains unprocessed trailing data")
+        return body
+    return raw
 
 
 class Requester(Protocol):

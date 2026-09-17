@@ -36,8 +36,7 @@ from .formularios import bajar_formulario
 from .base import (Bloqueado, Connector, ErrorPermanente, ErrorTransitorio,
                    Fuente, PropiedadNormalizada, a_numero, detectar_moneda,
                    detectar_operacion, detectar_tipo, identidad_de_imagen,
-                   imagenes_de_fichas_vecinas, limpiar,
-                   sin_fichas_vecinas)
+                   imagenes_de_fichas_vecinas, limpiar)
 
 # Familias de atributo que un rotulo puede fundir. Si una celda nombra dos, el
 # numero que la sigue no se puede asignar a ninguna.
@@ -1392,11 +1391,9 @@ class GenericoConnector(Connector):
         -/<slug>- tambien alcanza /quienes-somos, y una pagina institucional no
         puede terminar publicada como propiedad.
         """
-        if propia is None:
-            return False
-        ruta = urllib.parse.urlparse(u).path
-        return bool(propia.match(ruta)) and not (RE_FICHA.search(u)
-                                                 or RE_FICHA_RAIZ.search(ruta))
+        # A recovered shape is only a candidate, whether it came from the
+        # shared historical detector or a source-specific pattern.
+        return not GenericoConnector._es_ficha_url(u)
 
     @staticmethod
     def _fichas_en(html: str, base: str, extra: "re.Pattern | None" = None) -> list[str]:
@@ -1408,22 +1405,33 @@ class GenericoConnector(Connector):
         con moneda, operacion y fotos. Habilitar esa forma para ellos no afloja
         nada para los otros 2.258.
         """
-        host = urllib.parse.urlparse(base).netloc.lower().replace("www.", "")
+        from bs4 import BeautifulSoup
+        from scraper.detail_urls import (extract_candidate_detail_urls_from_card,
+                                         extract_candidate_detail_urls_from_document)
+        host = (urllib.parse.urlparse(base).hostname or '').lower().removeprefix('www.')
         salida, vistas = [], set()
-        for m in re.finditer(r'href="([^"]{4,300})"', html or ""):
-            u = urllib.parse.urljoin(base, m.group(1))
-            if urllib.parse.urlparse(u).netloc.lower().replace("www.", "") != host:
+        soup = BeautifulSoup(html or '', 'html.parser')
+        recovered = [url for url, _ in extract_candidate_detail_urls_from_document(soup, base)]
+        for card in soup.select("article, [class*='property'], [class*='propiedad'], [class*='listing'], [class*='card']"):
+            recovered.extend(extract_candidate_detail_urls_from_card(card, base))
+        hrefs = [urllib.parse.urljoin(base, a.get('href', '')) for a in soup.select('a[href]')]
+        recovered_set = set(recovered)
+        for u in hrefs + recovered:
+            if (urllib.parse.urlparse(u).hostname or '').lower().removeprefix('www.') != host:
+                continue
+            if RE_NO_FICHA.search(urllib.parse.urlparse(u).path):
                 continue
             # Se pregunta al reconocedor, no se repite su logica: estaba
             # duplicada aca y agregar una forma nueva en `_es_ficha_url` no
             # tenia ningun efecto sobre la enumeracion. Una regla escrita dos
             # veces es una regla que miente en uno de los dos lados.
-            if not GenericoConnector._es_ficha_url(u, extra):
+            if not GenericoConnector._es_ficha_url(u, extra) and u not in recovered_set:
                 continue
             c = u.split("#")[0].rstrip("/")
             if c not in vistas:
                 vistas.add(c)
                 salida.append(u)
+        soup.decompose()
         return salida
 
     # ----------------------------------------------------------- fetch_listing
@@ -1719,9 +1727,14 @@ class GenericoConnector(Connector):
         """Id de la plataforma si lo hay; si no, el slug. Nunca un hash propio:
         tiene que poder rastrearse hasta la ficha de origen."""
         parsed = urllib.parse.urlparse(url)
-        query_id = (urllib.parse.parse_qs(parsed.query).get("id") or [""])[0]
-        if re.fullmatch(r"\d{3,}", query_id):
+        from scraper.detail_urls import detail_query_identifier, _DETAIL_QUERY_KEYS
+        query_id = detail_query_identifier(url)
+        if query_id is not None:
             return query_id
+        if any(k.lower() in _DETAIL_QUERY_KEYS for k in urllib.parse.parse_qs(parsed.query, keep_blank_values=True)):
+            # Preserve evidence of an ambiguous identity, never collapse it
+            # into "ficha.php". The write gate rejects this serialized ID.
+            return url
         ruta = parsed.path.rstrip("/")
         ultimo = ruta.rsplit("/", 1)[-1] if "/" in ruta else ruta
         m = re.search(r"-(\d{3,})$", ultimo) or re.search(r"(\d{3,})", ultimo)
@@ -1770,6 +1783,17 @@ class GenericoConnector(Connector):
         texto_campos = normalizar_texto_campos(
             _texto(sin_filtros_catalogo(principal_campos)))
         datos = self._de_json_ld(html)
+        if not datos.get("tipo_ld") and self._es_pagina_contenedora(principal):
+            # Review is explicit; this is not proof that the source is empty.
+            # The runner counts the unresolved candidate as a failed detail,
+            # so two identical mistakes cannot become CERTIFIED_COMPLETE.
+            if not hasattr(self, "descartes"):
+                self.descartes = []
+            if len(self.descartes) < 500:
+                self.descartes.append({"source_url": url,
+                                      "canonical_agency_id": fuente.canonical_agency_id,
+                                      "motivo": "PAGINA_CONTENEDORA_REQUIERE_REVISION"})
+            return None
         mapaprop = (self._detalle_mapaprop(html, url)
                     if crudo.get("mapaprop_catalog") else {})
 
@@ -2619,6 +2643,21 @@ class GenericoConnector(Connector):
         return next((c for c in candidatos if c), None)
 
     @staticmethod
+    def _es_pagina_contenedora(html: str) -> bool:
+        """A generic catalogue heading AND an explicit filter form, not a slug.
+
+        Never reject an incomplete property because price/images are missing.
+        A shared institutional title alone is not sufficient evidence either.
+        """
+        heading = re.search(r"<h1\b[^>]*>(.*?)</h1>", html or "", re.I | re.S)
+        if not heading or not re.fullmatch(
+                r"propiedades|inmuebles|cat[aá]logo(?: de propiedades)?|listado(?: de propiedades)?",
+                _texto(heading.group(1)).strip().lower()):
+            return False
+        return any(re.search(r"\b(?:aplicar\s+filtros|filtrar)\b", _texto(form), re.I)
+                   for form in re.findall(r"<form\b[^>]*>(.*?)</form>", html or "", re.I | re.S))
+
+    @staticmethod
     def _operacion_desde_title(html: str) -> str | None:
         """Fallback acotado al titulo del documento, nunca al menu del sitio."""
         title = re.search(r"<title\b[^>]*>(.*?)</title>", html or "", re.I | re.S)
@@ -2695,8 +2734,9 @@ class GenericoConnector(Connector):
         t = texto or ""
         describe = (bool(RE_OPERACION_TXT.search(t))
                     or len({x.lower() for x in RE_ATRIBUTOS_TXT.findall(t)}) >= 2)
-        fotos_suficientes = (len(imagenes) >= FOTOS_MINIMAS
-                             or (catalogo_verificado and len(imagenes) >= 1))
+        # La ausencia de fotos no invalida una ficha cuya pertenencia al
+        # catalogo ya se demostro. Las formas amplias siguen exigiendo fotos.
+        fotos_suficientes = catalogo_verificado or len(imagenes) >= FOTOS_MINIMAS
         return ((precio is not None or bool(tipo_ld) or catalogo_verificado) and describe
                 and fotos_suficientes)
 
@@ -2727,10 +2767,18 @@ class GenericoConnector(Connector):
             except ValueError:
                 continue
             for nodo in _aplanar_ld(dato):
-                tipo = str(nodo.get("@type") or "")
-                if tipo and not re.search(
-                        r"(Residence|Apartment|House|Product|Offer|RealEstate|"
-                        r"SingleFamily|Place|Accommodation)", tipo, re.I):
+                tipos = nodo.get("@type") or []
+                tipos = [tipos] if isinstance(tipos, str) else tipos
+                if not isinstance(tipos, list):
+                    continue
+                permitidos = {"Residence", "Apartment", "House", "Product", "Offer",
+                              "RealEstateListing", "SingleFamilyResidence", "Place",
+                              "Accommodation", "ApartmentComplex"}
+                tipos = [t.rsplit("/", 1)[-1] for t in tipos if isinstance(t, str)]
+                tipo = next((t for t in tipos if t in permitidos), None)
+                # RealEstateAgent describe una agencia, no su inventario.
+                # WebSite/Organization sin tipo tampoco prueban una ficha.
+                if not tipo:
                     continue
                 out.setdefault("tipo_ld", tipo or None)
                 out.setdefault("via", "json-ld")

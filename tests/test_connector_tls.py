@@ -10,10 +10,13 @@ from connectors.formularios import bajar_formulario
 @pytest.mark.parametrize('method', ['get', 'form'])
 def test_connectors_verify_tls_and_do_not_fallback_on_certificate_error(monkeypatch, method):
     contexts = []
-    def fail(request, *, timeout, context):
-        contexts.append(context)
-        raise ssl.SSLCertVerificationError('invalid certificate')
-    monkeypatch.setattr('urllib.request.urlopen', fail)
+    def build(*handlers):
+        contexts.extend(h._context for h in handlers if hasattr(h, '_context'))
+        def fail(request, *, timeout):
+            raise ssl.SSLCertVerificationError('invalid certificate')
+        return SimpleNamespace(open=fail)
+    monkeypatch.setattr('scraper.network_security.validate_outbound_url', lambda url: url)
+    monkeypatch.setattr('urllib.request.build_opener', build)
     downloader = Descargador(limitador=SimpleNamespace(esperar=lambda host: None), reintentos=1)
     with pytest.raises(ErrorTransitorio):
         if method == 'get':
@@ -23,3 +26,4 @@ def test_connectors_verify_tls_and_do_not_fallback_on_certificate_error(monkeypa
     assert len(contexts) == 1
     assert contexts[0].verify_mode == ssl.CERT_REQUIRED
     assert contexts[0].check_hostname is True
+    assert downloader.pedidos == 1  # failed attempts are not invisible

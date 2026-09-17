@@ -19,9 +19,7 @@ Tres decisiones que valen mas que el codigo:
 """
 from __future__ import annotations
 
-import gzip
 import hashlib
-import importlib.util
 import json
 import os
 import random
@@ -37,6 +35,12 @@ import urllib.request
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Iterator
+from scraper.network_security import secure_urlopen, read_bounded_response
+from scraper.models import (
+    _compute_hash_dedup as calcular_hash_dedup,
+    ALLOWED_PROPERTY_TYPES, ALLOWED_MONEDAS, ALLOWED_OPERACIONES,
+)
+from scraper.models import _normalize_url_for_hash as normalizar_url  # noqa: F401 - public compatibility export
 
 from .coherencia import revisar
 
@@ -135,46 +139,13 @@ def dimension_geo(valor=None, *, id=None, procedencia=GEO_UNKNOWN,
 # silencio y empezaria a crear duplicados.
 # --------------------------------------------------------------------------
 RUTA_PIPELINE = Path(os.environ.get(
-    "ERETZ_PIPELINE_ROOT", r"D:\INMO CAPITAL\Inmo-Capital-main"))
+    "ERETZ_PIPELINE_ROOT", str(Path(__file__).resolve().parents[1])))
 
 
-def _cargar_modelos():
-    ruta = RUTA_PIPELINE / "scraper" / "models.py"
-    if not ruta.exists():
-        return None
-    spec = importlib.util.spec_from_file_location("eretz_models", ruta)
-    mod = importlib.util.module_from_spec(spec)
-    try:
-        spec.loader.exec_module(mod)
-    except Exception:
-        return None
-    return mod
-
-
-_MODELOS = _cargar_modelos()
-
-if _MODELOS is not None:
-    normalizar_url = _MODELOS._normalize_url_for_hash
-    calcular_hash_dedup = _MODELOS._compute_hash_dedup
-    TIPOS_VALIDOS = set(_MODELOS.ALLOWED_PROPERTY_TYPES)
-    MONEDAS_VALIDAS = set(_MODELOS.ALLOWED_MONEDAS)
-    OPERACIONES_VALIDAS = set(_MODELOS.ALLOWED_OPERACIONES)
-    REUSA_PIPELINE = True
-else:  # pragma: no cover - solo si el repo del pipeline no esta montado
-    REUSA_PIPELINE = False
-    TIPOS_VALIDOS = {"casa", "departamento", "terreno", "local", "oficina",
-                     "cochera", "galpon", "otro"}
-    MONEDAS_VALIDAS = {"ARS", "USD"}
-    OPERACIONES_VALIDAS = {"venta", "alquiler", "alquiler_temporario",
-                           "consultar", "venta_y_alquiler"}
-
-    def normalizar_url(url: Any) -> str:
-        return re.sub(r"^https?://(www\.)?", "", str(url or "").strip().lower()).rstrip("/")
-
-    def calcular_hash_dedup(inmobiliaria_id: Any, url: Any) -> str:
-        clave = normalizar_url(url)
-        base = f"{inmobiliaria_id}|url|{clave}" if clave else f"{inmobiliaria_id}|sin_identidad|"
-        return hashlib.sha256(base.encode()).hexdigest()[:32]
+TIPOS_VALIDOS = set(ALLOWED_PROPERTY_TYPES)
+MONEDAS_VALIDAS = set(ALLOWED_MONEDAS)
+OPERACIONES_VALIDAS = set(ALLOWED_OPERACIONES)
+REUSA_PIPELINE = True
 
 
 def geografia(*args, **kwargs):
@@ -529,23 +500,15 @@ class Descargador:
                 req = urllib.request.Request(url, headers={
                     "User-Agent": self.UA, "Accept-Encoding": "gzip",
                     "Accept": "text/html,application/xhtml+xml,application/json"})
-                with urllib.request.urlopen(req, timeout=self.timeout, context=ctx) as r:
-                    crudo = r.read(self.limite_bytes)
-                    if r.headers.get("Content-Encoding") == "gzip":
-                        try:
-                            crudo = gzip.decompress(crudo)
-                        except (OSError, EOFError):
-                            # Un gzip truncado -pasa cuando se corta la lectura
-                            # por el limite de bytes- levanta EOFError, que no
-                            # es OSError. Sin atraparlo, la excepcion sube y se
-                            # lleva la fuente entera.
-                            pass
+                with self._lock:
+                    self.pedidos += 1  # attempts, including failed requests/retries
+                with secure_urlopen(req, timeout=self.timeout, context=ctx) as r:
+                    crudo = read_bounded_response(r, self.limite_bytes)
                     juego = "utf-8"
                     m = re.search(r"charset=([\w-]+)", r.headers.get("Content-Type") or "", re.I)
                     if m:
                         juego = m.group(1)
                     with self._lock:
-                        self.pedidos += 1
                         self.bytes_bajados += len(crudo)
                         self._hosts_leidos.add(host)
                     return crudo.decode(juego, "ignore")

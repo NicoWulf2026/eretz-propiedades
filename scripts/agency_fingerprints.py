@@ -209,6 +209,10 @@ def _selected_nodes(path: Path, class_name: str,
 
 def fingerprint_components(connector: str, strategy: str) -> dict[str, bytes]:
     components = {
+        "shared/network_security": _semantic_file(ROOT / "scraper" / "network_security.py"),
+        "shared/models": _semantic_file(ROOT / "scraper" / "models.py"),
+        "shared/detail_urls": _semantic_file(ROOT / "scraper" / "detail_urls.py"),
+        "shared/source_policy": _semantic_file(ROOT / "scripts" / "agency_web_discovery.py"),
         "shared/base": _semantic_file(ROOT / "connectors" / "base.py"),
         "shared/runner": _archivo_sin_operativas(
             (ROOT / "scripts" / "run_rollout.py").read_text(encoding="utf-8"),

@@ -2466,11 +2466,23 @@ def test_un_404_al_paginar_es_el_final_no_un_fallo():
     assert ids == ["111", "222"]          # lo enumerado se conserva
 
 
-def test_un_gzip_truncado_no_tumba_la_descarga():
-    """El limite de bytes puede cortar un gzip a la mitad, y decompress levanta
-    EOFError, que no es OSError."""
-    src = (ROOT / "connectors" / "base.py").read_text(encoding="utf-8")
-    assert "except (OSError, EOFError):" in src
+def test_un_gzip_truncado_no_tumba_la_descarga(monkeypatch):
+    """Un cuerpo incompleto falla explicitamente, no se convierte en HTML valido."""
+    import gzip
+    import io
+    from types import SimpleNamespace
+
+    class Response(io.BytesIO):
+        headers = {"Content-Encoding": "gzip"}
+
+    monkeypatch.setattr("scraper.network_security.validate_outbound_url", lambda url: url)
+    monkeypatch.setattr("urllib.request.build_opener", lambda *args: SimpleNamespace(
+        open=lambda *args, **kwargs: Response(gzip.compress(b"catalogo")[:-2])))
+    downloader = B.Descargador(limitador=SimpleNamespace(esperar=lambda host: None),
+                              reintentos=1)
+    with pytest.raises(B.ErrorTransitorio, match="OutboundResponseError"):
+        downloader.bajar("https://official.test/catalogo")
+    assert not downloader.hubo_contacto("https://official.test/catalogo")
 
 
 def test_el_censo_no_promete_un_conector_sin_inventario_a_la_vista():

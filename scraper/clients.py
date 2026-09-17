@@ -6,15 +6,19 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from config import SUPABASE_TABLE
-from safe_merge import (
-    ACCEPTED_IMPROVEMENT,
-    ACCEPTED_SOURCE_CHANGE,
-    REJECTED_AMBIGUOUS_IDENTITY,
-    REJECTED_CROSS_PROPERTY_CONTAMINATION,
-    UNCHANGED_EQUAL,
-    build_merge_plan,
-)
+if __package__:
+    from .config import SUPABASE_TABLE
+    from . import safe_merge
+else:  # Historical direct-file entry point.
+    from config import SUPABASE_TABLE
+    import safe_merge
+
+ACCEPTED_IMPROVEMENT = safe_merge.ACCEPTED_IMPROVEMENT
+ACCEPTED_SOURCE_CHANGE = safe_merge.ACCEPTED_SOURCE_CHANGE
+REJECTED_AMBIGUOUS_IDENTITY = safe_merge.REJECTED_AMBIGUOUS_IDENTITY
+REJECTED_CROSS_PROPERTY_CONTAMINATION = safe_merge.REJECTED_CROSS_PROPERTY_CONTAMINATION
+UNCHANGED_EQUAL = safe_merge.UNCHANGED_EQUAL
+build_merge_plan = safe_merge.build_merge_plan
 
 logger = logging.getLogger(__name__)
 

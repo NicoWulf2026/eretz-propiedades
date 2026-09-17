@@ -46,6 +46,7 @@ from scripts.agency_fingerprints import (
 )
 from scripts.run_rollout import (PRESUPUESTO_POR_FUENTE, _procesar_con,
                                  version_del_codigo)
+from scripts.agency_web_discovery import es_portal, franquicia_de_dominio
 
 CERTIFIER_VERSION = "agency_certifier_v1"
 IDENTITY_STRATEGY_VERSION = "canonical_main_exact_live_v2"
@@ -313,8 +314,9 @@ def host(url: str | None) -> str:
 
 def external_portal(url: str | None) -> bool:
     current = host(url)
-    return any(current == blocked or current.endswith("." + blocked)
-               for blocked in EXTERNAL_PORTAL_HOSTS)
+    return es_portal(url or '') or any(
+        current == blocked or current.endswith("." + blocked)
+        for blocked in EXTERNAL_PORTAL_HOSTS)
 
 
 def content_present(value: Any) -> bool:
@@ -494,7 +496,8 @@ def selected_source(record: dict[str, dict[str, Any]]) -> tuple[str | None, str]
     recovered = verified.get("official_url")
     if (url and external_portal(url) and recovered
             and verified.get("verificacion") == "VERIFICADA_ARGENTINA"
-            and not external_portal(recovered)):
+            and not external_portal(recovered)
+            and not franquicia_de_dominio(recovered)):
         parsed = urllib.parse.urlparse(recovered)
         if parsed.scheme in {"http", "https"} and parsed.hostname and not parsed.username:
             return recovered, "verified_recovery"

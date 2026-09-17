@@ -25,6 +25,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from connectors.base import calcular_hash_dedup  # noqa: E402
+from scraper.detail_urls import _looks_like_detail_url, detail_query_identifier  # noqa: E402
+from scripts.agency_web_discovery import es_portal  # noqa: E402
 from scripts.input_universe import (OBLIGATORIAS, UNIVERSE_VERSION,  # noqa: E402
                                     rutas)
 
@@ -89,7 +91,8 @@ def _host(u):
 
 def motivo_rechazo(p: dict) -> str | None:
     url = p.get("source_url") or ""
-    if not url.startswith("http"):
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username is not None:
         return "url_invalida"
     lid = str(p.get("source_listing_id") or "")
     if not lid:
@@ -100,6 +103,11 @@ def motivo_rechazo(p: dict) -> str | None:
     for nombre, patron in RECHAZOS:
         if not patron.search(url):
             continue
+        if nombre == 'query_string' and not parsed.fragment and _looks_like_detail_url(url, url):
+            # Admit an explicit property identity, not arbitrary search params
+            # on a vaguely property-shaped path or a serialized query as ID.
+            if detail_query_identifier(url) == lid:
+                continue
         # "busqueda" no es lo mismo cuando la ficha CUELGA del buscador.
         # laroccapropiedades.com publica cada propiedad en
         # /busqueda/ver/8693745-2/: la regla le rechazaba 88 fichas reales
@@ -109,7 +117,7 @@ def motivo_rechazo(p: dict) -> str | None:
         if nombre == "busqueda" and RE_TERMINA_EN_ID.search(ruta):
             continue
         return nombre
-    return None
+    return 'fuente_no_oficial' if es_portal(url) else None
 
 
 def escribir_jsonl(ruta: Path, filas) -> None:
@@ -133,12 +141,12 @@ def leer(ruta: Path) -> list[dict]:
     if not ruta.exists():
         return []
     out = []
-    for l in ruta.open(encoding="utf-8"):
-        l = l.strip()
-        if not l:
+    for line in ruta.open(encoding="utf-8"):
+        line = line.strip()
+        if not line:
             continue
         try:
-            out.append(json.loads(l))
+            out.append(json.loads(line))
         except ValueError:
             continue
     return out

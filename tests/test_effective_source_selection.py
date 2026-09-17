@@ -25,8 +25,6 @@ def test_unverified_candidate_cannot_authorize_recovery():
     data = record()
     data['verificada']['verificacion'] = 'CANDIDATE'
     assert resolve_identity(data, 'agency:7')['identity_status'] == 'BLOCKED_EXTERNAL'
-
-
 def test_portal_cannot_be_authorized_by_verified_label():
     data = record()
     data['verificada']['official_url'] = 'https://zonaprop.com.ar/inmobiliarias/7'
@@ -65,3 +63,15 @@ def test_certification_uses_the_effective_url_and_drops_rejected_pattern(tmp_pat
     agency_certifier.certify('agency:7', {'agency:7': data}, tmp_path,
                              tmp_path / 'absent.sqlite3', 1, 5, 10)
     assert seen == [('generico', 'https://estudioelhelou.com.ar', None, None)]
+def test_social_and_other_marketplaces_cannot_be_verified_into_official_inventory():
+    for url in ('https://facebook.com/agency', 'https://properati.com.ar/agency',
+                'https://www.zonaprop.com/agency'):
+        data = record()
+        data['verificada']['official_url'] = url
+        assert resolve_identity(data, 'agency:7')['identity_status'] == 'BLOCKED_EXTERNAL'
+
+
+def test_network_root_cannot_be_recovered_as_an_official_independent_agency():
+    data = record()
+    data['verificada']['official_url'] = 'https://remax.com.ar'
+    assert resolve_identity(data, 'agency:7')['identity_status'] == 'BLOCKED_EXTERNAL'

@@ -62,3 +62,51 @@ def test_document_title_does_not_override_editorial_operation():
     html = (FIXTURES / 'operacion_solo_en_title.html').read_text(encoding='utf-8')
     prop = normalize(html.replace('z/ EL BRETE. EDIF. EJEMPLO.', 'Casa en alquiler'))
     assert prop.operacion == 'alquiler'
+def test_agency_jsonld_does_not_supply_property_title_address_or_evidence():
+    from connectors.generico import GenericoConnector
+    html = '<script type="application/ld+json">{"@type":"RealEstateAgent", "name":"Agencia", "address":{"addressLocality":"Ciudad ajena"}}</script>'
+    assert GenericoConnector._de_json_ld(html) == {}
+
+
+def test_property_jsonld_type_array_is_supported():
+    from connectors.generico import GenericoConnector
+    html = '<script type="application/ld+json">{"@type":["Thing","https://schema.org/House"],"name":"Casa real"}</script>'
+    assert GenericoConnector._de_json_ld(html)['titulo'] == 'Casa real'
+
+
+def test_verified_catalogue_property_survives_without_photos_or_price():
+    from connectors.generico import GenericoConnector
+    assert GenericoConnector._confirma_ficha('', 'Casa en venta', None, [],
+                                            catalogo_verificado=True)
+    assert not GenericoConnector._confirma_ficha('', 'Casa en venta', None, [],
+                                                catalogo_verificado=False)
+@pytest.mark.parametrize('attribute', [
+    "href='/propiedad/casa-en-venta-123'",
+    'data-href="/propiedad/casa-en-venta-123"',
+    'data-url="/propiedad/casa-en-venta-123"',
+    'onclick="window.location.href=\'/propiedad/casa-en-venta-123\'"',
+])
+def test_historical_detail_link_capabilities_are_used_by_the_canonical_connector(attribute):
+    html = '<article class="property-card"><h3>Casa en venta</h3><b>USD 120000</b><a ' + attribute + '>Ver</a></article>'
+    assert GenericoConnector._fichas_en(html, 'https://official.test') == [
+        'https://official.test/propiedad/casa-en-venta-123']
+
+
+def test_recovered_routes_cannot_escape_a_white_label_tenant():
+    html = '<article class="property-card"><b>Casa en venta USD 100000</b><a href="https://provider.test/propiedad/casa-en-venta-123">Ver</a></article>'
+    assert GenericoConnector._fichas_en(html, 'https://agency.provider.test') == []
+
+
+def test_recovered_legacy_query_requires_detail_confirmation():
+    assert GenericoConnector._solo_por_forma('https://official.test/ficha?id=123', None)
+
+
+@pytest.mark.parametrize('key', ['id', 'idprop', 'id_prop', 'codigo', 'cod', 'code', 'ficha', 'idFicha', 'pid'])
+def test_query_detail_identity_does_not_collapse_every_property_into_ficha_php(key):
+    assert GenericoConnector._id_de(f'https://official.test/ficha.php?{key}=123') == '123'
+    assert GenericoConnector._id_de(f'https://official.test/ficha.php?{key}=456') == '456'
+
+
+def test_recovered_query_shape_still_needs_proof_with_a_source_pattern():
+    import re
+    assert GenericoConnector._solo_por_forma('https://official.test/ficha?id=123', re.compile('/propiedad/'))

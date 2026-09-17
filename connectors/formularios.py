@@ -6,7 +6,6 @@ jamás ejecutan formularios (Tokko, Wasi, WordPress).
 """
 from __future__ import annotations
 
-import gzip
 import random
 import re
 import ssl
@@ -17,6 +16,7 @@ import urllib.request
 from typing import Any
 
 from .base import Bloqueado, Descargador, ErrorPermanente, ErrorTransitorio
+from scraper.network_security import secure_urlopen, read_bounded_response
 
 
 def bajar_formulario(descargador: Descargador, url: str,
@@ -42,14 +42,11 @@ def bajar_formulario(descargador: Descargador, url: str,
                 "Accept": "application/json,text/plain,*/*",
                 "Content-Type": "application/x-www-form-urlencoded",
             })
-            with urllib.request.urlopen(
+            with descargador._lock:
+                descargador.pedidos += 1
+            with secure_urlopen(
                     request, timeout=descargador.timeout, context=context) as response:
-                raw = response.read(limite_bytes)
-                if response.headers.get("Content-Encoding") == "gzip":
-                    try:
-                        raw = gzip.decompress(raw)
-                    except (OSError, EOFError):
-                        pass
+                raw = read_bounded_response(response, limite_bytes)
                 charset = "utf-8"
                 match = re.search(
                     r"charset=([\w-]+)",
@@ -57,8 +54,8 @@ def bajar_formulario(descargador: Descargador, url: str,
                 if match:
                     charset = match.group(1)
                 with descargador._lock:
-                    descargador.pedidos += 1
                     descargador.bytes_bajados += len(raw)
+                    descargador._hosts_leidos.add(host)
                 return raw.decode(charset, "ignore")
         except urllib.error.HTTPError as error:
             if error.code in (403, 429):

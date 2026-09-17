@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 """Una vista filtrada del catálogo no es una propiedad.
 
-**Rojo a propósito. El arreglo NO está aplicado.** Va aparte del arreglo de
+La candidata unificada ya bloquea la familia de encabezado genérico + formulario
+explícito de filtros, dejando un descarte trazable y revisión pendiente. Esta
+regla no pretende resolver todos los ocho contenedores históricos. Va aparte de
 `operacion` porque **no comparten causa**: uno es de dónde se lee un campo, el
 otro es qué se admite como ficha. Unirlos ataría dos radios de dependencia
 distintos a un solo despliegue.
@@ -132,9 +134,7 @@ def test_una_ficha_duplicada_no_se_marca_por_repetirse(ficha):
 
 # --- el rojo ------------------------------------------------------------
 
-@pytest.mark.xfail(strict=True, reason="defecto abierto: el enumerador admite "
-                                       "vistas filtradas como si fueran fichas")
-def test_ROJO_una_url_de_alquiler_no_puede_quedar_como_venta():
+def test_una_url_de_categoria_no_se_normaliza_como_propiedad(categoria):
     """El desenlace concreto que se vio en producción.
 
     `/propiedades/alquiler-departamentos-posadas/` entró al inventario con
@@ -142,7 +142,18 @@ def test_ROJO_una_url_de_alquiler_no_puede_quedar_como_venta():
     aceptarla como ficha.
     """
     url = "https://ejemplo.test/propiedades/alquiler-departamentos-ciudad/"
-    operacion_asignada = "venta"          # lo que paso de verdad
-    es_categoria = False                  # <-- hoy nadie lo pregunta
-    assert es_categoria or "alquiler" not in url, (
-        f"una url de alquiler entro como {operacion_asignada}")
+    from connectors.base import Fuente
+    from connectors.generico import GenericoConnector
+    cached = type('Cached', (), {'bajar': lambda self, url: categoria})()
+    connector = GenericoConnector(cached)
+    assert connector.normalize(dict(source_url=url, source_listing_id='category'),
+                               Fuente('agency', 'Inmobiliaria Ejemplo', 'https://ejemplo.test')) is None
+    assert connector.descartes[0]['motivo'] == 'PAGINA_CONTENEDORA_REQUIERE_REVISION'
+
+
+def test_incomplete_property_is_not_a_catalogue_because_title_is_shared():
+    from connectors.generico import GenericoConnector
+    assert not GenericoConnector._es_pagina_contenedora(
+        '<h1>Casa con patio</h1><form><button>Aplicar filtros</button></form>')
+    assert not GenericoConnector._es_pagina_contenedora(
+        '<h1>Propiedades</h1><form><button>Enviar consulta</button></form>')
