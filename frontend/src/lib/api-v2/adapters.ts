@@ -170,9 +170,8 @@ export type ApiV2SearchRequest =
 export const API_V2_RANKED_MAX_OFFSET = 200;
 
 /**
- * API v2 currently ranks `/buscar`, but that endpoint accepts only text,
- * operation and property type. Refuse unsupported combinations rather than
- * pretending filters/sorts were applied.
+ * Combined `/buscar` owns filtering and sorting. Refuse the few combinations
+ * still absent from its contract rather than simulate them on a partial page.
  */
 export function toApiV2SearchRequest(query: CatalogSearchQuery): ApiV2SearchRequest {
   if (query.sort.kind === "user_selected" && query.sort.value === "recent") return { supported: false, reason: "API v2 does not expose a contractual publication timestamp" };
