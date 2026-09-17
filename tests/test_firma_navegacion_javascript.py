@@ -184,12 +184,38 @@ def test_el_corte_de_portal_va_antes_que_cualquier_firma_tecnica():
     assert ajeno["firma"] == "FUENTE_ES_PORTAL_AJENO"
 
 
+def test_un_sitemap_con_fichas_gana_a_cualquier_firma_tecnica():
+    """El caso `franchi inmobiliaria`, y es la reparación más barata que hay.
+
+    WordPress con el tema Houzez: su tipo `property` no está expuesto en REST
+    —`/wp-json/wp/v2/property` da 404— así que el conector de WordPress no ve
+    una sola propiedad y la agencia cierra con cero. Su `property-sitemap.xml`
+    lista 91 fichas.
+
+    Cuando el catálogo ya está publicado en un sitemap no hay que escribir
+    extractor ni descubrir rutas: hay que enrutar a `generic/sitemap`, que
+    existe y la usan 21 agencias. Por eso gana incluso sobre el marcado real
+    de `david rodriguez`, que por lo demás dispararía la firma del JavaScript.
+    """
+    señal = clasificar_html(REAL, BASE, fichas_sitemap=91,
+                            sitemap="https://x/property-sitemap.xml")
+    assert señal["firma"] == "SITEMAP_CON_FICHAS"
+    assert señal["fichas_en_sitemap"] == 91
+
+
+def test_un_sitemap_casi_vacio_no_cuenta_como_catalogo():
+    """Dos fichas sueltas no son un catálogo, y prometerlo sería peor que nada."""
+    señal = clasificar_html(REAL, BASE, fichas_sitemap=2, sitemap="https://x/s.xml")
+    assert señal["firma"] == "NAVEGACION_SOLO_JAVASCRIPT"
+
+
 @pytest.mark.parametrize("firma", sorted(RECUPERABLES))
 def test_las_firmas_recuperables_no_necesitan_navegador(firma):
     """Nombrarlas aparte es el punto del §25.
 
-    Estas dos se resuelven con HTTP plano. Meterlas en la misma bolsa que
+    Estas tres se resuelven con HTTP plano. Meterlas en la misma bolsa que
     `API_DE_TERCEROS` haría que 39 agencias esperen una ventana de navegador
     que no necesitan.
     """
-    assert firma in ("NAVEGACION_SOLO_JAVASCRIPT", "CATALOGO_POR_POST")
+    assert firma in ("SITEMAP_CON_FICHAS", "NAVEGACION_SOLO_JAVASCRIPT",
+                     "CATALOGO_POR_POST")

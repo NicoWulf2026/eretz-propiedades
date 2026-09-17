@@ -101,6 +101,17 @@ RE_RUTA_CATALOGO = re.compile(
     r"catalogo|emprendimiento|venta|alquiler|resultados|search|listing)")
 
 
+# Las rutas donde vive un sitemap, en orden de probabilidad. `wp-sitemap.xml`
+# es el de WordPress moderno; los otros dos, los que deja Yoast.
+SITEMAPS = ("/wp-sitemap.xml", "/sitemap_index.xml", "/sitemap.xml")
+RE_LOC = re.compile(r"<loc>\s*([^<\s]+)\s*</loc>", re.I)
+# Una url de ficha dentro de un sitemap. Singular y plural, porque el catalogo
+# suele estar en plural y la ficha en singular -`franchi` publica el listado en
+# /propiedades/ y cada ficha en /propiedad/<slug>/-.
+RE_LOC_FICHA = re.compile(r"/(?:propiedad|propiedades|inmueble|inmuebles|"
+                          r"property|properties|ficha|listing)/[^/]+/?$", re.I)
+
+
 def bajar(url: str, limite: int = 900_000) -> tuple[int, str, str]:
     peticion = urllib.request.Request(url, headers=UA)
     respuesta = urllib.request.urlopen(peticion, timeout=25)
@@ -149,6 +160,53 @@ def rutas_en_javascript(html: str, base: str) -> list[str]:
     return sorted(set(vistas))
 
 
+def fichas_en_sitemap(base: str, pausa: float = 1.2,
+                      tope_subsitemaps: int = 6) -> tuple[int, str | None]:
+    """¿Publica un sitemap con fichas dentro? Devuelve (cuántas, dónde).
+
+    Esta pregunta va antes que cualquier otra porque su respuesta es la más
+    barata de todas: si el catálogo está listado en un sitemap, no hay que
+    escribir un extractor ni descubrir rutas, hay que **enrutar** a una
+    estrategia que ya existe y que usan 21 agencias.
+
+    El caso que lo motiva es `franchi inmobiliaria`: WordPress con el tema
+    Houzez, cuyo tipo `property` no está expuesto en REST —`/wp-json/wp/v2/
+    property` da 404—, así que el conector de WordPress no ve una sola
+    propiedad y la agencia cierra con cero. Su `property-sitemap.xml` lista
+    **91 fichas**.
+    """
+    raiz = f"{urlparse(base).scheme}://{urlparse(base).netloc}"
+    for ruta in SITEMAPS:
+        try:
+            _, final, cuerpo = bajar(raiz + ruta, 400_000)
+        except Exception:
+            time.sleep(pausa)
+            continue
+        if "<loc>" not in cuerpo.lower():
+            time.sleep(pausa)
+            continue
+        locs = RE_LOC.findall(cuerpo)
+        directas = [u for u in locs if RE_LOC_FICHA.search(u)]
+        if directas:
+            return len(directas), raiz + ruta
+        # Es un índice: se miran los sub-sitemaps que puedan tener fichas.
+        candidatos = [u for u in locs
+                      if re.search(r"(propiedad|inmueble|propert|listing)", u, re.I)]
+        total = 0
+        for sub in candidatos[:tope_subsitemaps]:
+            time.sleep(pausa)
+            try:
+                _, _, hijo = bajar(sub, 400_000)
+            except Exception:
+                continue
+            total += len([u for u in RE_LOC.findall(hijo)
+                          if RE_LOC_FICHA.search(u)])
+        if total:
+            return total, raiz + ruta
+        time.sleep(pausa)
+    return 0, None
+
+
 def endpoints_post(html: str) -> list[str]:
     return sorted(set(RE_AJAX_URL.findall(html)) | set(RE_LOAD.findall(html)))
 
@@ -173,10 +231,17 @@ def clasificar(url: str) -> dict:
     except Exception as e:
         return {"firma": "NO_RESPONDE",
                 "porque": f"{type(e).__name__} {getattr(e, 'code', '')}".strip()}
-    return clasificar_html(html, final, http)
+    # El sitemap se consulta sólo si el sitio no es un portal ajeno: mirar el
+    # sitemap de un portal cuenta el inventario de otro.
+    if v2.es_portal_url(final):
+        return clasificar_html(html, final, http)
+    cuantas, donde = fichas_en_sitemap(final)
+    return clasificar_html(html, final, http, fichas_sitemap=cuantas,
+                           sitemap=donde)
 
 
-def clasificar_html(html: str, final: str, http: int = 200) -> dict:
+def clasificar_html(html: str, final: str, http: int = 200, *,
+                    fichas_sitemap: int = 0, sitemap: str | None = None) -> dict:
     """Una sola mirada al marcado, y de ahí salen todas las señales.
 
     La primera pregunta no es técnica sino de identidad, y va antes que todo
@@ -207,7 +272,19 @@ def clasificar_html(html: str, final: str, http: int = 200) -> dict:
     contenedor = bool(RE_CONTENEDOR.search(html))
     api = tercero(html)
 
+    # Va primero entre las firmas tecnicas porque es la reparacion mas barata
+    # de todas: no hay que escribir extractor ni descubrir rutas, hay que
+    # enrutar a `generic/sitemap`, que ya existe y la usan 21 agencias.
+    if fichas_sitemap >= 3:
+        return {"http": http, "url_final": final, "bytes": len(html),
+                "firma": "SITEMAP_CON_FICHAS",
+                "fichas_en_sitemap": fichas_sitemap, "sitemap": sitemap,
+                "porque": f"{fichas_sitemap} fichas listadas en {sitemap}: el "
+                          f"catalogo esta publicado y la estrategia elegida no "
+                          f"lo mira"}
+
     comun = {"http": http, "url_final": final, "bytes": len(html),
+             "fichas_en_sitemap": fichas_sitemap, "sitemap": sitemap,
              "rutas_por_href": len(por_href), "rutas_por_javascript": len(por_js),
              "rutas_solo_en_javascript": solo_en_js[:12],
              "endpoints_post": post[:8], "usa_post": hay_post,
@@ -306,7 +383,8 @@ def main() -> int:
     return 0
 
 
-RECUPERABLES = {"NAVEGACION_SOLO_JAVASCRIPT", "CATALOGO_POR_POST"}
+RECUPERABLES = {"SITEMAP_CON_FICHAS", "NAVEGACION_SOLO_JAVASCRIPT",
+                "CATALOGO_POR_POST"}
 
 
 if __name__ == "__main__":
