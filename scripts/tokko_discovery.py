@@ -33,8 +33,6 @@ RUTAS_TFW = ("/Propiedades", "/propiedades", "/Venta", "/venta", "/Buscar")
 
 def bajar(url: str, timeout: int = 20, limite: int = 400_000) -> tuple[int | None, str]:
     ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
     req = urllib.request.Request(url, headers={
         "User-Agent": UA, "Accept-Encoding": "gzip",
         "Accept": "text/html,application/xhtml+xml"})

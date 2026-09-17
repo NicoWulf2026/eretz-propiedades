@@ -87,8 +87,6 @@ def candidatos_de_nombre(nombre: str) -> list[str]:
 def bajar(url: str, timeout: int = 12) -> "wd.Candidata":
     """Una peticion, sin reintentos. Un fallo es informacion, no un problema."""
     ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
     req = urllib.request.Request(url, headers={"User-Agent": UA})
     try:
         with urllib.request.urlopen(req, timeout=timeout, context=ctx) as r:

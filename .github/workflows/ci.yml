@@ -23,21 +23,19 @@ jobs:
       - run: python -m pip install --require-hashes -r requirements.lock
       - run: python -m compileall -q scraper scripts api tests
       - name: Run offline backend test suite
-        # The full-coverage campaign test imports a preserved, intentionally
-        # unversioned operator script. It is exercised by the local release gate,
-        # while CI must remain reproducible from Git alone.
+        # Campaign imports are now versioned and included in the same gate.
         env:
           PYTHON_DOTENV_DISABLED: "1"
           SUPABASE_URL: https://ci.invalid
           SUPABASE_SERVICE_ROLE_KEY: ci-placeholder-not-a-secret
-        run: python -m pytest -q --ignore=tests/test_full_7004_coverage.py
+        run: python -m pytest -q
       - run: ruff check scraper/network_security.py tests/test_network_security.py
       - run: mypy
       - run: python -m pip_audit -r requirements.lock --progress-spinner off
       - name: Block disabled TLS verification
         shell: bash
         run: |
-          if rg -n 'verify\s*=\s*False|disable_warnings\s*\(' scraper scripts api \
+          if rg -n 'verify\s*=\s*False|disable_warnings\s*\(|ssl\.CERT_NONE|check_hostname\s*=\s*False' scraper scripts api connectors \
             --glob '*.py'; then
             echo "Insecure TLS override found."
             exit 1

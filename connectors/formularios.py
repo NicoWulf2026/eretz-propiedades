@@ -36,8 +36,6 @@ def bajar_formulario(descargador: Descargador, url: str,
         descargador.limitador.esperar(host)
         try:
             context = ssl.create_default_context()
-            context.check_hostname = False
-            context.verify_mode = ssl.CERT_NONE
             request = urllib.request.Request(safe_url, data=body, headers={
                 "User-Agent": descargador.UA,
                 "Accept-Encoding": "gzip",

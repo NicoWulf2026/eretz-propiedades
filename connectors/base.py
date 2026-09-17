@@ -526,8 +526,6 @@ class Descargador:
             self.limitador.esperar(host)
             try:
                 ctx = ssl.create_default_context()
-                ctx.check_hostname = False
-                ctx.verify_mode = ssl.CERT_NONE
                 req = urllib.request.Request(url, headers={
                     "User-Agent": self.UA, "Accept-Encoding": "gzip",
                     "Accept": "text/html,application/xhtml+xml,application/json"})
