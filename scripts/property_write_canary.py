@@ -22,6 +22,10 @@ Un cuidado que no estaba en la lista y vale mas que varios de los que si: el
 los canaries de scraping. Escribir con un id inventado llenaria la tabla de
 propiedades que no pertenecen a ninguna inmobiliaria existente, y el error solo
 aparece mucho despues, cuando alguien intenta unir las tablas.
+
+Sin --escribir también se ejecuta INSERT, seguido de ROLLBACK. Eso puede
+consumir valores de secuencias: no equivale a una prueba de sólo lectura.
+Las auditorías sin autorización de escrituras deben usar mocks o una base local.
 """
 from __future__ import annotations
 
@@ -31,7 +35,7 @@ import os
 import re
 import sys
 import unicodedata
-from collections import Counter
+from urllib.parse import urlparse, unquote
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -57,8 +61,16 @@ PROHIBIDOS = ("postgres", "service_role", "neondb_owner", "supabase_admin")
 
 
 def usuario_de(url):
-    m = re.match(r"^[a-z+]+://([^:/@]+)", url or "")
-    return (m.group(1) if m else "").lower()
+    try:
+        return unquote(urlparse(url or '').username or '').lower()
+    except ValueError:
+        return ''
+
+
+def usuario_ro_autorizado(quien):
+    # Supavisor may suffix the login with the project reference. The live
+    # current_user/session_user check below still requires the actual RO role.
+    return quien.split('.', 1)[0] == USUARIO_ESPERADO
 
 
 def elegir_credencial():
@@ -73,6 +85,8 @@ def elegir_credencial():
             if quien in PROHIBIDOS:
                 return "", ("%s existe pero entra como %r, que esta prohibido"
                             % (v, quien))
+            if not usuario_ro_autorizado(quien):
+                return '', '%s tiene un usuario no autorizado; se requiere el rol RO' % v
             return u, "%s (usuario %s)" % (v, quien or "?")
     # Lo que haya quedado configurado de antes solo sirve si NO es superusuario.
     for v in ("SUPABASE_POOLER_DATABASE_URL", "SUPABASE_DATABASE_URL"):
@@ -83,6 +97,8 @@ def elegir_credencial():
         if quien in PROHIBIDOS:
             return "", ("%s entra como %r: no se usa para saltear la "
                         "restriccion de privilegio minimo" % (v, quien))
+        if not usuario_ro_autorizado(quien):
+            return '', '%s tiene un usuario no autorizado; se requiere el rol RO' % v
         return u, "%s (usuario %s)" % (v, quien or "?")
     return "", "ninguna variable de credencial configurada"
 TABLA = "internal_scraping.propiedades_raw"
@@ -90,16 +106,9 @@ SECUENCIA = "internal_scraping.propiedades_raw_id_seq"
 
 
 def cargar_env() -> None:
+    from dotenv import load_dotenv
     for nombre in (".env", ".env.local"):
-        ruta = RUTA_PIPELINE / nombre
-        if not ruta.exists():
-            continue
-        for linea in ruta.read_text(encoding="utf-8", errors="ignore").splitlines():
-            linea = linea.strip()
-            if not linea or linea.startswith("#") or "=" not in linea:
-                continue
-            k, v = linea.split("=", 1)
-            os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+        load_dotenv(RUTA_PIPELINE / nombre, override=False)
 
 
 def normalizar(nombre: str) -> str:
@@ -113,12 +122,12 @@ def leer(ruta: Path) -> list[dict]:
     if not ruta.exists():
         return []
     out = []
-    for l in ruta.open(encoding="utf-8"):
-        l = l.strip()
-        if not l:
+    for line in ruta.open(encoding="utf-8"):
+        line = line.strip()
+        if not line:
             continue
         try:
-            out.append(json.loads(l))
+            out.append(json.loads(line))
         except ValueError:
             continue
     return out
@@ -173,6 +182,8 @@ def main() -> int:
                 # entro realmente.
                 cur.execute("select current_user, session_user, current_database()")
                 usuario, sesion, base = cur.fetchone()
+                if usuario != USUARIO_ESPERADO or sesion != USUARIO_ESPERADO:
+                    raise Fallo('La sesión no pertenece al usuario RO esperado; no se asume rol ni se inserta')
                 print(f"\n  [1] conectado  current_user={usuario} "
                       f"session_user={sesion} db={base}")
 
@@ -308,7 +319,7 @@ def main() -> int:
 
                     if not a.escribir:
                         # [13] en modo validacion se aborta a proposito: se
-                        # comprobo todo el camino sin dejar rastro.
+                        # revierte las filas; las secuencias pueden avanzar.
                         raise Fallo("__rollback_pedido__")
 
             print("\n  [13] COMMIT: el canary paso.")
@@ -316,13 +327,13 @@ def main() -> int:
 
     except Fallo as e:
         if str(e) == "__rollback_pedido__":
-            print("\n  [13] ROLLBACK: validacion completa, nada quedo escrito.")
+            print("\n  [13] ROLLBACK: filas revertidas; las secuencias pueden haber avanzado.")
             print("       Volve a correr con --escribir para confirmar.")
             return 0
         print(f"\n  ABORTADO: {e}")
         return 3
     except Exception as e:
-        print(f"\n  ERROR: {type(e).__name__}: {str(e)[:200]}")
+        print(f"\n  ERROR: {type(e).__name__}; detalle omitido para proteger credenciales")
         return 3
 
 

@@ -1,5 +1,6 @@
 """Exercise actual raw -> staging and write guards, never a live database."""
 from unittest.mock import Mock
+import json
 
 import pytest
 
@@ -67,6 +68,35 @@ def test_raw_adapter_keeps_zero_and_unknown_operation_without_dropping_the_prope
     assert rechazos(property) == []
     assert a_fila_raw(property)['operacion'] == 'desconocida'
     assert a_fila_raw(property)['precio'] == 0
+
+
+@pytest.mark.parametrize('count', [None, 0, 3])
+def test_counts_survive_raw_staging_publication_without_restoring_rejected_geo(count):
+    from scripts.publish_to_supabase import staging_to_prop
+    row = raw(ambientes=count, dormitorios=count, banos=count,
+              source_url='https://official.test/propiedad/123')
+    captured = a_fila_raw(row)
+    captured['id'] = 1
+    stage, _, _ = validation.build_validation(Mock(), captured)
+    stage['raw_extra'] = json.loads(captured['datos_extra'])
+    stage['raw_extra']['ciudad'] = 'must not restore raw geography'
+    published = staging_to_prop(stage)
+    assert [published[key] for key in ('ambientes', 'dormitorios', 'banos')] == [count] * 3
+    assert published['ciudad'] != 'must not restore raw geography'
+
+
+@pytest.mark.parametrize('count', [True, -1, 1.5, '3 rooms', float('inf'), float('nan'), 2**31])
+def test_invalid_raw_count_does_not_invalidate_property_or_become_zero(count):
+    from scripts.publish_to_supabase import staging_to_prop
+    result = staging_to_prop({'titulo': 'Casa real', 'raw_extra': {'ambientes': count}})
+    assert result['titulo'] == 'Casa real'
+    assert result['ambientes'] is None
+
+
+def test_removed_unguarded_writer_refuses_before_reading_input_or_configuration(monkeypatch):
+    from scripts import ingest_to_pipeline
+    monkeypatch.setattr('sys.argv', ['ingest_to_pipeline', '--entrada', 'must-not-open.jsonl', '--escribir'])
+    assert ingest_to_pipeline.main() == 2
 
 
 def test_known_legacy_query_identity_survives_write_guard_but_search_does_not():

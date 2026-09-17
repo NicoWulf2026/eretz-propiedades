@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import sys
+import pytest
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parents[1]
@@ -40,6 +41,8 @@ def _correr(tmp_path, filas, monkeypatch):
         "snap", "--db", str(db), "--gate", str(vacio),
         "--cobertura", str(vacio), "--salida", str(salida)])
     monkeypatch.setattr(api_snapshot, "exigir_base_vigente", lambda r: Path(r))
+    monkeypatch.setattr(api_snapshot, 'mas_frescas', lambda root: {})
+    monkeypatch.setattr(api_snapshot, 'agencias_con_web_ajena', lambda root: set())
     assert api_snapshot.main() == 0
     resumen = json.loads(
         (salida / "ERETZ_API_SNAPSHOT_SUMMARY.json").read_text(encoding="utf-8"))
@@ -49,6 +52,44 @@ def _correr(tmp_path, filas, monkeypatch):
             for f in con.execute("select id, documento from propiedades")}
     con.close()
     return resumen, docs
+
+
+def test_snapshot_builder_cannot_delete_its_own_source(tmp_path, monkeypatch):
+    from scripts import api_snapshot
+    source = tmp_path / 'ERETZ_API_SNAPSHOT.sqlite3'
+    source.write_bytes(b'irreplaceable source fixture')
+    monkeypatch.setattr(sys, 'argv', ['snap', '--db', str(source), '--salida', str(tmp_path), '--replace-derived'])
+    with pytest.raises(SystemExit):
+        api_snapshot.main()
+    assert source.read_bytes() == b'irreplaceable source fixture'
+
+
+def test_snapshot_builder_refuses_implicit_replacement(tmp_path, monkeypatch):
+    from scripts import api_snapshot
+    output = tmp_path / 'ERETZ_API_SNAPSHOT.sqlite3'
+    output.write_bytes(b'previous snapshot')
+    monkeypatch.setattr(sys, 'argv', ['snap', '--db', str(tmp_path / 'different.sqlite3'), '--salida', str(tmp_path)])
+    with pytest.raises(SystemExit):
+        api_snapshot.main()
+    assert output.read_bytes() == b'previous snapshot'
+
+
+def test_failed_snapshot_build_preserves_the_served_artifact(tmp_path, monkeypatch):
+    from scripts import api_snapshot
+    db = _base(tmp_path, [('agency', [])])
+    output = tmp_path / 'ERETZ_API_SNAPSHOT.sqlite3'
+    output.write_bytes(b'previous snapshot')
+    monkeypatch.setattr(sys, 'argv', ['snap', '--db', str(db), '--salida', str(tmp_path), '--replace-derived'])
+    monkeypatch.setattr(api_snapshot, 'exigir_base_vigente', lambda path: Path(path))
+    monkeypatch.setattr(api_snapshot, '_leer_jsonl', lambda *args: {})
+    monkeypatch.setattr(api_snapshot, 'mas_frescas', lambda root: {})
+    monkeypatch.setattr(api_snapshot, 'agencias_con_web_ajena', lambda root: set())
+    def failed(*args):
+        raise RuntimeError('intentional fixture failure')
+    monkeypatch.setattr(api_snapshot, 'fila_de_api', failed)
+    with pytest.raises(RuntimeError, match='intentional fixture failure'):
+        api_snapshot.main()
+    assert output.read_bytes() == b'previous snapshot'
 
 
 def test_un_avatar_repetido_no_es_la_foto_de_nadie(tmp_path, monkeypatch):

@@ -94,6 +94,39 @@ def test_sin_nada_configurado_lo_dice(monkeypatch):
     assert "ninguna" in via
 
 
+def test_an_unlisted_admin_or_writer_is_not_mistaken_for_read_only(monkeypatch):
+    limpiar(monkeypatch)
+    monkeypatch.setenv('ERETZ_PREVIEW_RO_URL', 'postgresql://unlisted_admin:x@host/db')
+    assert elegir_credencial()[0] == ''
+
+
+def test_pooler_project_suffix_does_not_break_valid_ro_login(monkeypatch):
+    limpiar(monkeypatch)
+    url = 'postgresql://eretz_preview_ro.project:x@host/db'
+    monkeypatch.setenv('ERETZ_PREVIEW_RO_POOLER_URL', url)
+    assert elegir_credencial()[0] == url
+
+
+def test_wrong_live_session_refuses_before_set_role_or_insert(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+    from scripts import property_write_canary as canary
+    cursor = MagicMock()
+    cursor.__enter__.return_value = cursor
+    cursor.fetchone.return_value = ('unlisted_admin', 'unlisted_admin', 'test_database')
+    connection = MagicMock()
+    connection.__enter__.return_value = connection
+    connection.cursor.return_value = cursor
+    monkeypatch.setattr(canary, 'cargar_env', lambda: None)
+    monkeypatch.setattr(canary, 'elegir_credencial', lambda: (RO, 'test RO fixture'))
+    monkeypatch.setattr(canary, 'leer', lambda path: [{'source_url': 'https://agency.test/p/123'}])
+    monkeypatch.setitem(sys.modules, 'psycopg', SimpleNamespace(connect=lambda *args, **kwargs: connection))
+    monkeypatch.setattr(sys, 'argv', ['canary', '--entrada', 'never-read.jsonl', '--escribir'])
+    assert canary.main() == 3
+    assert cursor.execute.call_count == 1
+    assert cursor.execute.call_args.args[0].startswith('select current_user')
+
+
 def test_la_explicacion_no_puede_llevar_la_contrasena(monkeypatch):
     limpiar(monkeypatch)
     monkeypatch.setenv("ERETZ_PREVIEW_RO_URL",

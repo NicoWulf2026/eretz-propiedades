@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sqlite3
 import sys
 import time
@@ -132,7 +133,15 @@ def main() -> int:
     ap.add_argument("--directorio",
                     default=str(Path("D:/INMO CAPITAL/agency_platform_directory.jsonl")))
     ap.add_argument("--salida", default=r"D:\INMO CAPITAL\ERETZ_API_CONTRACT")
+    ap.add_argument('--replace-derived', action='store_true',
+                    help='replace an existing derived snapshot atomically after successful construction')
     args = ap.parse_args()
+    salida = Path(args.salida)
+    destino = salida / 'ERETZ_API_SNAPSHOT.sqlite3'
+    if Path(args.db).resolve() == destino.resolve():
+        ap.error('output must differ from source; the source is immutable')
+    if destino.exists() and not args.replace_derived:
+        ap.error('output already exists; choose a new path or explicitly --replace-derived')
     exigir_base_vigente(args.db)
 
     # Una propiedad leida en la web de OTRO no es de esta inmobiliaria, y el
@@ -146,11 +155,11 @@ def main() -> int:
         r"D:\INMO CAPITAL\ERETZ_AGENCY_CERTIFICATION_20260827\agencies"))
     gate = _leer_jsonl(Path(args.gate))
 
-    salida = Path(args.salida)
     salida.mkdir(parents=True, exist_ok=True)
-    destino = salida / "ERETZ_API_SNAPSHOT.sqlite3"
-    # Se reconstruye entera: es derivada, no acumulativa.
-    destino.unlink(missing_ok=True)
+    temporal = destino.with_name(f'{destino.name}.building.{os.getpid()}')
+    # An interrupted/failed build never truncates the artifact currently served.
+    with temporal.open('xb'):
+        pass
 
     origen = sqlite3.connect(f"file:{Path(args.db).as_posix()}?mode=ro", uri=True)
 
@@ -164,7 +173,7 @@ def main() -> int:
         for url in set(json.loads(crudo).get("imagenes") or []):
             apariciones[canonical][url] += 1
 
-    api = sqlite3.connect(destino)
+    api = sqlite3.connect(temporal)
     api.executescript(ESQUEMA)
 
     filas = 0
@@ -235,6 +244,8 @@ def main() -> int:
         "database_writes": 0,
     }
     api.close()
+    origen.close()
+    os.replace(temporal, destino)
     (salida / "ERETZ_API_SNAPSHOT_SUMMARY.json").write_text(
         json.dumps(resumen, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(resumen, ensure_ascii=False, indent=2))

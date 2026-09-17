@@ -104,12 +104,18 @@ def nucleo_del_nombre(nombre: str) -> str:
 def clasificar(agencia: str, nombre: str, url: str,
                agencias_por_host: dict[str, set]) -> dict:
     """Devuelve el tipo de fuente y la evidencia que lo sostiene."""
-    if not url or not url.startswith("http"):
+    try:
+        partes = urlparse(url or '')
+        partes.port  # Reject malformed ports as well as malformed host syntax.
+    except (ValueError, TypeError):
+        return {"source_type": NO_OFFICIAL_WEB, "confidence": "ALTA",
+                "evidence": "URL inválida", "inventory_allowed": False}
+    if (partes.scheme not in ('http', 'https') or not partes.hostname
+            or partes.username is not None or partes.password is not None):
         return {"source_type": NO_OFFICIAL_WEB, "confidence": "ALTA",
                 "evidence": "no hay url declarada", "inventory_allowed": False}
 
-    partes = urlparse(url)
-    host = (partes.netloc or "").lower().removeprefix("www.")
+    host = (partes.hostname or "").lower().removeprefix("www.")
     reg = registrable(host)
     ruta = partes.path or "/"
     n = nucleo_del_nombre(nombre)
@@ -174,21 +180,21 @@ def clasificar(agencia: str, nombre: str, url: str,
     return {"source_type": UNKNOWN, "confidence": "BAJA",
             "evidence": f"{reg} no coincide con el nombre y no cayo en "
                         f"ninguna regla: queda para mirar",
-            "inventory_allowed": True}
+            "inventory_allowed": False}
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--solo-cambios", action="store_true")
-    args = ap.parse_args()
+    ap.parse_args()
 
     ult = {}
-    for l in (CERT / "AGENCY_CERTIFICATION_RESULTS.jsonl").read_text(
+    for line in (CERT / "AGENCY_CERTIFICATION_RESULTS.jsonl").read_text(
             encoding="utf-8", errors="replace").splitlines():
-        if not l.strip():
+        if not line.strip():
             continue
         try:
-            r = json.loads(l)
+            r = json.loads(line)
         except ValueError:
             continue
         if r.get("canonical_agency_id"):
@@ -198,7 +204,7 @@ def main() -> int:
     for a, r in ult.items():
         u = r.get("official_url") or ""
         if u.startswith("http"):
-            por_host[registrable(urlparse(u).netloc)].add(a)
+            por_host[registrable(urlparse(u).hostname or '')].add(a)
 
     filas = []
     for a, r in sorted(ult.items()):
@@ -208,7 +214,7 @@ def main() -> int:
         filas.append({
             "agency_id": a, "agency_name": nombre,
             "declared_url": url,
-            "canonical_host": registrable(urlparse(url).netloc) if url else None,
+            "canonical_host": registrable(urlparse(url).hostname or '') if url else None,
             "status_certificacion": r.get("status"),
             "enumeradas": (r.get("enumeration_audit") or {}).get("enumerated"),
             **c,

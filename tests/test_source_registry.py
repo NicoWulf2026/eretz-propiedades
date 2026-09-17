@@ -34,6 +34,10 @@ def tipo(nombre, url, vecinas=1):
 
 # --- lo que NO se puede scrapear ----------------------------------------
 
+@pytest.mark.parametrize('url', ['https://[broken', 'https://agency.test:bad', 'https://user:pass@agency.test'])
+def test_invalid_source_url_never_authorizes_inventory(url):
+    assert clasificar('agency', 'Agency', url, {})['inventory_allowed'] is False
+
 @pytest.mark.parametrize("nombre,url", [
     ("ALONSO PROPIEDADES",
      "https://www.buscainmueble.com/inmobiliarias/alonso-propiedades"),
@@ -103,6 +107,16 @@ def test_sin_url_declarada_no_hay_fuente():
     r = tipo("Alguna Propiedades", "")
     assert r["source_type"] == NO_OFFICIAL_WEB
     assert r["inventory_allowed"] is False
+
+
+def test_port_number_cannot_hide_a_social_or_portal_host():
+    assert tipo('Alguna', 'https://facebook.com:443/algunaprop')['source_type'] == SOCIAL_ONLY
+    assert tipo('Alguna', 'https://zonaprop.com.ar:443/')['inventory_allowed'] is False
+
+
+def test_unknown_attribution_is_review_not_inventory_permission():
+    assert tipo('Agency', 'https://unrelated.test/')['inventory_allowed'] is False
+    assert tipo('Agency', 'https://user:password@agency.test/')['inventory_allowed'] is False
 
 
 # --- la evidencia, que es lo que hace auditable la decisión -------------

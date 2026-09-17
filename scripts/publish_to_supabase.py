@@ -41,7 +41,7 @@ except Exception:  # pragma: no cover
 # El logger usa una conexión EFÍMERA propia con este URL; nunca la transacción del publish.
 _ABIS_DB_URL = None
 
-from scripts.image_quality import normalize_property_images
+from scripts.image_quality import normalize_property_images  # noqa: E402 (CLI path bootstrap)
 
 # FASE 1 — Sprint A: ampliado con consultar y venta_y_alquiler.
 # Debe mantenerse en sync con build_publish_queue.py::VALID_OPERATIONS.
@@ -80,32 +80,13 @@ FOR UPDATE SKIP LOCKED
 
 STAGING_SELECT_SQL = """
 SELECT
-  id,
-  inmobiliaria_id,
-  hash_dedup,
-  titulo,
-  descripcion,
-  precio,
-  moneda,
-  tipo_propiedad,
-  operacion,
-  superficie_total,
-  superficie_cubierta,
-  direccion_normalizada,
-  barrio,
-  ciudad,
-  provincia,
-  pais,
-  latitud,
-  longitud,
-  imagenes,
-  url,
-  url_normalizada,
-  geocoding_status,
-  validation_score,
-  status
-FROM propiedades_staging
-WHERE id = ANY(%s)
+  s.*,
+  r.datos_extra AS raw_extra
+FROM propiedades_staging s
+LEFT JOIN propiedades_raw r ON r.id = s.raw_id
+  AND r.inmobiliaria_id = s.inmobiliaria_id
+  AND r.hash_dedup = s.hash_dedup
+WHERE s.id = ANY(%s)
 """
 
 
@@ -315,6 +296,21 @@ def staging_to_prop(staging: Dict[str, Any]) -> Dict[str, Any]:
         "url_normalizada": staging.get("url_normalizada"),
         "estado": staging.get("estado") or "activa",
     }
+    # Staging has no columns for these counts. Recover only the associated
+    # raw record's normalized attributes, without restoring its geography.
+    extra = staging.get("raw_extra")
+    if not isinstance(extra, dict):
+        extra = {}
+    for field in ("ambientes", "dormitorios", "banos"):
+        value = extra.get(field)
+        # No rounding, bool-to-int conversion or parsing arbitrary raw text.
+        if isinstance(value, bool) or not isinstance(value, (int, float, Decimal)):
+            prop[field] = None
+        else:
+            number = Decimal(str(value))
+            prop[field] = (int(number) if number.is_finite()
+                           and 0 <= number <= 2_147_483_647
+                           and number == number.to_integral_value() else None)
     return _json_safe(prop)
 
 

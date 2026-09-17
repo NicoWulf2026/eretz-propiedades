@@ -1,32 +1,30 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Carga de propiedades normalizadas al pipeline ERETZ.
+"""Adaptación y dry-run de propiedades normalizadas al pipeline ERETZ.
 
-No inventa una via nueva. Usa la que ya existe: `public.propiedades_raw` con
-`ON CONFLICT (hash_dedup) DO NOTHING`, que es exactamente lo que hace
-`scripts/import_captured_props_to_neon.py`. De ahi el pipeline sigue su curso
-normal hacia staging y publicacion; este script no toca staging ni main.
+Produce filas para `internal_scraping.propiedades_raw`. El consumidor de
+escritura es `scripts/property_write_canary.py`; luego el pipeline continúa
+hacia staging y publicación. Este script sólo adapta y valida en memoria.
 
-Por defecto NO escribe: hay que pedir `--escribir` explicitamente. Antes de
-insertar valida contra el vocabulario del propio schema y descarta lo que no
-cumple, informando el motivo, en vez de dejar que la base lo rechace a mitad
-del lote.
+No conecta a una base ni carga configuración. El escritor directo sin rol y
+prueba de ownership fue retirado; `--escribir` falla antes de leer entrada.
+El canary usa estos mismos adapters y agrega los gates transaccionales.
 
-La idempotencia no depende de este script sino del indice unico sobre
-hash_dedup: correrlo dos veces con el mismo dataset inserta cero filas nuevas.
+La idempotencia del consumidor depende del índice único sobre hash_dedup.
 """
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
+import urllib.parse
 from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from connectors.base import (MONEDAS_VALIDAS, OPERACIONES_VALIDAS,  # noqa: E402
-                             RUTA_PIPELINE, TIPOS_VALIDOS, normalizar_url)
+                             TIPOS_VALIDOS, normalizar_url)
+from scripts.agency_web_discovery import es_portal  # noqa: E402
 
 # Las columnas son las del pipeline, no una lista propia.
 RAW_COLUMNS = [
@@ -36,20 +34,6 @@ RAW_COLUMNS = [
     "barrio", "ciudad", "provincia", "pais", "latitud", "longitud", "imagenes",
     "datos_extra", "status",
 ]
-
-
-def cargar_env() -> None:
-    """Lee el .env del pipeline sin volcarlo a ningun log."""
-    for nombre in (".env", ".env.local"):
-        ruta = RUTA_PIPELINE / nombre
-        if not ruta.exists():
-            continue
-        for linea in ruta.read_text(encoding="utf-8", errors="ignore").splitlines():
-            linea = linea.strip()
-            if not linea or linea.startswith("#") or "=" not in linea:
-                continue
-            k, v = linea.split("=", 1)
-            os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
 
 
 def a_fila_raw(p: dict) -> dict:
@@ -115,6 +99,12 @@ def rechazos(p: dict) -> list[str]:
         r.append("inmobiliaria_id fuera del rango INTEGER")
     if not p.get("source_url"):
         r.append("sin url")
+    else:
+        parsed = urllib.parse.urlparse(p['source_url'])
+        if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username is not None:
+            r.append('url invalida')
+        elif es_portal(p['source_url']):
+            r.append('fuente no oficial')
     if p.get("moneda") and p["moneda"] not in MONEDAS_VALIDAS:
         r.append("moneda invalida")
     op = p.get("operacion") or "desconocida"
@@ -135,6 +125,10 @@ def main() -> int:
     ap.add_argument("--lote", type=int, default=200)
     ap.add_argument("--limite", type=int, default=0)
     a = ap.parse_args()
+    if a.escribir:
+        print('La escritura directa sin rol/ownership fue retirada. '
+              'Usar scripts/property_write_canary.py con sus gates; no se leyó configuración ni se escribió.')
+        return 2
 
     props = [json.loads(line) for line in Path(a.entrada).open(encoding="utf-8") if line.strip()]
     if a.limite:
@@ -164,52 +158,6 @@ def main() -> int:
             print(f"    {c:22} {str(v)[:70]}")
         print("\n  dry run: no se escribio nada.")
         return 0
-
-    cargar_env()
-    if os.environ.get("USE_INTERNAL_DB", "").lower() != "true":
-        print("\n  USE_INTERNAL_DB no esta en true: no se escribe.")
-        return 2
-    url = os.environ.get("INTERNAL_DB_URL", "")
-    if not url:
-        print("\n  falta INTERNAL_DB_URL: no se escribe.")
-        return 2
-
-    try:
-        import psycopg
-    except ImportError:
-        print("\n  falta psycopg.")
-        return 2
-
-    insertadas = ya_estaban = 0
-    columnas = ", ".join(RAW_COLUMNS)
-    marcas = ", ".join(["%s"] * len(RAW_COLUMNS))
-    sql = (f"INSERT INTO public.propiedades_raw ({columnas}) VALUES ({marcas}) "
-           f"ON CONFLICT (hash_dedup) DO NOTHING RETURNING id")
-    try:
-        with psycopg.connect(url, connect_timeout=20) as cn:
-            for i in range(0, len(aptas), a.lote):
-                trozo = aptas[i:i + a.lote]
-                # Un lote por transaccion: si uno falla no se lleva puesto todo
-                # lo anterior, y al reanudar el indice unico evita duplicar.
-                with cn.transaction(), cn.cursor() as cur:
-                    for p in trozo:
-                        fila = a_fila_raw(p)
-                        cur.execute(sql, [fila[c] for c in RAW_COLUMNS])
-                        if cur.fetchone():
-                            insertadas += 1
-                        else:
-                            ya_estaban += 1
-                print(f"    {min(i + a.lote, len(aptas))}/{len(aptas)}", flush=True)
-    except Exception as e:
-        print(f"\n  ERROR de base: {type(e).__name__}; detalle omitido para proteger credenciales")
-        print(f"  insertadas antes del fallo: {insertadas:,}")
-        return 3
-
-    print(f"\n  insertadas:  {insertadas:,}")
-    print(f"  ya estaban:  {ya_estaban:,}  (idempotencia por hash_dedup)")
-    print(f"  reconcilia:  {insertadas + ya_estaban == len(aptas)}")
-    return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())
