@@ -55,6 +55,7 @@ import sys
 import time
 from collections import defaultdict
 from pathlib import Path
+from typing import Any
 
 RAIZ = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RAIZ))
@@ -172,6 +173,59 @@ def episodios() -> tuple[list[dict], list[dict]]:
     return medidos, descartados
 
 
+def horas_de_reloj_parada(medidos: list[dict]) -> dict[str, Any]:
+    """El tiempo REAL parado, que no es la suma de las duraciones.
+
+    Los episodios **se solapan**: los dos workers pueden estar detenidos por
+    agencias distintas en momentos que se pisan, y cada diferida aporta su
+    intervalo por separado. Sumarlos cuenta dos veces la misma hora de reloj.
+
+    Medido el 2026-09-17 sobre 65 episodios: la suma da 106,3 h y la unión de
+    los intervalos da **74,2 h**. Treinta por ciento de inflación, en un número
+    que se venía reportando como "horas de cola parada".
+
+    Las dos cifras sirven, pero para cosas distintas:
+
+      - la **unión** contesta *"¿cuánto estuvo la cola detenida?"*;
+      - la **suma** contesta *"¿cuánto aportó cada causa?"*, y ahí el
+        solapamiento es correcto: si dos causas detuvieron la cola a la vez,
+        las dos son responsables de esa hora.
+
+    Confundirlas exagera el problema, y un número exagerado se descubre tarde y
+    barre con la credibilidad de los que sí estaban bien.
+    """
+    intervalos = []
+    for e in medidos:
+        inicio, fin = _epoch(e.get("inicio")), _epoch(e.get("fin"))
+        if inicio and fin and fin > inicio:
+            intervalos.append((inicio, fin))
+    if not intervalos:
+        return {"horas_de_reloj": 0.0, "horas_sumadas": 0.0}
+    intervalos.sort()
+    fusionados = [list(intervalos[0])]
+    for inicio, fin in intervalos[1:]:
+        if inicio <= fusionados[-1][1]:
+            fusionados[-1][1] = max(fusionados[-1][1], fin)
+        else:
+            fusionados.append([inicio, fin])
+    union = sum(b - a for a, b in fusionados) / 3600
+    suma = sum(b - a for a, b in intervalos) / 3600
+    reloj = (intervalos[-1][1] - intervalos[0][0]) / 3600
+    return {
+        "horas_de_reloj_parada": round(union, 1),
+        "horas_sumadas_por_episodio": round(suma, 1),
+        "solapamiento_horas": round(suma - union, 1),
+        "solapamiento_pct": round(100 * (suma - union) / suma, 0) if suma else 0,
+        "ventana_de_reloj_horas": round(reloj, 1),
+        "pct_del_reloj_parada": round(100 * union / reloj, 0) if reloj else 0,
+        "tramos_tras_fusionar": len(fusionados),
+        "nota": ("la UNION contesta cuanto estuvo parada la cola; la SUMA "
+                 "contesta cuanto aporto cada causa, y ahi el solapamiento es "
+                 "correcto porque dos causas simultaneas son las dos "
+                 "responsables de esa hora"),
+    }
+
+
 def resumir(medidos: list[dict]) -> list[dict]:
     por_causa: dict[str, list[dict]] = defaultdict(list)
     for e in medidos:
@@ -205,11 +259,18 @@ def main() -> int:
         ventana = f"{min(e['inicio'] for e in medidos)[:10]} a " \
                   f"{max(e['fin'] for e in medidos)[:10]}"
 
+    reloj = horas_de_reloj_parada(medidos)
     reporte = {"generado_en": time.strftime("%Y-%m-%dT%H:%M:%S"),
                "ventana": ventana,
                "episodios_medidos": len(medidos),
                "episodios_descartados": len(descartados),
-               "horas_perdidas_totales": total,
+               # La cifra que contesta "cuanto estuvo parada la cola".
+               "horas_de_reloj_parada": reloj.get("horas_de_reloj_parada"),
+               "reloj": reloj,
+               # La suma por episodio sirve para atribuir POR CAUSA, no para
+               # decir cuanto estuvo parada. Se venia reportando como si fuera
+               # lo primero y esta ~30% inflada por solapamiento.
+               "horas_sumadas_por_episodio": total,
                "sobreestimacion_conocida": "~8% por alto: el inicio se toma del "
                                            "resultado, no de la bandera",
                "por_causa": filas,
@@ -224,7 +285,15 @@ def main() -> int:
 
     print(f"paros medibles: {len(medidos)}   descartados: {len(descartados)}")
     print(f"ventana: {ventana}")
-    print(f"horas de cola parada: {total}\n")
+    print(f"HORAS DE RELOJ PARADA:  {reloj.get('horas_de_reloj_parada')}  "
+          f"({reloj.get('pct_del_reloj_parada')}% de "
+          f"{reloj.get('ventana_de_reloj_horas')} h de ventana)")
+    print(f"suma por episodio:      {total}  "
+          f"(+{reloj.get('solapamiento_horas')} h de solapamiento, "
+          f"{reloj.get('solapamiento_pct')}%)")
+    print("  La suma sirve para atribuir por causa; NO para decir cuanto")
+    print("  estuvo parada la cola: dos workers pueden estar detenidos por")
+    print("  agencias distintas a la misma hora.\n")
     print(f"  {'CAUSA':38} {'N':>3} {'TOTAL':>7} {'MEDIANA':>8} {'MAX':>7}")
     print(f"  {'-' * 38} {'-' * 3} {'-' * 7} {'-' * 8} {'-' * 7}")
     for f in filas:
