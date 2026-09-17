@@ -88,6 +88,23 @@ Va con su prohibición: la regla histórica y la señal actual **las dos** fabri
 `ambientes=1` desde `Monoambiente 1 dormitorio`. Hay tres `xfail` abiertos
 esperando este arreglo.
 
+**Y son dos sub-casos opuestos, que un solo arreglo tiene que distinguir.**
+Salió de consultar el banco por `bottega` con `ya_lo_vimos.py`:
+
+| | sitio | qué pasa | qué corresponde |
+|---|---|---|---|
+| **A** | `bottega` | publica `Ambientes 5` rotulado y limpio, y **no lo extraemos** | recuperar el dato |
+| **B** | `bartolelli maini` | **no publica ambientes** —publica dormitorios— y la palabra sólo aparece en el menú | que la señal **deje de dispararse** |
+
+En A el fallo es del extractor y `EXTRACTION_FAILED` es correcto. En B el fallo
+es de la señal: 28 de 29 "provistos" no existían, y el estado correcto sería
+`NOT_PROVIDED`.
+
+Confundirlos hace lo peor de los dos lados. Si sólo se afloja el extractor, B
+empieza a inventar un `1` desde el menú; si sólo se endurece la señal, A queda
+sin recuperar. Anclar a **etiqueta con límite de palabra** resuelve los dos a la
+vez: la etiqueta rotulada se lee, la palabra suelta del menú no.
+
 **2. `barrio`: por qué se rechaza la mitad**
 
 | | |
@@ -214,7 +231,7 @@ de investigando de cero.
 | re-detección **dirigida** a las que enumeran cero | se hizo, sobre las 14 con plataforma declarada y cero enumeradas: **1 desacuerdo** (`carlos castaño`, WORDPRESS → LARAVEL). Las otras 13 coinciden, `coldwell banker` incluida con 0,9 de confianza. La plataforma casi nunca es el problema |
 | ampliar la lista de hosts-portal | `365litoralargentino` lo usa 1 agencia; 3 de 4 hosts compartidos ya cerrados |
 | alinear detector con conector | 19 desacuerdos, 7 de ellos `CERTIFIED_COMPLETE`; no cuesta inventario |
-| reinicio automático tras corte por lote | 5 cortes contra 62 paros: recupera el 7% |
+| reinicio automático tras corte por lote | **8 cortes contra 63 paros: recupera el 11%**. Un corte por lote es una salida limpia y planificada, así que reiniciar ahí NO sería el reinicio prohibido tras un STOP sin diagnosticar |
 
 Los cuatro se midieron y los cuatro dieron negativo. Quedan escritos para que no
 se vuelvan a investigar, que es el §102.
