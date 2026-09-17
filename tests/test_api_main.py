@@ -1,9 +1,18 @@
+import json
+
 from api import main as api
 
 
 def test_public_api_uses_eretz_brand():
+    """La marca, no el payload entero: congelar el diccionario completo hacia
+    fallar el test por agregar un campo, que es lo contrario de lo que este
+    test cuida."""
     assert api.app.title == "ERETZ Propiedades API"
-    assert api.root() == {"status": "ok", "proyecto": "ERETZ Propiedades API"}
+    raiz = api.root()
+    assert raiz["status"] == "ok"
+    assert raiz["proyecto"] == "ERETZ Propiedades API"
+    assert "InmoCapital" not in json.dumps(raiz)
+    assert "Roomix" not in json.dumps(raiz)
 
 
 def test_property_filters_only_reference_live_schema_columns(monkeypatch):
