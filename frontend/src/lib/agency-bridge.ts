@@ -23,7 +23,7 @@ export const SOURCE_NAME = "roomix_agency_coverage";
 let pool: Sql | null = null;
 
 export function isPreviewEnvironment(): boolean {
-  if (!process.env.VERCEL) return true;
+  if (!process.env.VERCEL) return process.env.NODE_ENV === "development";
   return process.env.VERCEL_ENV === "preview";
 }
 

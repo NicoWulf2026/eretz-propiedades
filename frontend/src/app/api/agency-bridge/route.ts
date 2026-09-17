@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { timingSafeEqual } from "node:crypto";
 import {
   type Fila, insertar, isConfigured, isPreviewEnvironment, nombres,
   preflight, safeError, stagingPorFuente, stats,
@@ -17,14 +18,27 @@ export const maxDuration = 60;
 
 const MAX_FILAS = 250;
 
-function guard(): NextResponse | null {
+function guard(request: Request): NextResponse | null {
+  // Deployment protection is not application authentication. Inert by default,
+  // including self-hosted production. Never accept a token in query parameters.
+  if (process.env.AGENCY_BRIDGE_ENABLED !== "true") {
+    return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
   if (!isPreviewEnvironment()) return NextResponse.json({ error: "not found" }, { status: 404 });
+  const token = process.env.AGENCY_BRIDGE_TOKEN ?? "";
+  const supplied = request.headers.get("authorization") ?? "";
+  const expected = `Bearer ${token}`;
+  if (token.length < 32) return NextResponse.json({ error: "puente no configurado" }, { status: 503 });
+  const a = Buffer.from(supplied), b = Buffer.from(expected);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
   if (!isConfigured()) return NextResponse.json({ error: "sin conexión" }, { status: 503 });
   return null;
 }
 
 export async function GET(request: Request) {
-  const blocked = guard();
+  const blocked = guard(request);
   if (blocked) return blocked;
 
   const op = new URL(request.url).searchParams.get("op");
@@ -47,7 +61,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const blocked = guard();
+  const blocked = guard(request);
   if (blocked) return blocked;
 
   let body: { filas?: unknown; dryRun?: unknown };
@@ -64,8 +78,12 @@ export async function POST(request: Request) {
   }
   if (body.dryRun) return NextResponse.json({ dryRun: true, recibidas: filas.length });
 
-  const antes = await stats();
-  const r = await insertar(filas);
-  const despues = await stats();
-  return NextResponse.json({ recibidas: filas.length, ...r, antes, despues });
+  try {
+    const antes = await stats();
+    const r = await insertar(filas);
+    const despues = await stats();
+    return NextResponse.json({ recibidas: filas.length, ...r, antes, despues });
+  } catch (e) {
+    return NextResponse.json({ error: safeError(e) }, { status: 500 });
+  }
 }

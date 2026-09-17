@@ -17,7 +17,7 @@
   "dependencies": {
     "@vercel/blob": "^2.6.1",
     "leaflet": "^1.9.4",
-    "next": "^16.2.12",
+    "next": "^16.3.5",
     "postgres": "^3.4.9",
     "react": "19.2.4",
     "react-dom": "19.2.4",
@@ -32,16 +32,17 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "^16.2.12",
+    "eslint-config-next": "^16.3.5",
     "jsdom": "^30.0.1",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   },
   "overrides": {
     "brace-expansion": "5.0.9",
     "minimatch": "10.2.6",
     "postcss": "8.5.25",
-    "sharp": "0.35.3"
+    "sharp": "0.35.4",
+    "js-yaml": "4.3.2"
   }
 }
