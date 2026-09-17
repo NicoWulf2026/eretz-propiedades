@@ -26,6 +26,13 @@ agencia, recertificarla cuesta lo que costó.
 
 Para qué sirve el número
 ------------------------
+Las horas son la **suma** de lo que ya tardó cada agencia, no una estimación.
+Parece obvio y la primera versión lo hizo mal: usaba `mediana × cantidad`, con
+el argumento de que una agencia de tres horas corre el promedio. Ese argumento
+vale para *"¿cuánto tarda una agencia típica?"* y es exactamente al revés para
+un total —si una agencia tarda tres horas, rehacerla cuesta tres horas—. La
+mediana daba 9,6 h con dos workers y la suma real da **23,9 h**.
+
 El §47 da el criterio y vale citarlo entero, porque el número solo no decide:
 
     arreglar 3 propiedades → invalida 600 agencias → normalmente deferir
@@ -124,10 +131,25 @@ def presupuesto(componente: str,
     segundos = [(f.get("operational_metrics") or {}).get("duration_seconds")
                 for f in alcanzadas]
     segundos = [s for s in segundos if isinstance(s, (int, float)) and s > 0]
-    # Mediana y no promedio: una sola agencia de tres horas corre el promedio y
-    # hace parecer inviable un cambio que no lo es.
+
+    # El costo de recertificar a TODAS es la SUMA de lo que tardó cada una, y
+    # está medida: no hay nada que estimar.
+    #
+    # La primera versión usaba `mediana × cantidad` con el argumento de que una
+    # agencia de tres horas corre el promedio. Ese argumento vale para "¿cuánto
+    # tarda una agencia típica?" y es exactamente al revés para un TOTAL: si
+    # una agencia tarda tres horas, recertificarla cuesta tres horas, y la
+    # mediana las borra. Medido sobre las 261 alcanzables, la mediana daba
+    # 9,6 h con dos workers y la suma real da **23,9 h**. Dos veces y media.
+    #
+    # La distribución explica la diferencia: mediana 264 s, promedio 660 s,
+    # máximo 10.846 s, y 64 agencias de más de 10 minutos que solas suman
+    # 36,3 de las 47,9 horas.
+    total_segundos = sum(segundos) if segundos else None
+    horas_1w = (total_segundos / 3600) if total_segundos else None
+    # La mediana se conserva, pero como lo que es: cuánto tarda una agencia
+    # típica de esta familia, no cuánto cuesta rehacerlas todas.
     mediana = statistics.median(segundos) if segundos else None
-    horas_1w = (mediana * len(alcanzadas) / 3600) if mediana else None
 
     estrategias = Counter(f.get("connector_strategy") or "(sin estrategia)"
                           for f in alcanzadas)
@@ -141,12 +163,14 @@ def presupuesto(componente: str,
         "estrategias_afectadas": dict(estrategias.most_common()),
         "estados_afectados": dict(estados.most_common()),
         "mediana_segundos_por_agencia": round(mediana, 1) if mediana else None,
+        "agencias_de_mas_de_10_min": sum(1 for s in segundos if s > 600),
         "horas_de_recertificacion_1_worker": (round(horas_1w, 1)
                                               if horas_1w else None),
         "horas_de_recertificacion_2_workers": (round(horas_1w / 2, 1)
                                                if horas_1w else None),
-        "nota": ("la mediana y no el promedio: una agencia de tres horas corre "
-                 "el promedio y hace parecer inviable un cambio que no lo es"),
+        "nota": ("las horas son la SUMA de lo que ya tardo cada agencia, no "
+                 "una estimacion. La mediana figura aparte y describe a una "
+                 "agencia tipica: usarla para el total subestimaba 2,5 veces"),
     }
 
 

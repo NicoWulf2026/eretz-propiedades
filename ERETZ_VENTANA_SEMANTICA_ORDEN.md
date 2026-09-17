@@ -31,24 +31,33 @@ Un score habría escondido eso detrás de una multiplicación. Así que las
 
 ---
 
-## El precio, que resultó más barato de lo esperado
+## El precio, y una cifra mía que estaba mal
 
-Medido con `presupuesto_de_riesgo.py` sobre las 255 certificaciones alcanzables:
+Medido con `presupuesto_de_riesgo.py` sobre las 261 certificaciones alcanzables.
+Las horas son la **suma** de lo que ya tardó cada agencia, no una estimación:
 
 | componente | agencias | % | horas (2 workers) |
 |---|---:|---:|---:|
-| `shared/*` (los seis) | 255 | 100% | **9,5** |
-| `generic/common` | 130 | 51% | 4,7 |
-| `connector/tokko` | 84 | 33% | 3,3 |
-| `strategy/generic/html_catalog` | 48 | 19% | 1,8 |
-| `connector/wordpress` | 35 | 14% | 1,2 |
+| `shared/*` (los seis) | 261 | 100% | **23,9** |
+| `generic/common` | 134 | 51% | 15,3 |
+| `connector/tokko` | 86 | 33% | 6,2 |
+| `strategy/generic/html_catalog` | 49 | 19% | 2,5 |
+| `connector/wordpress` | 35 | 13% | 2,0 |
 
-Nueve horas y media para recertificar el universo entero. Eso cambia el criterio:
+Esta cifra decía **9,5 h** hasta que la verifiqué, y estaba mal: se calculaba
+`mediana × cantidad`. La mediana contesta *"¿cuánto tarda una agencia típica?"*;
+el costo de rehacerlas todas es la **suma**, y la suma está medida. La
+distribución explica la diferencia —mediana 264 s, promedio 660 s, máximo 10.846 s,
+y **64 agencias de más de diez minutos que solas aportan 36,3 de las 47,9 horas**
+de worker—.
+
+Casi veinticuatro horas para recertificar el universo entero. Sigue siendo
+asumible, pero es 2,5 veces lo que dije antes, y eso cambia el criterio:
 la pregunta deja de ser *"¿vale la pena invalidar todo?"* y pasa a ser *"¿qué
-metemos en las 9,5 horas que vamos a pagar igual?"*.
+metemos en las 23,9 horas que vamos a pagar igual?"*.
 
 Porque el radio **no se suma**. Tres arreglos que tocan `shared/*` cuestan las
-mismas 9,5 horas que uno. La ventana se paga una vez.
+mismas 23,9 horas que uno. La ventana se paga una vez.
 
 ---
 
@@ -60,13 +69,13 @@ No hay hoy ningún defecto abierto que cumpla P0: no hay COMPLETE falso, no hay
 contaminación entre agencias, no hay corrupción. Lo más cerca es la colisión de
 ids estables, y se midió que **no** afecta inventario.
 
-### P1 — entran a la ventana, y las tres primeras comparten las mismas 9,5 h
+### P1 — entran a la ventana, y las tres primeras comparten las mismas 23,9 h
 
 **1. `ambientes` anclado a etiqueta, con límite de palabra**
 
 | | |
 |---|---|
-| componente | `shared/certifier` → 255 agencias, 9,5 h |
+| componente | `shared/certifier` → 261 agencias, 23,9 h |
 | efecto | **CORRIGE** ~1.600 propiedades de la familia más cara |
 | evidencia | el legacy saca 5 de 5 en fichas reales de `bottega`; el conector cierra `EXTRACTION_FAILED` con 41% |
 | costo | bajo: la regla existe en `playwright_scraper.py`, se porta adaptada |
@@ -83,7 +92,7 @@ esperando este arreglo.
 
 | | |
 |---|---|
-| componente | validación geográfica → `shared/*`, mismas 9,5 h |
+| componente | validación geográfica → `shared/*`, mismas 23,9 h |
 | efecto | **CORRIGE** hasta 159 propiedades sólo en `di maria` |
 | evidencia | `barrio` se rechaza el **26,2%** en todo el universo, la tasa más alta de cualquier campo |
 
@@ -94,7 +103,7 @@ la ventana con el diagnóstico como primer paso, no con un parche.
 
 | | |
 |---|---|
-| componente | descubrimiento genérico → `generic/common`, 130 agencias, 4,7 h |
+| componente | descubrimiento genérico → `generic/common`, 134 agencias, 15,3 h |
 | efecto | **RECUPERA** ~365 propiedades sólo en `david rodriguez` |
 | alcance | 4 de 38 agencias `SIN_INVENTARIO` medidas |
 
