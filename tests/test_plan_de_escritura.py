@@ -16,7 +16,8 @@ def _artefactos(tmp_path):
             {"canonical_agency_id": "c", "promotion_state": "REQUIRES_REVIEW"},
         )) + "\n", encoding="utf-8")
     (cert / "AGENCY_PROMOTION_WEB_RECHECK.jsonl").write_text(
-        json.dumps({"canonical_agency_id": "b", "veredicto": "RECHAZADA"}) + "\n",
+        json.dumps({"canonical_agency_id": "a", "veredicto": "SOSTIENE_SU_EVIDENCIA"}) + "\n" +
+        json.dumps({"canonical_agency_id": "b", "veredicto": "DOMINIO_AJENO_DEMOSTRADO"}) + "\n",
         encoding="utf-8")
     (cert / "AGENCY_MAIN_LINK_DRYRUN.jsonl").write_text(
         json.dumps({"canonical_agency_id": "z"}) + "\n", encoding="utf-8")
@@ -57,6 +58,13 @@ def test_una_web_rechazada_no_se_promueve(tmp_path):
     plan = construir(*_artefactos(tmp_path))
     promocion = [p for p in plan["pasos"] if "promover" in p["paso"]][0]
     assert promocion["filas"] == 1, "b fue rechazada al abrir su web"
+
+
+def test_missing_web_recheck_is_not_permission_to_promote(tmp_path):
+    paths = _artefactos(tmp_path)
+    (paths[0] / 'AGENCY_PROMOTION_WEB_RECHECK.jsonl').unlink()
+    plan = construir(*paths)
+    assert next(p for p in plan['pasos'] if 'promover' in p['paso'])['filas'] == 0
 
 
 def test_las_retenidas_de_geografia_no_entran(tmp_path):

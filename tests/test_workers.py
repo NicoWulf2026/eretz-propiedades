@@ -2,6 +2,11 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
+import time
+from pathlib import Path
 
 import pytest
 
@@ -95,6 +100,37 @@ def test_un_stop_transversal_corta_a_los_dos(tmp_path):
     assert bandera["canonical_agency_id"] == "roomix:ami propiedades"
     assert bandera["radio"] == "FAMILIA"
     assert (tmp_path / BANDERA_DE_PARO).exists()
+
+
+def test_expired_heartbeat_cannot_steal_a_live_process_checkpoint(tmp_path):
+    from scripts.run_agency_certification_queue import LATIDO_VENCIDO
+    lock = tomar_cerrojo(tmp_path)
+    data = json.loads(lock.read_text(encoding='utf-8'))
+    data['heartbeat_epoch'] = time.time() - LATIDO_VENCIDO - 1
+    lock.write_text(json.dumps(data), encoding='utf-8')
+    with pytest.raises(SystemExit, match='runner activo'):
+        tomar_cerrojo(tmp_path)
+    assert json.loads(lock.read_text(encoding='utf-8'))['pid'] == os.getpid()
+
+
+def test_actual_concurrent_processes_have_only_one_checkpoint_owner(tmp_path):
+    code = '''
+import sys,time
+from pathlib import Path
+from scripts.run_agency_certification_queue import tomar_cerrojo
+try:
+    tomar_cerrojo(Path(sys.argv[1]))
+except SystemExit:
+    raise SystemExit(23)
+time.sleep(1)
+'''
+    env = dict(os.environ, PYTHON_DOTENV_DISABLED='1')
+    processes = [subprocess.Popen([sys.executable, '-c', code, str(tmp_path)],
+                                 cwd=Path(__file__).resolve().parents[1], env=env,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+                 for _ in range(2)]
+    results = [p.communicate(timeout=30) for p in processes]
+    assert sorted(p.returncode for p in processes) == [0, 23], results
 
 
 def test_una_bandera_ilegible_igual_detiene(tmp_path):

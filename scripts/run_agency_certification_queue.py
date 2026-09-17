@@ -16,9 +16,12 @@ import time
 import urllib.parse
 import urllib.request
 import traceback
+from contextlib import contextmanager
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
+
+import psutil
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -186,12 +189,42 @@ INTERVALO_DE_LATIDO = 60.0
 
 
 def latir(ruta: Path, canonical_id: str | None) -> None:
-    ruta.write_text(json.dumps({
+    temporal = ruta.with_name(f'{ruta.name}.{os.getpid()}.{threading.get_ident()}.tmp')
+    temporal.write_text(json.dumps({
         "pid": os.getpid(),
         "heartbeat": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "heartbeat_epoch": time.time(),
         "current_agency": canonical_id,
     }, ensure_ascii=False), encoding="utf-8")
+    os.replace(temporal, ruta)
+
+
+@contextmanager
+def _claim_guard(ruta: Path):
+    """Serialize claims with an OS lock that is released even on process death.
+
+    The persistent sidecar is not a lease: its existence never blocks recovery.
+    Both first acquisition and stale recovery pass through this same lock.
+    """
+    with ruta.with_name(ruta.name + '.claim').open('a+b') as guard:
+        try:
+            if os.name == 'nt':
+                import msvcrt
+                guard.seek(0)
+                msvcrt.locking(guard.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(guard.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            raise SystemExit('Ya hay un runner activo tomando este checkpoint') from None
+        try:
+            yield
+        finally:
+            if os.name == 'nt':
+                guard.seek(0)
+                msvcrt.locking(guard.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(guard.fileno(), fcntl.LOCK_UN)
 
 
 def particion(cola: list[str], catalogo: dict[str, dict[str, Any]],
@@ -304,18 +337,20 @@ def tomar_cerrojo(output: Path, worker: int = 0, workers: int = 1) -> Path:
     y golpea sitios ajenos al doble del ritmo que acordamos con ellos.
     """
     ruta = output / sufijado(CERROJO, worker, workers)
-    if ruta.exists():
-        try:
-            previo = json.loads(ruta.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            previo = {}
-        edad = time.time() - float(previo.get("heartbeat_epoch") or 0)
-        if edad < LATIDO_VENCIDO:
-            raise SystemExit(
-                f"Ya hay un runner activo (pid {previo.get('pid')}, ultimo "
-                f"latido hace {edad:.0f}s, en {previo.get('current_agency')}). "
-                f"Si comprobaste que murio, borra {ruta}.")
-    latir(ruta, None)
+    with _claim_guard(ruta):
+        if ruta.exists():
+            try:
+                previo = json.loads(ruta.read_text(encoding="utf-8"))
+                edad = time.time() - float(previo['heartbeat_epoch'])
+                pid = int(previo['pid'])
+            except (OSError, ValueError, KeyError, TypeError):
+                raise SystemExit(f'Cerrojo ilegible: revisar propietario de {ruta}; no se reemplaza') from None
+            if edad < LATIDO_VENCIDO or pid <= 0 or psutil.pid_exists(pid):
+                raise SystemExit(
+                    f"Ya hay un runner activo (pid {pid}, ultimo "
+                    f"latido hace {edad:.0f}s, en {previo.get('current_agency')}). "
+                    f"Si comprobaste que murio, borra {ruta}.")
+        latir(ruta, None)
     return ruta
 
 

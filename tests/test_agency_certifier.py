@@ -422,9 +422,10 @@ def test_a_dead_runner_does_not_block_the_queue_forever(tmp_path) -> None:
     cerrojo = certification_queue.tomar_cerrojo(tmp_path)
     viejo = json.loads(cerrojo.read_text(encoding="utf-8"))
     viejo["heartbeat_epoch"] -= certification_queue.LATIDO_VENCIDO + 1
+    viejo["pid"] = 2147483647
     cerrojo.write_text(json.dumps(viejo), encoding="utf-8")
 
-    # No levanta: el latido vencido lo declara muerto.
+    # An expired heartbeat AND a confirmed dead process allow recovery.
     certification_queue.tomar_cerrojo(tmp_path)
 
 

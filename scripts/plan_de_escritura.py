@@ -39,7 +39,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.write_eligibility import NO_SON_WEB_PROPIA  # noqa: E402
 
-PLAN_VERSION = "plan_de_escritura_v1"
+PLAN_VERSION = "plan_de_escritura_v2"
 
 
 def _contar_jsonl(ruta: Path, filtro=None) -> int:
@@ -111,8 +111,8 @@ def construir(certificacion: Path, geo: Path, preingestion: Path,
         certificacion / "AGENCY_PROMOTION_WEB_RECHECK.jsonl",
         "canonical_agency_id")
     seguras_confirmadas = [f for f in seguras
-                           if (recheck.get(f["canonical_agency_id"], {})
-                               .get("veredicto") or "SIN_RECHEQUEO") != "RECHAZADA"]
+                           if recheck.get(f["canonical_agency_id"], {})
+                           .get("veredicto") == "SOSTIENE_SU_EVIDENCIA"]
 
     vinculos = _contar_jsonl(certificacion / "AGENCY_MAIN_LINK_DRYRUN.jsonl")
     ciudades = _contar_jsonl(geo / "CIUDAD_DRYRUN_AUDIT.jsonl",
@@ -148,7 +148,7 @@ def construir(certificacion: Path, geo: Path, preingestion: Path,
             "filas": len(seguras_confirmadas),
             "clave_de_upsert": "canonical_agency_id",
             "precondicion": "identity_status READY y web oficial verificada "
-                            "argentina; el recheque de web no la rechazo",
+                            "argentina; el recheque de web sostiene su evidencia",
             "invariante": "no se crea una inmobiliaria cuya web no se pudo "
                           "abrir y confirmar",
             "rollback": "borrar por canonical_agency_id las creadas en esta "
