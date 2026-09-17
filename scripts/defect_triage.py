@@ -76,8 +76,25 @@ RE_API_DE_CATALOGO = re.compile(
     r"""wasi|search)[^"']*["']""", re.I)
 
 # Un contador publicado: "16 propiedades encontradas".
+#
+# El `(?<![%\w])` no es cosmético: sin él, esta expresión inventa un contador
+# donde no hay ninguno, y eso detuvo la cola. El 2026-09-16 `gabriela aloise
+# propiedades` paró con la evidencia "contador publicado: 20propiedades". No
+# había 20 propiedades: el sitio tiene un enlace de WhatsApp,
+#
+#     wa.me/54...?text=Hola!%20Quisiera%20mas%20informacion%20sobre%20las%20propiedades
+#
+# y `%20` es un espacio codificado. Con `\s*` —cero o más espacios— el patrón
+# leyó "20propiedades" adentro de una url y lo reportó como total declarado. El
+# sitio, en su propia página de listado, dice "0 propiedades".
+#
+# Es la misma clase de error que ya costó caro antes: tomar por dato de la
+# fuente algo que es un artefacto del marcado. Un contador falso no sólo miente,
+# detiene a los dos workers hasta que alguien lo mira.
+#
+# El `%` cubre la url y el `\w` el caso simétrico, "casa20propiedades".
 RE_CONTADOR = re.compile(
-    r"(\d{1,5})\s*(?:propiedades|inmuebles|resultados|avisos)", re.I)
+    r"(?<![%\w])(\d{1,5})\s*(?:propiedades|inmuebles|resultados|avisos)", re.I)
 
 # Enlaces a una pagina de busqueda o listado.
 RE_RUTA_DE_BUSQUEDA = re.compile(
