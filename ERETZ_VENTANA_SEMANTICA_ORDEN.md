@@ -140,8 +140,20 @@ previo (baseline 30).
 
 La conclusión importa más que el número: **no hay que reescribir el conector de
 Tokko**. Hay que entender qué tienen de distinto esos cuatro sitios respecto de
-los 78 que sí se leen. En los cuatro el listado es
-`<ul id="propiedades" class="resultados-list">` vacío, que rellena JavaScript.
+los 78 que sí se leen.
+
+Y los cuatro **no son el mismo caso**, que es una corrección a lo primero que
+escribí acá. `ya_lo_vimos.py` lo sacó a la luz al buscar precedentes de
+`di santo`: `coldwell banker andes bienes raices` figura como
+`TOKKO_FRONTEND_PROPIO` y **su sitio no es Tokko**. Es PHP plano —
+`cbandesbienesraices.com.ar/index.php` sirve 37 KB y enlaza **17 fichas** de la
+forma `/ficha.php?id=6699459`, con los precios a la vista en el listado—. Ahí no
+falla el conector: falla la clasificación de plataforma, y son 17 propiedades
+recuperables por una corrección de datos.
+
+Quedan entonces tres con el contenedor vacío
+—`<ul id="propiedades" class="resultados-list">` que rellena JavaScript— y una
+mal clasificada.
 
 Es también el primer caso donde el banco de firmas pagó: `etcheverry` se había
 diagnosticado el 2026-09-14 y `di santo` se cerró reconociendo la firma en vez
