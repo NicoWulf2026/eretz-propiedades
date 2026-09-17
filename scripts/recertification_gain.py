@@ -10,11 +10,12 @@ Se compara por `hash_dedup`, que es la misma propiedad en los dos lados, y solo
 sobre las agencias efectivamente recertificadas: mezclar las que todavia no
 pasaron diluiria el resultado hasta volverlo ilegible.
 
-Tres cuentas por campo:
+Cuatro cuentas por campo:
 
   gana      estaba vacio en la snapshot y ahora tiene valor
   pierde    tenia valor y ahora esta vacio
   igual     los dos lados dicen lo mismo, o los dos estan vacios
+  cambia    ambos presentes, pero distintos; requiere validar contra la fuente
 
 **Perder no siempre es empeorar**, y esa es la lectura mas dificil del informe.
 Un campo que se vacia porque la validacion lo rechazo -una superficie de
@@ -52,7 +53,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.preingestion_manifest import (base_canonica,  # noqa: E402
                                            exigir_base_vigente)
 
-GANANCIA_VERSION = "recertification_gain_v1"
+GANANCIA_VERSION = "recertification_gain_v2"
 
 # Los campos que decidan si una propiedad se puede publicar y encontrar. No se
 # miran `titulo` ni `descripcion`: cambian de redaccion sin cambiar de valor y
@@ -64,7 +65,7 @@ CAMPOS = ("precio", "moneda", "operacion", "tipo_propiedad", "ciudad",
 
 
 def _vacio(valor: Any) -> bool:
-    return valor in (None, "", [], {}, 0)
+    return valor is None or valor == "" or valor == [] or valor == {}
 
 
 def _frescas(paquetes: Path) -> tuple[dict[str, dict], set[str]]:
@@ -90,7 +91,7 @@ def _frescas(paquetes: Path) -> tuple[dict[str, dict], set[str]]:
 
 
 def comparar(vieja: dict, fresca: dict) -> dict[str, str]:
-    """Campo por campo: gana, pierde, o queda igual."""
+    """Presencia y cambio, sin atribuir correctitud a un valor distinto."""
     salida = {}
     descartados = str((fresca.get("extra") or {}).get(
         "atributos_descartados") or "")
@@ -102,6 +103,8 @@ def comparar(vieja: dict, fresca: dict) -> dict[str, str]:
             # Vaciar por validacion es una decision, no una perdida.
             salida[campo] = ("pierde_con_motivo" if campo in descartados
                              else "pierde")
+        elif not antes and not ahora and vieja.get(campo) != fresca.get(campo):
+            salida[campo] = "cambia"
         else:
             salida[campo] = "igual"
     return salida

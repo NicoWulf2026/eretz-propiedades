@@ -94,7 +94,8 @@ RE_API_DE_CATALOGO = re.compile(
 #
 # El `%` cubre la url y el `\w` el caso simétrico, "casa20propiedades".
 RE_CONTADOR = re.compile(
-    r"(?<![%\w])(\d{1,5})\s*(?:propiedades|inmuebles|resultados|avisos)", re.I)
+    r"(?<![%\w.,])([1-9]\d{0,2}(?:[.,]\d{3})+|\d{1,6})\s+"
+    r"(?:propiedades|inmuebles|resultados|avisos)\b", re.I)
 
 # Enlaces a una pagina de busqueda o listado.
 RE_RUTA_DE_BUSQUEDA = re.compile(
@@ -125,7 +126,7 @@ def senales_de_catalogo(html: str) -> list[str]:
     if RE_RUTA_DE_BUSQUEDA.search(html):
         senales.append("enlace a una pagina de busqueda o listado")
     contador = RE_CONTADOR.search(html)
-    if contador and int(contador.group(1)) > 0:
+    if contador and int(re.sub(r"[.,]", "", contador.group(1))) > 0:
         senales.append(f"contador publicado: {contador.group(0).strip()}")
     return senales
 

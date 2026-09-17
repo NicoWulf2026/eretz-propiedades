@@ -453,7 +453,8 @@ def test_finalize_playwright_gap_results_prefers_retry_and_closes_externals():
     by_id = {row["source_id"]: row for row in rows}
 
     assert by_id[1]["final_status"] == "recovered_parser"
-    assert by_id[2]["final_status"] == "external_empty"
+    # Zero observed links proves neither an empty source nor complete discovery.
+    assert by_id[2]["final_status"] == "no_property_links"
     assert by_id[3]["final_status"] == "external_timeout"
 
 
@@ -468,7 +469,24 @@ def test_finalize_playwright_gap_results_maps_legacy_playwright_statuses():
         "source_id": 2,
         "playwright_final_status": "playwright_zero_properties",
     })
-    assert status == "external_empty"
+    assert status == "no_property_links"
+
+
+def test_finalize_does_not_bless_caps_low_quality_or_parser_errors():
+    for raw, expected in (
+        ('playwright_partial_due_to_cap', 'partial_due_to_cap'),
+        ('playwright_success_low_quality', 'needs_quality_fix'),
+        ('playwright_parser_error', 'internal_error'),
+    ):
+        assert finalize_pw_gaps.finalize_status({'playwright_final_status': raw})[0] == expected
+
+
+def test_finalize_preserves_retry_only_sources_and_does_not_mutate_evidence():
+    retry = {4: {'source_id': 4, 'playwright_final_status': 'playwright_zero_properties'}}
+    rows = finalize_pw_gaps.choose_result({}, retry)
+    assert rows[0]['source_id'] == 4
+    assert rows[0]['final_status'] == 'no_property_links'
+    assert 'final_status' not in retry[4]
 
 
 def test_safe_url_recheck_rejects_details_forms_and_prohibited_portals():

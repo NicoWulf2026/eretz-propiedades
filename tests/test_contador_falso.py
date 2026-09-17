@@ -81,12 +81,6 @@ def test_un_contador_al_principio_del_texto_se_lee():
     assert encontrado is not None and encontrado.group(1) == "35"
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "defecto abierto y PREEXISTENTE: con separador de miles el contador "
-    "sub-cuenta. '1.234 resultados' se lee como 234, no como 1234. No lo "
-    "introduce el lookbehind -el patron viejo hacia lo mismo- y no se arregla "
-    "aca porque sub-contar es conservador: hace parar la cola de mas, nunca de "
-    "menos, que es el lado seguro. Va a la ventana semantica"))
 def test_ROJO_el_separador_de_miles_hace_subcontar_al_contador():
     """Se documenta en rojo en vez de bendecirse en verde.
 
@@ -94,4 +88,11 @@ def test_ROJO_el_separador_de_miles_hace_subcontar_al_contador():
     defecto en contrato, y el día que alguien lo arregle el test lo frenaría.
     """
     encontrado = RE_CONTADOR.search("1.234 resultados")
-    assert encontrado is not None and encontrado.group(1) == "1234"
+    assert encontrado is not None and encontrado.group(1) == "1.234"
+    assert senales_de_catalogo('1.234 resultados') == ['contador publicado: 1.234 resultados']
+
+
+@pytest.mark.parametrize('text', ['12.34 resultados', '1234567 resultados',
+                                  '?query=%201.234%20propiedades', '234propiedades'])
+def test_malformed_count_cannot_be_recognized_by_numeric_suffix(text):
+    assert RE_CONTADOR.search(text) is None
