@@ -294,6 +294,13 @@ Controles posteriores (validación global pendiente, HEAD funcional congelado):
   2318 PASS, ocho fallos y cuatro errores no acreditan validación global verde.
   Se repite desde un proceso nuevo con código funcional congelado.
 
+Suite congelada posterior: **2336 PASS, cero fallos/errores/skips, 228,95 s**,
+confirmada por pytest y XML `backend_frozen_validation.xml`. Los trece controles
+de publicación histórica y configuración de timeout también pasan en proceso
+nuevo. Esto acredita la suite backend actual, no la finalización de toda la
+misión ni certificación del long tail. Código funcional `b018b86398` y documentación
+posterior sin cambios semánticos.
+
 La arquitectura candidata concentra conectores, identidad, detección de URLs,
 contrato de propiedad y validación; conserva entrypoints históricos donde aún
 hay consumidores. Su eliminación requiere una matriz de consumidores y
