@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from scripts.property_observations import (ARCHIVO, leer, observacion,
                                            registrar, transiciones)
 
@@ -81,3 +83,113 @@ def test_una_ausencia_puntual_no_es_una_baja():
     m = transiciones([{"hashes": ["a"]}, {"hashes": []}, {"hashes": ["a"]}])
     assert m["ausentes_al_final"] == 0
     assert m["ausencia_consecutiva_maxima"] == 0
+
+
+def test_continuing_absence_counts_each_observation_not_only_disappearance():
+    result = transiciones([{'hashes': ['a', 'b']}, {'hashes': ['b']},
+                           {'hashes': ['b']}, {'hashes': ['b']}])
+    assert result['desapariciones'] == 1
+    assert result['ausentes_al_final'] == 1
+    assert result['ausencia_consecutiva_maxima'] == 3
+
+
+def test_reappearance_resets_streak_before_a_new_disappearance():
+    result = transiciones([{'hashes': ['a']}, {'hashes': []}, {'hashes': []},
+                           {'hashes': ['a']}, {'hashes': []}])
+    assert result['desapariciones'] == 2
+    assert result['reapariciones'] == 1
+    assert result['ausencia_consecutiva_maxima'] == 1
+
+
+@pytest.mark.parametrize('flag,value', [('paginacion_interrumpida', True),
+    ('presupuesto_agotado', True), ('enumeracion_completa', False)])
+def test_ok_with_incomplete_enumeration_cannot_generate_absence(tmp_path, flag, value):
+    package = _paquete(tmp_path, ['a'])
+    certificate = _resultado()
+    certificate['run2'][flag] = value
+    assert observacion(package, certificate) is None
+
+
+@pytest.mark.parametrize('invalid', ['not JSON', 'null', '[]',
+                                     '{"hash_dedup": null}', '{"hash_dedup": true}'])
+def test_corrupt_observation_run_does_not_append_partial_seen_set(tmp_path, invalid):
+    package = _paquete(tmp_path, ['a', 'b'])
+    (package / 'properties_run2.jsonl').write_text(invalid + '\n', encoding='utf-8')
+    output = tmp_path / 'output'
+    with pytest.raises(ValueError):
+        registrar(package, _resultado(), output)
+    assert not (output / ARCHIVO).exists()
+
+
+def test_missing_observation_run_does_not_append_partial_seen_set(tmp_path):
+    package = _paquete(tmp_path, ['a', 'b'])
+    (package / 'properties_run2.jsonl').unlink()
+    with pytest.raises(ValueError, match='run is missing'):
+        registrar(package, _resultado(), tmp_path / 'output')
+
+
+def test_declared_observation_count_is_checked_before_registration(tmp_path):
+    package = _paquete(tmp_path, ['a'])
+    certificate = _resultado()
+    certificate['run2']['detalles_obtenidos'] = 2
+    with pytest.raises(ValueError, match='count does not match'):
+        registrar(package, certificate, tmp_path / 'output')
+
+
+@pytest.mark.parametrize('field,value', [('canonical_agency_id', None),
+    ('canonical_agency_id', True), ('checked_at', None), ('checked_at', 'not a date')])
+def test_missing_identity_or_time_does_not_get_fabricated(tmp_path, field, value):
+    package = _paquete(tmp_path, ['a'])
+    certificate = _resultado()
+    certificate[field] = value
+    with pytest.raises(ValueError):
+        registrar(package, certificate, tmp_path / 'output')
+
+
+def _observation(when, hashes):
+    return {'canonical_agency_id': 'roomix:alfa', 'observado_en': when,
+            'hashes': hashes, 'vistas': len(hashes)}
+
+
+def _registry(tmp_path, rows):
+    path = tmp_path / ARCHIVO
+    path.write_text(''.join(json.dumps(row) + '\n' for row in rows), encoding='utf-8')
+    return path
+
+
+@pytest.mark.parametrize('invalid', ['not JSON', None, [],
+    {'canonical_agency_id': 'roomix:alfa', 'hashes': [True], 'vistas': 1},
+    _observation('2026-09-18T10:00:00', ['a', 'a']),
+    {**_observation('2026-09-18T10:00:00', ['a']), 'vistas': 2}])
+def test_corrupt_registry_cannot_silently_remove_observations(tmp_path, invalid):
+    path = _registry(tmp_path, [_observation('2026-09-17T10:00:00', ['a']), invalid])
+    original = path.read_bytes()
+    with pytest.raises(ValueError):
+        leer(path)
+    assert path.read_bytes() == original
+
+
+def test_replayed_same_instant_is_not_an_extra_absence(tmp_path):
+    rows = [_observation('2026-09-18T10:00:00-03:00', ['a']),
+            _observation('2026-09-18T13:00:00Z', ['a'])]
+    assert len(leer(_registry(tmp_path, rows))['roomix:alfa']) == 1
+
+
+def test_same_instant_conflicting_seen_sets_are_not_order_dependent(tmp_path):
+    rows = [_observation('2026-09-18T10:00:00-03:00', ['a']),
+            _observation('2026-09-18T13:00:00Z', ['b'])]
+    with pytest.raises(ValueError, match='Conflicting observations'):
+        leer(_registry(tmp_path, rows))
+
+
+def test_registry_orders_explicit_instants_not_iso_text(tmp_path):
+    rows = [_observation('2026-09-18T10:00:00-03:00', ['new']),
+            _observation('2026-09-18T12:00:00Z', ['old'])]
+    assert [row['hashes'] for row in leer(_registry(tmp_path, rows))['roomix:alfa']] == [['old'], ['new']]
+
+
+def test_unknown_registry_timezone_is_not_guessed(tmp_path):
+    rows = [_observation('2026-09-18T10:00:00', ['a']),
+            _observation('2026-09-18T13:00:00Z', ['a'])]
+    with pytest.raises(ValueError, match='mixed known and unknown timezones'):
+        leer(_registry(tmp_path, rows))

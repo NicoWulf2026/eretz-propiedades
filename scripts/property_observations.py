@@ -26,11 +26,17 @@ from __future__ import annotations
 
 import argparse
 import json
-import time
 from pathlib import Path
 from typing import Any, Iterable
 
-OBSERVACION_VERSION = "property_observations_v1"
+if __package__:
+    from .property_freshest import _certification_time, _leer, _package_rows
+    from .property_lifecycle import enumeracion_confiable
+else:  # Preserve the existing direct-file CLI without environment bootstrap.
+    from property_freshest import _certification_time, _leer, _package_rows
+    from property_lifecycle import enumeracion_confiable
+
+OBSERVACION_VERSION = "property_observations_v2"
 
 ARCHIVO = "PROPERTY_OBSERVATIONS.jsonl"
 
@@ -39,19 +45,9 @@ CORRIDAS_CONFIABLES = ("OK",)
 
 
 def _hashes(ruta: Path) -> set[str]:
-    fuera: set[str] = set()
-    if not ruta.exists():
-        return fuera
-    for linea in ruta.read_text(encoding="utf-8", errors="replace").splitlines():
-        if not linea.strip():
-            continue
-        try:
-            fila = json.loads(linea)
-        except ValueError:
-            continue
-        if fila.get("hash_dedup"):
-            fuera.add(fila["hash_dedup"])
-    return fuera
+    if not ruta.is_file():
+        raise ValueError('Observation property run is missing')
+    return {fila['hash_dedup'] for fila in _leer(ruta)}
 
 
 def observacion(paquete: Path, resultado: dict[str, Any]) -> dict[str, Any] | None:
@@ -62,8 +58,14 @@ def observacion(paquete: Path, resultado: dict[str, Any]) -> dict[str, Any] | No
     una baja.
     """
     corridas = [resultado.get("run1") or {}, resultado.get("run2") or {}]
-    if not all(c.get("estado") in CORRIDAS_CONFIABLES for c in corridas):
+    if not all(isinstance(c, dict) and enumeracion_confiable(c) for c in corridas):
         return None
+    if not isinstance(resultado.get('canonical_agency_id'), str) or not resultado['canonical_agency_id'].strip():
+        raise ValueError('Observation requires a canonical agency identity')
+    _certification_time(resultado.get('checked_at'))
+    # Validate both declared runs and their counts before deriving any absence.
+    # The shared archive validator does not establish current source identity.
+    _package_rows(paquete, resultado)
     vistos = _hashes(paquete / "properties_run1.jsonl") | _hashes(
         paquete / "properties_run2.jsonl")
     if not vistos:
@@ -71,8 +73,7 @@ def observacion(paquete: Path, resultado: dict[str, Any]) -> dict[str, Any] | No
     return {
         "canonical_agency_id": resultado.get("canonical_agency_id"),
         "observacion_version": OBSERVACION_VERSION,
-        "observado_en": resultado.get("checked_at")
-                        or time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "observado_en": resultado['checked_at'],
         "vistas": len(vistos),
         "hashes": sorted(vistos),
     }
@@ -100,16 +101,30 @@ def leer(ruta: Path) -> dict[str, list[dict[str, Any]]]:
     por_agencia: dict[str, list[dict[str, Any]]] = {}
     if not ruta.exists():
         return por_agencia
-    for linea in ruta.read_text(encoding="utf-8", errors="replace").splitlines():
-        if not linea.strip():
-            continue
-        try:
-            fila = json.loads(linea)
-        except ValueError:
-            continue
-        por_agencia.setdefault(fila.get("canonical_agency_id"), []).append(fila)
+    instantes: dict[tuple[str, Any], dict[str, Any]] = {}
+    for fila in _leer(ruta):
+        agency = fila.get('canonical_agency_id')
+        hashes = fila.get('hashes')
+        if (not isinstance(agency, str) or not agency.strip()
+                or not isinstance(hashes, list)
+                or any(not isinstance(h, str) or not h.strip() for h in hashes)
+                or len(set(hashes)) != len(hashes)
+                or type(fila.get('vistas')) is not int or fila['vistas'] != len(hashes)):
+            raise ValueError('Invalid observation identity or property count')
+        instant = _certification_time(fila.get('observado_en'))
+        key = (agency, instant)
+        prior = instantes.get(key)
+        if prior is not None:
+            if set(prior['hashes']) != set(hashes):
+                raise ValueError('Conflicting observations at the same time')
+            continue  # Replayed evidence is not another consecutive absence.
+        instantes[key] = fila
+        por_agencia.setdefault(agency, []).append(fila)
     for filas in por_agencia.values():
-        filas.sort(key=lambda f: f.get("observado_en") or "")
+        times = [_certification_time(f['observado_en']) for f in filas]
+        if len({instant.tzinfo is None for instant in times}) > 1:
+            raise ValueError('Cannot order observations with mixed known and unknown timezones')
+        filas.sort(key=lambda f: _certification_time(f['observado_en']))
     return por_agencia
 
 
@@ -132,8 +147,9 @@ def transiciones(observaciones: Iterable[dict[str, Any]]) -> dict[str, Any]:
 
     for anterior, actual in zip(conjuntos, conjuntos[1:]):
         for h in anterior - actual:
-            ausencias[h] = ausencias.get(h, 0) + 1
             desapariciones += 1
+        for h in (anterior | set(ausencias)) - actual:
+            ausencias[h] = ausencias.get(h, 0) + 1
         for h in actual & set(ausencias):
             if ausencias.get(h):
                 reapariciones += 1
@@ -176,7 +192,9 @@ def main() -> int:
         "ausencia_consecutiva_maxima": max(
             (m["ausencia_consecutiva_maxima"] for m in con_datos.values()),
             default=0),
-        "listo_para_activar_el_ciclo_de_vida": len(con_datos) > 0 and total_des > 0,
+        "datos_para_medir_reapariciones": len(con_datos) > 0 and total_des > 0,
+        # A disappearance metric is not approval to deactivate real inventory.
+        "listo_para_activar_el_ciclo_de_vida": False,
         "database_writes": 0,
     }
     print(json.dumps(resumen, ensure_ascii=False, indent=2))

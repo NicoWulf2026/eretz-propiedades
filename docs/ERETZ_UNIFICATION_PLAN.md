@@ -23,12 +23,18 @@ productiva ni cierre de la misión. Evidencia cuantificada y limitaciones en
 | Frontend F7 | Integrado sin rediseño | Tests/typecheck/build; browser QA candidato pendiente |
 | Publicación única | Parcial | Hay consumidores reales del escritor REST histórico; equivalencia con RPC pendiente |
 
-Últimos controles: 2437 tests backend PASS (233,44 s, XML de publicación/
-snapshot), sin fallos/errores/skips. Operación desconocida se almacena NULL
+Últimos controles: 2481 tests backend PASS (156,20 s, XML de integridad del
+registro/lifecycle), sin fallos/errores/skips. Operación desconocida se almacena NULL
 según el CHECK público observado; superficie cubierta ya se preserva en el
 RPC candidato. La consulta REST de identidad no convierte fallo/rango parcial
 en propiedad nueva. Persisten diferencias de campos/invalidación y no se
 autoriza retirar ese consumidor todavía.
+
+Paquetes y registro histórico ya rechazan corrupción, ausencia de archivos y
+conteos contradictorios antes de derivar snapshots/ausencias. Replay del mismo
+log: 201 desapariciones, 77 reapariciones; máximo de ausencias observadas al final
+corregido de 1 a 32 por incremento continuado. No es prueba de bajas reales ni
+habilitación productiva; fuente/completitud/fingerprint actuales siguen pendientes.
 
 ## Matriz de consumidores y eliminación
 

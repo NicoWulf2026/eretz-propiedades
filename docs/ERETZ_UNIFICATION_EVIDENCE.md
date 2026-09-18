@@ -459,3 +459,31 @@ No se modificó el archivo original ni se imprimieron filas de propiedades.
 
 Suite backend congelada con esta integridad de archivos: 2455 PASS, 0 fallos,
 0 errores, 0 skipped, 181,58 s; backend_archive_integrity_validation.xml.
+
+Ciclo de vida/registro (`property_observations_v2`, no activado): observación OK
+con paginación interrumpida, presupuesto agotado o enumeración explícitamente
+incompleta no registra ausencias. Reutiliza la validación de paquetes; archivos
+corruptos/ausentes o conteos contradictorios fallan antes de append. Agencia y
+fecha deben existir: no se fabrica una observación de "hoy". El lector del log
+append-only rechaza corrupción y conteos/identidades inválidas; ordena instantes
+con offsets explícitos sin inventar zona, deduplica la misma evidencia temporal
+y rechaza conflictos en el mismo instante. Ausencia continuada incrementa el
+contador en cada observación, no sólo al desaparecer; reaparecer lo reinicia.
+88 controles focalizados PASS y lint PASS. CLI directa y de módulo preservadas.
+La métrica de desapariciones ya no afirma autorización para activar lifecycle;
+esa salida queda false, separada de datos_para_medir_reapariciones. No hubo bajas
+ni escrituras en bases. OK histórico sin prueba positiva de completitud, cambios
+de fuente y vigencia de fingerprint siguen requiriendo validación: este bloque
+no demuestra por sí solo que toda ausencia archivada sea ausencia real.
+
+Replay readonly del MISMO registro histórico, con funciones anteriores aisladas
+por AST (`a4840295d7`) contra el consumidor candidato: ambos cuentan 207 agencias,
+88 medibles, 201 desapariciones y 77 reapariciones (38,3%). El contador máximo al
+final pasa de 1 a 32 observaciones: antes no incrementaba una ausencia continuada.
+Esto corrige una métrica, NO prueba 32 ausencias reales independientes: vigencia,
+completitud positiva, separación temporal y continuidad de fuente deben ser
+verificadas antes de convertir el registro en bajas. No hubo mutación de log,
+registro de nuevas observaciones ni escrituras en bases durante este replay.
+
+Regresión completa congelada del registro/lifecycle: 2481 PASS, 0 fallos,
+0 errores, 0 skipped, 156,20 s; backend_lifecycle_integrity_validation.xml.
