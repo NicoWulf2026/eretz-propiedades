@@ -22,14 +22,21 @@ try {
   await db.exec(`
     CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;
     CREATE SCHEMA internal_scraping;
+    CREATE TABLE public.inmobiliarias_main (id bigint PRIMARY KEY);
+    INSERT INTO public.inmobiliarias_main VALUES (7), (8);
     CREATE TABLE public.propiedades (
-      id bigserial PRIMARY KEY, inmobiliaria_id integer, url text,
-      url_normalizada text, hash_dedup text UNIQUE, titulo text, descripcion text,
+      id bigserial PRIMARY KEY, inmobiliaria_id integer REFERENCES public.inmobiliarias_main(id), url text,
+      url_normalizada text, hash_dedup text NOT NULL UNIQUE, titulo text, descripcion text,
       precio numeric, moneda text, tipo_propiedad text, operacion text,
       ambientes integer, dormitorios integer, banos integer, superficie_total numeric,
       direccion text, barrio text, ciudad text, latitud double precision,
       longitud double precision, imagenes text[], fuente_extraccion text,
-      estado text, updated_at timestamptz DEFAULT now()
+      estado text, updated_at timestamptz DEFAULT now(),
+      CHECK (operacion IS NULL OR operacion IN
+        ('venta','alquiler','alquiler_temporario','consultar','venta_y_alquiler')),
+      CHECK (moneda IS NULL OR moneda IN ('ARS','USD','EUR','UYU')),
+      CHECK (estado IS NULL OR estado IN
+        ('activa','reservada','vendida','alquilada','no_detectada_en_ultimo_scraping','consultar','desconocida'))
     );
   `);
   await check('internal_schema_applies_twice', async () => {
@@ -63,12 +70,20 @@ try {
     inmobiliaria_id: 7, url: 'https://official.test/propiedad/123',
     url_normalizada: 'official.test/propiedad/123', hash_dedup: 'local-fixture-123',
     titulo: 'Casa real de fixture', precio: 0, moneda: 'USD', ambientes: 0,
-    dormitorios: null, banos: 1, superficie_total: null, operacion: 'desconocida',
+    dormitorios: null, banos: 1, superficie_total: null, operacion: null,
     tipo_propiedad: 'casa', imagenes: [], fuente_extraccion: 'test', estado: 'activa',
   };
   const audit = [{ field: 'precio', old_value: null, new_value: 0,
     decision: 'ACCEPTED_INSERT', confidence: 1, reason: 'local fixture' }];
   let id;
+  await check('observed_public_constraints_reject_domain_unknown_and_foreign_agency', async () => {
+    await assert.rejects(() => db.query(
+      'INSERT INTO public.propiedades(hash_dedup,inmobiliaria_id,operacion) VALUES ($1,$2,$3)',
+      ['invalid-operation', 7, 'desconocida']));
+    await assert.rejects(() => db.query(
+      'INSERT INTO public.propiedades(hash_dedup,inmobiliaria_id) VALUES ($1,$2)',
+      ['invalid-agency', 999]));
+  });
   await check('insert_null_zero_and_audit', async () => {
     const result = await db.query('SELECT public.insert_property_safe($1::jsonb,$2,$3,$4::jsonb) AS result',
       [JSON.stringify(payload), '7', 'local-insert', JSON.stringify(audit)]);
@@ -77,6 +92,7 @@ try {
     assert.equal(Number(row.precio), 0);
     assert.equal(row.ambientes, 0);
     assert.equal(row.dormitorios, null);
+    assert.equal(row.operacion, null);
     assert.equal(Number((await db.query('SELECT count(*) AS n FROM public.property_merge_audit')).rows[0].n), 1);
   });
   const merge = (patch, entries, source = '7', run = 'local-update') => db.query(

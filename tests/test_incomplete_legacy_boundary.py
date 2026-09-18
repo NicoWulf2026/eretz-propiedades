@@ -11,7 +11,7 @@ def test_verified_property_does_not_require_price_location_images_or_coordinates
     assert doc['precio'] is None
     assert doc['direccion'] is None
     assert doc['barrio'] is None
-    assert doc['operacion'] == 'desconocida'
+    assert doc['operacion'] is None
     assert doc['latitud'] is doc['longitud'] is None
 
 
@@ -20,7 +20,7 @@ def test_missing_fields_do_not_relax_url_identity_validation(url):
     assert not Propiedad(url=url, titulo='Casa con patio').is_valid()
 
 
-@pytest.mark.parametrize('operation,expected', [(None, 'desconocida'), ('UNKNOWN', 'desconocida'),
+@pytest.mark.parametrize('operation,expected', [(None, None), ('UNKNOWN', None),
                                               ('consultar', 'consultar'), ('venta', 'venta')])
 def test_unknown_operation_is_not_source_explicit_consultation(operation, expected):
     assert prepare_insert_payload(dict(operacion=operation))['operacion'] == expected

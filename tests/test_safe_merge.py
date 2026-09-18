@@ -82,11 +82,20 @@ def test_new_property_gets_sanitized_insert_and_field_audit():
     assert all(item["decision"] == ACCEPTED_INSERT for item in plan["audit"])
 
 
-def test_new_property_uses_explicit_unknown_operation_state():
-    plan = build_merge_plan(incoming(operacion=None), [], source_id="10")
+@pytest.mark.parametrize('operation', [None, 'desconocida', 'proyecto', 'unknown'])
+def test_new_property_unknown_operation_is_nullable_storage_not_an_invalid_enum(operation):
+    plan = build_merge_plan(incoming(operacion=operation), [], source_id="10")
 
     assert plan["status"] == "insert"
-    assert plan["payload"]["operacion"] == "desconocida"
+    assert plan["payload"]["operacion"] is None
+    assert not any(item['field'] == 'operacion' for item in plan['audit'])
+
+
+@pytest.mark.parametrize('operation', ['desconocida', 'proyecto', 'unknown'])
+def test_domain_unknown_operation_is_not_a_storage_improvement(operation):
+    plan = build_merge_plan(incoming(operacion=operation), [existing(operacion=None)], source_id='10')
+    assert 'operacion' not in plan['patch']
+    assert decision(plan, 'operacion')['decision'] == REJECTED_PLACEHOLDER
 
 
 def test_changed_amount_does_not_borrow_old_currency():

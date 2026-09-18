@@ -334,7 +334,8 @@ Rechazos registrados sobreviven aunque falte señal del detector, y el mapper
 por ficha no convierte presencia agregada de agencia en ausencia demostrada en
 una fila. Cero permanece presente; booleanos no cuentan como campos numéricos.
 134 controles focalizados PASS, lint de los archivos tocados PASS; suite global
-posterior en ejecución. Cambia la huella del certificador: el canario anterior
+posterior 2349 PASS, sin fallos/errores/skips, 235,52 s (XML
+backend_source_evidence_validation.xml). Cambia la huella del certificador: el canario anterior
 no se actualiza artificialmente ni acredita vigencia de este nuevo HEAD.
 
 La arquitectura candidata concentra conectores, identidad, detección de URLs,
@@ -342,3 +343,23 @@ contrato de propiedad y validación; conserva entrypoints históricos donde aún
 hay consumidores. Su eliminación requiere una matriz de consumidores y
 equivalencia verificada. Mantenerlos temporalmente no es el resultado final
 de simplificación solicitado.
+
+Verificación de Supabase en esta continuación: sólo SELECT de metadatos sobre
+columnas, constraints y ACLs; ninguna llamada al RPC, lectura de secretos,
+INSERT, rollback productivo ni publicación. La FK de propiedades referencia
+inmobiliarias_main. El CHECK real acepta operación NULL o venta, alquiler,
+alquiler_temporario, consultar y venta_y_alquiler; no acepta desconocida ni
+proyecto. Los RPC observados existen y tienen EXECUTE para postgres/service_role,
+no PUBLIC/anon/authenticated. Esto no certifica sus cuerpos ni su deployment.
+
+Regresión de frontera comprobada: el fallback local desconocida podía rechazar
+una propiedad real incompleta al insertar en el contrato público. El modelo,
+safe_merge, staging_to_prop y sanitizador REST ahora comparten un serializador:
+desconocida/proyecto/no reconocido -> NULL público, conservando la evidencia
+original en dominio/staging; nunca venta ni consultar inventadas. Un estado
+desconocido tampoco se promueve como mejora de operación en una actualización.
+El fixture PGlite incluye los CHECK observados y la FK main, antes ausentes:
+rechaza desconocida y agencia inexistente; conserva INSERT con operación NULL,
+precio/ambientes cero y auditoría atómica. Once comprobaciones SQL PASS; ninguna
+conexión productiva. Falta cerrar la equivalencia de campos y semántica de
+actualizaciones antes de retirar el publicador REST todavía consumido.

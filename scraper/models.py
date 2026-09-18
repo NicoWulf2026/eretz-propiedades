@@ -125,7 +125,7 @@ ALLOWED_MONEDAS = {"ARS", "USD"}
 # - desconocida: no se pudo determinar la operacion (FASE 4). No es lo mismo que
 #   "consultar": antes ambos casos colapsaban y un aviso que decia "Consultar"
 #   quedaba indistinguible de uno sin operacion detectable. Aca solo puntua la
-#   completitud del registro; safe_merge también conserva esta distinción.
+#   completitud del registro; en almacenamiento público se representa con NULL.
 # - venta_y_alquiler: propiedad publicada simultáneamente como venta y alquiler
 ALLOWED_OPERACIONES = {
     "venta",
@@ -136,6 +136,19 @@ ALLOWED_OPERACIONES = {
     "desconocida",
     "proyecto",  # legacy — no eliminar
 }
+
+# Public CHECK observed read-only on 2026-09-18. Domain-only states are not
+# storage enum values: retain the original in memory/raw evidence, not as venta.
+PUBLIC_STORAGE_OPERACIONES = frozenset({
+    "venta", "alquiler", "alquiler_temporario", "consultar", "venta_y_alquiler",
+})
+
+
+def operation_for_storage(value: Any) -> Optional[str]:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower().replace(" ", "_")
+    return normalized if normalized in PUBLIC_STORAGE_OPERACIONES else None
 
 
 @dataclass
@@ -198,7 +211,7 @@ class Propiedad:
             "superficie_total":  _safe_surface(self.metros),    # metros -> superficie_total
             "imagenes":          self.imagenes,
             "ciudad":            self.ciudad,
-            "operacion":         self.operacion,
+            "operacion":         operation_for_storage(self.operacion),
             "latitud":           self.latitud,
             "longitud":          self.longitud,
             "fuente_extraccion": self.fuente,        # fuente -> fuente_extraccion

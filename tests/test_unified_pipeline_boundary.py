@@ -93,6 +93,16 @@ def test_invalid_raw_count_does_not_invalidate_property_or_become_zero(count):
     assert result['ambientes'] is None
 
 
+@pytest.mark.parametrize('operation', [None, 'desconocida', 'proyecto', 'unknown'])
+def test_staging_domain_unknown_is_nullable_at_publication_boundary(operation):
+    from scripts.publish_to_supabase import staging_to_prop
+    stage = {'titulo': 'Casa real', 'operacion': operation}
+    result = staging_to_prop(stage)
+    assert result['titulo'] == 'Casa real'
+    assert result['operacion'] is None
+    assert stage['operacion'] == operation
+
+
 def test_removed_unguarded_writer_refuses_before_reading_input_or_configuration(monkeypatch):
     from scripts import ingest_to_pipeline
     monkeypatch.setattr('sys.argv', ['ingest_to_pipeline', '--entrada', 'must-not-open.jsonl', '--escribir'])

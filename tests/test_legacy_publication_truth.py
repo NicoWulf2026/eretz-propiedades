@@ -31,6 +31,18 @@ def publisher(monkeypatch):
     return db
 
 
+@pytest.mark.parametrize('operation', [None, 'desconocida', 'proyecto', 'venta', 'consultar'])
+def test_actual_rest_sanitizer_obeys_public_operation_enum(publisher, operation):
+    from scraper.models import operation_for_storage
+    publisher._get_property_columns = lambda: {'titulo', 'operacion'}
+    # The fixture's method is a mock for unrelated identity tests. Bind the
+    # actual class implementation here without importing the .env bootstrap.
+    result = type(publisher)._sanitize_property_payload(
+        publisher, {'titulo': 'Casa real', 'operacion': operation})
+    assert result['titulo'] == 'Casa real'
+    assert result['operacion'] == operation_for_storage(operation)
+
+
 def prop(**changes):
     row = dict(inmobiliaria_id=7, hash_dedup='fixture', url='https://official.test/propiedad/123',
                url_normalizada='official.test/propiedad/123', id_externo='123')

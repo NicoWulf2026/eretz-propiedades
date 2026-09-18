@@ -42,6 +42,7 @@ except Exception:  # pragma: no cover
 _ABIS_DB_URL = None
 
 from scripts.image_quality import normalize_property_images  # noqa: E402 (CLI path bootstrap)
+from scraper.models import operation_for_storage  # noqa: E402 (CLI path bootstrap)
 
 # FASE 1 — Sprint A: ampliado con consultar y venta_y_alquiler.
 # Debe mantenerse en sync con build_publish_queue.py::VALID_OPERATIONS.
@@ -281,7 +282,7 @@ def staging_to_prop(staging: Dict[str, Any]) -> Dict[str, Any]:
         "precio": staging.get("precio"),
         "moneda": staging.get("moneda"),
         "tipo_propiedad": staging.get("tipo_propiedad"),
-        "operacion": staging.get("operacion"),
+        "operacion": operation_for_storage(staging.get("operacion")),
         "superficie_total": staging.get("superficie_total"),
         "superficie_cubierta": staging.get("superficie_cubierta"),
         "direccion": staging.get("direccion_normalizada"),

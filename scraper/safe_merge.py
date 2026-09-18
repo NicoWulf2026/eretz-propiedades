@@ -15,9 +15,9 @@ import unicodedata
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 if __package__:
-    from .models import _compute_hash_dedup, _normalize_url_for_hash
+    from .models import PUBLIC_STORAGE_OPERACIONES, _compute_hash_dedup, _normalize_url_for_hash, operation_for_storage
 else:  # Existing source-checkout command-line entry points.
-    from models import _compute_hash_dedup, _normalize_url_for_hash
+    from models import PUBLIC_STORAGE_OPERACIONES, _compute_hash_dedup, _normalize_url_for_hash, operation_for_storage
 
 ACCEPTED_INSERT = "ACCEPTED_INSERT"
 ACCEPTED_IMPROVEMENT = "ACCEPTED_IMPROVEMENT"
@@ -124,14 +124,7 @@ _IMAGE_REJECT_RE = re.compile(
     re.IGNORECASE,
 )
 _VALID_CURRENCIES = {"ARS", "USD"}
-_VALID_OPERATIONS = {
-    "venta",
-    "alquiler",
-    "alquiler_temporario",
-    "consultar",
-    "venta_y_alquiler",
-    "desconocida",
-}
+_VALID_OPERATIONS = PUBLIC_STORAGE_OPERACIONES
 _VALID_TYPES = {
     "casa",
     "departamento",
@@ -646,8 +639,7 @@ def prepare_insert_payload(incoming: Mapping[str, Any]) -> Dict[str, Any]:
     price = _number(payload.get("precio"))
     if payload.get("precio") is not None and (price is None or not 0 <= price <= 1e15):
         payload["precio"] = None
-    operation = _plain(payload.get("operacion")).replace(" ", "_")
-    payload["operacion"] = operation if operation in _VALID_OPERATIONS else "desconocida"
+    payload["operacion"] = operation_for_storage(payload.get("operacion"))
     property_type = _plain(payload.get("tipo_propiedad")).replace(" ", "_")
     payload["tipo_propiedad"] = property_type if property_type in _VALID_TYPES else "otro"
     if not _valid_coordinate_pair(payload.get("latitud"), payload.get("longitud")):

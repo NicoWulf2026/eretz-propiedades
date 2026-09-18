@@ -43,6 +43,7 @@ from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Page, sync_playwright
 from requests.adapters import HTTPAdapter
 from scraper.network_security import secure_get, validate_outbound_url
+from scraper.models import operation_for_storage
 from urllib3.util.retry import Retry
 
 # ---------------------------------------------------------------------------
@@ -2826,6 +2827,8 @@ class SupabasePropiedades:
     def _sanitize_property_payload(self, prop: Dict) -> Dict:
         columns = self._get_property_columns()
         clean = dict(prop)
+        if "operacion" in clean:
+            clean["operacion"] = operation_for_storage(clean["operacion"])
         url_key = normalize_property_url_for_dedup(clean.get("url"))
         if url_key:
             clean["url_normalizada"] = url_key
