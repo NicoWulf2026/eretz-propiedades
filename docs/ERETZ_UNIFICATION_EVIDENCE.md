@@ -432,3 +432,9 @@ fingerprint actual ni verdad del dato: esa verificación sigue pendiente en la
 frontera de consumo de paquetes archivados y no se declara este punto cerrado.
 64 controles de refresco/snapshot/gate/diagnóstico de imágenes PASS; lint de
 los archivos tocados PASS.
+
+Suite congelada después de consulta REST, superficie cubierta, cleanup del
+builder y cronología (`ad8215dcf8`): 2437 PASS, 0 fallos, 0 errores, 0 skipped,
+233,444 s. Confirmado en backend_publication_snapshot_validation.xml, terminado
+2026-09-18 10:12:48 local. Los ocho worktrees originales conservan los HEADs
+previamente inventariados; candidato limpio antes de esta actualización documental.

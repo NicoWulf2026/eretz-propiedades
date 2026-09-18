@@ -17,11 +17,18 @@ productiva ni cierre de la misión. Evidencia cuantificada y limitaciones en
 | Null/zero e incompletas | Probados por fronteras | Raw/staging, API, presentación; cero precio/superficie sólo fixture |
 | Imágenes | Política corregida, revisión pendiente | Frecuencia sin evidencia no excluye; falta revisión visual de cohorte real |
 | Workers/locks/heartbeat | Controles locales PASS | Falta soak con cohortes reales y fallos inducidos |
-| SQL de merge/auditoría/rollback | Validado localmente | Diez controles PGlite; no Supabase alojado ni concurrencia productiva |
+| SQL de merge/auditoría/rollback | Validado localmente | Trece controles PGlite con CHECK/FK observados; no prueba de deployment/concurrencia alojada |
 | API combinada/mapa/batch/agencia | Integrada localmente | Snapshot real y contratos probados; staging accesible pendiente |
 | Detail histórico numérico | Bloqueado por datos | Crosswalk de IDs público↔hash vacío; no inventar aliases |
 | Frontend F7 | Integrado sin rediseño | Tests/typecheck/build; browser QA candidato pendiente |
 | Publicación única | Parcial | Hay consumidores reales del escritor REST histórico; equivalencia con RPC pendiente |
+
+Últimos controles: 2437 tests backend PASS (233,44 s, XML de publicación/
+snapshot), sin fallos/errores/skips. Operación desconocida se almacena NULL
+según el CHECK público observado; superficie cubierta ya se preserva en el
+RPC candidato. La consulta REST de identidad no convierte fallo/rango parcial
+en propiedad nueva. Persisten diferencias de campos/invalidación y no se
+autoriza retirar ese consumidor todavía.
 
 ## Matriz de consumidores y eliminación
 
@@ -52,6 +59,18 @@ habilitar el helper; no afirmar recuperación de paginación por copiarlo.
 `dry_run_politica.py` aporta trazabilidad de campos conservados, pero sus
 firmas cortas y coordenadas aproximadas no prueban igualdad ni verdad geográfica.
 No usar sus decisiones como autorización productiva ni ejecutar sus escrituras.
+
+Triage estático actual: 85 Python sin trackear en el worktree original, 45 en
+root como herramientas ad hoc; todos parsean, seis rutas también existen en el
+candidato y cuatro son idénticas. Siete tienen indicadores sintácticos estrechos
+de escritura; no es un análisis completo de efectos ni un permiso de ejecución.
+`apply_diagnostic_backfill` bloquea --commit y genera SQL para un RUN_ID
+histórico: no portarlo como clasificador actual. `run_scraping_autofix_continuous`
+orquesta import/validación/geocoding y posee estado/lock propio; no iniciar una
+segunda operación paralela ni reemplazar los locks atómicos ya probados por
+esas banderas. Hay consumidores reales de los campaigns desde
+run_targeted_coverage_diagnostic/run_targeted_playwright_diagnostic: todavía
+no son SAFE_TO_REMOVE. Sus artefactos diagnósticos no equivalen a certificación.
 
 1. Terminar revisión de tooling local no integrado por riesgo/capacidad, no
    incorporar scripts uno a uno sólo por existir. Mantener evidencia de descarte.
@@ -98,7 +117,7 @@ padrón daría una fecha falsa. La mediana registrada de dos corridas (215,4 s)
 no incluye toda la espera ni demuestra calidad. No existe aún ETA nacional
 defendible con estas medidas.
 
-El presupuesto medido de una suite backend completa es ~2,7–3,1 minutos local,
+El presupuesto observado de suites backend completas varía ~2,6–6,5 minutos local,
 aparte de lint/build/replays; no es una estimación de días de desarrollo.
 Para actualizar plazos se debe medir una cohorte fresca durante varias jornadas:
 altas netas verificadas/día, tasa de corrección por familia, revisiones humanas,
