@@ -3762,28 +3762,7 @@ def extraer_agente(soup: BeautifulSoup) -> Tuple[Optional[str], Optional[str]]:
     return nombre, telefono
 
 
-def _normalize_image_url(raw_url: Any, base_url: str = "") -> Optional[str]:
-    if not raw_url:
-        return None
-    url = str(raw_url).strip().strip("\"'() ")
-    if not url or url.startswith("data:") or url.startswith("blob:"):
-        return None
-    url = re.sub(r"^url\([\"']?|[\"']?\)$", "", url.strip()).strip()
-    if url.startswith("//"):
-        scheme = urlparse(base_url).scheme or "https"
-        url = f"{scheme}:{url}"
-    if base_url:
-        if re.match(r"^wp-content/", url, re.I):
-            url = "/" + url
-        elif re.match(r"^uploads/", url, re.I):
-            url = "/wp-content/" + url
-        elif re.match(r"^/uploads/", url, re.I):
-            url = "/wp-content" + url
-    if base_url:
-        url = urljoin(base_url, url)
-    if not url.startswith(("http://", "https://")):
-        return None
-    return url
+from scripts.image_quality import normalize_image_url as _normalize_image_url
 
 
 def _image_sort_weight(text: str) -> int:

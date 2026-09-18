@@ -4,7 +4,28 @@ from __future__ import annotations
 
 import re
 from typing import Any, Iterable, List, Tuple
-from urllib.parse import urlparse, unquote
+from urllib.parse import urljoin, urlparse, unquote
+
+
+def normalize_image_url(raw_url: Any, base_url: str = "") -> str | None:
+    """Existing scraper URL normalization shared with image classification."""
+    if not raw_url:
+        return None
+    url = str(raw_url).strip().strip("\"'() ")
+    if not url or url.startswith(("data:", "blob:")):
+        return None
+    url = re.sub(r"^url\([\"']?|[\"']?\)$", "", url.strip()).strip()
+    if url.startswith("//"):
+        url = f"{urlparse(base_url).scheme or 'https'}:{url}"
+    if base_url:
+        if re.match(r"^wp-content/", url, re.I):
+            url = "/" + url
+        elif re.match(r"^uploads/", url, re.I):
+            url = "/wp-content/" + url
+        elif re.match(r"^/uploads/", url, re.I):
+            url = "/wp-content" + url
+        url = urljoin(base_url, url)
+    return url if url.startswith(("http://", "https://")) else None
 
 BRANDING_IMAGE_PATTERNS = (
     "static.tokkobroker.com/tfw/img/prop-icons",
@@ -178,7 +199,7 @@ _NORMALIZED_NON_PROPERTY_STEMS = tuple((marker, _norm_token(marker))
 
 def non_property_image_signals(image_url, publisher_name=None):
     """Devuelve la lista de senales estructurales detectadas en la URL."""
-    url = str(image_url or "").strip()
+    url = normalize_image_url(image_url) or str(image_url or "")
     low = unquote(url.lower())
     signals = []
     if not low.strip():

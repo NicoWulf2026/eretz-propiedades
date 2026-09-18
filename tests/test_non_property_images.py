@@ -18,6 +18,16 @@ from scraper.scraper_propiedades import (
 WP = "https://ejemplo.com.ar/wp-content/uploads/2024/07/"
 
 
+@pytest.mark.parametrize('wrapper', [lambda url: url, lambda url: '"' + url + '"',
+                                    lambda url: '//' + url.split('://', 1)[1]])
+def test_shared_classifier_preserves_scraper_url_normalization(wrapper):
+    from scripts.image_quality import normalize_image_url, non_property_image_signals
+    from scraper.scraper_propiedades import _normalize_image_url
+    assert _normalize_image_url is normalize_image_url
+    url = 'https://agency.test/icons/transparent.gif'
+    assert non_property_image_signals(wrapper(url)) == non_property_image_signals(url)
+
+
 @pytest.mark.parametrize("url,publisher", [
     # Recursos tecnicamente imposibles de ser la foto de un aviso.
     ("http://{s}.tile.osm.org/{z}/{x}/{y}.png", None),
