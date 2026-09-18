@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import argparse
 import csv
+import os
 import shutil
 import sqlite3
+import tempfile
 from pathlib import Path
 
 
@@ -58,9 +60,14 @@ def main() -> int:
     if args.output.exists():
         parser.error("output already exists; choose a new derived artifact path")
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(args.source, args.output)
-    connection = sqlite3.connect(args.output)
+    descriptor, name = tempfile.mkstemp(prefix=args.output.name + '.building.',
+                                         dir=args.output.parent)
+    os.close(descriptor)
+    temporary = Path(name)
+    connection = None
     try:
+        shutil.copy2(args.source, temporary)
+        connection = sqlite3.connect(temporary)
         connection.execute("pragma foreign_keys=on")
         connection.executescript(INDEXES)
         if connection.execute("select 1 from sqlite_master where name='busqueda'").fetchone():
@@ -77,8 +84,15 @@ def main() -> int:
                         (alias, property_id),
                     )
         connection.commit()
-    finally:
         connection.close()
+        connection = None
+        # Atomic, no-clobber publication: a failed index/alias build is never
+        # presented as a prepared artifact, even if another process races us.
+        os.link(temporary, args.output)
+    finally:
+        if connection is not None:
+            connection.close()
+        temporary.unlink(missing_ok=True)
     return 0
 
 

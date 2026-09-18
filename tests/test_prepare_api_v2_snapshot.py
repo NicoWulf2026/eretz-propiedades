@@ -60,3 +60,18 @@ def test_prepare_snapshot_preserves_source_and_loads_verified_aliases(tmp_path: 
                              str(source), str(output)], capture_output=True)
     assert result.returncode != 0
     assert b'output already exists' in result.stderr
+
+
+def test_failed_prepare_never_publishes_partial_artifact(tmp_path):
+    source = tmp_path / 'source.sqlite3'
+    output = tmp_path / 'prepared.sqlite3'
+    with sqlite3.connect(source) as connection:
+        connection.execute('create table unrelated (value text)')
+        connection.execute("insert into unrelated values ('preserve me')")
+    result = subprocess.run([sys.executable, 'scripts/prepare_api_v2_snapshot.py',
+                             str(source), str(output)], capture_output=True)
+    assert result.returncode != 0
+    assert not output.exists()
+    assert not list(tmp_path.glob('prepared.sqlite3.building.*'))
+    with sqlite3.connect(source) as connection:
+        assert connection.execute('select value from unrelated').fetchone()[0] == 'preserve me'
