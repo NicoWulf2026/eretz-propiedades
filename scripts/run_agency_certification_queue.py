@@ -584,6 +584,49 @@ def inventory(record: dict[str, dict[str, Any]]) -> int:
     return max([int(x) for x in values if isinstance(x, (int, float))] or [0])
 
 
+def is_current_catalog_result(previous: dict[str, Any],
+                              record: dict[str, dict[str, Any]],
+                              canonical_id: str,
+                              postergadas: list[dict[str, str]] | None = None) -> bool:
+    """Queue boundary: historical closure must still describe today's identity.
+
+    No network, ID translation or alternate source policy. Identity-only
+    closures can remain deferred only while the same classification persists;
+    parser closures require a currently executable official identity. A failed
+    identity read is not permission to reuse historical success.
+    """
+    if not isinstance(previous, dict) or previous.get('canonical_agency_id') != canonical_id:
+        return False
+    status = previous.get('status')
+    if not isinstance(status, str):
+        return False
+    try:
+        identity = resolve_identity(record, canonical_id)
+        if not isinstance(identity, dict):
+            return False
+        current_status = identity.get('identity_status')
+        identity_only = status == 'IDENTITY_PENDING' or (
+            status == 'BLOCKED_EXTERNAL' and not previous.get('connector_version'))
+        if identity_only:
+            if current_status != status:
+                return False
+        elif current_status != 'READY':
+            return False
+        else:
+            for url in (previous.get('official_url'), identity.get('official_url')):
+                if not isinstance(url, str) or not url.strip():
+                    return False
+            old_id, current_id = previous.get('eretz_id'), identity.get('eretz_id')
+            if (type(old_id) is not int or old_id <= 0 or type(current_id) is not int
+                    or current_id <= 0 or old_id != current_id):
+                return False
+        return is_current_result(previous, record, postergadas, identity.get('official_url'))
+    except Exception:
+        # Selection is read-only. A malformed catalog or unavailable code
+        # invalidates reuse; certify/runner_error will record the actual failure.
+        return False
+
+
 def bucket(record: dict[str, dict[str, Any]]) -> str:
     amount = inventory(record)
     if amount <= 11:
@@ -820,19 +863,15 @@ def main() -> int:
         # La fuente de hoy se resuelve con la misma precedencia que usa el
         # certificador, llamando a `resolve_identity`: no se reimplementa acá,
         # porque dos copias de una precedencia terminan divergiendo.
-        try:
-            fuente = (resolve_identity(catalog[key], key) or {}).get("official_url")
-        except Exception:
-            fuente = None
-        return is_current_result(existing.get(key, {}), catalog[key],
-                                 diferidas_al_armar.get(key), fuente)
+        return is_current_catalog_result(existing.get(key, {}), catalog[key], key,
+                                         diferidas_al_armar.get(key))
 
     stale = [key for key in queue if key in existing and not current(key)
              and existing[key].get("status") in TERMINAL]
     for key in stale:
         append_jsonl(output / "AGENCY_MASTER_PROGRESS.jsonl", {
             "canonical_agency_id": key, "status": "RECERTIFICATION_REQUIRED",
-            "reason": "connector code fingerprint changed",
+            "reason": "certification evidence or current source identity no longer matches",
             "mode": mode_name, "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S")})
     pending = [key for key in queue if not current(key)]
     if args.limit > 0:

@@ -23,7 +23,7 @@ productiva ni cierre de la misión. Evidencia cuantificada y limitaciones en
 | Frontend F7 | Integrado sin rediseño | Tests/typecheck/build; browser QA candidato pendiente |
 | Publicación única | Parcial | Hay consumidores reales del escritor REST histórico; equivalencia con RPC pendiente |
 
-Últimos controles: 2608 tests backend PASS (168,63 s, XML de caudal/lectura única),
+Últimos controles: 2633 tests backend PASS (157,01 s, XML de identidad actual),
 sin fallos/errores/skips. Operación desconocida se almacena NULL
 según el CHECK público observado; superficie cubierta ya se preserva en el
 RPC candidato. La consulta REST de identidad no convierte fallo/rango parcial
@@ -56,6 +56,13 @@ actual ni --refresh-safe sobreescribe evidencia vencida; sólo métricas sin
 recertificación sobre código ya compatible. Queue exige prueba granular/versionada
 de código para éxito; defectos antiguos desconocidos no reciben amnistía. Falta
 proveniencia de datos GeoRef/identidad actuales: código vigente no prueba verdad.
+
+La cola real ahora comprueba identidad del catálogo antes de reutilizar evidencia:
+un viejo pending/block de identidad no tapa una fuente ahora READY, un fallo al
+resolver no habilita éxito cached, y cierres de parser requieren URL/FK observado
+iguales y ejecutables. No es un crosswalk hacia PK públicas ni aprobación del
+lifecycle; faltan continuidad temporal, referencia geográfica capturada y política
+de refresh de éxitos. Ledger corrupto/último resultado ambiguo requiere revisión.
 
 ## Matriz de consumidores y eliminación
 

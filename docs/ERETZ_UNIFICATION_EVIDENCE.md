@@ -640,3 +640,18 @@ Es una medición local puntual, no un benchmark del pipeline ni throughput nacio
 Suite completa de lectura única: 2608 PASS, 0 fallos/errores/skipped, 168,63 s,
 backend_throughput_single_read_validation.xml. Wheel aislado también
 resolvió strategy_fingerprint/current_code_evidence sin importar config/clients.
+
+Vigencia de identidad en la cola: el runner convertía excepciones de
+resolve_identity en fuente=None y podía reutilizar éxito antiguo; IDENTITY_PENDING
+sin URL previa seguía terminal por certifier_version aunque el catálogo ya fuera
+READY. La frontera is_current_catalog_result reutiliza la política existente sin
+requests: cierre de identidad sólo vigente si persiste su clasificación; cierres
+de parser exigen identidad READY, URL observada no vacía y el mismo FK entero
+positivo observado, además de huella actual. Cambios de FK/URL, metadata ausente,
+catálogo malformado o fallo de resolución invalidan reutilización, no prueban una
+agencia inactiva. Los llamadores históricos de is_current_result se conservan;
+el runner real usa la nueva frontera. No traduce IDs ni prueba namespace público.
+166 controles focalizados/lint PASS; suite congelada 2633 PASS, 0 fallos/errores/
+skipped, 157,01 s, backend_current_identity_validation.xml. No se ejecutó cola
+contra agencias/productivo ni se mutaron registros originales. Sigue pendiente
+la continuidad temporal/proveniencia geográfica y vigencia de éxito por antigüedad.
