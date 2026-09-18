@@ -224,3 +224,77 @@ def test_corrupt_certificate_cannot_silently_hide_its_evidence(tmp_path, invalid
     with pytest.raises(ValueError, match='Invalid certification JSON|must be an object') as error:
         mas_frescas(tmp_path)
     assert invalid not in str(error.value)
+
+
+def test_missing_property_archives_are_not_certified_zero_results(tmp_path):
+    _package(tmp_path / 'missing', '2026-09-18T10:00:00', 'Casa')
+    (tmp_path / 'missing/properties_run1.jsonl').unlink()
+    with pytest.raises(ValueError, match='no archived property run'):
+        mas_frescas(tmp_path)
+
+
+def test_empty_existing_legacy_run_is_valid_empty_evidence(tmp_path):
+    _package(tmp_path / 'empty', '2026-09-18T10:00:00', 'Casa')
+    (tmp_path / 'empty/properties_run1.jsonl').write_text('', encoding='utf-8')
+    assert mas_frescas(tmp_path) == {}
+
+
+def _declare_run(folder, run, metadata):
+    path = folder / 'certification.json'
+    certificate = json.loads(path.read_text(encoding='utf-8'))
+    certificate[run] = metadata
+    path.write_text(json.dumps(certificate), encoding='utf-8')
+
+
+@pytest.mark.parametrize('expected', [0, 2, True, -1, '1', None])
+def test_declared_count_must_match_actual_rows_without_coercion(tmp_path, expected):
+    folder = tmp_path / 'count'
+    _package(folder, '2026-09-18T10:00:00', 'Casa')
+    _declare_run(folder, 'run1', {'detalles_obtenidos': expected})
+    with pytest.raises(ValueError, match='count does not match'):
+        mas_frescas(tmp_path)
+
+
+def test_declared_missing_second_run_cannot_use_first_as_substitute(tmp_path):
+    folder = tmp_path / 'missing'
+    _package(folder, '2026-09-18T10:00:00', 'Casa')
+    _declare_run(folder, 'run2', {'detalles_obtenidos': 1})
+    with pytest.raises(ValueError, match='run is missing'):
+        mas_frescas(tmp_path)
+
+
+def test_corrupt_second_run_is_checked_even_when_first_has_properties(tmp_path):
+    folder = tmp_path / 'corrupt'
+    _package(folder, '2026-09-18T10:00:00', 'Casa')
+    (folder / 'properties_run2.jsonl').write_text('null\n', encoding='utf-8')
+    with pytest.raises(ValueError, match='must be an object'):
+        mas_frescas(tmp_path)
+
+
+@pytest.mark.parametrize('rows', [
+    [{'hash_dedup': 'same'}, {'hash_dedup': 'same'}],
+    [{'hash_dedup': None}], [{'hash_dedup': True}], [{'hash_dedup': ' '}],
+])
+def test_invalid_or_duplicate_archived_identity_is_not_silently_dropped(tmp_path, rows):
+    folder = tmp_path / 'identity'
+    _package(folder, '2026-09-18T10:00:00', 'Casa')
+    (folder / 'properties_run1.jsonl').write_text(
+        ''.join(json.dumps(row) + '\n' for row in rows), encoding='utf-8')
+    with pytest.raises(ValueError, match='identity|hash_dedup'):
+        mas_frescas(tmp_path)
+
+
+def test_matching_declared_count_preserves_property(tmp_path):
+    folder = tmp_path / 'valid'
+    _package(folder, '2026-09-18T10:00:00', 'Casa')
+    _declare_run(folder, 'run1', {'detalles_obtenidos': 1})
+    assert mas_frescas(tmp_path)['same']['titulo'] == 'Casa'
+
+
+@pytest.mark.parametrize('metadata', [None, [], 1])
+def test_invalid_run_metadata_is_not_accepted(tmp_path, metadata):
+    folder = tmp_path / 'invalid'
+    _package(folder, '2026-09-18T10:00:00', 'Casa')
+    _declare_run(folder, 'run1', metadata)
+    with pytest.raises(ValueError, match='run metadata must be an object'):
+        mas_frescas(tmp_path)

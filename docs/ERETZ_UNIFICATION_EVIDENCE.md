@@ -438,3 +438,24 @@ builder y cronología (`ad8215dcf8`): 2437 PASS, 0 fallos, 0 errores, 0 skipped,
 233,444 s. Confirmado en backend_publication_snapshot_validation.xml, terminado
 2026-09-18 10:12:48 local. Los ocho worktrees originales conservan los HEADs
 previamente inventariados; candidato limpio antes de esta actualización documental.
+
+Integridad de paquetes (`property_freshest_v5`, auditoría en curso): el consumidor
+rechaza certificados sin ningún archivo de propiedades, corridas declaradas
+ausentes, metadata de corrida malformada, conteos declarados distintos a las
+filas, hashes vacíos/no textuales y duplicados dentro de una corrida. Valida
+también run2 si existe aunque run1 tenga datos: un segundo archivo corrupto no
+queda oculto por el fallback. Un archivo existente vacío sigue representando
+cero observaciones; archivos ausentes no. Archivos históricos con una única
+corrida no declarada se conservan como lecturas históricas, no como prueba de
+dos corridas actuales ni verdad del dato. Preferencia histórica run1/run2 sin
+cambios. 62 controles focalizados PASS; lint PASS.
+
+Revisión agregada readonly del archivo original de certificaciones: 168 paquetes
+con status CERTIFIED_COMPLETE/CERTIFIED_BEST_AVAILABLE, cero paquetes sin archivos,
+cero corridas declaradas ausentes y cero diferencias de detalles_obtenidos contra
+conteo de líneas no vacías. Este chequeo de conteo no valida semánticamente cada
+fila ni acredita fingerprint vigente, identidad actual o calidad geográfica.
+No se modificó el archivo original ni se imprimieron filas de propiedades.
+
+Suite backend congelada con esta integridad de archivos: 2455 PASS, 0 fallos,
+0 errores, 0 skipped, 181,58 s; backend_archive_integrity_validation.xml.

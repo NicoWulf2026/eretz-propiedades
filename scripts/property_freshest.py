@@ -33,7 +33,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-FRESCURA_VERSION = "property_freshest_v4"
+FRESCURA_VERSION = "property_freshest_v5"
 
 # Historical structural evidence can fill an unexplained extraction gap.
 # A previous commercial value is not evidence of the current offer.
@@ -82,6 +82,43 @@ def _certification_time(value: Any) -> datetime:
     return parsed.astimezone(timezone.utc) if parsed.tzinfo is not None else parsed
 
 
+def _package_rows(folder: Path, certificate: dict[str, Any]) -> list[dict[str, Any]]:
+    """Validate available archive runs, without claiming current certification.
+
+    Legacy archives may have only one run. A declared run cannot disappear,
+    and an existing corrupt second run must not hide behind a valid first one.
+    """
+    runs: list[list[dict[str, Any]]] = []
+    for number in (1, 2):
+        name = f'run{number}'
+        path = folder / f'properties_{name}.jsonl'
+        declared = certificate.get(name)
+        if name in certificate and not isinstance(declared, dict):
+            raise ValueError('Certification run metadata must be an object')
+        if not path.is_file():
+            if name in certificate:
+                raise ValueError('Declared certification property run is missing')
+            continue
+        rows = _leer(path)
+        hashes: set[str] = set()
+        for row in rows:
+            identity = row.get('hash_dedup')
+            if not isinstance(identity, str) or not identity.strip():
+                raise ValueError('Archived property must have a nonempty hash_dedup')
+            if identity in hashes:
+                raise ValueError('Duplicate property identity within archived run')
+            hashes.add(identity)
+        if isinstance(declared, dict) and 'detalles_obtenidos' in declared:
+            expected = declared['detalles_obtenidos']
+            if type(expected) is not int or expected < 0 or expected != len(rows):
+                raise ValueError('Archived property count does not match certification run')
+        runs.append(rows)
+    if not runs:
+        raise ValueError('Certification has no archived property run')
+    # Preserve historical run preference; this is not a two-run truth check.
+    return next((rows for rows in runs if rows), [])
+
+
 def mas_frescas(paquetes: Path) -> dict[str, dict[str, Any]]:
     """Por `hash_dedup`, la propiedad mas reciente de los paquetes.
 
@@ -106,8 +143,7 @@ def mas_frescas(paquetes: Path) -> dict[str, dict[str, Any]]:
             continue
         instante = _certification_time(paquete.get("checked_at"))
         cuando = instante.isoformat()
-        for fila in (_leer(carpeta / "properties_run1.jsonl")
-                     or _leer(carpeta / "properties_run2.jsonl")):
+        for fila in _package_rows(carpeta, paquete):
             h = fila.get("hash_dedup")
             if not h:
                 continue
