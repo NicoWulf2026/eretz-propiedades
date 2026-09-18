@@ -17,18 +17,23 @@ productiva ni cierre de la misión. Evidencia cuantificada y limitaciones en
 | Null/zero e incompletas | Probados por fronteras | Raw/staging, API, presentación; cero precio/superficie sólo fixture |
 | Imágenes | Política corregida, revisión pendiente | Frecuencia sin evidencia no excluye; falta revisión visual de cohorte real |
 | Workers/locks/heartbeat | Controles locales PASS | Falta soak con cohortes reales y fallos inducidos |
-| SQL de merge/auditoría/rollback | Validado localmente | Trece controles PGlite con CHECK/FK observados; no prueba de deployment/concurrencia alojada |
+| SQL de merge/auditoría/rollback | Validado localmente | Diecisiete controles PGlite con CHECK/FK/tipos observados; no prueba de deployment/concurrencia alojada |
 | API combinada/mapa/batch/agencia | Integrada localmente | Snapshot real y contratos probados; staging accesible pendiente |
 | Detail histórico numérico | Bloqueado por datos | Crosswalk de IDs público↔hash vacío; no inventar aliases |
 | Frontend F7 | Integrado sin rediseño | Tests/typecheck/build; browser QA candidato pendiente |
 | Publicación única | Parcial | Hay consumidores reales del escritor REST histórico; equivalencia con RPC pendiente |
 
-Últimos controles: 2481 tests backend PASS (156,20 s, XML de integridad del
-registro/lifecycle), sin fallos/errores/skips. Operación desconocida se almacena NULL
+Últimos controles: 2494 tests backend PASS (155,87 s, XML de INSERT identidad/
+geografía), sin fallos/errores/skips. Operación desconocida se almacena NULL
 según el CHECK público observado; superficie cubierta ya se preserva en el
 RPC candidato. La consulta REST de identidad no convierte fallo/rango parcial
 en propiedad nueva. Persisten diferencias de campos/invalidación y no se
 autoriza retirar ese consumidor todavía.
+
+INSERT RPC ahora conserva id_externo/provincia/pais entregados como texto nullable,
+sin defaults inventados. UPDATE geográfico acoplado e invalidación justificada
+de valores históricos siguen pendientes; no reemplazar todavía el escritor REST
+con payload enriquecido por un RPC suponiendo equivalencia de todas las columnas.
 
 Paquetes y registro histórico ya rechazan corrupción, ausencia de archivos y
 conteos contradictorios antes de derivar snapshots/ausencias. Replay del mismo

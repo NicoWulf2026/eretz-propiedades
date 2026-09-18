@@ -113,15 +113,22 @@ BEGIN
     INTO forbidden_keys
     FROM jsonb_object_keys(COALESCE(p_payload, '{}'::jsonb)) AS key
     WHERE key <> ALL (ARRAY[
-        'inmobiliaria_id', 'url', 'url_normalizada', 'hash_dedup',
+        'inmobiliaria_id', 'url', 'url_normalizada', 'hash_dedup', 'id_externo',
         'titulo', 'descripcion', 'precio', 'moneda', 'tipo_propiedad',
         'operacion', 'ambientes', 'dormitorios', 'banos',
-        'superficie_total', 'superficie_cubierta', 'direccion', 'barrio', 'ciudad',
+        'superficie_total', 'superficie_cubierta', 'direccion', 'barrio', 'ciudad', 'provincia', 'pais',
         'latitud', 'longitud', 'imagenes', 'fuente_extraccion', 'estado'
     ]::text[]);
 
     IF forbidden_keys IS NOT NULL THEN
         RAISE EXCEPTION 'forbidden insert keys: %', forbidden_keys;
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM jsonb_each(COALESCE(p_payload, '{}'::jsonb))
+        WHERE key IN ('id_externo', 'provincia', 'pais')
+          AND jsonb_typeof(value) NOT IN ('string', 'null')
+    ) THEN
+        RAISE EXCEPTION 'optional identity and geography fields require text or null';
     END IF;
     IF COALESCE((p_payload->>'inmobiliaria_id')::bigint, 0) <= 0
        OR p_source_id !~ '^[0-9]+$'
@@ -136,16 +143,17 @@ BEGIN
     END IF;
 
     INSERT INTO public.propiedades (
-        inmobiliaria_id, url, url_normalizada, hash_dedup,
+        inmobiliaria_id, url, url_normalizada, hash_dedup, id_externo,
         titulo, descripcion, precio, moneda, tipo_propiedad, operacion,
         ambientes, dormitorios, banos, superficie_total, superficie_cubierta,
-        direccion, barrio, ciudad, latitud, longitud, imagenes,
+        direccion, barrio, ciudad, provincia, pais, latitud, longitud, imagenes,
         fuente_extraccion, estado
     ) VALUES (
         (p_payload->>'inmobiliaria_id')::integer,
         p_payload->>'url',
         p_payload->>'url_normalizada',
         p_payload->>'hash_dedup',
+        p_payload->>'id_externo',
         p_payload->>'titulo',
         p_payload->>'descripcion',
         (p_payload->>'precio')::numeric,
@@ -160,6 +168,8 @@ BEGIN
         p_payload->>'direccion',
         p_payload->>'barrio',
         p_payload->>'ciudad',
+        p_payload->>'provincia',
+        p_payload->>'pais',
         (p_payload->>'latitud')::double precision,
         (p_payload->>'longitud')::double precision,
         CASE

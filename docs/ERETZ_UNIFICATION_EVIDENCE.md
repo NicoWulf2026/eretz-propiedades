@@ -487,3 +487,30 @@ registro de nuevas observaciones ni escrituras en bases durante este replay.
 
 Regresión completa congelada del registro/lifecycle: 2481 PASS, 0 fallos,
 0 errores, 0 skipped, 156,20 s; backend_lifecycle_integrity_validation.xml.
+
+Equivalencia de INSERT público, siguiente bloque local: metadatos readonly de
+Supabase confirman id_externo/provincia/pais nullable text. El RPC candidato los
+conserva si se entregan; omisión/NULL no fabrica localidad, país ni identificador.
+INSERT rechaza JSON no textual en esos campos; la preparación normalizada mantiene
+la propiedad y convierte evidencia opcional de tipo inválido en NULL. UPDATE no
+permite modificar id_externo ni agregar provincia/pais de manera independiente:
+falta la política geográfica acoplada, no se finge cerrada. Continúan prohibidas
+claves arbitrarias, escrituras públicas de anon/authenticated y degradación NULL.
+114 controles Python focalizados y 17 controles PGlite PASS, incluida reversión
+de fila/auditoría y validación de campos nuevos. No conexión ni migración alojada.
+La guía de Supabase/PostgreSQL se usó para mantener límites de privilegios y
+transacciones; no para abrir permisos ni ejecutar publicaciones productivas.
+Referencia de seguridad: [funciones de base](https://supabase.com/docs/guides/database/functions).
+
+Este cambio es iteración del SQL local existente, no prueba del cuerpo del RPC
+productivo ni migración desplegada. Antes de un despliegue autorizado se debe
+generar/verificar la migración versionada en el workflow real. El escritor REST
+todavía tiene consumidores: faltan equivalencia del payload enriquecido completo,
+actualización geográfica coherente e invalidaciones justificadas de datos viejos.
+
+Suite completa congelada de INSERT identidad/geografía: 2494 PASS, 0 fallos,
+0 errores, 0 skipped, 155,87 s; backend_identity_geo_insert_validation.xml.
+Wheel construido offline sin dependencias e instalado en directorio aislado:
+fronteras puras fuera del checkout PASS (operación desconocida, superficie cero,
+identidad/geografía nullable y ausencias continuadas). No prueba staging completo,
+recursos GeoRef empaquetados, CLI operacional ni permisos del RPC alojado.

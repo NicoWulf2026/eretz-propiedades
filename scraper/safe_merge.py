@@ -627,6 +627,11 @@ def build_merge_plan(
 def prepare_insert_payload(incoming: Mapping[str, Any]) -> Dict[str, Any]:
     """Sanitize the mutable fields of a new row without inventing data."""
     payload = dict(incoming)
+    # Optional text evidence is not a boolean/object serialized as a location
+    # or listing identity. Retain the valid property when that field is invalid.
+    for field in ('id_externo', 'provincia', 'pais'):
+        if field in payload and payload[field] is not None and not isinstance(payload[field], str):
+            payload[field] = None
     payload["url_normalizada"] = incoming.get("url_normalizada") or _normalize_url_for_hash(incoming.get("url"))
     payload["hash_dedup"] = _compute_hash_dedup(incoming.get("inmobiliaria_id"), incoming.get("url"))
     if "imagenes" in payload:

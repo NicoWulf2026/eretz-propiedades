@@ -82,6 +82,34 @@ def test_new_property_gets_sanitized_insert_and_field_audit():
     assert all(item["decision"] == ACCEPTED_INSERT for item in plan["audit"])
 
 
+@pytest.mark.parametrize('fields', [
+    {'id_externo': 'ABC-123', 'ciudad': 'Córdoba', 'provincia': 'Córdoba', 'pais': 'Argentina'},
+    {'id_externo': None, 'ciudad': None, 'provincia': None, 'pais': None},
+    {'id_externo': '0', 'ciudad': None, 'provincia': 'Buenos Aires', 'pais': None},
+])
+def test_insert_keeps_delivered_external_identity_and_geography_without_defaults(fields):
+    plan = build_merge_plan(incoming(**fields), [], source_id='10')
+    assert plan['status'] == 'insert'
+    for field, value in fields.items():
+        assert plan['payload'][field] == value
+
+
+def test_insert_geography_support_does_not_create_independent_geo_update_policy():
+    plan = build_merge_plan(incoming(provincia='Córdoba', pais='Argentina'),
+                            [existing(provincia='Buenos Aires', pais=None)], source_id='10')
+    assert 'provincia' not in plan['patch'] and 'pais' not in plan['patch']
+
+
+@pytest.mark.parametrize('field', ['id_externo', 'provincia', 'pais'])
+@pytest.mark.parametrize('value', [True, [], {'name': 'synthetic'}])
+def test_invalid_optional_text_does_not_become_fake_identity_or_location(field, value):
+    from safe_merge import prepare_insert_payload
+    row = incoming(**{field: value})
+    stored = prepare_insert_payload(row)
+    assert stored[field] is None
+    assert stored['url'] == row['url'] and stored['titulo'] == row['titulo']
+
+
 @pytest.mark.parametrize('operation', [None, 'desconocida', 'proyecto', 'unknown'])
 def test_new_property_unknown_operation_is_nullable_storage_not_an_invalid_enum(operation):
     plan = build_merge_plan(incoming(operacion=operation), [], source_id="10")

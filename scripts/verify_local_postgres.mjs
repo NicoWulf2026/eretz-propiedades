@@ -28,10 +28,10 @@ try {
     INSERT INTO public.inmobiliarias_main VALUES (7), (8);
     CREATE TABLE public.propiedades (
       id bigserial PRIMARY KEY, inmobiliaria_id integer REFERENCES public.inmobiliarias_main(id), url text,
-      url_normalizada text, hash_dedup text NOT NULL UNIQUE, titulo text, descripcion text,
+      url_normalizada text, hash_dedup text NOT NULL UNIQUE, id_externo text, titulo text, descripcion text,
       precio numeric, moneda text, tipo_propiedad text, operacion text,
       ambientes integer, dormitorios integer, banos integer, superficie_total numeric, superficie_cubierta numeric,
-      direccion text, barrio text, ciudad text, latitud double precision,
+      direccion text, barrio text, ciudad text, provincia text, pais text, latitud double precision,
       longitud double precision, imagenes text[], fuente_extraccion text,
       estado text, updated_at timestamptz DEFAULT now(),
       CHECK (operacion IS NULL OR operacion IN
@@ -124,6 +124,42 @@ try {
       assert.equal(stored === null ? null : Number(stored), surface);
     }
     await db.exec('ROLLBACK');
+  });
+  await check('insert_preserves_external_identity_and_delivered_geography_without_defaults', async () => {
+    await db.exec('BEGIN');
+    for (const fields of [{id_externo: 'ABC-123', ciudad: 'Córdoba', provincia: 'Córdoba', pais: 'Argentina'},
+      {id_externo: null, ciudad: null, provincia: null, pais: null},
+      {id_externo: '0', ciudad: null, provincia: 'Buenos Aires', pais: null}]) {
+      const inserted = await db.query('SELECT public.insert_property_safe($1::jsonb,$2,$3,$4::jsonb) AS result',
+        [JSON.stringify({...payload, ...fields, hash_dedup: `identity-geo-${fields.id_externo}`}),
+          '7', 'identity-geo-insert', '[]']);
+      const stored = (await db.query('SELECT id_externo,ciudad,provincia,pais FROM public.propiedades WHERE id=$1',
+        [inserted.rows[0].result.property_id])).rows[0];
+      assert.deepEqual(stored, fields);
+    }
+    await db.exec('ROLLBACK');
+  });
+  await check('insert_omitted_identity_and_geography_stay_null', async () => {
+    const row = (await db.query('SELECT id_externo,provincia,pais FROM public.propiedades WHERE id=$1', [id])).rows[0];
+    assert.deepEqual(row, {id_externo: null, provincia: null, pais: null});
+  });
+  await check('new_insert_fields_do_not_relax_update_identity_or_geography_guards', async () => {
+    for (const patch of [{id_externo: 'changed'}, {provincia: 'another'}, {pais: 'another'}]) {
+      await assert.rejects(() => merge(patch, []));
+    }
+    await assert.rejects(() => db.query('SELECT public.insert_property_safe($1::jsonb,$2,$3,$4::jsonb)',
+      [JSON.stringify({...payload, hash_dedup: 'forbidden-extra', internal_secret: 'synthetic'}), '7', 'extra-insert', '[]']));
+    assert.equal(Number((await db.query('SELECT count(*) AS n FROM public.propiedades')).rows[0].n), 1);
+  });
+  await check('optional_text_fields_reject_nontext_json_without_partial_mutation', async () => {
+    for (const field of ['id_externo', 'provincia', 'pais']) {
+      for (const value of [true, [], {name: 'synthetic'}, 123]) {
+        await assert.rejects(() => db.query('SELECT public.insert_property_safe($1::jsonb,$2,$3,$4::jsonb)',
+          [JSON.stringify({...payload, hash_dedup: 'invalid-optional-text', [field]: value}),
+            '7', 'invalid-text-insert', '[]']));
+      }
+    }
+    assert.equal(Number((await db.query('SELECT count(*) AS n FROM public.propiedades')).rows[0].n), 1);
   });
   await check('cross_agency_update_rejected', async () => {
     await assert.rejects(() => merge({precio: 100}, updateAudit, '8'));
