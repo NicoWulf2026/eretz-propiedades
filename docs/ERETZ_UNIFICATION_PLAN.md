@@ -42,6 +42,17 @@ menciones en documentación. No borrar entrypoints con consumidores activos.
 
 ## Cierre de la unificación (antes de otra etapa grande)
 
+Revisión adicional de tooling local no integrado: `run_faceted_scraping.py`
+duplica la generación de candidatos ya consumida desde
+`scraper/faceted_discovery.py`, su parámetro workers no se utiliza y su informe
+atribuye cero enlaces a JS-only sin demostrarlo. No portarlo como segundo
+scraper. Tanto ese CLI como el helper de paginación no consumido generan
+`/pagina-N` incluso al detectar `/page/N`: registrar esa familia antes de
+habilitar el helper; no afirmar recuperación de paginación por copiarlo.
+`dry_run_politica.py` aporta trazabilidad de campos conservados, pero sus
+firmas cortas y coordenadas aproximadas no prueban igualdad ni verdad geográfica.
+No usar sus decisiones como autorización productiva ni ejecutar sus escrituras.
+
 1. Terminar revisión de tooling local no integrado por riesgo/capacidad, no
    incorporar scripts uno a uno sólo por existir. Mantener evidencia de descarte.
 2. Comparar caminos de publicación REST/RPC: cobertura de campos, idempotencia,

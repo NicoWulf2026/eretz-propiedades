@@ -274,6 +274,26 @@ Validación adicional del 18 de septiembre (no certificación final):
   bajo un estado COMPLETE; 17 pruebas de frescura PASS. Vigencia de huellas y
   resolución de empates entre paquetes siguen pendientes de revisión.
 
+Controles posteriores (validación global pendiente, HEAD funcional congelado):
+
+- Empates con fecha idéntica y valores distintos ya producen error explícito,
+  no elección dependiente del filesystem; 19 pruebas de frescura PASS.
+  La comparación de zonas horarias y la vigencia de huellas siguen pendientes.
+- Clasificador y scraper comparten también la normalización de URLs histórica;
+  56 pruebas de imágenes PASS, incluyendo wrappers y enlaces protocol-relative.
+- Diagnóstico entre agencias v2: repetición produce REVIEW_REQUIRED, no prueba
+  de contaminación. Sólo un asset conocido tiene safe_to_exclude; siete pruebas
+  PASS. Las métricas históricas de ese diagnóstico no validan un umbral de borrado.
+- Catorce casos de API real PASS en dos mediciones locales de cinco requests por
+  caso. Segunda mediana: Explorer 317,75 ms, combinado 877,35 ms, mapa amplio
+  1150,39 ms, detalle 10,8 ms, batch de cien 37,41 ms. Había pruebas concurrentes;
+  no equivalen a latencia remota, producción ni comparación aislada de rendimiento.
+  3858 conflictos geográficos conservados, cero puntos conflictivos en el mapa.
+- Una corrida global se invalidó por cambios de código durante su ejecución:
+  imports mezclaron el helper nuevo con un módulo anterior ya cargado. Sus
+  2318 PASS, ocho fallos y cuatro errores no acreditan validación global verde.
+  Se repite desde un proceso nuevo con código funcional congelado.
+
 La arquitectura candidata concentra conectores, identidad, detección de URLs,
 contrato de propiedad y validación; conserva entrypoints históricos donde aún
 hay consumidores. Su eliminación requiere una matriz de consumidores y
