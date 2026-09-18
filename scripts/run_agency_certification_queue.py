@@ -46,6 +46,7 @@ from scripts.agency_certifier import (
 from scripts.run_rollout import PRESUPUESTO_POR_FUENTE
 from scripts.agency_fingerprints import (
     GENERIC_STRATEGY_METHODS,
+    current_code_evidence,
     strategy_fingerprint,
     strategy_for,
 )
@@ -560,9 +561,13 @@ def is_current_result(previous: dict[str, Any],
         return False
     if status not in TERMINAL:
         return False
+    if previous.get('fingerprint_backfilled_from_terminal_evidence', False) is not False:
+        return False
     if status == "IDENTITY_PENDING" or (
             status == "BLOCKED_EXTERNAL" and not previous.get("connector_version")):
         return previous.get("certifier_version") == CERTIFIER_VERSION
+    if status in {'CERTIFIED_COMPLETE', 'CERTIFIED_BEST_AVAILABLE', 'NO_INVENTORY_CONFIRMED'}:
+        return current_code_evidence(previous)
     connector = previous.get("connector") or choose_connector(record)
     if previous.get("strategy_fingerprint"):
         strategy = previous.get("connector_strategy") or strategy_for(

@@ -1,7 +1,7 @@
-"""Agrega metadata granular a cierres terminales ya probados.
+"""Refresca métricas sólo de evidencia con huella actual ya registrada.
 
-No visita webs ni bases. Solo puede migrar evidencia con dos corridas
-idempotentes y cero detalles fallidos, o un bloqueo terminal ya demostrado.
+No visita webs ni bases. Idempotencia no prueba qué código ejecutó una corrida:
+no agrega/reemplaza huellas ni convierte evidencia antigua en certificación actual.
 """
 from __future__ import annotations
 
@@ -17,8 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.agency_certifier import (append_jsonl, operational_metrics,
                                       read_jsonl, write_json)
 from scripts.agency_fingerprints import (
-    FINGERPRINT_SCHEMA_VERSION,
-    strategy_fingerprint,
+    current_code_evidence,
     strategy_for,
 )
 
@@ -29,15 +28,19 @@ SAFE_TERMINAL = {
 
 
 def safe_to_backfill(result: dict[str, Any]) -> bool:
-    if result.get("status") not in SAFE_TERMINAL or not result.get("connector"):
+    if not isinstance(result, dict) or not isinstance(result.get('status'), str):
+        return False
+    if result['status'] not in SAFE_TERMINAL or not current_code_evidence(result):
         return False
     if result.get("status") == "BLOCKED_EXTERNAL":
         return True
     comparison = result.get("comparison") or {}
     run1, run2 = result.get("run1") or {}, result.get("run2") or {}
+    if not all(isinstance(item, dict) for item in (comparison, run1, run2)):
+        return False
     return (comparison.get("idempotent") is True
-            and not run1.get("detalles_fallidos")
-            and not run2.get("detalles_fallidos")
+            and type(run1.get('detalles_fallidos')) is int and run1['detalles_fallidos'] == 0
+            and type(run2.get('detalles_fallidos')) is int and run2['detalles_fallidos'] == 0
             and not run1.get("presupuesto_agotado")
             and not run2.get("presupuesto_agotado"))
 
@@ -50,8 +53,10 @@ def latest_results(path: Path) -> dict[str, dict[str, Any]]:
 
 
 def migrate_result(result: dict[str, Any]) -> dict[str, Any]:
+    if not safe_to_backfill(result):
+        raise ValueError('Historical or unproven code evidence requires recertification')
     connector = str(result["connector"])
-    strategy = strategy_for(connector, result.get("publication_mechanism"))
+    strategy = result.get('connector_strategy') or strategy_for(connector, result.get("publication_mechanism"))
     run1, run2 = result.get("run1") or {}, result.get("run2") or {}
     network = result.get("network") or {}
     first = type("Download", (), {
@@ -64,9 +69,7 @@ def migrate_result(result: dict[str, Any]) -> dict[str, Any]:
     return {
         **result,
         "connector_strategy": strategy,
-        "strategy_fingerprint": strategy_fingerprint(connector, strategy),
-        "fingerprint_schema_version": FINGERPRINT_SCHEMA_VERSION,
-        "fingerprint_backfilled_from_terminal_evidence": True,
+        "operational_metrics_refreshed_without_recertification": True,
         "operational_metrics": metrics,
     }
 

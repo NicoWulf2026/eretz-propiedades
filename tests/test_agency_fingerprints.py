@@ -13,7 +13,6 @@ from pathlib import Path
 from scripts.agency_fingerprints import (CERTIFIER_OPERACIONALES, RAIZ,
                                          RUNNER_OPERACIONALES,
                                          _archivo_sin_operativas,
-                                         _selected_nodes,
                                          fingerprint_components,
                                          strategy_fingerprint)
 
@@ -169,10 +168,17 @@ def test_el_esquema_de_huella_esta_versionado():
     la huella no corrige ninguno."""
     from scripts.agency_fingerprints import (FINGERPRINT_SCHEMA_VERSION,
                                              strategy_fingerprint_v1)
-    assert FINGERPRINT_SCHEMA_VERSION == 4
+    assert FINGERPRINT_SCHEMA_VERSION == 5
     # El algoritmo viejo sigue disponible para juzgar paquetes del esquema 1.
     assert (strategy_fingerprint_v1("tokko", "tokko")
             != strategy_fingerprint("tokko", "tokko"))
+
+
+def test_shared_geographic_integrity_is_in_every_connector_fingerprint():
+    for connector in ('generico', 'tokko', 'wasi', 'wordpress', 'century21'):
+        strategy = 'generic/html_catalog' if connector == 'generico' else connector
+        component = fingerprint_components(connector, strategy)['shared/geo_reference']
+        assert b'verified_rows' in component and b'entity_ids' in component
 
 
 # ---- el modelo semantico por defecto (esquema 3) --------------------------

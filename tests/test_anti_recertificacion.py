@@ -25,6 +25,7 @@ from scripts.run_agency_certification_queue import (TTL_CRITICO_HORAS,
                                                     diferida_vigente,
                                                     diferidos,
                                                     is_current_result)
+from scripts.agency_fingerprints import FINGERPRINT_SCHEMA_VERSION
 
 HUELLA = "8c6a84314619"
 
@@ -43,6 +44,7 @@ def diferida(componente="extraccion_transversal_de_atributos",
 def resultado(status="NEEDS_FIX", huella=HUELLA, connector="generico",
               strategy="generic/html_catalog"):
     return {"status": status, "connector": connector,
+            'fingerprint_schema_version': FINGERPRINT_SCHEMA_VERSION,
             "connector_strategy": strategy, "strategy_fingerprint": huella,
             "certifier_version": "agency_certifier_v1"}
 
@@ -53,6 +55,7 @@ def huella_fija(monkeypatch):
     monkeypatch.setattr(
         "scripts.run_agency_certification_queue.strategy_fingerprint",
         lambda c, s: HUELLA)
+    monkeypatch.setattr('scripts.agency_fingerprints.strategy_fingerprint', lambda c, s: HUELLA)
 
 
 # --- A: el caso que motiva todo -----------------------------------------

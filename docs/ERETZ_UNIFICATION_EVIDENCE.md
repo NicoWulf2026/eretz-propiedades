@@ -568,3 +568,32 @@ scraping_id_origen está presente en todas. Esto no demuestra por sí mismo cuá
 namespace usa cada artefacto local, pero descarta sustituir IDs de origen por PK
 pública suponiendo igualdad numérica. Bridge de propiedad/agency FK requiere
 crosswalk de procedencia verificable, sin IDs ficticios ni consultas a secretos.
+
+Consumidor geográfico y promoción de evidencia, bloque en validación: Geografia
+reutiliza verified_rows, por lo que JSON presente sin manifiesto/count/hash válido
+no entra silenciosamente al normalizador. Fingerprint schema=5 incluye el helper
+geo_reference; futuros cambios de esa frontera no quedan fuera de la huella.
+Resultados schema 4 anteriores no se marcan retrospectivamente como schema 5.
+
+Regresión moderna demostrada por control: backfill_strategy_fingerprints podía
+asignar strategy_fingerprint del HEAD actual a cierres antiguos idempotentes y
+--refresh-safe podía sustituir una huella vencida por la actual sin recertificar.
+Esto probaba consistencia antigua, no código ejecutado ni verdad del dato.
+Se elimina esa promoción: migrate_result exige evidencia de código granular ya
+registrada/currente y conserva huella/schema/fecha/status/payload; sólo refresca
+métricas. Los marcados fingerprint_backfilled_from_terminal_evidence no prueban
+código actual, incluso si su huella coincide. Queue no da éxito vigente por hash
+whole-connector antiguo, metadata de versión ausente/malformada, mecanismo/estrategia
+contradictorios ni estrategia desconocida. current_code_evidence se comparte entre
+queue y tooling; no es prueba de identidad ni proveniencia de datos GeoRef.
+230 controles focalizados PASS y lint PASS, CLI backfill --help sin ejecutar
+mutaciones. No se corrió el backfill sobre archivos originales. Defectos NEEDS_FIX
+sin huella/esquema antiguo siguen abiertos según preflight: no amnistía por versión.
+Paquetes históricos siguen legibles como lecturas, no certificaciones actuales.
+
+Suite completa congelada de consumidor geográfico/promoción de evidencia:
+2567 PASS, 0 fallos, 0 errores, 0 skipped, 149,28 s;
+backend_certification_evidence_validation.xml. Mínimo de score de publicación
+verificado en run_daily_pipeline/build_publish_queue/publish_to_supabase: default
+0 (optativo). Penalizaciones de completitud no excluyen por ese umbral en default;
+no se declara una regresión de publicación inferida de un supuesto default 70.

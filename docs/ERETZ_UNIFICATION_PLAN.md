@@ -23,7 +23,7 @@ productiva ni cierre de la misión. Evidencia cuantificada y limitaciones en
 | Frontend F7 | Integrado sin rediseño | Tests/typecheck/build; browser QA candidato pendiente |
 | Publicación única | Parcial | Hay consumidores reales del escritor REST histórico; equivalencia con RPC pendiente |
 
-Últimos controles: 2540 tests backend PASS (148,81 s, XML de manifiesto GeoRef),
+Últimos controles: 2567 tests backend PASS (149,28 s, XML de evidencia de certificación),
 sin fallos/errores/skips. Operación desconocida se almacena NULL
 según el CHECK público observado; superficie cubierta ya se preserva en el
 RPC candidato. La consulta REST de identidad no convierte fallo/rango parcial
@@ -49,6 +49,13 @@ conteos/hash lógico: discrepancia CRLF de bytes no equivale a geografía corrup
 Diff exige recursos/manifiestos/conteos/hashes verificados, y no autoriza reemplazo.
 Namespaces de agencias no son iguales: cero coincidencias PK pública con IDs
 de origen en 7004 filas. No construir aliases ni FK suponiendo igualdad numérica.
+
+Normalizador consume referencias verificadas. Fingerprint schema=5 incluye
+geo_reference. Backfill no promueve cierres históricos idempotentes a huella
+actual ni --refresh-safe sobreescribe evidencia vencida; sólo métricas sin
+recertificación sobre código ya compatible. Queue exige prueba granular/versionada
+de código para éxito; defectos antiguos desconocidos no reciben amnistía. Falta
+proveniencia de datos GeoRef/identidad actuales: código vigente no prueba verdad.
 
 ## Matriz de consumidores y eliminación
 

@@ -24,6 +24,7 @@ from connectors.tokko import _tipo_propiedad
 from connectors.wasi import _campos_descriptivos, _campos_wasi
 from scripts import run_agency_certification_queue as certification_queue
 from scripts.agency_fingerprints import (
+    FINGERPRINT_SCHEMA_VERSION,
     fingerprint_components,
     fingerprint_from_components,
     strategy_for,
@@ -188,7 +189,7 @@ def test_queue_does_not_repeat_current_identity_terminal_results(monkeypatch) ->
         "status": "CERTIFIED_COMPLETE", "connector": "generico",
         "connector_version": "fingerprint-old",
     }, record)
-    assert certification_queue.is_current_result({
+    assert not certification_queue.is_current_result({
         "status": "CERTIFIED_COMPLETE", "connector": "generico",
         "connector_version": "fingerprint-current",
     }, record)
@@ -528,11 +529,14 @@ def test_queue_uses_strategy_fingerprint_when_present(monkeypatch) -> None:
     record = {"platform": {}, "source": {"detected_platform": "UNKNOWN"}}
     monkeypatch.setattr(certification_queue, "strategy_fingerprint",
                         lambda connector, strategy: f"{connector}:{strategy}:ok")
+    monkeypatch.setattr('scripts.agency_fingerprints.strategy_fingerprint',
+                        lambda connector, strategy: f"{connector}:{strategy}:ok")
     current = {
         "status": "CERTIFIED_COMPLETE", "connector": "generico",
         "publication_mechanism": "MAPAPROP_HTML",
         "connector_strategy": "generic/mapaprop",
         "strategy_fingerprint": "generico:generic/mapaprop:ok",
+        'fingerprint_schema_version': FINGERPRINT_SCHEMA_VERSION,
     }
     assert certification_queue.is_current_result(current, record)
     current["strategy_fingerprint"] = "stale"
@@ -542,6 +546,9 @@ def test_queue_uses_strategy_fingerprint_when_present(monkeypatch) -> None:
 def test_fingerprint_backfill_requires_terminal_clean_evidence() -> None:
     clean = {
         "status": "CERTIFIED_COMPLETE", "connector": "generico",
+        'connector_strategy': 'generic/html_catalog',
+        'strategy_fingerprint': certification_queue.strategy_fingerprint('generico', 'generic/html_catalog'),
+        'fingerprint_schema_version': FINGERPRINT_SCHEMA_VERSION,
         "comparison": {"idempotent": True},
         "run1": {"detalles_fallidos": 0},
         "run2": {"detalles_fallidos": 0},
@@ -550,7 +557,7 @@ def test_fingerprint_backfill_requires_terminal_clean_evidence() -> None:
     assert not safe_to_backfill({**clean, "status": "NEEDS_FIX"})
     assert not safe_to_backfill({
         **clean, "run2": {"detalles_fallidos": 1}})
-    assert safe_to_backfill({
+    assert not safe_to_backfill({
         "status": "BLOCKED_EXTERNAL", "connector": "generico"})
 
 

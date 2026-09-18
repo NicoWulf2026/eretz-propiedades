@@ -69,6 +69,18 @@ def test_changed_data_is_not_accepted_under_old_checksum(tmp_path):
         verified_rows(folder, 'municipios')
 
 
+def test_real_normalizer_reader_uses_the_verified_boundary(tmp_path):
+    from connectors.geografia import Geografia
+    folder = tmp_path / 'reference'
+    reference(folder)
+    reader = Geografia.__new__(Geografia)
+    reader.directorio = folder
+    assert reader._leer('municipios.json')[0]['id'] == '01'
+    (folder / 'municipios.json').write_text('[{"id":"changed"}]', encoding='utf-8')
+    with pytest.raises(ValueError, match='hash does not match'):
+        reader._leer('municipios.json')
+
+
 def test_duplicate_ids_do_not_get_collapsed_into_a_smaller_reference(tmp_path):
     folder = tmp_path / 'reference'
     reference(folder, [{'id': '01'}, {'id': '01'}])

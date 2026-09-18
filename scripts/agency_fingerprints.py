@@ -11,11 +11,11 @@ import ast
 import hashlib
 from functools import lru_cache
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable
 
 ROOT = Path(__file__).resolve().parents[1]
 RAIZ = ROOT  # alias en castellano para los tests
-FINGERPRINT_SCHEMA_VERSION = 4
+FINGERPRINT_SCHEMA_VERSION = 5
 
 PUBLICATION_STRATEGIES = {
     "EMPTY_CATALOG_HTML": "generic/empty_catalog",
@@ -226,6 +226,8 @@ def fingerprint_components(connector: str, strategy: str) -> dict[str, bytes]:
         # invalidar la certificacion como cualquier otro cambio de extraccion.
         "shared/geografia": _semantic_file(
             ROOT / "connectors" / "geografia.py"),
+        "shared/geo_reference": _semantic_file(
+            ROOT / "scripts" / "geo_reference.py"),
         # La normalizacion de texto decide que etiqueta se reconoce y que dos
         # valores son el mismo. Es codigo semantico y va en la huella desde el
         # primer dia: un modulo nuevo que nadie registra es exactamente el
@@ -291,3 +293,37 @@ def strategy_fingerprint_v1(connector: str, strategy: str) -> str:
 def strategy_fingerprint(connector: str, strategy: str) -> str:
     return fingerprint_from_components(
         fingerprint_components(connector, strategy))
+
+
+def current_code_evidence(result: dict[str, Any]) -> bool:
+    """Positive code evidence, not proof of source identity/data correctness.
+
+    Unknown old metadata keeps defects open elsewhere; it cannot establish
+    success here. Never upgrade an old whole-file or retrospectively stamped
+    fingerprint into a current strategy certificate.
+    """
+    if not isinstance(result, dict):
+        return False
+    if (type(result.get('fingerprint_schema_version')) is not int
+            or result['fingerprint_schema_version'] != FINGERPRINT_SCHEMA_VERSION
+            or result.get('fingerprint_backfilled_from_terminal_evidence', False) is not False):
+        return False
+    connector = result.get('connector')
+    if not isinstance(connector, str) or connector not in {'generico', 'tokko', 'wasi', 'wordpress', 'century21'}:
+        return False
+    declared_strategy = result.get('connector_strategy')
+    if declared_strategy is not None and not isinstance(declared_strategy, str):
+        return False
+    strategy = declared_strategy or strategy_for(
+        connector, result.get('publication_mechanism'))
+    if not isinstance(strategy, str):
+        return False
+    if connector == 'generico':
+        if strategy not in GENERIC_STRATEGY_METHODS:
+            return False
+    elif strategy != connector:
+        return False
+    if result.get('publication_mechanism') is not None and strategy_for(connector, result['publication_mechanism']) != strategy:
+        return False
+    saved = result.get('strategy_fingerprint')
+    return isinstance(saved, str) and saved == strategy_fingerprint(connector, strategy)

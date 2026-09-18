@@ -35,7 +35,6 @@ cumple y queda ambigua, que es la respuesta correcta.
 """
 from __future__ import annotations
 
-import json
 import math
 import re
 import unicodedata
@@ -43,6 +42,8 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+
+from scripts.geo_reference import verified_rows
 
 DIRECTORIO_POR_DEFECTO = Path(r"D:\INMO CAPITAL\ERETZ_GEO")
 FUENTE = "georef:localidades_censales"
@@ -219,7 +220,7 @@ class Geografia:
         if not ruta.exists():
             raise FileNotFoundError(
                 f"falta el snapshot {ruta}. Se baja con scripts/geo_snapshot.py")
-        return json.loads(ruta.read_text(encoding="utf-8"))
+        return verified_rows(self.directorio, ruta.stem)
 
     def _cargar(self) -> None:
         self.provincia_entidad: dict[str, Entidad] = {}
