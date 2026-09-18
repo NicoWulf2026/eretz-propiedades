@@ -58,13 +58,16 @@ def _leer(ruta: Path) -> list[dict[str, Any]]:
     if not ruta.exists():
         return []
     fuera = []
-    for linea in ruta.read_text(encoding="utf-8", errors="replace").splitlines():
+    for numero, linea in enumerate(ruta.read_text(encoding="utf-8").splitlines(), 1):
         if not linea.strip():
             continue
         try:
-            fuera.append(json.loads(linea))
+            fila = json.loads(linea)
         except ValueError:
-            continue
+            raise ValueError(f"Invalid property JSONL at row {numero}") from None
+        if not isinstance(fila, dict):
+            raise ValueError(f"Property JSONL row {numero} must be an object")
+        fuera.append(fila)
     return fuera
 
 

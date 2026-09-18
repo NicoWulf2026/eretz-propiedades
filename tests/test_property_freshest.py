@@ -3,8 +3,21 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from scripts.property_freshest import (CAMPOS_FUSIONABLES, CIERRES_CONFIABLES,
-                                       fusionar, mas_frescas)
+                                       _leer, fusionar, mas_frescas)
+
+
+@pytest.mark.parametrize('invalid', ['{not valid JSON', '[]', 'null'])
+def test_corrupt_certified_rows_cannot_silently_become_a_smaller_complete_batch(tmp_path, invalid):
+    source = tmp_path / 'properties.jsonl'
+    content = json.dumps({'hash_dedup': 'valid'}) + '\n' + invalid + '\n'
+    source.write_text(content, encoding='utf-8')
+    with pytest.raises(ValueError, match='row 2') as error:
+        _leer(source)
+    assert invalid not in str(error.value)
+    assert source.read_text(encoding='utf-8') == content
 
 CAMPOS = ("operacion", "banos", "ciudad", "barrio", "superficie_total")
 
