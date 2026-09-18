@@ -32,6 +32,15 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.api_contract import CONTRATO_API_VERSION, fila_de_api  # noqa: E402
+from scripts.prepare_api_v2_snapshot import _publish_no_clobber  # noqa: E402
+
+
+def publish_snapshot(temporary: Path, output: Path, *, replace: bool = False) -> None:
+    """Replacement must be explicit, including a destination created mid-build."""
+    if replace:
+        os.replace(temporary, output)
+    else:
+        _publish_no_clobber(temporary, output)
 from scripts.property_contract import alcances  # noqa: E402
 from scripts.image_quality import is_known_page_asset  # noqa: E402
 from scripts.plan_de_escritura import agencias_con_web_ajena  # noqa: E402
@@ -246,7 +255,7 @@ def main() -> int:
     }
     api.close()
     origen.close()
-    os.replace(temporal, destino)
+    publish_snapshot(temporal, destino, replace=args.replace_derived)
     (salida / "ERETZ_API_SNAPSHOT_SUMMARY.json").write_text(
         json.dumps(resumen, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(resumen, ensure_ascii=False, indent=2))
