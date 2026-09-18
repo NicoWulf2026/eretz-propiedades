@@ -119,12 +119,24 @@ publicación del HEAD final.
 
 ## Validación registrada y límites pendientes
 
-- Suite backend antes del último bloque: 2.200 PASS.
+- Suite backend después del bloque de publicación: 2.223 PASS, 230,75 s.
 - Frontend: 1.235 PASS, 9 SKIPPED; typecheck PASS; lint 0 errores, 3 warnings.
 - Integración frontend contra API local: 9 PASS.
 - Último bloque de publicación, fuente, credencial, snapshot y herramientas:
   76 PASS. Falta registrar la suite final después de este bloque.
 - Wheel construido e importado desde un entorno aislado fuera del checkout.
+- Postgres local en memoria (PGlite): 10 comprobaciones PASS con las migraciones
+  SQL reales. Incluyen aplicación repetida del schema interno y safe merge,
+  join de staging por identidad, null/zero, rechazo entre agencias, rollback
+  conjunto de actualización y auditoría, auditoría inválida, privilegios públicos
+  y revocación sin borrar evidencia. `node scripts/verify_local_postgres.mjs`;
+  instalar el runtime opcional únicamente en `_scratch/unification/postgres-check`.
+  [Documentación del motor local](https://pglite.dev/docs/). Usa filas sintéticas
+  y no demuestra comportamiento de Supabase alojado ni concurrencia productiva.
+- Datos reales: 51 ceros en ambientes, 89 en dormitorios y 67 en baños. Se
+  comprobaron ejemplos por endpoint de detalle, además de null en seis campos.
+  No hay muestras reales de precio cero ni superficie cero en este derivado;
+  esos casos permanecen cubiertos por fixtures. Coordenadas cero: ninguna.
 - Production build repetido y confirmado: PASS, exit 0, 20 páginas generadas;
   compilación 22,6 s. La sesión anterior se perdió y no se usó como prueba.
 - Browser QA del candidato pendiente: el control automático rechazó dos
@@ -132,8 +144,7 @@ publicación del HEAD final.
 
 Pendientes de revisión/validación: caminos de publicación y gates de evidencia
 de extremo a extremo, equivalencia de entrypoints históricos aún consumidos,
-scripts operativos sin seguimiento en el principal, prueba de migraciones en
-Postgres desechable, control geográfico de JSON-LD, QA real null/zero, browser
+scripts operativos sin seguimiento en el principal, control geográfico de JSON-LD, browser
 QA y puente histórico de IDs. No declarar beta ni producción listas todavía.
 
 La arquitectura candidata concentra conectores, identidad, detección de URLs,
