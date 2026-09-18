@@ -86,7 +86,7 @@ def _safe_surface(value: Any) -> Optional[float]:
         number = Decimal(str(value))
     except (ValueError, InvalidOperation):
         return None
-    return float(number) if number.is_finite() and 0 <= number <= Decimal('1e15') else None
+    return float(number) if number.is_finite() and 0 <= number <= _INT_MAX else None
 
 
 def _is_generic_title(value: Any) -> bool:

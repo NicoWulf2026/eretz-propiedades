@@ -12,3 +12,8 @@ def test_room_count_boundary_never_truncates_or_converts_boolean(value):
 def test_surface_boundary_preserves_fraction_and_null_zero(value, expected):
     prop = Propiedad(url='https://agency.test/p/1', titulo='Casa', metros=value)
     assert prop.to_payload()['superficie_total'] == expected
+
+
+def test_fractional_surface_keeps_the_existing_storage_range_guard():
+    prop = Propiedad(url='https://agency.test/p/1', titulo='Casa', metros=3413024001)
+    assert prop.to_payload()['superficie_total'] is None
