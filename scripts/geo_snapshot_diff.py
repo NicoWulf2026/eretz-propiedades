@@ -22,15 +22,14 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from scripts.geo_reference import verified_rows  # noqa: E402
+
 RECURSOS = ("provincias", "departamentos", "municipios",
             "localidades_censales", "localidades", "asentamientos")
 
 
 def indexar(directorio: Path, recurso: str) -> dict[str, dict[str, Any]]:
-    ruta = directorio / f"{recurso}.json"
-    if not ruta.exists():
-        return {}
-    return {str(f["id"]): f for f in json.loads(ruta.read_text(encoding="utf-8"))}
+    return {row['id']: row for row in verified_rows(directorio, recurso)}
 
 
 def comparar(viejo: dict[str, dict[str, Any]],
@@ -71,6 +70,7 @@ def main() -> int:
 
     anterior, nuevo = Path(args.anterior), Path(args.nuevo)
     informe: dict[str, Any] = {"anterior": str(anterior), "nuevo": str(nuevo),
+                               'replacement_authorized': False,
                                "recursos": {}}
     for archivo in ("MANIFEST.json",):
         for etiqueta, base in (("manifiesto_anterior", anterior),
@@ -103,7 +103,7 @@ def main() -> int:
               f"mudadas de provincia. Las propiedades que las referencian "
               f"quedarian apuntando a algo distinto.")
         return 1
-    print("Sin eliminaciones ni mudanzas: el reemplazo es seguro.")
+    print("Sin eliminaciones ni mudanzas detectadas. Este diagnóstico no autoriza el reemplazo.")
     return 0
 
 

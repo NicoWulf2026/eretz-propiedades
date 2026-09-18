@@ -25,6 +25,11 @@ import urllib.error
 from pathlib import Path
 from typing import Any
 
+if __package__:
+    from .geo_reference import entity_ids
+else:
+    from geo_reference import entity_ids
+
 BASE = "https://apis.datos.gob.ar/georef/api"
 VOLCADO = "https://infra.datos.gob.ar/georef"
 AGENTE = "ERETZ-Propiedades/1.0 (snapshot geografico)"
@@ -59,13 +64,7 @@ def _pagina(datos: Any, recurso: str, inicio: int | None) -> tuple[list[dict[str
         raise ValueError('GeoRef page count does not match its rows')
     if inicio is not None and (type(datos.get('inicio')) is not int or datos['inicio'] != inicio):
         raise ValueError('GeoRef page offset does not match request')
-    identities = []
-    for row in rows:
-        if not isinstance(row, dict) or not isinstance(row.get('id'), str) or not row['id'].strip():
-            raise ValueError('GeoRef entity requires a nonempty text ID')
-        identities.append(row['id'])
-    if len(set(identities)) != len(identities):
-        raise ValueError('GeoRef page contains duplicate entity IDs')
+    entity_ids(rows)
     return rows, total
 
 
@@ -126,6 +125,8 @@ def main() -> int:
     preparados = [(recurso, traer(recurso)) for recurso in RECURSOS]
     destino.mkdir(parents=True, exist_ok=True)
     manifiesto: dict[str, Any] = {
+        'schema_version': 2,
+        'sha256_scope': 'file_bytes_utf8_lf',
         "fuente": "GeoRef Argentina - datos.gob.ar",
         "api": BASE,
         "licencia": "oficial, gratuita, sin credenciales",
@@ -136,7 +137,7 @@ def main() -> int:
     for recurso, (filas, total, via) in preparados:
         archivo = destino / f"{recurso.replace('-', '_')}.json"
         crudo = json.dumps(filas, ensure_ascii=False, indent=1)
-        archivo.write_text(crudo, encoding="utf-8")
+        archivo.write_bytes(crudo.encode('utf-8'))
         manifiesto["recursos"][recurso] = {
             "archivo": archivo.name,
             "url": f"{BASE}/{recurso}",

@@ -543,3 +543,28 @@ Consumidor de paquetes v5 sobre el archivo original readonly: 15942 identidades
 con lectura histórica disponible, sin error de integridad, database_writes=0.
 No se declara ese número inventario vigente/certificación actual; la misma
 limitación de fingerprint/procedencia sigue abierta.
+
+GeoRef diff/manifiesto, siguiente bloque en validación: geo_reference centraliza
+IDs y verificación de recurso contra manifiesto. Archivos/manifiesto ausentes,
+totales/conteos no exactos, flags de completitud no booleanos, checksum incorrecto,
+IDs duplicados y esquema/scope desconocidos son errores, no diccionarios vacíos.
+El escritor nuevo guarda bytes UTF-8 LF y declara schema_version=2,
+sha256_scope=file_bytes_utf8_lf. El histórico sin schema explícito admite sólo
+la semántica demostrada de hash de texto con newlines normalizados; no adivina
+semánticas de versiones desconocidas. El diff no autoriza reemplazos: informe
+replacement_authorized=false y mensaje diagnóstico aun cuando no hay cambios.
+84 controles focalizados PASS, lint PASS; CLI directa y de módulo preservadas.
+Autodiff readonly de los seis recursos originales pasa sus conteos/hashes y
+reporta cero cambios; único artefacto nuevo es el informe local en _scratch.
+Esta verificación prueba integridad de referencia, no exactitud de cada ubicación,
+equivalencia de geometrías ni una promoción multiarchivo atómica.
+
+Suite completa congelada de diff/manifiesto GeoRef: 2540 PASS, 0 fallos,
+0 errores, 0 skipped, 148,81 s; backend_georef_manifest_integrity_validation.xml.
+
+Namespaces de agencia, agregado alojado readonly: 7004 agencias, ID público
+min=1/max=7004; cero filas con id=scraping_id_origen y cero con id=staging_id_origen;
+scraping_id_origen está presente en todas. Esto no demuestra por sí mismo cuál
+namespace usa cada artefacto local, pero descarta sustituir IDs de origen por PK
+pública suponiendo igualdad numérica. Bridge de propiedad/agency FK requiere
+crosswalk de procedencia verificable, sin IDs ficticios ni consultas a secretos.

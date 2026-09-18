@@ -23,7 +23,7 @@ productiva ni cierre de la misión. Evidencia cuantificada y limitaciones en
 | Frontend F7 | Integrado sin rediseño | Tests/typecheck/build; browser QA candidato pendiente |
 | Publicación única | Parcial | Hay consumidores reales del escritor REST histórico; equivalencia con RPC pendiente |
 
-Últimos controles: 2519 tests backend PASS (152,65 s, XML de descarga GeoRef),
+Últimos controles: 2540 tests backend PASS (148,81 s, XML de manifiesto GeoRef),
 sin fallos/errores/skips. Operación desconocida se almacena NULL
 según el CHECK público observado; superficie cubierta ya se preserva en el
 RPC candidato. La consulta REST de identidad no convierte fallo/rango parcial
@@ -46,6 +46,9 @@ fallos de descarga no dejan una actualización parcial. Publicación multiarchiv
 frente a kill/disco, hashes físicos vs texto LF y proveniencia de datos GeoRef
 en certificación siguen abiertos. Los seis recursos originales conservan sus
 conteos/hash lógico: discrepancia CRLF de bytes no equivale a geografía corrupta.
+Diff exige recursos/manifiestos/conteos/hashes verificados, y no autoriza reemplazo.
+Namespaces de agencias no son iguales: cero coincidencias PK pública con IDs
+de origen en 7004 filas. No construir aliases ni FK suponiendo igualdad numérica.
 
 ## Matriz de consumidores y eliminación
 
