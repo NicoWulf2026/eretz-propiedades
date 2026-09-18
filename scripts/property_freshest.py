@@ -81,7 +81,7 @@ def mas_frescas(paquetes: Path) -> dict[str, dict[str, Any]]:
     fuera: dict[str, dict[str, Any]] = {}
     if not paquetes.exists():
         return fuera
-    for carpeta in paquetes.iterdir():
+    for carpeta in sorted(paquetes.iterdir()):
         certificacion = carpeta / "certification.json"
         if not certificacion.exists():
             continue
@@ -98,6 +98,10 @@ def mas_frescas(paquetes: Path) -> dict[str, dict[str, Any]]:
             if not h:
                 continue
             previo = fuera.get(h)
+            if previo is not None and cuando == previo.get("_certificado_en", ""):
+                anterior = {k: v for k, v in previo.items() if k != '_certificado_en'}
+                if fila != anterior:
+                    raise ValueError("Conflicting property evidence at the same certification time")
             if previo is None or cuando >= previo.get("_certificado_en", ""):
                 fuera[h] = dict(fila, _certificado_en=cuando)
     return fuera

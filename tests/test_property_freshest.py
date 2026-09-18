@@ -160,3 +160,21 @@ def test_entre_dos_paquetes_gana_la_certificacion_mas_nueva(tmp_path):
             encoding="utf-8")
 
     assert mas_frescas(tmp_path)["h1"]["titulo"] == "nueva"
+
+
+@pytest.mark.parametrize('second_title', ['Casa', 'Otra casa'])
+def test_equal_timestamp_never_selects_conflicting_data_by_filesystem_order(tmp_path, second_title):
+    for name, title in [('z-first', 'Casa'), ('a-second', second_title)]:
+        folder = tmp_path / name
+        folder.mkdir()
+        (folder / 'certification.json').write_text(json.dumps({
+            'status': 'CERTIFIED_COMPLETE', 'checked_at': '2026-09-18T10:00:00'
+        }), encoding='utf-8')
+        (folder / 'properties_run1.jsonl').write_text(json.dumps({
+            'hash_dedup': 'same', 'titulo': title
+        }) + '\n', encoding='utf-8')
+    if second_title != 'Casa':
+        with pytest.raises(ValueError, match='Conflicting property evidence'):
+            mas_frescas(tmp_path)
+    else:
+        assert mas_frescas(tmp_path)['same']['titulo'] == 'Casa'
