@@ -170,6 +170,12 @@ def _norm_token(value):
     return re.sub(r"[^a-z0-9]+", "", text)
 
 
+# These markers are constants. Normalize them once, not twice per marker for
+# every photo in a national inventory build.
+_NORMALIZED_NON_PROPERTY_STEMS = tuple((marker, _norm_token(marker))
+                                      for marker in _NON_PROPERTY_STEMS)
+
+
 def non_property_image_signals(image_url, publisher_name=None):
     """Devuelve la lista de senales estructurales detectadas en la URL."""
     url = str(image_url or "").strip()
@@ -189,8 +195,8 @@ def non_property_image_signals(image_url, publisher_name=None):
     filename = path.rsplit("/", 1)[-1]
     stem = _norm_token(filename.rsplit(".", 1)[0])
 
-    for marker in _NON_PROPERTY_STEMS:
-        if _norm_token(marker) and _norm_token(marker) in stem:
+    for marker, normalized in _NORMALIZED_NON_PROPERTY_STEMS:
+        if normalized and normalized in stem:
             signals.append("semantic_marker:%s" % marker)
             break
     for tpath in _TEMPLATE_PATHS:

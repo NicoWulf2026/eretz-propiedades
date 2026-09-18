@@ -18,3 +18,12 @@ def test_shared_render_is_preserved_with_review_evidence():
     assert descartar_imagenes_compartidas(objects) == 0
     assert all(p.imagenes == [render] for p in objects)
     assert all(p.extra['imagenes_repetidas_revision'] == [render] for p in objects)
+
+
+def test_constant_markers_are_not_recomputed_for_every_photo(monkeypatch):
+    from scripts import image_quality as policy
+    original = policy._norm_token
+    calls = []
+    monkeypatch.setattr(policy, '_norm_token', lambda value: (calls.append(value), original(value))[1])
+    assert policy.classify_property_image('https://a.test/frente.jpg')[0] == policy.IMAGE_CLASS_VALID
+    assert calls == ['frente']
