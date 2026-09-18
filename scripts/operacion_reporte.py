@@ -17,13 +17,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import subprocess
 import time
 from collections import Counter
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-REPORTE_VERSION = "operacion_reporte_v1"
+REPORTE_VERSION = "operacion_reporte_v2"
 
 # El universo canonico. Se lee del checkpoint cuando esta; esto es el
 # respaldo para cuando no.
@@ -203,47 +205,95 @@ def rendimiento(certificacion: Path, horas: float = 24.0) -> dict[str, Any]:
     tres horas y aportar 800 propiedades, y otra tardar diez minutos y aportar
     cero. `agencias/hora` sola premia a la segunda.
     """
-    corte = time.time() - horas * 3600
-    terminales = {"CERTIFIED_COMPLETE", "CERTIFIED_BEST_AVAILABLE",
-                  "NO_INVENTORY_CONFIRMED", "BLOCKED_EXTERNAL"}
+    return _rendimiento_filas(
+        _jsonl(certificacion / 'AGENCY_CERTIFICATION_RESULTS.jsonl'), horas, time.time())
+
+
+def _rendimiento_filas(filas: list[Any], horas: float, ahora: float) -> dict[str, Any]:
+    """Pure window calculation over one captured log and one observation clock."""
+    if type(horas) not in (int, float) or not math.isfinite(horas) or horas <= 0:
+        raise ValueError('La ventana de rendimiento debe ser positiva y finita')
+    corte = ahora - horas * 3600
+    exitos = {"CERTIFIED_COMPLETE", "CERTIFIED_BEST_AVAILABLE", "NO_INVENTORY_CONFIRMED"}
     vistas: set[str] = set()
-    corridas = nuevas = 0
+    cerradas: set[str] = set()
+    corridas = nuevas = exitos_nuevos = 0
     props_nuevas = 0
     segundos = 0.0
-    for r in _jsonl(certificacion / "AGENCY_CERTIFICATION_RESULTS.jsonl"):
-        a = r.get("canonical_agency_id")
-        if not a:
+    sin_duracion = ilegibles = sin_inventario = 0
+    observaciones = []
+    for r in filas:
+        if not isinstance(r, dict):
+            ilegibles += 1
             continue
+        a = r.get("canonical_agency_id")
+        if not isinstance(a, str) or not a.strip():
+            ilegibles += 1
+            continue
+        try:
+            fecha = r.get('checked_at')
+            if not isinstance(fecha, str) or 'T' not in fecha:
+                raise ValueError('Fecha ausente')
+            # Historical naive records retain the existing local-time meaning;
+            # explicit offsets are respected instead of being truncated.
+            cuando = datetime.fromisoformat(fecha).timestamp()
+            if cuando > ahora:
+                raise ValueError('Fecha futura')
+        except (ValueError, TypeError, OverflowError, OSError):
+            ilegibles += 1
+            continue
+        observaciones.append((cuando, a, r))
+    for cuando, a, r in sorted(observaciones, key=lambda item: item[0]):
         primera = a not in vistas
         vistas.add(a)
-        try:
-            cuando = time.mktime(time.strptime(
-                str(r.get("checked_at"))[:19], "%Y-%m-%dT%H:%M:%S"))
-        except (ValueError, TypeError):
-            continue
+        status = r.get('status')
+        exito = isinstance(status, str) and status in exitos
+        primer_exito = exito and a not in cerradas
+        if exito:
+            cerradas.add(a)
         if cuando < corte:
             continue
         corridas += 1
-        segundos += (r.get("operational_metrics") or {}).get("duration_seconds") or 0
+        metricas = r.get('operational_metrics')
+        duracion = metricas.get('duration_seconds') if isinstance(metricas, dict) else None
+        if type(duracion) in (int, float) and math.isfinite(duracion) and duracion >= 0:
+            segundos += duracion
+        else:
+            sin_duracion += 1
         if primera:
             nuevas += 1
-            if r.get("status") in terminales:
-                props_nuevas += (r.get("enumeration_audit") or {}).get("enumerated") or 0
+        if primer_exito:
+            exitos_nuevos += 1
+            audit = r.get('enumeration_audit')
+            cantidad = audit.get('enumerated') if isinstance(audit, dict) else None
+            if type(cantidad) is int and cantidad >= 0:
+                props_nuevas += cantidad
+            else:
+                sin_inventario += 1
     return {
         "ventana_horas": horas,
         # Cuantas veces corrimos algo. Incluye repeticiones.
         "raw_throughput_corridas_por_hora": round(corridas / horas, 1),
-        # Cuantas agencias vimos por primera vez. Esto es avance real.
-        "certified_throughput_agencias_nuevas_por_hora": round(nuevas / horas, 2),
-        # Cuantas propiedades entraron al catalogo. Esto es lo que se publica.
+        "new_attempt_throughput_agencias_por_hora": round(nuevas / horas, 2),
+        # First recorded successful closure, not first attempt or external block.
+        "certified_throughput_agencias_nuevas_por_hora": round(exitos_nuevos / horas, 2),
+        # Compatibility key: enumerated in reported successes, NOT published rows.
         "useful_throughput_propiedades_por_hora": round(props_nuevas / horas, 1),
         "agencias_nuevas": nuevas,
+        "agencias_con_primer_cierre_exitoso": exitos_nuevos,
         "corridas": corridas,
         "propiedades_nuevas": props_nuevas,
         "horas_de_worker_gastadas": round(segundos / 3600, 1),
-        "nota": ("`raw` incluye repeticiones y no es avance. `certified` son "
-                 "agencias nuevas. `useful` son propiedades que entraron al "
-                 "catalogo, que es lo unico que ve un usuario."),
+        "corridas_sin_duracion_verificada": sin_duracion,
+        "cierres_sin_inventario_verificado": sin_inventario,
+        "registros_ilegibles_o_sin_fecha_valida": ilegibles,
+        "eta_eligible": ilegibles == 0,
+        "evidence_basis": "reported_status_not_current_certification_or_publication",
+        "nota": ("`raw` incluye repeticiones. Intentos nuevos no son certificados. "
+                 "`certified` cuenta primeros cierres exitosos registrados; no verifica "
+                 "vigencia de código, fuente ni calidad. `useful` suma inventario "
+                 "enumerado de esos cierres, NO propiedades publicadas. Horas de "
+                 "worker suman sólo duraciones conocidas; no son un total si faltan."),
     }
 
 
@@ -256,6 +306,8 @@ def eta(cola: dict[str, Any], rend: dict[str, Any]) -> dict[str, Any]:
     # Lo que falta NO es "las que estan en la cola de hoy": es el universo
     # canonico menos lo que ya llego a un estado terminal. Usar la cola actual
     # daria una fecha optimista que ignora las 6.000 que todavia no entraron.
+    if rend.get('eta_eligible') is False:
+        return {'estado': 'SIN_ETA', 'porque': 'el historial contiene registros sin fecha válida'}
     UNIVERSO = 6597
     pendientes = max(0, UNIVERSO - (cola.get("terminales") or 0))
     por_hora = rend.get("certified_throughput_agencias_nuevas_por_hora") or 0
@@ -281,27 +333,17 @@ def eta(cola: dict[str, Any], rend: dict[str, Any]) -> dict[str, Any]:
 def caudal_por_ventana(certificacion: Path,
                        horas: tuple[int, ...] = (6, 12, 24, 48, 168),
                        ) -> dict[str, float]:
-    """Agencias vistas por PRIMERA vez por hora, en varias ventanas.
+    """Primeros cierres exitosos registrados por hora, no primeras corridas.
 
-    Se cuenta la primera aparición de cada agencia y no las corridas: una
-    agencia que se repite no es avance. Y se miran varias ventanas porque el
-    ritmo varía mucho, y esa variación es información, no ruido.
+    Reutiliza exactamente la frontera de rendimiento para que las fechas de
+    ETA no sigan usando una métrica de intentos tras corregir el panel.
+    Una ventana con historial ilegible no aporta un ritmo para estimar.
     """
-    vistas: set[str] = set()
-    primeras: list[float] = []
-    for fila in _jsonl(certificacion / "AGENCY_CERTIFICATION_RESULTS.jsonl"):
-        agencia, cuando = fila.get("canonical_agency_id"), fila.get("checked_at")
-        if not agencia or not cuando or agencia in vistas:
-            continue
-        vistas.add(agencia)
-        try:
-            primeras.append(time.mktime(
-                time.strptime(str(cuando)[:19], "%Y-%m-%dT%H:%M:%S")))
-        except (ValueError, TypeError):
-            continue
+    filas = _jsonl(certificacion / 'AGENCY_CERTIFICATION_RESULTS.jsonl')
     ahora = time.time()
-    return {f"{h}h": round(sum(1 for p in primeras if p >= ahora - h * 3600) / h, 2)
-            for h in horas}
+    ventanas = {f'{h}h': _rendimiento_filas(filas, h, ahora) for h in horas}
+    return {key: value['certified_throughput_agencias_nuevas_por_hora']
+            if value['eta_eligible'] else 0.0 for key, value in ventanas.items()}
 
 
 def eta_por_poblacion(certificacion: Path, datos_dir: Path,
@@ -328,7 +370,8 @@ def eta_por_poblacion(certificacion: Path, datos_dir: Path,
     Donde no hay un proceso midiéndose, la respuesta honesta es `SIN_ETA` con
     el motivo, no una fecha.
     """
-    por_hora = rend.get("certified_throughput_agencias_nuevas_por_hora") or 0
+    por_hora = (rend.get("certified_throughput_agencias_nuevas_por_hora") or 0
+                if rend.get('eta_eligible') is not False else 0)
 
     resultados = _jsonl(certificacion / "AGENCY_CERTIFICATION_RESULTS.jsonl")
     ultimo: dict[str, dict] = {}
@@ -362,7 +405,8 @@ def eta_por_poblacion(certificacion: Path, datos_dir: Path,
     #
     # Dar una sola fecha con ese spread es la falsa precisión que el §33 pide
     # evitar. Se da un rango, y el rango mismo dice cuánto vale atender la cola.
-    ritmos = caudal_por_ventana(certificacion)
+    ritmos = (caudal_por_ventana(certificacion)
+              if rend.get('eta_eligible') is not False else {})
 
     def fechar(pendientes: int) -> dict[str, Any]:
         if pendientes <= 0:

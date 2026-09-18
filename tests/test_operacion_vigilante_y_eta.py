@@ -95,7 +95,9 @@ def test_los_tres_caudales_son_distintos(tmp_path):
         "".join(json.dumps(f) + "\n" for f in filas), encoding="utf-8")
     r = rendimiento(tmp_path, horas=2.0)
     assert r["corridas"] == 4                 # raw incluye repeticiones
-    assert r["agencias_nuevas"] == 2          # certified: a y b
+    assert r["agencias_nuevas"] == 2          # intentos nuevos: a y b
+    assert r['agencias_con_primer_cierre_exitoso'] == 1
+    assert r['certified_throughput_agencias_nuevas_por_hora'] == 0.5
     assert r["propiedades_nuevas"] == 800     # useful: solo la terminal
 
 

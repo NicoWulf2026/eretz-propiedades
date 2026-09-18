@@ -607,7 +607,7 @@ renombres o cambios semánticos; contextos no objeto/null fallan explícitamente
 No reemplaza ni autoriza una referencia. 75 controles focalizados PASS/lint PASS;
 suite completa congelada: 2582 PASS, 0 fallos/errores/skipped, 175,75 s,
 backend_georef_semantic_diff_validation.xml. Autocomparación de la referencia
-original ERетZ_GEO en seis recursos: sin cambios; ningún archivo original escrito.
+original ERETZ_GEO en seis recursos: sin cambios; ningún archivo original escrito.
 
 Wheel reconstruido offline sin resolver dependencias: 1493657 bytes,
 SHA256 3819e37ac118b1b6b01f91c6a71910fd7d43da766c5da4840e4b65f078edd734.
@@ -615,3 +615,28 @@ Instalación aislada e imports/lectura verificada GeoRef/normalizador/comparador
 PASS. No se importaron clients/config ni se leyeron archivos .env. Esto prueba
 distribución del helper y código, no una instalación operacional completa ni
 proveniencia geográfica registrada por una certificación actual.
+
+Caudal operativo, bloque en validación: rendimiento etiquetaba como certified
+toda agencia vista por primera vez, incluso NEEDS_FIX, y llamaba publicados a
+conteos enumerados. Se separan intentos nuevos/primeros cierres exitosos registrados,
+sin contar BLOCKED_EXTERNAL como certificado. Un primer éxito tras un intento viejo
+sí cuenta; recertificaciones no vuelven a sumar inventario. Orden temporal explícito
+y offsets respetados; historial ilegible/fecha futura bloquea ETA. Contadores y
+duraciones desconocidos se señalan, no se presentan como medición cero.
+
+Replay local del mismo historial, reloj congelado para ambas implementaciones,
+ventana móvil 48 h de esta ejecución: 125 corridas y 26 intentos de agencias nuevas
+en ambas; caudal mal llamado certified anterior 0,54/h vs 8 primeros cierres
+exitosos registrados/0,17/h candidato. Inventario enumerado asociado 363 vs 386
+por recuperar el primer éxito posterior de agencias ya intentadas; NO son filas
+publicadas ni prueba de mejor extracción. Cero requests/escrituras de DB o archivos
+originales. No se transforma esta tasa histórica en throughput neto verificado
+ni ETA nacional. Suite inicial 2602 PASS (157,71 s); alinear las ventanas múltiples
+con la misma frontera agregó controles: 2607 PASS (158,84 s), sin fallos/errores/skips.
+47 controles focalizados PASS/lint PASS de la optimización posterior. Cinco ventanas
+repetían cinco lecturas del log de 19.891.396 bytes/2501 registros (4,52 s); una
+captura de log/reloj conservó tasas 0/0/0/0,17/0,31 por hora y midió 0,789 s.
+Es una medición local puntual, no un benchmark del pipeline ni throughput nacional.
+Suite completa de lectura única: 2608 PASS, 0 fallos/errores/skipped, 168,63 s,
+backend_throughput_single_read_validation.xml. Wheel aislado también
+resolvió strategy_fingerprint/current_code_evidence sin importar config/clients.

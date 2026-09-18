@@ -23,7 +23,7 @@ productiva ni cierre de la misión. Evidencia cuantificada y limitaciones en
 | Frontend F7 | Integrado sin rediseño | Tests/typecheck/build; browser QA candidato pendiente |
 | Publicación única | Parcial | Hay consumidores reales del escritor REST histórico; equivalencia con RPC pendiente |
 
-Últimos controles: 2567 tests backend PASS (149,28 s, XML de evidencia de certificación),
+Últimos controles: 2608 tests backend PASS (168,63 s, XML de caudal/lectura única),
 sin fallos/errores/skips. Operación desconocida se almacena NULL
 según el CHECK público observado; superficie cubierta ya se preserva en el
 RPC candidato. La consulta REST de identidad no convierte fallo/rango parcial
@@ -143,6 +143,15 @@ Los 2.501 intentos / 429 agencias / 20,31 días incluyen reintentos y STOP. Las
 padrón daría una fecha falsa. La mediana registrada de dos corridas (215,4 s)
 no incluye toda la espera ni demuestra calidad. No existe aún ETA nacional
 defendible con estas medidas.
+
+El reporte operativo ya no llama certified a primeras corridas NEEDS_FIX ni
+publicadas a propiedades enumeradas. Diferencia intento nuevo/primer cierre
+exitoso registrado, reutiliza el criterio en ventanas de ETA y señala duraciones
+faltantes. Replay de 48 h: 26 intentos nuevos vs 8 primeros éxitos; 0,54/h anterior
+mal etiquetado vs 0,17/h corregido. Sigue siendo estatus histórico registrado,
+no throughput vigente con calidad/código/fuente verificados ni prueba de publicación.
+Historial ilegible bloquea fechas; cinco ventanas leen un solo log/reloj (~0,789 s
+en la medición local frente a ~4,52 s con cinco lecturas).
 
 El presupuesto observado de suites backend completas varía ~2,6–6,5 minutos local,
 aparte de lint/build/replays; no es una estimación de días de desarrollo.
