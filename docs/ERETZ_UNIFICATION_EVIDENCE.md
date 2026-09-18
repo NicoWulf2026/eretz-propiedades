@@ -597,3 +597,21 @@ backend_certification_evidence_validation.xml. Mínimo de score de publicación
 verificado en run_daily_pipeline/build_publish_queue/publish_to_supabase: default
 0 (optativo). Penalizaciones de completitud no excluyen por ese umbral en default;
 no se declara una regresión de publicación inferida de un supuesto default 70.
+
+Diagnóstico semántico GeoRef: el comparador anterior sólo miraba el nombre de
+provincia, por lo que un cambio de ID manteniendo ese nombre quedaba invisible.
+Ahora compara contexto completo de provincia/departamento/municipio/localidades
+y cualquier otro atributo cambiado, incluidos centroides/geometría. Conserva
+los campos históricos del reporte, agrega detalles y devuelve revisión ante
+renombres o cambios semánticos; contextos no objeto/null fallan explícitamente.
+No reemplaza ni autoriza una referencia. 75 controles focalizados PASS/lint PASS;
+suite completa congelada: 2582 PASS, 0 fallos/errores/skipped, 175,75 s,
+backend_georef_semantic_diff_validation.xml. Autocomparación de la referencia
+original ERетZ_GEO en seis recursos: sin cambios; ningún archivo original escrito.
+
+Wheel reconstruido offline sin resolver dependencias: 1493657 bytes,
+SHA256 3819e37ac118b1b6b01f91c6a71910fd7d43da766c5da4840e4b65f078edd734.
+Instalación aislada e imports/lectura verificada GeoRef/normalizador/comparador
+PASS. No se importaron clients/config ni se leyeron archivos .env. Esto prueba
+distribución del helper y código, no una instalación operacional completa ni
+proveniencia geográfica registrada por una certificación actual.
