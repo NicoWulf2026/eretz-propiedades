@@ -363,3 +363,23 @@ rechaza desconocida y agencia inexistente; conserva INSERT con operación NULL,
 precio/ambientes cero y auditoría atómica. Once comprobaciones SQL PASS; ninguna
 conexión productiva. Falta cerrar la equivalencia de campos y semántica de
 actualizaciones antes de retirar el publicador REST todavía consumido.
+
+Suite congelada posterior al serializador de almacenamiento (`cc5654b714`):
+2374 PASS, sin fallos/errores/skips, 248,94 s; XML
+backend_storage_operation_validation.xml. Wheel construido sin descargar
+dependencias e instalado en carpeta aislada: serializador, superficies
+fraccionarias, safe_merge y normalización de URL de imagen PASS, sin importar
+bootstrap/.env ni conectar a red/DB.
+
+Metadatos y agregados productivos de sólo lectura: 7004 agencias main, 7004
+orígenes scraping distintos y 138 orígenes staging distintos. La presencia
+de una columna de origen no establece por sí sola una correspondencia con
+canonical_agency_id del snapshot. Public.propiedades tiene 257073 filas,
+256290 activas y 3187 agencias; todos los hashes observados son de 32 caracteres
+hexadecimales. No es el universo de 57665 filas del derivado local y no se
+presenta esa diferencia como mejora/regresión ni cobertura certificada.
+El agregado de URLs publicadas encontró 2 URLs host Zonaprop y 24 Argenprop;
+su existencia histórica no autoriza ingestión: no se consultaron esos sitios,
+no se borró ni modificó ninguna fila. Requiere revisión de lineage/scope antes
+de cualquier saneamiento productivo autorizado. La regla de fuentes prohibidas
+se mantiene en la arquitectura candidata.
