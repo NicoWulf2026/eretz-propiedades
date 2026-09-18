@@ -216,9 +216,9 @@ def _number(value: Any) -> Optional[float]:
     return number if math.isfinite(number) else None
 
 
-def _positive_number(value: Any, *, upper: float = 1e15) -> bool:
+def _nonnegative_number(value: Any, *, upper: float = 1e15) -> bool:
     number = _number(value)
-    return number is not None and 0 < number <= upper
+    return number is not None and 0 <= number <= upper
 
 
 def _valid_coordinate_pair(lat: Any, lon: Any) -> bool:
@@ -501,12 +501,15 @@ def _field_decision(
         return _audit(field, old, new, REJECTED_NULL_DEGRADATION, 0.0, "Incoming value is null or empty.")
 
     if field == "precio":
-        if not _positive_number(new):
-            return _audit(field, old, new, REJECTED_PLACEHOLDER, 0.0, "Incoming price is non-positive, non-finite or out of range.")
+        if not _nonnegative_number(new):
+            return _audit(field, old, new, REJECTED_PLACEHOLDER, 0.0, "Incoming normalized price is negative, non-finite or out of range.")
         incoming_currency = incoming.get("moneda")
         if incoming_currency and str(incoming_currency).upper() not in _VALID_CURRENCIES:
             return _audit(field, old, new, REJECTED_PLACEHOLDER, 0.0, "Incoming price has an unknown currency.")
-        if not _positive_number(old):
+        if not incoming_currency and str(incoming.get('_old_moneda') or '').upper() in _VALID_CURRENCIES:
+            return _audit(field, old, new, REJECTED_LOWER_CONFIDENCE, 0.0,
+                          "A new amount cannot borrow the historical currency.")
+        if not _nonnegative_number(old):
             return _audit(field, old, new, ACCEPTED_IMPROVEMENT, 0.95, "Valid price fills an absent or invalid price.")
         if _number(old) == _number(new):
             return _audit(field, old, new, UNCHANGED_EQUAL, 1.0, "Numeric prices are equal.")
@@ -521,14 +524,16 @@ def _field_decision(
             return _audit(field, old, normalized_new, UNCHANGED_EQUAL, 1.0, "Currencies are equal.")
         if normalized_old not in _VALID_CURRENCIES:
             return _audit(field, old, normalized_new, ACCEPTED_IMPROVEMENT, 0.95, "Valid currency fills an absent or invalid currency.")
-        if _positive_number(incoming.get("precio")):
+        if _nonnegative_number(incoming.get("precio")):
             return _audit(field, old, normalized_new, ACCEPTED_SOURCE_CHANGE, 0.85, "Currency changed together with a valid current price.")
         return _audit(field, old, normalized_new, REJECTED_LOWER_CONFIDENCE, 0.3, "Existing valid currency is preserved.")
 
     if field in _FILL_ONLY_NUMBERS:
-        if not _positive_number(new, upper=10_000_000):
+        if not _nonnegative_number(new, upper=10_000_000):
             return _audit(field, old, new, REJECTED_PLACEHOLDER, 0.0, "Incoming numeric value is invalid.")
-        if _positive_number(old, upper=10_000_000):
+        if field in {'ambientes', 'dormitorios', 'banos'} and not _number(new).is_integer():
+            return _audit(field, old, new, REJECTED_PLACEHOLDER, 0.0, "Room counts must be whole numbers.")
+        if _nonnegative_number(old, upper=10_000_000):
             if _number(old) == _number(new):
                 return _audit(field, old, new, UNCHANGED_EQUAL, 1.0, "Numeric values are equal.")
             return _audit(field, old, new, REJECTED_LOWER_CONFIDENCE, 0.5, "Existing valid numeric value is preserved.")
@@ -610,6 +615,7 @@ def build_merge_plan(
         **normalized_incoming,
         "_old_latitud": existing.get("latitud"),
         "_old_longitud": existing.get("longitud"),
+        "_old_moneda": existing.get("moneda"),
     }
     patch: Dict[str, Any] = {}
     audit: List[Dict[str, Any]] = []

@@ -3,6 +3,7 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qsl, unquote, urlencode, urlparse
 
@@ -64,13 +65,28 @@ _INT_MIN = -2_147_483_648
 
 def _safe_int(value: Any) -> Optional[int]:
     """Convierte value a int PostgreSQL-safe. Retorna None si es None, no parseable, o fuera de rango."""
-    if value is None:
+    if value is None or isinstance(value, bool):
         return None
     try:
-        iv = int(value)
-    except (TypeError, ValueError):
+        number = Decimal(str(value))
+        if (not number.is_finite() or number != number.to_integral_value()
+                or not _INT_MIN <= number <= _INT_MAX):
+            return None
+        iv = int(number)
+    except (TypeError, ValueError, InvalidOperation):
         return None
-    return iv if _INT_MIN <= iv <= _INT_MAX else None
+    return iv
+
+
+def _safe_surface(value: Any) -> Optional[float]:
+    """Surfaces are measurements, not integer room counts."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = Decimal(str(value))
+    except (ValueError, InvalidOperation):
+        return None
+    return float(number) if number.is_finite() and 0 <= number <= Decimal('1e15') else None
 
 
 def _is_generic_title(value: Any) -> bool:
@@ -136,7 +152,7 @@ class Propiedad:
     dormitorios: Optional[int] = None
     banos: Optional[int] = None
     ambientes: Optional[int] = None
-    metros: Optional[int] = None
+    metros: Optional[float] = None
     imagenes: List[str] = field(default_factory=list)
     ciudad: Optional[str] = None
     operacion: Optional[str] = None
@@ -179,7 +195,7 @@ class Propiedad:
             "dormitorios":       _safe_int(self.dormitorios),
             "banos":             _safe_int(self.banos),
             "ambientes":         _safe_int(self.ambientes),
-            "superficie_total":  _safe_int(self.metros),        # metros -> superficie_total
+            "superficie_total":  _safe_surface(self.metros),    # metros -> superficie_total
             "imagenes":          self.imagenes,
             "ciudad":            self.ciudad,
             "operacion":         self.operacion,

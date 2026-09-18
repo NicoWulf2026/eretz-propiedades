@@ -89,6 +89,24 @@ def test_new_property_uses_explicit_unknown_operation_state():
     assert plan["payload"]["operacion"] == "desconocida"
 
 
+def test_changed_amount_does_not_borrow_old_currency():
+    plan = build_merge_plan(incoming(precio=95000, moneda=None), [existing()], source_id='10')
+    assert 'precio' not in plan['patch'] and 'moneda' not in plan['patch']
+    assert decision(plan, 'precio')['decision'] == 'REJECTED_LOWER_CONFIDENCE'
+
+
+def test_normalized_explicit_zero_price_is_not_a_null_placeholder():
+    plan = build_merge_plan(incoming(precio=0), [existing()], source_id='10')
+    assert plan['patch']['precio'] == 0
+
+
+def test_normalized_zero_room_count_fills_null_but_is_not_overwritten_as_absent():
+    first = build_merge_plan(incoming(banos=0), [existing(banos=None)], source_id='10')
+    assert first['patch']['banos'] == 0
+    second = build_merge_plan(incoming(banos=2), [existing(banos=0)], source_id='10')
+    assert 'banos' not in second['patch']
+
+
 def test_new_property_does_not_persist_operation_as_title():
     plan = build_merge_plan(incoming(titulo="Venta"), [], source_id="10")
 
@@ -222,14 +240,18 @@ def test_contaminated_description_is_rejected():
 
 
 @pytest.mark.parametrize("bad_price", [None, 0, -1, float("inf"), 10**20])
-def test_invalid_price_is_rejected_without_degrading_existing(bad_price):
+def test_normalized_price_preserves_zero_and_rejects_invalid_values(bad_price):
     plan = build_merge_plan(
         incoming(precio=bad_price),
         [existing(precio=120_000)],
         source_id="10",
     )
-    assert "precio" not in plan["patch"]
-    assert decision(plan, "precio")["decision"].startswith("REJECTED_")
+    if bad_price == 0:
+        assert plan["patch"]["precio"] == 0
+        assert decision(plan, "precio")["decision"] == ACCEPTED_SOURCE_CHANGE
+    else:
+        assert "precio" not in plan["patch"]
+        assert decision(plan, "precio")["decision"].startswith("REJECTED_")
 
 
 def test_valid_changed_price_is_an_audited_source_change():
