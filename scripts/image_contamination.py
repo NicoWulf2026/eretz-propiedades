@@ -1,6 +1,12 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Imagenes que no son de ninguna propiedad, detectadas por cruzar agencias.
+"""Diagnóstico de imágenes repetidas entre agencias, no prueba de contaminación.
+
+Nota v2: la repetición sólo produce REVIEW_REQUIRED. Únicamente la evidencia
+independiente de un asset conocido permite safe_to_exclude. Los argumentos
+históricos siguientes describen la hipótesis original, no una invariante
+válida: una foto de un desarrollo puede repetirse entre muchas unidades y
+agencias. Esta herramienta no autoriza publicación ni descarta propiedades.
 
 El filtro que ya existe mira la contaminacion DENTRO de una inmobiliaria: una
 imagen que aparece en la mitad o mas de su catalogo no es de ninguna propiedad.
@@ -55,7 +61,9 @@ from scripts.preingestion_manifest import (base_canonica,  # noqa: E402
 from scripts.property_freshest import (CAMPOS_FUSIONABLES,  # noqa: E402
                                        fusionar, mas_frescas)
 
-CONTAMINACION_VERSION = "image_contamination_v1"
+CONTAMINACION_VERSION = "image_contamination_v2"
+
+from scripts.image_quality import is_known_page_asset  # noqa: E402
 
 # Cuantas fotos de una ficha se miran. Mas alla de cuarenta, una galeria larga
 # no cambia el diagnostico y si multiplica el trabajo.
@@ -63,7 +71,7 @@ TOPE_POR_FICHA = 40
 
 
 def contaminantes(uso: dict[str, tuple[set[str], int]]) -> dict[str, dict[str, Any]]:
-    """Las urls que no pueden ser de ninguna propiedad, con su evidencia."""
+    """Repeated URLs needing review; frequency alone does not prove contamination."""
     fuera: dict[str, dict[str, Any]] = {}
     for url, (agencias, fichas) in uso.items():
         if len(agencias) < 2:
@@ -71,7 +79,10 @@ def contaminantes(uso: dict[str, tuple[set[str], int]]) -> dict[str, dict[str, A
         if fichas <= len(agencias):
             # Una por agencia: es la misma propiedad publicada varias veces.
             continue
+        confirmed = is_known_page_asset(url)
         fuera[url] = {"agencias": len(agencias), "fichas": fichas,
+                      "status": "KNOWN_PAGE_ASSET" if confirmed else "REVIEW_REQUIRED",
+                      "safe_to_exclude": confirmed,
                       "motivo": "aparece en varias inmobiliarias y se repite "
                                 "adentro de al menos un catalogo"}
     return fuera
@@ -120,7 +131,8 @@ def main() -> int:
         "contaminacion_version": CONTAMINACION_VERSION,
         "fichas_revisadas": fichas,
         "urls_distintas": len(uso),
-        "urls_contaminantes": len(sucias),
+        "urls_contaminantes": sum(d['safe_to_exclude'] for d in sucias.values()),
+        "urls_revision_sin_prueba_de_contaminacion": sum(not d['safe_to_exclude'] for d in sucias.values()),
         "fichas_afectadas": sum(d["fichas"] for d in sucias.values()),
         "compartidas_entre_agencias_pero_legitimas": compartidas_legitimas,
         "peores": [dict(d, url=u) for u, d in

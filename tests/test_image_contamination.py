@@ -32,6 +32,20 @@ def test_el_limite_esta_en_repetirse_adentro_de_un_catalogo():
     assert "u" in contaminantes({"u": ({"a", "b"}, 3)})
 
 
+def test_repeated_development_photo_is_review_not_proven_contamination():
+    url = 'https://cdn.test/desarrollo/foto-casas.jpg'
+    result = contaminantes({url: ({'a', 'b'}, 30)})[url]
+    assert result['status'] == 'REVIEW_REQUIRED'
+    assert result['safe_to_exclude'] is False
+
+
+def test_known_asset_has_independent_evidence_for_exclusion():
+    url = 'https://pinterest.com/pin/create/button/'
+    result = contaminantes({url: ({'a', 'b'}, 30)})[url]
+    assert result['status'] == 'KNOWN_PAGE_ASSET'
+    assert result['safe_to_exclude'] is True
+
+
 def test_la_evidencia_viaja_con_el_veredicto():
     sucias = contaminantes({"u": ({"a", "b"}, 10)})
     assert sucias["u"]["agencias"] == 2
