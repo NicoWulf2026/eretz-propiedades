@@ -33,7 +33,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from connectors.geografia import geografia_publicable  # noqa: E402
+from connectors.geografia import geografia_de_fila_publicable  # noqa: E402
 from scripts.preingestion_manifest import (base_canonica,  # noqa: E402
                                            exigir_base_vigente)
 
@@ -114,7 +114,7 @@ REGLAS_DE_PRESENTACION = (
 def fila_de_api(fila: dict[str, Any], geo: dict[str, Any] | None,
                 alcances: list[str]) -> dict[str, Any]:
     """Una propiedad con la forma exacta que consume el frontend."""
-    geo = geografia_publicable(geo)
+    geo = geografia_de_fila_publicable(fila, geo)
     if geo.get('estado_geografico') == 'GEO_CONFLICT':
         alcances = [s for s in alcances if s not in ('FILTRO_LOCALIDAD', 'AREA_BUSQUEDA', 'MAPA')]
     return {

@@ -94,7 +94,7 @@ def test_el_veredicto_declara_su_version():
     geo = {"localidad_canonica": "Rosario",
            "area_busqueda": {"nivel": "LOCALIDAD", "nombre": "Rosario"}}
     v = evaluar(_propiedad(), geo=geo)
-    assert v["contrato_version"] == "property_contract_v4"
+    assert v["contrato_version"] == "property_contract_v5"
     assert v["publicable"] is True
     assert v["database_writes"] == 0
     assert set(v["alcances"]) == {"FICHA", "LISTADO", "FILTRO_OPERACION",

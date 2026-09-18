@@ -169,7 +169,7 @@ def test_el_esquema_de_huella_esta_versionado():
     la huella no corrige ninguno."""
     from scripts.agency_fingerprints import (FINGERPRINT_SCHEMA_VERSION,
                                              strategy_fingerprint_v1)
-    assert FINGERPRINT_SCHEMA_VERSION == 3
+    assert FINGERPRINT_SCHEMA_VERSION == 4
     # El algoritmo viejo sigue disponible para juzgar paquetes del esquema 1.
     assert (strategy_fingerprint_v1("tokko", "tokko")
             != strategy_fingerprint("tokko", "tokko"))
@@ -229,3 +229,9 @@ def test_las_familias_propias_no_se_invalidan_por_generico():
         componentes = fingerprint_components(connector, connector)
         assert "generic/common" not in componentes
         assert f"connector/{connector}" in componentes
+
+
+def test_shared_image_policy_is_fingerprinted_for_every_family():
+    for connector, strategy in [('generico', 'generic/html_catalog'), ('tokko', 'tokko')]:
+        components = fingerprint_components(connector, strategy)
+        assert b'is_known_page_asset' in components['shared/image_quality']

@@ -40,9 +40,9 @@ import re
 import math
 from typing import Any
 
-from connectors.geografia import CAJA_ARGENTINA, geografia_publicable
+from connectors.geografia import CAJA_ARGENTINA, geografia_publicable, geografia_de_fila_publicable
 
-CONTRATO_VERSION = "property_contract_v4"
+CONTRATO_VERSION = "property_contract_v5"
 
 EXTRACTED = "EXTRACTED"
 SOURCE_NOT_PROVIDED = "SOURCE_NOT_PROVIDED"
@@ -236,6 +236,7 @@ def alcances(fila: dict[str, Any],
     `geo` trae las dimensiones canonicas ya resueltas y separadas por nivel.
     Sin el, la localidad no se afirma: no afirmarla es la respuesta correcta
     cuando no hay con que demostrarla."""
+    geo = geografia_de_fila_publicable(fila, geo)
     razones: list[str] = []
 
     faltan_identidad = [c for c in IDENTIDAD if not _presente(fila.get(c))]
@@ -297,6 +298,7 @@ def evaluar(fila: dict[str, Any],
             fuente: dict[str, bool] | None = None,
             geo: dict[str, Any] | None = None) -> dict[str, Any]:
     """El veredicto completo del contrato para una propiedad."""
+    geo = geografia_de_fila_publicable(fila, geo)
     fuente = fuente or {}
     permitidos, razones = alcances(fila, geo)
     estados = {c: estado_de_campo(fila, c, fuente.get(c), geo) for c in TODOS}

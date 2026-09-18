@@ -1,4 +1,4 @@
-"""Una imagen compartida por muchas fichas no es la foto de ninguna."""
+"""Repetition prompts review; only independent page-asset evidence excludes."""
 from __future__ import annotations
 
 import json
@@ -10,10 +10,10 @@ from pathlib import Path
 RAIZ = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RAIZ))
 
-from scripts.api_snapshot import FICHAS_PARA_SER_COMPARTIDA
+from scripts.api_snapshot import FICHAS_PARA_SER_COMPARTIDA  # noqa: E402
 
 
-def _base(tmp_path, filas):
+def _base(tmp_path, filas, values=None):
     ruta = tmp_path / "pre.sqlite3"
     con = sqlite3.connect(ruta)
     con.execute("create table rows (row_json text, canonical_id text, "
@@ -22,6 +22,7 @@ def _base(tmp_path, filas):
         fila = {"hash_dedup": f"h{i}", "canonical_agency_id": agencia,
                 "source_url": f"https://a.com/{i}", "titulo": "Casa",
                 "imagenes": imagenes}
+        fila.update(values or {})
         con.execute("insert into rows values (?,?,?,?)",
                     (json.dumps(fila), agencia, f"h{i}", "CANDIDATE"))
     con.commit()
@@ -29,19 +30,22 @@ def _base(tmp_path, filas):
     return ruta
 
 
-def _correr(tmp_path, filas, monkeypatch):
-    db = _base(tmp_path, filas)
+def _correr(tmp_path, filas, monkeypatch, values=None, fresh=None, gate=None):
+    db = _base(tmp_path, filas, values)
     salida = tmp_path / "out"
     salida.mkdir()
     vacio = tmp_path / "vacio.jsonl"
     vacio.write_text("", encoding="utf-8")
+    gate_path = tmp_path / 'gate.jsonl'
+    gate_path.write_text(''.join(json.dumps(dict(hash_dedup=h, alcances=scopes)) + '\n'
+                                for h, scopes in (gate or {}).items()), encoding='utf-8')
 
     from scripts import api_snapshot
     monkeypatch.setattr(sys, "argv", [
-        "snap", "--db", str(db), "--gate", str(vacio),
+        "snap", "--db", str(db), "--gate", str(gate_path),
         "--cobertura", str(vacio), "--salida", str(salida)])
     monkeypatch.setattr(api_snapshot, "exigir_base_vigente", lambda r: Path(r))
-    monkeypatch.setattr(api_snapshot, 'mas_frescas', lambda root: {})
+    monkeypatch.setattr(api_snapshot, 'mas_frescas', lambda root: fresh or {})
     monkeypatch.setattr(api_snapshot, 'agencias_con_web_ajena', lambda root: set())
     assert api_snapshot.main() == 0
     resumen = json.loads(
@@ -52,6 +56,17 @@ def _correr(tmp_path, filas, monkeypatch):
             for f in con.execute("select id, documento from propiedades")}
     con.close()
     return resumen, docs
+
+
+def test_snapshot_recalculates_scopes_after_current_offer_merge(tmp_path, monkeypatch):
+    summary, docs = _correr(tmp_path, [('roomix:alfa', [])], monkeypatch,
+                           values={'precio': 99000, 'moneda': 'USD', 'operacion': 'venta'},
+                           fresh={'h0': {'precio': None, 'moneda': None, 'operacion': None}},
+                           gate={'h0': ['FICHA', 'LISTADO', 'FILTRO_PRECIO', 'FILTRO_OPERACION']})
+    assert summary['propiedades'] == 1
+    assert docs['h0']['precio'] is None and docs['h0']['moneda'] is None
+    assert docs['h0']['operacion'] is None
+    assert docs['h0']['alcances'] == ['FICHA', 'LISTADO']
 
 
 def test_snapshot_builder_cannot_delete_its_own_source(tmp_path, monkeypatch):
@@ -128,6 +143,15 @@ def test_el_umbral_es_por_agencia(tmp_path, monkeypatch):
     resumen, docs = _correr(tmp_path, filas, monkeypatch)
 
     assert resumen["imagenes_compartidas_descartadas"] == 0
+
+
+def test_many_units_can_share_a_real_building_render(tmp_path, monkeypatch):
+    render = 'https://agency.test/building/render.jpg'
+    rows = [('roomix:alfa', [render]) for _ in range(12)]
+    summary, docs = _correr(tmp_path, rows, monkeypatch)
+    assert summary['imagenes_compartidas_descartadas'] == 0
+    assert summary['imagenes_repetidas_sin_evidencia_de_descarte'] == 12
+    assert all(doc['imagenes'] == [render] for doc in docs.values())
 
 
 def test_quedarse_sin_fotos_no_borra_la_propiedad(tmp_path, monkeypatch):

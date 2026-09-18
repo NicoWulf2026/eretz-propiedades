@@ -62,6 +62,7 @@ DE_TEXTO_DE_LA_FUENTE = "SOURCE_TEXT"
 NORMALIZADA_CANONICA = "CANONICAL_NORMALIZED"
 APOYADA_EN_COORDENADA = "COORDINATE_SUPPORTED"
 DESCONOCIDA = "UNKNOWN"
+PROVINCE_CONFLICT_REASON = "la provincia declarada contradice al catalogo"
 
 
 def geografia_publicable(geo: dict[str, Any] | None) -> dict[str, Any]:
@@ -81,6 +82,15 @@ def geografia_publicable(geo: dict[str, Any] | None) -> dict[str, Any]:
         'nivel': 'SIN_AREA', 'nombre': None, 'id': None, 'origen': 'sin_area',
     }
     return result
+
+
+def geografia_de_fila_publicable(fila: dict[str, Any], geo: dict[str, Any] | None) -> dict[str, Any]:
+    """A newly recorded row conflict overrides an older coverage artifact."""
+    extra = fila.get('extra')
+    conflict = extra.get('geo_conflicto') if isinstance(extra, dict) else None
+    if isinstance(conflict, dict) and conflict:
+        geo = dict(geo or {}, estado_geografico='GEO_CONFLICT', conflicto=conflict)
+    return geografia_publicable(geo)
 
 # Caja de Argentina continental mas el sector antartico e islas. Sirve para
 # descartar coordenadas invertidas o de otro pais, no para afirmar precision.
@@ -361,7 +371,7 @@ class Geografia:
                     and normalizar(entidad.provincia) != normalizar(provincia)):
                 return Resolucion(None, CONTRADICHA, DESCONOCIDA,
                                   resolucion.candidatas,
-                                  "la provincia declarada contradice al catalogo")
+                                  PROVINCE_CONFLICT_REASON)
             if entidad is None or entidad.lat is None:
                 return resolucion
             if not _en_argentina(lat, lon):
@@ -419,7 +429,7 @@ class Geografia:
             candidatas, provincia=provincia, departamento=departamento)
         if not filtradas:
             return Resolucion(None, AMBIGUA, DESCONOCIDA, total,
-                              "la provincia declarada contradice al catalogo")
+                              PROVINCE_CONFLICT_REASON)
         if len(filtradas) == 1:
             certeza = EXACTA if total == 1 else POR_CONTEXTO
             return controlar(Resolucion(

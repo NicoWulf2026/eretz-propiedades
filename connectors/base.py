@@ -779,7 +779,7 @@ class Connector:
         """
         padron = fuente.extra or {}
         provincia = padron.get("province")
-        if provincia and not prop.provincia:
+        if provincia and not prop.provincia and not prop.extra.get('geo_conflicto'):
             prop.provincia = provincia
             prop.extra["provincia_origen"] = "padron_inmobiliaria"
             prop.extra["provincia_confianza"] = "inferida"
@@ -823,6 +823,8 @@ class Connector:
         Nunca se inventa: si no resuelve, el texto se conserva donde estaba y
         `ciudad` queda vacia. Y la propiedad nunca desaparece por esto.
         """
+        if prop.extra.get('geo_conflicto'):
+            return  # Repeating normalization must not undo a recorded conflict.
         desde_barrio = not prop.ciudad
         publicada = prop.ciudad or prop.barrio
         if not publicada:
@@ -842,6 +844,23 @@ class Connector:
         prop.extra["ciudad_provenance"] = resolucion.provenance
         prop.extra["ciudad_campo_de_origen"] = ("barrio" if desde_barrio
                                                 else "ciudad")
+
+        from connectors.geografia import PROVINCE_CONFLICT_REASON
+        if not desde_barrio and resolucion.motivo == PROVINCE_CONFLICT_REASON:
+            # An explicit locality and province cannot both be true. Do not
+            # simply reject the locality and keep advertising the province.
+            prop.extra['geo_conflicto'] = {
+                'publicado': {'provincia': prop.provincia, 'localidad': publicada,
+                              'latitud': prop.latitud, 'longitud': prop.longitud},
+                'resolucion': resolucion.a_dict(),
+            }
+            prop.provincia = prop.ciudad = None
+            prop.latitud = prop.longitud = None
+            Connector._marcar_descartado(prop, 'ciudad')
+            Connector._marcar_descartado(prop, 'provincia')
+            Connector._escribir_dimensiones(prop, None, resolucion, desde_barrio, publicada)
+            prop.geo['estado_geografico'] = GEO_CONFLICT
+            return
 
         if resolucion.resuelta:
             entidad = resolucion.entidad

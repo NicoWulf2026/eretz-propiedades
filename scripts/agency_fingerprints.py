@@ -15,7 +15,7 @@ from typing import Iterable
 
 ROOT = Path(__file__).resolve().parents[1]
 RAIZ = ROOT  # alias en castellano para los tests
-FINGERPRINT_SCHEMA_VERSION = 3
+FINGERPRINT_SCHEMA_VERSION = 4
 
 PUBLICATION_STRATEGIES = {
     "EMPTY_CATALOG_HTML": "generic/empty_catalog",
@@ -209,6 +209,7 @@ def _selected_nodes(path: Path, class_name: str,
 
 def fingerprint_components(connector: str, strategy: str) -> dict[str, bytes]:
     components = {
+        "shared/image_quality": _semantic_file(ROOT / "scripts" / "image_quality.py"),
         "shared/network_security": _semantic_file(ROOT / "scraper" / "network_security.py"),
         "shared/models": _semantic_file(ROOT / "scraper" / "models.py"),
         "shared/detail_urls": _semantic_file(ROOT / "scraper" / "detail_urls.py"),

@@ -211,26 +211,16 @@ def universo(dd: Path, plataforma: str, variantes: set[str] | None,
     return fuentes[:limite] if limite else fuentes
 
 
-# Una imagen que aparece en la mitad o mas del catalogo de una inmobiliaria no
-# es la foto de ninguna de sus propiedades.
+# Frequency triggers review; it never proves that a photo is a page asset.
 MINIMO_PARA_JUZGAR = 8
 FRACCION_COMPARTIDA = 0.5
 
 
 def descartar_imagenes_compartidas(objetos: list) -> int:
-    """Saca de cada propiedad las imagenes que son de la PAGINA, no del aviso.
+    """Exclude repeated known page assets; retain uncertain media for review.
 
-    El chinche del mapa, el icono del telefono, el boton de Pinterest y el
-    banner de "Agenda un cafe" salen en todas las fichas del sitio. Medido sobre
-    las 18.474 propiedades de WordPress: 91.836 referencias de imagen, el 15,8%
-    del total, eran esto. Ademas de ensuciar el dataset hacian ruido en el
-    incremental, porque el sitio las rota y cada rotacion se leia como que la
-    propiedad habia cambiado de fotos.
-
-    La senal es estructural y no depende del nombre del archivo: si la misma url
-    esta en la mitad o mas de las propiedades de esa inmobiliaria, no es de
-    ninguna. Se exige un minimo de propiedades para no castigar a una agencia
-    con tres avisos del mismo edificio.
+    Many units can legitimately share a building photo or render. Counts alone
+    are not ownership evidence, even with a large catalog.
     """
     if len(objetos) < MINIMO_PARA_JUZGAR:
         return 0
@@ -238,11 +228,13 @@ def descartar_imagenes_compartidas(objetos: list) -> int:
     for p in objetos:
         veces.update(set(p.imagenes or []))
     tope = max(MINIMO_PARA_JUZGAR // 2, len(objetos) * FRACCION_COMPARTIDA)
-    compartidas = {u for u, n in veces.items() if n >= tope}
-    if not compartidas:
-        return 0
+    from scripts.image_quality import is_known_page_asset
+    compartidas = {u for u, n in veces.items() if n >= tope and is_known_page_asset(u)}
     descartadas = 0
     for p in objetos:
+        inciertas = [u for u in (p.imagenes or []) if veces[u] >= tope and u not in compartidas]
+        if inciertas:
+            p.extra['imagenes_repetidas_revision'] = inciertas
         antes = len(p.imagenes or [])
         p.imagenes = [u for u in (p.imagenes or []) if u not in compartidas]
         descartadas += antes - len(p.imagenes)

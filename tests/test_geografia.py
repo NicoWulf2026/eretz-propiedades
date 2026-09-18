@@ -111,6 +111,29 @@ def test_alias_does_not_bypass_conflicting_province(city, province, geo):
     assert result.certeza == CONTRADICHA
 
 
+def test_explicit_locality_province_conflict_preserves_evidence_not_assertions():
+    from connectors.base import Connector, Fuente
+    prop = _resolver(_propiedad(titulo='Casa real', ciudad='La Plata',
+                                provincia='Ciudad Autónoma de Buenos Aires',
+                                latitud=-34.92, longitud=-57.95))
+    assert prop.ciudad is None and prop.provincia is None
+    assert prop.latitud is None and prop.longitud is None
+    assert prop.geo['estado_geografico'] == 'GEO_CONFLICT'
+    assert prop.geo['area_busqueda']['nivel'] == 'SIN_AREA'
+    assert prop.extra['geo_conflicto']['publicado']['localidad'] == 'La Plata'
+    assert prop.extra['geo_conflicto']['publicado']['provincia'] == 'Ciudad Autónoma de Buenos Aires'
+    assert prop.titulo == 'Casa real'
+    Connector().completar_ubicacion(prop, Fuente('a', 'Agencia', 'https://a.test',
+                                              extra={'province': 'Ciudad Autónoma de Buenos Aires'}))
+    assert prop.provincia is None
+
+
+def test_neighborhood_named_like_another_province_locality_does_not_reject_province():
+    prop = _resolver(_propiedad(barrio='La Plata', provincia='Santa Fe'))
+    assert prop.ciudad is None and prop.provincia == 'Santa Fe'
+    assert 'geo_conflicto' not in prop.extra
+
+
 def test_una_coordenada_coherente_no_estorba(geo) -> None:
     resultado = geo.resolver_localidad("Rosario", lat=-32.95, lon=-60.66)
     assert resultado.certeza == EXACTA

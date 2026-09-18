@@ -54,7 +54,7 @@ from connectors.base import Connector, PropiedadNormalizada  # noqa: E402
 from connectors.texto import plegar  # noqa: E402
 from connectors.geografia import geografia  # noqa: E402
 
-COBERTURA_VERSION = "geo_coverage_audit_v3"
+COBERTURA_VERSION = "geo_coverage_audit_v4"
 
 GEO_CONFLICT = "GEO_CONFLICT"
 
@@ -200,11 +200,14 @@ def main() -> int:
             # No se elige. Y el municipio geometrico NO se usa como area: si la
             # coordenada esta mal, su municipio tambien, y mandaria a una
             # persona a buscar en la provincia equivocada.
-            conflicto = bool(
+            conflicto_estructurado = (prop.extra.get('geo_conflicto')
+                                     or (fila.get('extra') or {}).get('geo_conflicto'))
+            conflicto = bool(conflicto_estructurado or (
                 prov_geo and fila.get("provincia")
-                and _plegado(prov_geo) != _plegado(fila.get("provincia")))
+                and _plegado(prov_geo) != _plegado(fila.get("provincia"))))
             if conflicto:
-                conflictos["provincia_geometrica_vs_publicada"] += 1
+                conflictos['provincia_vs_localidad' if conflicto_estructurado
+                           else "provincia_geometrica_vs_publicada"] += 1
                 corroborada = False
                 provincia_final = None
                 departamento_nombre = departamento_id = None
@@ -265,7 +268,7 @@ def main() -> int:
                 "geometria": {"provincia": prov_geo, "departamento": depto_geo,
                               "municipio": muni_geo} if punto else None,
                 "estado_geografico": GEO_CONFLICT if conflicto else None,
-                "conflicto": ({"publicado": fila.get("provincia"),
+                "conflicto": (conflicto_estructurado or {"publicado": fila.get("provincia"),
                                "geometrico": prov_geo,
                                "razon": "la provincia publicada y la geometria "
                                         "oficial no coinciden"}
