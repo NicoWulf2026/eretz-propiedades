@@ -38,9 +38,7 @@ Uso:
 from __future__ import annotations
 
 import argparse
-import gzip
 import json
-import os
 import random
 import re
 import sys
@@ -49,34 +47,15 @@ import urllib.error
 import urllib.request
 from collections import Counter
 from pathlib import Path
-from urllib.parse import urlsplit
 
 RAIZ = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RAIZ))
 sys.path.insert(0, str(RAIZ / "scripts"))
 
 
-def cargar_env() -> None:
-    """La key vive en un .env ignorado por git. Se carga, nunca se imprime."""
-    for ruta in (Path(r"D:\INMO CAPITAL\Inmo-Capital-main\.env"),
-                 RAIZ / ".env"):
-        if not ruta.exists():
-            continue
-        for linea in ruta.read_text(encoding="utf-8", errors="replace").splitlines():
-            linea = linea.strip()
-            if not linea or linea.startswith("#") or "=" not in linea:
-                continue
-            nombre, valor = linea.split("=", 1)
-            nombre = nombre.strip()
-            if nombre and nombre not in os.environ:
-                os.environ[nombre] = valor.strip().strip('"').strip("'")
-
-
-cargar_env()
-
-import agency_web_discovery as wd  # noqa: E402
-import search_provider as sp  # noqa: E402
-from run_web_discovery import candidatos_de_nombre  # noqa: E402
+from scripts import agency_web_discovery as wd, search_provider as sp  # noqa: E402
+from scripts.run_web_discovery import candidatos_de_nombre  # noqa: E402
+from scraper.network_security import secure_urlopen, read_bounded_response  # noqa: E402
 
 DATOS = Path(r"D:\INMO CAPITAL\ERETZ_AGENCY_DATA")
 CERT = Path(r"D:\INMO CAPITAL\ERETZ_AGENCY_CERTIFICATION_20260827")
@@ -103,14 +82,9 @@ GBA = {"vicente lopez", "san isidro", "tigre", "pilar", "quilmes", "lomas de zam
 
 def bajar(url: str, timeout: float = 20) -> wd.Candidata:
     try:
-        with urllib.request.urlopen(
+        with secure_urlopen(
                 urllib.request.Request(url, headers=UA), timeout=timeout) as r:
-            crudo = r.read(400_000)
-            if r.headers.get("Content-Encoding") == "gzip":
-                try:
-                    crudo = gzip.decompress(crudo)
-                except OSError:
-                    pass
+            crudo = read_bounded_response(r, 400_000)
             cuerpo = crudo.decode("utf-8", "replace")
             final = r.url
         titulo = ""
@@ -319,11 +293,6 @@ def main() -> int:
     ap.add_argument("--pausa", type=float, default=0.4)
     args = ap.parse_args()
 
-    buscador = sp.Brave()
-    if not buscador.disponible():
-        print("BRAVE_AUTH_FAILED: la variable no esta en el entorno")
-        return 1
-
     pendientes = pendientes_de_web()
     muestra = seleccionar(pendientes)[:args.tamanyo]
 
@@ -342,8 +311,9 @@ def main() -> int:
     for clave, n in estratos.most_common():
         print(f"     {' / '.join(clave):48} {n:3}")
     avisos = sorted(f.get("avisos_observados") or 0 for f in muestra)
-    print(f"  avisos por agencia: min {avisos[0]}, mediana "
-          f"{avisos[len(avisos)//2]}, max {avisos[-1]}")
+    if avisos:
+        print(f"  avisos por agencia: min {avisos[0]}, mediana "
+              f"{avisos[len(avisos)//2]}, max {avisos[-1]}")
 
     if args.dry_run:
         print("\n  DRY-RUN: no se gasta nada.")
@@ -352,6 +322,12 @@ def main() -> int:
                   f"{zona_de(f):12} {f.get('avisos_observados')}")
         print("database_writes: 0")
         return 0
+
+    sp.cargar_env_local()
+    buscador = sp.Brave()
+    if not buscador.disponible():
+        print("BRAVE_AUTH_FAILED: la variable no esta en el entorno")
+        return 1
 
     clases: Counter = Counter()
     vias: Counter = Counter()
@@ -366,8 +342,7 @@ def main() -> int:
             print("  PROVEEDOR AGOTADO: se corta el canario")
             break
         except RuntimeError as e:
-            # `redactar` ya quito la key del mensaje del proveedor.
-            print(f"  error del proveedor: {e}")
+            print(f"  error del proveedor: {type(e).__name__}")
             break
         clases[r["clase"]] += 1
         vias[r["via"]] += 1
@@ -421,7 +396,9 @@ def main() -> int:
     print(f"DURACION                     {(time.time() - empezo) / 60:.1f} min")
     print(f"\nartefacto: {SALIDA}")
     print("database_writes: 0")
-    return 0
+    complete = len(filas_salida) == len(muestra)
+    print(f"RUN_STATUS                   {'COMPLETE' if complete else 'PARTIAL'}")
+    return 0 if complete else 2
 
 
 if __name__ == "__main__":

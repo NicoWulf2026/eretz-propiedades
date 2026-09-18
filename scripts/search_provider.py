@@ -34,6 +34,17 @@ PENDING = "SEARCH_API_PENDING"
 ERROR = "SEARCH_API_ERROR"
 
 
+def cargar_env_local() -> None:
+    """Explicit CLI-only loading; never borrow another worktree's secrets."""
+    if os.environ.get('PYTHON_DOTENV_DISABLED', '').casefold() in {'1', 'true', 'yes'}:
+        return
+    from dotenv import load_dotenv
+    root = Path(__file__).resolve().parents[1]
+    # Process variables win, then local overrides, then repository defaults.
+    for filename in ('.env.local', '.env'):
+        load_dotenv(root / filename, override=False)
+
+
 class ConsultaInvalida(RuntimeError):
     """El proveedor rechazo ESTA consulta. No dice nada del resto del lote.
 
@@ -233,13 +244,15 @@ class Tavily(Proveedor):
                     self.sin_creditos = True
                     raise ProveedorAgotado(redactar(f"tavily sin creditos o limitado (HTTP {e.code})", key)) from None
                 if e.code >= 500 and intento < self.reintentos:
-                    time.sleep(demora); demora *= 2
+                    time.sleep(demora)
+                    demora *= 2
                     continue
                 raise RuntimeError(redactar(f"tavily HTTP {e.code}", key)) from None
             except Exception as e:
                 self._ultimo = time.time()
                 if intento < self.reintentos:
-                    time.sleep(demora); demora *= 2
+                    time.sleep(demora)
+                    demora *= 2
                     continue
                 raise RuntimeError(redactar(f"tavily: {type(e).__name__}", key)) from None
         if datos is None:
@@ -318,13 +331,15 @@ class Serper(Proveedor):
                 if e.code in (400, 413, 422):
                     raise ConsultaInvalida(redactar(f"serper rechazo la consulta (HTTP {e.code})", key)) from None
                 if e.code >= 500 and intento < self.reintentos:
-                    time.sleep(demora); demora *= 2
+                    time.sleep(demora)
+                    demora *= 2
                     continue
                 raise RuntimeError(redactar(f"serper HTTP {e.code}", key)) from None
             except Exception as e:
                 self._ultimo = time.time()
                 if intento < self.reintentos:
-                    time.sleep(demora); demora *= 2
+                    time.sleep(demora)
+                    demora *= 2
                     continue
                 raise RuntimeError(redactar(f"serper: {type(e).__name__}", key)) from None
         if datos is None:

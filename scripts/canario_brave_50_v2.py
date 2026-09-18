@@ -12,9 +12,7 @@ serían indistinguibles — y las difíciles son justamente las que importan.
 from __future__ import annotations
 
 import argparse
-import gzip
 import json
-import os
 import re
 import sys
 import time
@@ -28,24 +26,9 @@ sys.path.insert(0, str(RAIZ))
 sys.path.insert(0, str(RAIZ / "scripts"))
 
 
-def cargar_env() -> None:
-    for ruta in (Path(r"D:\INMO CAPITAL\Inmo-Capital-main\.env"), RAIZ / ".env"):
-        if not ruta.exists():
-            continue
-        for linea in ruta.read_text(encoding="utf-8", errors="replace").splitlines():
-            linea = linea.strip()
-            if not linea or linea.startswith("#") or "=" not in linea:
-                continue
-            nombre, valor = linea.split("=", 1)
-            if nombre.strip() and nombre.strip() not in os.environ:
-                os.environ[nombre.strip()] = valor.strip().strip('"').strip("'")
-
-
-cargar_env()
-
-import search_provider as sp  # noqa: E402
-import verificador_identidad_v2 as v2  # noqa: E402
-from run_web_discovery import candidatos_de_nombre  # noqa: E402
+from scripts import search_provider as sp, verificador_identidad_v2 as v2  # noqa: E402
+from scripts.run_web_discovery import candidatos_de_nombre  # noqa: E402
+from scraper.network_security import secure_urlopen, read_bounded_response  # noqa: E402
 
 DATOS = Path(r"D:\INMO CAPITAL\ERETZ_AGENCY_DATA")
 PADRON = DATOS / "roomix_agency_directory.jsonl"
@@ -64,14 +47,9 @@ UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
 
 def bajar(url: str, timeout: float = 20) -> v2.Sitio:
     try:
-        with urllib.request.urlopen(
+        with secure_urlopen(
                 urllib.request.Request(url, headers=UA), timeout=timeout) as r:
-            crudo = r.read(400_000)
-            if r.headers.get("Content-Encoding") == "gzip":
-                try:
-                    crudo = gzip.decompress(crudo)
-                except OSError:
-                    pass
+            crudo = read_bounded_response(r, 400_000)
             cuerpo = crudo.decode("utf-8", "replace")
             final = r.url
         titulo = ""
@@ -177,6 +155,7 @@ def main() -> int:
     ap.add_argument("--pausa", type=float, default=0.4)
     args = ap.parse_args()
 
+    sp.cargar_env_local()
     buscador = sp.Brave()
     if not buscador.disponible():
         print("BRAVE_AUTH_FAILED")
@@ -195,7 +174,7 @@ def main() -> int:
     print("### CANARIO V2 — LAS MISMAS 50 ###")
     print(f"  ids del canario V1:  {len(v1)}")
     print(f"  encontradas:         {len(muestra)}")
-    print(f"  verificador:         V2 (tipo de sitio + identidad)\n")
+    print("  verificador:         V2 (tipo de sitio + identidad)\n")
 
     clases: Counter = Counter()
     vias: Counter = Counter()
@@ -208,7 +187,7 @@ def main() -> int:
         try:
             r = resolver(fila, buscador, args.pausa)
         except RuntimeError as e:
-            print(f"  proveedor: {e}")
+            print(f"  proveedor: {type(e).__name__}")
             break
         v = r["v"]
         clases[v.clase] += 1
@@ -265,7 +244,9 @@ def main() -> int:
             print(f"       {url[:74]}")
     print(f"\nartefacto: {SALIDA}")
     print("database_writes: 0")
-    return 0
+    complete = len(filas) == len(muestra) == len(v1)
+    print(f"RUN_STATUS                   {'COMPLETE' if complete else 'PARTIAL'}")
+    return 0 if complete else 2
 
 
 if __name__ == "__main__":

@@ -27,7 +27,6 @@ import argparse
 import importlib.util
 import json
 import re
-import ssl
 import sys
 import time
 import urllib.error
@@ -36,6 +35,9 @@ from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from scraper.network_security import secure_urlopen, read_bounded_response  # noqa: E402
 
 
 def _load(name: str):
@@ -86,11 +88,10 @@ def candidatos_de_nombre(nombre: str) -> list[str]:
 
 def bajar(url: str, timeout: int = 12) -> "wd.Candidata":
     """Una peticion, sin reintentos. Un fallo es informacion, no un problema."""
-    ctx = ssl.create_default_context()
     req = urllib.request.Request(url, headers={"User-Agent": UA})
     try:
-        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as r:
-            cuerpo = r.read(180_000).decode("utf-8", "ignore")
+        with secure_urlopen(req, timeout=timeout) as r:
+            cuerpo = read_bounded_response(r, 180_000).decode("utf-8", "ignore")
             final = r.geturl()
             titulo = ""
             m = re.search(r"<title[^>]*>(.{0,200}?)</title>", cuerpo, re.I | re.S)
@@ -119,8 +120,8 @@ def main() -> int:
 
     resuelto = (wd.VERIFIED, wd.HIGH_CONFIDENCE, wd.NO_SITE)
 
-    padron = [json.loads(l) for l in
-              (dd / "roomix_agency_directory.jsonl").open(encoding="utf-8") if l.strip()]
+    padron = [json.loads(line) for line in
+              (dd / "roomix_agency_directory.jsonl").open(encoding="utf-8") if line.strip()]
     cwin = _load("coverage_windows")
     objetivo = [e for e in padron if e.get("tipo") in cwin.CUENTA_COMO_AGENCIA]
     # Prioridad: primero las que ya tienen web en ERETZ -se cierran validando y

@@ -39,8 +39,7 @@ RAIZ = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RAIZ))
 sys.path.insert(0, str(RAIZ / "scripts"))
 
-import canario_brave_50_v2 as canario  # noqa: E402
-import search_provider as sp  # noqa: E402
+from scripts import canario_brave_50_v2 as canario, search_provider as sp  # noqa: E402
 
 DATOS = Path(r"D:\INMO CAPITAL\ERETZ_AGENCY_DATA")
 PADRON = DATOS / "roomix_agency_directory.jsonl"
@@ -156,6 +155,7 @@ def informe_seleccion(elegidas: list[dict]) -> None:
 
 
 def correr(elegidas: list[dict], pausa: float) -> int:
+    sp.cargar_env_local()
     buscador = sp.Brave()
     if not buscador.disponible():
         print("BRAVE_AUTH_FAILED")
@@ -164,6 +164,7 @@ def correr(elegidas: list[dict], pausa: float) -> int:
     clases: Counter = Counter()
     vias: Counter = Counter()
     usadas = 0
+    processed = 0
     with SALIDA.open("w", encoding="utf-8") as fh:
         for i, elegida in enumerate(elegidas, 1):
             fila = padron.get(elegida["agency_id"])
@@ -178,6 +179,7 @@ def correr(elegidas: list[dict], pausa: float) -> int:
                       f"{type(e).__name__}")
                 break
             ver = r["v"]
+            processed += 1
             usadas += r["consultas"]
             clases[ver.clase] += 1
             vias[r["via"]] += 1
@@ -203,7 +205,8 @@ def correr(elegidas: list[dict], pausa: float) -> int:
             fh.flush()
             if i % 25 == 0:
                 print(f"   {i}/{len(elegidas)}  queries={usadas}")
-    print(f"\nRESUELTAS          {len(elegidas)}")
+    print(f"\nPROCESADAS         {processed}")
+    print(f"SELECCIONADAS      {len(elegidas)}")
     print(f"QUERIES_USADAS     {usadas}   (USD {usadas/1000*USD_POR_MIL:.2f})")
     for k, n in vias.most_common():
         print(f"   via {k:16} {n}")
@@ -213,7 +216,9 @@ def correr(elegidas: list[dict], pausa: float) -> int:
     print("\nNINGUNA de estas conclusiones vale como OFFICIAL_WEB hasta la")
     print("auditoria del §12. Brave descubre; el sitio real es el que prueba.")
     print("\ndatabase_writes: 0")
-    return 0
+    complete = processed == len(elegidas)
+    print(f"RUN_STATUS         {'COMPLETE' if complete else 'PARTIAL'}")
+    return 0 if complete else 2
 
 
 def main() -> int:
