@@ -320,6 +320,23 @@ El builder principal también respeta publicación exclusiva si no se pide
 --replace-derived: rechaza un destino creado durante la construcción. El modo
 de reemplazo explícito permanece disponible; 14 controles de snapshot PASS.
 
+Suite posterior al builder exclusivo: 2338 PASS, sin fallos/errores/skips,
+388,19 s. Replay offline del HEAD funcional repetido con las cinco capturas:
+0/15 histórico, 8/15 local previo, 15/15 candidato; URLs 8/9, 6/9, 9/9,
+respectivamente. No hubo requests externos en ese replay ni escrituras de DB.
+
+Familia de evidencia de campos (`658ac32eaa`): no detectar una señal no prueba
+ausencia de fuente. El auditor conserva source_not_provided por compatibilidad,
+pero no inventa pruebas negativas: registra source_unknown y SOURCE_UNKNOWN.
+EXTRACTED continúa significando presencia normalizada, no corrección del dato.
+Una galería normalizada vacía tampoco demuestra ausencia de fotos en la fuente.
+Rechazos registrados sobreviven aunque falte señal del detector, y el mapper
+por ficha no convierte presencia agregada de agencia en ausencia demostrada en
+una fila. Cero permanece presente; booleanos no cuentan como campos numéricos.
+134 controles focalizados PASS, lint de los archivos tocados PASS; suite global
+posterior en ejecución. Cambia la huella del certificador: el canario anterior
+no se actualiza artificialmente ni acredita vigencia de este nuevo HEAD.
+
 La arquitectura candidata concentra conectores, identidad, detección de URLs,
 contrato de propiedad y validación; conserva entrypoints históricos donde aún
 hay consumidores. Su eliminación requiere una matriz de consumidores y
