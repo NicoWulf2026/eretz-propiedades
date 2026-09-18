@@ -254,7 +254,10 @@ class SupabaseClient:
         self, payloads: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
         """Load only rows touched by strong identity evidence, fail closed."""
-        from models import _normalize_url_for_hash
+        if __package__:
+            from .models import _normalize_url_for_hash
+        else:
+            from models import _normalize_url_for_hash
 
         lookups: List[tuple[str, List[Any], Optional[Any]]] = []
         urls = sorted({str(p.get("url")) for p in payloads if p.get("url")})
@@ -301,18 +304,23 @@ class SupabaseClient:
                         timeout=HTTP_TIMEOUT,
                     )
                 except Exception as exc:
-                    raise RuntimeError(f"Safe merge identity lookup failed: {exc}") from exc
+                    raise RuntimeError(f"Safe merge identity lookup failed: {type(exc).__name__}") from None
                 if response.status_code != 200:
                     raise RuntimeError(
-                        f"Safe merge identity lookup HTTP {response.status_code}: "
-                        f"{response.text[:300]}"
+                        f"Safe merge identity lookup HTTP {response.status_code}"
                     )
-                rows = response.json()
+                try:
+                    rows = response.json()
+                except ValueError:
+                    raise RuntimeError('Safe merge identity lookup returned invalid JSON') from None
                 if not isinstance(rows, list):
                     raise RuntimeError("Safe merge identity lookup returned a non-list payload")
+                if len(rows) >= 1000:
+                    raise RuntimeError('Safe merge identity lookup reached its candidate limit')
                 for row in rows:
-                    if isinstance(row, dict) and row.get("id") is not None:
-                        result[str(row["id"])] = row
+                    if not isinstance(row, dict) or row.get('id') is None:
+                        raise RuntimeError('Safe merge identity lookup returned an invalid candidate')
+                    result[str(row['id'])] = row
         return list(result.values())
 
     def _call_merge_rpc(self, function: str, payload: Dict[str, Any]) -> Any:
@@ -324,11 +332,10 @@ class SupabaseClient:
         )
         if response.status_code not in {200, 201}:
             raise RuntimeError(
-                f"Safe merge RPC {function} HTTP {response.status_code}: "
-                f"{response.text[:300]}"
+                f"Safe merge RPC {function} HTTP {response.status_code}"
             )
         body = response.json()
-        if not isinstance(body, (dict, int)):
+        if not isinstance(body, dict) and type(body) is not int:
             raise RuntimeError(f"Safe merge RPC {function} returned an invalid payload")
         return body
 
