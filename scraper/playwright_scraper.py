@@ -703,10 +703,6 @@ def parse_cards(html: str, operacion: str, fuente_key: str, base_url: str,
                 else:
                     direccion = " ".join(palabras[:4]).title()
 
-            # Fallback: usar ciudad como barrio si no se pudo extraer nada
-            if not barrio and not direccion:
-                barrio = ciudad or "Argentina"
-
             # Tipo: la URL de Tokko incluye el tipo en el slug (/p/1234-Casa-en-Venta-...)
             tipo = DataCleaner.detect_property_type(slug.replace("-", " ") + " " + (titulo or ""))
 
@@ -946,8 +942,7 @@ def parse_cards(html: str, operacion: str, fuente_key: str, base_url: str,
                 if palabras and nums:
                     calle = " ".join(palabras[-3:]) if len(palabras) >= 3 else " ".join(palabras[-2:])
                     direccion = f"{calle} {nums[-1]}".title()
-                # Fallback: usar ciudad como barrio para pasar is_valid()
-                barrio = (ciudad or "Argentina") if not direccion else None
+                barrio = None
 
                 # ── MÉTRICAS: metros, ambientes, dormitorios, baños ────────────────────
                 # Muchos cards Tokko muestran "3 ambientes", "2 dorm.", "85 m²" en el texto.
@@ -1513,10 +1508,6 @@ def scrape_detail_page(
                     prop.titulo, prop.descripcion
                 )
 
-        # Garantizar barrio mínimo para pasar is_valid()
-        if not prop.barrio:
-            prop.barrio = prop.ciudad or "Argentina"
-
         return True
 
     except Exception as exc:
@@ -1640,9 +1631,6 @@ def parse_apl_cards(html: str) -> List[Propiedad]:
 
         if not titulo:
             titulo = DataCleaner.clean_title(barrio, url)
-
-        # Fallback de barrio: si el card no tenía badge de barrio, usar la ciudad
-        barrio = barrio or ciudad
 
         prop = Propiedad(
             url=url,
@@ -2128,7 +2116,7 @@ def scrape_pilay(supabase: SupabaseClient, existing_urls: set, context) -> None:
                         operacion=operacion,
                         fuente="pilay",
                         direccion=direccion,
-                        barrio=direccion or "Santa Fe",  # fallback para is_valid()
+                        barrio=None,
                     )
                     if prop.is_valid():
                         nuevas.append(prop)
@@ -3050,7 +3038,7 @@ def scrape_nuevas(supabase: SupabaseClient, existing_urls: set, context) -> None
 
         url = fuente["url"]
         operacion = fuente["operacion"]
-        ciudad = fuente.get("ciudad", "Argentina")
+        ciudad = fuente.get("ciudad")
         url_segment = fuente.get("url_segment")
         base_url = "/".join(url.split("/")[:3])
 
@@ -3255,7 +3243,7 @@ def _guardar_urls_desde_pagina(
                 "alquiler" if "alquiler" in prop_url.lower() else operacion  # fallback al operacion del config
             )
             tipo = DataCleaner.detect_property_type(titulo)
-            barrio = DataCleaner.extract_neighborhood(direccion or titulo) or ciudad
+            barrio = DataCleaner.extract_neighborhood(direccion or titulo)
 
             prop = Propiedad(
                 url=prop_url,

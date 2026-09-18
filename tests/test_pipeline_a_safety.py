@@ -363,7 +363,7 @@ def test_detail_property_without_seed_keeps_previous_safe_defaults():
     )
 
     assert prop.titulo == "Sin título"
-    assert prop.barrio == "Argentina"
+    assert prop.barrio is None
     assert not prop.is_valid()
 
 

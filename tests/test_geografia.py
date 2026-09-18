@@ -102,6 +102,15 @@ def test_caba_resuelve_a_la_provincia_y_no_a_una_comuna(geo) -> None:
         assert "Comuna" not in resultado.entidad.official_name
 
 
+@pytest.mark.parametrize('city,province', [('CABA', 'Santa Fe'),
+                                         ('Cordoba Capital', 'Buenos Aires'),
+                                         ('Capital Federal', 'Buenos Aires')])
+def test_alias_does_not_bypass_conflicting_province(city, province, geo):
+    result = geo.resolver_localidad(city, provincia=province)
+    assert result.entidad is None
+    assert result.certeza == CONTRADICHA
+
+
 def test_una_coordenada_coherente_no_estorba(geo) -> None:
     resultado = geo.resolver_localidad("Rosario", lat=-32.95, lon=-60.66)
     assert resultado.certeza == EXACTA

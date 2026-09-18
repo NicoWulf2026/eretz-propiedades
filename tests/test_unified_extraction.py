@@ -74,6 +74,52 @@ def test_property_jsonld_type_array_is_supported():
     assert GenericoConnector._de_json_ld(html)['titulo'] == 'Casa real'
 
 
+def test_jsonld_property_cannot_borrow_office_geography_or_other_property_price():
+    html = '''<script type="application/ld+json">{"@graph":[
+      {"@type":"Place","name":"Oficina","address":{"addressLocality":"Ciudad ajena"}},
+      {"@type":"House","url":"https://official.test/propiedad/123","name":"Casa real"},
+      {"@type":"House","url":"https://official.test/propiedad/456","name":"Otra casa",
+       "offers":{"price":999,"priceCurrency":"USD"},
+       "address":{"addressLocality":"Otra ciudad"}}
+    ]}</script>'''
+    result = GenericoConnector._de_json_ld(html, 'https://official.test/propiedad/123')
+    assert result['titulo'] == 'Casa real'
+    assert not result.get('ciudad') and result.get('precio') is None
+
+
+def test_ambiguous_jsonld_properties_do_not_merge_fields():
+    html = '''<script type="application/ld+json">[
+      {"@type":"House","name":"Casa uno"},
+      {"@type":"House","offers":{"price":999,"priceCurrency":"USD"}}
+    ]</script>'''
+    assert GenericoConnector._de_json_ld(html) == {}
+
+
+def test_single_jsonld_related_property_is_not_the_requested_property():
+    html = '''<script type="application/ld+json">{
+      "@type":"House","url":"https://official.test/propiedad/456","name":"Otra casa"
+    }</script>'''
+    assert GenericoConnector._de_json_ld(html, 'https://official.test/propiedad/123') == {}
+
+
+def test_property_jsonld_uses_its_nested_offer_and_not_standalone_offer():
+    html = '''<script type="application/ld+json">[
+      {"@type":"Offer","price":999,"priceCurrency":"USD"},
+      {"@type":"House","name":"Casa real","offers":{"price":0,"priceCurrency":"ARS"}}
+    ]</script>'''
+    result = GenericoConnector._de_json_ld(html)
+    assert (result['titulo'], result['precio'], result['moneda']) == ('Casa real', 0, 'ARS')
+
+
+def test_product_jsonld_nested_typed_offer_is_not_another_property():
+    html = '''<script type="application/ld+json">{
+      "@type":"Product","name":"Casa real",
+      "offers":{"@type":"Offer","price":90000,"priceCurrency":"USD"}
+    }</script>'''
+    result = GenericoConnector._de_json_ld(html, 'https://official.test/propiedad/123')
+    assert (result['titulo'], result['precio'], result['moneda']) == ('Casa real', 90000, 'USD')
+
+
 def test_verified_catalogue_property_survives_without_photos_or_price():
     from connectors.generico import GenericoConnector
     assert GenericoConnector._confirma_ficha('', 'Casa en venta', None, [],

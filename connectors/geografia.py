@@ -42,7 +42,7 @@ import unicodedata
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 DIRECTORIO_POR_DEFECTO = Path(r"D:\INMO CAPITAL\ERETZ_GEO")
 FUENTE = "georef:localidades_censales"
@@ -357,6 +357,11 @@ class Geografia:
             ciudad equivocada despues no se distingue de una correcta.
             """
             entidad = resolucion.entidad
+            if (entidad is not None and provincia
+                    and normalizar(entidad.provincia) != normalizar(provincia)):
+                return Resolucion(None, CONTRADICHA, DESCONOCIDA,
+                                  resolucion.candidatas,
+                                  "la provincia declarada contradice al catalogo")
             if entidad is None or entidad.lat is None:
                 return resolucion
             if not _en_argentina(lat, lon):

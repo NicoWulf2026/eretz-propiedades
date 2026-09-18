@@ -91,7 +91,11 @@ def _host(u):
 
 def motivo_rechazo(p: dict) -> str | None:
     url = p.get("source_url") or ""
-    parsed = urllib.parse.urlparse(url)
+    try:
+        parsed = urllib.parse.urlparse(url)
+        parsed.port
+    except (ValueError, TypeError, AttributeError):
+        return "url_invalida"
     if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username is not None:
         return "url_invalida"
     lid = str(p.get("source_listing_id") or "")

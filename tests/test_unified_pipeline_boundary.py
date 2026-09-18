@@ -112,3 +112,8 @@ def test_known_legacy_query_identity_survives_write_guard_but_search_does_not():
 def test_inventory_from_forbidden_or_nonofficial_sources_is_never_write_eligible(host):
     assert motivo_rechazo(dict(source_url=f'https://{host}/propiedad/123',
                                source_listing_id='123')) == 'fuente_no_oficial'
+
+
+@pytest.mark.parametrize('url', ['https://[broken', 'https://official.test:bad/propiedad/123', 123])
+def test_malformed_url_is_rejected_without_aborting_the_batch(url):
+    assert motivo_rechazo(dict(source_url=url, source_listing_id='123')) == 'url_invalida'

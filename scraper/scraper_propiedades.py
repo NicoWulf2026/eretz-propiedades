@@ -2956,6 +2956,7 @@ class SupabasePropiedades:
         actualizadas: List[Tuple[Dict[str, Any], Dict[str, Any], str]] = []
         matched_existing_hashes: set = set()
         matched_existing_ids: set = set()
+        identity_errors: List[Dict[str, Any]] = []
 
         def choose_existing_candidate(candidates: List[Dict[str, Any]], incoming_hash: Any) -> Optional[Dict[str, Any]]:
             if not candidates:
@@ -2974,6 +2975,22 @@ class SupabasePropiedades:
                 agency_key = None
             url_key = normalize_property_url_for_dedup(prop.get("url"))
             external_key = normalize_external_id_for_dedup(prop.get("id_externo"))
+            # URL, external ID and hash must converge on one row. Picking the
+            # first matching row used to hide duplicate/conflicting identities.
+            candidates = list(identity_index.get("by_url_all", {}).get((agency_key, url_key), []))
+            if external_key:
+                candidates += identity_index.get("by_external_all", {}).get((agency_key, external_key), [])
+            hash_candidate = identity_index.get("by_hash", {}).get(prop.get("hash_dedup"))
+            if hash_candidate:
+                candidates.append(hash_candidate)
+            distinct = {str(candidate.get("id")) for candidate in candidates}
+            wrong_agency = any(str(candidate.get("inmobiliaria_id")) != str(agency_key)
+                               for candidate in candidates)
+            if len(distinct) > 1 or wrong_agency:
+                identity_errors.append({"operation": "identity", "status_code": "ambiguous_identity",
+                                        "hash_dedup": prop.get("hash_dedup"),
+                                        "message": "Los identificadores no convergen en una fila de esta agencia"})
+                continue
             existing_prop = None
             match_type = ""
             if agency_key is not None and url_key:
@@ -3016,9 +3033,9 @@ class SupabasePropiedades:
         inserted = 0
         updated = 0
         unchanged = 0
-        failed = 0
+        failed = len(identity_errors)
         recovered_unique = 0
-        save_errors: List[Dict[str, Any]] = []
+        save_errors: List[Dict[str, Any]] = list(identity_errors)
 
         def update_existing_property(
             prop: Dict[str, Any],
@@ -3120,19 +3137,15 @@ class SupabasePropiedades:
             if self._is_unique_url_violation(r_single.status_code, r_single.text):
                 if recover_unique_url_violation(prop, r_single.text):
                     return
-                # El 409 sobre idx_propiedades_unique_inmobiliaria_url_normalizada confirma
-                # que la propiedad YA EXISTE en DB (misma inmobiliaria_id + url_normalizada).
-                # La recuperacion via lookup fallo (timeout, race condition, etc.), pero el
-                # dato esta seguro — no hay perdida. Contar como sin_cambios para no marcar
-                # el item como save_failed cuando el unico fallo es un duplicado esperado.
+                # A uniqueness conflict proves a collision, not that these
+                # fields were persisted. Without a verified lookup/update the
+                # queue must retain a failure rather than mark publication done.
                 logger.warning(
                     "save_propiedades: 409 url_normalizada sin recuperacion para "
-                    "inmobiliaria_id=%s url_normalizada=%s — contado como sin_cambios",
+                    "inmobiliaria_id=%s url_normalizada=%s — publicacion no confirmada",
                     prop.get("inmobiliaria_id"),
                     prop.get("url_normalizada") or normalize_property_url_for_dedup(prop.get("url")),
                 )
-                unchanged += 1
-                return
             failed += 1
             save_errors.append({
                 "operation": "insert",

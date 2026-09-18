@@ -34,40 +34,30 @@ import requests
 from playwright.sync_api import TimeoutError as PwTimeout
 from playwright.sync_api import sync_playwright
 
-from clients import PartialBatchInsertError, SessionFactory, SupabaseClient
-from config import (
-    SUPABASE_SERVICE_ROLE_KEY,
-    SUPABASE_TABLE,
-    SUPABASE_URL,
-    require_supabase_config,
-)
-from models import Propiedad
-
-from playwright_scraper import (
-    FUENTES,
-    FUENTES_NUEVAS,
-    _get_next_page_url,
-    _goto_safe,
-    discover_listing_page_urls,
-    parse_cards,
-    scrape_9010,
-    scrape_apl,
-    scrape_cam,
-    scrape_casablanca,
-    scrape_cisfe,
-    scrape_config_sources,
-    scrape_detail_page,
-    scrape_lenarduzzi,
-    scrape_neo,
-    scrape_nuevas_no_tokko,
-    scrape_pilay,
-    scrape_proa,
-    scrape_raes,
-    scrape_raffin,
-    scrape_sofia,
-    scrape_sur,
-    scroll_to_bottom,
-)
+if __package__:
+    from .clients import PartialBatchInsertError, SessionFactory, SupabaseClient
+    from .config import SUPABASE_SERVICE_ROLE_KEY, SUPABASE_TABLE, SUPABASE_URL, require_supabase_config
+    from .models import Propiedad
+    from .playwright_scraper import (
+        FUENTES, FUENTES_NUEVAS, _get_next_page_url, _goto_safe,
+        discover_listing_page_urls, parse_cards, scrape_9010, scrape_apl,
+        scrape_cam, scrape_casablanca, scrape_cisfe, scrape_config_sources,
+        scrape_detail_page, scrape_lenarduzzi, scrape_neo, scrape_nuevas_no_tokko,
+        scrape_pilay, scrape_proa, scrape_raes, scrape_raffin, scrape_sofia,
+        scrape_sur, scroll_to_bottom,
+    )
+else:  # Existing direct-script consumers remain supported.
+    from clients import PartialBatchInsertError, SessionFactory, SupabaseClient
+    from config import SUPABASE_SERVICE_ROLE_KEY, SUPABASE_TABLE, SUPABASE_URL, require_supabase_config
+    from models import Propiedad
+    from playwright_scraper import (
+        FUENTES, FUENTES_NUEVAS, _get_next_page_url, _goto_safe,
+        discover_listing_page_urls, parse_cards, scrape_9010, scrape_apl,
+        scrape_cam, scrape_casablanca, scrape_cisfe, scrape_config_sources,
+        scrape_detail_page, scrape_lenarduzzi, scrape_neo, scrape_nuevas_no_tokko,
+        scrape_pilay, scrape_proa, scrape_raes, scrape_raffin, scrape_sofia,
+        scrape_sur, scroll_to_bottom,
+    )
 
 logging.basicConfig(
     level=logging.INFO,
@@ -215,7 +205,7 @@ def _property_from_listing_seed(
             fuente=fuente,
             ciudad=ciudad or None,
             operacion=operacion,
-            barrio=ciudad or "Argentina",
+            barrio=None,
             inmobiliaria_id=inmobiliaria_id,
         )
     return Propiedad(
@@ -224,7 +214,7 @@ def _property_from_listing_seed(
         precio=seed.precio,
         moneda=seed.moneda,
         direccion=seed.direccion,
-        barrio=seed.barrio or ciudad or "Argentina",
+        barrio=seed.barrio,
         barrio_normalizado=seed.barrio_normalizado,
         tipo_propiedad=seed.tipo_propiedad or "otro",
         descripcion=seed.descripcion or "",
@@ -1067,9 +1057,6 @@ def _scrape_batch(
                                     _had_timeout = True
                                     break
                             if ok:
-                                # Garantizar barrio mínimo
-                                if not prop.barrio:
-                                    prop.barrio = ciudad or "Argentina"
                                 if prop.is_valid():
                                     propiedades_completas.append(prop)
                             if _source_abort_reason:

@@ -1782,7 +1782,7 @@ class GenericoConnector(Connector):
             if es_emprendimiento else principal)
         texto_campos = normalizar_texto_campos(
             _texto(sin_filtros_catalogo(principal_campos)))
-        datos = self._de_json_ld(html)
+        datos = self._de_json_ld(html, url)
         if not datos.get("tipo_ld") and self._es_pagina_contenedora(principal):
             # Review is explicit; this is not proof that the source is empty.
             # The runner counts the unresolved candidate as a failed detail,
@@ -2751,13 +2751,14 @@ class GenericoConnector(Connector):
 
     # --------------------------------------------------------------- schema.org
     @staticmethod
-    def _de_json_ld(html: str) -> dict[str, Any]:
+    def _de_json_ld(html: str, url: str | None = None) -> dict[str, Any]:
         """Lo que schema.org publica ya tipado.
 
         Cuando esta, gana sobre cualquier heuristica de texto: es un contrato
         publico, no una convencion visual que cambia con el tema del sitio.
         """
         out: dict[str, Any] = {}
+        candidatos: list[tuple[int, str, dict]] = []
         for bloque in RE_LD.findall(html):
             try:
                 # Algunos proveedores emiten saltos de linea literales dentro
@@ -2780,37 +2781,70 @@ class GenericoConnector(Connector):
                 # WebSite/Organization sin tipo tampoco prueban una ficha.
                 if not tipo:
                     continue
-                out.setdefault("tipo_ld", tipo or None)
-                out.setdefault("via", "json-ld")
-                if not out.get("titulo"):
-                    out["titulo"] = limpiar(nodo.get("name"))
-                if not out.get("descripcion"):
-                    out["descripcion"] = limpiar(nodo.get("description"))
-                oferta = nodo if "price" in nodo else (nodo.get("offers") or {})
-                if isinstance(oferta, list):
-                    oferta = oferta[0] if oferta else {}
-                if isinstance(oferta, dict):
-                    if out.get("precio") is None:
-                        out["precio"] = a_numero(oferta.get("price"))
-                    if not out.get("moneda"):
-                        m = (oferta.get("priceCurrency") or "").upper().strip()
-                        out["moneda"] = m if m in ("ARS", "USD") else None
-                dire = nodo.get("address")
-                if isinstance(dire, dict):
-                    out.setdefault("direccion", limpiar(dire.get("streetAddress")))
-                    out.setdefault("ciudad", limpiar(dire.get("addressLocality")))
-                    out.setdefault("provincia", limpiar(dire.get("addressRegion")))
-                geo = nodo.get("geo")
-                if isinstance(geo, dict) and out.get("lat") is None:
-                    try:
-                        out["lat"] = float(geo.get("latitude"))
-                        out["lon"] = float(geo.get("longitude"))
-                    except (TypeError, ValueError):
-                        pass
-                img = nodo.get("image")
-                if img:
-                    urls = img if isinstance(img, list) else [img]
-                    out.setdefault("imagenes", [u for u in urls if isinstance(u, str)])
+                concretos = {"Residence", "Apartment", "House", "RealEstateListing",
+                             "SingleFamilyResidence", "Accommodation", "ApartmentComplex"}
+                # Flattening also yields nested Offer nodes. They are not a
+                # second property and must not compete with their parent.
+                prioridad = 0 if tipo in concretos else (2 if tipo == 'Offer' else 1)
+                # A Place with the office address is not property evidence.
+                if tipo == "Place" and not nodo.get("offers"):
+                    continue
+                candidatos.append((prioridad, tipo, nodo))
+        if not candidatos:
+            return out
+        if url:
+            def identidad(value):
+                if not isinstance(value, str):
+                    return None
+                return urllib.parse.urldefrag(urllib.parse.urljoin(url, value))[0].rstrip('/')
+            objetivo = identidad(url)
+            coincidentes = [item for item in candidatos
+                            if any(identidad(item[2].get(key)) == objetivo
+                                   for key in ('url', '@id'))]
+            if coincidentes:
+                candidatos = coincidentes
+            else:
+                candidatos = [item for item in candidatos
+                              if not any(item[2].get(key) for key in ('url', '@id'))]
+        if not candidatos:
+            return out
+        prioridad = min(item[0] for item in candidatos)
+        candidatos = [item for item in candidatos if item[0] == prioridad]
+        # Never complete one property's fields from another property's node.
+        # Identical duplicate responsive blocks can safely be collapsed.
+        unicos = {json.dumps(item[2], sort_keys=True, ensure_ascii=False): item
+                  for item in candidatos}
+        if len(unicos) != 1:
+            return out
+        _, tipo, nodo = next(iter(unicos.values()))
+        out["tipo_ld"] = tipo
+        out["via"] = "json-ld"
+        out["titulo"] = limpiar(nodo.get("name"))
+        out["descripcion"] = limpiar(nodo.get("description"))
+        oferta = nodo if "price" in nodo else (nodo.get("offers") or {})
+        if isinstance(oferta, list):
+            oferta = oferta[0] if oferta else {}
+        if isinstance(oferta, dict):
+            out["precio"] = a_numero(oferta.get("price"))
+            moneda = oferta.get("priceCurrency")
+            m = moneda.upper().strip() if isinstance(moneda, str) else ''
+            out["moneda"] = m if m in ("ARS", "USD") else None
+        dire = nodo.get("address")
+        if isinstance(dire, dict):
+            out["direccion"] = limpiar(dire.get("streetAddress"))
+            out["ciudad"] = limpiar(dire.get("addressLocality"))
+            out["provincia"] = limpiar(dire.get("addressRegion"))
+        geo = nodo.get("geo")
+        if isinstance(geo, dict):
+            try:
+                lat, lon = float(geo.get("latitude")), float(geo.get("longitude"))
+                out["lat"], out["lon"] = lat, lon
+            except (TypeError, ValueError, OverflowError):
+                pass
+        img = nodo.get("image")
+        if img:
+            urls = img if isinstance(img, list) else [img]
+            out["imagenes"] = [u for u in urls if isinstance(u, str)]
         for k in ("lat", "lon"):
             v = out.get(k)
             if v is not None and not (-74 <= v <= -21):
