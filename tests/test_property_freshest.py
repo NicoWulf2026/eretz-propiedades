@@ -87,6 +87,31 @@ def test_accepted_zero_is_not_replaced_with_historical_nonzero():
     assert fusionar({'precio': 99}, {'precio': 0}, CAMPOS_FUSIONABLES)['precio'] == 0
 
 
+def test_unknown_current_offer_does_not_revive_a_historical_price():
+    merged = fusionar({'precio': 99000, 'moneda': 'USD'},
+                     {'precio': None, 'moneda': None}, CAMPOS_FUSIONABLES)
+    assert merged['precio'] is None and merged['moneda'] is None
+
+
+def test_new_amount_cannot_borrow_old_currency():
+    merged = fusionar({'precio': 99000, 'moneda': 'USD'},
+                     {'precio': 0, 'moneda': None}, CAMPOS_FUSIONABLES)
+    assert merged['precio'] == 0 and merged['moneda'] is None
+
+
+def test_explicit_commercial_and_editorial_absences_win_over_old_offer():
+    old = {'operacion': 'venta', 'imagenes': ['old.jpg'], 'descripcion': 'Oferta anterior', 'banos': 2}
+    fresh = {'operacion': None, 'imagenes': [], 'descripcion': None, 'banos': None}
+    merged = fusionar(old, fresh, CAMPOS_FUSIONABLES)
+    assert merged['operacion'] is None and merged['imagenes'] == [] and merged['descripcion'] is None
+    assert merged['banos'] == 2
+
+
+def test_sparse_structural_patch_does_not_erase_unmentioned_offer():
+    merged = fusionar({'precio': 99000, 'moneda': 'USD'}, {'banos': 2}, CAMPOS_FUSIONABLES)
+    assert merged['precio'] == 99000 and merged['moneda'] == 'USD'
+
+
 def test_solo_se_leen_paquetes_que_cerraron_bien(tmp_path):
     """Un paquete de una corrida que falló tiene datos parciales, y preferirlos
     cambiaría datos completos por incompletos."""

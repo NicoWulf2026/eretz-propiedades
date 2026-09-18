@@ -41,6 +41,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from connectors.base import RUTA_PIPELINE  # noqa: E402
 from scripts.ingest_to_pipeline import RAW_COLUMNS, a_fila_raw, rechazos  # noqa: E402
+from scripts.preingestion_manifest import base_canonica  # noqa: E402
+from scripts.preingestion_rebuild import norm  # noqa: E402
 
 ROL = "eretz_direct_property_writer"
 
@@ -137,13 +139,43 @@ class Fallo(RuntimeError):
     pass
 
 
+def resolved_main_ids(resolutions: list[dict], main_rows: list[tuple]) -> dict[str, int]:
+    """Use the existing resolved-main manifest, never a staging numeric ID.
+
+    Revalidate the exact name against the live main row; namespace membership
+    alone does not prove identity. A duplicate canonical/FK has no implicit winner.
+    """
+    main = dict(main_rows)
+    mapping, claimed = {}, set()
+    for record in resolutions:
+        if record.get('resolution_status') != 'RESOLVED':
+            continue
+        canonical, ident = record.get('canonical_agency_id'), record.get('eretz_id')
+        if (not isinstance(canonical, str) or not canonical
+                or not isinstance(ident, int) or isinstance(ident, bool) or ident <= 0):
+            raise Fallo('manifiesto de identidad resuelta inválido')
+        name = norm(record.get('agency_name'))
+        if ident not in main or not name or name != norm(main[ident]):
+            raise Fallo('identidad resuelta no coincide con inmobiliarias_main vigente')
+        if canonical in mapping or ident in claimed:
+            raise Fallo('identidades duplicadas en el manifiesto; requieren resolución explícita')
+        mapping[canonical] = ident
+        claimed.add(ident)
+    return mapping
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--entrada", required=True)
     ap.add_argument("--limite", type=int, default=50)
+    ap.add_argument('--agency-resolution', type=Path,
+                    default=base_canonica().parent / 'CANONICAL_AGENCY_TO_ERETZ_ID.jsonl',
+                    help='existing RESOLVED main-namespace identity manifest')
     ap.add_argument("--escribir", action="store_true",
                     help="sin esto valida y hace ROLLBACK")
     a = ap.parse_args()
+    if not 1 <= a.limite <= 1000:
+        ap.error('--limite must be between 1 and 1000')
 
     cargar_env()
     # El endpoint directo de Supabase es IPv6 por diseno. Desde una red sin IPv6
@@ -229,25 +261,17 @@ def main() -> int:
                     # [4] lectura del padron
                     cur.execute("select count(*) from public.inmobiliarias_main")
                     n_main = cur.fetchone()[0]
-                    cur.execute("select count(*) from public.inmobiliarias_staging")
-                    n_stg = cur.fetchone()[0]
-                    print(f"  [4] padron legible: main={n_main:,} staging={n_stg:,}")
+                    print(f"  [4] padron principal legible: main={n_main:,}")
 
                     # --- resolver inmobiliaria_id REAL ---------------------
-                    # Sale del directorio, donde el crosswalk ya lo resolvio.
-                    # Rehacer la asociacion por nombre contra la base seria
-                    # repetir el paso mas delicado de todo el proyecto y con
-                    # menos evidencia de la que se uso la primera vez.
-                    dd = Path(r"D:\INMO CAPITAL\ERETZ_AGENCY_DATA")
-                    padron = {}
-                    for d in leer(dd / "agency_web_directory.jsonl"):
-                        eid = d.get("eretz_id")
-                        if str(eid).isdigit():
-                            padron[d["canonical_agency_id"]] = int(eid)
-                    cur.execute("select id from public.inmobiliarias_main")
-                    existentes = {r[0] for r in cur.fetchall()}
-                    cur.execute("select id from public.inmobiliarias_staging")
-                    existentes |= {r[0] for r in cur.fetchall()}
+                    # The old web directory could contain staging IDs, whose
+                    # numeric values can collide with unrelated main IDs.
+                    # Consume the already resolved manifest instead of creating
+                    # a new name match. Live names only corroborate that mapping.
+                    cur.execute("select id, nombre from public.inmobiliarias_main")
+                    main_rows = cur.fetchall()
+                    padron = resolved_main_ids(leer(a.agency_resolution), main_rows)
+                    existentes = {ident for ident, _ in main_rows}
 
                     from connectors.base import calcular_hash_dedup
                     listas, sin_id, fuera_padron = [], 0, 0

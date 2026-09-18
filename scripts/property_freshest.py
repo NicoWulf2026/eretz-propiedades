@@ -33,7 +33,12 @@ import re
 from pathlib import Path
 from typing import Any
 
-FRESCURA_VERSION = "property_freshest_v2"
+FRESCURA_VERSION = "property_freshest_v3"
+
+# Historical structural evidence can fill an unexplained extraction gap.
+# A previous commercial value is not evidence of the current offer.
+CAMPOS_VOLATILES = frozenset({'precio', 'moneda', 'operacion', 'titulo',
+                              'descripcion', 'imagenes'})
 
 # Estados en los que el inventario del paquete es confiable y completo.
 CIERRES_CONFIABLES = ("CERTIFIED_COMPLETE", "CERTIFIED_BEST_AVAILABLE")
@@ -105,7 +110,7 @@ def fusionar(vieja: dict[str, Any], fresca: dict[str, Any] | None,
     operaciones, y a la vez pierde 177 valores de `banos` en casas y
     departamentos, sin ningun motivo anotado.
 
-    La regla:
+    La regla (para campos estructurales):
 
       la fresca trae valor          gana la fresca, que corrio con codigo de hoy
       la fresca esta vacia y ANOTO  gana el vacio: la validacion lo rechazo y
@@ -113,8 +118,10 @@ def fusionar(vieja: dict[str, Any], fresca: dict[str, Any] | None,
       la fresca esta vacia y no     gana el viejo: no leerlo no es haberlo
       anoto nada                    leido y encontrado que no estaba
 
-    Es la misma distincion que ordena todo el sistema -negarse a afirmar no es
-    fallar al extraer- aplicada a elegir entre dos lecturas.
+    Los campos comerciales/editoriales presentes pero vacíos en la nueva fila
+    NO se recuperan de un anuncio histórico. Precio y moneda se reemplazan
+    juntos: combinar el precio nuevo con una moneda vieja fabricaría una oferta.
+    Una clave omitida en un parche parcial no equivale a un vacío explícito.
     """
     if not fresca:
         return vieja
@@ -135,8 +142,13 @@ def fusionar(vieja: dict[str, Any], fresca: dict[str, Any] | None,
             salida[metadata] = fresca[metadata]
     for campo in campos:
         valor = fresca.get(campo)
-        if valor not in (None, "", []) or campo in rechazados:
+        if (valor not in (None, "", []) or campo in rechazados
+                or (campo in CAMPOS_VOLATILES and campo in fresca)):
             salida[campo] = valor
+    if {'precio', 'moneda'} & set(campos) and {'precio', 'moneda'} & fresca.keys():
+        for campo in ('precio', 'moneda'):
+            if campo in campos:
+                salida[campo] = fresca.get(campo)
     return salida
 
 

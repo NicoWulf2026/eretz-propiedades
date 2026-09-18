@@ -1,6 +1,6 @@
 # ERETZ — evidencia de unificación
 
-Estado: investigación e integración local en curso, 2026-09-17. Este documento
+Estado: investigación e integración local en curso, 2026-09-18. Este documento
 no certifica producción ni cobertura nacional. Worktree candidato:
 `D:\INMO CAPITAL\eretz-unified`, rama `codex/eretz-unified-audit`.
 
@@ -53,6 +53,10 @@ Artefactos locales, ignorados por Git: `_scratch/unification/bottega/comparison.
 - Detección de fichas con comillas simples, atributos de datos y onclick;
   reglas compartidas en `scraper/detail_urls.py`, con exclusiones editoriales y
   control del hostname del tenant. El consumidor Playwright reutiliza el módulo.
+- JSON-LD selecciona un inmueble asociado a la URL y no combina campos de
+  inmuebles relacionados. Los nodos Place sin oferta no prueban inventario.
+  Alias como CABA/Capital Federal y capitales contrastan la provincia antes
+  de resolver; un alias ya no evita ese control.
 - Extracción de etiquetas tabulares y protección contra páginas de categoría.
 - Un único modelo compartido para hashing/identidad, sin cargas desde otro
   worktree ni copias silenciosas de algoritmos.
@@ -69,6 +73,21 @@ Artefactos locales, ignorados por Git: `_scratch/unification/bottega/comparison.
   se roba. Heartbeat atómico. La prueba concurrente verifica un único ganador.
 - Escritura directa sin rol retirada de `ingest_to_pipeline.py`. El canary
   valida usuario permitido y sesión real antes de asumir el rol de escritura.
+- Publicador histórico aún consumido: identidad que converge en varias filas
+  se retiene; 409 sin recuperación confirmada es fallo, no éxito sin cambios.
+  Fallbacks históricos que copiaban ciudad/país/dirección a barrio retirados.
+- Gate histórico de regresión recuperado por propósito, no por implementación:
+  `python -m scripts.regression_gate` compara JSONL fila a fila, conserva IDs de
+  query y no usa cobertura agregada para justificar pérdidas. Identidad ambigua,
+  inventario no observado y mudanzas de dimensión requieren revisión. No autoriza
+  publicación ni restauración automática. Diez controles offline cubren esa familia.
+- Canary consume `CANONICAL_AGENCY_TO_ERETZ_ID.jsonl` con estado RESOLVED,
+  corrobora ID/nombre contra main y rechaza duplicados. IDs de staging ya no
+  pueden convertirse en FK de propiedades por coincidir numéricamente.
+- Fusión de lecturas v3: ausencia comercial/editorial explícita gana al dato
+  histórico; precio y moneda viajan juntos. Los faltantes estructurales sin
+  rechazo siguen pudiendo recuperar evidencia anterior. Cuatro controles nuevos
+  prueban que precio desconocido no revive una oferta ni toma moneda antigua.
 - Reconstrucción del snapshot en archivo temporal: una falla no trunca el
   snapshot servido y no se permite usar la fuente como destino.
 - Búsqueda técnica estable dentro de la ventana: offset máximo 200 conservado.
@@ -119,11 +138,16 @@ publicación del HEAD final.
 
 ## Validación registrada y límites pendientes
 
-- Suite backend después del bloque de publicación: 2.223 PASS, 230,75 s.
+- Suite backend tras JSON-LD/identidad/geografía y gate por fila:
+  2.250 PASS, 157,19 s. La primera pasada detectó una oferta JSON-LD anidada
+  compitiendo con su Product; se corrigió y se repitió la suite completa.
 - Frontend: 1.235 PASS, 9 SKIPPED; typecheck PASS; lint 0 errores, 3 warnings.
 - Integración frontend contra API local: 9 PASS.
-- Último bloque de publicación, fuente, credencial, snapshot y herramientas:
-  76 PASS. Falta registrar la suite final después de este bloque.
+- Canary de identidad/fusión comercial/snapshot/gate por fila: 71 PASS.
+  Falta registrar la suite completa después de estas últimas modificaciones.
+- Ruff de los módulos nuevos/tocados salvo scraper_propiedades: PASS. Ese
+  archivo histórico tiene 16 hallazgos de lint fuera del bloque modificado;
+  no se declara lint global limpio ni se reformatea por estética.
 - Wheel construido e importado desde un entorno aislado fuera del checkout.
 - Postgres local en memoria (PGlite): 10 comprobaciones PASS con las migraciones
   SQL reales. Incluyen aplicación repetida del schema interno y safe merge,
@@ -144,7 +168,8 @@ publicación del HEAD final.
 
 Pendientes de revisión/validación: caminos de publicación y gates de evidencia
 de extremo a extremo, equivalencia de entrypoints históricos aún consumidos,
-scripts operativos sin seguimiento en el principal, control geográfico de JSON-LD, browser
+scripts operativos sin seguimiento en el principal, contradicciones entre la
+geografía de JSON-LD y la prosa de la ficha, browser
 QA y puente histórico de IDs. No declarar beta ni producción listas todavía.
 
 La arquitectura candidata concentra conectores, identidad, detección de URLs,

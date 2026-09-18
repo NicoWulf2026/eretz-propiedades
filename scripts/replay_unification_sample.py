@@ -186,9 +186,19 @@ def main():
                     row[name] = dict(error=type(error).__name__)
             rows.append(row)
     url_comparison = compare_detail_discovery(baseline)
+    from scripts.regression_gate import compare
+    comparable = [row for row in rows if 'sha256' in row
+                  and 'error' not in row.get('local_before', {})
+                  and 'error' not in row.get('unified', {})]
+    extraction_regression = compare(
+        [dict(row['local_before'], source_url=row['url'], canonical_agency_id='audit:bottega')
+         for row in comparable],
+        [dict(row['unified'], source_url=row['url'], canonical_agency_id='audit:bottega')
+         for row in comparable])
+    extraction_regression['scope'] = 'Only measured FIELDS on the five matched HTML pages; not all fields or agencies.'
     report = dict(schema='eretz_behavioral_sample_v2', historical_ref=HISTORICAL,
                   local_ref=LOCAL, rows=rows, database_writes=0,
-                  detail_discovery=url_comparison,
+                  detail_discovery=url_comparison, extraction_regression=extraction_regression,
                   limitation='New five-page, one-family sample; not a national or 413-source benchmark.')
     (args.output / 'comparison.json').write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding='utf-8')
     print(json.dumps(dict(pages=len(rows), fetched=sum('sha256' in r for r in rows),
