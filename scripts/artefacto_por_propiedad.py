@@ -70,7 +70,7 @@ def estado_del_campo(valor, campo: str, cobertura: dict,
     es una aproximación —y se dice que lo es— en vez de inventar precisión.
     """
     d = cobertura.get(campo) or {}
-    if valor not in (None, "", [], {}):
+    if not isinstance(valor, bool) and valor not in (None, "", [], {}):
         return PROVIDED_EXTRACTED
     if url in fallidas:
         return EXTRACTION_FAILED
@@ -85,7 +85,8 @@ def estado_del_campo(valor, campo: str, cobertura: dict,
         return NOT_ATTEMPTED
     if not estado:
         return NOT_ATTEMPTED
-    return NOT_PROVIDED
+    # Aggregate presence/unknown states cannot prove absence on THIS row.
+    return NOT_ATTEMPTED
 
 
 def main() -> int:
@@ -94,12 +95,12 @@ def main() -> int:
     args = ap.parse_args()
 
     ult = {}
-    for l in (CERT / "AGENCY_CERTIFICATION_RESULTS.jsonl").read_text(
+    for linea in (CERT / "AGENCY_CERTIFICATION_RESULTS.jsonl").read_text(
             encoding="utf-8", errors="replace").splitlines():
-        if not l.strip():
+        if not linea.strip():
             continue
         try:
-            r = json.loads(l)
+            r = json.loads(linea)
         except ValueError:
             continue
         if r.get("canonical_agency_id"):

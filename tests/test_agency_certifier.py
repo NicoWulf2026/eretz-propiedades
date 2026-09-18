@@ -726,15 +726,58 @@ def test_field_audit_wordpress_rest_uses_structured_source_evidence() -> None:
     assert audit["tipo_propiedad"]["extraction_failed"] == 0
 
 
-def test_field_audit_wordpress_does_not_count_shared_site_images_as_source() -> None:
+def test_field_audit_wordpress_does_not_prove_photo_absence_from_empty_normalized_images() -> None:
     props = [{
         "source_url": "https://agency.test/propiedad/1/", "connector": "wordpress",
         "imagenes": [], "extra": {
             "via": "rest", "source_fields_provided": {"imagenes": True}},
     }]
     result = field_audit(props, {})["imagenes"]
-    assert result["state"] == "SOURCE_NOT_PROVIDED"
+    assert result["state"] == "SOURCE_UNKNOWN"
     assert result["source_provided"] == 0
+    assert result["source_not_provided"] == 0
+    assert result["source_unknown"] == 1
+
+
+def test_missing_source_detector_signal_is_unknown_not_proven_absence():
+    props = [{'source_url': 'https://agency.test/p/1', 'provincia': None}]
+    result = field_audit(props, {})['provincia']
+    assert result['state'] == 'SOURCE_UNKNOWN'
+    assert result['source_unknown'] == 1
+    assert result['source_not_provided'] == 0
+
+
+def test_inferred_normalized_value_does_not_claim_source_absence_or_source_proof():
+    props = [{'source_url': 'https://agency.test/p/1', 'provincia': 'Buenos Aires'}]
+    result = field_audit(props, {})['provincia']
+    assert result['state'] == 'EXTRACTED'  # normalized presence, not truth
+    assert result['source_unknown'] == 1
+    assert result['source_provided'] == result['source_not_provided'] == 0
+
+
+def test_recorded_validation_rejection_survives_missing_detector_signal():
+    props = [{'source_url': 'https://agency.test/p/1', 'provincia': None,
+              'extra': {'atributos_descartados': 'provincia'}}]
+    result = field_audit(props, {})['provincia']
+    assert result['state'] == 'REJECTED_BY_VALIDATION'
+    assert result['validation_rejected'] == 1
+    assert result['extraction_failed'] == 0
+
+
+def test_zero_normalized_count_remains_present_when_source_signal_is_unknown():
+    props = [{'source_url': 'https://agency.test/p/1', 'dormitorios': 0}]
+    result = field_audit(props, {})['dormitorios']
+    assert result['state'] == 'EXTRACTED'
+    assert result['normalized_present'] == 1
+    assert result['coverage'] == 1.0
+    assert result['source_unknown'] == 1
+
+
+def test_boolean_is_not_a_normalized_room_count_even_when_false_equals_zero():
+    props = [{'source_url': 'https://agency.test/p/1', 'dormitorios': False}]
+    result = field_audit(props, {})['dormitorios']
+    assert result['normalized_present'] == 0
+    assert result['state'] == 'SOURCE_UNKNOWN'
     assert result["extraction_failed"] == 0
 
 

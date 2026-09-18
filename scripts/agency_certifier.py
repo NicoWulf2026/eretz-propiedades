@@ -320,7 +320,7 @@ def external_portal(url: str | None) -> bool:
 
 
 def content_present(value: Any) -> bool:
-    return value not in (None, "", [], {})
+    return not isinstance(value, bool) and value not in (None, "", [], {})
 
 
 def collapse_ratio(current: int, baseline: int | None) -> float | None:
@@ -339,11 +339,13 @@ def needs_exhaustive_review(current: int, baseline: int | None) -> tuple[bool, l
     return bool(reasons), reasons
 
 
-def classify_field(source_has: bool, normalized_has: bool) -> str:
+def classify_field(source_has: bool | None, normalized_has: bool) -> str:
     if normalized_has:
         return "EXTRACTED"
     if source_has:
         return "EXTRACTION_FAILED"
+    if source_has is None:
+        return "SOURCE_UNKNOWN"
     return "SOURCE_NOT_PROVIDED"
 
 
@@ -595,10 +597,9 @@ def field_audit(properties: list[dict[str, Any]], pages: dict[str, dict[str, Any
                         "mapaprop_html", "php_ajax_search"}):
                 signal = bool((prop.get("extra") or {}).get(
                     "source_fields_provided", {}).get(field))
-                # El normalizador registra candidatos de imagen antes del
-                # filtro de recursos compartidos. Si luego no queda ninguna,
-                # todos eran banners/iconos del sitio: la publicacion no
-                # proveyo una foto propia, no fallo la extraccion.
+                # Candidatos previos al filtro no prueban fotos propias.
+                # Una galería normalizada vacía tampoco prueba que la fuente
+                # no ofreciera ninguna; sin evidencia adicional es UNKNOWN.
                 if field == "imagenes" and not content_present(prop.get(field)):
                     signal = False
             else:
@@ -607,7 +608,7 @@ def field_audit(properties: list[dict[str, Any]], pages: dict[str, dict[str, Any
                               .get(prop.get("connector"), "source_signals"))
                 signal = bool(evidence.get(signal_key, {}).get(field))
             source_present += signal
-            if not signal or content_present(prop.get(field)):
+            if content_present(prop.get(field)):
                 continue
             discarded = str((prop.get("extra") or {}).get("atributos_descartados") or "")
             rejected = (field in discarded or
@@ -619,18 +620,22 @@ def field_audit(properties: list[dict[str, Any]], pages: dict[str, dict[str, Any
                          and "coordenada_fuera_de_argentina" in discarded))
             if rejected:
                 validation_rejected += 1
-            else:
+            elif signal:
                 extraction_failed += 1
                 if len(failure_examples) < 20:
                     failure_examples.append(str(prop.get("source_url")))
         state = ("EXTRACTION_FAILED" if extraction_failed else
                  "REJECTED_BY_VALIDATION" if validation_rejected else
-                 classify_field(source_present > 0, present > 0))
+                 classify_field(True if source_present else None, present > 0))
         rows[field] = {"state": state, "normalized_present": present,
                        "normalized_total": len(properties),
                        "coverage": round(present / len(properties), 4) if properties else 0.0,
                        "source_provided": source_present,
-                       "source_not_provided": len(properties) - source_present,
+                       # Detectors provide positive signals, not exhaustive
+                       # proof that every unobserved field is absent in source.
+                       "source_not_provided": 0,
+                       "source_unknown": len(properties) - source_present,
+                       "source_signals_absent": len(properties) - source_present,
                        "extraction_failed": extraction_failed,
                        "validation_rejected": validation_rejected,
                        "failure_examples": failure_examples}
