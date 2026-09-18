@@ -138,6 +138,77 @@ publicación del HEAD final.
 
 ## Validación registrada y límites pendientes
 
+El contrato de propiedad v5 conserva el conflicto entre localidad explícita y
+provincia como evidencia por fila; anula las dimensiones disputadas sin eliminar
+la propiedad. Una cobertura geográfica anterior y el padrón de la agencia no
+pueden revivir esos datos. Un nombre de barrio homónimo no basta para declarar
+ese conflicto. Esto no demuestra aún detección universal de contradicciones
+entre JSON-LD y prosa. Snapshot v3 recalcula scopes tras la fusión comercial y
+respeta las restricciones del gate: un precio/operación vuelto desconocido no
+mantiene scopes antiguos de filtros.
+
+La primera suite de este bloque dio 2.269 PASS y una expectativa obsoleta de
+versión (v4 frente a v5); se actualizó la expectativa, no las reglas del contrato.
+La repetición completa posterior dio 2.270 PASS en 162,57 s antes de los nuevos
+controles de discovery e imágenes.
+
+Revisión de imágenes: el detector histórico ya distinguía repetición sospechosa
+de exclusión, pero rollout y snapshot contradecían esa política con umbrales
+automáticos. Se concentra ese detector en image_quality y el scraper histórico
+lo reexporta por compatibilidad. Frecuencia sin otra señal conserva la imagen
+y produce evidencia de revisión; renders de doce unidades y fotografías
+exportadas por WhatsApp tienen controles negativos. Assets conocidos siguen
+excluidos y las propiedades sin foto sobreviven. Fingerprint esquema 4 incluye
+esta dependencia semántica compartida; no se convalidan paquetes viejos.
+
+Discovery: los canarios V1/V2 son controles A/B históricos, no dos pipelines
+productivos. Se elimina su carga de secretos al importar y la búsqueda de `.env`
+en otro worktree. El CLI carga únicamente entorno propio explícitamente y el
+dry-run no necesita credencial. Tres entrypoints comparten límites de respuesta
+y validación de destinos/redirects; proveedor interrumpido termina PARTIAL con
+exit 2. Veintiún controles offline PASS; cero consultas pagas ejecutadas. El
+consumidor brave_250 carga su entorno explícitamente al ejecutar, no al importar;
+cuenta procesadas reales y devuelve PARTIAL si faltan seleccionadas.
+
+El preflight ya no trata cualquier esquema anterior como esquema 1: el helper
+histórico depende del inventario actual de componentes y no reconstruye cada
+esquema anterior exactamente. Un cambio de esquema no vence por sí solo un
+defecto abierto; exige revalidación controlada. Veintiocho controles de
+fingerprint/preflight PASS. Los fallos externos de radio acotado mantienen el
+triage independiente. Preparación de índices/alias atómica y sin reemplazo
+implícito: dos controles PASS.
+
+Suite backend completa antes del último ajuste de preflight: 2.294 PASS,
+184,03 s; repetir después del ajuste. No son 2.294 pruebas reales de sitios.
+
+La siguiente suite dio 2.302 PASS en 180,58 s, antes de las correcciones del
+cliente de merge y su nuevo control de rendimiento. Lookup de identidad ahora
+rechaza respuestas malformadas o cortadas en el límite, en vez de asumir que no
+hay coincidencias y permitir insertar. Los errores de ese lookup/RPC no hacen
+eco del body o excepción crudos; un booleano no cuenta como filas auditadas.
+Su import interno funciona como paquete instalado, no depende de `models`
+top-level. Noventa y dos controles offline del bloque de escritura PASS.
+
+Microbenchmark local sobre una URL sintética, 10.000 llamadas a
+`is_known_page_asset`: 9,211 s antes y 1,040 s después de precalcular los
+marcadores constantes. No demuestra ese factor de mejora en API/pipeline.
+Control que cuenta normalizaciones y 43 controles de imágenes PASS. El primer
+build v4 arrancó antes de esa optimización; no usar su duración como build
+optimizado ni convertir un ajuste de CPU en una certificación de datos.
+
+Control vivo nuevo con fingerprint esquema 4: Benítez Ullo, 12 propiedades,
+dos corridas idempotentes, 58 requests, 156,8 s, sin reintentos ni errores de red.
+Dos propiedades sin imágenes y todas sin coordenadas permanecen en inventario.
+Su geografía/fuentes de cada campo no se dan por verdaderas sólo por ese cierre.
+La optimización posterior cambia la huella; está en marcha otro control vivo
+en carpeta nueva, no se actualiza a mano el certificado anterior.
+
+`apply_page_image_filter` comparte ahora la política de assets y no excluye
+renders sólo por repetir. Inputs/copia/informe deben ser distintos y nuevos;
+JSON inválido o fingerprint que no puede recalcularse son fallos, no filas
+omitidas ni certificados silenciosamente preservados. Cinco controles PASS.
+Esta herramienta de copia no recertifica una agencia.
+
 - Suite backend tras JSON-LD/identidad/geografía y gate por fila:
   2.250 PASS, 157,19 s. La primera pasada detectó una oferta JSON-LD anidada
   compitiendo con su Product; se corrigió y se repitió la suite completa.
@@ -171,6 +242,37 @@ de extremo a extremo, equivalencia de entrypoints históricos aún consumidos,
 scripts operativos sin seguimiento en el principal, contradicciones entre la
 geografía de JSON-LD y la prosa de la ficha, browser
 QA y puente histórico de IDs. No declarar beta ni producción listas todavía.
+
+Validación adicional del 18 de septiembre (no certificación final):
+
+- Suite backend anterior al cambio numérico: 2310 PASS, 186,431 s, sin skips
+  ni errores, confirmada en el XML de pytest.
+- Frontera numérica normalizada: 49 pruebas focalizadas PASS. No convertir
+  booleanos o fracciones en cantidades enteras; preservar superficie decimal
+  y cero válido. Safe merge no toma la moneda histórica para un importe nuevo.
+  Esto no cambia las reglas de extractores que identifican cero como placeholder
+  ni elimina la incertidumbre comercial de registros históricos.
+- Snapshot v4 derivado: 57.665 propiedades, 762 omitidas por web ajena;
+  25.417 referencias a assets compartidos descartadas y 44.891 referencias
+  repetidas sin evidencia suficiente para descartarlas conservadas para revisión.
+  231 fichas quedaron sin foto propia, sin eliminar la propiedad. El inventario
+  coincide con el derivado anterior; la política de imágenes es menos destructiva.
+- Segundo canario Benítez Ullo: 12 propiedades, 58 requests, 152,9 s, dos
+  corridas idempotentes y sin errores de red. Ocurrió antes del cambio numérico;
+  no demuestra certificación vigente del código final ni verdad de cada campo.
+- La suite numérica completa encontró una regresión de rango de superficie
+  (2323 PASS, 1 FAIL). Se corrigió preservando el límite de almacenamiento
+  anterior junto con decimales, y 154 pruebas focalizadas posteriores pasan.
+  No se usa esa corrida fallida como validación final verde.
+- Preparar índices falló en el volumen exFAT por falta de hard links. La
+  publicación exclusiva en Windows usa rename, manteniendo el rechazo de
+  destinos existentes incluso si otro proceso los crea después del preflight;
+  tres pruebas PASS y preparación del snapshot real repetida exitosamente.
+  [Semántica de rename en Python](https://docs.python.org/3/library/os.html#os.rename).
+- Lectura de propiedades certificadas: JSONL corrupto o filas no objeto
+  producen error sin mostrar payload, en lugar de perder filas silenciosamente
+  bajo un estado COMPLETE; 17 pruebas de frescura PASS. Vigencia de huellas y
+  resolución de empates entre paquetes siguen pendientes de revisión.
 
 La arquitectura candidata concentra conectores, identidad, detección de URLs,
 contrato de propiedad y validación; conserva entrypoints históricos donde aún
