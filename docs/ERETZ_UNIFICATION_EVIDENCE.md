@@ -397,3 +397,18 @@ bloqueada y bootstrap/.env excluido por AST. El código AST se compila una vez
 y se ejecuta en namespace nuevo por test; evita repetir el coste observado de
 parsear el monolito sin compartir instancias/estado entre casos.
 [Contrato de paginación PostgREST](https://docs.postgrest.org/en/stable/references/api/pagination_count.html).
+
+Equivalencia de superficie cubierta: el escritor atómico candidato omitía la
+columna real superficie_cubierta del SELECT de existentes, allowlist INSERT,
+INSERT SQL, campos de merge y UPDATE SQL. La conserva ahora, nullable y numeric,
+con la política conservadora existente: llenar ausencia válida, no sustituir
+un valor estructural conocido sin evidencia suficiente. El sanitizador INSERT
+comparte los límites numéricos del modelo para ambas superficies y rechaza
+booleanos/fracciones de conteos sin descartar la propiedad. Trece controles
+PGlite PASS, incluidos INSERT NULL/0/90,75, UPDATE desde NULL y rollback de
+campo/auditoría; privilegios y rechazo de patch NULL permanecen intactos.
+El SQL es una iteración local del script idempotente del candidato: no fue
+aplicado en Supabase ni acredita vigencia del RPC alojado. Un futuro despliegue
+requiere generar/verificar su migración versionada en el workflow real antes
+de habilitar escrituras. Provincia/pais y la invalidación validada de datos
+históricos siguen impidiendo retirar ciegamente el publicador REST.

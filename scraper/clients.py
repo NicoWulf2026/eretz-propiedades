@@ -31,7 +31,7 @@ HTTP_FAST_TIMEOUT = (HTTP_CONNECT_TIMEOUT_S, HTTP_FAST_READ_TIMEOUT_S)
 _MERGE_SELECT_FIELDS = (
     "id,inmobiliaria_id,url,url_normalizada,id_externo,hash_dedup,"
     "titulo,descripcion,precio,moneda,tipo_propiedad,operacion,"
-    "ambientes,dormitorios,banos,superficie_total,direccion,barrio,ciudad,"
+    "ambientes,dormitorios,banos,superficie_total,superficie_cubierta,direccion,barrio,ciudad,"
     "latitud,longitud,imagenes,fuente_extraccion,estado,created_at,updated_at"
 )
 

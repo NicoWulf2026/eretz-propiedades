@@ -13,7 +13,9 @@ const require = createRequire(resolve(root, '_scratch/unification/postgres-check
 const { PGlite } = require('@electric-sql/pglite');
 const db = new PGlite();
 const passed = [];
+let currentCheck;
 async function check(name, action) {
+  currentCheck = name;
   await action();
   passed.push(name);
 }
@@ -28,7 +30,7 @@ try {
       id bigserial PRIMARY KEY, inmobiliaria_id integer REFERENCES public.inmobiliarias_main(id), url text,
       url_normalizada text, hash_dedup text NOT NULL UNIQUE, titulo text, descripcion text,
       precio numeric, moneda text, tipo_propiedad text, operacion text,
-      ambientes integer, dormitorios integer, banos integer, superficie_total numeric,
+      ambientes integer, dormitorios integer, banos integer, superficie_total numeric, superficie_cubierta numeric,
       direccion text, barrio text, ciudad text, latitud double precision,
       longitud double precision, imagenes text[], fuente_extraccion text,
       estado text, updated_at timestamptz DEFAULT now(),
@@ -100,6 +102,29 @@ try {
     [id, 7, payload.url, payload.hash_dedup, 'test', JSON.stringify(patch), source, run, JSON.stringify(entries)]);
   const updateAudit = [{field: 'precio', old_value: 0, new_value: 100,
     decision: 'ACCEPTED_SOURCE_CHANGE', confidence: 1, reason: 'local source update'}];
+  await check('covered_surface_update_preserves_fraction_zero_and_atomic_audit', async () => {
+    for (const surface of [90.75, 0]) {
+      await db.exec('BEGIN');
+      await merge({superficie_cubierta: surface}, [{field: 'superficie_cubierta',
+        old_value: null, new_value: surface, decision: 'ACCEPTED_IMPROVEMENT', confidence: 0.9, reason: 'local surface fixture'}]);
+      assert.equal(Number((await db.query('SELECT superficie_cubierta FROM public.propiedades WHERE id=$1', [id])).rows[0].superficie_cubierta), surface);
+      await db.exec('ROLLBACK');
+      assert.equal((await db.query('SELECT superficie_cubierta FROM public.propiedades WHERE id=$1', [id])).rows[0].superficie_cubierta, null);
+      assert.equal(Number((await db.query('SELECT count(*) AS n FROM public.property_merge_audit')).rows[0].n), 1);
+    }
+  });
+  await check('covered_surface_insert_preserves_nullable_numeric', async () => {
+    await db.exec('BEGIN');
+    for (const surface of [null, 0, 90.75]) {
+      const inserted = await db.query('SELECT public.insert_property_safe($1::jsonb,$2,$3,$4::jsonb) AS result',
+        [JSON.stringify({...payload, hash_dedup: `covered-${surface}`, superficie_cubierta: surface}),
+          '7', 'covered-insert', '[]']);
+      const stored = (await db.query('SELECT superficie_cubierta FROM public.propiedades WHERE id=$1',
+        [inserted.rows[0].result.property_id])).rows[0].superficie_cubierta;
+      assert.equal(stored === null ? null : Number(stored), surface);
+    }
+    await db.exec('ROLLBACK');
+  });
   await check('cross_agency_update_rejected', async () => {
     await assert.rejects(() => merge({precio: 100}, updateAudit, '8'));
   });
@@ -134,6 +159,12 @@ try {
   });
   console.log(JSON.stringify({engine: 'PGlite', storage: 'memory', passed,
     production_connections: 0, limitation: 'Synthetic rows; not hosted Supabase/PostgREST or concurrent production load.'}, null, 2));
+} catch (error) {
+  // SQL runtimes may attach complete query parameters to errors. Keep the
+  // diagnostic bounded even though this harness only uses synthetic fixtures.
+  console.error(JSON.stringify({check: currentCheck, status: 'FAIL',
+    sqlstate: error.code ?? null, error_type: error.constructor.name}));
+  process.exitCode = 1;
 } finally {
   await db.close();
 }

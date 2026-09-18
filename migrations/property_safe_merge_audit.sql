@@ -116,7 +116,7 @@ BEGIN
         'inmobiliaria_id', 'url', 'url_normalizada', 'hash_dedup',
         'titulo', 'descripcion', 'precio', 'moneda', 'tipo_propiedad',
         'operacion', 'ambientes', 'dormitorios', 'banos',
-        'superficie_total', 'direccion', 'barrio', 'ciudad',
+        'superficie_total', 'superficie_cubierta', 'direccion', 'barrio', 'ciudad',
         'latitud', 'longitud', 'imagenes', 'fuente_extraccion', 'estado'
     ]::text[]);
 
@@ -138,7 +138,7 @@ BEGIN
     INSERT INTO public.propiedades (
         inmobiliaria_id, url, url_normalizada, hash_dedup,
         titulo, descripcion, precio, moneda, tipo_propiedad, operacion,
-        ambientes, dormitorios, banos, superficie_total,
+        ambientes, dormitorios, banos, superficie_total, superficie_cubierta,
         direccion, barrio, ciudad, latitud, longitud, imagenes,
         fuente_extraccion, estado
     ) VALUES (
@@ -156,6 +156,7 @@ BEGIN
         (p_payload->>'dormitorios')::integer,
         (p_payload->>'banos')::integer,
         (p_payload->>'superficie_total')::numeric,
+        (p_payload->>'superficie_cubierta')::numeric,
         p_payload->>'direccion',
         p_payload->>'barrio',
         p_payload->>'ciudad',
@@ -229,7 +230,7 @@ BEGIN
     WHERE key <> ALL (ARRAY[
         'titulo', 'descripcion', 'precio', 'moneda', 'tipo_propiedad',
         'operacion', 'ambientes', 'dormitorios', 'banos',
-        'superficie_total', 'direccion', 'barrio', 'ciudad',
+        'superficie_total', 'superficie_cubierta', 'direccion', 'barrio', 'ciudad',
         'latitud', 'longitud', 'imagenes'
     ]::text[]);
 
@@ -259,6 +260,7 @@ BEGIN
             dormitorios = CASE WHEN p_patch ? 'dormitorios' THEN (p_patch->>'dormitorios')::integer ELSE current_row.dormitorios END,
             banos = CASE WHEN p_patch ? 'banos' THEN (p_patch->>'banos')::integer ELSE current_row.banos END,
             superficie_total = CASE WHEN p_patch ? 'superficie_total' THEN (p_patch->>'superficie_total')::numeric ELSE current_row.superficie_total END,
+            superficie_cubierta = CASE WHEN p_patch ? 'superficie_cubierta' THEN (p_patch->>'superficie_cubierta')::numeric ELSE current_row.superficie_cubierta END,
             direccion = CASE WHEN p_patch ? 'direccion' THEN p_patch->>'direccion' ELSE current_row.direccion END,
             barrio = CASE WHEN p_patch ? 'barrio' THEN p_patch->>'barrio' ELSE current_row.barrio END,
             ciudad = CASE WHEN p_patch ? 'ciudad' THEN p_patch->>'ciudad' ELSE current_row.ciudad END,

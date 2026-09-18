@@ -98,6 +98,40 @@ def test_domain_unknown_operation_is_not_a_storage_improvement(operation):
     assert decision(plan, 'operacion')['decision'] == REJECTED_PLACEHOLDER
 
 
+@pytest.mark.parametrize('surface', [None, 0, 90.75])
+def test_covered_surface_survives_insert_and_fill_plan(surface):
+    row = incoming(superficie_cubierta=surface)
+    assert build_merge_plan(row, [], source_id='10')['payload']['superficie_cubierta'] == surface
+    plan = build_merge_plan(row, [existing(superficie_cubierta=None)], source_id='10')
+    if surface is None:
+        assert 'superficie_cubierta' not in plan['patch']
+    else:
+        assert plan['patch']['superficie_cubierta'] == surface
+        assert decision(plan, 'superficie_cubierta')['decision'] == ACCEPTED_IMPROVEMENT
+
+
+@pytest.mark.parametrize('field', ['superficie_total', 'superficie_cubierta'])
+@pytest.mark.parametrize('surface', [True, -1, float('inf'), 'not numeric', 2**31])
+def test_invalid_surface_is_withheld_without_losing_real_property(field, surface):
+    plan = build_merge_plan(incoming(**{field: surface}), [], source_id='10')
+    assert plan['status'] == 'insert'
+    assert plan['payload'][field] is None
+
+
+@pytest.mark.parametrize('field', ['ambientes', 'dormitorios', 'banos'])
+@pytest.mark.parametrize('count', [True, -1, 1.5, '1.5', 2**31])
+def test_invalid_count_is_withheld_at_insert_without_losing_property(field, count):
+    plan = build_merge_plan(incoming(**{field: count}), [], source_id='10')
+    assert plan['status'] == 'insert'
+    assert plan['payload'][field] is None
+
+
+def test_known_covered_surface_is_not_replaced_by_a_lower_confidence_value():
+    plan = build_merge_plan(incoming(superficie_cubierta=90.75),
+                            [existing(superficie_cubierta=0)], source_id='10')
+    assert 'superficie_cubierta' not in plan['patch']
+
+
 def test_changed_amount_does_not_borrow_old_currency():
     plan = build_merge_plan(incoming(precio=95000, moneda=None), [existing()], source_id='10')
     assert 'precio' not in plan['patch'] and 'moneda' not in plan['patch']

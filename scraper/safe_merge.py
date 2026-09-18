@@ -15,9 +15,9 @@ import unicodedata
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 if __package__:
-    from .models import PUBLIC_STORAGE_OPERACIONES, _compute_hash_dedup, _normalize_url_for_hash, operation_for_storage
+    from .models import PUBLIC_STORAGE_OPERACIONES, _compute_hash_dedup, _normalize_url_for_hash, _safe_int, _safe_surface, operation_for_storage
 else:  # Existing source-checkout command-line entry points.
-    from models import PUBLIC_STORAGE_OPERACIONES, _compute_hash_dedup, _normalize_url_for_hash, operation_for_storage
+    from models import PUBLIC_STORAGE_OPERACIONES, _compute_hash_dedup, _normalize_url_for_hash, _safe_int, _safe_surface, operation_for_storage
 
 ACCEPTED_INSERT = "ACCEPTED_INSERT"
 ACCEPTED_IMPROVEMENT = "ACCEPTED_IMPROVEMENT"
@@ -52,6 +52,7 @@ MERGE_FIELDS: Tuple[str, ...] = (
     "dormitorios",
     "banos",
     "superficie_total",
+    "superficie_cubierta",
     "direccion",
     "barrio",
     "ciudad",
@@ -140,6 +141,7 @@ _FILL_ONLY_NUMBERS = {
     "dormitorios",
     "banos",
     "superficie_total",
+    "superficie_cubierta",
 }
 _LOCATION_FIELDS = {"direccion", "barrio", "ciudad"}
 
@@ -640,6 +642,13 @@ def prepare_insert_payload(incoming: Mapping[str, Any]) -> Dict[str, Any]:
     if payload.get("precio") is not None and (price is None or not 0 <= price <= 1e15):
         payload["precio"] = None
     payload["operacion"] = operation_for_storage(payload.get("operacion"))
+    for field in ('superficie_total', 'superficie_cubierta'):
+        if field in payload:
+            payload[field] = _safe_surface(payload[field])
+    for field in ('ambientes', 'dormitorios', 'banos'):
+        if field in payload:
+            count = _safe_int(payload[field])
+            payload[field] = count if count is not None and count >= 0 else None
     property_type = _plain(payload.get("tipo_propiedad")).replace(" ", "_")
     payload["tipo_propiedad"] = property_type if property_type in _VALID_TYPES else "otro"
     if not _valid_coordinate_pair(payload.get("latitud"), payload.get("longitud")):
