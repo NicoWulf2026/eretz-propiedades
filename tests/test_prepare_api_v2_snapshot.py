@@ -6,6 +6,21 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
+from scripts.prepare_api_v2_snapshot import _publish_no_clobber
+
+
+def test_publication_rejects_a_destination_created_after_preflight(tmp_path):
+    temporary = tmp_path / 'own-building.sqlite3'
+    output = tmp_path / 'other-writer.sqlite3'
+    temporary.write_bytes(b'complete candidate')
+    output.write_bytes(b'preserve other writer')
+    with pytest.raises(FileExistsError):
+        _publish_no_clobber(temporary, output)
+    assert output.read_bytes() == b'preserve other writer'
+    assert temporary.read_bytes() == b'complete candidate'
+
 
 def test_prepare_snapshot_preserves_source_and_loads_verified_aliases(tmp_path: Path):
     source = tmp_path / "source.sqlite3"

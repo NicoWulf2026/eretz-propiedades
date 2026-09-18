@@ -49,6 +49,16 @@ create index if not exists ix_search_property_id on search_property_ids(property
 """
 
 
+def _publish_no_clobber(source: Path, output: Path) -> None:
+    # Windows rename rejects an existing destination, including a racing writer.
+    # Unlike hard links, rename does not require hard-link filesystem support.
+    # POSIX rename replaces destinations, so keep link's exclusive semantics.
+    if os.name == 'nt':
+        os.rename(source, output)
+    else:
+        os.link(source, output)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("source", type=Path)
@@ -88,7 +98,7 @@ def main() -> int:
         connection = None
         # Atomic, no-clobber publication: a failed index/alias build is never
         # presented as a prepared artifact, even if another process races us.
-        os.link(temporary, args.output)
+        _publish_no_clobber(temporary, args.output)
     finally:
         if connection is not None:
             connection.close()
