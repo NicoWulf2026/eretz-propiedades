@@ -2,10 +2,9 @@
 # -*- coding: utf-8 -*-
 """La version mas fresca de cada propiedad, venga de donde venga.
 
-La preingestion es del 3 de septiembre. Las certificaciones corren todos los
-dias y producen propiedades normalizadas con el codigo de HOY, y hasta ahora
-nadie las consumia: quedaban adentro del paquete de certificacion como
-evidencia y nada mas.
+Compara lecturas de la misma identidad desde preingestion y paquetes archivados.
+Una fecha reciente no demuestra vigencia de código ni verdad de datos; la
+verificación de fingerprint/identidad se debe cerrar antes de publicar.
 
 El efecto de eso no era teorico. `agostini inmobiliaria` tiene 360 propiedades
 con `operacion` en su certificacion y 9 en la preingestion: 350 arregladas que
@@ -17,7 +16,7 @@ alguien reconstruyera la preingestion entera.
 
 **No se toca la base canonica.** Esto es una CAPA de lectura: dice cual es la
 version mas fresca de cada propiedad. La preingestion sigue siendo la fuente de
-verdad de que existe; el paquete, de como se ve hoy.
+verdad de que existe; el paquete documenta una lectura posterior, no "hoy".
 
 **Solo de certificaciones que cerraron bien.** Un paquete de una corrida que
 fallo tiene datos parciales, y preferirlos a la preingestion cambiaria datos
@@ -30,17 +29,18 @@ from __future__ import annotations
 import argparse
 import json
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-FRESCURA_VERSION = "property_freshest_v3"
+FRESCURA_VERSION = "property_freshest_v4"
 
 # Historical structural evidence can fill an unexplained extraction gap.
 # A previous commercial value is not evidence of the current offer.
 CAMPOS_VOLATILES = frozenset({'precio', 'moneda', 'operacion', 'titulo',
                               'descripcion', 'imagenes'})
 
-# Estados en los que el inventario del paquete es confiable y completo.
+# Cierres utilizables para comparar lecturas; BEST_AVAILABLE no afirma completo.
 CIERRES_CONFIABLES = ("CERTIFIED_COMPLETE", "CERTIFIED_BEST_AVAILABLE")
 
 # Los campos que se toman de la version mas fresca. La identidad no entra:
@@ -71,6 +71,17 @@ def _leer(ruta: Path) -> list[dict[str, Any]]:
     return fuera
 
 
+def _certification_time(value: Any) -> datetime:
+    """Compare explicit offsets in UTC; never invent a timezone for old data."""
+    if not isinstance(value, str) or 'T' not in value:
+        raise ValueError('Certification must have a valid checked_at timestamp')
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        raise ValueError('Certification must have a valid checked_at timestamp') from None
+    return parsed.astimezone(timezone.utc) if parsed.tzinfo is not None else parsed
+
+
 def mas_frescas(paquetes: Path) -> dict[str, dict[str, Any]]:
     """Por `hash_dedup`, la propiedad mas reciente de los paquetes.
 
@@ -88,21 +99,27 @@ def mas_frescas(paquetes: Path) -> dict[str, dict[str, Any]]:
         try:
             paquete = json.loads(certificacion.read_text(encoding="utf-8"))
         except ValueError:
-            continue
+            raise ValueError('Invalid certification JSON') from None
+        if not isinstance(paquete, dict):
+            raise ValueError('Certification must be an object')
         if paquete.get("status") not in CIERRES_CONFIABLES:
             continue
-        cuando = paquete.get("checked_at") or ""
+        instante = _certification_time(paquete.get("checked_at"))
+        cuando = instante.isoformat()
         for fila in (_leer(carpeta / "properties_run1.jsonl")
                      or _leer(carpeta / "properties_run2.jsonl")):
             h = fila.get("hash_dedup")
             if not h:
                 continue
             previo = fuera.get(h)
+            previo_instante = _certification_time(previo['_certificado_en']) if previo else None
+            if previo_instante is not None and (instante.tzinfo is None) != (previo_instante.tzinfo is None):
+                raise ValueError('Cannot order certification timestamps with mixed known and unknown timezones')
             if previo is not None and cuando == previo.get("_certificado_en", ""):
                 anterior = {k: v for k, v in previo.items() if k != '_certificado_en'}
                 if fila != anterior:
                     raise ValueError("Conflicting property evidence at the same certification time")
-            if previo is None or cuando >= previo.get("_certificado_en", ""):
+            if previo_instante is None or instante >= previo_instante:
                 fuera[h] = dict(fila, _certificado_en=cuando)
     return fuera
 
@@ -113,13 +130,13 @@ def fusionar(vieja: dict[str, Any], fresca: dict[str, Any] | None,
 
     Los dos lados son extractores DISTINTOS, no dos versiones del mismo: la
     preingestion la construye el pipeline legacy y los paquetes los connectors.
-    Ninguno gana en todo. El refresco recupera 679 superficies y 503
-    operaciones, y a la vez pierde 177 valores de `banos` en casas y
-    departamentos, sin ningun motivo anotado.
+    Ninguno gana en todo. Una medición histórica recuperó 679 superficies y
+    503 operaciones, pero perdió 177 baños sin motivo anotado; no es un
+    benchmark vigente ni justifica restaurar automáticamente valores rechazados.
 
     La regla (para campos estructurales):
 
-      la fresca trae valor          gana la fresca, que corrio con codigo de hoy
+      la fresca trae valor          gana la lectura posterior aceptada
       la fresca esta vacia y ANOTO  gana el vacio: la validacion lo rechazo y
       el rechazo                    volver al viejo desharia esa decision
       la fresca esta vacia y no     gana el viejo: no leerlo no es haberlo

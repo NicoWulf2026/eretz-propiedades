@@ -178,3 +178,49 @@ def test_equal_timestamp_never_selects_conflicting_data_by_filesystem_order(tmp_
             mas_frescas(tmp_path)
     else:
         assert mas_frescas(tmp_path)['same']['titulo'] == 'Casa'
+
+
+def _package(folder, when, title):
+    folder.mkdir()
+    (folder / 'certification.json').write_text(json.dumps({
+        'status': 'CERTIFIED_COMPLETE', 'checked_at': when}), encoding='utf-8')
+    (folder / 'properties_run1.jsonl').write_text(json.dumps({
+        'hash_dedup': 'same', 'titulo': title}) + '\n', encoding='utf-8')
+
+
+def test_explicit_offsets_order_instants_not_timestamp_text(tmp_path):
+    _package(tmp_path / 'a', '2026-09-18T10:00:00-03:00', 'newer')
+    _package(tmp_path / 'b', '2026-09-18T12:00:00Z', 'older')
+    result = mas_frescas(tmp_path)['same']
+    assert result['titulo'] == 'newer'
+    assert result['_certificado_en'] == '2026-09-18T13:00:00+00:00'
+
+
+def test_same_instant_in_different_offsets_still_detects_conflict(tmp_path):
+    _package(tmp_path / 'a', '2026-09-18T10:00:00-03:00', 'Casa')
+    _package(tmp_path / 'b', '2026-09-18T13:00:00Z', 'Otra casa')
+    with pytest.raises(ValueError, match='Conflicting property evidence'):
+        mas_frescas(tmp_path)
+
+
+def test_missing_timezone_is_not_invented_to_order_conflicting_packages(tmp_path):
+    _package(tmp_path / 'a', '2026-09-18T10:00:00', 'Casa')
+    _package(tmp_path / 'b', '2026-09-18T13:00:00Z', 'Otra casa')
+    with pytest.raises(ValueError, match='mixed known and unknown timezones'):
+        mas_frescas(tmp_path)
+
+
+@pytest.mark.parametrize('when', [None, '', 'not-a-date', '2026-09-18', '2026-99-18T10:00:00'])
+def test_certified_status_without_valid_time_cannot_claim_newer_evidence(tmp_path, when):
+    _package(tmp_path / 'invalid', when, 'Casa')
+    with pytest.raises(ValueError, match='valid checked_at'):
+        mas_frescas(tmp_path)
+
+
+@pytest.mark.parametrize('invalid', ['{not valid JSON', '[]', 'null'])
+def test_corrupt_certificate_cannot_silently_hide_its_evidence(tmp_path, invalid):
+    _package(tmp_path / 'invalid', '2026-09-18T10:00:00', 'Casa')
+    (tmp_path / 'invalid/certification.json').write_text(invalid, encoding='utf-8')
+    with pytest.raises(ValueError, match='Invalid certification JSON|must be an object') as error:
+        mas_frescas(tmp_path)
+    assert invalid not in str(error.value)

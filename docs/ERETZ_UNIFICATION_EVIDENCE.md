@@ -421,3 +421,14 @@ el origen o snapshot servido; publicación sigue exigiendo reemplazo explícito.
 no se usa limpieza global ni se supone que finally corre después de SIGKILL.
 La cabecera ya no afirma indisponibilidad productiva ni una cantidad constante
 de propiedades: el alcance se informa en el resumen real de cada derivación.
+
+Cronología del refresco (`property_freshest_v4`): interpreta checked_at como
+datetime, compara offsets explícitos en UTC y detecta conflictos de la misma
+ficha en el mismo instante aunque el texto use otra zona. Mezclar fechas sin
+zona con fechas zonificadas para la misma identidad es un error, no asignación
+ficticia de UTC/Argentina. Certificado sin tiempo válido o JSON corrupto no
+desaparece silenciosamente ni puede ganar como "más nuevo". La fecha no acredita
+fingerprint actual ni verdad del dato: esa verificación sigue pendiente en la
+frontera de consumo de paquetes archivados y no se declara este punto cerrado.
+64 controles de refresco/snapshot/gate/diagnóstico de imágenes PASS; lint de
+los archivos tocados PASS.
