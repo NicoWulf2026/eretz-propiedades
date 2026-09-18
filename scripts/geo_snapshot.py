@@ -21,6 +21,7 @@ import hashlib
 import json
 import time
 import urllib.request
+import urllib.error
 from pathlib import Path
 from typing import Any
 
@@ -41,6 +42,33 @@ def bajar(url: str) -> dict[str, Any]:
         return json.loads(respuesta.read().decode("utf-8"))
 
 
+def _pagina(datos: Any, recurso: str, inicio: int | None) -> tuple[list[dict[str, Any]], int]:
+    """Never certify an arbitrary list, unknown total or repeated entity ID."""
+    if not isinstance(datos, dict):
+        raise ValueError('GeoRef response must be an object')
+    keys = {recurso, recurso.replace('-', '_')}
+    present = [key for key in keys if key in datos]
+    if len(present) != 1:
+        raise ValueError('GeoRef response must contain the requested resource')
+    rows, total = datos[present[0]], datos.get('total')
+    if not isinstance(rows, list) or type(total) is not int or not 0 < total <= 100_000:
+        raise ValueError('GeoRef requires a bounded positive declared total and rows')
+    if len(rows) > total:
+        raise ValueError('GeoRef row count exceeds declared total')
+    if 'cantidad' in datos and (type(datos['cantidad']) is not int or datos['cantidad'] != len(rows)):
+        raise ValueError('GeoRef page count does not match its rows')
+    if inicio is not None and (type(datos.get('inicio')) is not int or datos['inicio'] != inicio):
+        raise ValueError('GeoRef page offset does not match request')
+    identities = []
+    for row in rows:
+        if not isinstance(row, dict) or not isinstance(row.get('id'), str) or not row['id'].strip():
+            raise ValueError('GeoRef entity requires a nonempty text ID')
+        identities.append(row['id'])
+    if len(set(identities)) != len(identities):
+        raise ValueError('GeoRef page contains duplicate entity IDs')
+    return rows, total
+
+
 def traer(recurso: str) -> tuple[list[dict[str, Any]], int, str]:
     """Trae un recurso completo, preferentemente del volcado oficial.
 
@@ -52,21 +80,33 @@ def traer(recurso: str) -> tuple[list[dict[str, Any]], int, str]:
     archivo = recurso.replace("-", "_")
     try:
         datos = bajar(f"{VOLCADO}/{archivo}.json")
-        clave = next(k for k in datos if isinstance(datos[k], list))
-        return datos[clave], int(datos.get("total") or 0), "volcado"
-    except Exception:  # noqa: BLE001 - se cae al paginado, que es equivalente
-        pass
+    except urllib.error.HTTPError as error:
+        if error.code != 404:
+            raise
+        # Some official resources have no dump; validate the API fallback too.
+    else:
+        rows, total = _pagina(datos, recurso, None)
+        if len(rows) != total:
+            raise ValueError('GeoRef dump is incomplete')
+        return rows, total, 'volcado'
 
     filas: list[dict[str, Any]] = []
-    total = 0
+    total: int | None = None
+    vistos: set[str] = set()
     while True:
         datos = bajar(f"{BASE}/{recurso}?max={PAGINA}&inicio={len(filas)}")
-        clave = next(k for k in datos
-                     if k not in ("cantidad", "inicio", "total", "parametros"))
-        total = int(datos.get("total") or 0)
-        pagina = datos.get(clave) or []
+        pagina, declarado = _pagina(datos, recurso, len(filas))
+        if total is not None and total != declarado:
+            raise ValueError('GeoRef total changed during pagination')
+        total = declarado
+        if total > 10_000:
+            raise ValueError('GeoRef API window cannot enumerate this resource; a complete dump is required')
         if not pagina:
-            break
+            raise ValueError('GeoRef pagination ended before declared total')
+        ids = {row['id'] for row in pagina}
+        if vistos & ids or len(filas) + len(pagina) > total:
+            raise ValueError('GeoRef pagination repeats entities or exceeds total')
+        vistos.update(ids)
         filas.extend(pagina)
         if len(filas) >= total:
             break
@@ -80,6 +120,10 @@ def main() -> int:
     args = parser.parse_args()
 
     destino = Path(args.destino)
+    # Finish and validate every download before touching the existing reference.
+    # File promotion is not a multi-file transaction; disk/kill failures remain
+    # a separate generation-publication concern.
+    preparados = [(recurso, traer(recurso)) for recurso in RECURSOS]
     destino.mkdir(parents=True, exist_ok=True)
     manifiesto: dict[str, Any] = {
         "fuente": "GeoRef Argentina - datos.gob.ar",
@@ -89,8 +133,7 @@ def main() -> int:
         "recursos": {},
     }
 
-    for recurso in RECURSOS:
-        filas, total, via = traer(recurso)
+    for recurso, (filas, total, via) in preparados:
         archivo = destino / f"{recurso.replace('-', '_')}.json"
         crudo = json.dumps(filas, ensure_ascii=False, indent=1)
         archivo.write_text(crudo, encoding="utf-8")

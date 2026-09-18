@@ -514,3 +514,32 @@ Wheel construido offline sin dependencias e instalado en directorio aislado:
 fronteras puras fuera del checkout PASS (operación desconocida, superficie cero,
 identidad/geografía nullable y ausencias continuadas). No prueba staging completo,
 recursos GeoRef empaquetados, CLI operacional ni permisos del RPC alojado.
+
+GeoRef, integridad de descarga (nuevo bloque en validación): sólo el 404 de un
+volcado ausente permite fallback a API. Respuesta malformada/incompleta, total
+desconocido/cambiante, offsets incompatibles, IDs inválidos/duplicados, paginación
+interrumpida y ventana API insuficiente no se convierten en snapshot completo.
+Se terminan/validan los seis recursos antes de escribir el destino: un fallo de
+descarga tardío conserva la referencia anterior. 63 controles de descarga y
+resolución geográfica PASS, lint PASS. No se ejecutó descarga real ni se alteró
+el directorio GeoRef original. Referencia: [GeoRef oficial](https://datosgobar.github.io/georef-ar-api/).
+El límite local de volumen es protección operativa, no afirmación de un límite
+oficial del universo. Promoción multiarchivo frente a fallo de disco/kill sigue
+pendiente: prefetched downloads no equivalen a una transacción de publicación.
+
+Chequeo readonly de la referencia original (2026-09-02): 24 provincias, 529
+departamentos, 2082 municipios, 4023 localidades censales, 4028 localidades y
+14466 asentamientos; conteos iguales al manifiesto, cero IDs repetidos/no textuales.
+Los seis hashes físicos difieren; los seis hashes con CRLF→LF coinciden. Causa
+demostrada de formato: el generador hashea texto LF antes de write_text, que usa
+conversión de newline en Windows. No se etiqueta esta discrepancia como corrupción
+semántica ni se "repara" el original. Falta formalizar hash de bytes vs texto y
+proveniencia de la referencia en certificados; un fingerprint de código solo no
+demuestra que dos corridas usaron el mismo snapshot geográfico.
+
+Suite completa congelada de integridad de descarga GeoRef: 2519 PASS, 0 fallos,
+0 errores, 0 skipped, 152,65 s; backend_georef_download_integrity_validation.xml.
+Consumidor de paquetes v5 sobre el archivo original readonly: 15942 identidades
+con lectura histórica disponible, sin error de integridad, database_writes=0.
+No se declara ese número inventario vigente/certificación actual; la misma
+limitación de fingerprint/procedencia sigue abierta.
