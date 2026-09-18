@@ -83,16 +83,20 @@ def test_cambiar_la_definicion_de_la_huella_no_amnistia_los_defectos(tmp_path,
     import scripts.agency_rollout_preflight as pre
 
     viejo = _resultado(huella="vieja", esquema=1)
-    # El algoritmo del esquema 1 da lo mismo que lo guardado: nadie toco el
-    # comportamiento, asi que el defecto sigue abierto.
-    monkeypatch.setattr(pre, "strategy_fingerprint_v1", lambda *_: "vieja")
     monkeypatch.setattr(pre, "strategy_fingerprint", lambda *_: "nueva-por-el-modelo")
     salida = _salida(tmp_path, [viejo])
     assert sin_defectos_abiertos(salida, {"roomix:alfa": {}})[0] is False
 
-    # Si ademas cambio el comportamiento, ahi si es evidencia vencida.
-    monkeypatch.setattr(pre, "strategy_fingerprint_v1", lambda *_: "otra")
-    assert sin_defectos_abiertos(salida, {"roomix:alfa": {}})[0] is True
+    # Today's component set does not reproduce every old schema. A differing
+    # current hash cannot prove the old defect is fixed; revalidation is needed.
+    assert sin_defectos_abiertos(salida, {"roomix:alfa": {}})[0] is False
+
+
+def test_unsupported_schema_cannot_silently_expire_a_defect(monkeypatch):
+    monkeypatch.setattr('scripts.agency_rollout_preflight.strategy_fingerprint',
+                        lambda *_: 'different')
+    for schema in (None, 1, 2, 3, 999):
+        assert huella_vigente(_resultado(huella='old', esquema=schema), {}) is True
 
 
 def test_un_defecto_de_radio_acotado_no_cierra_la_cola(tmp_path, monkeypatch):

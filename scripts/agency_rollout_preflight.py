@@ -26,7 +26,7 @@ from scripts.defect_triage import CONTINUE, clasificar
 from scripts.preingestion_manifest import base_canonica, describir
 from scripts.agency_fingerprints import (FINGERPRINT_SCHEMA_VERSION,
                                          strategy_fingerprint,
-                                         strategy_fingerprint_v1, strategy_for)
+                                         strategy_for)
 from scripts.run_agency_certification_queue import (CERROJO, LATIDO_VENCIDO,
                                                     TERMINAL, choose_connector,
                                                     diferidos, full_queue,
@@ -115,7 +115,7 @@ def git_coherente() -> tuple[bool, str]:
             text=True, timeout=60)
     except (OSError, subprocess.SubprocessError) as error:
         return False, f"no se pudo consultar git: {error}"
-    sucio = [l for l in salida.stdout.splitlines() if l.strip()]
+    sucio = [line for line in salida.stdout.splitlines() if line.strip()]
     if sucio:
         return False, f"{len(sucio)} archivos sin commitear"
     return True, "arbol limpio"
@@ -148,13 +148,11 @@ def huella_vigente(resultado: dict[str, Any],
     estrategia = resultado.get("connector_strategy") or strategy_for(
         conector, resultado.get("publication_mechanism"))
     if resultado.get("fingerprint_schema_version") != FINGERPRINT_SCHEMA_VERSION:
-        # El paquete se emitio con otra definicion de huella. Comparar contra
-        # la actual no responde nada -todo difiere por construccion- y dejarlo
-        # pasar convertiria el cambio de modelo en una amnistia silenciosa para
-        # todos los defectos abiertos. Se recomputa con el algoritmo de SU
-        # esquema, que es lo unico que contesta la pregunta real: cambio el
-        # comportamiento desde que se emitio este veredicto.
-        return guardada == strategy_fingerprint_v1(conector, estrategia)
+        # The legacy helper now depends on today's component inventory: it
+        # cannot reconstruct every historical schema exactly. A mismatch is
+        # not proof that a defect was fixed. Keep it open for an explicit,
+        # controlled revalidation instead of granting a schema-change amnesty.
+        return True
     return guardada == strategy_fingerprint(conector, estrategia)
 
 
