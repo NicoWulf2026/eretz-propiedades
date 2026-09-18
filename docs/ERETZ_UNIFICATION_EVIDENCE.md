@@ -383,3 +383,17 @@ su existencia histórica no autoriza ingestión: no se consultaron esos sitios,
 no se borró ni modificó ninguna fila. Requiere revisión de lineage/scope antes
 de cualquier saneamiento productivo autorizado. La regla de fuentes prohibidas
 se mantiene en la arquitectura candidata.
+
+Consulta de identidad REST aún consumida: un HTTP fallido o excepción cortaba
+el loop y devolvía un índice parcial, permitiendo tratar registros existentes
+como nuevos. Ahora falla antes de POST/PATCH y contabiliza el fallo; no imprime
+body ni texto de excepciones. Solicita count=exact, valida Content-Range,
+acepta 206 y avanza por filas efectivamente recibidas: una página corta por
+límite del servidor no implica fin. Total cambiante, rango incompleto, fila
+malformada, agencia ajena y IDs repetidos/desordenados bloquean la escritura.
+No equivale a lectura transaccional: cambios de contenido con igual total
+todavía requieren el escritor atómico. 107 controles focalizados PASS, red
+bloqueada y bootstrap/.env excluido por AST. El código AST se compila una vez
+y se ejecuta en namespace nuevo por test; evita repetir el coste observado de
+parsear el monolito sin compartir instancias/estado entre casos.
+[Contrato de paginación PostgREST](https://docs.postgrest.org/en/stable/references/api/pagination_count.html).

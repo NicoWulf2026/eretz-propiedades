@@ -2715,11 +2715,11 @@ class SupabasePropiedades:
         2) inmobiliaria_id canonico + id_externo normalizado,
         3) hash_dedup como fallback.
         """
-        agency_ids = sorted({
-            int(p.get("inmobiliaria_id"))
-            for p in propiedades
-            if p.get("inmobiliaria_id") is not None and str(p.get("inmobiliaria_id")).isdigit()
-        })
+        if any(isinstance(p.get("inmobiliaria_id"), bool)
+               or not re.fullmatch(r"[0-9]+", str(p.get("inmobiliaria_id", "")))
+               or int(p["inmobiliaria_id"]) <= 0 for p in propiedades):
+            raise SavePropertiesError("identity_lookup_invalid_agency")
+        agency_ids = sorted({int(p["inmobiliaria_id"]) for p in propiedades})
         result = {
             "by_url": {},
             "by_url_all": {},
@@ -2755,11 +2755,13 @@ class SupabasePropiedades:
         for agency_id in agency_ids:
             offset = 0
             page_size = 1000
+            expected_total = None
+            last_id = 0
             while True:
                 try:
                     r = self.session.get(
                         f"{SUPABASE_URL}/rest/v1/propiedades",
-                        headers=self._headers,
+                        headers={**self._headers, "Prefer": "count=exact"},
                         params={
                             "select": ",".join(select_columns),
                             "inmobiliaria_id": f"eq.{agency_id}",
@@ -2769,15 +2771,42 @@ class SupabasePropiedades:
                         },
                         timeout=30,
                     )
-                    if r.status_code != 200:
-                        logger.warning("get_existing_properties_for_dedup %s: %s", r.status_code, r.text[:200])
-                        break
+                    if r.status_code not in {200, 206}:
+                        raise SavePropertiesError(f"identity_lookup_http_{r.status_code}")
                     rows = r.json()
+                    if not isinstance(rows, list) or len(rows) > page_size:
+                        raise SavePropertiesError("identity_lookup_invalid_payload")
+                    content_range = r.headers.get("Content-Range")
+                    match = re.fullmatch(r"(?:(\d+)-(\d+)|\*)/(\d+)", content_range or "")
+                    if not match:
+                        raise SavePropertiesError("identity_lookup_unproven_range")
+                    start, end, total = match.groups()
+                    total = int(total)
+                    if expected_total is not None and total != expected_total:
+                        raise SavePropertiesError("identity_lookup_total_changed")
+                    expected_total = total
+                    if rows:
+                        if (start is None or int(start) != offset
+                                or int(end) != offset + len(rows) - 1
+                                or offset + len(rows) > total):
+                            raise SavePropertiesError("identity_lookup_inconsistent_range")
+                    elif start is not None or total != offset:
+                        raise SavePropertiesError("identity_lookup_incomplete_range")
+                except SavePropertiesError:
+                    raise
                 except Exception as exc:
-                    logger.warning("get_existing_properties_for_dedup fallo: %s", str(exc)[:200])
-                    break
+                    # Response bodies and exception text can contain credentials.
+                    raise SavePropertiesError(f"identity_lookup_failed_{type(exc).__name__}") from None
 
                 for row in rows:
+                    if (not isinstance(row, dict) or isinstance(row.get("id"), bool)
+                            or not re.fullmatch(r"[0-9]+", str(row.get("id", "")))
+                            or int(row["id"]) <= last_id
+                            or str(row.get("inmobiliaria_id")) != str(agency_id)
+                            or not isinstance(row.get("hash_dedup"), str)
+                            or not row["hash_dedup"].strip()):
+                        raise SavePropertiesError("identity_lookup_invalid_candidate")
+                    last_id = int(row["id"])
                     row_agency_id = row.get("inmobiliaria_id")
                     if row.get("hash_dedup"):
                         remember(result["by_hash"], row["hash_dedup"], row, "hash")
@@ -2792,9 +2821,9 @@ class SupabasePropiedades:
                         result["by_external_all"].setdefault(key, []).append(row)
                         remember(result["by_external"], key, row, "id_externo")
 
-                if len(rows) < page_size:
+                offset += len(rows)
+                if offset == expected_total:
                     break
-                offset += page_size
 
         duplicates = result.get("duplicate_existing_keys") or []
         if duplicates:
@@ -2954,7 +2983,12 @@ class SupabasePropiedades:
             return 0, 0
 
         columns = self._get_property_columns()
-        identity_index = self.get_existing_properties_for_dedup(propiedades)
+        try:
+            identity_index = self.get_existing_properties_for_dedup(propiedades)
+        except SavePropertiesError as exc:
+            self.last_save_result["failed"] = len(propiedades)
+            self.last_save_result["errors"] = [{"operation": "identity", "message": str(exc)}]
+            raise
         nuevas: List[Dict[str, Any]] = []
         actualizadas: List[Tuple[Dict[str, Any], Dict[str, Any], str]] = []
         matched_existing_hashes: set = set()
