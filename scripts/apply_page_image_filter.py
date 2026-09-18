@@ -34,6 +34,7 @@ from connectors.base import HUELLA_VERSION, PropiedadNormalizada  # noqa: E402
 from scripts.run_rollout import (FRACCION_COMPARTIDA,  # noqa: E402
                                  MINIMO_PARA_JUZGAR)
 from connectors.wordpress import _sin_variantes_de_tamano  # noqa: E402
+from scripts.image_quality import is_known_page_asset  # noqa: E402
 
 import dataclasses  # noqa: E402
 
@@ -42,13 +43,16 @@ CAMPOS = {f.name for f in dataclasses.fields(PropiedadNormalizada)}
 
 def leer(ruta: Path):
     with ruta.open(encoding="utf-8") as fh:
-        for linea in fh:
+        for number, linea in enumerate(fh, 1):
             linea = linea.strip()
             if linea:
                 try:
-                    yield json.loads(linea)
+                    row = json.loads(linea)
                 except ValueError:
-                    continue
+                    raise ValueError(f'invalid JSON at row {number}') from None
+                if not isinstance(row, dict):
+                    raise ValueError(f'invalid property object at row {number}')
+                yield row
 
 
 def compartidas_por_agencia(ruta: Path) -> dict[str, set[str]]:
@@ -65,7 +69,7 @@ def compartidas_por_agencia(ruta: Path) -> dict[str, set[str]]:
         if n < MINIMO_PARA_JUZGAR:
             continue
         tope = max(MINIMO_PARA_JUZGAR // 2, n * FRACCION_COMPARTIDA)
-        malas = {u for u, v in c.items() if v >= tope}
+        malas = {u for u, v in c.items() if v >= tope and is_known_page_asset(u)}
         if malas:
             salida[cid] = malas
     return salida
@@ -88,6 +92,11 @@ def main() -> int:
     ent = Path(a.entrada)
     sal = Path(a.salida) if a.salida else ent.with_suffix(".limpio.jsonl")
     inf = Path(a.informe) if a.informe else ent.with_suffix(".imagenes_descartadas.jsonl")
+    if a.aplicar:
+        if len({p.resolve() for p in (ent, sal, inf)}) != 3:
+            ap.error('input, output and report must be distinct; the original is immutable')
+        if sal.exists() or inf.exists():
+            ap.error('output/report already exists; choose new artifact paths')
 
     print("### IMAGENES DE LA PAGINA ###")
     print(f"  artefacto: {ent}", flush=True)
@@ -131,7 +140,7 @@ def main() -> int:
                     **{k: v for k, v in p.items() if k in CAMPOS}).fingerprint
                 p["fingerprint_version"] = HUELLA_VERSION
             except TypeError:
-                pass
+                raise ValueError(f'cannot recompute fingerprint at row {filas}') from None
             escritas.append(p)
 
     print(f"  propiedades:                 {filas:,}")
@@ -151,14 +160,14 @@ def main() -> int:
         print("\n  (solo medicion) usar --aplicar para escribir la copia limpia")
         return 0
 
-    with sal.open("w", encoding="utf-8") as fh:
+    with sal.open("x", encoding="utf-8") as fh:
         for p in escritas:
             fh.write(json.dumps(p, ensure_ascii=False) + "\n")
-    with inf.open("w", encoding="utf-8") as fh:
+    with inf.open("x", encoding="utf-8") as fh:
         for u, v in detalle.most_common():
             fh.write(json.dumps({"url": u, "propiedades": v,
-                                 "motivo": "aparece en la mitad o mas del "
-                                           "catalogo de su inmobiliaria",
+                                 "motivo": "asset de pagina identificado y repetido "
+                                           "en el catalogo de su inmobiliaria",
                                  "checked_at": time.strftime("%Y-%m-%dT%H:%M:%S")},
                                 ensure_ascii=False) + "\n")
     print(f"\n  copia limpia -> {sal.name}")
