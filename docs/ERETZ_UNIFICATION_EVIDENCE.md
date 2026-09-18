@@ -301,6 +301,25 @@ nuevo. Esto acredita la suite backend actual, no la finalización de toda la
 misión ni certificación del long tail. Código funcional `b018b86398` y documentación
 posterior sin cambios semánticos.
 
+Comprobación viva posterior a la normalización compartida: Benítez Ullo,
+CERTIFIED_COMPLETE, 12 propiedades, dos corridas idempotentes, 58 requests,
+160,6 s, cero retries/errores de red; estrategia generic/html_catalog,
+huella `8a3057c78ab0`, schema 4. Alcance: una fuente oficial, no toda la cohorte
+ni verdad de su geografía. Los builders del snapshot no forman parte de esa
+huella de extracción.
+
+Performance posterior: el mismo código sobre el derivado anterior también
+presentó dispersión (combinado 921,36 ms de mediana, outlier del mapa pequeño
+12,86 s). Una copia del mismo snapshot v4 en NTFS no mejoró consistentemente
+las latencias; por tanto no se confirma una causa puramente exFAT ni una
+regresión atribuible sólo a imágenes. Conservar estos resultados como límites
+de la medición local; falta comparación controlada y diagnóstico del caso
+combinado cercano a un segundo antes de declarar rendimiento launch-ready.
+
+El builder principal también respeta publicación exclusiva si no se pide
+--replace-derived: rechaza un destino creado durante la construcción. El modo
+de reemplazo explícito permanece disponible; 14 controles de snapshot PASS.
+
 La arquitectura candidata concentra conectores, identidad, detección de URLs,
 contrato de propiedad y validación; conserva entrypoints históricos donde aún
 hay consumidores. Su eliminación requiere una matriz de consumidores y
