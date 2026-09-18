@@ -412,3 +412,12 @@ aplicado en Supabase ni acredita vigencia del RPC alojado. Un futuro despliegue
 requiere generar/verificar su migración versionada en el workflow real antes
 de habilitar escrituras. Provincia/pais y la invalidación validada de datos
 históricos siguen impidiendo retirar ciegamente el publicador REST.
+
+Builder de snapshot: cierra ambas conexiones y retira sólo el temporal creado
+exclusivamente por esta construcción ante excepciones, incluida la apertura
+fallida del origen readonly. No elimina un temporal ajeno preexistente ni toca
+el origen o snapshot servido; publicación sigue exigiendo reemplazo explícito.
+17 controles de snapshot PASS. Un kill del proceso puede dejar su temporal:
+no se usa limpieza global ni se supone que finally corre después de SIGKILL.
+La cabecera ya no afirma indisponibilidad productiva ni una cantidad constante
+de propiedades: el alcance se informa en el resumen real de cada derivación.

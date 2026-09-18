@@ -89,6 +89,41 @@ def test_snapshot_builder_refuses_implicit_replacement(tmp_path, monkeypatch):
     assert output.read_bytes() == b'previous snapshot'
 
 
+def test_snapshot_connection_failure_cleans_only_its_owned_build(tmp_path):
+    from scripts.api_snapshot import _snapshot_connections
+    temporary = tmp_path / 'own.building.sqlite3'
+    with pytest.raises(sqlite3.OperationalError):
+        with _snapshot_connections(tmp_path / 'nonexistent-source.sqlite3', temporary):
+            pytest.fail('missing readonly source cannot open')
+    assert not temporary.exists()
+    assert not (tmp_path / 'nonexistent-source.sqlite3').exists()
+
+
+def test_snapshot_cannot_clean_a_foreign_preexisting_temporary(tmp_path):
+    from scripts.api_snapshot import _snapshot_connections
+    temporary = tmp_path / 'foreign.building.sqlite3'
+    temporary.write_bytes(b'foreign work')
+    with pytest.raises(FileExistsError):
+        with _snapshot_connections(tmp_path / 'source.sqlite3', temporary):
+            pytest.fail('exclusive ownership cannot be acquired')
+    assert temporary.read_bytes() == b'foreign work'
+
+
+def test_snapshot_failure_closes_both_connections_and_removes_owned_build(tmp_path):
+    from scripts.api_snapshot import _snapshot_connections
+    source = _base(tmp_path, [('agency', [])])
+    original = source.read_bytes()
+    temporary = tmp_path / 'own.building.sqlite3'
+    with pytest.raises(RuntimeError, match='fixture failure'):
+        with _snapshot_connections(source, temporary) as (origin, derived):
+            raise RuntimeError('fixture failure')
+    for connection in (origin, derived):
+        with pytest.raises(sqlite3.ProgrammingError, match='closed database'):
+            connection.execute('select 1')
+    assert not temporary.exists()
+    assert source.read_bytes() == original
+
+
 def test_failed_snapshot_build_preserves_the_served_artifact(tmp_path, monkeypatch):
     from scripts import api_snapshot
     db = _base(tmp_path, [('agency', [])])
@@ -105,6 +140,7 @@ def test_failed_snapshot_build_preserves_the_served_artifact(tmp_path, monkeypat
     with pytest.raises(RuntimeError, match='intentional fixture failure'):
         api_snapshot.main()
     assert output.read_bytes() == b'previous snapshot'
+    assert not list(tmp_path.glob('ERETZ_API_SNAPSHOT.sqlite3.building.*'))
 
 
 def test_un_avatar_repetido_no_es_la_foto_de_nadie(tmp_path, monkeypatch):

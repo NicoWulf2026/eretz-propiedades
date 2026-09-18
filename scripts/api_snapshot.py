@@ -2,14 +2,9 @@
 # -*- coding: utf-8 -*-
 """Una base lista para servir la API, armada con datos locales reales.
 
-Produccion no responde y el frontend se esta construyendo igual. Sin esto,
-Codex tiene dos opciones malas: esperar, o construir contra mocks y descubrir
-en la integracion que la mitad de los campos son null.
-
-Esta snapshot es la tercera opcion: las 58.427 propiedades reales con la forma
-EXACTA que va a servir la API, indexadas para las consultas que el frontend
-hace de verdad -filtro por operacion, por tipo, por rango de precio, por area
-de busqueda-.
+Se deriva de los artefactos locales y del contrato de API vigente, con indices
+para filtros, precio y area de busqueda. Su cantidad y alcance se miden en cada
+construccion; no representa automaticamente el catalogo publicado en Supabase.
 
 **Es derivada y desechable.** Se reconstruye entera desde los artefactos
 locales, no se edita a mano y no es fuente de verdad de nada. Si el resultado
@@ -26,6 +21,7 @@ import sqlite3
 import sys
 import time
 from collections import Counter, defaultdict
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -41,6 +37,30 @@ def publish_snapshot(temporary: Path, output: Path, *, replace: bool = False) ->
         os.replace(temporary, output)
     else:
         _publish_no_clobber(temporary, output)
+
+
+@contextmanager
+def _snapshot_connections(source: Path, temporary: Path):
+    """Close handles and clean only our exclusively created build."""
+    owned = False
+    origen = api = None
+    try:
+        with temporary.open('xb'):
+            owned = True
+        origen = sqlite3.connect(f"file:{source.as_posix()}?mode=ro", uri=True)
+        api = sqlite3.connect(temporary)
+        yield origen, api
+    finally:
+        try:
+            if api is not None:
+                api.close()
+        finally:
+            try:
+                if origen is not None:
+                    origen.close()
+            finally:
+                if owned:
+                    temporary.unlink(missing_ok=True)
 from scripts.property_contract import alcances  # noqa: E402
 from scripts.image_quality import is_known_page_asset  # noqa: E402
 from scripts.plan_de_escritura import agencias_con_web_ajena  # noqa: E402
@@ -158,14 +178,20 @@ def main() -> int:
 
     salida.mkdir(parents=True, exist_ok=True)
     temporal = destino.with_name(f'{destino.name}.building.{os.getpid()}')
-    # An interrupted/failed build never truncates the artifact currently served.
-    with temporal.open('xb'):
-        pass
+    with _snapshot_connections(Path(args.db), temporal) as (origen, api):
+        resumen = _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino)
+        # Windows publication requires all SQLite file handles closed first.
+        api.close()
+        origen.close()
+        publish_snapshot(temporal, destino, replace=args.replace_derived)
+    (salida / "ERETZ_API_SNAPSHOT_SUMMARY.json").write_text(
+        json.dumps(resumen, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(json.dumps(resumen, ensure_ascii=False, indent=2))
+    return 0
 
-    origen = sqlite3.connect(f"file:{Path(args.db).as_posix()}?mode=ro", uri=True)
 
-    # Primera pasada: en cuantas propiedades de cada agencia aparece cada
-    # imagen. Sin esto no se puede distinguir una foto de un logo.
+def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
+    # Frecuencia por agencia para revisión; repetir no demuestra ser un logo.
     apariciones: dict[str, Counter] = defaultdict(Counter)
     for crudo, canonical in origen.execute(
             "select row_json, canonical_id from rows where status = 'CANDIDATE'"):
@@ -174,7 +200,6 @@ def main() -> int:
         for url in set(json.loads(crudo).get("imagenes") or []):
             apariciones[canonical][url] += 1
 
-    api = sqlite3.connect(temporal)
     api.executescript(ESQUEMA)
 
     filas = 0
@@ -253,13 +278,7 @@ def main() -> int:
         "artefacto": destino.name,
         "database_writes": 0,
     }
-    api.close()
-    origen.close()
-    publish_snapshot(temporal, destino, replace=args.replace_derived)
-    (salida / "ERETZ_API_SNAPSHOT_SUMMARY.json").write_text(
-        json.dumps(resumen, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(json.dumps(resumen, ensure_ascii=False, indent=2))
-    return 0
+    return resumen
 
 
 if __name__ == "__main__":
