@@ -98,3 +98,38 @@ def test_una_sola_agencia_de_red_con_otra_cualquiera_no_es_red():
     assert clasificar("https://x.com.ar",
                       ["roomix:re max noa", "roomix:lopez propiedades"]) != \
         "OFICINAS_DE_RED"
+
+
+def test_MUERDE_el_guion_bajo_no_esconde_un_directorio():
+    """Quinta vez que `\b` muerde a este proyecto, y siempre igual.
+
+    `\b` no casa antes de un guion BAJO porque el guion bajo es carácter de
+    palabra. `/comercializadores_de_propiedades_en_palermo` —una página que
+    lista a los comercializadores de un barrio, de nadie en particular—
+    quedaba `SIN_CLASIFICAR` y sus dos agencias sin corregir.
+
+    Las cuatro anteriores: `bottai inmueble_6076`, `fios propiedades`
+    relativo, `yacopino busqueda-de-propiedades-en-venta`, y
+    `/propiedad-9871962-…`.
+    """
+    assert clasificar("https://palermo.licuo.com.ar/comercializadores_de_propiedades_en_palermo",
+                      ["roomix:zarlenga propiedades",
+                       "roomix:uniprop inmobiliaria"]) == "DIRECTORIO_INSTITUCIONAL"
+
+
+def test_MUERDE_una_palabra_que_solo_EMPIEZA_igual_no_cuenta():
+    """El límite sigue existiendo: no se cambió por «contiene».
+
+    `/socioscomerciales` no es un padrón de socios, y aflojar hasta ahí sería
+    el error contrario —el que ya cometió la regla de páginas
+    institucionales, que marcaba 26 falsos positivos—.
+    """
+    assert clasificar("https://x.com.ar/socioscomerciales",
+                      ["roomix:una", "roomix:otra"]) != "DIRECTORIO_INSTITUCIONAL"
+
+
+def test_el_guion_medio_y_la_barra_tambien_valen_de_limite():
+    for url in ("https://x.com.ar/socios-y-socias",
+                "https://x.com.ar/colegiados/padron"):
+        assert clasificar(url, ["roomix:una", "roomix:otra"]) == \
+            "DIRECTORIO_INSTITUCIONAL"

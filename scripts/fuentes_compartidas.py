@@ -68,10 +68,21 @@ SALIDA = CERT / "ERETZ_FUENTES_COMPARTIDAS.json"
 
 # Rutas de una entidad que AGRUPA inmobiliarias: colegios, camaras, portales
 # con padron. Ninguna es la web de ninguno de sus miembros.
+#
+# El limite del final NO es `\b`, y es la quinta vez que este proyecto tropieza
+# con lo mismo. `\b` no casa antes de un guion BAJO, porque el guion bajo es
+# caracter de palabra: `/comercializadores_de_propiedades_en_palermo` -una
+# pagina que lista a los comercializadores de un barrio, de nadie en
+# particular- quedaba SIN_CLASIFICAR y sus dos agencias sin corregir.
+#
+# Lo que hace falta es "que no siga una letra". Eso acepta el guion bajo, el
+# guion medio y la barra, y sigue rechazando `/socioscomerciales`, que es el
+# error contrario y tambien conocido: la regla de paginas institucionales
+# marco 26 falsos positivos por aflojar hasta "contiene".
 RE_DIRECTORIO = re.compile(
     r"/(socios?|socias?|colegiados?|miembros?|padron|matriculados?|"
     r"asociados?|infractores?|comercializadores?|inmobiliarias?|"
-    r"agencias?|directorio)\b", re.I)
+    r"agencias?|directorio)(?![a-záéíóúñ])", re.I)
 
 # Buscadores: la pagina de resultados de un portal, que sirve el inventario de
 # todos sus anunciantes.
