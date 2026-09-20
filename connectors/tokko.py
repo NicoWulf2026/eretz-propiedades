@@ -38,6 +38,61 @@ POR_PAGINA = 20
 
 RE_FICHA = re.compile(r"/p/(\d+)-([^\"'?#]*)")
 RE_AJAX = re.compile(r"\$\.ajax\('([^']{20,900})'")
+
+# El template TFW cambio: antes la url de paginacion era literal y ahora la
+# arma un ayudante de JavaScript definido en la misma pagina.
+#
+#   antes:  $.ajax('/Propiedades?o=2,2&p=' + current_page)
+#   ahora:  $.ajax(tfwListingUrl('', {o: '2,2', p: current_page}))
+#
+#   function tfwListingUrl(searchQuery, values) {
+#     const params = new URLSearchParams(searchQuery);
+#     Object.keys(values).forEach(k => params.set(k, String(values[k])));
+#     return '?' + tfwRenderQuery(params);
+#   }
+#
+# Sin url literal, `query_paginacion` quedaba en None y `fetch_listing` cortaba
+# despues de la primera pagina: exactamente 20 avisos, que es `POR_PAGINA`.
+# `aagaard` paso de 297 enumeradas el 2026-09-09 a 20 el 2026-09-20, y
+# `abriola` dio el mismo 20. Comprobado contra la fuente que `?p=2` devuelve 20
+# ids NUEVOS: la paginacion funciona, faltaba saber pedirla.
+RE_AJAX_AYUDANTE = re.compile(
+    r"\$\.ajax\(\s*tfwListingUrl\(\s*'([^']*)'\s*,\s*\{([^}]{0,400})\}")
+# Pares `clave: 'valor'` o `clave: variable` dentro del objeto del ayudante.
+RE_PAR_AYUDANTE = re.compile(r"(\w+)\s*:\s*(?:'([^']*)'|\"([^\"]*)\"|([A-Za-z_]\w*))")
+# La clave de pagina es la que recibe una VARIABLE, no un literal: el numero lo
+# pone `fetch_listing` al concatenar.
+CLAVES_DE_PAGINA = ("p", "page", "pagina")
+
+
+def query_de_paginacion(html: str) -> str | None:
+    """La query que hay que concatenarle el numero de pagina, o None.
+
+    Primero la forma literal de siempre, que es la que usan la mayoria de las
+    86 agencias Tokko que hoy cierran bien. Despues la forma nueva con
+    ayudante. Si no hay ninguna de las dos no se inventa nada: pedir una
+    paginacion equivocada devuelve cero, que es peor que quedarse en 20.
+    """
+    literal = RE_AJAX.search(html or "")
+    if literal:
+        return literal.group(1)
+    ayudante = RE_AJAX_AYUDANTE.search(html or "")
+    if not ayudante:
+        return None
+    busqueda, cuerpo = ayudante.group(1), ayudante.group(2)
+    fijos: list[str] = []
+    clave_pagina: str | None = None
+    for clave, sim, dob, variable in RE_PAR_AYUDANTE.findall(cuerpo):
+        if variable and clave.lower() in CLAVES_DE_PAGINA:
+            clave_pagina = clave
+            continue
+        valor = sim or dob or variable
+        fijos.append(f"{clave}={valor}")
+    if clave_pagina is None:
+        # Sin clave de pagina, concatenar el numero inventaria un parametro.
+        return None
+    partes = [p for p in ([busqueda] if busqueda else []) + fijos if p]
+    return "?" + "&".join(partes + [f"{clave_pagina}="]) if partes else         f"?{clave_pagina}="
 RE_TOTAL = re.compile(r"(\d[\d.]*)\s*Resultados", re.I)
 RE_LOGO = re.compile(r"static\.tokkobroker\.com/logos/(\d+)/")
 RE_FOTO = re.compile(r"https://static\.tokkobroker\.com/(?:pictures|thumbs)/[^\"'\s)]+")
@@ -251,9 +306,12 @@ class TokkoConnector(Connector):
         if ruta and ruta != propia:
             listado = self.descargador.bajar(base + ruta)
 
-        m = RE_AJAX.search(listado)
-        plan["query_paginacion"] = m.group(1) if m else None
-        plan["pagina_por_query"] = bool(m and m.group(1).rstrip().endswith("&p="))
+        query = query_de_paginacion(listado)
+        plan["query_paginacion"] = query
+        plan["pagina_por_query"] = bool(
+            query and query.rstrip().endswith(("&p=", "?p=", "&page=",
+                                               "?page=", "&pagina=",
+                                               "?pagina=")))
         mt = RE_TOTAL.search(listado)
         crudo = mt.group(1).replace(".", "") if mt else ""
         plan["total_declarado"] = int(crudo) if crudo.isdigit() else None
