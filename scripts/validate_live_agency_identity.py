@@ -50,13 +50,24 @@ def main() -> int:
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
     disable_console_echo()
-    manifest = {}
+    # Cargar sin pisar. Dos filas con el mismo id son evidencia en conflicto
+    # sobre una identidad, y quedarse con la ultima es elegir sin decir que se
+    # eligio. Un dict indexado por id lo hacia en silencio.
+    manifest: dict[int, dict] = {}
     with Path(args.manifest).open(encoding="utf-8") as handle:
         for line in handle:
             row = json.loads(line)
-            if row.get("resolution_status") == "RESOLVED":
-                manifest[int(row["eretz_id"])] = row
-    live = {}
+            if row.get("resolution_status") != "RESOLVED":
+                continue
+            ident = int(row["eretz_id"])
+            if ident in manifest:
+                raise SystemExit(
+                    f"el manifest trae el eretz_id {ident} dos veces: "
+                    f"{manifest[ident].get('canonical_agency_id')} y "
+                    f"{row.get('canonical_agency_id')}. No se elige entre dos "
+                    f"identidades para el mismo id.")
+            manifest[ident] = row
+    live: dict[int, dict] = {}
     for line in sys.stdin:
         if not line.strip():
             continue
@@ -64,7 +75,22 @@ def main() -> int:
         if payload.get("_end"):
             break
         for row in payload.get("rows", []):
-            live[int(row["id"])] = row
+            ident = int(row["id"])
+            if ident in live:
+                raise SystemExit(
+                    f"llegaron dos filas vivas con el id {ident}: "
+                    f"{live[ident].get('nombre')!r} y {row.get('nombre')!r}. "
+                    f"No se elige entre dos filas para el mismo id.")
+            live[ident] = row
+
+    # Las filas inesperadas se comprueban ANTES de escribir nada. Un archivo de
+    # evidencia escrito por una corrida que despues levanta excepcion es peor
+    # que ninguno: parece bueno.
+    inesperadas = set(live) - set(manifest)
+    if inesperadas:
+        raise SystemExit(
+            f"llegaron {len(inesperadas)} filas vivas que el manifest no "
+            f"esperaba: {sorted(inesperadas)[:10]}")
     counts: Counter[str] = Counter()
     output = Path(args.output)
     with output.open("w", encoding="utf-8") as handle:
@@ -74,7 +100,23 @@ def main() -> int:
             official_host = host(canonical.get("official_domain"))
             live_host = host(row.get("web") if row else None)
             domain_match = bool(official_host and live_host and official_host == live_host)
-            status = "VALIDATED" if name_exact else "CONTRADICTION"
+            # Que el nombre coincida no prueba que sea la misma inmobiliaria.
+            # «Lopez Propiedades» hay muchas. El nombre normalizado es una
+            # evidencia y el dominio es otra; declarar VALIDATED con la primera
+            # sola era confundir evidencia de nombre con identidad.
+            #
+            # Y hay que distinguir «no coincide» de «no se pudo comparar»:
+            # tratar la ausencia de web como contradiccion convertiria un dato
+            # faltante en un error, y tratarla como validacion afirmaria lo que
+            # no se comprobo.
+            if not name_exact:
+                status = "CONTRADICTION"
+            elif domain_match:
+                status = "VALIDATED"
+            elif not live_host:
+                status = "NOMBRE_SIN_WEB_VIVA"
+            else:
+                status = "NOMBRE_SIN_DOMINIO"
             counts[status] += 1
             evidence = {
                 "canonical_agency_id": canonical["canonical_agency_id"],
@@ -91,11 +133,14 @@ def main() -> int:
                 },
             }
             handle.write(json.dumps(evidence, ensure_ascii=False, sort_keys=True) + "\n")
-    missing = set(live) - set(manifest)
-    if missing:
-        raise RuntimeError(f"received {len(missing)} unexpected live agency rows")
-    print(json.dumps({"expected": len(manifest), "received": len(live), **counts}, sort_keys=True))
-    return 0 if counts["CONTRADICTION"] == 0 and len(live) == len(manifest) else 2
+    print(json.dumps({"expected": len(manifest), "received": len(live),
+                      **counts}, sort_keys=True))
+    # `NOMBRE_SIN_DOMINIO` tambien falla: dos dominios distintos para el mismo
+    # nombre son evidencia EN CONFLICTO, no evidencia faltante.
+    # `NOMBRE_SIN_WEB_VIVA` no falla: ahi no hay contradiccion, hay un dato que
+    # no esta, y queda anotado para que se vea.
+    conflictos = counts["CONTRADICTION"] + counts["NOMBRE_SIN_DOMINIO"]
+    return 0 if conflictos == 0 and len(live) == len(manifest) else 2
 
 
 if __name__ == "__main__":
