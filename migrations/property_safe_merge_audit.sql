@@ -289,6 +289,19 @@ BEGIN
         current_row.id, p_source_id, p_run_id, p_audit
     );
 
+    -- Una mutacion sin rastro no puede existir. El argumento entero para usar
+    -- este RPC en vez del PATCH por REST es que deja auditoria, y hasta aca
+    -- una auditoria VACIA se aceptaba: se cambiaban campos y no quedaba
+    -- ninguna fila diciendo cuales. La FORMA de la auditoria ya se validaba
+    -- -una malformada hace rollback-; lo que faltaba era exigir que exista.
+    --
+    -- Con `changed_fields = 0` no se exige nada, y esta bien: una llamada que
+    -- no cambia nada no tiene nada que auditar.
+    IF changed_fields > 0 AND audit_rows = 0 THEN
+        RAISE EXCEPTION 'merge changed % fields without audit evidence',
+            changed_fields;
+    END IF;
+
     RETURN jsonb_build_object(
         'status', CASE WHEN changed_fields > 0 THEN 'updated' ELSE 'unchanged' END,
         'property_id', current_row.id,
