@@ -158,6 +158,44 @@ son el 100 %.
 
 ---
 
+## 5 bis. El arreglo de Tokko, confirmado en producción
+
+La cola lo corrió sola, sin intervención:
+
+| agencia | antes | después |
+|---|---|---|
+| `aagaard` | 20 | **295 de 295 declaradas** · `CERTIFIED_COMPLETE` |
+| `abriola` | 20 | **263 de 263 declaradas** · `CERTIFIED_COMPLETE` |
+| `acevedo` | — | 86 de 86 · `CERTIFIED_COMPLETE` |
+| `adrian mitre` | — | 42 de 42 · `CERTIFIED_COMPLETE` |
+| `agostinelli` | — | 388 de 388 enumeradas |
+
+**+538 propiedades sólo entre `aagaard` y `abriola`**, y todas cerrando contra
+su total declarado.
+
+---
+
+## 5 ter. Y la franja imposible entre los dos topes
+
+`agostinelli` enumeró sus 388 completas y **paró las dos colas por ocho
+coordenadas de 154** (5,2 %).
+
+El problema no era ninguno de los dos topes sino su intersección: para ser
+menor había que cumplir ≤4 fichas **y** ≤2 %. Una agencia chica no pasa el
+porcentual (2 de 54 = 3,7 %); una grande no pasa el absoluto (8 de 154 son
+ocho fichas). Sólo calificaban los defectos de una o dos fichas sobre bases
+enormes.
+
+De los 287 casos históricos con ratio ≤ 0,10, el reparto por cantidad de
+fallas tiene un hueco claro entre **9 y 20**: no hay ninguno. El tope absoluto
+pasó de 4 a **10**, puesto en ese hueco. Eran 42 casos en 9 agencias.
+
+Cuatro tests viejos afirmaban el tope de 4. Los leí antes de darlos vuelta: lo
+que afirmaban era la constante, no un principio. Reescritos con la medición, y
+se agregó el borde por el otro lado.
+
+---
+
 ## 6. NEXT-001 cerrado, y era endurecimiento y no reparación
 
 Medido sobre el ledger real de 2.501 filas: **0** JSON inválido, **0** filas sin
