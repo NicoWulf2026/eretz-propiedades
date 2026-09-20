@@ -29,8 +29,9 @@ from scripts.preingestion_manifest import base_canonica  # noqa: E402
 from scripts.property_observations import (  # noqa: E402
     registrar as registrar_observacion)
 from scripts.defect_triage import senales_de_catalogo  # noqa: E402
-from scripts.defect_triage import (STOP, clasificar,  # noqa: E402
-                                   debe_cortar_por_lote)
+from scripts.defect_triage import (STOP, anotar_corte,  # noqa: E402
+                                   clasificar, debe_cortar_por_lote,
+                                   defectos_ya_cortados)
 from scripts.agency_certifier import (
     CERTIFIER_VERSION,
     append_jsonl,
@@ -902,6 +903,9 @@ def main() -> int:
     (output / BANDERA_DE_PARO).unlink(missing_ok=True)
     stopped_on: str | None = None
     defectos_pendientes: list[dict[str, Any]] = []
+    # Que lotes ya provocaron un corte. Un corte es un pedido de atencion:
+    # repetirlo sobre los mismos defectos no informa nada y cuesta un paro.
+    ruta_de_cortes = output / "ERETZ_CORTES_POR_LOTE.jsonl"
     pospuestos = diferidos(output)
     for index, canonical_id in enumerate(pending, 1):
         # Un defecto transversal lo es para los dos workers. Se mira ANTES de
@@ -1008,7 +1012,11 @@ def main() -> int:
         print(json.dumps({"position": index, "total": len(pending),
                           "agency": canonical_id, "status": result["status"]}), flush=True)
         if triage is not None and not args.continue_after_fix:
-            corta, motivo_lote = debe_cortar_por_lote(defectos_pendientes)
+            # La memoria de cortes: un lote que ya pidio atencion no la
+            # vuelve a pedir. Tres cortes identicos medidos en `gomez`.
+            corta, motivo_lote = debe_cortar_por_lote(
+                defectos_pendientes,
+                ya_cortados=defectos_ya_cortados(ruta_de_cortes))
             if triage.get("paro_diferido"):
                 # El paro es el que ya se miro y se posterga. Se anota entero
                 # -la agencia igual cierra NEEDS_FIX y el defecto queda en la
@@ -1037,6 +1045,7 @@ def main() -> int:
             if corta:
                 # El defecto era continuable, pero el lote acumulado ya no.
                 # Se corta ACA, que es un checkpoint recien escrito.
+                anotar_corte(ruta_de_cortes, defectos_pendientes, motivo_lote)
                 stopped_on = canonical_id
                 if args.workers > 1:
                     pedir_paro(output, canonical_id,

@@ -27,9 +27,11 @@ No escribe en ninguna base.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import time
+from pathlib import Path
 from typing import Any
 
 TRIAGE_VERSION = "defect_triage_v1"
@@ -561,16 +563,99 @@ DEFECTOS_PARA_CORTAR = 5
 HORAS_PARA_CORTAR = 12
 
 
+def identidad_de_defecto(defecto: dict[str, Any]) -> str:
+    """Lo que hace a un defecto EL MISMO defecto entre dos pasadas.
+
+    Agencia, componente y huella de estrategia. Nada mas: ni la fecha ni la
+    evidencia, que traen la hora y el conteo del momento y harian que cada
+    pasada produjera una identidad nueva -y entonces la memoria no recordaria
+    nada-.
+
+    La huella SI entra, y es deliberado. Si cambiamos el codigo, el defecto de
+    antes puede no ser el de ahora y merece volver a contar. Sin ese campo, un
+    arreglo que no funciono quedaria silenciado para siempre, que es el modo de
+    falla peligroso de cualquier memoria.
+    """
+    return "|".join((str(defecto.get("canonical_agency_id") or ""),
+                     str(defecto.get("componente_sospechoso") or ""),
+                     str(defecto.get("strategy_fingerprint") or "")))
+
+
+def defectos_ya_cortados(ruta) -> frozenset[str]:
+    """Las identidades que ya provocaron un corte alguna vez.
+
+    Si el archivo no se puede leer se devuelve vacio, y eso hace **cortar de
+    mas**, no de menos: un corte sobrante cuesta un relanzamiento y uno
+    faltante deja corriendo codigo sospechado.
+    """
+    ruta = Path(ruta)
+    if not ruta.exists():
+        return frozenset()
+    vistos: set[str] = set()
+    try:
+        for linea in ruta.open(encoding="utf-8", errors="replace"):
+            linea = linea.strip()
+            if not linea:
+                continue
+            try:
+                fila = json.loads(linea)
+            except ValueError:
+                continue
+            for identidad in (fila.get("defectos") or []):
+                if isinstance(identidad, str):
+                    vistos.add(identidad)
+    except OSError:
+        return frozenset()
+    return frozenset(vistos)
+
+
+def anotar_corte(ruta, pendientes: list[dict[str, Any]], motivo: str) -> None:
+    """Deja escrito que este lote ya pidio atencion, y cual era."""
+    ruta = Path(ruta)
+    ruta.parent.mkdir(parents=True, exist_ok=True)
+    with ruta.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps({
+            "cuando": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "motivo": motivo,
+            "defectos": [identidad_de_defecto(d) for d in pendientes],
+            "agencias": [d.get("canonical_agency_id") for d in pendientes],
+        }, ensure_ascii=False) + "\n")
+
+
 def debe_cortar_por_lote(pendientes: list[dict[str, Any]],
-                         ahora: float | None = None) -> tuple[bool, str]:
+                         ahora: float | None = None,
+                         ya_cortados: frozenset[str] = frozenset(),
+                         ) -> tuple[bool, str]:
     """Si conviene detenerse aunque cada defecto fuera continuable.
 
     Cinco defectos sueltos ya justifican una tanda de diagnostico, y dos con la
     misma firma dejaron de ser casualidad: es el mismo problema apareciendo dos
     veces, y eso es exactamente lo que un radio mal estimado produce.
+
+    Un corte que ya se dio no se vuelve a dar
+    -----------------------------------------
+    Medido sobre el log real: los tres ultimos cortes del worker 1 pararon en
+    la MISMA agencia -`gomez servicios inmobiliarios`- con EXACTAMENTE los
+    mismos cinco defectos, y ninguna de las cinco tenia diferida escrita. La
+    cola se relanzaba, recorria el mismo tramo, reacumulaba los mismos cinco y
+    volvia a cortar. Tres cortes por la misma informacion.
+
+    Un corte por lote es un pedido de atencion sobre un conjunto concreto de
+    defectos. Una vez hecho, repetirlo no informa nada nuevo -la informacion ya
+    esta en la cola de defectos y en los reportes- y si cuesta un paro completo
+    mas un relanzamiento a mano.
+
+    Lo que cambia es **que cuenta**, no que se registra: el registro completo
+    se conserva, y el radio, el ranking y los reportes lo siguen usando entero.
     """
     if not pendientes:
         return False, ""
+
+    if ya_cortados:
+        pendientes = [d for d in pendientes
+                      if identidad_de_defecto(d) not in ya_cortados]
+        if not pendientes:
+            return False, ""
 
     # Los de baja magnitud no cuentan para el umbral. El corte junta defectos
     # para diagnosticarlos de a tanda, y un defecto clasificado por magnitud es
