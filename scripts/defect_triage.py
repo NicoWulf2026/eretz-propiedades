@@ -192,7 +192,28 @@ def firma(resultado: dict[str, Any], componente: str) -> str:
 # cuatro propiedades, y discutir si el 2,0 % entra o no entra por un decimal
 # no cambia nada del mundo real. El quinto caso ya no pasa ni por el tope de
 # fichas ni por el porcentual.
-TOPE_DE_FICHAS_MENORES = 4
+# El tope absoluto estuvo en 4 y, junto al porcentual, dejaba una franja
+# imposible: las agencias chicas no pasaban el porcentual y las grandes no
+# pasaban el absoluto. Medido sobre los 778 casos de EXTRACTION_FAILED del
+# historial, 287 tienen ratio <= 0,10 y se reparten asi por cantidad de fallas:
+#
+#     1 falla   206 casos        6 fallas    2
+#     2          14              7           3
+#     3          10              8           4
+#     4          15              9           1
+#     5          30             20+          2
+#
+# Entre 9 y 20 hay un hueco. El tope en 10 admite todo lo que esta debajo del
+# hueco y deja afuera los dos casos grandes -27 de 395 y 20 de 254-.
+#
+# Eran 42 casos en 9 agencias los que caian por el absoluto teniendo un ratio
+# chico: `agostinelli` con 8 coordenadas de 154 -5,2 %- paro las dos colas
+# teniendo las 388 propiedades enumeradas y completas.
+#
+# El riesgo de subirlo -perder la senal de un fallo sistematico- no se
+# materializa: la regla de "dos defectos con la misma firma" SI cuenta los
+# menores, asi que un campo que falla igual en dos agencias sigue cortando.
+TOPE_DE_FICHAS_MENORES = 10
 # El porcentual estuvo en 0,02 y frenaba de mas. Medido sobre los 382 casos
 # historicos con 4 fallas o menos:
 #

@@ -56,15 +56,36 @@ def test_cuatro_de_doscientos_no_para():
     assert t["decision"] == CONTINUE
 
 
-def test_cinco_de_doscientos_si_para():
-    """El tope absoluto es 4: el quinto ya no es 'una ficha rara'."""
+def test_cinco_de_doscientos_ya_no_para():
+    """El tope absoluto paso de 4 a 10, y la razon esta medida.
+
+    Entre los dos topes quedaba una franja imposible: las agencias chicas no
+    pasaban el porcentual -2 de 54 es 3,7 %- y las grandes no pasaban el
+    absoluto -8 de 154 es 5,2 % y son ocho fichas-. Eran 42 casos en 9
+    agencias, y `agostinelli` paro las dos colas con sus 388 propiedades
+    enumeradas y completas.
+
+    Cinco de doscientos es el 2,5 %: se registra, se rankea y aparece en los
+    reportes, pero no detiene el padron.
+    """
     t = clasificar(resultado({"banos": (5, 200)}))
-    assert t["decision"] == STOP
-    assert t["componente_sospechoso"] == "extraccion_transversal_de_atributos"
+    assert t["componente_sospechoso"] == "extraccion_de_baja_magnitud"
 
 
-def test_diez_de_doscientos_para():
+def test_diez_de_doscientos_tampoco():
+    """Diez es el tope exacto, y esta puesto en el hueco de los datos.
+
+    De los 287 casos historicos con ratio <= 0,10, ninguno tiene entre 9 y 20
+    fallas. Arriba de ese hueco hay dos -27 de 395 y 20 de 254- y esos siguen
+    parando.
+    """
     t = clasificar(resultado({"banos": (10, 200)}))
+    assert t["componente_sospechoso"] == "extraccion_de_baja_magnitud"
+
+
+def test_once_de_doscientos_vuelve_a_parar():
+    """El tope es inclusivo y el que sigue ya no pasa."""
+    t = clasificar(resultado({"banos": (11, 200)}))
     assert t["decision"] == STOP
 
 
@@ -195,7 +216,8 @@ def test_sin_defectos_no_inventa_uno_menor():
 @pytest.mark.parametrize("campos,esperado", [
     ({"descripcion": (1, 275)}, CONTINUE),
     ({"banos": (4, 300)}, CONTINUE),
-    ({"banos": (5, 300)}, STOP),
+    ({"banos": (5, 300)}, CONTINUE),   # 1,7 %: menor desde el tope nuevo
+    ({"banos": (11, 300)}, STOP),      # once ya pasa el tope absoluto
     ({"precio": (1207, 1211)}, STOP),
     ({"ambientes": (48, 59)}, STOP),
     ({"ambientes": (11, 23)}, STOP),
@@ -437,8 +459,40 @@ def test_MUERDE_cuando_el_campo_falla_en_TODO_lo_que_hay_no_es_menor():
                                     ["ambientes"])
 
 
-def test_cinco_fallas_siguen_sin_ser_menores_por_muchas_que_haya():
-    """El tope absoluto no se movio: cinco fichas son cinco fichas."""
+def test_once_fallas_no_son_menores_por_muchas_propiedades_que_haya():
+    """El tope absoluto se movio de 4 a 10, pero sigue existiendo.
+
+    Cinco de cinco mil paso a ser menor -el 0,1 %-, y esta bien: cinco
+    propiedades sobre cinco mil no justifican detener el padron. Once si
+    excede el tope, por chico que sea el porcentaje.
+    """
     from scripts.defect_triage import _es_de_baja_magnitud
-    assert not _es_de_baja_magnitud(_resultado("ambientes", 5, 5000, 5000),
+    assert _es_de_baja_magnitud(_resultado("ambientes", 5, 5000, 5000),
+                                ["ambientes"])
+    assert not _es_de_baja_magnitud(_resultado("ambientes", 11, 5000, 5000),
                                     ["ambientes"])
+
+
+def test_MUERDE_ocho_coordenadas_de_154_son_menores():
+    """El paro de `agostinelli propiedades`.
+
+    388 propiedades enumeradas y completas, y las dos colas detenidas porque
+    ocho fichas de 154 no traian coordenada. 5,2 %.
+
+    Entre los dos topes quedaba una franja imposible: las agencias chicas no
+    pasaban el porcentual y las grandes no pasaban el absoluto. Eran 42 casos
+    en 9 agencias.
+    """
+    from scripts.defect_triage import _es_de_baja_magnitud
+    assert _es_de_baja_magnitud(_resultado("latitud", 8, 154, 388), ["latitud"])
+
+
+def test_veintisiete_de_395_sigue_sin_ser_menor():
+    """Arriba del hueco de los datos, el defecto vuelve a merecer atencion.
+
+    Entre 9 y 20 fallas no hay ningun caso historico: el tope esta puesto ahi
+    y no en un numero redondo elegido a ojo.
+    """
+    from scripts.defect_triage import _es_de_baja_magnitud
+    assert not _es_de_baja_magnitud(_resultado("tipo_propiedad", 27, 395, 395),
+                                    ["tipo_propiedad"])
