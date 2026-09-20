@@ -550,10 +550,18 @@ Comprobado antes de dar el handoff por cerrado:
   agregó un test; los 4 que fallaban eran del almanaque y están corregidos.
 - **El repo versionado reproduce la candidata**: `git status` limpio; el árbol
   contiene `b36d8462df` entero y la suite corre sin nada de fuera del repo.
-- **No se depende de otro worktree**: la suite corre con `cwd` en
-  `eretz-unified` y sin `PYTHONPATH` externo. Los scripts que necesitan las
-  rutas de la cola las llevan escritas y declaradas, no descubiertas con un glob
-  —precisamente el error que dejó cinco correcciones inertes—.
+- **No se depende de otro worktree — probado, no argumentado**: se creó un
+  bundle de respaldo, se clonó en un directorio temporal fuera de los nueve
+  worktrees, y la suite corrió ahí: **2634 passed en 126,64 s**. Un clon limpio
+  que pasa entero es la prueba de que ningún import ni ningún path apunta
+  afuera del repo. Los scripts que sí necesitan las rutas de la cola las llevan
+  escritas y declaradas, no descubiertas con un glob —precisamente el error que
+  dejó cinco correcciones inertes—.
+- **Bundle de respaldo**: `D:\INMO CAPITAL\ERETZ_HANDOFF_2026-09-20.bundle`,
+  5.067.740 bytes, con `handoff/codex-unificacion-2026-09-18` y `main`.
+  `git bundle verify` → «records a complete history». El clon reprodujo
+  `b857ce6129`, 941 archivos, 860 commits. Sin secretos ni artefactos externos:
+  contiene sólo lo versionado.
 - **Sin secretos**: escaneo de los archivos versionados y de los 39 de
   cuarentena buscando JWT `eyJ`, tokens `sbp_`, cadenas de conexión con
   contraseña y asignaciones literales a `api_key`/`service_role`/`password`/
