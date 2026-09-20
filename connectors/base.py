@@ -634,6 +634,15 @@ class Connector:
         self.descargador = descargador or Descargador()
         self.checkpoint = checkpoint
         self.errores: list[dict[str, Any]] = []
+        # La paginacion se corto sin llegar al final: un error transitorio o un
+        # bloqueo en medio del listado. NO es lo mismo que haberla agotado.
+        #
+        # Lo motiva un caso de Tokko -el conector dejo de saber pedir la pagina
+        # 2 y devolvia 20 de 295 declaradas- pero el riesgo es compartido: los
+        # cinco conectores tienen un `except (ErrorTransitorio, Bloqueado):
+        # break` en su bucle de listado, y sin esta marca una caida de red a
+        # mitad de camino se certificaba como catalogo completo.
+        self.paginacion_interrumpida = False
         # Si el baseline de cada fuente es comparable con la version de huella
         # de hoy. Se decide una vez por fuente, no una vez por propiedad.
         self._version_evaluada: dict[str, bool] = {}

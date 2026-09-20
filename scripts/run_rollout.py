@@ -53,6 +53,38 @@ CONNECTORS = {"tokko": TokkoConnector, "wordpress": WordPressConnector,
 # Una fuente que declara 299 y entrega 20 no puede quedar como PASS.
 COBERTURA_MINIMA = 0.98
 
+
+def enumeracion_es_completa(cobertura: float | None,
+                            paginacion_imposible: bool = False) -> bool:
+    """Si esta corrida probo haber visto todo el catalogo.
+
+    Sin total declarado la paginacion se da por agotada cuando una pagina no
+    trae ids nuevos; con total declarado, la comparacion manda.
+
+    Y hay un tercer caso que faltaba, que es el que dejo pasar el defecto de
+    Tokko del 2026-09-20: la paginacion **no pudo continuar**. El conector
+    devolvio los 20 avisos de la primera pagina y corto porque no sabia pedir
+    la segunda. Eso no es haber terminado: es no haber podido seguir.
+
+    La linea anterior decia
+
+        cobertura is None or cobertura >= COBERTURA_MINIMA
+
+    y `cobertura is None` significa "no hay total declarado", o sea NO SE, y
+    estaba escrito como SI. Esa vez la cola lo atrapo igual porque la fuente
+    declaraba 295 y la guarda `catalogo_declarado_mayor_que_el_enumerado`
+    comparo. Pero esa guarda depende de que la fuente declare, y medido sobre
+    las 166 certificaciones vigentes hay **16 sin techo declarado** que nadie
+    mira.
+
+    Una cobertura alta tampoco salva: si no se pudo paginar, se calculo sobre
+    lo unico que se vio. Y los contadores de las fuentes se equivocan
+    -`berrueta` declara 197 y sirve 193-, asi que no son un respaldo.
+    """
+    if paginacion_imposible:
+        return False
+    return cobertura is None or cobertura >= COBERTURA_MINIMA
+
 # Cuanto puede tardar UNA fuente antes de que se le corte el detalle.
 #
 # Un host que acepta la conexion y despues no contesta cuesta 75 segundos por
@@ -322,6 +354,10 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
               "total_declarado": plan.get("total_declarado"),
               "tokko_client_id": plan.get("tokko_client_id"),
               "ruta_listado": plan.get("ruta_listado"),
+              # Lo sabe el conector en `discover` y decide si esta corrida
+              # puede afirmar haber visto todo. Sin traerlo aca, la senal se
+              # calculaba y se perdia.
+              "paginacion_imposible": bool(plan.get("paginacion_imposible")),
               "fuera_de_servicio": plan.get("fuera_de_servicio")})
     if not plan["soportada"]:
         # Decir que una fuente no tiene inventario exige haber LEIDO algo de
@@ -376,10 +412,14 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
     r["registros_declarados_contabilizados"] = contabilizadas
     r["cobertura"] = (round(min(contabilizadas, declarado) / declarado, 4)
                       if declarado else None)
-    # Sin total declarado la paginacion se da por agotada cuando una pagina no
-    # trae ids nuevos; con total declarado, la comparacion manda.
-    r["enumeracion_completa"] = (r["cobertura"] is None or
-                                 r["cobertura"] >= COBERTURA_MINIMA)
+    # Dos maneras distintas de no haber terminado, y las dos cuentan: el plan
+    # no podia paginar desde el principio -Tokko sin query-, o la paginacion se
+    # corto en el camino por una caida de red o un bloqueo.
+    r["paginacion_interrumpida"] = bool(
+        getattr(con, "paginacion_interrumpida", False))
+    r["enumeracion_completa"] = enumeracion_es_completa(
+        r["cobertura"],
+        bool(r.get("paginacion_imposible")) or r["paginacion_interrumpida"])
     # Si la paginacion llego hasta el final o si la cortaron. Sin esta
     # distincion, quedarse corto contra el total que declara el sitio se leia
     # siempre como un defecto nuestro, y el contador del sitio puede estar mal:

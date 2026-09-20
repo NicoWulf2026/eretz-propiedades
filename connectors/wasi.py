@@ -247,6 +247,8 @@ class WasiConnector(Connector):
             except ErrorPermanente:
                 break
             except (ErrorTransitorio, Bloqueado):
+                # Cortar por red caida no es haber llegado al final.
+                self.paginacion_interrumpida = True
                 break
 
             nuevos = 0

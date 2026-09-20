@@ -92,7 +92,11 @@ def query_de_paginacion(html: str) -> str | None:
         # Sin clave de pagina, concatenar el numero inventaria un parametro.
         return None
     partes = [p for p in ([busqueda] if busqueda else []) + fijos if p]
-    return "?" + "&".join(partes + [f"{clave_pagina}="]) if partes else         f"?{clave_pagina}="
+    if not partes:
+        return f"?{clave_pagina}="
+    return "?" + "&".join(partes + [f"{clave_pagina}="])
+
+
 RE_TOTAL = re.compile(r"(\d[\d.]*)\s*Resultados", re.I)
 RE_LOGO = re.compile(r"static\.tokkobroker\.com/logos/(\d+)/")
 RE_FOTO = re.compile(r"https://static\.tokkobroker\.com/(?:pictures|thumbs)/[^\"'\s)]+")
@@ -327,7 +331,24 @@ class TokkoConnector(Connector):
         else:
             plan["variante"] = "SIN_MARCADOR"
         plan["soportada"] = plan["variante"] in self.variantes_soportadas
+        plan["paginacion_imposible"] = self.paginacion_imposible(plan)
         return plan
+
+    @staticmethod
+    def paginacion_imposible(plan: dict[str, Any]) -> bool:
+        """Este plan solo puede devolver la primera pagina.
+
+        Un TFW con fichas en la primera pagina y SIN query de paginacion no
+        tiene como pedir la segunda: `fetch_listing` cae en `else: break` y
+        devuelve exactamente `POR_PAGINA` avisos. Se sabe aca, antes de bajar
+        nada mas, y por eso se anota aca en vez de inferirlo despues.
+
+        Cero fichas NO es un truncamiento: es otra cosa y tiene su propio
+        defecto. Mezclarlos haria que "no pudimos paginar" y "no hay nada" se
+        diagnostiquen igual.
+        """
+        return bool(plan.get("ids_primera_pagina")
+                    and not plan.get("query_paginacion"))
 
     def foto_verificable(self) -> bool:
         """La ruta del CDN de Tokko lleva el id de la propiedad adelante."""
@@ -388,6 +409,8 @@ class TokkoConnector(Connector):
                     # inmobiliaria.
                     break
                 except (ErrorTransitorio, Bloqueado):
+                    # Cortar por red caida no es haber llegado al final.
+                    self.paginacion_interrumpida = True
                     break
 
                 hallados = RE_FICHA.findall(html)

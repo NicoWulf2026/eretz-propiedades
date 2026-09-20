@@ -118,6 +118,8 @@ class Century21Connector(Connector):
                 except (ValueError, ErrorPermanente):
                     break
                 except (ErrorTransitorio, Bloqueado):
+                    # Cortar por red caida no es haber llegado al final.
+                    self.paginacion_interrumpida = True
                     break
                 items = datos.get("results") or []
             if not items:

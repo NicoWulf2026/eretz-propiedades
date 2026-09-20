@@ -500,6 +500,8 @@ class WordPressConnector(Connector):
                 # es el final del listado, no un fallo.
                 break
             except (ErrorTransitorio, Bloqueado):
+                # Cortar por red caida no es haber llegado al final.
+                self.paginacion_interrumpida = True
                 break
             if not isinstance(items, list) or not items:
                 break
@@ -544,7 +546,13 @@ class WordPressConnector(Connector):
             url = f"{base}/{ruta}/" if pagina == 1 else f"{base}/{ruta}/page/{pagina}/"
             try:
                 html = self.descargador.bajar(url)
-            except (ErrorTransitorio, ErrorPermanente, Bloqueado):
+            except ErrorPermanente:
+                # WordPress devuelve 404 en la pagina que ya no existe: eso SI
+                # es el final del listado.
+                break
+            except (ErrorTransitorio, Bloqueado):
+                # Una caida de red a mitad de camino no lo es.
+                self.paginacion_interrumpida = True
                 break
             nuevos = 0
             for m in re.finditer(rf'href="({re.escape(base)}/{re.escape(ruta)}/[^"/]+/?)"', html):
