@@ -77,6 +77,10 @@ MAX_CATEGORIAS = 12
 # Paginado del proxy Tokko y tope de seguridad.
 PAGINA_TOKKO_PROXY = 50
 TOPE_TOKKO_PROXY = 5000
+# Cuantas veces se repite el barrido completo. Cuatro es el mismo numero que
+# usa `connectors/tokko.py` contra la misma API, y por la misma razon: el
+# conjunto viene reordenado entre pedidos.
+MAX_BARRIDOS_TOKKO_PROXY = 4
 
 SITEMAPS = ("/sitemap.xml", "/sitemap_index.xml", "/wp-sitemap.xml",
             "/sitemap-index.xml", "/sitemapindex.xml")
@@ -1556,32 +1560,62 @@ class GenericoConnector(Connector):
             # `count` para terminar: un total declarado que miente cortaria la
             # enumeracion antes de tiempo, y perder inventario en silencio es
             # justamente lo que este connector viene a evitar.
+            #
+            # Y se repite el barrido, por la misma razon que `connectors/
+            # tokko.py` ya tenia documentada y resuelta:
+            #
+            #   "Tokko reordena el conjunto entre pedidos: dos barridos
+            #    identicos devuelven subconjuntos distintos, asi que una sola
+            #    pasada deja afuera entre un 6% y un 14% del inventario aunque
+            #    recorra todas las paginas que el total declarado implica."
+            #
+            # Esta estrategia lee la MISMA API desde el frontend propio de la
+            # agencia y no habia heredado la contramedida. `alta inmobiliaria`
+            # dio 16 en una corrida y 18 en la siguiente, once segundos
+            # despues: 11 % faltante, dentro de esa banda. La cola lo leyo
+            # como no idempotente y paro con radio COMPARTIDO, que detiene a
+            # los dos workers.
             base_ = plan["base"]
             ruta = plan["tokko_proxy_ruta"]
-            offset, pagina, vistos = 0, 0, set()
-            while offset < TOPE_TOKKO_PROXY:
-                pagina += 1
-                try:
-                    cuerpo = self.descargador.bajar(
-                        f"{base_}{ruta}?limit={PAGINA_TOKKO_PROXY}&offset={offset}")
-                except (ErrorTransitorio, ErrorPermanente, Bloqueado):
+            declarado = plan.get("total_declarado")
+            vistos: set[str] = set()
+            pagina = 0
+            for _ in range(MAX_BARRIDOS_TOKKO_PROXY):
+                antes = len(vistos)
+                offset = 0
+                while offset < TOPE_TOKKO_PROXY:
+                    pagina += 1
+                    try:
+                        cuerpo = self.descargador.bajar(
+                            f"{base_}{ruta}?limit={PAGINA_TOKKO_PROXY}"
+                            f"&offset={offset}")
+                    except (ErrorTransitorio, ErrorPermanente, Bloqueado):
+                        # Cortar por red caida no es haber llegado al final.
+                        self.paginacion_interrumpida = True
+                        break
+                    try:
+                        objetos = (json.loads(cuerpo) or {}).get("objects") or []
+                    except (json.JSONDecodeError, TypeError):
+                        break
+                    if not objetos:
+                        break
+                    for objeto in objetos:
+                        identificador = str(objeto.get("id") or "").strip()
+                        if not identificador or identificador in vistos:
+                            continue
+                        vistos.add(identificador)
+                        yield {"source_listing_id": identificador,
+                               "source_url": f"{base_}/propiedad/{identificador}",
+                               "pagina": pagina,
+                               "tokko_objeto": objeto}
+                    offset += PAGINA_TOKKO_PROXY
+                # Otro barrido solo si el anterior aporto algo Y todavia falta
+                # material. Repetir sin freno multiplicaria los pedidos a una
+                # fuente ajena por el numero de barridos.
+                if len(vistos) == antes:
                     break
-                try:
-                    objetos = (json.loads(cuerpo) or {}).get("objects") or []
-                except (json.JSONDecodeError, TypeError):
+                if declarado and len(vistos) >= int(declarado):
                     break
-                if not objetos:
-                    break
-                for objeto in objetos:
-                    identificador = str(objeto.get("id") or "").strip()
-                    if not identificador or identificador in vistos:
-                        continue
-                    vistos.add(identificador)
-                    yield {"source_listing_id": identificador,
-                           "source_url": f"{base_}/propiedad/{identificador}",
-                           "pagina": pagina,
-                           "tokko_objeto": objeto}
-                offset += PAGINA_TOKKO_PROXY
             return
         if plan["variante"] in ("SITEMAP", "CATEGORY_HTML_CATALOG"):
             for i, u in enumerate(plan["fichas"], 1):
