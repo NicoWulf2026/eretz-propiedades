@@ -121,10 +121,79 @@ SOURCE_SIGNALS = {
 }
 
 
+# Tipos de schema.org que describen a la INMOBILIARIA o al sitio, nunca a una
+# propiedad. Un bloque JSON-LD hecho solo de estos es la tarjeta institucional.
+TIPOS_INSTITUCIONALES = frozenset({
+    "realestateagent", "organization", "localbusiness", "corporation",
+    "website", "webpage", "breadcrumblist", "searchaction", "imageobject",
+    "person", "collectionpage", "itemlist",
+})
+
+RE_JSON_LD = re.compile(
+    r"<script[^>]+application/ld\+json[^>]*>(.*?)</script>", re.S | re.I)
+
+
+def _tipos_del_bloque(dato: Any) -> list[str]:
+    """Los `@type` de todos los nodos de un bloque, en minusculas."""
+    tipos: list[str] = []
+    pendientes = [dato]
+    while pendientes:
+        actual = pendientes.pop()
+        if isinstance(actual, list):
+            pendientes.extend(actual)
+        elif isinstance(actual, dict):
+            crudo = actual.get("@type")
+            for tipo in (crudo if isinstance(crudo, list) else [crudo]):
+                if isinstance(tipo, str):
+                    tipos.append(tipo.strip().lower())
+            for clave in ("@graph", "itemListElement", "mainEntity"):
+                if clave in actual:
+                    pendientes.append(actual[clave])
+    return tipos
+
+
+def sin_ficha_de_la_agencia(body: str) -> str:
+    """Quita los bloques JSON-LD que describen a la agencia y no a la ficha.
+
+    `arturo pereyra` paro la cola con radio FAMILIA: la senal decia que la
+    fuente publica `ciudad` en 36 de 36 fichas y el extractor no sacaba
+    ninguna. La unica `addressLocality` de la pagina estaba en un nodo
+    `RealEstateAgent` con la direccion de la OFICINA -Sarmiento 1726, Rosario-.
+
+    El extractor tiene razon en no tomarla: usar la ciudad de la oficina como
+    ciudad de cada propiedad pondria las 36 en Rosario esten donde esten, que
+    es inventar geografia. La que estaba mal era la senal, que se conformo con
+    que la palabra apareciera. Es la misma forma que el patron de `ambientes`
+    encontrando "ambiente 1" dentro de MONOambiente, y que
+    `inmobiliariacip` publicando `data-lat=""` vacio en 49 fichas.
+
+    Medido: 4 agencias y 838 propiedades con `ciudad` disparando en el 100 % y
+    fallando en el 100 %. Confirmado el mismo nodo en `arturo pereyra` y en
+    `bottega`.
+
+    Se quita el bloque SOLO si todos sus nodos son institucionales. Un bloque
+    mixto -la tarjeta y la propiedad en el mismo `@graph`- se conserva entero,
+    porque descartarlo perderia la ciudad real. Y un bloque que no se puede
+    parsear tampoco se toca: si no se entendio, no se puede afirmar que sea
+    institucional, y borrarlo seria silenciar evidencia.
+    """
+    def decidir(match: "re.Match[str]") -> str:
+        crudo = match.group(1).strip()
+        try:
+            dato = json.loads(crudo)
+        except (ValueError, TypeError):
+            return match.group(0)
+        tipos = _tipos_del_bloque(dato)
+        if tipos and all(t in TIPOS_INSTITUCIONALES for t in tipos):
+            return ""
+        return match.group(0)
+    return RE_JSON_LD.sub(decidir, body or "")
+
+
 def source_signals(body: str, url: str = "") -> dict[str, bool]:
     # Lo que viene despues de relacionadas, footer o scripts de filtros no
     # describe la ficha principal y no puede probar que un campo fue provisto.
-    main = cuerpo_principal(body)
+    main = cuerpo_principal(sin_ficha_de_la_agencia(body))
     is_development = (
         "/emprendimiento/" in urllib.parse.urlparse(url).path.lower())
     if is_development:
