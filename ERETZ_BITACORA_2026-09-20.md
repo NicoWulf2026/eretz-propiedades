@@ -271,6 +271,62 @@ documentado.
 
 ---
 
+## 10. El relanzador no servía para el caso que vino a resolver
+
+El hallazgo más útil de la tarde, porque desmiente algo que yo había dado por
+hecho tres horas antes.
+
+Maté los workers a la fuerza para que cargaran un arreglo. Quedaron sus
+cerrojos con latido reciente, `tomar_cerrojo` los dio por activos —su regla es
+latido fresco **o** pid vivo— y cada relanzamiento levantaba un proceso que
+moría en el acto:
+
+```
+Ya hay un runner activo (pid 13976, ultimo latido hace 36s, ...).
+```
+
+Iba a seguir así **una hora entera**, que es `LATIDO_VENCIDO`. La tarea
+programada disparó a las 13:57 y a las 14:04 y las dos veces levantó un
+proceso condenado. Catorce minutos de cola parada sin que nada lo notara.
+
+Y es exactamente el caso que el relanzador vino a resolver: los 117 huecos sin
+paro registrado. Dos errores míos, los dos del mismo tipo: `workers_vivos`
+preguntaba sólo por el pid mientras el runner decide con latido **o** pid
+—preguntar distinto que el que decide es no preguntar—, y no limpiaba
+cerrojos huérfanos.
+
+Ahora borra el cerrojo cuyo **PID ya no existe**. No es a ciegas: el propio
+mensaje del runner dice «si comprobaste que murió, borra…», y
+`psutil.pid_exists` **es** esa comprobación. Si el pid existe no se toca ni con
+el latido vencido; si el cerrojo es ilegible tampoco.
+
+---
+
+## 11. `validate_live_agency_identity`, el pendiente #11 de Codex
+
+Tres defectos, todos del mismo tipo: el validador afirmaba más de lo que había
+comprobado. `VALIDATED` con sólo el nombre —«Lopez Propiedades» hay muchas—;
+ids que se pisaban en silencio en un dict; y las filas inesperadas
+comprobadas **después** de escribir el artefacto.
+
+Ahora hay cuatro estados y la distinción que importa es entre «no coincide» y
+«no se pudo comparar»: `NOMBRE_SIN_DOMINIO` hace fallar la corrida —dos
+dominios para un nombre es evidencia en conflicto—, `NOMBRE_SIN_WEB_VIVA` no
+—es un dato que falta—. Radio cero.
+
+---
+
+## 12. Dos cifras mías mal escritas
+
+En dos mensajes de commit puse el total de la suite de memoria y erré por dos
+y por uno: decía 2726 donde había 2724, y 2745 donde había 2744. Las
+mediciones estaban bien; lo que estaba mal era transcribirlas sin mirar.
+
+Lo anoto porque en un proyecto cuya disciplina es medir antes de afirmar, una
+cifra inventada en un mensaje vale lo mismo que una medición mal hecha.
+
+---
+
 ## Pendientes, con lo que se aprendió hoy
 
 1. **El fallback sólo dispara en cero** (`debe_reintentar_con_generico`).
