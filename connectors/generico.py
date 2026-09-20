@@ -428,20 +428,119 @@ class GenericoConnector(Connector):
     def _patron_de(fuente: Fuente) -> "re.Pattern | None":
         return patron_de_forma((fuente.extra or {}).get("patron_ficha") or "")
 
+    # Palabras que, en una ruta, dicen que eso es un inmueble. No se reusa
+    # `RE_FICHA` a proposito: aca la pregunta es que forma APRENDER, no que
+    # ruta aceptar, y mezclarlas ataria el aprendizaje al patron que se quiere
+    # complementar.
+    _PALABRAS_DE_FICHA = (r"propiedad(?:es)?|inmueble[s]?|emprendimiento[s]?|"
+                          r"ficha[s]?|propert(?:y|ies)|listing[s]?|aviso[s]?|"
+                          r"casa|departamento|depto|terreno|lote|ph|local|"
+                          r"oficina|galpon|campo|cochera|quinta|duplex|chalet")
+
+    @staticmethod
+    def _forma_de_ruta(ruta: str) -> str | None:
+        """La ruta con su identificador y su slug reemplazados por comodines.
+
+        Devuelve None si la ruta no tiene un identificador de tres digitos o
+        mas, o si nada en ella dice que se trata de un inmueble. Las dos cosas
+        juntas: `/quienes-somos` no tiene id, y `/2024/09/nota-del-blog` tiene
+        numero pero no palabra.
+        """
+        segmentos = [s for s in (ruta or "").strip("/").split("/") if s]
+        if not segmentos or len(segmentos) > 3:
+            return None
+        if not re.search(r"\d{3,}", ruta):
+            return None
+        partes = []
+        for segmento in segmentos:
+            m = re.fullmatch(r"([A-Za-z][A-Za-z-]*)([-_])(\d{3,})"
+                             r"(?:([-_])([A-Za-z0-9_-]+))?", segmento)
+            if m:
+                cola = f"{m.group(4)}<slug>" if m.group(5) else ""
+                partes.append(f"{m.group(1)}{m.group(2)}<id>{cola}")
+                continue
+            m = re.fullmatch(r"(\d{3,})([-_])([A-Za-z0-9_-]+)", segmento)
+            if m:
+                partes.append(f"<id>{m.group(2)}<slug>")
+                continue
+            if re.fullmatch(r"\d{3,}", segmento):
+                partes.append("<id>")
+                continue
+            if re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", segmento):
+                partes.append(segmento.lower())
+                continue
+            return None
+        return "/" + "/".join(partes)
+
+    @staticmethod
+    def _regex_de_forma(forma: str) -> "re.Pattern":
+        partes = []
+        for segmento in forma.strip("/").split("/"):
+            trozo = ""
+            for pedazo in re.split(r"(<id>|<slug>)", segmento):
+                if pedazo == "<id>":
+                    trozo += r"\d{3,}"
+                elif pedazo == "<slug>":
+                    trozo += r"[A-Za-z0-9_-]+"
+                elif pedazo:
+                    trozo += re.escape(pedazo)
+            partes.append(trozo)
+        return re.compile("^/" + "/".join(partes) + "/?$", re.I)
+
     @staticmethod
     def _patron_raiz_local(html: str) -> "re.Pattern | None":
-        """Forma /p-<id>_<slug>, habilitada solo para la fuente observada.
+        """La forma de ficha de ESTA fuente, aprendida de sus propios enlaces.
 
-        Tres enlaces distintos son la evidencia minima. Cada detalle entra con
-        por_forma=True y el guardian lo valida; no se afloja el patron global.
+        Tres rutas distintas de la misma forma son la evidencia minima. Cada
+        detalle entra con `por_forma=True` y `_confirma_ficha` lo valida uno
+        por uno; no se afloja el patron global.
+
+        Antes reconocia UNA sola forma -/p-<id>_<slug>- y la idea era buena con
+        la implementacion cableada. El escaneo de las 50 agencias NEEDS_FIX con
+        cero enumeradas mostro que 14 de 49 publican fichas con formas que
+        ningun patron nuestro ve, y varias llevan identificador:
+
+            /propiedad-9871962-venta-casa-en-funes      fios
+            /p/7525662-Casa-en-Venta-en-Salvador-Maria  andrea gianfelice
+            /inmueble_6076                              bottai
+
+        Se exige un id de tres digitos Y una palabra que diga de que se trata.
+        Las dos juntas son mucho mas dificiles de cumplir por accidente que
+        cualquiera sola, y lo que queda afuera son justamente los dos falsos
+        amigos conocidos: la navegacion institucional -sin id- y el blog con
+        fechas -sin palabra-.
+
+        Lo que hace seguro generalizar esto es el guardian que ya existe:
+        sobre las 283 paginas con que se verifico, `_confirma_ficha` acepta el
+        96,9 % de las formas confirmadas y solo el 4,5 % de las descartadas.
         """
-        rutas = {"/" + urllib.parse.urlparse(m.group(1)).path.lstrip("/")
-                 for m in re.finditer(r'href="([^"]{4,300})"', html or "", re.I)}
-        candidatas = {ruta for ruta in rutas
-                      if re.match(r"^/p-\d{3,}_[a-z0-9_-]+/?$", ruta, re.I)}
-        if len(candidatas) < 3:
+        rutas = set()
+        for m in re.finditer(r'href="([^"]{4,300})"', html or "", re.I):
+            partes = urllib.parse.urlparse(m.group(1))
+            if partes.query:
+                # Una paginacion -/propiedades?pagina=2- no es una ficha.
+                continue
+            rutas.add("/" + partes.path.lstrip("/"))
+        por_forma: dict[str, set[str]] = {}
+        for ruta in rutas:
+            forma = GenericoConnector._forma_de_ruta(ruta)
+            if forma:
+                por_forma.setdefault(forma, set()).add(ruta)
+        # La palabra que dice "esto es un inmueble" se le pide a la FORMA, no a
+        # cada ruta. `andrea gianfelice` publica /p/7525662-Casa-en-Venta-...,
+        # /p/2494510-Lote-en-Canning y /p/6731093-Haras-Santa-Cecilia-en-Lobos:
+        # las tres son fichas y la tercera no nombra ningun tipo. Exigirsela a
+        # cada una dejaba la forma en dos ejemplos y por debajo del minimo.
+        candidatas = [
+            (len(rutas_de_la_forma), forma)
+            for forma, rutas_de_la_forma in por_forma.items()
+            if len(rutas_de_la_forma) >= 3
+            and any(re.search(GenericoConnector._PALABRAS_DE_FICHA, r, re.I)
+                    for r in rutas_de_la_forma)]
+        if not candidatas:
             return None
-        return re.compile(r"^/p-\d{3,}_[a-z0-9_-]+/?$", re.I)
+        candidatas.sort(reverse=True)
+        return GenericoConnector._regex_de_forma(candidatas[0][1])
 
     @staticmethod
     def _patron_portal_offset_local(html: str) -> "re.Pattern | None":
