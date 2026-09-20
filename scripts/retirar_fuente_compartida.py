@@ -107,8 +107,14 @@ def a_retirar() -> dict[str, str]:
     return salida
 
 
+MOTIVO_NO_ES_DE_NADIE = ("url compartida por varias agencias y que no es la "
+                         "web de ninguna: directorio institucional o buscador "
+                         "de portal")
+
+
 def retirar_en(ruta: Path, campos: tuple[str, ...],
-               objetivo: dict[str, str], aplicar: bool) -> int:
+               objetivo: dict[str, str], aplicar: bool,
+               motivo: str = MOTIVO_NO_ES_DE_NADIE) -> int:
     """Quita la url de esos campos, conservandola. Devuelve cuantas filas tocó."""
     if not ruta.exists():
         return 0
@@ -126,10 +132,7 @@ def retirar_en(ruta: Path, campos: tuple[str, ...],
                         cambiada = True
                     fila["url_retirada_como_fuente"] = fila.get(campo)
                     fila["url_retirada_at"] = marca
-                    fila["url_retirada_porque"] = (
-                        "url compartida por varias agencias y que no es la web "
-                        "de ninguna: directorio institucional o buscador de "
-                        "portal")
+                    fila["url_retirada_porque"] = motivo
                     fila[campo] = None
             if cambiada:
                 tocadas += 1
@@ -147,9 +150,31 @@ def retirar_en(ruta: Path, campos: tuple[str, ...],
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--aplicar", action="store_true")
+    ap.add_argument("--motivo", default="",
+                    help="la razon exacta, que va al rastro de auditoria")
+    ap.add_argument(
+        "--agencia", action="append", default=[], metavar="ID=URL",
+        help="retira esa url de ESA agencia, sin pasar por la clasificacion. "
+             "Para los casos donde el sitio SI es de alguien y hay que decidir "
+             "de quien: se le quita al que no es, con la evidencia escrita.")
     args = ap.parse_args()
 
-    objetivo = a_retirar()
+    motivo = MOTIVO_NO_ES_DE_NADIE
+    if args.agencia:
+        # El sitio SI es de alguien: se le quita al que no es. Escribir el
+        # motivo generico aca seria falso, y un rastro de auditoria con una
+        # razon inventada no vale mas que no tenerlo.
+        motivo = args.motivo or (
+            "url compartida: el sitio pertenece a otra agencia segun su "
+            "propio titulo; se retira de esta, que no es su dueña")
+        objetivo = {}
+        for par in args.agencia:
+            clave, _, url = par.partition("=")
+            if not clave or not url:
+                raise SystemExit(f"--agencia espera ID=URL, llego {par!r}")
+            objetivo[clave.strip()] = url.strip()
+    else:
+        objetivo = a_retirar()
     if not objetivo:
         print("no hay fuentes compartidas de las clases que se retiran")
         return 0
@@ -174,7 +199,7 @@ def main() -> int:
     tocadas_por_capa = {}
     for ruta, campos in CAPAS:
         tocadas_por_capa[ruta.name] = retirar_en(ruta, campos, objetivo,
-                                                 args.aplicar)
+                                                 args.aplicar, motivo)
     print("\n  filas que contienen esa url, por capa:")
     for nombre, cuantas in tocadas_por_capa.items():
         print(f"     {nombre:46} {cuantas}")
@@ -202,7 +227,7 @@ def main() -> int:
             fh.write(json.dumps({
                 "cuando": time.strftime("%Y-%m-%dT%H:%M:%S"),
                 "canonical_agency_id": agencia, "url_retirada": url,
-                "porque": "compartida y de ninguna: directorio o buscador",
+                "porque": motivo,
                 "database_writes": 0}, ensure_ascii=False) + "\n")
     if fallaron:
         print(f"\n  {fallaron} SIGUEN resolviendo a la url retirada: hay otra "
