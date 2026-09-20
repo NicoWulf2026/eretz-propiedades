@@ -82,6 +82,28 @@ después de la primera página.
 a punta contra las dos fuentes: la query queda en `?o=2,2&p=` y la página 2
 devuelve **20 ids nuevos**. Radio `connector/tokko`.
 
+### Cuánto estaba en juego
+
+No eran dos agencias. Se bajaron ocho sitios TFW que ya habían cerrado
+`CERTIFIED_COMPLETE` y **siete de los siete que respondieron sirven el template
+nuevo**; ninguno conserva la forma literal. Tokko lo desplegó en todo su
+producto.
+
+| | |
+|---|---:|
+| TFW `CERTIFIED_COMPLETE` alcanzadas | 77 |
+| Propiedades que aportan hoy | **7.951** |
+| De ésas, con más de 20 propiedades | 70 |
+| Pérdida que el arreglo evita | **~6.445 propiedades** |
+
+Sobre 27.233 enumeradas en total, eso es el **24 % del catálogo**. Y son sólo
+las 81 agencias Tokko que la cola alcanzó: hay **875** con `connector: tokko`
+declarado.
+
+Sin el arreglo, la pasada que está corriendo ahora habría recertificado cada
+una de esas 70 agencias en 20 propiedades, y las que declaran más habrían ido
+parando la cola de a una con radio FAMILIA.
+
 ### Cómo casi me equivoco, dos veces
 
 Primero sospeché de la candidata, en particular de `read_bounded_response`, que
