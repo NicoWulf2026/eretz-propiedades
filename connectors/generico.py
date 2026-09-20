@@ -1307,15 +1307,28 @@ class GenericoConnector(Connector):
                 return plan
         runtime = propia or self._patron_raiz_local(html)
         enlaces = self._fichas_en(html, base, runtime)
-        listado = base + "/propiedades"
         ruta_propia = urllib.parse.urlparse(fuente.official_url).path.rstrip("/")
-        if ruta_propia != "/propiedades":
-            # Se prueba /propiedades por convencion, pero tambien los catalogos
-            # que la PORTADA enlaza: alianzarealestate.com.ar publica el suyo en
-            # /ventas/listado y con una sola ruta fija se reportaba sin
-            # inventario teniendo doce fichas. Seguir la navegacion del sitio no
-            # es adivinar una ruta, es leer la que el sitio declara.
-            for candidato in [listado] + self._catalogos_enlazados(html, base):
+        ya_es_el_catalogo = ruta_propia == "/propiedades"
+        listado = fuente.official_url if ya_es_el_catalogo else base + "/propiedades"
+        # Se prueba /propiedades por convencion, pero tambien los catalogos que
+        # la pagina de la fuente enlaza: alianzarealestate.com.ar publica el
+        # suyo en /ventas/listado y con una sola ruta fija se reportaba sin
+        # inventario teniendo doce fichas. Seguir la navegacion del sitio no es
+        # adivinar una ruta, es leer la que el sitio declara.
+        #
+        # Y esta exploracion corre SIEMPRE, tambien cuando la fuente registrada
+        # ya es /propiedades. Antes ese caso se saltaba entero, con el supuesto
+        # de que si la fuente apunta al catalogo el catalogo esta ahi. Es cierto
+        # en la mayoria de los sitios y falso en los que reparten el listado en
+        # una segunda ruta: `fios consultoria` registra /propiedades, esa pagina
+        # declara 266 y enlaza catorce `listado.php?...&pagina=N`, y las fichas
+        # estan en esas y no en ella. La agencia enumeraba CERO y paraba la cola
+        # con radio FAMILIA.
+        candidatos = ([] if ya_es_el_catalogo else [base + "/propiedades"])
+        candidatos += [c for c in self._catalogos_enlazados(html, base)
+                       if c.rstrip("/") != fuente.official_url.rstrip("/")]
+        if candidatos:
+            for candidato in candidatos:
                 try:
                     html_listado = self.descargador.bajar(candidato)
                 except (ErrorTransitorio, ErrorPermanente, Bloqueado):
@@ -1333,8 +1346,6 @@ class GenericoConnector(Connector):
                     runtime, listado = runtime_listado, candidato
                     if catalogo_explicito:
                         break
-        else:
-            listado = fuente.official_url
         if enlaces:
             patron_catalogo = self._patron_catalogo_numerico(enlaces)
             if patron_catalogo is not None:
