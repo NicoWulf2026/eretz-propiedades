@@ -46,10 +46,16 @@ def safe_to_backfill(result: dict[str, Any]) -> bool:
 
 
 def latest_results(path: Path) -> dict[str, dict[str, Any]]:
-    latest: dict[str, dict[str, Any]] = {}
-    for row in read_jsonl(path):
-        latest[row["canonical_agency_id"]] = row
-    return latest
+    """La misma seleccion que usa la cola, y por la misma razon. NEXT-001.
+
+    Tener dos lecturas distintas del mismo ledger es como se llega a que el
+    backfill y la cola no coincidan en que corrida representa a una agencia.
+    """
+    from ledger_de_certificacion import vigentes_por_agencia
+    vigentes, problemas = vigentes_por_agencia(path)
+    for agencia, detalle in problemas.items():
+        print(f"ledger ambiguo, se omite: {agencia}: {detalle}")
+    return vigentes
 
 
 def migrate_result(result: dict[str, Any]) -> dict[str, Any]:

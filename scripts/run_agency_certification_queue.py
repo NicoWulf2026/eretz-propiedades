@@ -29,6 +29,8 @@ from scripts.preingestion_manifest import base_canonica  # noqa: E402
 from scripts.property_observations import (  # noqa: E402
     registrar as registrar_observacion)
 from scripts.defect_triage import senales_de_catalogo  # noqa: E402
+from scripts.ledger_de_certificacion import (  # noqa: E402
+    vigentes_por_agencia)
 from scripts.defect_triage import (STOP, anotar_corte,  # noqa: E402
                                    clasificar, debe_cortar_por_lote,
                                    defectos_ya_cortados)
@@ -752,10 +754,25 @@ def ordenar_para_correr(cola: list[str],
 
 
 def latest_results(output: Path) -> dict[str, dict[str, Any]]:
-    latest: dict[str, dict[str, Any]] = {}
-    for row in read_jsonl(output / "AGENCY_CERTIFICATION_RESULTS.jsonl"):
-        latest[row["canonical_agency_id"]] = row
-    return latest
+    """El resultado VIGENTE de cada agencia, no su ultimo append.
+
+    NEXT-001. Con dos workers escribiendo el mismo archivo, el orden de append
+    no es el orden temporal: el que termino despues pudo haber empezado antes.
+    Y una linea truncada por una muerte del proceso desaparecia en silencio,
+    dejando elegido un cierre viejo. Medido sobre el ledger real de 2.501
+    filas: hoy no pasa ninguna de las dos cosas, asi que esto es
+    endurecimiento y no reparacion.
+
+    Una agencia con dos resultados distintos en el mismo instante se EXCLUYE y
+    se avisa: no se elige entre dos evidencias distintas. Excluirla hace que se
+    vuelva a certificar, que es el lado seguro.
+    """
+    vigentes, problemas = vigentes_por_agencia(
+        output / "AGENCY_CERTIFICATION_RESULTS.jsonl")
+    for agencia, detalle in problemas.items():
+        print(json.dumps({"ledger_ambiguo": agencia, "detalle": detalle},
+                         ensure_ascii=False), flush=True)
+    return vigentes
 
 
 def render_summary(output: Path, universe: int, latest: dict[str, dict[str, Any]],
