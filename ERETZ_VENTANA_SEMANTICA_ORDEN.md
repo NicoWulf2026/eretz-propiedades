@@ -1,3 +1,36 @@
+> ## ACTUALIZACIÓN DEL 2026-09-20 — dos de los cuatro puntos ya no van
+>
+> **1. `ambientes` ya está resuelto en la candidata.** El patrón del
+> certificador tiene límite de palabra desde `edf7a37b34` y rechaza
+> «Monoambiente 1 dormitorio» (verificado sobre ocho casos); `bottega`
+> extrae `ambientes` con cobertura 0,77. Era el punto más caro del ranking
+> —23,9 h de radio— y no necesita ventana.
+>
+> **2. `barrio` no es un defecto.** Se diagnosticó, que era lo que este
+> documento pedía como primer paso, y la respuesta es negativa: cuando un
+> valor publicado como barrio resuelve en el catálogo GeoRef **como ciudad**,
+> se promueve a `ciudad` y se limpia de `barrio`, marcado como descartado. No
+> se pierde: se mueve.
+>
+> Comprobado sobre las 72 agencias con `barrio` en `REJECTED_BY_VALIDATION`:
+> en **71 de 72** la cantidad de barrios rechazados es **exactamente igual** a
+> la cantidad de propiedades con ciudad. `aagaard` 38 y 38; `abriola` 78 y 78;
+> `acevedo` 8 y 8. La única excepción, `dastoli vanesa`, tiene 1 rechazado y
+> 22 con ciudad, o sea que recibe ciudades por otra vía además.
+>
+> Queda una pregunta distinta y más grande, que **no** es ésta: en esas
+> agencias la cobertura de ciudad tiene mediana 0,205, así que el 80 % de las
+> propiedades no tiene ni barrio ni ciudad. Eso es ausencia de dato o
+> resolución que no encuentra la localidad, y merece su propia investigación.
+>
+> **Lo que queda de la ventana** son los puntos 3 y 4 —`location.href` y
+> enrutado a `generic/sitemap`—, más lo que salió del escaneo de formas de
+> ficha. Y la recertificación que este documento presupone ya está corriendo
+> por otro motivo: el salto de esquema de huella 3 a 5 al adoptar la
+> candidata.
+
+---
+
 # El orden de la ventana semántica, con los números medidos
 
 **2026-09-17 · `database_writes: 0` · nada de esto se aplica todavía**
