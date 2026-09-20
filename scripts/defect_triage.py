@@ -193,7 +193,27 @@ def firma(resultado: dict[str, Any], componente: str) -> str:
 # no cambia nada del mundo real. El quinto caso ya no pasa ni por el tope de
 # fichas ni por el porcentual.
 TOPE_DE_FICHAS_MENORES = 4
-TOPE_PORCENTUAL_MENOR = 0.02
+# El porcentual estuvo en 0,02 y frenaba de mas. Medido sobre los 382 casos
+# historicos con 4 fallas o menos:
+#
+#     ratio <= 0,02   142 casos   37 %     <- el tope viejo
+#     ratio <= 0,05   182 casos   48 %
+#     ratio <= 0,10   245 casos   64 %     <- el tope nuevo
+#     ratio <= 0,25   247 casos   65 %
+#     ratio <= 0,50   264 casos   69 %
+#
+# Entre 0,10 y 0,30 hay un HUECO: pasar de 0,10 a 0,25 suma dos casos. El corte
+# esta puesto donde los datos tienen el salto, no donde me parecia razonable.
+#
+# Lo que quedaba afuera con 0,02 era `3 de 103` -2,9 %-, `4 de 129` -3,1 %- y
+# `2 de 54` -3,7 %, el paro de `abril negocios inmobiliarios` que destapo
+# esto-: defectos de dos o tres fichas que paraban LAS DOS COLAS. Eran 240
+# casos en 29 agencias, el 63 % de todas las fallas chicas del historial.
+#
+# Y lo que sigue quedando afuera es lo que tiene que quedar afuera: `cavacini`
+# con `ambientes` 3 de 3 y `alder` con 4 de 4 son el 100 %, o sea que el campo
+# falla en todo lo que hay. Un tope absoluto solo los habria dado por menores.
+TOPE_PORCENTUAL_MENOR = 0.10
 
 COMPONENTE_MENOR = "extraccion_de_baja_magnitud"
 # Debajo de esta cantidad de fichas vistas, la proporcion sobre

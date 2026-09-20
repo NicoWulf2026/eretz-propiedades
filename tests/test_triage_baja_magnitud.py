@@ -388,3 +388,57 @@ def test_pocas_invisibles_en_un_catalogo_grande_no_paran():
 def test_enumerar_todo_lo_declarado_no_para():
     t = clasificar(con_techo(182, 182))
     assert t["componente_sospechoso"] != "catalogo_declarado_mayor_que_el_enumerado"
+
+
+# --------------------------------------------------------------------------
+# El tope porcentual estuvo en 0,02 y frenaba de mas. Medido sobre los 382
+# casos historicos con 4 fallas o menos, el 63 % de las fallas chicas caia
+# afuera y paraba las dos colas: `3 de 103`, `4 de 129`, `2 de 54`.
+#
+# Entre 0,10 y 0,30 los datos tienen un hueco -pasar de 0,10 a 0,25 suma dos
+# casos-, asi que el corte esta donde el salto, no donde me parecia.
+# --------------------------------------------------------------------------
+
+def _resultado(campo: str, fallas: int, provistos: int, enumeradas: int):
+    return {"field_coverage": {campo: {"state": "EXTRACTION_FAILED",
+                                       "extraction_failed": fallas,
+                                       "source_provided": provistos}},
+            "enumeration_audit": {"enumerated": enumeradas}}
+
+
+def test_MUERDE_dos_fallas_sobre_cincuenta_y_cuatro_son_menores():
+    """El paro de `abril negocios inmobiliarios` que destapo el tope.
+
+    Dos propiedades sin coordenada sobre 54 pararon las dos colas. La fuente
+    las publica y no las leimos -es un defecto de verdad- pero no es uno que
+    justifique detener el padron entero.
+    """
+    from scripts.defect_triage import _es_de_baja_magnitud
+    assert _es_de_baja_magnitud(_resultado("latitud", 2, 54, 54), ["latitud"])
+
+
+def test_tres_de_ciento_tres_tambien():
+    from scripts.defect_triage import _es_de_baja_magnitud
+    assert _es_de_baja_magnitud(_resultado("ambientes", 3, 103, 103),
+                                ["ambientes"])
+
+
+def test_MUERDE_cuando_el_campo_falla_en_TODO_lo_que_hay_no_es_menor():
+    """`cavacini` con 3 de 3 y `alder` con 4 de 4.
+
+    Son pocas fichas en absoluto y el 100 % de las que tienen el campo. Un
+    tope solo absoluto las habria dado por menores, que es exactamente el
+    error que el porcentual existe para evitar. Subirlo no puede borrarlo.
+    """
+    from scripts.defect_triage import _es_de_baja_magnitud
+    assert not _es_de_baja_magnitud(_resultado("ambientes", 3, 3, 3),
+                                    ["ambientes"])
+    assert not _es_de_baja_magnitud(_resultado("ambientes", 4, 4, 4),
+                                    ["ambientes"])
+
+
+def test_cinco_fallas_siguen_sin_ser_menores_por_muchas_que_haya():
+    """El tope absoluto no se movio: cinco fichas son cinco fichas."""
+    from scripts.defect_triage import _es_de_baja_magnitud
+    assert not _es_de_baja_magnitud(_resultado("ambientes", 5, 5000, 5000),
+                                    ["ambientes"])
