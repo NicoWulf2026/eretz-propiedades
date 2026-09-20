@@ -120,17 +120,74 @@ def paro_atendido(salida: Path, paro: dict[str, Any]) -> bool:
     return False
 
 
-def workers_vivos(salida: Path) -> dict[int, int]:
-    """Que workers tienen cerrojo con un PID que sigue existiendo."""
+# El runner da por ocupado un cerrojo si el latido es reciente **o** el pid
+# existe, y su umbral es de una hora. Ese umbral esta bien calibrado: una sola
+# inmobiliaria puede tardar tres horas y bajarlo haria que un segundo worker
+# diera por muerto a uno vivo.
+LATIDO_VENCIDO = 3600.0
+
+
+def cerrojo_de(salida: Path, worker: int) -> Path:
+    return salida / f"AGENCY_CERTIFICATION_RUNNER.w{worker}.lock"
+
+
+def limpiar_cerrojos_huerfanos(salida: Path, aplicar: bool) -> list[int]:
+    """Borra los cerrojos cuyo PID ya no existe. Devuelve cuales.
+
+    Sin esto el relanzador no sirve para el caso que vino a resolver. Se vio
+    en vivo: despues de matar los workers a la fuerza quedaron sus cerrojos
+    con latido reciente, `tomar_cerrojo` los dio por activos -su regla es
+    latido fresco **o** pid vivo- y cada relanzamiento levantaba un proceso
+    que moria en el acto con "Ya hay un runner activo (pid 13976...)". Iba a
+    seguir asi **una hora entera**, hasta que el latido venciera.
+
+    Borrar un cerrojo a ciegas es peligroso y por eso el runner no lo hace: dos
+    procesos sobre el mismo checkpoint se pisan el cursor y le piden a los
+    mismos sitios al doble del ritmo acordado. Pero aca no es a ciegas. El
+    propio mensaje del runner dice "si comprobaste que murio, borra...", y
+    `psutil.pid_exists` ES esa comprobacion. Automatizar una comprobacion
+    verificable no es lo mismo que saltearla.
+
+    Si el pid existe no se toca nada, ni siquiera cuando el latido esta
+    vencido: la reutilizacion de pid por el sistema operativo empuja hacia el
+    lado conservador, que es el correcto.
+    """
     import psutil
-    vivos: dict[int, int] = {}
+    limpiados: list[int] = []
     for worker in range(WORKERS):
-        ruta = salida / f"AGENCY_CERTIFICATION_RUNNER.w{worker}.lock"
+        ruta = cerrojo_de(salida, worker)
         if not ruta.exists():
             continue
         try:
             previo = json.loads(ruta.read_text(encoding="utf-8"))
             pid = int(previo["pid"])
+        except (OSError, ValueError, KeyError, TypeError):
+            continue  # ilegible: no se toca
+        if pid > 0 and not psutil.pid_exists(pid):
+            limpiados.append(worker)
+            if aplicar:
+                ruta.unlink(missing_ok=True)
+    return limpiados
+
+
+def workers_vivos(salida: Path) -> dict[int, int]:
+    """Los workers cuyo cerrojo el RUNNER daria por activo.
+
+    Se usa la misma regla que `tomar_cerrojo` -latido fresco **o** pid vivo- y
+    no solo el pid. Con la regla de antes el relanzador creia libre un puesto
+    que el runner iba a rechazar, y levantaba un proceso condenado a morir en
+    el arranque. Preguntar distinto que el que decide es no preguntar.
+    """
+    import psutil
+    vivos: dict[int, int] = {}
+    for worker in range(WORKERS):
+        ruta = cerrojo_de(salida, worker)
+        if not ruta.exists():
+            continue
+        try:
+            previo = json.loads(ruta.read_text(encoding="utf-8"))
+            pid = int(previo["pid"])
+            latido = float(previo["heartbeat_epoch"])
         except (OSError, ValueError, KeyError, TypeError):
             # Cerrojo ilegible: se trata como ocupado. El runner tiene la
             # misma politica y por una razon buena: borrarlo a ciegas es como
@@ -138,6 +195,8 @@ def workers_vivos(salida: Path) -> dict[int, int]:
             vivos[worker] = -1
             continue
         if pid > 0 and psutil.pid_exists(pid):
+            vivos[worker] = pid
+        elif (time.time() - latido) < LATIDO_VENCIDO:
             vivos[worker] = pid
     return vivos
 
@@ -150,6 +209,7 @@ def decidir(salida: Path) -> tuple[list[int], str]:
                     f"{paro.get('canonical_agency_id')} "
                     f"({paro.get('componente')}, radio {paro.get('radio')}): "
                     f"no se relanza hasta que haya una diferida firmada")
+    limpiar_cerrojos_huerfanos(salida, aplicar=True)
     vivos = workers_vivos(salida)
     faltan = [w for w in range(WORKERS) if w not in vivos]
     if not faltan:

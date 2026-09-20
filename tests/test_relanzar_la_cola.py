@@ -125,18 +125,70 @@ def test_un_cerrojo_ilegible_cuenta_como_ocupado(tmp_path):
     assert decidir(tmp_path)[0] == [1]
 
 
-def test_un_cerrojo_de_un_pid_muerto_no_bloquea(tmp_path):
-    """Un proceso muerto no es un worker vivo.
+def test_MUERDE_un_cerrojo_de_un_pid_muerto_no_deja_la_cola_trabada(tmp_path):
+    """El caso que se vio en vivo, y que el relanzador NO resolvia.
 
-    Es justamente el caso de los 117 huecos sin paro: el proceso se murió y el
-    cerrojo quedó. Tratarlo como ocupado dejaría la cola detenida para siempre,
-    que es exactamente lo que venía pasando.
+    Tras matar los workers a la fuerza quedaron sus cerrojos con latido
+    reciente. `tomar_cerrojo` los dio por activos —su regla es latido fresco
+    **o** pid vivo— y cada relanzamiento levantaba un proceso que moria en el
+    acto con «Ya hay un runner activo (pid 13976...)». Iba a seguir asi **una
+    hora entera**, que es `LATIDO_VENCIDO`.
+
+    O sea: el relanzador no servia justamente para el caso que vino a
+    resolver, que son los 117 huecos sin paro registrado.
     """
-    (tmp_path / "AGENCY_CERTIFICATION_RUNNER.w0.lock").write_text(
-        json.dumps({"pid": 999999999, "heartbeat_epoch": time.time()}),
-        encoding="utf-8")
-    assert workers_vivos(tmp_path) == {}
-    assert decidir(tmp_path)[0] == [0, 1]
+    import relanzar_la_cola as modulo
+    ruta = tmp_path / "AGENCY_CERTIFICATION_RUNNER.w0.lock"
+    ruta.write_text(json.dumps({"pid": 999999999,
+                                "heartbeat_epoch": time.time()}),
+                    encoding="utf-8")
+    faltan, _ = modulo.decidir(tmp_path)
+    assert faltan == [0, 1]
+    assert not ruta.exists(), "el cerrojo huerfano tiene que quedar borrado"
+
+
+def test_MUERDE_un_cerrojo_de_un_pid_VIVO_no_se_toca(tmp_path):
+    """Borrar a ciegas es como se terminan pisando dos procesos.
+
+    Ni siquiera con el latido vencido: la reutilizacion de pid por el sistema
+    operativo empuja hacia el lado conservador, y ese es el correcto.
+    """
+    import os
+    import relanzar_la_cola as modulo
+    ruta = tmp_path / "AGENCY_CERTIFICATION_RUNNER.w0.lock"
+    ruta.write_text(json.dumps({"pid": os.getpid(),
+                                "heartbeat_epoch": time.time() - 99999}),
+                    encoding="utf-8")
+    faltan, _ = modulo.decidir(tmp_path)
+    assert faltan == [1]
+    assert ruta.exists()
+
+
+def test_un_latido_fresco_cuenta_como_ocupado_aunque_el_pid_no_exista(tmp_path):
+    """Se pregunta lo mismo que el runner va a responder.
+
+    Con la regla vieja —solo el pid— el relanzador creia libre un puesto que
+    el runner iba a rechazar, y levantaba un proceso condenado. Preguntar
+    distinto que el que decide es no preguntar.
+
+    Acá el cerrojo no se limpia porque se le pasa `aplicar=False`: se
+    comprueba la clasificacion, no la limpieza.
+    """
+    import relanzar_la_cola as modulo
+    ruta = tmp_path / "AGENCY_CERTIFICATION_RUNNER.w0.lock"
+    ruta.write_text(json.dumps({"pid": 999999999,
+                                "heartbeat_epoch": time.time()}),
+                    encoding="utf-8")
+    assert 0 in modulo.workers_vivos(tmp_path)
+
+
+def test_un_cerrojo_ilegible_no_se_borra(tmp_path):
+    """Ilegible no es lo mismo que huerfano: no se puede comprobar nada."""
+    import relanzar_la_cola as modulo
+    ruta = tmp_path / "AGENCY_CERTIFICATION_RUNNER.w0.lock"
+    ruta.write_text("no es json", encoding="utf-8")
+    assert modulo.limpiar_cerrojos_huerfanos(tmp_path, aplicar=True) == []
+    assert ruta.exists()
 
 
 def test_paro_atendido_no_se_confunde_con_fecha_invalida(tmp_path):
