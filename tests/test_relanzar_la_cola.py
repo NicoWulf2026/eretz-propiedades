@@ -195,3 +195,41 @@ def test_paro_atendido_no_se_confunde_con_fecha_invalida(tmp_path):
     poner_paro(tmp_path, cuando="no es una fecha")
     paro = paro_vigente(tmp_path)
     assert paro_atendido(tmp_path, paro) is False
+
+
+def test_MUERDE_un_paro_con_precedente_se_difiere_solo_y_la_cola_sigue(tmp_path, monkeypatch):
+    """Lo que hace que el relanzador sirva sin nadie mirando.
+
+    Tres de cada cuatro paros pendientes comparten firma con uno ya
+    diagnosticado. Sin esto, cada uno deja la cola detenida hasta que aparece
+    una persona, y el relanzador queda de adorno.
+    """
+    import relanzar_la_cola as modulo
+    poner_paro(tmp_path, agencia="roomix:b", cuando=ahora(-600))
+
+    def falso_precedente(salida):
+        poner_diferida(salida, agencia="roomix:b", cuando=ahora())
+        return 1
+
+    monkeypatch.setattr(modulo, "intentar_precedente", falso_precedente)
+    faltan, _ = modulo.decidir(tmp_path)
+    assert faltan == [0, 1]
+
+
+def test_MUERDE_si_el_precedente_no_cubre_ESE_paro_no_se_relanza(tmp_path, monkeypatch):
+    """Escribir diferidas de otras agencias no desbloquea este paro.
+
+    Es el modo de falla peligroso de automatizar esto: que la sola existencia
+    de trabajo automático se lea como que el paro está atendido.
+    """
+    import relanzar_la_cola as modulo
+    poner_paro(tmp_path, agencia="roomix:b", cuando=ahora(-600))
+
+    def falso_precedente(salida):
+        poner_diferida(salida, agencia="roomix:otra", cuando=ahora())
+        return 1
+
+    monkeypatch.setattr(modulo, "intentar_precedente", falso_precedente)
+    faltan, motivo = modulo.decidir(tmp_path)
+    assert faltan == []
+    assert "ninguna cubre este paro" in motivo

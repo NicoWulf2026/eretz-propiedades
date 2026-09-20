@@ -201,14 +201,60 @@ def workers_vivos(salida: Path) -> dict[int, int]:
     return vivos
 
 
+def intentar_precedente(salida: Path) -> int:
+    """Antes de rendirse ante un paro, ver si su firma ya se diagnostico.
+
+    Es lo que hace que el relanzador sirva sin nadie mirando. Un paro
+    transversal detiene la cola hasta que alguien escribe una diferida, y
+    medido sobre las 93 agencias en `NEEDS_FIX`, **tres de cada cuatro** de
+    las que no la tienen comparten firma con una que si.
+
+    No relaja ninguna regla: `diferir_por_precedente` solo escribe cuando la
+    firma es IDENTICA a una diagnosticada por una persona, del mismo radio,
+    con el defecto todavia abierto, y nunca sobre `variante_no_soportada`. Si
+    no hay precedente, no escribe nada y el paro sigue en pie.
+    """
+    try:
+        from diferir_por_precedente import candidatas, texto, DIFERIDAS
+        from diferir_por_precedente import MARCA_AUTOMATICA
+    except Exception:  # noqa: BLE001 - sin la herramienta, se sigue como antes
+        return 0
+    try:
+        lista = candidatas()
+    except Exception:  # noqa: BLE001 - un artefacto ilegible no relanza nada
+        return 0
+    if not lista:
+        return 0
+    marca = time.strftime("%Y-%m-%dT%H:%M:%S")
+    with DIFERIDAS.open("a", encoding="utf-8") as fh:
+        for c in lista:
+            fh.write(json.dumps({
+                "canonical_agency_id": c["agencia"],
+                "componente": c["componente"], "radio": c["radio"],
+                "diagnostico": texto(c), "cuando": marca,
+                MARCA_AUTOMATICA: True,
+                "precedente_agencia": c["precedente"]["agencia"],
+                "precedente_cuando": c["precedente"]["cuando"],
+                "firma_del_patron": c["firma"],
+                "database_writes": 0}, ensure_ascii=False) + "\n")
+    return len(lista)
+
+
 def decidir(salida: Path) -> tuple[list[int], str]:
     """Que workers lanzar, y por que no los otros."""
     paro = paro_vigente(salida)
     if paro is not None and not paro_atendido(salida, paro):
-        return [], (f"paro sin diagnosticar en "
-                    f"{paro.get('canonical_agency_id')} "
-                    f"({paro.get('componente')}, radio {paro.get('radio')}): "
-                    f"no se relanza hasta que haya una diferida firmada")
+        escritas = intentar_precedente(salida)
+        if escritas:
+            paro = paro_vigente(salida)
+        if paro is not None and not paro_atendido(salida, paro):
+            return [], (f"paro sin diagnosticar en "
+                        f"{paro.get('canonical_agency_id')} "
+                        f"({paro.get('componente')}, radio "
+                        f"{paro.get('radio')}): no se relanza hasta que haya "
+                        f"una diferida firmada"
+                        + (f" (se escribieron {escritas} por precedente, "
+                           f"ninguna cubre este paro)" if escritas else ""))
     limpiar_cerrojos_huerfanos(salida, aplicar=True)
     vivos = workers_vivos(salida)
     faltan = [w for w in range(WORKERS) if w not in vivos]
