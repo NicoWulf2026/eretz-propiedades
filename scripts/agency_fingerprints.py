@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import json
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Iterable
@@ -207,6 +208,42 @@ def _selected_nodes(path: Path, class_name: str,
                       for node in nodes).encode()
 
 
+# Los dos unicos recursos que `Geografia._cargar` abre de verdad. Los otros
+# cuatro del manifiesto -departamentos, municipios, localidades, asentamientos-
+# no los lee nadie, y meterlos en la huella significaria recertificar 261
+# agencias por un archivo que no cambio nada de lo extraido. Codex lo pidio
+# asi: "capturar input realmente usado".
+RECURSOS_GEO_USADOS = ("provincias", "localidades-censales")
+
+
+def huella_del_input_geografico(directorio: "Path | None" = None) -> bytes:
+    """La identidad del snapshot de GeoRef que la extraccion va a consultar.
+
+    Sale de los `sha256` que el propio `MANIFEST.json` publica, que es la
+    identidad que el descargador ya verifica al leer cada recurso.
+
+    Si el manifiesto falta o no se puede leer, la huella lo DICE en vez de
+    parecerse a la de un manifiesto presente. Dos maquinas, una con la
+    referencia y otra sin ella, no producen el mismo resultado geografico:
+    que produjeran la misma huella seria la falsedad exacta que esto cierra.
+    """
+    if directorio is None:
+        from connectors.geografia import DIRECTORIO_POR_DEFECTO
+        directorio = Path(DIRECTORIO_POR_DEFECTO)
+    ruta = Path(directorio) / "MANIFEST.json"
+    try:
+        manifiesto = json.loads(ruta.read_text(encoding="utf-8"))
+        recursos = manifiesto["recursos"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return b"georef:sin-manifiesto-legible"
+    partes = []
+    for nombre in RECURSOS_GEO_USADOS:
+        entrada = recursos.get(nombre) or {}
+        sha = entrada.get("sha256") if isinstance(entrada, dict) else None
+        partes.append(f"{nombre}={sha or 'sin-sha'}")
+    return ("georef:" + "|".join(partes)).encode()
+
+
 def fingerprint_components(connector: str, strategy: str) -> dict[str, bytes]:
     components = {
         "shared/image_quality": _semantic_file(ROOT / "scripts" / "image_quality.py"),
@@ -228,6 +265,13 @@ def fingerprint_components(connector: str, strategy: str) -> dict[str, bytes]:
             ROOT / "connectors" / "geografia.py"),
         "shared/geo_reference": _semantic_file(
             ROOT / "scripts" / "geo_reference.py"),
+        # Y el DATO, no solo el codigo que lo lee. `connectors/geografia.py`
+        # ya esta en la huella porque decide la ciudad y la provincia de cada
+        # propiedad; el snapshot de GeoRef que consulta decide lo mismo y no
+        # estaba. Un snapshot nuevo cambia lo extraido y dejaba la huella
+        # igual, o sea certificaciones vigentes describiendo un resultado que
+        # hoy no se reproduciria.
+        "shared/geo_input": huella_del_input_geografico(),
         # La normalizacion de texto decide que etiqueta se reconoce y que dos
         # valores son el mismo. Es codigo semantico y va en la huella desde el
         # primer dia: un modulo nuevo que nadie registra es exactamente el
