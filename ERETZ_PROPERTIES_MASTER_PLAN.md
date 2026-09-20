@@ -1020,15 +1020,66 @@ tarea administrativa: frena la mitad del catálogo.
    para los connectors, y el quality gate ahora consulta las propuestas aptas y
    reporta el alcance proyectado aparte del real. Lo que queda son dos cosas
    distintas:
-   - **Corregir el resolver** para que un nombre que sale del campo `barrio` no
-     resuelva a una localidad de otra provincia sin corroboración (§3.4). Vive
-     en `connectors/base.py`, así que necesita un punto sin certificación en
-     vuelo: tocarlo cambia la huella de todas las estrategias.
-   - **Decidir qué significa `ciudad` cuando sólo hay una coordenada** (§2.8).
-     Son 35.644 propiedades, tres de cada cuatro de las que quedarían sin
-     ciudad. No es técnica: el plan ya descartó `municipios` como nivel
-     canónico, y recuperarlas obliga a revisar esa decisión o a dejarlas en
-     `UNKNOWN`.
+   - ~~**Corregir el resolver** para que exija corroboración.~~ **Se probó y
+     se revirtió el 2026-09-08.** La regla se implementó, se validó contra las
+     29.048 propuestas —reproducía el corte exacto: 6.890 dejaban de afirmarse,
+     18.383 seguían resolviendo— y aun así es incorrecta, porque el resolver no
+     tiene con qué distinguir los dos casos:
+
+     | nombre | alias | candidatas por nombre |
+     |---|---|---|
+     | `Villa del Parque` (barrio de CABA) | no | 1 |
+     | `Mar del Plata` (ciudad real) | no | 1 |
+     | `Rosario` (ciudad real) | no | 1 |
+
+     Son la misma forma. Exigir corroboración en el resolver deja de promover
+     `Mar del Plata` desde el campo `barrio`, que son las 11.440 propiedades de
+     Tokko que el plan cuenta como recuperadas, y de resolver `Rosario` a secas.
+     Lo detectaron siete pruebas que ya existían.
+
+     **La corroboración vive donde ya está: en la auditoría de escritura.** Ahí
+     retiene 6.890 propuestas sin perder el dato —queda en el artefacto y se
+     recupera con una coordenada o una provincia— y el costo asimétrico se paga
+     una sola vez, en el único lugar donde una ciudad falsa se vuelve pública.
+   - ~~**Decidir qué significa `ciudad` cuando sólo hay una coordenada.**~~
+     **Ya está resuelto por el `area_busqueda`**, y el texto anterior era
+     anterior a esa capa. Medido el 2026-09-09 sobre las 58.427:
+
+     | nivel del área de búsqueda | propiedades |
+     |---|---|
+     | MUNICIPIO | 32.428 |
+     | PROVINCIA | 15.749 |
+     | LOCALIDAD | 9.619 |
+     | DEPARTAMENTO | 139 |
+     | **SIN_AREA** | **492** |
+
+     La localidad sigue siendo demostrable sólo en el 16,5 %, y eso no cambió:
+     lo que cambió es que **encontrar** una propiedad no depende de afirmar su
+     localidad. Sólo 492 —el 0,84 %— quedan sin ningún nivel.
+
+     **Y esas 492 no son ausencia en la fuente.** Son tres agencias, y dos de
+     ellas publican la ubicación con todas las letras:
+
+     | agencia | propiedades | qué publica la ficha |
+     |---|---|---|
+     | `gruponortepropiedades` (Tokko) | 192 | `Los Puentes \| Nordelta \| Countries/B.Cerrado (Tigre)` bajo el título |
+     | `inmobiliariacip` (WordPress) | 196 | `<li>Localidad: Merlo</li>` y `<li>Provincia: San Luis</li>` |
+     | `nicorapropiedades` (WordPress) | 104 | nada estructurado; a veces el lugar está en el título en prosa |
+
+     De `gruponortepropiedades` se toma **sólo el paréntesis**: `Tigre` es una
+     localidad censal y resuelve, mientras que `Nordelta` y `Los Puentes` no lo
+     son. De `inmobiliariacip` se recupera la provincia —`Merlo` + `San Luis` no
+     resuelve, porque el catálogo tiene `Villa de Merlo` en San Luis y `Merlo`
+     en Buenos Aires, y el resolver se niega correctamente—. Las 104 de
+     `nicorapropiedades` quedan: sacar la localidad de un título en prosa es
+     inferir geografía.
+
+   - **Una regla que se midió y se descartó.** Cuando la provincia declarada
+     contradice al catálogo, se podría buscar en ESA provincia una localidad
+     cuyo nombre contenga al publicado. Recupera 132 propiedades, y los
+     ejemplos la desmienten: `Crespo` + Santa Fe → `Gobernador Crespo` —Crespo
+     es de Entre Ríos— y `Sarmiento` + Tucumán → `Los Sarmiento`. Por el 0,23 %
+     no vale mandar a alguien a la ciudad equivocada.
 3. ~~Cablear las webs verificadas y la base canónica.~~ **Hecho.**
    `AGENCY_OFFICIAL_WEB_VERIFIED.jsonl` entra por `load_catalog` y
    `resolve_identity` lo prefiere al directorio; el default de la base sale del
@@ -1046,6 +1097,213 @@ tarea administrativa: frena la mitad del catálogo.
 La geografía es una **dependencia** del contrato de propiedad y del filtro de
 búsqueda, no una misión aparte: entra en el DAG entre la normalización y el
 quality gate.
+
+---
+
+## 7 bis. Lo que el ranking de defectos no puede ver
+
+**El ranking mide una snapshot anterior al código.** Las 58.427 propiedades se
+extrajeron en agosto —la última, el 26— y desde entonces hay 41 commits de
+connectors. El 2026-09-08 se persiguieron dos de los defectos mejor rankeados y
+los dos ya estaban arreglados:
+
+| defecto rankeado | propiedades | qué pasaba de verdad |
+|---|---|---|
+| `tokko/superficie_total` | 376 | el rótulo `Terreno` se lee desde el 2026-09-02 |
+| `generic/html_catalog operacion` | 128 | el cuerpo se lee desde el 2026-08-26 |
+
+`extraction_failures.py` ahora emite `vigencia` con las dos fechas y la
+advertencia. **Antes de trabajar sobre un grupo hay que abrir una ficha real y
+correr el parser de hoy.** No se ocultan grupos: sin correr no se puede saber
+cuál arreglo cubre cuál defecto.
+
+El de tokko escondía además lo contrario de lo anotado. No perdíamos un campo:
+`aagaard.com.ar` publica `Terreno: 50000000 m2` en un dos ambientes de 45 m²
+cubiertos, y otras dos fichas dicen `50.0 Ha` y `180.0 Ha` sobre 45 y 180 metros
+construidos. Al recertificar, esos cincuenta kilómetros cuadrados entraban.
+`coherencia` los descarta ahora por tipo —el tope son diez hectáreas para tipos
+edificados, medido contra el corpus: descarta cuatro propiedades en 58.427— y
+**no los corrige**: que `180.0 Ha` sea probablemente `180 m²` es una sospecha
+razonable y sigue siendo una invención.
+
+**`wordpress/barrio`, 541 propiedades, tampoco es un defecto nuestro.** El tema
+publica un campo rotulado literalmente "Localidad o barrio" cuyo valor repite la
+ciudad, y otro rotulado "Provincia" que dice "Bs.As. G.B.A. Sur" —una zona—.
+Leer cualquiera de los dos sería inventar geografía. Lo que sí se perdía es la
+**ciudad**, que el mismo bloque publica sin ambigüedad y la taxonomía vacía
+tapaba.
+
+## 7 ter. Identidad: de quién es el sitio que tenemos cargado
+
+`arte propiedades` paró la cola el 2026-09-08. Su `official_url` es
+`lujanprop.com.ar/inmobiliaria/arte`: **el perfil en un portal**. Dos corridas
+seguidas enumeraron 17 y 18 fichas **sin una sola en común**, y las tres que se
+abrieron declaraban otras tres inmobiliarias del portal. No era inestabilidad:
+publicábamos propiedades ajenas bajo su nombre.
+
+Las reglas que no alcanzaban, y por qué:
+
+- **La lista de portales escrita a mano** no conoce `lujanprop.com.ar` ni
+  `buscainmueble.com`, que 65 agencias reclaman.
+- **Contar agencias por host** no lo ve: `lujanprop` aloja a 31 inmobiliarias y
+  una sola figura en nuestro padrón.
+- **La forma de la URL** —ruta profunda en un dominio que no lleva el nombre—
+  marcaba 101 filas, y entre ellas `dbj.com.ar`, `chbpropiedades.com.ar`,
+  `lexpropiedades.com.ar` y veinte más que son sitios propios con marca de
+  siglas. Cerrarlas habría borrado inventario real.
+
+Lo que sí separa, en dos pasos:
+
+1. **El comparador de nombres estaba roto.** `marca_de` leía sólo la primera
+   etiqueta del host —`propiedades.moresco.com.ar` daba marca "propiedades"— y
+   `palabras_del_nombre` partía la palabra en el acento —`Cuño` quedaba en "cu"
+   y "o"—. Arreglados, 479 de 578 filas con ruta profunda se reconocen como
+   sitio propio. La marca de iniciales (`vlbprop`, `kepropiedades`) rescata 11
+   más sin tocar la red.
+2. **Preguntarle a la raíz del host cómo se presenta.** Un sitio propio dice el
+   nombre de la inmobiliaria; un portal dice el nombre del portal. Cuando no lo
+   dice, se cuentan las entradas hermanas bajo el mismo prefijo **y se exige que
+   el sitio use su propia palabra para lo que indexa** (`/inmobiliaria/`,
+   `/inmobiliarias/`, `/empresa/`). Sin esa exigencia se marcaban 18 y se
+   confundían hermanas que son agencias con hermanas que son propiedades —que
+   tiene cualquier sitio propio— y con secciones del sitio.
+
+**El certificador no cambió.** Ya clasifica `web_kind != OFFICIAL_WEB` como
+`BLOCKED_EXTERNAL`; lo que faltaba era la evidencia en los datos.
+
+---
+
+## 7 quater. Listo para la próxima ventana sin certificación en vuelo
+
+Diagnosticado y verificado contra la fuente el 2026-09-09; no aplicado para no
+volver a detener la cola. Cada uno cambia una huella, así que van juntos.
+
+**`inmobiliariacip.com.ar` (WordPress).** Al leer `Localidad:` y `Provincia:`
+la certificación pasó de cero geografía a 132 de 192 con ciudad y provincia, y
+el audit de campos delató lo que sigue sin leerse en la misma ficha:
+
+| campo | dónde está |
+|---|---|
+| `superficie_total` | `<li class="prop-overview__item"> Superficie terreno: 760 m<sup>2</sup> </li>` |
+| `descripcion` | `<h2>Descripción.</h2> <div class="text-format"><p>…</p>` |
+
+El valor de la superficie trae el `<sup>`, así que el lector de rótulos
+devuelve `760 m` y hay que pasarlo por `a_numero`.
+
+**Lo que NO hay que leer de ahí.** La descripción dice "en el ingreso a la
+**Villa de Merlo**", que es exactamente la localidad que el catálogo tiene y
+que `Localidad: Merlo` no alcanza a resolver. Sacarla de la prosa sería
+inferir geografía: la coordenada del mapa ya resuelve ese caso por el camino
+correcto.
+
+**Una ficha que la fuente enlaza y no sirve.** `andrea gianfelice inmobiliaria`
+cierra `NEEDS_FIX` en cada pasada por una sola ficha de 147: su URL tiene una
+barra sin codificar en el slug —`Calle Tejedor e/ Francia`, donde "e/" es
+"entre"— y el sitio no la sirve por ninguna vía; se comprobaron la cruda, la
+codificada, la cortada y la del id. Las dos corridas coinciden en perderla.
+
+El certificador ya descuenta los 404 que aparecen en las dos corridas, con el
+argumento correcto —"un 404 sobre una ficha que la fuente sigue enlazando no es
+una lectura fallida: es una inconsistencia de la fuente"—. Esto es lo mismo con
+otro código de estado: el sitio responde 200 con una página genérica.
+
+**Se arregla después de la pasada, no durante.** Es un cambio en el runner, y
+recertificar esa agencia sola cuesta minutos mientras invalidar la pasada
+cuesta horas. La condición es acotada: una URL que en la PRIMERA lectura dio
+cascarón y que después falla, cuenta como desaparecida y no como lectura
+fallida nuestra.
+
+---
+
+## 7 quinquies. Qué gana la recertificación
+
+La pregunta que justifica decenas de horas de cola, respondida con números.
+Medido el 2026-09-09 sobre las **67 agencias ya recertificadas**: 3.429
+propiedades comparables por `hash_dedup`, más **2.197 que no estaban en la
+snapshot**.
+
+| campo | gana | pierde | pierde con motivo |
+|---|---|---|---|
+| `superficie_total` | 912 | 68 | 86 |
+| `barrio` | 786 | 0 | 148 |
+| `ciudad` | 511 | 0 | 9 |
+| `operacion` | 507 | 0 | 0 |
+| `direccion` | 372 | 0 | 0 |
+| `banos` | 235 | 182 | 13 |
+| `superficie_cubierta` | 222 | 48 | 0 |
+| `dormitorios` | 193 | 37 | 11 |
+| `ambientes` | 184 | 4 | 32 |
+| `provincia` | 173 | 0 | 0 |
+| `latitud` / `longitud` | 171 | 0 | 0 |
+| `precio` | 1 | 1 | 0 |
+
+**En `ciudad`, `operacion`, `direccion`, `provincia` y las coordenadas se pierde
+cero.** Son los campos que deciden si una propiedad se puede encontrar.
+
+**Las 182 pérdidas de `banos` son correcciones, no regresiones.** Se abrieron
+contra la fuente:
+
+- `alaspropiedades.com`: el valor viejo, `banos=5`, salía del desplegable del
+  buscador —"Habitaciones Min. Cualquiera 1 2 3 4 5 **Baños** Min…"—, leyendo
+  el número *antes* del rótulo.
+- `agostiniinmobiliaria.com`: salía del bloque de propiedades relacionadas al
+  pie. Era la cantidad de baños del vecino.
+
+De ahí la advertencia que quedó escrita en `recertification_gain.py`: **una
+columna de pérdidas sin motivo hay que abrirla contra la fuente antes de leerla
+como regresión.** El informe dice dónde mirar, no qué pasó.
+
+---
+
+## 7 sexies. SOM: una plataforma entera que no soportamos
+
+Encontrada el 2026-09-09 al diagnosticar por qué `amud propiedades` certificaba
+sin inventario. Su sitio es estático y chico —11 KB— y sus páginas de catálogo,
+`venta.html` y `alquiler.html`, traen **190 caracteres de texto y un botón
+"Cargar más resultados"**: el listado lo inyecta jQuery.
+
+Contra qué: `https://apmovil.som.com.ar/BusquedaServiceV2.aspx?token=…`. El pie
+del sitio lo dice —"Desarrollado por SOM"— y es una plataforma inmobiliaria como
+Tokko o Wasi.
+
+**Y sirve HTML.** `sistema.som.com.ar/inmuebles-LMA-00-2-venta-alquiler.html`
+devuelve 30 KB con quince enlaces a fichas
+—`propiedades-LMA-00-LMA00127101970-departamentos-venta-…html`— y paginación
+propia. No hace falta un navegador: hace falta una estrategia.
+
+| agencia | url cargada | propiedades hoy |
+|---|---|---|
+| `lmabroker` | `sistema.som.com.ar/inmuebles-LMA-00-2-…` | 0 |
+| `marcelo candel propiedades` | `sistema.som.com.ar/inmuebles-MCP-00-…` | 0 |
+| `pablo otto negocios inmobiliarios` | `sistema.som.com.ar/inmuebles-OTO-01-2-…` | 0 |
+| `rodriguez drimal negocios inmobiliarios` | `sistema.som.com.ar/inmuebles-RDR-00-2-…` | 0 |
+| `rossi propiedades` | `rsi.som.com.ar` | 0 |
+| `amud propiedades` | dominio propio, API de SOM | 0 |
+
+**Va después de la pasada.** Una estrategia nueva toca `discover`, que vive en
+`generic/common` y entra en la huella de todas las familias genéricas:
+agregarla ahora invalida la certificación entera. El diagnóstico ya está hecho
+y la forma de las URLs es regular, así que el trabajo es acotado.
+
+---
+
+## 7 septies. Un 200 con el cuerpo vacío es un sitio muerto
+
+`eduardobergo.com.ar` responde **HTTP 200, `Content-Type: text/html`, cero
+bytes**, y lo hace igual en `https`, en `www` y en `http`. No es un corte del
+momento: el host no sirve un sitio.
+
+Hoy eso termina en `NEEDS_FIX` con "zero inventory was not exhaustively proven",
+que es exactamente el estado que condena a una agencia a esperar para siempre un
+arreglo que no existe. El detector de bajas no lo ve porque busca un texto
+—"cuenta suspendida", "página no disponible"— y acá no hay texto que buscar.
+
+**La regla que falta:** un cuerpo vacío o de sólo espacios, visto en las dos
+corridas, es una fuente que dejó de publicar. Va con las mismas cautelas que ya
+tiene el detector —las dos corridas, no una— porque dar de baja una inmobiliaria
+viva es el error caro.
+
+Vive en `generic/common` y por eso espera a la próxima ventana.
 
 ---
 
