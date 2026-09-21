@@ -209,7 +209,15 @@ compartido, en vez de ir de a uno:
    valor es un `srcset` de verdad, y si el valor entero termina en extensión
    de imagen, usarlo entero.
 
-8. lo que aparezca de los paros que la cola encuentre de acá en adelante.
+8. **La cola no registra QUÉ propiedades faltan, sólo cuántas.**
+   `run_rollout.py` escribe `absences_runN.jsonl` con el detalle; el camino
+   del certificador guarda sólo el conteo `ausentes`. Resultado: **0 de 429
+   paquetes** tienen el detalle, y sin identidades la regla de bajas no puede
+   acumular evidencia nunca —ver `ERETZ_PROPERTY_LIFECYCLE.md`, sección 5
+   bis—. No es una pieza que falte inventar: es una diferencia entre dos
+   caminos.
+
+9. lo que aparezca de los paros que la cola encuentre de acá en adelante.
 
 ### El crosswalk de identidad pública: no se puede construir acá
 

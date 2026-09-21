@@ -94,9 +94,54 @@ esperar es cero.
 
 ---
 
+## 5 bis. Los dos números, medidos el 2026-09-21
+
+Corrido `scripts/evaluate_deletions.py` sobre el histórico:
+
+| | |
+|---|---:|
+| ausencias comparables | **1.565** |
+| se desactivarían hoy | **0** |
+| volvieron a aparecer | **0** |
+| ausencia consecutiva más larga | **1** |
+
+**El cero de la segunda columna no dice que la regla sea segura: dice que
+nunca tuvo ocasión de dispararse.** Ninguna propiedad estuvo ausente tres
+corridas seguidas, así que la tasa de reaparición tras tres ausencias —el
+número que decide— está **indefinida, no en cero**. Leerlo al revés sería
+exactamente el error que este documento existe para evitar.
+
+Además hay **110.368 ausencias no comparables** (91.367 de
+`TOKKO_ROLLOUT_FULL`, 19.001 de `WP_ROLLOUT_FULL`) anotadas con la clave
+vieja del checkpoint: ninguna puede cruzarse con una propiedad de hoy.
+
+### Y el reloj no está corriendo
+
+Lo que importa más que los números: **el proceso que corre hoy no genera la
+evidencia que hace falta.**
+
+- Ningún paquete de la cola de certificación escribe `absences_runN.jsonl`:
+  son **0 de 429**.
+- El registro de corrida sí anota `ausentes`, en 219 paquetes, 60 de ellos
+  con ausencias — pero es un **conteo**, no la lista de cuáles.
+
+Sin las identidades no se puede acumular «la misma propiedad ausente tres
+veces seguidas», que es la única forma de la evidencia. Esperar no alcanza:
+por muchas pasadas que dé la cola, la racha nunca sube de cero.
+
+El detalle sí se escribe en el camino de `run_rollout.py` —`esc_aus`—, y se
+pierde en el camino del certificador. Es una diferencia entre dos caminos,
+no una pieza que falte inventar.
+
+---
+
 ## 6. Qué falta
 
-1. Correr `evaluate_deletions.py` sobre el histórico y publicar los dos números.
+1. ~~Correr `evaluate_deletions.py` y publicar los dos números.~~ **Hecho,
+   sección 5 bis.** El resultado cambia el orden de lo que sigue: antes de
+   implementar la máquina de estados hay que **empezar a registrar qué
+   propiedades faltan**, porque hoy no se registra y sin eso no hay nada que
+   evaluar.
 2. Implementar la máquina de estados, con las ausencias contadas sólo sobre
    corridas confiables.
 3. Detección de `REMOVED` por 404/410 en la ficha propia.
