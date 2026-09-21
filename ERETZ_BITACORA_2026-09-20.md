@@ -351,3 +351,87 @@ cifra inventada en un mensaje vale lo mismo que una medición mal hecha.
   `ambientes` con cobertura 0,77. El ranking de la ventana quedó desactualizado
   a favor nuestro.
 - **NEXT-001** ya no bloquea nada.
+
+---
+
+# Segunda tanda: geografía, catálogos partidos y las urls compartidas
+
+## El catálogo no termina donde termina el primer catálogo
+
+`andrea gianfelice` paró la cola con radio FAMILIA: declara 158, enumerábamos
+44. Adentro había **dos causas apiladas, las dos mías**.
+
+La que vale para toda la familia: el sitio no tiene catálogo unificado, lo
+parte en `/Venta` (147), `/Alquiler` (10) y `/Emprendimientos` (7). `discover`
+hacía `next(r for r in RUTAS_LISTADO if ...)`, que devuelve siempre `/Venta`
+porque encabeza la lista. Los otros dos **no existían para el conector**, y la
+enumeración se declaraba completa igual.
+
+Es el **mismo error conceptual que la paginación rota de esta mañana**, en otra
+forma. Antes el catálogo terminaba donde terminaba la primera página; ahora
+termina donde termina el primer catálogo. Las dos veces el síntoma fue el
+mismo: certificar una parte como si fuera el todo, sin que nada avise.
+
+Sondeados 45 sitios tokko: **10 están partidos así**, todos perdiendo
+`/Alquiler` y seis además `/Emprendimientos`. En los 11 casos donde leí los
+totales declarados de cada ruta son **291 propiedades invisibles sobre 1.767,
+el 16,5 %**. Algunos de esos totales valen exactamente 20 y pueden ser el
+tamaño de página y no el total: descontándolos todos, el piso es 211.
+
+La otra causa fui yo a las 10:15: reenruté esta agencia de `tokko` a
+`generico` con el motivo «frontend ajeno a la plataforma declarada». La
+evidencia que usé era que tokko daba 20 de 147 — pero ese 20 era el bug de
+paginación, exactamente `POR_PAGINA`, no una señal sobre el frontend. **Mismo
+error que con coldwell**: atribuirle a un reroute un síntoma cuya causa estaba
+en otro lado. Revertido, con la evidencia en el ledger.
+
+Verificado contra la fuente: tokko leyendo los tres catálogos enumera **157**
+contra 44 de generico, y 157 es exactamente el `preingestion_rows` del
+baseline.
+
+## Geografía: el extractor explica el 0,2 %, no el 80 %
+
+Informe completo en `ERETZ_GEOGRAFIA_CAUSAS_2026-09-20.md`. Lo esencial:
+
+- **36.718 propiedades tienen su municipio demostrado por la geometría oficial
+  de GeoRef** —contención en polígono, no centroide— y el campo `municipio`
+  está vacío en las 57.665 filas del snapshot. Cero, no pocas. Es lo que
+  produce el `municipality: null` del autocompletado.
+- **El extractor explica el 0,2 %.** Era la hipótesis intuitiva y es la causa
+  más chica. Wasi saca ciudad en el 96 % de sus fichas con el mismo código con
+  el que Tokko saca 24 %.
+- **`provincia` parecía el campo sano al 98,6 % y es el más frágil**: el 96,4 %
+  repite exactamente la provincia de su inmobiliaria (99,7 % en el snapshot;
+  183 de 195 agencias con *todas* sus propiedades iguales). El conector la
+  marca `inferida`; el artefacto pierde la marca.
+
+## Urls compartidas: de 15 grupos quedan 2
+
+El detector anterior contaba menciones y se equivocaba de forma sistemática
+—eligió `remax star` para `remax-net.com.ar`— porque **contar menciones no
+distingue al dueño del mencionado**. El criterio nuevo es el dominio, que lo
+registra su dueño: `rodriguezjurado` contiene `jurado` y de las dos candidatas
+una sola se llama así.
+
+9 dueñas resueltas, 3 «de nadie», 3 en `IDENTITY_REVIEW`, **18 retiros
+aplicados**. Los 2 que quedan son empates reales de apellido —leiva/leiva,
+martinez/martinez— y quedan en revisión, no resueltos a ojo.
+
+Un intento intermedio descartó todo nombre de lugar del catálogo de GeoRef y
+se llevó puesto justo lo que distingue: en Argentina los pueblos se llaman como
+la gente, y `Zárate` y `Rodríguez` son ciudades. Lo que no distingue es la
+geografía **del grupo**, no la geografía.
+
+## Pendientes que esta tanda cierra o mueve
+
+- Pendiente 4 (25 urls compartidas): **cerrado salvo 2**.
+- Pendiente 5 (`barrio` sin diagnóstico): **diagnosticado**, más 1.715 barrios
+  que son texto recortado —693 recuperables cortando en «Fecha de entrega»—.
+- Pendiente 1 (`debe_reintentar_con_generico` sólo dispara en cero): sigue
+  abierto, pero `gianfelice` ya no es su caso testigo.
+
+## Primera acción cuando la cola cierre
+
+Publicar `municipio` y `departamento` con procedencia propia `GEO_GEOMETRY`,
+dejando `localidad` intacta. Toca `connectors/base.py`, que está en la huella
+del certificador, y por eso no se hizo con la cola corriendo.
