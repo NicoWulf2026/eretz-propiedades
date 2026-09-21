@@ -256,7 +256,28 @@ compartido, en vez de ir de a uno:
     Las otras 314 sí son fallos reales. Chico en propiedades y caro en
     operación: dos paros FAMILIA de la misma agencia.
 
-11. lo que aparezca de los paros que la cola encuentre de acá en adelante.
+11. **Un icono entre el rótulo y el número rompe el conteo de atributos.**
+    `alas propiedades` publica `Dormitorios 4` con el tema RealHomes:
+
+    ```html
+    <span class="rh_meta_titles"> Dormitorios </span>
+    <div> <svg class="rh_svg" …> … 4 … </div>
+    ```
+
+    `_cuenta_de_ficha` exige que el elemento del valor contenga **sólo** el
+    número, y acá empieza con un SVG. Cuesta **120 de 206 fichas** sin
+    dormitorios.
+
+    Cuidado con el respaldo por texto: aplanada, la ficha dice `ID de la
+    propiedad: A222 Dormitorios 4`, y un patrón de «número antes de la
+    palabra» saca **222**, que es el ID. La salida no es aflojar hacia el
+    texto plano sino permitir contenido no numérico dentro del elemento del
+    valor.
+
+    **No es familia grande**: de las 6 agencias con 10+ fallos en un conteo,
+    sólo ésta usa RealHomes.
+
+12. lo que aparezca de los paros que la cola encuentre de acá en adelante.
 
 ### El crosswalk de identidad pública: no se puede construir acá
 
