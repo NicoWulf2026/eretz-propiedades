@@ -485,7 +485,44 @@ compartido, en vez de ir de a uno:
     este repo la misma regla suele estar escrita en varios lugares que ya
     divergieron (ver ítems 13 y 15).
 
-17. lo que aparezca de los paros que la cola encuentre de acá en adelante.
+17. **El respaldo a `generico` no se compara con nada.**
+    `austral inmobiliaria` certificó `CERTIFIED_COMPLETE` el 2026-09-10 con
+    conector `wordpress` y **196 propiedades**. Hoy corrió con `generico` y
+    enumeró **17**, contra un baseline de 191.
+
+    La fuente no se achicó: su propia API declara
+    `X-WP-Total: 200` en `/wp-json/wp/v2/properties`, y el conector de
+    WordPress la descubre bien hoy —`WORDPRESS_REST`, `rest_base=properties`—.
+    `choose_connector` recalculado ahora devuelve `wordpress`, así que la
+    elección también fue correcta.
+
+    Lo que cambió el resultado es `debe_reintentar_con_generico`: si el
+    conector específico no obtuvo **nada**, se reintenta con `generico` y se
+    acepta su resultado con la sola condición de que haya obtenido algo
+    (`alternate.get("detalles_obtenidos") or estado == "OK"`). El wordpress
+    volvió vacío esa vez, entró generico, trajo 17, y se aceptó.
+
+    **El respaldo no es el problema; la falta de comparación sí.** De los 17
+    resultados que lo usaron, **14 salieron igual o mejor** —`federico negro`
+    1.429, `baron` 227 contra un baseline de 49, `alagna` 218—. La idea que lo
+    motivó es buena y su docstring cuenta el caso: `requenapropiedades`, una
+    app Laravel a la que se le había asignado WordPress.
+
+    **Pierden dos**, y las dos por lo mismo: ésta (17 contra 191) y
+    `forja propiedades` (de `tokko` a `generico`, 7 contra 350). Esa segunda
+    cierra un cabo suelto de la mañana: `forja` había aparecido en la rama «la
+    fuente no declara ningún total» sin causa conocida. El tercer candidato
+    aparente, `carlos castano`, **no** es este caso: su sitio migró a Laravel y
+    hoy publica cero, así que ahí generico es lo correcto.
+
+    **Falta una condición**: aceptar el resultado de generico sólo si no es
+    drásticamente menor que lo que la agencia ya demostró tener. El baseline
+    está calculado en el mismo módulo (`baseline_inventory()`), así que el dato
+    está a mano.
+
+    Toca `agency_certifier.py`, que es `shared/certifier` y entra en la huella.
+
+18. lo que aparezca de los paros que la cola encuentre de acá en adelante.
 
 ---
 
