@@ -327,6 +327,86 @@ def _es_de_baja_magnitud(resultado: dict[str, Any],
     return True
 
 
+def descarte_parecia_una_propiedad(descarte: dict[str, Any]) -> bool:
+    """Un rechazo del guardian que SI tenia pinta de ficha.
+
+    Se miran dos senales y no mas: que la pagina publicara un **precio** o un
+    **schema**. Son las unicas dos que no las tiene una pagina institucional.
+
+    `operacion_en_texto` queda afuera a proposito, y no por prolijidad: de los
+    100 rechazos registrados en el corpus, 88 lo traian en `True`, y entre
+    ellos estan `historia.php`, `ubicacion.php`, `como_llegar.php` y
+    `galerias.html` del portal de `gama`. Se dispara porque la palabra
+    «venta» aparece en el menu del sitio, no porque la pagina venda algo.
+
+    Es el tercer caso del mismo vicio en este proyecto: la senal de `ciudad`
+    disparando con la direccion de la oficina en el nodo `RealEstateAgent`, y
+    el patron de `ambientes` encontrando «ambiente 1» dentro de
+    «Monoambiente». Las tres veces la senal se conformo con que la palabra
+    apareciera.
+    """
+    return descarte.get("precio") is not None or bool(descarte.get("tipo_ld"))
+
+
+def paro_por_el_guardian_de_forma(corrida: dict[str, Any]) -> str | None:
+    """Por que parar -o no- cuando el guardian descarto fichas.
+
+    La regla anterior paraba las dos colas con **cualquier** descarte. El
+    problema es que descartar es lo que el guardian hace: mezclaba «el
+    guardian se equivoco», que es grave y compartido, con «el guardian
+    funciono», que es su operacion normal.
+
+    Medido sobre los 100 rechazos que hay registrados en el corpus: **los 100
+    son correctos**, ninguno traia precio ni schema, y son cosas como
+    `area_cliente.php?sec=sol` y `quienes-somos.php`. Con eso, la regla vieja
+    paro las dos colas dos veces -`gama` y `bottai`- por trabajo bien hecho.
+    `bottai` descarto 1 sobre 234.
+
+    Se para en tres casos, y el primero es el que importa:
+
+    1. **Un rechazo con precio o schema.** Ahi el guardian pudo equivocarse y
+       el guardian es compartido. No paso nunca todavia, que es justamente por
+       que hay que dejarlo armado.
+    2. **No sobrevivio ninguna ficha.** Aunque cada rechazo sea correcto, una
+       agencia que termina en cero necesita que alguien mire por que. Es el
+       caso `gama`, y mirarlo encontro que su fuente era un perfil de portal.
+    3. **No hay evidencia de los rechazos.** Sin el detalle no se puede
+       afirmar que estuvieran bien, y el silencio no es una respuesta
+       tranquilizadora: se para igual que antes.
+    """
+    descartadas = corrida.get("descartadas_por_forma") or 0
+    if not descartadas:
+        return None
+
+    # Dos formas de la misma evidencia. El rollout guarda el detalle completo
+    # en `_descartes`; el paquete del certificador no lo serializa -las claves
+    # con guion bajo se caen- y por eso el conteo viaja aparte. Se prefiere el
+    # conteo porque esta en los dos caminos.
+    cuantos = corrida.get("descartes_con_senal")
+    ejemplos = corrida.get("descartes_con_senal_ejemplos") or []
+    detalle = corrida.get("_descartes")
+    if cuantos is None:
+        if detalle is None:
+            return (f"{descartadas} fichas descartadas por el guardian de "
+                    f"forma, que es compartido, y sin evidencia de por que")
+        sospechosos = [d for d in detalle if descarte_parecia_una_propiedad(d)]
+        cuantos = len(sospechosos)
+        ejemplos = [str(d.get("source_url"))[:200] for d in sospechosos[:3]]
+
+    if cuantos:
+        urls = ", ".join(str(u)[:70] for u in ejemplos)
+        return (f"{cuantos} de {descartadas} fichas descartadas por el "
+                f"guardian de forma TENIAN precio o schema: pudo no ser "
+                f"institucional, y el guardian es compartido. {urls}")
+
+    if not corrida.get("detalles_obtenidos"):
+        return (f"{descartadas} fichas descartadas y ninguna sobrevivio: cada "
+                f"rechazo se ve correcto -ninguna traia precio ni schema- "
+                f"pero la agencia termino en cero y eso necesita explicacion")
+
+    return None
+
+
 def _detalle_menor(resultado: dict[str, Any], fallidos: list[str]) -> str:
     cobertura = resultado.get("field_coverage") or {}
     partes = []
@@ -433,10 +513,11 @@ def clasificar(resultado: dict[str, Any]) -> dict[str, Any]:
 
     for corrida in corridas:
         if corrida.get("descartadas_por_forma"):
-            return _veredicto(
-                STOP, resultado, "guardian_de_forma_compartido", RADIO_FAMILIA,
-                f"{corrida['descartadas_por_forma']} fichas descartadas por el "
-                f"guardian de forma, que es compartido")
+            motivo = paro_por_el_guardian_de_forma(corrida)
+            if motivo:
+                return _veredicto(
+                    STOP, resultado, "guardian_de_forma_compartido",
+                    RADIO_FAMILIA, motivo)
         if corrida.get("fichas_sin_contenido"):
             return _veredicto(
                 STOP, resultado, "lectura_de_ficha_compartida", RADIO_FAMILIA,

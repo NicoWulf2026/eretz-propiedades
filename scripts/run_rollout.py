@@ -594,7 +594,19 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
     # una pagina que no era ficha no es una fuente que respondio mal, y sin
     # esta cuenta las dos cosas se leen igual en el resumen.
     r["descartadas_por_forma"] = getattr(con, "descartadas_por_forma", 0)
-    r["_descartes"] = getattr(con, "descartes", None) or []
+    descartes = getattr(con, "descartes", None) or []
+    r["_descartes"] = descartes
+    # La cuenta sola no dice si el guardian acerto, y las claves con guion
+    # bajo no se serializan -por eso `_descartes` no llega al paquete del
+    # certificador-. Asi que la senal que hace falta para juzgar viaja al lado
+    # de la cuenta: cuantos de esos rechazos traian precio o schema, que es lo
+    # unico que una pagina institucional no tiene. Sin esto el triaje solo
+    # puede elegir entre parar siempre o aflojar a ciegas.
+    con_senal = [d for d in descartes
+                 if d.get("precio") is not None or d.get("tipo_ld")]
+    r["descartes_con_senal"] = len(con_senal)
+    r["descartes_con_senal_ejemplos"] = [str(d.get("source_url"))[:200]
+                                         for d in con_senal[:3]]
     r["cambios"] = dict(Counter(p["_cambio"] for p in props))
 
     # --- ausencias, solo si la enumeracion merece confianza -----------------
