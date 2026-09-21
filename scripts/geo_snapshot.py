@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import time
 import urllib.request
 import urllib.error
@@ -113,6 +114,63 @@ def traer(recurso: str) -> tuple[list[dict[str, Any]], int, str]:
     return filas, total, "api"
 
 
+# Sufijo de los archivos a medio escribir. Nunca se lee un `.parcial`: o se
+# promueve entero o queda ahi como evidencia de que la promocion se corto.
+SUFIJO_PARCIAL = ".parcial"
+
+# Mientras se renombran los archivos definitivos existe esta marca. Si aparece
+# en un snapshot, la promocion se interrumpio y lo que hay en el directorio es
+# una mezcla de generaciones.
+MARCA_DE_PROMOCION = "PROMOCION_EN_CURSO.json"
+
+
+def escribir_durable(destino: "Path", contenido: bytes) -> None:
+    """Escribe y baja a disco antes de seguir.
+
+    Sin el `fsync`, el rename puede llegar al disco antes que los datos y una
+    caida deja un archivo que existe con su nombre final y esta vacio. Es el
+    modo de falla que el rename atomico deberia evitar y no evita solo.
+    """
+    with open(destino, "wb") as fh:
+        fh.write(contenido)
+        fh.flush()
+        os.fsync(fh.fileno())
+
+
+def promocion_interrumpida(directorio: "Path") -> bool:
+    """Si el directorio quedo a mitad de una promocion.
+
+    No lo puede saber solo por el manifiesto: `huella_del_input_geografico`
+    hashea los sha256 QUE EL MANIFIESTO DECLARA, asi que un snapshot con
+    archivos nuevos y manifiesto viejo produce la misma huella que antes. Se
+    veria igual y seria otro. Por eso la marca es un archivo aparte.
+    """
+    return (Path(directorio) / MARCA_DE_PROMOCION).exists()
+
+
+def promover(directorio: "Path", pendientes: "list[tuple[Path, Path]]") -> None:
+    """Pasa los `.parcial` a sus nombres definitivos.
+
+    `os.replace` es atomico por archivo, no por conjunto: renombrar seis
+    archivos no es una transaccion. Lo que si se puede es dejar constancia
+    mientras dura, y poner el MANIFIESTO AL FINAL -- si el corte ocurre antes
+    de el, el manifiesto viejo sigue describiendo sha256 que ya no estan, y
+    eso es detectable; si ocurre despues, no queda nada a medias.
+    """
+    marca = Path(directorio) / MARCA_DE_PROMOCION
+    escribir_durable(marca, json.dumps({
+        "empezo": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "archivos": [d.name for _, d in pendientes],
+    }, ensure_ascii=False).encode("utf-8"))
+    for parcial, final in pendientes:
+        os.replace(parcial, final)
+    # La marca se borra SOLO si todos los renames terminaron. Ponerlo en un
+    # `finally` la borraria tambien cuando la promocion se corta, y entonces
+    # una mezcla de generaciones se veria identica a un snapshot sano: seria
+    # escribir la deteccion y despues apagarla.
+    marca.unlink(missing_ok=True)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--destino", default=r"D:\INMO CAPITAL\ERETZ_GEO")
@@ -134,10 +192,18 @@ def main() -> int:
         "recursos": {},
     }
 
+    # Se escribe TODO al lado, con sufijo, y recien despues se promueve. Un
+    # `write_bytes` directo sobre el archivo vivo deja un
+    # `localidades_censales.json` truncado si el proceso muere a mitad, y ese
+    # es el catalogo del que depende toda la resolucion geografica.
+    pendientes: list[tuple[Path, Path]] = []
     for recurso, (filas, total, via) in preparados:
         archivo = destino / f"{recurso.replace('-', '_')}.json"
         crudo = json.dumps(filas, ensure_ascii=False, indent=1)
-        archivo.write_bytes(crudo.encode('utf-8'))
+        escribir_durable(archivo.with_suffix(archivo.suffix + SUFIJO_PARCIAL),
+                         crudo.encode('utf-8'))
+        pendientes.append((archivo.with_suffix(archivo.suffix + SUFIJO_PARCIAL),
+                           archivo))
         manifiesto["recursos"][recurso] = {
             "archivo": archivo.name,
             "url": f"{BASE}/{recurso}",
@@ -151,8 +217,13 @@ def main() -> int:
               f"-> {archivo.name}")
         time.sleep(PAUSA)
 
-    (destino / "MANIFEST.json").write_text(
-        json.dumps(manifiesto, ensure_ascii=False, indent=2), encoding="utf-8")
+    manifiesto_final = destino / "MANIFEST.json"
+    escribir_durable(
+        manifiesto_final.with_suffix(".json" + SUFIJO_PARCIAL),
+        json.dumps(manifiesto, ensure_ascii=False, indent=2).encode("utf-8"))
+    pendientes.append((manifiesto_final.with_suffix(".json" + SUFIJO_PARCIAL),
+                       manifiesto_final))
+    promover(destino, pendientes)
     incompletos = [r for r, m in manifiesto["recursos"].items()
                    if not m["completo"]]
     print()
