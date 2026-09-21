@@ -771,6 +771,51 @@ class Connector:
     def foto_es_de(self, prop: "PropiedadNormalizada", url: str) -> bool:
         return True
 
+    @staticmethod
+    def _canonizar_la_provincia_publicada(prop: "PropiedadNormalizada") -> None:
+        """Lo que la fuente escribio en `provincia` no siempre es una.
+
+        No es un fallo de extraccion. La ficha de `dardopropiedades` publica
+        literalmente `Provincia: Bs.As. Costa Atlantica`, y el resto de su
+        geografia esta bien: `Ciudad: Mar del Plata`, `Direccion: Moreno
+        2568`. Es la taxonomia de otra plataforma debajo de la misma etiqueta.
+        Medido: 612 propiedades del padron tienen ahi algo que no es una
+        provincia, 567 con esta forma, repartidas en 10 agencias -9 de ellas
+        wordpress-.
+
+        Dos casos y ninguna adivinanza:
+
+          - El texto NOMBRA una provincia -`Bs.As. Costa Atlantica` empieza
+            diciendo Buenos Aires-: se guarda la canonica y la zona sobrante
+            queda en `zona_declarada`. No se pierde nada y el campo deja de
+            afirmar una provincia que no existe.
+          - El texto NO nombra ninguna -`San Salvador`, que es una ciudad de
+            Jujuy escrita en el casillero equivocado-: el campo se vacia y el
+            texto original se conserva en `provincia_declarada_sin_resolver`.
+            Vaciarlo permite que la inferencia del padron lo complete, marcada
+            como inferida; inventar que `San Salvador` es una provincia no lo
+            permitiria nadie.
+
+        En los dos casos se preserva el dato crudo. La consigna era preservar
+        evidencia antes que inventar, y un campo con la taxonomia de otra
+        plataforma adentro es evidencia de algo aunque no sea de lo que dice.
+        """
+        from connectors.geografia import normalizar as normalizar_geo
+
+        publicada = prop.provincia
+        if not publicada:
+            return
+        canonica, zona = geografia().provincia_declarada(publicada)
+        if canonica:
+            if normalizar_geo(canonica) != normalizar_geo(publicada):
+                prop.extra["provincia_publicada"] = publicada
+            if zona:
+                prop.extra["zona_declarada"] = zona
+            prop.provincia = canonica
+            return
+        prop.extra["provincia_declarada_sin_resolver"] = publicada
+        prop.provincia = None
+
     def completar_ubicacion(self, prop: "PropiedadNormalizada",
                             fuente: Fuente) -> None:
         """Completa provincia desde el padron de la inmobiliaria.
@@ -786,6 +831,7 @@ class Connector:
         se pisa con una inferencia- y queda marcada como inferida, porque la
         provincia de la inmobiliaria no es necesariamente la del inmueble.
         """
+        Connector._canonizar_la_provincia_publicada(prop)
         padron = fuente.extra or {}
         provincia = padron.get("province")
         if provincia and not prop.provincia and not prop.extra.get('geo_conflicto'):

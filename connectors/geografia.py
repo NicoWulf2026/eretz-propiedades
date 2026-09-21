@@ -348,6 +348,75 @@ class Geografia:
             return del_departamento[0]
         return None
 
+    def provincia_declarada(self, texto: Any) -> tuple[str | None, str | None]:
+        """Que provincia nombra lo que la fuente escribio en `provincia`.
+
+        Devuelve `(provincia canonica, zona sobrante)`.
+
+        Hay fuentes que rotulan una ZONA como provincia. No es un error de
+        extraccion: la ficha de `dardopropiedades` publica, con todas las
+        letras, `Provincia: Bs.As. Costa Atlantica`, y el resto de su
+        geografia esta bien -`Ciudad: Mar del Plata`, `Direccion: Moreno
+        2568`-. Es la taxonomia de otra plataforma debajo de la misma
+        etiqueta. Medido: 612 propiedades del padron tienen en `provincia`
+        algo que no es una provincia, y 567 son de esta forma.
+
+        La regla NO adivina: se queda con la provincia **que el propio texto
+        nombra**. `Bs.As. Costa Atlantica` empieza diciendo Buenos Aires, y
+        `Buenos Aires Interior` tambien. Lo que sobra se devuelve aparte, como
+        zona, porque es informacion real de la fuente y tirarla seria perder
+        evidencia para no publicar un campo mal.
+
+        Lo que no nombra una provincia devuelve `(None, None)`. `San Salvador`
+        -una ciudad de Jujuy escrita en el campo provincia- queda sin
+        resolver, que es la respuesta correcta: la fuente se equivoco de
+        nivel y nosotros no sabemos cual quiso decir.
+
+        La comparacion es por PALABRAS ENTERAS y no por prefijo de caracteres.
+        En este proyecto la suposicion de limite de palabra ya fallo cinco
+        veces; aca un prefijo suelto haria que `Cordobes` empiece por
+        `Cordoba`.
+        """
+        palabras = normalizar(texto).split()
+        if not palabras:
+            return None, None
+        # De la frase mas larga a la mas corta: `tierra del fuego` tiene que
+        # ganarle a `tierra`, si alguna vez existiera esa provincia.
+        for corte in range(len(palabras), 0, -1):
+            candidata = " ".join(palabras[:corte])
+            canonica = self._provincia_por_nombre(candidata)
+            if canonica:
+                resto = " ".join(palabras[corte:])
+                return canonica, (resto or None)
+        return None, None
+
+    def _provincia_por_nombre(self, normalizada: str) -> str | None:
+        """El nombre oficial de una provincia, o None.
+
+        Acepta las formas que las fuentes escriben de verdad y que el catalogo
+        no trae: la abreviatura `bs as`, los nombres comerciales de CABA, y
+        `tierra del fuego` a secas -el catalogo la llama `Tierra del Fuego,
+        Antartida e Islas del Atlantico Sur`-. No se inventan provincias: cada
+        alias apunta a una entidad que ya existe.
+        """
+        entidad = self.provincia_entidad.get(normalizada)
+        if entidad is not None:
+            return entidad.provincia
+        for alias, oficial in (
+                ("bs as", "buenos aires"),
+                ("pcia de buenos aires", "buenos aires"),
+                ("provincia de buenos aires", "buenos aires"),
+                ("caba", "ciudad autonoma de buenos aires"),
+                ("capital federal", "ciudad autonoma de buenos aires"),
+                ("ciudad de buenos aires", "ciudad autonoma de buenos aires"),
+                ("tierra del fuego", "tierra del fuego antartida e islas "
+                                     "del atlantico sur")):
+            if normalizada == alias:
+                destino = self.provincia_entidad.get(oficial)
+                if destino is not None:
+                    return destino.provincia
+        return None
+
     def resolver_localidad(self, texto: Any, *, provincia: str | None = None,
                            departamento: str | None = None,
                            lat: float | None = None,

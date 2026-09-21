@@ -253,7 +253,21 @@ RE_ATRIBUTOS_TXT = re.compile(r"\b(dormitorio|ambiente|ba[nñ]o|superficie|"
                               r"m2|m²|cubierta|cochera|antig[uü]edad)", re.I)
 RE_EDITORIAL = re.compile(r'"@type"\s*:\s*"?(Article|NewsArticle|BlogPosting)|'
                           r'property="og:type"\s+content="article"', re.I)
+# Un precio CON MONEDA al lado, que es lo que el comentario de arriba ya venia
+# diciendo que distingue una ficha de una nota y no estaba implementado. Un
+# numero suelto no alcanza: "Analisis de la superficie construida en 2026"
+# tiene un numero y una palabra de atributo, y no es una propiedad.
+RE_PRECIO_CON_MONEDA = re.compile(
+    r"(?:u\$s|us\$|usd|ars|\$)\s*\d[\d.,]*"
+    r"|\d[\d.,]*\s*(?:d[oó]lares|pesos|usd|ars)\b", re.I)
 FOTOS_MINIMAS = 3
+
+# Cuantos atributos distintos tiene que reconocer una ficha para aceptarse SIN
+# precio numerico. Sale de medir, no de elegir: de las 53 paginas
+# institucionales que el guardian de forma rechazo en todo el corpus, 45
+# tienen cero atributos y ninguna llega a cuatro. El hueco entre 1 y 4 es lo
+# que hace seguro el corte.
+ATRIBUTOS_SIN_PRECIO = 4
 
 
 # `src` con ruta relativa, y los atributos con los que los sitios difieren la
@@ -2876,13 +2890,63 @@ class GenericoConnector(Connector):
         if RE_EDITORIAL.search(html or "") and not catalogo_verificado:
             return False
         t = texto or ""
-        describe = (bool(RE_OPERACION_TXT.search(t))
-                    or len({x.lower() for x in RE_ATRIBUTOS_TXT.findall(t)}) >= 2)
+        atributos = {x.lower() for x in RE_ATRIBUTOS_TXT.findall(t)}
+        describe = bool(RE_OPERACION_TXT.search(t)) or len(atributos) >= 2
+        # UN atributo alcanza si la pagina ademas publica precio.
+        #
+        # `alma di matteo` perdio sus 6 fichas por esta clausula y quedo en
+        # cero. Son propiedades reales, hechas a mano en HTML estatico:
+        # "Ranelagh Oeste - Calle 120", U$S 130.000, 8 fotos, 20x54 mts, y UN
+        # solo atributo reconocido -`cochera`-, sin la palabra "venta" en el
+        # texto porque el aviso dice "Se escuchan propuestas". Lo mismo
+        # `Bosco Building`, U$S 118.000, con `ambiente`.
+        #
+        # Se exige el precio CON MONEDA en el texto, no un numero suelto.
+        # Un test que ya existia lo mordio y tenia razon: "Analisis de la
+        # superficie construida en 2026" trae un numero y una palabra de
+        # atributo, y es una nota de mercado. La regla del censo decia
+        # "precio con moneda" y el comentario de `RE_OPERACION_TXT` ya lo
+        # anticipaba -«una nota del blog no suele traer un precio con moneda
+        # al lado»-; faltaba implementarlo.
+        #
+        # El precio es el discriminante, y esta medido: de los 100 rechazos
+        # del guardian registrados en TODO el corpus, ninguno traia precio.
+        # `area_cliente.php?sec=sol` y `quienes-somos.php` no publican uno.
+        # Con esta concesion ninguno de los 100 entraria.
+        #
+        # Ademas acerca la regla a la que verifico las formas -"precio con
+        # moneda, operacion o atributos, y fotos", un O entre las tres-.
+        # `_confirma_ficha` decia ser ese mismo criterio y era mas estricto:
+        # exigia precio Y ademas operacion o dos atributos. Con el cambio
+        # sigue siendo mas estricto que el censo, no menos.
+        if (not describe and precio is not None and atributos
+                and RE_PRECIO_CON_MONEDA.search(t)):
+            describe = True
         # La ausencia de fotos no invalida una ficha cuya pertenencia al
         # catalogo ya se demostro. Las formas amplias siguen exigiendo fotos.
         fotos_suficientes = catalogo_verificado or len(imagenes) >= FOTOS_MINIMAS
-        return ((precio is not None or bool(tipo_ld) or catalogo_verificado) and describe
-                and fotos_suficientes)
+        # Sin precio numerico, pero describiendo el inmueble en detalle.
+        #
+        # La concesion de "consultar precio" ya estaba razonada mas arriba
+        # -«es una propiedad publicada, no una nota»- y estaba implementada
+        # SOLO para schema.org. Las otras cuatro fichas de `alma di matteo`
+        # publican `Precio Consulte` con cinco atributos reconocidos
+        # -ambiente, bano, cochera, cubierta, dormitorio- y ocho fotos, y no
+        # tienen JSON-LD. Quedaban afuera por no traer un numero.
+        #
+        # El umbral sale de los datos, no de la intuicion. Medidas las 53
+        # paginas institucionales distintas que el guardian rechazo en todo el
+        # corpus: 45 tienen CERO atributos reconocidos, 4 tienen uno, y
+        # NINGUNA llega a cuatro. Las unicas cuatro con cuatro o mas son
+        # justamente las propiedades reales de esta agencia. El hueco entre 1
+        # y 4 es lo que hace seguro el corte.
+        #
+        # Incluye las paginas de portal de `gama` -`historia.php`,
+        # `galerias.html`-, que era el riesgo que habia que descartar: tienen
+        # cero o un atributo, no cuatro.
+        describe_en_detalle = len(atributos) >= ATRIBUTOS_SIN_PRECIO
+        return ((precio is not None or bool(tipo_ld) or catalogo_verificado
+                 or describe_en_detalle) and describe and fotos_suficientes)
 
     @staticmethod
     def _estado_fuente(titulo: str | None) -> str | None:
