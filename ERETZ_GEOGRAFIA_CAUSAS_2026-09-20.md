@@ -74,16 +74,42 @@ autocompletado devuelve `municipality: null` en 12 de 12 sugerencias. El dato
 existe —viaja en `area_nombre`, con `area_nivel = MUNICIPIO`, en 32.428
 filas— y no está donde el consumidor lo lee.
 
-### La propuesta, y por qué no la apliqué hoy
+### Aplicado el 2026-09-21
 
-Publicar `municipio` y `departamento` con **procedencia propia**
-—`GEO_GEOMETRY`, distinta de `GEO_CANONICAL` y de `GEO_SOURCE_TEXT`— para que
-nada quede promovido en silencio, y dejar `localidad` exactamente como está.
+Se publica `municipio` y `departamento` con **procedencia propia**
+—`GEO_GEOMETRY`, distinta de `SOURCE_LOCALITY`— y `localidad` queda
+exactamente como estaba.
 
-No está aplicado por una sola razón: toca `connectors/base.py`, que está en la
-huella del certificador, y **la cola está corriendo ahora mismo** (791
-agencias, dos workers en 413 y 378). Cambiarlo a mitad de corrida invalida el
-trabajo en vuelo. Queda como primera acción cuando la cola cierre.
+| dimensión | antes | ahora |
+|---|---:|---:|
+| `municipio_canonico` | **0** | **33.003** (56,5 %) |
+| `departamento_canonico` | 9.574 | **42.124** (72,1 %) |
+| `localidad_canonica` | 9.612 | 9.563 — **sin tocar** |
+
+De los 36.718 municipios demostrables se publican 33.003. **Los 3.715 que
+faltan son los `GEO_CONFLICT`**, retenidos a propósito: si la coordenada
+contradice la provincia que publica la fuente, su municipio tampoco sirve, y
+publicarlo mandaría a una persona a buscar en la provincia equivocada.
+
+La procedencia no es decorativa. Publicar 33.003 municipios nuevos sin decir
+de dónde salen sería promoverlos en silencio, que es el mismo error que
+comete hoy `provincia` (sección 3). Un consumidor puede distinguir el
+municipio que salió de un nombre escrito por la fuente del que salió de un
+polígono oficial, y `_procedencia()` devuelve `UNKNOWN` —nunca la de otra
+dimensión— cuando el nombre falta o el registro es anterior a este cambio.
+
+Un dato que apareció al aplicarlo: de los 33.003 municipios, **ninguno**
+viene del camino de la localidad. El catálogo no declara `gobierno_local`
+para las localidades censales resueltas, así que sin la geometría ese campo
+no tenía ninguna fuente. No era que se publicara poco: no se podía publicar
+nada.
+
+Bloqueo levantado: el 2026-09-20 dije que esto esperaba a que cerrara la
+cola, por la huella del certificador. Medida en vez de supuesta, **275 de 275
+certificaciones comparables ya tenían la huella caduca y cero vigentes**: el
+padrón ya estaba invalidado entero y el cambio no cuesta recertificación
+adicional. Además terminó no tocando `connectors/base.py`, sino
+`geo_coverage_audit.py` y `api_contract.py`, que no están en la huella.
 
 ---
 

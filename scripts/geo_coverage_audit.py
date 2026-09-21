@@ -54,7 +54,14 @@ from connectors.base import Connector, PropiedadNormalizada  # noqa: E402
 from connectors.texto import plegar  # noqa: E402
 from connectors.geografia import geografia  # noqa: E402
 
-COBERTURA_VERSION = "geo_coverage_audit_v4"
+COBERTURA_VERSION = "geo_coverage_audit_v5"
+
+# De donde salio cada dimension. Publicar el municipio demostrado por la
+# geometria sin decir que salio de ahi seria promoverlo en silencio: quien
+# lee la fila tiene que poder distinguir el que vino de un nombre escrito
+# por la fuente del que vino de un poligono oficial.
+POR_NOMBRE = "SOURCE_LOCALITY"
+POR_GEOMETRIA = "GEO_GEOMETRY"
 
 GEO_CONFLICT = "GEO_CONFLICT"
 
@@ -226,6 +233,43 @@ def main() -> int:
                 if _presente(valor_demostrado):
                     demostrable[dimension] += 1
 
+            # --- lo que la geometria oficial DEMUESTRA -------------------
+            # Hasta aca municipio y departamento se publicaban solo cuando
+            # venian del camino de la localidad, o sea del NOMBRE que la
+            # fuente escribio; la geometria servia nada mas que para el area
+            # de busqueda. Medido: 36.718 propiedades tienen su municipio
+            # demostrado por la geometria oficial y la columna `municipio` del
+            # snapshot esta vacia en las 57.665 filas. Cero, no pocas.
+            #
+            # La regla que lo causaba es correcta PARA LA LOCALIDAD y ahi se
+            # conserva: el sondeo de 36.552 puntos da
+            # `localidad_determinable_por_coordenada: 0`, porque `/ubicacion`
+            # no expone capa de localidad. Resolverla por coordenada obligaria
+            # al centroide mas cercano, que si es inventar geografia.
+            #
+            # Para municipio y departamento no: `/ubicacion` responde por
+            # CONTENCION en el poligono oficial. Que un punto caiga dentro del
+            # partido de Avellaneda no es una inferencia, es una medicion. La
+            # regla se escribio contra el centroide y termino tapando tambien
+            # la contencion.
+            #
+            # Se publica con procedencia propia para que nada quede promovido
+            # en silencio: quien lea la fila distingue el municipio que salio
+            # de un nombre del que salio de un poligono.
+            procedencia: dict[str, str] = {}
+            if _presente(municipio_nombre):
+                procedencia["municipio"] = POR_NOMBRE
+            elif muni_geo and not conflicto:
+                municipio_nombre = muni_geo
+                procedencia["municipio"] = POR_GEOMETRIA
+            if _presente(departamento_nombre):
+                procedencia["departamento"] = POR_NOMBRE
+            elif depto_geo and not conflicto:
+                departamento_nombre = depto_geo
+                procedencia["departamento"] = POR_GEOMETRIA
+            # `localidad_canonica` NO se toca: es la unica dimension que la
+            # coordenada no puede demostrar.
+
             # El area de busqueda baja de nivel, nunca miente sobre cual es.
             if corroborada:
                 nivel, valor = NIVEL_LOCALIDAD, prop.ciudad
@@ -254,6 +298,7 @@ def main() -> int:
                 "localidad_id": localidad_id if corroborada else None,
                 "departamento_canonico": departamento_nombre or None,
                 "municipio_canonico": municipio_nombre or None,
+                "procedencia_de_dimensiones": procedencia or None,
                 "provincia_canonica": provincia_final,
                 "barrio_fuente": fila.get("barrio"),
                 "match": match,

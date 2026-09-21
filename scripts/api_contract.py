@@ -111,6 +111,19 @@ REGLAS_DE_PRESENTACION = (
 )
 
 
+def _procedencia(geo: dict[str, Any] | None, dimension: str) -> str:
+    """De donde salio esta dimension, o `UNKNOWN` si no esta.
+
+    `UNKNOWN` cuando el nombre falta, igual que hace `localidad`: una
+    dimension vacia no tiene procedencia, y devolver la de otra cosa seria
+    peor que no devolver nada.
+    """
+    if not (geo or {}).get(f"{dimension}_canonico"):
+        return "UNKNOWN"
+    return ((geo or {}).get("procedencia_de_dimensiones") or {}).get(
+        dimension, "UNKNOWN")
+
+
 def fila_de_api(fila: dict[str, Any], geo: dict[str, Any] | None,
                 alcances: list[str]) -> dict[str, Any]:
     """Una propiedad con la forma exacta que consume el frontend."""
@@ -141,8 +154,16 @@ def fila_de_api(fila: dict[str, Any], geo: dict[str, Any] | None,
                           "procedencia": ("CANONICAL_NORMALIZED"
                                           if (geo or {}).get("localidad_canonica")
                                           else "UNKNOWN")},
-            "municipio": {"nombre": (geo or {}).get("municipio_canonico")},
-            "departamento": {"nombre": (geo or {}).get("departamento_canonico")},
+            # Municipio y departamento viajan CON su procedencia. La mayoria
+            # ahora sale de la geometria oficial -contencion en el poligono de
+            # GeoRef- y no del nombre que escribio la fuente. Las dos cosas
+            # son ciertas y no son lo mismo, asi que el consumidor tiene que
+            # poder distinguirlas: sin este campo, publicar 33.003 municipios
+            # nuevos seria promoverlos en silencio.
+            "municipio": {"nombre": (geo or {}).get("municipio_canonico"),
+                          "procedencia": _procedencia(geo, "municipio")},
+            "departamento": {"nombre": (geo or {}).get("departamento_canonico"),
+                             "procedencia": _procedencia(geo, "departamento")},
             "provincia": {"nombre": (geo or {}).get("provincia_canonica")},
             "barrio": {"nombre": (geo or {}).get("barrio_fuente")},
             "area_busqueda": (geo or {}).get("area_busqueda")
