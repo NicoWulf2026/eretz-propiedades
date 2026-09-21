@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, Iterable, List, Optional, Set
 from urllib.parse import quote
 
 import requests
@@ -43,6 +43,60 @@ class PartialBatchInsertError(RuntimeError):
         super().__init__(message)
         self.saved_payloads = list(saved_payloads)
         self.saved_count = len(self.saved_payloads)
+
+
+class EscrituraVigilada:
+    """Deja pasar las lecturas y solo las escrituras autorizadas.
+
+    `SupabaseClient` expone seis escritores y cuatro de ellos no los llama
+    nadie. Uno de esos cuatro, `batch_save_only_changed`, hace un PATCH con
+    una lista NEGRA de tres campos, asi que puede reasignar una propiedad a
+    otra inmobiliaria y reescribir su `hash_dedup` sin comprobar contra que
+    fila escribe y sin dejar auditoria. El RPC no puede ninguna de esas cosas.
+
+    La proteccion ya existia -`_InsertOnlySupabaseProxy`, en Pipeline A- pero
+    estaba en **una sola** de las tres puertas de entrada:
+
+        scripts/run_manifest.py      -> cliente envuelto
+        scraper/playwright_scraper.py -> cliente CRUDO
+        scraper/run.py                -> cliente CRUDO
+
+    Los dos scrapers hoy llaman solo a `batch_save_only_new`, asi que no hay
+    dano en curso. Pero nada se lo impide, y descubrirlo el dia que alguien
+    agregue una linea es tarde.
+
+    No se reuso aquella clase tal cual porque bloquea **todo** lo que no sean
+    sus dos metodos, lecturas incluidas, y los scrapers necesitan leer
+    (`get_all_existing_urls`, `get_active_urls_by_fuente`). Una guarda que
+    obliga a elegir entre proteger y funcionar no se aplica: por eso aca las
+    lecturas pasan y lo que se enumera es la escritura.
+    """
+
+    # Todo lo que no muta la base. Se enumeran una por una y no por prefijo:
+    # `get_` es una convencion, no una garantia, y basta con que alguien llame
+    # `get_or_create` a algo para que un prefijo deje entrar una escritura.
+    LECTURAS = frozenset({
+        "get_all_existing_urls", "get_existing_properties",
+        "get_unspecified_locations", "get_active_urls_by_fuente",
+        "filter_new_exact_urls", "table", "url", "headers",
+    })
+
+    def __init__(self, cliente: Any, escrituras: Iterable[str],
+                 donde: str = "este proceso") -> None:
+        self._cliente = cliente
+        self._escrituras = frozenset(escrituras)
+        self._donde = donde
+        sobran = self._escrituras & self.LECTURAS
+        if sobran:
+            # Autorizar una lectura como escritura no rompe nada hoy y hace
+            # ilegible la lista el dia que importe.
+            raise ValueError(f"no son escrituras: {sorted(sobran)}")
+
+    def __getattr__(self, nombre: str) -> Any:
+        if nombre in self.LECTURAS or nombre in self._escrituras:
+            return getattr(self._cliente, nombre)
+        raise RuntimeError(
+            f"escritura no autorizada en {self._donde}: {nombre}")
 
 
 class SessionFactory:

@@ -13,13 +13,13 @@ from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 
 if __package__:
-    from .clients import SupabaseClient, SessionFactory
+    from .clients import EscrituraVigilada, SupabaseClient, SessionFactory
     from .config import (SOURCE_CONFIGS, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_TABLE,
                          SUPABASE_URL, require_supabase_config)
     from .extractors import DataCleaner
     from .models import Propiedad
 else:  # Historical direct-file entry point.
-    from clients import SupabaseClient, SessionFactory
+    from clients import EscrituraVigilada, SupabaseClient, SessionFactory
     from config import (SOURCE_CONFIGS, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_TABLE,
                         SUPABASE_URL, require_supabase_config)
     from extractors import DataCleaner
@@ -3767,7 +3767,14 @@ def _dict_to_form(d: dict) -> str:
 def scrape_all():
     require_supabase_config()
     session = SessionFactory.create()
-    supabase = SupabaseClient(session, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_TABLE)
+    supabase = EscrituraVigilada(
+        SupabaseClient(session, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_TABLE),
+        # Las unicas dos escrituras que este proceso usa. El resto de los
+        # escritores del cliente -entre ellos el PATCH con lista negra, que
+        # puede reasignar una propiedad a otra inmobiliaria sin auditoria- no
+        # se llaman desde aca y ahora tampoco se pueden llamar.
+        escrituras=("batch_save_only_new", "batch_save_safe_merge"),
+        donde="playwright_scraper")
     existing_urls = supabase.get_all_existing_urls()
     logger.info(f"URLs existentes: {len(existing_urls)}")
 

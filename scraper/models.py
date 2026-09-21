@@ -221,6 +221,26 @@ class Propiedad:
         if self.inmobiliaria_id is not None:
             payload["inmobiliaria_id"] = self.inmobiliaria_id
         payload["hash_dedup"] = _compute_hash_dedup(self.inmobiliaria_id, self.url)
+        # `url_normalizada` no se producia y el RPC la EXIGE: sin ella,
+        # `insert_property_safe` levanta "safe insert requires complete
+        # identity and audit envelope". O sea que migrar del REST al RPC no
+        # era cambiar la llamada, faltaba el dato. Y produccion ya trata su
+        # ausencia como defecto: la bandera `missing_normalized_url` de
+        # `property_active_state_and_quality_flags.sql` es exactamente "url
+        # exists and url_normalizada is blank".
+        #
+        # Se calcula con `_normalize_url_for_hash`, la MISMA funcion sobre la
+        # que ya esta definido `hash_dedup`, y no con la forma que usa el
+        # volcado de produccion -`netloc + path`, sin query-. Medido sobre las
+        # 22.097 propiedades certificadas: aquella forma colapsa 492 en otra
+        # fila, porque los sitios que identifican la propiedad por query
+        # quedan todos con la misma clave. `agostinelli` funde 397 propiedades
+        # en `agostinelli.com.ar/ficha.php` y `abonapace` 92 en
+        # `abonapace.com.ar/propiedad.php`. Esta funcion conserva las 21.901
+        # urls distintas como 21.901 claves distintas.
+        normalizada = _normalize_url_for_hash(self.url)
+        if normalizada:
+            payload["url_normalizada"] = normalizada
         return payload
 
     def is_valid(self) -> bool:

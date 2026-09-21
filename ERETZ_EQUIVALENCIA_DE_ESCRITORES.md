@@ -141,20 +141,95 @@ cambia legítimamente en una propiedad ya publicada, y ese número no lo tengo.
 
 ## Qué falta para poder retirar el REST
 
-1. **Completar `to_payload()`** con `url_normalizada` —requerida— y decidir
-   sobre `superficie_cubierta`, `id_externo`, `provincia`, `pais`.
-2. **Resolver el acoplamiento geográfico** entre `ciudad` y `provincia`.
-3. **Matriz de consumidores**: quién llama hoy a `save`,
-   `batch_save_only_new`, `batch_save_only_changed`, `update_location`,
-   `mark_as_inactive` y `save_historial`. Codex ya advirtió que no hay
-   equivalencia completa de escritores y que el REST tiene consumidores
-   legítimos; retirarlo sin esa matriz sería romper algo que no estoy viendo.
-4. **`update_location` y `mark_as_inactive` no tienen equivalente RPC.** El
-   primero escribe `latitud`/`longitud` —que el merge sí cubre— pero por otra
-   ruta y sin auditoría; el segundo escribe `estado`, que el UPDATE del RPC
-   **no permite**. Cerrar el REST hoy dejaría sin camino a la baja de una
-   propiedad.
+**Actualizado el 2026-09-21 con la matriz de consumidores medida.** Tres de
+los cuatro puntos que estaban abiertos cambian de forma, y uno de ellos
+estaba mal planteado.
 
-Los cuatro son trabajo local y ninguno necesita tocar producción. El punto 4
-es el que más me sorprendió: la función que da de baja una propiedad no tiene
-sustituto en el camino seguro.
+### La matriz de consumidores: cuatro de los seis escritores no los llama nadie
+
+Buscados en todo el repositorio —`.py`, `.ts`, `.tsx`, `.mjs`, `.sql`, `.md`,
+más despacho dinámico por `getattr`—, excluyendo `_scratch` y `build`:
+
+| escritor | llamadas en producción |
+|---|---|
+| `batch_save_only_new` | **19**, todas en `playwright_scraper.py` |
+| `batch_save_safe_merge` | 1 |
+| `save` | **0** |
+| `batch_save_only_changed` | **0** |
+| `update_location` | **0** |
+| `mark_as_inactive` | **0** |
+| `save_historial` | **0** |
+
+El PATCH peligroso —el de la lista negra de tres campos, el que puede
+reasignar una propiedad a otra inmobiliaria sin auditoría— **no tiene ni un
+solo consumidor**. El riesgo era de capacidad, no de uso.
+
+### El punto 4 estaba mal planteado
+
+Decía: *«cerrar el REST hoy dejaría sin camino a la baja de una propiedad»*.
+Medido, es peor y más simple: **no hay camino hoy**. `mark_as_inactive` existe
+y no la llama nadie, así que el ciclo de vida de una propiedad no tiene baja
+implementada por ninguna vía. Cerrar el REST no quita nada; lo que falta es
+construirlo, y eso es trabajo de `ERETZ_PROPERTY_LIFECYCLE.md`, no de esta
+equivalencia.
+
+### Lo que sí faltaba y ya está: `url_normalizada`
+
+`to_payload()` ahora la produce. Era el punto 1 y era un bloqueo real: sin
+ella el RPC levanta «safe insert requires complete identity and audit
+envelope», que es donde falló el primer intento de esta verificación.
+
+**Con qué forma se calcula no es un detalle.** Hay dos normalizaciones de url
+en el proyecto y no son la misma:
+
+```
+_normalize_url_for_hash     agostinelli.com.ar/ficha.php?id=7838&op=v
+la del volcado de prod      agostinelli.com.ar/ficha.php
+```
+
+Medido sobre las 22.097 propiedades certificadas, la segunda **colapsa 492 en
+otra fila**: `agostinelli` funde 397 propiedades en una sola clave y
+`abonapace` 92, porque los sitios que identifican la propiedad por query
+quedan todos iguales. La primera conserva las 21.901 urls distintas como
+21.901 claves distintas, y además es sobre la que ya estaba definido
+`hash_dedup`. Se usa esa.
+
+Es un hallazgo sobre el dato de producción, no sólo sobre el código: la
+columna `url_normalizada` que hoy está poblada tiene ese colapso adentro para
+esos sitios, y hay un índice sobre ella. No se tocó: las escrituras
+productivas no están autorizadas.
+
+### Los otros cuatro campos: la decisión se toma sola
+
+`superficie_cubierta`, `id_externo`, `provincia` y `pais` los soporta el RPC y
+**el modelo `Propiedad` no los tiene**. No hay de dónde sacarlos. Completarlos
+exige que alguien los produzca primero; inventarlos sería peor que su
+ausencia. Queda con test que lo fija.
+
+### La guarda estaba en una sola de las tres puertas
+
+El hallazgo incidental de la matriz, y el que más valía arreglar:
+
+```
+scripts/run_manifest.py        -> cliente envuelto en _InsertOnlySupabaseProxy
+scraper/playwright_scraper.py  -> cliente CRUDO
+scraper/run.py                 -> cliente CRUDO
+```
+
+Los dos scrapers hoy sólo llaman a `batch_save_only_new`, así que no había
+daño en curso. Pero nada se lo impedía, y descubrirlo el día que alguien
+agrega una línea es tarde.
+
+Ahora las tres están cubiertas con `EscrituraVigilada` (`scraper/clients.py`).
+No se reusó aquella clase tal cual porque bloquea **todo** lo que no sean sus
+dos métodos, lecturas incluidas, y los scrapers necesitan leer: una guarda que
+obliga a elegir entre proteger y funcionar no se aplica, y entonces no protege
+nada. Acá las lecturas pasan y lo que se enumera es la escritura, con lista
+blanca: un método nuevo queda bloqueado por defecto.
+
+### Lo que sigue abierto
+
+**El acoplamiento geográfico** entre `ciudad` y `provincia` (sección anterior).
+Sigue necesitando el dato que no tengo: con qué frecuencia una ciudad cambia
+legítimamente en una propiedad ya publicada. Las tres salidas siguen escritas
+y ninguna elegida a ojo.

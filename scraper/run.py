@@ -35,7 +35,7 @@ from playwright.sync_api import TimeoutError as PwTimeout
 from playwright.sync_api import sync_playwright
 
 if __package__:
-    from .clients import PartialBatchInsertError, SessionFactory, SupabaseClient
+    from .clients import EscrituraVigilada, PartialBatchInsertError, SessionFactory, SupabaseClient
     from .config import SUPABASE_SERVICE_ROLE_KEY, SUPABASE_TABLE, SUPABASE_URL, require_supabase_config
     from .models import Propiedad
     from .playwright_scraper import (
@@ -47,7 +47,7 @@ if __package__:
         scrape_sur, scroll_to_bottom,
     )
 else:  # Existing direct-script consumers remain supported.
-    from clients import PartialBatchInsertError, SessionFactory, SupabaseClient
+    from clients import EscrituraVigilada, PartialBatchInsertError, SessionFactory, SupabaseClient
     from config import SUPABASE_SERVICE_ROLE_KEY, SUPABASE_TABLE, SUPABASE_URL, require_supabase_config
     from models import Propiedad
     from playwright_scraper import (
@@ -1383,7 +1383,14 @@ def run(
     """
     require_supabase_config()
     session = SessionFactory.make()
-    supabase = SupabaseClient(session, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_TABLE)
+    supabase = EscrituraVigilada(
+        SupabaseClient(session, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_TABLE),
+        # Las unicas dos escrituras que este proceso usa. El resto de los
+        # escritores del cliente -entre ellos el PATCH con lista negra, que
+        # puede reasignar una propiedad a otra inmobiliaria sin auditoria- no
+        # se llaman desde aca y ahora tampoco se pueden llamar.
+        escrituras=("batch_save_only_new", "batch_save_safe_merge"),
+        donde="run.py")
 
     # Cargar URLs ya existentes
     logger.info("Cargando URLs existentes desde Supabase...")
