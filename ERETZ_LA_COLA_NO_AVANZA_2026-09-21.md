@@ -232,7 +232,31 @@ compartido, en vez de ir de a uno:
    línea —agregar `and (d.get("fotos") or 0) >= FOTOS_MINIMAS`— pero
    `_procesar_con` **sí** está en la huella del certificador.
 
-10. lo que aparezca de los paros que la cola encuentre de acá en adelante.
+10. **El conflicto geográfico borra la coordenada y la reporta como fallo de
+    extracción.** `connectors/base.py:934-937` borra cuatro campos y marca
+    dos:
+
+    ```python
+    prop.provincia = prop.ciudad = None
+    prop.latitud = prop.longitud = None
+    _marcar_descartado(prop, 'ciudad')
+    _marcar_descartado(prop, 'provincia')
+    ```
+
+    Latitud y longitud quedan en `None` sin rastro, así que la cobertura ve
+    «la fuente lo publica, no lo tenemos, nadie lo descartó» y concluye
+    `EXTRACTION_FAILED`. Son **dos** defectos: la etiqueta —debería ser
+    `PROVIDED_REJECTED`, que existe para esto— y borrar la coordenada, que es
+    el mismo exceso corregido esta mañana en la rama de
+    `PROVINCE_CONFLICT_REASON`; ésta es la de `CONTRADICTED_BY_COORDINATES` y
+    quedó afuera.
+
+    Medido: de 372 propiedades sin latitud en las 7 agencias con ese estado,
+    **58 son descartes y no fallos** —34 de `cantale` y 11 de `agostinelli`—.
+    Las otras 314 sí son fallos reales. Chico en propiedades y caro en
+    operación: dos paros FAMILIA de la misma agencia.
+
+11. lo que aparezca de los paros que la cola encuentre de acá en adelante.
 
 ### El crosswalk de identidad pública: no se puede construir acá
 
