@@ -50,6 +50,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import urllib.parse
 import shutil
 import sys
 import time
@@ -92,7 +93,24 @@ def _jsonl(ruta: Path):
 
 
 def normalizar(url: Any) -> str:
-    return str(url or "").strip().rstrip("/").lower()
+    """La url comparable. `www` NO distingue dos sitios.
+
+    Sin sacarlo, retirar `https://crecer.com.ar` deja intacta
+    `https://www.crecer.com.ar/`, que es el MISMO sitio, y la verificacion de
+    esta misma herramienta lo da por retirado. Paso de verdad: el retiro
+    informo "ninguna resuelve ya a una url compartida" mientras la agencia
+    seguia apuntando a la variante con `www`.
+
+    Es la misma forma que usa `fuentes_compartidas.normalizar`. Las dos tienen
+    que plegar igual o una retira lo que la otra no ve.
+    """
+    limpia = str(url or "").strip().rstrip("/").lower()
+    partes = urllib.parse.urlsplit(limpia)
+    if not partes.netloc.startswith("www."):
+        return limpia
+    return urllib.parse.urlunsplit(
+        (partes.scheme, partes.netloc[4:], partes.path,
+         partes.query, partes.fragment))
 
 
 def a_retirar() -> dict[str, str]:

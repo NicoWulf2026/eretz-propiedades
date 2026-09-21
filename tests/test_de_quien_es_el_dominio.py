@@ -204,3 +204,37 @@ def test_la_cobertura_no_cuenta_dos_veces_el_mismo_pedazo():
     fallo = dictaminar("https://rodriguez.com.ar", {
         "roomix:x": "Rodriguez Rodrig"})
     assert fallo["detalle"]["roomix:x"]["cobertura"] == 9
+
+
+def test_MUERDE_www_no_distingue_dos_sitios():
+    """`crecer.com.ar` y `www.crecer.com.ar` son el mismo sitio.
+
+    Sin plegar `www`, dos agencias apuntando al MISMO sitio no aparecen como
+    url compartida: se esconden en la detección por host, que es la categoría
+    menos grave —ahí cada una tiene su ruta y nadie se pisa, y éstas sí se
+    pisan—. Eran cuatro grupos: `crecer.com.ar`, `red-inmobiliaria.com.ar`,
+    `bustamantepropiedades.com` e `inmobiliariafotheringham.com.ar`.
+
+    Y la herramienta de retiro tenía el mismo hueco: retiraba
+    `https://crecer.com.ar`, dejaba intacta `https://www.crecer.com.ar/` y
+    después informaba que no quedaba ninguna url compartida. Las dos
+    normalizaciones tienen que plegar igual o una retira lo que la otra no ve.
+    """
+    import sys as _sys
+    _sys.path.insert(0, str(RAIZ / "scripts"))
+    from scripts.fuentes_compartidas import normalizar as n_detectar
+    from scripts.retirar_fuente_compartida import normalizar as n_retirar
+    for con, sin in (("https://www.crecer.com.ar/", "https://crecer.com.ar"),
+                     ("https://WWW.Red-Inmobiliaria.com.ar", "https://red-inmobiliaria.com.ar"),
+                     ("https://www.x.com/a/b", "https://x.com/a/b")):
+        assert n_detectar(con) == n_detectar(sin), con
+        assert n_retirar(con) == n_retirar(sin), con
+        # Y las dos herramientas tienen que coincidir entre si.
+        assert n_detectar(con) == n_retirar(con), con
+
+
+def test_un_host_que_empieza_con_wwwalgo_no_se_recorta():
+    """`wwwalgo.com` no es `algo.com`: el prefijo se saca con el punto."""
+    from scripts.fuentes_compartidas import normalizar
+    assert normalizar("https://wwwalgo.com") == "https://wwwalgo.com"
+    assert "wwwalgo" in normalizar("https://wwwalgo.com/x")

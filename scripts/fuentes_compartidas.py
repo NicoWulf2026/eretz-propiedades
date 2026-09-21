@@ -115,7 +115,26 @@ def nombre_de(clave: str) -> str:
 
 
 def normalizar(url: str) -> str:
-    return (url or "").strip().rstrip("/").lower()
+    """La url comparable. `www` NO distingue dos sitios.
+
+    Sin sacarlo, `https://crecer.com.ar` y `https://www.crecer.com.ar` son dos
+    urls distintas, y dos agencias que apuntan al MISMO sitio no aparecen como
+    url compartida. Se escondian en la deteccion por host, que es la categoria
+    menos grave: ahi cada agencia tiene su propia ruta y nadie se pisa, y estas
+    si se pisan.
+
+    Medido al escribir la deteccion por host: cuatro grupos -`crecer.com.ar`,
+    `red-inmobiliaria.com.ar`, `bustamantepropiedades.com`,
+    `inmobiliariafotheringham.com.ar`- eran exactamente esto. Sacarlo no los
+    oculta: los sube a la categoria que les corresponde.
+    """
+    limpia = (url or "").strip().rstrip("/").lower()
+    partes = urllib.parse.urlsplit(limpia)
+    if not partes.netloc.startswith("www."):
+        return limpia
+    return urllib.parse.urlunsplit(
+        (partes.scheme, partes.netloc[4:], partes.path,
+         partes.query, partes.fragment))
 
 
 def clasificar(url: str, agencias: list[str]) -> str:
