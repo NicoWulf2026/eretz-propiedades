@@ -830,6 +830,28 @@ alcanzó alguna vez. Lo que sí es raro de explicar por azar es la forma —cinc
 crecientes y un corte— y eso se confirma o se cae con las próximas agencias
 contra el control.
 
+#### Cierre de la medición, al final del día
+
+El A/B con control se terminó temprano —un paro COMPARTIDO mató al worker 1 y
+lo relancé con el arreglo, así que dejó de ser control—. Lo que queda es
+comparar tramos del día, con su matiz:
+
+| tramo | resultados/h | paros/h |
+|---|---:|---:|
+| 00–06, antes de la degradación | **15,4** | 1,0 |
+| 07–12, degradado (IPv6 empeorando) | **8,7** | 2,2 |
+| 13–17, con IPv4 primero | **12,8** | 3,2 |
+
+El ritmo se recuperó de 8,7 a 12,8/h, un 47 % más, **y con el triple de paros
+por hora** que el tramo rápido de la madrugada. Cada paro mata a los dos
+workers hasta que se firma y se relanza, así que la comparación juega en
+contra del tramo de la tarde y aun así gana.
+
+No volvió a 15,4, y no tengo cómo separar cuánto de eso es el arreglo y
+cuánto la carga de paros. Lo que sí se sostiene: la caída de la mañana se
+revirtió, y la forma —cinco horas cayendo, corte, recuperación— coincide con
+lo medido en el handshake.
+
 Arreglado en `scripts/ipv4_primero.py`, conectado en el runner de la cola.
 Reordena las direcciones para poner IPv4 adelante y **no descarta las IPv6**:
 de los 83 hosts con AAAA, 51 conectan rápido por IPv6 y hay redes donde es el
