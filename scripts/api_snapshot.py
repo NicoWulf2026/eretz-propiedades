@@ -127,8 +127,15 @@ create index if not exists ix_operacion_tipo
 create index if not exists ix_precio on propiedades(moneda, precio);
 create index if not exists ix_area on propiedades(area_nivel, area_nombre);
 -- Prefijo sin acentos: es exactamente lo que consulta el autocompletado.
-create index if not exists ix_area_plano on propiedades(area_nombre_plano);
-create index if not exists ix_barrio_plano on propiedades(barrio_plano);
+-- Los indices llevan TAMBIEN las columnas que la consulta agrupa y devuelve,
+-- porque si no el planificador prefiere `ix_area` -que cubre el `group by`- y
+-- filtra escaneando. Medido sobre las 57.665 filas: con el indice de una sola
+-- columna la consulta tardaba 469 ms; con estos, 2,8 ms. `ANALYZE` no
+-- alcanzaba: el planificador seguia eligiendo mal con estadisticas.
+create index if not exists ix_area_plano
+    on propiedades(area_nombre_plano, area_nivel, area_nombre);
+create index if not exists ix_barrio_plano
+    on propiedades(barrio_plano, barrio);
 create index if not exists ix_localidad on propiedades(localidad);
 create index if not exists ix_agencia on propiedades(agency_id);
 

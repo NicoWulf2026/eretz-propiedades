@@ -84,3 +84,75 @@ def test_MUERDE_con_una_sola_de_las_dos_columnas_no_alcanza():
                 "barrio text, area_nombre_plano text)")
     assert _tiene_columnas_planas(con) is False
     con.close()
+
+
+def _snapshot_de_prueba(con: sqlite3.Connection, planas: bool = True) -> None:
+    """Una snapshot minima con la forma real, para medir la consulta."""
+    extra = ", area_nombre_plano text, barrio_plano text" if planas else ""
+    con.execute(f"create table propiedades (id text, area_nivel text, "
+                f"area_nombre text, barrio text{extra})")
+    if planas:
+        con.execute("create index ix_area_plano on propiedades"
+                    "(area_nombre_plano, area_nivel, area_nombre)")
+        con.execute("create index ix_barrio_plano on propiedades(barrio_plano, barrio)")
+    filas = [("1", "MUNICIPIO", "Córdoba", "Alberdi"),
+             ("2", "PROVINCIA", "Córdoba", "Centro"),
+             ("3", "LOCALIDAD", "Mar del Plata", "Centro"),
+             ("4", "LOCALIDAD", "Corrientes", "Sur")]
+    for f in filas:
+        if planas:
+            con.execute("insert into propiedades values (?,?,?,?,?,?)",
+                        f + (sin_acento(f[2]), sin_acento(f[3])))
+        else:
+            con.execute("insert into propiedades values (?,?,?,?)", f)
+    con.commit()
+
+
+def test_MUERDE_el_rango_devuelve_lo_mismo_que_el_like():
+    """El cambio a rango es por velocidad -469 ms contra 2,8- y no puede
+    cambiar ni una fila del resultado."""
+    con = sqlite3.connect(":memory:")
+    _snapshot_de_prueba(con)
+    plano = sin_acento("cordo")
+    rango = con.execute(
+        "select area_nivel, area_nombre from propiedades "
+        "where area_nombre_plano >= ? and area_nombre_plano < ? "
+        "order by area_nivel", (plano, plano + "\uffff")).fetchall()
+    like = con.execute(
+        "select area_nivel, area_nombre from propiedades "
+        "where area_nombre_plano like ? order by area_nivel",
+        (plano + "%",)).fetchall()
+    assert rango == like
+    assert {n for _, n in rango} == {"Córdoba"}
+    con.close()
+
+
+def test_MUERDE_el_rango_no_se_lleva_de_mas_ni_de_menos():
+    """`corri` no puede traer Cordoba, y `cordo` no puede traer Corrientes."""
+    con = sqlite3.connect(":memory:")
+    _snapshot_de_prueba(con)
+    def buscar(q):
+        p = sin_acento(q)
+        return {r[0] for r in con.execute(
+            "select distinct area_nombre from propiedades "
+            "where area_nombre_plano >= ? and area_nombre_plano < ?",
+            (p, p + "\uffff"))}
+    assert buscar("cordo") == {"Córdoba"}
+    assert buscar("corri") == {"Corrientes"}
+    assert buscar("cor") == {"Córdoba", "Corrientes"}
+    assert buscar("mar del") == {"Mar del Plata"}
+    con.close()
+
+
+def test_MUERDE_el_indice_cubre_el_filtro_y_la_agrupacion():
+    """El indice de UNA sola columna no alcanzaba: el planificador prefiere
+    el que cubre el `group by` y filtra escaneando. Medido, 469 ms contra
+    2,8. Si alguien lo simplifica a una columna, esto muerde."""
+    con = sqlite3.connect(":memory:")
+    _snapshot_de_prueba(con)
+    plan = " ".join(r[-1] for r in con.execute(
+        "explain query plan select area_nivel, area_nombre, count(*) "
+        "from propiedades where area_nombre_plano >= ? and area_nombre_plano < ? "
+        "group by area_nivel, area_nombre", ("cordo", "cordo\uffff")))
+    assert "ix_area_plano" in plan, plan
+    con.close()

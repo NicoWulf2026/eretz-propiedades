@@ -50,6 +50,31 @@ encadenar ocho cambios mantiene el padrón permanentemente caduco.
 **La cola no está rota. Está haciendo exactamente lo que se le pidió.** Lo que
 falla es la secuencia en la que trabajé.
 
+### Y hay una segunda mitad, que encontré después y es peor
+
+Cada vez que cambié código compartido, **reinicié los workers** para que
+tomaran el código nuevo. Parecía obviamente correcto —un worker con el módulo
+viejo cargado escribiría certificaciones con la huella nueva y la conducta
+anterior—. Lo que no miré es qué le hace el reinicio a la posición:
+
+```
+w0   global_cursor 4    queue_size 413    started_at 2026-09-20T22:52
+w1   global_cursor 5    queue_size 378    started_at 2026-09-21T01:42
+```
+
+**w0 lleva seis horas corriendo y avanzó cuatro posiciones. w1, tres horas y
+cinco.** Los `started_at` son exactamente mis reinicios, y el cursor arranca
+de cero en cada uno.
+
+Así que no es sólo que las certificaciones queden caducas: es que cada
+reinicio vuelve a empezar por el principio del abecedario, vuelve a encontrar
+las mismas agencias caducas, y las vuelve a hacer. Reinicié cinco veces hoy.
+Las dos cosas se multiplican.
+
+**Dejar drenar la cola significa también no reiniciarla.** Eso no estaba en mi
+decisión de hace un rato y es la mitad que importa: sin esto, congelar el
+código no alcanza.
+
 ## Lo que esto NO significa
 
 No significa que los arreglos no valieran la pena. Lo que evitaron está

@@ -641,28 +641,50 @@ def sugerencias(
         # no encontraba `Cordoba`, porque ese COLLATE solo pliega mayusculas
         # ASCII y no toca los acentos.
         #
-        # Si la snapshot trae las columnas planas se usan esas, que estan
-        # indexadas: resolverlo con la funcion sobre las 57.665 filas medio
-        # 436 ms, y una caja de autocompletado se dispara con cada tecla. La
-        # funcion queda de respaldo para que una snapshot vieja siga
-        # respondiendo -lenta, pero bien- en vez de fallar con `no such
-        # column`.
-        planas = _tiene_columnas_planas(con)
-        col_area = "area_nombre_plano" if planas else "sin_acento(area_nombre)"
-        col_barrio = "barrio_plano" if planas else "sin_acento(barrio)"
-        patron = f"{_plano(q)}%"
-        area = con.execute(
-            "select area_nivel, area_nombre, count(*) as n from propiedades "
-            f"where {col_area} like ? "
-            "group by area_nivel, area_nombre order by n desc limit ?",
-            (patron, limit),
-        ).fetchall()
-        barrio = con.execute(
-            "select barrio, count(*) as n from propiedades "
-            f"where {col_barrio} like ? group by barrio "
-            "order by n desc limit ?",
-            (patron, limit),
-        ).fetchall()
+        # Si la snapshot trae las columnas planas, el prefijo se pide como
+        # RANGO y no con `like`. No es una preferencia de estilo: con `like`
+        # el planificador elige `ix_area` -que cubre el `group by`- y filtra
+        # escaneando las 57.665 filas. Medido, la misma consulta da
+        #
+        #     like sobre la columna plana      469 ms
+        #     rango sobre la columna plana     2,8 ms
+        #
+        # y devuelve exactamente las mismas filas. `ANALYZE` no alcanzaba: el
+        # planificador seguia eligiendo mal con estadisticas encima.
+        #
+        # La funcion `sin_acento` queda de respaldo para una snapshot vieja,
+        # que responde lenta pero bien en vez de fallar con `no such column`.
+        plano = _plano(q)
+        if _tiene_columnas_planas(con):
+            # El tope del rango: cualquier cosa que empiece con el prefijo es
+            # menor que el prefijo seguido del caracter mas alto.
+            tope = plano + "￿"
+            area = con.execute(
+                "select area_nivel, area_nombre, count(*) as n from propiedades "
+                "where area_nombre_plano >= ? and area_nombre_plano < ? "
+                "group by area_nivel, area_nombre order by n desc limit ?",
+                (plano, tope, limit),
+            ).fetchall()
+            barrio = con.execute(
+                "select barrio, count(*) as n from propiedades "
+                "where barrio_plano >= ? and barrio_plano < ? "
+                "group by barrio order by n desc limit ?",
+                (plano, tope, limit),
+            ).fetchall()
+        else:
+            patron = f"{plano}%"
+            area = con.execute(
+                "select area_nivel, area_nombre, count(*) as n from propiedades "
+                "where sin_acento(area_nombre) like ? "
+                "group by area_nivel, area_nombre order by n desc limit ?",
+                (patron, limit),
+            ).fetchall()
+            barrio = con.execute(
+                "select barrio, count(*) as n from propiedades "
+                "where sin_acento(barrio) like ? group by barrio "
+                "order by n desc limit ?",
+                (patron, limit),
+            ).fetchall()
     finally:
         con.close()
     salida = [
