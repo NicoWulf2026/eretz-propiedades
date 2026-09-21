@@ -167,7 +167,47 @@ compartido, en vez de ir de a uno:
    la red. El conector no se puede escribir hasta resolver la atribución, o
    le adjudicaríamos propiedades ajenas a cada agencia.
 
-6. lo que aparezca de los paros que la cola encuentre de acá en adelante.
+6. **`source_listing_id` repetido en `generico`: 3.683 propiedades (24,5 %).**
+   Apareció buscando si se podía construir el crosswalk de identidad pública.
+   El conector genérico toma el primer número del slug, y en una url como
+   `carusopropiedades.com/ad/lote-de-1200-m2-en-venta-la-reja-centro` ese
+   número es la **superficie**. El id `1200` aparece en 31 urls de agencias
+   distintas; el `500`, en 27.
+
+   | conector | propiedades | ids con choque | afectadas |
+   |---|---:|---:|---:|
+   | tokko | 32.757 | **0** | **0** |
+   | generico | 15.042 | 1.131 | **3.683 (24,5 %)** |
+   | wordpress | 8.722 | 272 | 613 (7,0 %) |
+   | wasi | 1.322 | 0 | 0 |
+   | century21 | 584 | 0 | 0 |
+
+   No compromete la identidad de la propiedad —`hash_dedup` se calcula sobre
+   `inmobiliaria_id|url`, no sobre esto— pero es un campo publicado que dice
+   algo falso, y el caso `eckert` muestra el mecanismo con claridad: la url es
+   `/properties/446753/1200m2-…` y el id que guardamos es `1200`.
+
+7. lo que aparezca de los paros que la cola encuentre de acá en adelante.
+
+### El crosswalk de identidad pública: no se puede construir acá
+
+Era uno de los pendientes heredados —«el crosswalk URL numérica ↔ hash está
+vacío; **no inventar aliases**»—. Comprobado: la tabla `property_aliases` no
+existe en la snapshot y nada la construye; la API la consulta a la defensiva,
+así que degrada a 404 en vez de romper.
+
+**No se puede armar con datos locales, por dos razones y las dos medidas:**
+
+1. El identificador público viejo es el `id` numérico de producción, y
+   producción no se consulta. Localmente no existe en ningún artefacto: las
+   filas de preingestión tienen `canonical_agency_id`, `inmobiliaria_id` y
+   `source_listing_id`, ninguno de ellos ese id.
+2. Aunque se intentara con `source_listing_id`, **no sirve**: 1.646 valores
+   están compartidos por dos o más propiedades y afectan a 4.937 (8,4 %).
+   Un alias construido así mandaría una url a la propiedad equivocada, que es
+   exactamente lo que la consigna prohíbe.
+
+Queda como bloqueado por acceso a producción, no como pendiente de trabajo.
 
 ### Lo que el sondeo descartó
 
