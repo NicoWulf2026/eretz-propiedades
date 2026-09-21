@@ -33,6 +33,25 @@ from .base import (Bloqueado, Connector, ErrorPermanente, ErrorTransitorio,
                    detectar_moneda, detectar_operacion, detectar_tipo, limpiar)
 
 RUTAS_LISTADO = ("/Propiedades", "/propiedades", "/Venta", "/venta", "/Buscar")
+
+# Un catalogo unificado ya trae venta, alquiler y emprendimientos juntos: si
+# esta, con ese alcanza.
+RUTAS_UNIFICADAS = ("/Propiedades", "/propiedades", "/Buscar")
+
+# Muchos sitios NO tienen catalogo unificado: lo parten por operacion. Quedarse
+# con el primero que aparece -siempre `/Venta`, porque encabeza la lista- deja
+# afuera el resto del inventario, y la enumeracion se declara completa igual.
+#
+# Es el mismo error conceptual que la paginacion rota, en otra forma: la
+# primera vez el catalogo terminaba donde terminaba la primera pagina, y aca
+# termina donde termina el primer catalogo.
+#
+# Medido sobre 45 sitios tokko: 10 estan partidos asi. En los 11 casos donde se
+# leyeron los totales declarados de cada ruta son 291 propiedades invisibles
+# sobre 1.767, el 16,5%.
+RUTAS_POR_OPERACION = ("/Venta", "/venta", "/Alquiler", "/alquiler",
+                       "/Emprendimientos", "/emprendimientos",
+                       "/Alquiler-Temporario", "/Temporario", "/temporario")
 MAX_PAGINAS = 200          # 4.000 avisos: mas que el maximo observado (690)
 POR_PAGINA = 20
 
@@ -300,26 +319,29 @@ class TokkoConnector(Connector):
             "usa_tfw": "static.tokkobroker.com/tfw/" in html,
         }
 
-        ruta = next((r for r in RUTAS_LISTADO if f'href="{r}"' in html), None)
         propia = urllib.parse.urlparse(fuente.official_url).path or "/"
-        if ruta is None and RE_FICHA.search(html):
-            ruta = propia
-        plan["ruta_listado"] = ruta
+        rutas = self.rutas_del_catalogo(html, propia)
+        plan["rutas_listado"] = rutas
+        plan["ruta_listado"] = rutas[0] if rutas else None
 
-        listado = html
-        if ruta and ruta != propia:
-            listado = self.descargador.bajar(base + ruta)
+        # Cada catalogo se mide por separado: tienen su propio total declarado
+        # y pueden paginar distinto. Sumarlos antes de medirlos escondria que
+        # uno de ellos no se puede paginar.
+        plan["catalogos"] = [self._medir_catalogo(base, r, html if r == propia
+                                                  else None)
+                             for r in rutas]
+        principal = plan["catalogos"][0] if plan["catalogos"] else {}
+        listado = principal.get("html_listado", html)
 
-        query = query_de_paginacion(listado)
-        plan["query_paginacion"] = query
-        plan["pagina_por_query"] = bool(
-            query and query.rstrip().endswith(("&p=", "?p=", "&page=",
-                                               "?page=", "&pagina=",
-                                               "?pagina=")))
-        mt = RE_TOTAL.search(listado)
-        crudo = mt.group(1).replace(".", "") if mt else ""
-        plan["total_declarado"] = int(crudo) if crudo.isdigit() else None
-        plan["ids_primera_pagina"] = len(set(RE_FICHA.findall(listado)))
+        plan["query_paginacion"] = principal.get("query_paginacion")
+        plan["pagina_por_query"] = bool(principal.get("pagina_por_query"))
+        # El total del sitio es la suma de sus catalogos. Con un solo catalogo
+        # da exactamente lo de antes; con varios, es contra este numero que la
+        # enumeracion tiene que compararse para poder llamarse completa.
+        totales = [c["total_declarado"] for c in plan["catalogos"]
+                   if c["total_declarado"] is not None]
+        plan["total_declarado"] = sum(totales) if totales else None
+        plan["ids_primera_pagina"] = principal.get("ids_primera_pagina", 0)
         plan["html_listado"] = listado
 
         if plan["usa_tfw"] and plan["ids_primera_pagina"] and plan["pagina_por_query"]:
@@ -335,6 +357,49 @@ class TokkoConnector(Connector):
         return plan
 
     @staticmethod
+    def rutas_del_catalogo(html: str, propia: str) -> list[str]:
+        """Todos los catalogos del sitio, no el primero que aparece.
+
+        Si hay uno unificado -`/Propiedades`- ese trae todo y se devuelve solo
+        el. Si el sitio parte el inventario por operacion, se devuelven TODAS
+        las rutas partidas que publica, en el orden de `RUTAS_POR_OPERACION`
+        para que la principal siga siendo `/Venta` y nada de lo que ya
+        dependia de `ruta_listado` cambie de significado.
+
+        Quedarse con la primera era el defecto: `andrea gianfelice` declara 147
+        en `/Venta`, 10 en `/Alquiler` y 7 en `/Emprendimientos`, y se
+        certificaba contra 147.
+        """
+        unificada = next((r for r in RUTAS_UNIFICADAS if f'href="{r}"' in html),
+                         None)
+        if unificada:
+            return [unificada]
+        partidas = [r for r in RUTAS_POR_OPERACION if f'href="{r}"' in html]
+        if partidas:
+            return partidas
+        # Sin ninguna ruta reconocible, la propia pagina es el listado si trae
+        # fichas. Es el caso de los sitios de una sola pagina.
+        return [propia] if RE_FICHA.search(html) else []
+
+    def _medir_catalogo(self, base: str, ruta: str,
+                        html_ya_bajado: str | None = None) -> dict[str, Any]:
+        """Lo que hace falta saber de UN catalogo para recorrerlo entero."""
+        listado = (html_ya_bajado if html_ya_bajado is not None
+                   else self.descargador.bajar(base + ruta))
+        query = query_de_paginacion(listado)
+        mt = RE_TOTAL.search(listado)
+        crudo = mt.group(1).replace(".", "") if mt else ""
+        return {
+            "ruta": ruta,
+            "query_paginacion": query,
+            "pagina_por_query": bool(
+                query and query.rstrip().endswith(
+                    ("&p=", "?p=", "&page=", "?page=", "&pagina=", "?pagina="))),
+            "total_declarado": int(crudo) if crudo.isdigit() else None,
+            "ids_primera_pagina": len(set(RE_FICHA.findall(listado))),
+            "html_listado": listado}
+
+    @staticmethod
     def paginacion_imposible(plan: dict[str, Any]) -> bool:
         """Este plan solo puede devolver la primera pagina.
 
@@ -346,9 +411,15 @@ class TokkoConnector(Connector):
         Cero fichas NO es un truncamiento: es otra cosa y tiene su propio
         defecto. Mezclarlos haria que "no pudimos paginar" y "no hay nada" se
         diagnostiquen igual.
+
+        Con varios catalogos alcanza con que UNO no pueda paginar: ese queda
+        truncado en 20 y el sitio no esta enumerado entero, aunque los demas
+        anden bien.
         """
-        return bool(plan.get("ids_primera_pagina")
-                    and not plan.get("query_paginacion"))
+        catalogos = plan.get("catalogos") or [plan]
+        return any(bool(c.get("ids_primera_pagina")
+                        and not c.get("query_paginacion"))
+                   for c in catalogos)
 
     def foto_verificable(self) -> bool:
         """La ruta del CDN de Tokko lleva el id de la propiedad adelante."""
@@ -373,14 +444,34 @@ class TokkoConnector(Connector):
         """
         if not plan.get("soportada"):
             return
-        base, ruta = plan["base"], plan.get("ruta_listado") or "/Propiedades"
-        query = plan.get("query_paginacion")
+        base = plan["base"]
         vistos: set[str] = set()
-
         estado = self.resume(fuente)
-        declarado = plan.get("total_declarado")
+
+        # Un sitio puede partir su inventario en varios catalogos. Se recorren
+        # todos, compartiendo `vistos`: una propiedad listada en dos catalogos
+        # se emite una sola vez.
+        catalogos = plan.get("catalogos") or [{
+            "ruta": plan.get("ruta_listado") or "/Propiedades",
+            "query_paginacion": plan.get("query_paginacion"),
+            "total_declarado": plan.get("total_declarado"),
+            "html_listado": plan.get("html_listado")}]
+        for catalogo in catalogos:
+            yield from self._recorrer_catalogo(base, catalogo, vistos, estado)
+        estado["completa"] = True
+
+    def _recorrer_catalogo(self, base: str, catalogo: dict[str, Any],
+                           vistos: set[str],
+                           estado: dict[str, Any]) -> Iterator[dict]:
+        """Un catalogo, pagina por pagina, hasta agotarlo."""
+        ruta = catalogo.get("ruta") or "/Propiedades"
+        query = catalogo.get("query_paginacion")
+        declarado = catalogo.get("total_declarado")
+        propias: set[str] = set()
         # Si la fuente declara un total, se sabe cuantas paginas hacen falta y
-        # ese numero manda por encima de cualquier heuristica.
+        # ese numero manda por encima de cualquier heuristica. Es el total de
+        # ESTE catalogo: comparar contra la suma del sitio haria recorrer de
+        # mas en cada uno.
         minimo_paginas = -(-declarado // POR_PAGINA) if declarado else 0
 
         # Tokko reordena el conjunto entre pedidos: dos barridos identicos
@@ -390,12 +481,12 @@ class TokkoConnector(Connector):
         # apareciendo material nuevo y el total siga sin alcanzarse.
         MAX_BARRIDOS = 4
         for barrido in range(1, MAX_BARRIDOS + 1):
-            antes = len(vistos)
+            antes = len(propias)
             pagina, sin_nuevos = 1, 0
             while pagina <= MAX_PAGINAS:
                 try:
                     if pagina == 1 and barrido == 1:
-                        html = (plan.get("html_listado")
+                        html = (catalogo.get("html_listado")
                                 or self.descargador.bajar(base + ruta))
                     elif query:
                         html = self.descargador.bajar(base + ruta + query + str(pagina))
@@ -416,10 +507,17 @@ class TokkoConnector(Connector):
                 hallados = RE_FICHA.findall(html)
                 nuevos = 0
                 for pid, slug in hallados:
+                    # `propias` mide el avance DE ESTE catalogo; `vistos` evita
+                    # emitir dos veces una propiedad que figura en dos. Si se
+                    # usara solo `vistos`, un catalogo cuyas fichas ya salieron
+                    # todas en otro pareceria no avanzar y cortaria antes de
+                    # llegar a las suyas.
+                    if pid not in propias:
+                        propias.add(pid)
+                        nuevos += 1
                     if pid in vistos:
                         continue
                     vistos.add(pid)
-                    nuevos += 1
                     yield {"source_listing_id": pid,
                            "source_url": self.descargador.url_segura(
                                f"{base}/p/{pid}-{slug}"),
@@ -436,11 +534,10 @@ class TokkoConnector(Connector):
                 estado["ultima_pagina"] = pagina
                 pagina += 1
 
-            ganancia = len(vistos) - antes
+            ganancia = len(propias) - antes
             estado["barridos"] = barrido
-            if not declarado or len(vistos) >= declarado or ganancia == 0:
+            if not declarado or len(propias) >= declarado or ganancia == 0:
                 break
-        estado["completa"] = True
 
     # --------------------------------------------------------------- normalize
     def normalize(self, crudo: dict, fuente: Fuente) -> PropiedadNormalizada | None:
