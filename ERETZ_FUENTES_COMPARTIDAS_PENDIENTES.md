@@ -94,3 +94,76 @@ antes.
 Ninguno urge: los 15 están en cero propiedades y cero certificaciones. Lo que
 urge es hacerlo **antes** de que la cola los alcance, y la cola va por la
 letra A.
+
+
+---
+
+# Lo que el detector no veía: hosts compartidos — 2026-09-21
+
+Las 15 urls compartidas quedaron en 2. Pero el detector agrupa por **url
+exacta**, y hay un riesgo que se le escapa entero: varias agencias cuyo
+«sitio oficial» es su **perfil en el mismo portal**, cada una con su propia
+ruta.
+
+Medido sobre las 318 agencias con `official_url`:
+
+| | |
+|---|---:|
+| urls compartidas por 2+ agencias | **0** |
+| **hosts** compartidos por 2+ agencias | **4** |
+| agencias involucradas | **10** |
+
+```
+4 agencias en buscainmueble.com
+      /inmobiliarias/alonso-propiedades/casas/venta
+      /inmobiliarias/analia-verga-propiedades
+      /inmobiliarias/calderon-inmobiliaria/inmueble…
+      /inmobiliarias/carlos-aslan-propiedades/depar…
+2 en inmobusqueda.com      /abalsamopropiedades, /albertodacal
+2 en proppies.app          /inmobiliarias/<agencia>-<n>
+2 en liderprop.com         /es-ar/propiedades/6257658/alquiler--casa--…
+```
+
+**No es el mismo riesgo que una url compartida.** Ahí el peligro era la doble
+atribución; acá cada agencia tiene su ruta y nadie se pisa. Lo que pasa es
+otra cosa y ya se vio dos veces esta noche: la enumeración recorre el chrome
+del portal —le pasó a `gama` y a `bertomeu`— y el inventario propio de la
+agencia queda invisible.
+
+El caso de `liderprop` es el peor de los cuatro: la «web oficial» de esa
+agencia es **una ficha de propiedad**, no un perfil ni un sitio.
+
+## Y hay una población mayor detrás
+
+De las 318, **34 (10,7 %)** tienen una `official_url` cuyo dominio **no las
+nombra en absoluto** —medido con el dictamen de dominio de
+`scripts/de_quien_es_el_dominio.py`—. Los hosts que se repiten son portales y
+plataformas: `buscainmueble` (4), `inmobusqueda` (2), `liderprop` (2),
+`comunidadinmobiliaria`, `redinmosoft`, `inmoclickai`, `ventasprop`… y
+`turismomardelplata`, que para una inmobiliaria es difícil de defender.
+
+Que el dominio no la nombre no prueba que esté mal —una agencia puede tener
+un dominio de marca distinta— pero es la lista de candidatas correcta para
+revisar, y los hosts la confirman.
+
+## El caso que lo destapó
+
+`bertomeu propiedades` tiene como sitio oficial
+`https://cia.org.ar/nuevo-directorio/`: el **directorio de socios de la Cámara
+Inmobiliaria Argentina**. El guardián paró la cola rechazando dos páginas de
+ese sitio —un formulario de inscripción y una **nota periodística** sobre
+escrituras— y hacía bien.
+
+Lo notable es el registro: `AGENCY_OFFICIAL_WEB_VERIFIED.jsonl` la marca
+`VERIFICADA_ARGENTINA`. La verificación confirmó que la página está **viva y
+es argentina**, no que sea de esa agencia. Y el directorio ya lo decía:
+`status: OFFICIAL_WEB_AMBIGUOUS`, con la otra candidata siendo un perfil de
+ejecutivo en `expansion.com`.
+
+## Qué falta
+
+1. **Extender el detector a hosts**, no sólo a urls exactas. Es donde está el
+   riesgo que hoy no se ve.
+2. Revisar las 34, empezando por las 10 de host compartido.
+3. Corregir la fuente cambia `official_url`, y eso cambia la cola —la
+   vigencia compara la fuente—. Va en tanda, no de a una.
