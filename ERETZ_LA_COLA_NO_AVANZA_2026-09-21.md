@@ -226,6 +226,33 @@ compartido, en vez de ir de a uno:
      fuente ya no publica. Vive en `absences_runN.jsonl`, el camino del
      certificador no la guarda, y sigue congelada y sin resolver. Es la que
      bloquea la regla de bajas —`carina gonzalez`, `carlos castano`—.
+
+     **CORRECCIÓN del 2026-09-21, más tarde: esto también estaba mal, y es la
+     tercera vez en el día.** El dato existe. Lo que guarda sólo el conteo es
+     el **resultado** (campo `ausentes`); el **checkpoint** de cada paquete
+     guarda las identidades:
+
+     ```
+     checkpoint.json
+       fuentes[<agencia>].ausencias  {hash_dedup: corridas_seguidas_ausente}
+       fuentes[<agencia>].ids        {hash_dedup: source_listing_id}
+     ```
+
+     Medido sobre los 236 checkpoints en disco: **89 agencias tienen
+     `ausencias`, con 918 propiedades ausentes registradas, y ninguna sin
+     id**. Están en los cuatro conectores —generico 41, tokko 33, wordpress
+     11, wasi 4—, así que no es una peculiaridad de una familia. En `cocucci`
+     son 14 y la más vieja lleva **20 corridas** ausente.
+
+     La evidencia que la regla de bajas necesitaba se venía acumulando,
+     callada, donde nadie la miraba. `scripts/quienes_faltan.py` la lee, y no
+     toca la huella porque sólo abre archivos que ya existen.
+
+     Lo que sigue faltando no es la identidad sino la **respuesta**: saber si
+     una propiedad ausente se dio de baja o la perdimos exige preguntarle al
+     catálogo de la fuente por ese id. En `cocucci` no pude: no hay enlaces de
+     paginación en el HTML y ni `?page=N` ni `/N` funcionan, así que sólo
+     alcancé 20 de 270.
    - **La otra, que resultó no estar bloqueada**: qué difiere entre la corrida
      1 y la 2. Yo creía que había que tocar `compare_runs`, que está dentro de
      `shared/certifier` y habría invalidado certificaciones. No hacía falta:
