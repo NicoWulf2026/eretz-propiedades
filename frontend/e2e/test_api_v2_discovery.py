@@ -43,11 +43,31 @@ def query_url(page: Page) -> dict[str, list[str]]:
 
 
 @pytest.mark.parametrize(
-    "width,query,expected_name",
-    [(1440, "cór", "Córdoba"), (1366, "ros", "Rosario"), (1280, "san", "Sa")],
+    "width,query,expected_name,niveles,ausentes",
+    [
+        # Cordoba es provincia, municipio Y localidad: los tres niveles
+        # existen de verdad y los tres tienen que mostrarse con su nombre.
+        (1440, "cór", "Córdoba", ("Municipio", "Provincia", "Localidad"), ()),
+        # Rosario NO es una provincia: es municipio y localidad de Santa Fe.
+        # Este caso exigia los tres niveles, asi que no podia pasar nunca.
+        # Lo comprobado contra el catalogo: `area_nivel = PROVINCIA` no tiene
+        # ningun `Rosario`, y esta bien que no lo tenga.
+        #
+        # Lo que este test protege no es que aparezcan tres niveles, sino que
+        # cada nivel que aparece sea real. Por eso ahora tambien se afirma el
+        # nivel AUSENTE: si algun dia el autocompletado ofreciera
+        # «Provincia Rosario», seria geografia inventada y esto lo muerde.
+        (1366, "ros", "Rosario", ("Municipio", "Localidad"), ("Provincia",)),
+        (1280, "san", "Sa", ("Municipio", "Provincia", "Localidad"), ()),
+    ],
 )
 def test_accented_api_v2_autocomplete_keeps_real_levels(
-    page: Page, width: int, query: str, expected_name: str
+    page: Page,
+    width: int,
+    query: str,
+    expected_name: str,
+    niveles: tuple[str, ...],
+    ausentes: tuple[str, ...],
 ) -> None:
     console_errors: list[str] = []
     requests: list[str] = []
@@ -58,9 +78,12 @@ def test_accented_api_v2_autocomplete_keeps_real_levels(
     with page.expect_response(lambda response: "/api/properties/suggestions" in response.url) as response_info:
         search.fill(query)
     assert response_info.value.status == 200
-    expect(page.get_by_role("option").filter(has_text="Municipio").first).to_contain_text(expected_name)
-    expect(page.get_by_role("option").filter(has_text="Provincia").first).to_contain_text(expected_name)
-    expect(page.get_by_role("option").filter(has_text="Localidad").first).to_contain_text(expected_name)
+    for nivel in niveles:
+        expect(page.get_by_role("option").filter(has_text=nivel).first).to_contain_text(expected_name)
+    for nivel in ausentes:
+        expect(
+            page.get_by_role("option").filter(has_text=nivel).filter(has_text=expected_name)
+        ).to_have_count(0)
     assert [url for url in requests if "/api/properties/suggestions" in url]
     assert not [url for url in requests if "supabase.co" in url or "/rest/v1/" in url]
     assert console_errors == []
