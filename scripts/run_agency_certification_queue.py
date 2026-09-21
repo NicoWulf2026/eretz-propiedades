@@ -29,6 +29,7 @@ from scripts.preingestion_manifest import base_canonica  # noqa: E402
 from scripts.property_observations import (  # noqa: E402
     registrar as registrar_observacion)
 from scripts.defect_triage import senales_de_catalogo  # noqa: E402
+from scripts.ipv4_primero import preferir_ipv4  # noqa: E402
 from scripts.ledger_de_certificacion import (  # noqa: E402
     vigentes_por_agencia)
 from scripts.defect_triage import (STOP, anotar_corte,  # noqa: E402
@@ -850,6 +851,15 @@ def main() -> int:
             f"contra sitios de inmobiliarias chicas dejan de ser paralelismo.")
     if not 0 <= args.worker < args.workers:
         raise SystemExit(f"--worker tiene que estar entre 0 y {args.workers - 1}")
+    # Transporte, no extraccion: el 8 % de los hosts del padron tiene AAAA
+    # que se cuelga desde esta maquina -18 de 400 dieron timeout de mas de 6 s
+    # y 14 tardaron entre 1 y 3 s solo en el handshake-. Medido sobre
+    # `alagnapropiedades.com.ar`, misma pagina y los mismos 106.183 bytes:
+    # 23.224 ms como estaba, 1.462 ms con IPv4 adelante. Va aca y no en el
+    # `Descargador` porque `connectors/base.py` entra en la huella y esto no
+    # cambia nada de lo que se extrae. Ver `scripts/ipv4_primero.py`.
+    preferir_ipv4()
+
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
     catalog = load_catalog(Path(args.v2_dir), Path(args.data_dir),

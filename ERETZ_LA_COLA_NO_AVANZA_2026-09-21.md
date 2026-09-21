@@ -455,6 +455,48 @@ sobre una agencia grande** que se pierden y hay que rehacer. Con 8 muertes en
 un día y agencias de 200 a 450 propiedades, eso solo explica la diferencia
 entre 11,9/h teóricas y las 3 a 9 observadas.
 
+### CORRECCIÓN, medida más tarde: el costo dominante no eran las muertes
+
+Miré las conexiones del worker 0 en vivo mientras estaba «trabado» en `alagna`
+y encontré otra cosa. No estaba colgado: estaba pidiendo, y una sola conexión
+quedó **50 segundos en `SynSent`** contra una IPv6 de Cloudflare.
+
+Medido sobre `alagnapropiedades.com.ar` —la misma página, los mismos
+**106.183 bytes**—:
+
+| | |
+|---|---:|
+| como está hoy | 5.444 ms |
+| forzando IPv4 | **1.462 ms** |
+| como está hoy, otra vez | **23.224 ms** |
+
+La IPv6 de esta máquina no está muerta —a Google conecta en 20 ms— pero hacia
+Cloudflare se cuelga: `cloudflare.com` dio 1.018 ms y después timeout de más de
+12 s, contra 28 ms por IPv4.
+
+Sondeé 400 hosts del padrón:
+
+| | hosts | |
+|---|---:|---|
+| sin AAAA | 317 | 79,2 % — no les afecta |
+| rápido | 51 | 12,8 % |
+| lento | 14 | 3,5 % — 1 a 3 s de handshake |
+| **colgado** | **18** | **4,5 % — timeout** |
+
+**`alagnapropiedades.com.ar` está entre los colgados.** Y ahí se cae mi propia
+explicación de arriba: 219 propiedades por unos 20 s de handshake perdido son
+**4.380 s**, o sea prácticamente los 3.370 s enteros de la primera corrida. No
+es que las muertes de worker no costaran nada —costaron—, es que **no eran lo
+dominante**, y yo había cerrado el análisis sin mirar el transporte.
+
+Arreglado en `scripts/ipv4_primero.py`, conectado en el runner de la cola.
+Reordena las direcciones para poner IPv4 adelante y **no descarta las IPv6**:
+de los 83 hosts con AAAA, 51 conectan rápido por IPv6 y hay redes donde es el
+único camino. Va en el runner y no en el `Descargador` porque
+`connectors/base.py` entra en la huella y esto no cambia **nada** de lo que se
+extrae: los 106.183 bytes son idénticos por las dos familias. Verificado que
+ninguna de las dos huellas se mueve.
+
 Queda anotado, no arreglado: el resume por checkpoint existe
 (`Checkpoint(packet_dir / "checkpoint.json")`) y evidentemente no está
 recuperando el trabajo de una agencia interrumpida. Mirarlo es trabajo de
