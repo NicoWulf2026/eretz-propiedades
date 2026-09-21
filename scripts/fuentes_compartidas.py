@@ -167,6 +167,7 @@ def colisiones() -> list[dict[str, Any]]:
         url = (resolve_identity(registro, clave) or {}).get("official_url")
         if url:
             por_url[normalizar(url)].append(clave)
+    colisiones.por_url = dict(por_url)
     salida = []
     for url, agencias in por_url.items():
         if len(agencias) < 2:
@@ -188,6 +189,46 @@ def colisiones() -> list[dict[str, Any]]:
     return sorted(salida, key=lambda x: (-x["propiedades"], -x["cuantas"]))
 
 
+
+def host_de(url: str) -> str:
+    """El host, sin `www`. Es la unidad que faltaba mirar."""
+    host = urllib.parse.urlparse(normalizar(url)).netloc.split(":")[0]
+    return host[4:] if host.startswith("www.") else host
+
+
+def colisiones_por_host(por_url: dict[str, list[str]]) -> list[dict[str, Any]]:
+    """Agencias que comparten el HOST aunque no la url.
+
+    El detector agrupaba por url exacta y ahi hay un riesgo que no ve: varias
+    inmobiliarias cuyo "sitio oficial" es su PERFIL en el mismo portal, cada
+    una con su propia ruta. Medido el 2026-09-21: 0 urls compartidas y **4
+    hosts compartidos por 10 agencias** -4 en `buscainmueble.com`, 2 en
+    `inmobusqueda.com`, 2 en `proppies.app`, 2 en `liderprop.com`-.
+
+    No es el mismo riesgo que una url compartida. Ahi el peligro era la doble
+    atribucion; aca cada agencia tiene su ruta y nadie se pisa. Lo que pasa es
+    otra cosa, y ya se vio en `gama` y en `bertomeu`: la enumeracion recorre el
+    chrome del portal y el inventario propio de la agencia queda invisible.
+
+    Se reportan SOLO los grupos cuyas urls difieren: si son iguales, ya salen
+    por el camino de siempre y contarlos dos veces infla el problema.
+    """
+    por_host: dict[str, dict[str, list[str]]] = collections.defaultdict(
+        lambda: collections.defaultdict(list))
+    for url, agencias in por_url.items():
+        for agencia in agencias:
+            por_host[host_de(url)][url].append(agencia)
+    salida = []
+    for host, urls in por_host.items():
+        agencias = sorted({a for lista in urls.values() for a in lista})
+        if len(agencias) < 2 or len(urls) < 2:
+            continue
+        salida.append({"host": host, "agencias": agencias,
+                       "cuantas": len(agencias),
+                       "urls": sorted(urls)})
+    return sorted(salida, key=lambda x: -x["cuantas"])
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--solo", default="")
@@ -198,6 +239,13 @@ def main() -> int:
         grupos = [g for g in grupos if g["clase"] == args.solo]
     if not grupos:
         print("no hay dos agencias compartiendo la misma url de fuente")
+        porhost = colisiones_por_host(getattr(colisiones, "por_url", {}))
+        print()
+        print(f"hosts compartidos con urls distintas: {len(porhost)}")
+        for g in porhost:
+            print(f"   {g['cuantas']} agencias en {g['host']}")
+            for u in g["urls"]:
+                print(f"        {u[:74]}")
         return 0
 
     print(f"urls compartidas por 2 o mas agencias: {len(grupos)}")
@@ -222,8 +270,23 @@ def main() -> int:
         print("     ninguno: la cola todavia no llego. Es una mina, no un "
               "incendio.")
 
+    porhost = colisiones_por_host(getattr(colisiones, "por_url", {}))
+    print()
+    print(f"  hosts compartidos por 2 o mas agencias CON URLS DISTINTAS: "
+          f"{len(porhost)}")
+    if porhost:
+        print("     -lo que el agrupamiento por url exacta no ve: cada agencia "
+              "con su perfil en el mismo portal-")
+        for g in porhost:
+            print(f"     {g['cuantas']} agencias en {g['host']}")
+            for u in g["urls"]:
+                print(f"          {u[:74]}")
+    else:
+        print("     ninguno")
+
     SALIDA.write_text(json.dumps(
         {"cuando": time.strftime("%Y-%m-%dT%H:%M:%S"), "grupos": grupos,
+         "hosts_compartidos": porhost,
          "database_writes": 0}, ensure_ascii=False, indent=1), encoding="utf-8")
     print(f"\nartefacto: {SALIDA}")
     print("\ndatabase_writes: 0")

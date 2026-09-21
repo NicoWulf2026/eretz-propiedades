@@ -167,3 +167,64 @@ ejecutivo en `expansion.com`.
 2. Revisar las 34, empezando por las 10 de host compartido.
 3. Corregir la fuente cambia `official_url`, y eso cambia la cola —la
    vigencia compara la fuente—. Va en tanda, no de a una.
+
+
+---
+
+# El detector ya agrupa por host, y el número es mucho mayor
+
+Extendido `fuentes_compartidas.py` con `colisiones_por_host()`. Sólo reporta
+grupos cuyas urls **difieren** —si son iguales ya salían por el camino de
+siempre—. Corrido sobre el catálogo completo:
+
+| | |
+|---|---:|
+| urls compartidas | **2** |
+| **hosts** compartidos con urls distintas | **76** |
+| agencias involucradas | **650** de 791 |
+| de ésas, ya certificadas | **22** |
+| **todavía no alcanzadas por la cola** | **628** |
+
+Mi medición a mano de hace un rato dio 4 hosts y 10 agencias. Estaba mirando
+sólo las 318 que ya tienen resultado; el catálogo completo es otra cosa.
+
+## Los grandes son portales
+
+```
+70  buscainmueble.com     45  inmoclick.com     36  todoprops.com
+62  inmoup.com.ar         42  choza.ai          28  proppies.app
+46  liderprop.com         39  century21.com.ar  22  inmobusqueda.com
+```
+
+14 hosts tienen 10 agencias o más y suman **452**. Y varias de esas urls no
+son ni siquiera un perfil: `choza.ai/property/34237` es **una ficha de
+propiedad** registrada como el sitio oficial de una inmobiliaria.
+
+## Lo que esto NO es, y por qué importa la diferencia
+
+De las 22 certificadas, **14 lo hicieron contra el portal**. Su resultado:
+
+```
+11  BLOCKED_EXTERNAL
+ 3  NEEDS_FIX
+32  fichas enumeradas entre las catorce
+```
+
+**El sistema ya se protege.** Certificar contra un portal no produce
+inventario ajeno atribuido a la agencia: produce un bloqueo. Eso es lo que
+hay que decir con precisión, porque la lectura fácil —«650 agencias van a
+contaminar el padrón»— es falsa y llevaría a una urgencia equivocada.
+
+Lo que sí es: **un techo**. 628 agencias todavía sin alcanzar tienen como
+fuente registrada una url de portal, y cuando la cola llegue van a certificar
+bloqueadas o vacías. No es una mina que explota; es una porción grande del
+padrón que **no se puede certificar con la fuente que tiene registrada**.
+
+## Qué haría falta
+
+Para esas 628, el trabajo no es de conectores sino de **registro de fuentes**:
+encontrar el sitio propio de cada agencia, o declarar explícitamente que no
+tiene. Es el mismo trabajo que se hizo con las 15 urls compartidas, a otra
+escala.
+
+Y cambia `official_url`, que es lo que compara la vigencia: va en tanda.
