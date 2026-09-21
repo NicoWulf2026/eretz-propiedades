@@ -41,11 +41,37 @@ hoy hice varios, uno tras otro:
 | coordenada en JSON | `connector/wordpress` |
 | corte en «Fecha de entrega» | `connector/tokko` |
 
-Cada uno reinició el ciclo. Medido antes de empezar la tanda: **275 de 275
-certificaciones comparables ya tenían la huella caduca, cero vigentes**. Usé
-ese dato para justificar que tocar `shared/*` «no costaba recertificación
-adicional» —y era cierto para *ese* cambio—, pero lo que no medí es que
-encadenar ocho cambios mantiene el padrón permanentemente caduco.
+Cada uno reinició el ciclo.
+
+### CORRECCIÓN: la medición con la que justifiqué esto estaba mal
+
+Escribí que «275 de 275 certificaciones comparables ya tenían la huella
+caduca, cero vigentes», y usé ese número para justificar que tocar `shared/*`
+no costaba recertificación adicional. **Estaba midiendo otra función.**
+
+`code_fingerprint` no es la huella de componentes: es
+`version_del_codigo(connector)`, el sha256 de los **bytes** de tres archivos
+—`connectors/base.py`, `connectors/<connector>.py` y
+`scripts/run_rollout.py`—. Yo estaba comparando contra
+`fingerprint_from_components(...)`, que es el `strategy_fingerprint`, una
+cantidad distinta. Nunca iba a coincidir.
+
+Medido bien:
+
+| | |
+|---|---:|
+| certificaciones **vigentes** | **42** |
+| caducas | 233 |
+| sin dato para comparar | 154 |
+
+Y las huellas que los workers escriben coinciden exactamente con las que
+calculo ahora —`4d72de75ed17` para tokko, `511258e31c3a` para wasi—, o sea
+que están corriendo el código actual.
+
+**Lo que se cae es el argumento, no los arreglos.** Cada cambio sobre
+`shared/*` sí costó recertificación real. Los arreglos siguen siendo
+correctos —están verificados contra las fuentes, uno por uno— pero la razón
+que di para hacerlos todos seguidos no se sostenía.
 
 **La cola no está rota. Está haciendo exactamente lo que se le pidió.** Lo que
 falla es la secuencia en la que trabajé.
@@ -157,11 +183,37 @@ Para dimensionar la primera contra la que ya se arregló: «Fecha de entrega»
 son 1.242 propiedades en 64 agencias, y ese corte ya está aplicado —sólo
 falta que la cola vuelva a pasar—.
 
+## El congelamiento está funcionando
+
+Medido con la función correcta, desde que dejé de tocar código compartido:
+
+| hora | certificaciones vigentes escritas |
+|---|---:|
+| 04 | 13 |
+| 05 | 14 |
+| 06 | 15 |
+
+**13 a 15 por hora, sostenido.** Con 767 en la cola, una pasada completa son
+unas 55 horas —el número que ya había estimado, sólo que ahora es avance real
+y no repetición—. Los dos workers están en la letra B, no en la A.
+
 ## Cómo saber si esto se repite
 
-La señal es directa y no hace falta ninguna herramienta nueva: **agencias que
-cierran por primera vez, por hora**. Si es cero durante horas mientras la cola
-escribe resultados, la cola está recertificando y no avanzando.
+La señal es **cuántas certificaciones tienen la huella vigente**, y hay que
+calcularla como la calcula el certificador:
+
+```python
+h = hashlib.sha256()
+for r in (raiz/"connectors"/"base.py",
+          raiz/"connectors"/f"{connector}.py",
+          raiz/"scripts"/"run_rollout.py"):
+    h.update(r.read_bytes())
+vigente = (h.hexdigest()[:12] == resultado["code_fingerprint"])
+```
+
+La métrica que usé primero —agencias que cierran por primera vez— no sirve
+para esto: mientras la cola recertifica, es cero por definición aunque el
+trabajo avance.
 
 ```bash
 python scripts/de_donde_falta_la_geografia.py
