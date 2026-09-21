@@ -219,7 +219,32 @@ def firma(resultado: dict[str, Any], componente: str) -> str:
 # El riesgo de subirlo -perder la senal de un fallo sistematico- no se
 # materializa: la regla de "dos defectos con la misma firma" SI cuenta los
 # menores, asi que un campo que falla igual en dos agencias sigue cortando.
-TOPE_DE_FICHAS_MENORES = 10
+#
+# 2026-09-21: subido de 10 a 15, y la razon NO es que molestara.
+#
+# El 10 se eligio esa misma manana por un hueco entre 9 y 20 en los datos de
+# entonces. Ese hueco se lleno: la cola siguio corriendo y aparecieron casos
+# en 11, 12, 13, 16 y 18. El valor estaba ajustado a una forma de los datos
+# que ya no esta.
+#
+# El caso que lo destapo:
+#
+#     13 de 428 (3,04 %)  brunetti propiedades  tipo_propiedad
+#
+# Es el porcentaje MAS BAJO de toda su banda. Los demas casos entre 10 y 30
+# fallos son 45 %, 75 %, 96 % y 100 %, y a esos los frena el tope porcentual
+# sin ayuda del absoluto.
+#
+# Se elige 15 y no mas: en los datos de hoy hay un hueco entre 13 y 16, y
+# sobre todo porque la decision de la manana fue deliberada en dejar `27 de
+# 395` y `20 de 254` del lado de STOP. Un tope de 50 los habria dado por
+# menores y habria pisado esa decision sin evidencia nueva sobre ELLOS. Lo
+# probaron cuatro tests que ya existian.
+#
+# Medido sobre los 67 casos de `EXTRACTION_FAILED` del corpus, con 15 cambia
+# exactamente un caso -brunetti- y sigue siendo mayor todo lo que debe:
+# 1.206 de 1.213, 724 de 724, 179 de 502, 80 de 159, 27 de 395, 20 de 254.
+TOPE_DE_FICHAS_MENORES = 15
 # El porcentual estuvo en 0,02 y frenaba de mas. Medido sobre los 382 casos
 # historicos con 4 fallas o menos:
 #

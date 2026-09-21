@@ -83,10 +83,18 @@ def test_diez_de_doscientos_tampoco():
     assert t["componente_sospechoso"] == "extraccion_de_baja_magnitud"
 
 
-def test_once_de_doscientos_vuelve_a_parar():
-    """El tope es inclusivo y el que sigue ya no pasa."""
-    t = clasificar(resultado({"banos": (11, 200)}))
-    assert t["decision"] == STOP
+def test_el_tope_es_inclusivo_y_el_que_sigue_ya_no_pasa():
+    """La frontera, expresada contra la CONSTANTE y no contra un numero.
+
+    Estaba escrito como `11 de 200` porque el tope valia 10. Cuando el tope
+    se movio a 15 el test fallo sin que la conducta hubiera cambiado: media
+    una constante en vez de una frontera. Es el mismo vicio que ya aparecio
+    en el conteo literal del e2e y en las fechas fijas de otro test.
+    """
+    from scripts.defect_triage import TOPE_DE_FICHAS_MENORES as TOPE
+    muchas = TOPE * 20
+    assert clasificar(resultado({"banos": (TOPE, muchas)}))["decision"] == CONTINUE
+    assert clasificar(resultado({"banos": (TOPE + 1, muchas)}))["decision"] == STOP
 
 
 def test_el_porcentaje_manda_aunque_sean_pocas_fichas():
@@ -213,11 +221,15 @@ def test_sin_defectos_no_inventa_uno_menor():
     assert t["componente_sospechoso"] != "extraccion_de_baja_magnitud"
 
 
+from scripts.defect_triage import TOPE_DE_FICHAS_MENORES as TOPE_ABS  # noqa: E402
+
+
 @pytest.mark.parametrize("campos,esperado", [
     ({"descripcion": (1, 275)}, CONTINUE),
     ({"banos": (4, 300)}, CONTINUE),
     ({"banos": (5, 300)}, CONTINUE),   # 1,7 %: menor desde el tope nuevo
-    ({"banos": (11, 300)}, STOP),      # once ya pasa el tope absoluto
+    # Uno mas que el tope absoluto, sea cual sea su valor hoy.
+    ({"banos": (TOPE_ABS + 1, TOPE_ABS * 20)}, STOP),
     ({"precio": (1207, 1211)}, STOP),
     ({"ambientes": (48, 59)}, STOP),
     ({"ambientes": (11, 23)}, STOP),
@@ -459,18 +471,20 @@ def test_MUERDE_cuando_el_campo_falla_en_TODO_lo_que_hay_no_es_menor():
                                     ["ambientes"])
 
 
-def test_once_fallas_no_son_menores_por_muchas_propiedades_que_haya():
-    """El tope absoluto se movio de 4 a 10, pero sigue existiendo.
+def test_el_tope_absoluto_manda_por_encima_del_porcentaje():
+    """El tope absoluto sigue existiendo, valga lo que valga.
 
-    Cinco de cinco mil paso a ser menor -el 0,1 %-, y esta bien: cinco
-    propiedades sobre cinco mil no justifican detener el padron. Once si
-    excede el tope, por chico que sea el porcentaje.
+    Cinco de cinco mil es menor -el 0,1 %-, y esta bien: cinco propiedades
+    sobre cinco mil no justifican detener el padron. Pero una cantidad que
+    excede el tope no es menor por chico que sea el porcentaje, y ese es el
+    unico proposito del tope absoluto.
     """
-    from scripts.defect_triage import _es_de_baja_magnitud
+    from scripts.defect_triage import (TOPE_DE_FICHAS_MENORES as TOPE,
+                                       _es_de_baja_magnitud)
     assert _es_de_baja_magnitud(_resultado("ambientes", 5, 5000, 5000),
                                 ["ambientes"])
-    assert not _es_de_baja_magnitud(_resultado("ambientes", 11, 5000, 5000),
-                                    ["ambientes"])
+    assert not _es_de_baja_magnitud(
+        _resultado("ambientes", TOPE + 1, 5000, 5000), ["ambientes"])
 
 
 def test_MUERDE_ocho_coordenadas_de_154_son_menores():

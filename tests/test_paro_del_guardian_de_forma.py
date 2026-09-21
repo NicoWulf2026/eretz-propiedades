@@ -196,3 +196,42 @@ def test_un_schema_sin_fotos_tampoco_alcanza():
         {"precio": None, "tipo_ld": "Product", "fotos": 0})
     assert descarte_parecia_una_propiedad(
         {"precio": None, "tipo_ld": "Product", "fotos": 5})
+
+
+def test_MUERDE_el_tope_absoluto_no_frena_un_3_por_ciento():
+    """`brunetti`: 13 fichas de 428 sin `tipo_propiedad`, el 3,04 %.
+
+    Con el tope en 10 eso paraba las dos colas. Re-medido sobre los 67 casos
+    de `EXTRACTION_FAILED` del corpus, mover el tope de 10 a cualquier valor
+    hasta 100 cambia exactamente este caso: es el porcentaje mas bajo de su
+    banda, y los demas entre 10 y 30 fallos son 45 %, 75 %, 96 % y 100 %.
+
+    Se quedo en 15 y no en 50 porque la decision de la manana fue deliberada
+    en dejar `27 de 395` y `20 de 254` del lado de STOP, y subirlo mas los
+    habria pisado sin evidencia nueva sobre ellos.
+    """
+    from scripts.defect_triage import (TOPE_DE_FICHAS_MENORES,
+                                       TOPE_PORCENTUAL_MENOR)
+    assert 13 <= TOPE_DE_FICHAS_MENORES
+    assert 13 / 428 <= TOPE_PORCENTUAL_MENOR
+
+
+def test_MUERDE_lo_grande_sigue_siendo_grande():
+    """Los cuatro casos que el tope tiene que seguir frenando, con sus
+    numeros reales. Si alguien sube el tope hasta taparlos, esto muerde."""
+    from scripts.defect_triage import (TOPE_DE_FICHAS_MENORES,
+                                       TOPE_PORCENTUAL_MENOR)
+    for fallos, total in ((1206, 1213), (724, 724), (179, 502), (80, 159),
+                          (27, 395), (20, 254)):
+        menor = fallos <= TOPE_DE_FICHAS_MENORES and fallos / total <= TOPE_PORCENTUAL_MENOR
+        assert not menor, f"{fallos} de {total} no puede ser menor"
+
+
+def test_el_tope_absoluto_sigue_atrapando_dano_grande_con_porcentaje_chico():
+    """Su unico proposito: 60 fichas perdidas en una agencia de 1.213 son el
+    4,9 % —pasa el porcentual— y tienen que seguir parando."""
+    from scripts.defect_triage import (TOPE_DE_FICHAS_MENORES,
+                                       TOPE_PORCENTUAL_MENOR)
+    fallos, total = 60, 1213  # 4,9 %: pasa el porcentual, lo frena el absoluto
+    assert fallos / total <= TOPE_PORCENTUAL_MENOR
+    assert fallos > TOPE_DE_FICHAS_MENORES
