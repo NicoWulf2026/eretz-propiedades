@@ -217,6 +217,26 @@ compartido, en vez de ir de a uno:
    bis—. No es una pieza que falte inventar: es una diferencia entre dos
    caminos.
 
+
+   **Aclaración del 2026-09-21, porque yo mismo lo mezclé.** Hoy dije cuatro
+   veces que «el ítem 8 bloquea este diagnóstico» y en tres de esas estaba
+   confundiendo dos brechas distintas:
+
+   - **Ésta, la del ítem 8**: qué propiedades del inventario guardado la
+     fuente ya no publica. Vive en `absences_runN.jsonl`, el camino del
+     certificador no la guarda, y sigue congelada y sin resolver. Es la que
+     bloquea la regla de bajas —`carina gonzalez`, `carlos castano`—.
+   - **La otra, que resultó no estar bloqueada**: qué difiere entre la corrida
+     1 y la 2. Yo creía que había que tocar `compare_runs`, que está dentro de
+     `shared/certifier` y habría invalidado certificaciones. No hacía falta:
+     `agency_certifier.py:1011` **ya escribe** `properties_run1.jsonl` y
+     `properties_run2.jsonl` en el paquete de cada agencia. El dato estaba en
+     disco todo el tiempo; lo único que faltaba era leerlo.
+
+   Lo segundo quedó resuelto con `scripts/que_cambio_entre_corridas.py`, que
+   no toca la huella porque sólo lee archivos que ya existen. Con él,
+   `castro y compania` y `alagna` —dos paros que llevaban horas sin causa—
+   se cerraron en un comando cada uno.
 9. **La condición de fotos del triaje quedó inerte en el camino que
    importa.** Hace unas horas agregué que un rechazo del guardián sólo es
    sospechoso si traía precio o schema **y además fotos suficientes**, y lo
@@ -301,7 +321,49 @@ compartido, en vez de ir de a uno:
     propiedades»—, pero separa los estados **terminales**, no esta etiqueta.
     La misma regla en dos lugares que no se hablan, otra vez.
 
-13. lo que aparezca de los paros que la cola encuentre de acá en adelante.
+13. **Una etiqueta de cierre rota en la fuente se come la página entera.**
+    `cecilia sarro` perdió sus 51 fichas por esto, el 2026-09-21, y son
+    propiedades reales: la página muestra «VENTA DEPARTAMENTO / CASTELLI 520 /
+    1 Hab / 1 Bñ / 55 mts2 / U$S 45000», y el precio está en el HTML crudo,
+    literal, `<p class="price"> <span> U$S </span> 45000 </p>`. No es
+    JavaScript.
+
+    Lo que pasa es esto, en la fuente:
+
+    ```html
+    <script src="…/recaptcha/api.js" async defer></script </head>
+    ```
+
+    El cierre está escrito `</script ` **sin su `>`**. El navegador lo tolera;
+    `<(script|style)[^>]*>.*?</\1>` no encuentra `</script>` ahí y sigue hasta
+    el siguiente, tragándose **228.176 bytes de una vez** —el cuerpo entero—.
+    De 237.888 bytes de documento, `_texto()` devuelve **212 caracteres**.
+    Después de eso no hay precio, ni schema, ni atributos, y el guardián
+    rechaza con razón algo que él mismo dejó vacío.
+
+    **Las tres variantes, probadas contra la página real:**
+
+    | expresión | dónde está | texto | ¿precio? |
+    |---|---|---:|---|
+    | `</\1>` | `generico` ×2, `wordpress`, +7 | 212 | no |
+    | `</\1\s*>` | `tokko:152`, `preingestion_rebuild:50` | 212 | **no** |
+    | `</\1\b[^>]*>` | propuesta | 11.567 | **sí** |
+
+    Que la tolerante tampoco alcance es el punto: no basta con copiar la
+    variante que ya existe en otro archivo.
+
+    **Y la regla está escrita en doce lugares que ya divergieron**: dos
+    aprendieron algo y diez no se enteraron. Es el mismo patrón que ya apareció
+    varias veces acá, y arreglar sólo `generico.py` lo dejaría igual de frágil.
+
+    **El tamaño no es «una agencia».** De las 4 con el 100 % descartado, sólo
+    ésta tiene el desbocamiento —las otras tres tienen proporciones normales de
+    script y texto sano, cada una con otra causa—. Pero el disparador es una
+    sola etiqueta malformada en cualquier fuente, y cuando ocurre se pierde la
+    agencia **entera, en silencio y sin error**. La exposición es toda fuente
+    futura, no una lista de cuatro.
+
+14. lo que aparezca de los paros que la cola encuentre de acá en adelante.
 
 ### El crosswalk de identidad pública: no se puede construir acá
 
