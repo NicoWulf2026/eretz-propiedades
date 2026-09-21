@@ -122,7 +122,36 @@ compartido, en vez de ir de a uno:
 2. los 1.022 barrios que son prosa recortada —la familia que **no** se
    arregla cortando en una etiqueta—;
 3. las 32 ciudades de Jujuy escritas en el campo `provincia`;
-4. lo que aparezca de los paros que la cola encuentre de acá en adelante.
+4. **Formas de ficha que el patrón no reconoce: 12 agencias, 10 formas.**
+   Medido con `que_forma_tienen_sus_fichas.py` sobre las 47 agencias
+   `NEEDS_FIX` con cero enumeradas: 44 respondieron y 12 publican enlaces de
+   ficha que no vemos. La forma más grande es `/<slug-con-tipo>` —48 urls en
+   3 agencias, `urbanorosario.com.ar/pte-roca-1438-a`—, que es también la más
+   difícil: un slug suelto en la raíz se parece a cualquier página.
+
+   El arreglo no es aflojar el patrón global —arrastraría páginas
+   institucionales— sino extender la forma verificada por fuente, que ya
+   existe. Y ese camino ahora es más seguro que antes: el guardián que valida
+   ficha por ficha es lo que lo hace viable, y acaba de quedar calibrado con
+   las dos concesiones de `alma di matteo`.
+
+5. **La plataforma SOM (`apmovil.som.com.ar`): 2 agencias medidas.**
+   `amud` y `chenlo`. Tiene API propia y paginada, pero su parámetro
+   `codigoInmobiliaria` **no filtra**: devuelve las 16.822 propiedades de toda
+   la red. El conector no se puede escribir hasta resolver la atribución, o
+   le adjudicaríamos propiedades ajenas a cada agencia.
+
+6. lo que aparezca de los paros que la cola encuentre de acá en adelante.
+
+### Lo que el sondeo descartó
+
+Sondeadas las 51 agencias genéricas con 0–2 fichas enumeradas, buscando
+familias nuevas: 4 inaccesibles, 3 wordpress, 2 tokko, 2 SOM, y el resto sin
+plataforma reconocible. **No hay una familia grande escondida ahí.** Los casos
+se reparten entre formas no reconocidas (la mayoría), sitios mínimos de pocos
+kilobytes y páginas grandes sin fichas. Vale anotarlo porque el valor de un
+sondeo que no encuentra nada es justamente ése: deja de ser una sospecha
+abierta.
 
 Para dimensionar la primera contra la que ya se arregló: «Fecha de entrega»
 son 1.242 propiedades en 64 agencias, y ese corte ya está aplicado —sólo
