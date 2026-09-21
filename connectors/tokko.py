@@ -175,6 +175,19 @@ ETIQUETAS = (
     # La ficha declara el tipo como campo propio. Sin esta etiqueta no era
     # frontera, asi que los valores vecinos podian arrastrarla adentro.
     "Tipo de Propiedad", "Tipo de propiedad",
+    # Los avisos de pozo publican la entrega y no estaba en la lista, asi que
+    # el valor seguia de largo hasta el tope de 70 caracteres y se llevaba el
+    # rotulo y la fecha adentro:
+    #
+    #     barrio = 'Centro Fecha de entrega Diciembre 2027'
+    #     barrio = 'Lanus Este Fecha de entrega Abril 2029'
+    #
+    # El barrio estaba bien; lo que sobraba era el campo siguiente. Medido
+    # sobre el snapshot: de 1.715 barrios que son texto recortado, **1.243 -el
+    # 72,5 %- contienen esta etiqueta**, y son todos recuperables cortando
+    # aca. Los que quedan son otra cosa -listas de amenities y prosa de la
+    # descripcion- y piden otra frontera, no esta.
+    "Fecha de entrega", "Fecha de Entrega",
 )
 _STOP = "|".join(re.escape(e) for e in sorted(ETIQUETAS, key=len, reverse=True))
 
