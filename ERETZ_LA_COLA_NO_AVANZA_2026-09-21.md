@@ -415,8 +415,39 @@ compartido, en vez de ir de a uno:
     filtrando logos e iconos y que `FOTOS_MINIMAS` haga el resto. Un fallback
     por `Content-Type` no serviría: este servidor no manda ninguno.
 
+    **Actualización de la misma tarde: son dos agencias, no una.**
+    `corporacion inmobiliaria` paró por lo mismo y perdió 30 fichas. Sus
+    descartes traen precio (800.000, 60.000), operación y títulos que son
+    propiedades de verdad —«YOFRE NORTE - LAS MALVINAS 1893 - GALPÓN EN
+    ALQUILER»—, y exactamente 2 fotos.
+
+    Pero esas 2 fotos no son fotos: `_imagenes_de` devuelve 5 urls y las cinco
+    son adorno —el logo de la plataforma, las dos flechas del carrusel y dos
+    sellos de colegiación—. Las de verdad están en el HTML, cinco, en
+    `<img src>`:
+
+    ```
+    https://gvamax.ar/serverdata/554/Fotos/Fi158411.554
+    ```
+
+    Terminan en `.554`, que es el id de la agencia usado como sufijo, así que
+    `RE_EXTENSION` las descarta. Bajé la primera: 200, `Content-Type:
+    image/jpeg`, bytes mágicos de JPEG.
+
+    **Y ese detalle decide el arreglo:** este servidor *sí* manda
+    `Content-Type`, el de `chambouleyron` no manda ninguno. Un fallback por
+    `Content-Type` resolvería uno y no el otro. Refuerza que lo correcto es lo
+    ya propuesto: lo que viene del `src` de un `<img>` es una imagen por
+    construcción.
+
+    De paso, un problema menor que conviene anotar: `RE_NO_ES_FOTO` no filtra
+    sellos ni flechas, así que contamos adorno como fotos. Acá jugó a favor
+    —sumó 2 en vez de 0— pero está igual de mal: con tres piezas de adorno,
+    una ficha sin una sola foto pasaría el mínimo.
+
     **Tamaño:** 19 descartes con precio y cero fotos en todo el corpus, en 3
-    agencias, y sólo ésta tiene esta causa. Las otras dos son rechazos
+    agencias, y sólo `chambouleyron` tiene esa forma exacta. Contando las dos
+    variantes, el ítem cuesta **46 propiedades reales en 2 agencias**. Las otras dos son rechazos
     correctos —`bunader` descarta `/propiedades/proyectos`, que es una página
     de sección, y `bertomeu` la ficha de inscripción de la cámara—. Son 16
     propiedades reales, todas de una agencia, que es todo lo que tiene.
