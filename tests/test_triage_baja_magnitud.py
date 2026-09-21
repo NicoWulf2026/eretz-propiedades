@@ -510,3 +510,35 @@ def test_veintisiete_de_395_sigue_sin_ser_menor():
     from scripts.defect_triage import _es_de_baja_magnitud
     assert not _es_de_baja_magnitud(_resultado("tipo_propiedad", 27, 395, 395),
                                     ["tipo_propiedad"])
+
+
+def test_MUERDE_el_hueco_dice_de_donde_sale_cada_numero():
+    """El mensaje decia «la fuente declara 407» cuando la fuente declaraba 337.
+
+    El techo sale del maximo entre lo que la fuente declara HOY y la senal
+    historica, y el texto atribuia el techo a la fuente aunque viniera del
+    historico. Medido sobre las 81 agencias con hueco: en 46 —el 57 %— la
+    fuente declara hoy exactamente lo que enumeramos. `carina gonzalez`
+    declara 337, enumeramos 337, y el baseline decia 407.
+
+    La decision no cambia; lo que cambia es que la evidencia sea cierta.
+    """
+    r = resultado({})
+    r["enumeration_audit"] = {"enumerated": 337, "declared_total": 337,
+                              "independent_max_inventory_signal": 407}
+    t = clasificar(r)
+    assert t["decision"] == STOP
+    assert "337 HOY" in t["evidencia"]
+    assert "viene de una corrida anterior" in t["evidencia"]
+    assert "todavia no sabemos cual" in t["evidencia"]
+
+
+def test_un_hueco_de_verdad_sigue_diciendolo_como_antes():
+    """Cuando la fuente SI declara mas de lo que enumeramos, el texto no cambia."""
+    r = resultado({})
+    r["enumeration_audit"] = {"enumerated": 44, "declared_total": 158,
+                              "independent_max_inventory_signal": 158}
+    t = clasificar(r)
+    assert t["decision"] == STOP
+    assert "la fuente declara 158 y enumeramos 44" in t["evidencia"]
+    assert "HOY" not in t["evidencia"]

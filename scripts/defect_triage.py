@@ -517,12 +517,37 @@ def clasificar(resultado: dict[str, Any]) -> dict[str, Any]:
         invisibles = techo - enumeradas
         proporcion = invisibles / techo
         if invisibles >= INVISIBLES_MINIMAS and proporcion >= TOPE_DE_HUECO:
+            # El techo sale del MAXIMO entre lo que la fuente declara hoy y la
+            # senal historica, y el mensaje decia "la fuente declara {techo}"
+            # aunque el techo viniera del historico. Eso hacia falsa la
+            # evidencia del paro en mas de la mitad de los casos.
+            #
+            # Medido sobre las 81 agencias con hueco: en 46 -el 57 %- la
+            # fuente declara HOY exactamente lo que enumeramos, y el hueco es
+            # contra un baseline anterior. `carina gonzalez` declara 337,
+            # enumeramos 337, y el baseline decia 407: el catalogo se achico,
+            # no se nos escapo nada.
+            #
+            # La DECISION no cambia -seguir parando es correcto hasta que el
+            # ciclo de vida pueda distinguir una baja de una perdida, y hoy no
+            # puede porque no registra QUE propiedades faltan-. Lo que cambia
+            # es que la evidencia diga de donde sale cada numero.
+            hoy = int(auditoria.get("declared_total") or 0)
+            historico = int(auditoria.get("independent_max_inventory_signal") or 0)
+            if hoy and enumeradas >= hoy and historico > hoy:
+                origen = (f"la fuente declara {hoy} HOY y enumeramos "
+                          f"{enumeradas}: el techo de {techo} viene de una "
+                          f"corrida anterior, asi que el catalogo se achico "
+                          f"en {invisibles} ({proporcion:.1%}) o los perdimos, "
+                          f"y todavia no sabemos cual de las dos")
+            else:
+                origen = (f"la fuente declara {techo} y enumeramos "
+                          f"{enumeradas}: {invisibles} propiedades "
+                          f"({proporcion:.1%}) que existen y no vimos")
             return _veredicto(
                 STOP, resultado, "catalogo_declarado_mayor_que_el_enumerado",
                 RADIO_FAMILIA,
-                f"la fuente declara {techo} y enumeramos {enumeradas}: "
-                f"{invisibles} propiedades ({proporcion:.1%}) que existen y no "
-                f"vimos. Certificar esto como completo seria afirmar que el "
+                f"{origen}. Certificar esto como completo seria afirmar que el "
                 f"catalogo termina donde termino nuestra enumeracion")
 
     faltantes = int(comparacion.get("missing_in_run2") or 0)
