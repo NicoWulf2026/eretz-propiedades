@@ -113,3 +113,76 @@ perdidos—, y eso deja el resto más acotado.
 - Staging real ni Preview: no hay entorno configurado y no lo invento.
 - La API alojada: esto corre contra un snapshot local, no contra Supabase.
 - Carga concurrente: las latencias son de un proceso local, no TTFB remoto.
+
+---
+
+# Segunda corrida, 2026-09-21: contra la geografía recuperada
+
+## El síntoma que abrió todo esto está cerrado
+
+El test de autocompletado esperaba tres niveles para `ros` y la API devolvía
+dos, porque el snapshot no tenía jerarquía. Ahora la tiene:
+
+```
+q='ros'   MUNICIPIO  Rosario   7.726
+          LOCALIDAD  Rosario   1.668
+```
+
+| columna del snapshot | antes | ahora |
+|---|---:|---:|
+| `municipio` | **0** | **36.281** |
+| `departamento` | 9.568 | 45.551 |
+| `provincia` | 52.849 | 56.246 |
+| `latitud` | 38.827 | 42.225 |
+| `SIN_AREA` | 4.350 | **953** |
+
+## Un defecto de búsqueda que apareció al mirar
+
+`collate nocase` de SQLite pliega mayúsculas ASCII y no toca los acentos, así
+que **`cordo` devolvía cero áreas** y `córdo` devolvía las tres. Quien escribe
+sin acento es casi todo el mundo. Arreglado comparando sin acentos de los dos
+lados, con las columnas plegadas guardadas e indexadas.
+
+| | |
+|---|---:|
+| antes del arreglo, `cordo` | **0 áreas** |
+| después | 3 áreas, 4–14 ms |
+
+## Cuatro veces que el error estuvo en mi medición
+
+Vale anotarlas juntas porque son el mismo error con cuatro caras, y las cuatro
+veces la conclusión equivocada estaba a un paso:
+
+1. **La sonda de coordenadas.** Busqué `lat\s*[:=]` y el HTML tiene `"lat":`.
+   Concluí «la fuente no publica coordenadas» sobre una página que las
+   publicaba.
+2. **El 0 % de conflictos.** Comparé la provincia publicada contra el padrón
+   sin notar que el conflicto **vacía** esa columna: comparaba contra nulos.
+   Un cero exacto fue lo único que me hizo desconfiar.
+3. **La clave de la respuesta.** Leí `d["sugerencias"]` y la API devuelve
+   `d["data"]`. Reporté que el autocompletado no devolvía nada.
+4. **El servidor zombi.** Maté uvicorn y lo relancé tres veces; las dos
+   últimas no pudieron tomar el puerto 8099 y murieron en silencio. Todo lo
+   que medí después fue contra el proceso viejo. Por eso «seguía en 436 ms»
+   después de dos arreglos que sí funcionaban: medido contra el servidor
+   correcto, **4 a 14 ms**.
+
+El patrón es uno solo: **verifiqué el sistema con una herramienta que no
+verifiqué**. La defensa que funcionó las cuatro veces fue la misma —un número
+demasiado redondo o demasiado parejo— y no la disciplina.
+
+Lo concreto para la próxima: antes de creerle a una medición sobre un
+servidor, preguntar **desde cuándo está corriendo ese proceso**.
+
+```powershell
+Get-NetTCPConnection -LocalPort 8099 -State Listen |
+  ForEach-Object { (Get-Process -Id $_.OwningProcess).StartTime }
+```
+
+## Lo que NO se probó todavía
+
+- La suite Playwright completa contra este snapshot. Queda pendiente y es lo
+  siguiente.
+- Los dos tests que fallaban en la corrida anterior: el de conteo literal
+  sigue siendo un conteo literal, y el de niveles debería cerrarse solo, pero
+  **no está comprobado**.
