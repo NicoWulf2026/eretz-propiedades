@@ -238,3 +238,106 @@ def test_un_host_que_empieza_con_wwwalgo_no_se_recorta():
     from scripts.fuentes_compartidas import normalizar
     assert normalizar("https://wwwalgo.com") == "https://wwwalgo.com"
     assert "wwwalgo" in normalizar("https://wwwalgo.com/x")
+
+
+# ---------------------------------------------------------------------------
+# El titulo como segunda instancia, cuando el dominio no alcanza.
+#
+# El 2026-09-21 el dictamen por dominio marco 34 fuentes que «no nombran a la
+# agencia» y varias eran abreviaturas legitimas. El titulo las resuelve, y
+# resolvio las dos unicas que habian llegado a CERTIFIED_COMPLETE.
+
+from scripts.de_quien_es_el_dominio import (el_titulo_la_nombra,  # noqa: E402
+                                            titulo_de)
+
+
+def test_titulo_de_saca_el_titulo_aplanado():
+    assert titulo_de("<html><head><title>  Hola\n  Mundo </title></head>") == "Hola Mundo"
+    assert titulo_de("<title lang='es'>Con <b>marcado</b></title>") == "Con marcado"
+
+
+def test_sin_titulo_no_hay_titulo():
+    assert titulo_de("<html><body>nada</body></html>") == ""
+    assert titulo_de("") == ""
+
+
+def test_MUERDE_el_caso_abril_abreviatura_legitima():
+    """`ventasprop.com` no nombra a la agencia y es suyo: el titulo lo dice."""
+    assert el_titulo_la_nombra(
+        "Abril Negocios Inmobiliarios en venta y alquiler - Propiedades",
+        "ABRiL Negocios Inmobiliarios") is True
+
+
+def test_MUERDE_el_caso_fandino():
+    assert el_titulo_la_nombra(
+        "Fandino Propiedades - Inmobiliarias Banfield - Alquiler y Venta",
+        "FANDINO PROPIEDADES") is True
+
+
+def test_MUERDE_un_directorio_no_se_titula_con_el_nombre_de_la_agencia():
+    """La diferencia con el intento viejo que fallo: un directorio nombra a
+    docenas de agencias en su CUERPO y a ninguna en su TITULO."""
+    assert el_titulo_la_nombra(
+        "Empresas de Cordoba - Guia comercial de la provincia",
+        "Cerro Inmobiliaria") is False
+
+
+def test_MUERDE_sin_titulo_devuelve_None_y_no_False():
+    """Sin evidencia no se afirma nada. Un `False` aca haria que una pagina
+    sin titulo se leyera como «no es suya», que es inventar."""
+    assert el_titulo_la_nombra("", "Cerro Inmobiliaria") is None
+
+
+def test_un_nombre_sin_tokens_propios_no_decide():
+    """`Inmobiliaria Propiedades` no tiene ninguna palabra que distinga: no se
+    puede concluir nada del titulo."""
+    assert el_titulo_la_nombra("Cualquier Cosa", "Inmobiliaria Propiedades") is None
+
+
+def test_el_titulo_ignora_acentos_y_mayusculas():
+    assert el_titulo_la_nombra("ACUNA PROPIEDADES - Inicio", "Acuña Propiedades") is True
+
+
+# El titulo solo no alcanza: lo descubri usandolo sobre las 34 marcadas.
+
+from scripts.de_quien_es_el_dominio import el_titulo_es_del_portal  # noqa: E402
+
+
+def test_MUERDE_el_caso_cerro_un_directorio_titula_con_el_nombre_del_negocio():
+    """Este es el falso positivo que el titulo INTRODUCE.
+
+    `empresasdecordoba.com` titula cada pagina con el negocio que describe, y
+    por eso `el_titulo_la_nombra` dice que si. Lo que lo delata es que el
+    titulo TAMBIEN nombra al dominio.
+    """
+    titulo = "Cerro Inmobiliaria Miguel A Caceres - Empresas de Cordoba"
+    url = "https://empresasdecordoba.com/pagina/Cerro-Inmobiliaria-Miguel-A-Caceres/"
+    assert el_titulo_la_nombra(titulo, "Cerro Inmobiliaria") is True
+    assert el_titulo_es_del_portal(titulo, url) is True
+
+
+def test_MUERDE_el_caso_lujanprop():
+    assert el_titulo_es_del_portal(
+        "LujanProp | Arte Propiedades | Encontra tu proxima propiedad",
+        "https://lujanprop.com.ar/inmobiliaria/arte") is True
+
+
+def test_un_sitio_propio_no_se_nombra_dos_veces():
+    """`fandiprop.com.ar` se titula «Fandino Propiedades»: la etiqueta del
+    dominio no esta en el titulo, y eso es lo normal en un sitio propio."""
+    assert el_titulo_es_del_portal(
+        "Fandino Propiedades - Inmobiliarias Banfield",
+        "https://fandiprop.com.ar") is False
+
+
+def test_MUERDE_no_atrapa_al_portal_que_no_se_nombra():
+    """Honestidad sobre el limite: `inmobusqueda.com` titula «ABALSAMO
+    PROPIEDADES» a secas y esta regla no lo ve. Reduce el ruido, no lo
+    elimina; si alguien cree que esto decide solo, se equivoca."""
+    assert el_titulo_es_del_portal(
+        "ABALSAMO PROPIEDADES",
+        "https://www.inmobusqueda.com/abalsamopropiedades") is False
+
+
+def test_sin_titulo_no_es_del_portal():
+    assert el_titulo_es_del_portal("", "https://lujanprop.com.ar/x") is False

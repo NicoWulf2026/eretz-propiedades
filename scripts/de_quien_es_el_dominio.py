@@ -250,6 +250,75 @@ def dictaminar(url: str, candidatas: dict[str, str],
             "detalle": detalle}
 
 
+RE_TITULO = re.compile(r"<title[^>]*>(.*?)</title>", re.S | re.I)
+
+
+def titulo_de(html: str) -> str:
+    """El `<title>` del documento, aplanado."""
+    encontrado = RE_TITULO.search(html or "")
+    if not encontrado:
+        return ""
+    return " ".join(re.sub(r"<[^>]+>", " ", encontrado.group(1)).split())
+
+
+def el_titulo_la_nombra(titulo: str, nombre: str,
+                        su_lugar: Iterable[str] = ()) -> bool | None:
+    """¿El sitio se declara de esta agencia en su propio título?
+
+    El 2026-09-21 el dictamen por dominio marcó 34 fuentes que «no nombran a
+    la agencia» y varias eran **abreviaturas legítimas**: `acuprop.com` para
+    ACUÑA, `fandiprop.com.ar` para FANDIÑO, `csgestion.com.ar` para CASTIÑEIRA
+    SALGUERO. El dominio no las nombra y aun así son suyas.
+
+    El título lo resuelve en un pedido, porque ahí el dueño **se declara**:
+    `ventasprop.com` se titula «Abril Negocios Inmobiliarios» y
+    `fandiprop.com.ar` «Fandiño Propiedades».
+
+    Esto NO es el intento viejo que ya falló. Aquel contaba menciones en el
+    cuerpo y no distinguía al dueño del mencionado —en `remax-net.com.ar`
+    eligió `remax star`—. Un directorio nombra a docenas de agencias en su
+    cuerpo y a ninguna en su título: ahí dice el nombre del directorio.
+
+    **No alcanza solo, y esto lo descubrí usándolo.** Corrí el título sobre
+    las 34 marcadas y `Cerro Inmobiliaria` volvió como «suya», porque
+    `empresasdecordoba.com` titula cada una de sus páginas con el nombre del
+    negocio: «Cerro Inmobiliaria Miguel A Caceres - Empresas de Córdoba». Es
+    un directorio, y la página igual se titula con la agencia. Lo mismo
+    `inmobusqueda.com/abalsamopropiedades` y `lujanprop.com.ar/inmobiliaria/
+    arte`.
+
+    Por eso hay que preguntar las dos cosas: si el título nombra a la agencia
+    **y** si además nombra al dominio. Ver `el_titulo_es_del_portal`.
+
+    Devuelve `None` cuando no hay título: sin evidencia no se afirma nada.
+    """
+    if not titulo:
+        return None
+    heno = aplanar(titulo)
+    propios = tokens_propios(nombre, su_lugar)
+    if not propios:
+        return None
+    return all(token in heno for token in propios)
+
+
+def el_titulo_es_del_portal(titulo: str, url: str) -> bool:
+    """¿El título nombra al DOMINIO? Entonces el sitio se declara a sí mismo.
+
+    «Cerro Inmobiliaria Miguel A Caceres - **Empresas de Córdoba**» y
+    «**LujanProp** | Arte Propiedades» dicen de quién es el sitio y de quién
+    es la página, en ese orden. Cuando pasa, que el título nombre a la agencia
+    no prueba que el sitio sea suyo: prueba que el portal le dedicó una ficha.
+
+    No atrapa todos los casos —`inmobusqueda.com` titula «ABALSAMO
+    PROPIEDADES» a secas, sin nombrarse— así que esto reduce el ruido, no lo
+    elimina. Un veredicto sigue necesitando a alguien que lo mire.
+    """
+    etiqueta = etiqueta_del_dominio(url)
+    if not etiqueta:
+        return False
+    return etiqueta in re.sub(r"[^a-z0-9]", "", aplanar(titulo or ""))
+
+
 def leer_jsonl(ruta: Path) -> Iterator[dict[str, Any]]:
     if not ruta.exists():
         return

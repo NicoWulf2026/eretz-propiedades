@@ -304,6 +304,87 @@ quedaría atribuido a Lien**. `Lien` sigue pendiente en la cola.
 
 Son dos preguntas distintas y hoy sólo se hace una.
 
+## CORRECCIÓN de la misma tarde: medí la puerta equivocada
+
+`cerro inmobiliaria` paró unas horas después y su fuente registrada es
+`empresasdecordoba.com/pagina/Cerro-Inmobiliaria-Miguel-A-Caceres/`, otro
+directorio. Pero el directorio **no** la había dejado en
+`OFFICIAL_WEB_AMBIGUOUS`: la dejó en `SEARCH_SECOND_PASS_REQUIRED` —«no
+terminé de buscar»— y se tomó igual su **primera candidata** como
+`official_url`.
+
+O sea que yo había condicionado la medición a un solo estado y por eso me dio
+442 → 28. **La pregunta correcta no es qué decía el directorio sino qué usó la
+certificación.** Medido así, sobre las 429 agencias con resultado:
+
+| | agencias |
+|---|---:|
+| con resultado de certificación | 429 |
+| cuyo `official_url` **no nombra** a la agencia | **34** |
+
+Y lo que el directorio decía de esas 34:
+
+| veredicto del directorio | agencias |
+|---|---:|
+| `OFFICIAL_WEB_HIGH_CONFIDENCE` | **16** |
+| `OFFICIAL_WEB_VERIFIED` | **8** |
+| `OFFICIAL_WEB_AMBIGUOUS` | 9 |
+| `SEARCH_SECOND_PASS_REQUIRED` | 1 |
+
+**24 de 34 estaban marcadas con confianza alta.** Mi explicación de la mañana
+—«la capa que gana por precedencia no arrastra la duda de la de abajo»—
+describe 9 de 34. El resto es otra cosa: el directorio estaba seguro y se
+equivocó.
+
+### Pero el detector sobre-marca, y sin decirlo el número engaña
+
+Varias de esas 24 son **abreviaturas legítimas** que mi regla de tokens no
+reconoce: `acuprop.com` para ACUÑA, `fandiprop.com.ar` para FANDIÑO,
+`csgestion.com.ar` para CASTIÑEIRA SALGUERO, `azpropiedades.com` para Agustín
+Zlotnik, `bmsrl.com.ar` para Bartolelli Maini.
+
+Lo verifiqué en las **dos únicas que llegaron a `CERTIFIED_COMPLETE`**:
+`ventasprop.com` se titula «Abril Negocios Inmobiliarios» y `fandiprop.com.ar`
+«Fandiño Propiedades». Las dos son de su agencia.
+
+**Cero certificaciones contaminadas.** Las que sí son fuentes de terceros están
+casi todas en `BLOCKED_EXTERNAL`: el sistema las frenó. Dos muestran hasta
+dónde llega el problema de registro: `ABATTE DAGA LUXURY ESTATE` apunta a
+`inmoclick.ai/257787-**ayres-madero**/…` —la ruta nombra a otra agencia— y
+`Abdala Negocios Inmobiliarios` apunta a `turismomardelplata.gob.ar`, un sitio
+del gobierno.
+
+### Lo que sirve para la próxima
+
+Cuando el dominio no nombra a la agencia, **el `<title>` del sitio ayuda**, porque ahí el dueño se declara. Es distinto de contar menciones
+en el cuerpo, que ya probé y falla por la razón que explica
+`de_quien_es_el_dominio.py`: contar no distingue al dueño del mencionado. Leer
+el título sí, y resolvió los dos casos certificados sin ambigüedad.
+
+**Pero solo no alcanza, y lo supe usándolo.** Lo corrí sobre las 34 y `Cerro
+Inmobiliaria` volvió como «suya», porque `empresasdecordoba.com` titula cada
+una de sus páginas con el nombre del negocio: «Cerro Inmobiliaria Miguel A
+Caceres — Empresas de Córdoba». Es un directorio y la página igual se titula
+con la agencia. Igual `inmobusqueda.com/abalsamopropiedades` y
+`lujanprop.com.ar/inmobiliaria/arte`.
+
+Lo que los delata es que el título nombra **también al dominio**. Con las dos
+preguntas juntas, sobre las 34:
+
+| | agencias |
+|---|---:|
+| el título la nombra y **no** nombra al dominio → suya | 10 |
+| el título la nombra y **sí** nombra al dominio → ficha en portal | 3 |
+| el título **no** la nombra → ajena | 12 |
+| sin título o sin respuesta → a revisar | 9 |
+
+Queda un límite conocido y escrito en el test: `inmobusqueda.com` titula
+«ABALSAMO PROPIEDADES» a secas, sin nombrarse, así que sus dos fichas siguen
+contando como «suya». **Esto reduce el ruido, no lo elimina**, y un veredicto
+sigue necesitando a alguien que lo mire. Implementado en
+`de_quien_es_el_dominio.py` —`titulo_de`, `el_titulo_la_nombra`,
+`el_titulo_es_del_portal`—, que está fuera de la huella.
+
 ## Un desvío que investigué y que resultó ser otra cosa
 
 Mientras medía esto encontré 8 agencias con conector `wordpress` y cero
