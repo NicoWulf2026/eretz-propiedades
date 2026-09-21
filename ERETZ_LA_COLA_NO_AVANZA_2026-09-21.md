@@ -363,7 +363,60 @@ compartido, en vez de ir de a uno:
     agencia **entera, en silencio y sin error**. La exposición es toda fuente
     futura, no una lista de cuatro.
 
-14. lo que aparezca de los paros que la cola encuentre de acá en adelante.
+14. **`mts2` no cuenta como superficie.** Chico y medido, lo anoto sin
+    inflarlo. `alianza real estate` publica un terreno en Pujato con «Precio:
+    Consulte», «Área: 382-mts2», «Dormitorios: 2», lista de comodidades y 16
+    fotos. Sin precio numérico la regla exige 4 atributos distintos y
+    `RE_ATRIBUTOS_TXT` reconoce 3 —baño, cochera, dormitorio—. El cuarto sería
+    la superficie, y no se ve: la expresión tiene `m2|m²` pero no `mts2`, que
+    es como se escribe en media Argentina, ni `área`, que es la palabra que
+    usa esta ficha.
+
+    **Tamaño real: una propiedad.** Hay 118 descartes en todo el corpus con 3+
+    fotos y sin precio —los sospechosos de ser fichas reales— y viven en 5
+    hosts. 117 pertenecen a causas ya diagnosticadas: `ceciliasarro` 50 (el
+    ítem 13), `365litoralargentino` 48 (gama, cuya fuente es un portal),
+    `smartservices.uy` 18 (casagrande) y `cia.org.ar` 1 (bertomeu). Bajé 40 de
+    esas páginas y probé el umbral: sólo una cambia. Y `superficie_total` /
+    `superficie_cubierta` no aparecen entre los campos con `EXTRACTION_FAILED`
+    en ninguna agencia, así que el hueco tampoco está costando superficies por
+    otro lado.
+
+15. lo que aparezca de los paros que la cola encuentre de acá en adelante.
+
+---
+
+## Lo que se está acumulando, medido
+
+169 defectos abiertos (el último por agencia y componente), repartidos así:
+
+| radio | |
+|---|---:|
+| FAMILIA | 93 |
+| AGENCIA | 34 |
+| ESTRATEGIA | 32 |
+| COMPARTIDO | 10 |
+
+| componente | |
+|---|---:|
+| `extraccion_transversal_de_atributos` | **35** |
+| `variante_no_soportada` | 32 |
+| `posible_perdida_de_inventario` | 17 |
+| `extraccion_de_baja_magnitud` | 15 |
+| `fuente_inaccesible` | 11 |
+| `sin_determinar` | 10 |
+| `guardian_de_forma_compartido` | 10 |
+
+El bloque más grande es el primero y no es una sola causa: sus 35 agencias se
+reparten en 8 estrategias (`generic/sitemap` 13, `generic/html_catalog` 10,
+`wordpress` 6, `tokko` 2 y cinco más con una cada una) y 7 plataformas. El
+ítem 11 —el icono de RealHomes— es una de ellas.
+
+Lo que sí se puede decir con un número: sobre las 275 agencias con cobertura
+de campos medida, **`ambientes` falla en 12 agencias y 1.900 propiedades**,
+que es el campo más caro de todos. Le siguen `precio` (1.803), `moneda`
+(1.214) y `ciudad` (776). No afirmo que sea una sola causa —no lo medí— pero
+es por donde habría que empezar cuando la tanda se descongele.
 
 ### El crosswalk de identidad pública: no se puede construir acá
 
