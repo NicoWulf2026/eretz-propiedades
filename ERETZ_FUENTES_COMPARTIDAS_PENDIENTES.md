@@ -228,3 +228,121 @@ tiene. Es el mismo trabajo que se hizo con las 15 urls compartidas, a otra
 escala.
 
 Y cambia `official_url`, que es lo que compara la vigencia: va en tanda.
+
+---
+
+# La capa que gana por precedencia no arrastra la duda de la que está abajo — 2026-09-21
+
+**`database_writes: 0` · nada aplicado · la cola sigue a mitad de pasada**
+
+Esto salió del paro de `roomix:casagrande negocios inmobiliarios`, y el paro en
+sí era aburrido: 18 fichas descartadas, ninguna sobrevivió, y **cada rechazo
+estaba bien**. Las 18 eran `caseritos-al-paso-91800-tala`, `lpm-burgers-sauce`,
+`cerveceria-heisenbeer-pando`. No son propiedades. Son comercios de un
+directorio **uruguayo**, `smartservices.uy`, que quedó registrado como la
+fuente oficial de una inmobiliaria argentina.
+
+Lo que importa no es ese sitio: es **cómo llegó a ser la fuente**.
+
+## El mecanismo
+
+`agency_web_directory.jsonl` ya lo había marcado `OFFICIAL_WEB_AMBIGUOUS`, con
+dos candidatas y sin resolver cuál era. Esa duda estaba registrada y era
+correcta. Pero `agency_platform_directory.jsonl` guardó la url uruguaya como
+`domain`, y **la capa de plataforma gana por precedencia sobre el directorio**.
+
+El resultado es que la duda se pierde en el camino: abajo alguien escribió «no
+sé cuál de las dos», arriba quedó una url sola y afirmativa, y la resolución de
+identidad leyó la de arriba.
+
+## El tamaño, medido — y una corrección a lo que yo mismo dije
+
+Primero conté TLD extranjeros entre las fuentes certificadas, me dio 1 de 318 y
+estuve a punto de firmar «caso aislado». **Estaba midiendo otra cosa**: el
+problema no es que la fuente sea extranjera, es que sea de un tercero.
+
+Medido bien, sobre `platform.domain` contra el estado del directorio:
+
+| | agencias |
+|---|---|
+| con `platform.domain` puesto | 2.567 |
+| de esas, el directorio las dejó en `OFFICIAL_WEB_AMBIGUOUS` | 442 |
+| de esas 442, el dominio **nombra entera** a la agencia | 369 |
+| la nombra **en parte** | 45 |
+| **no la nombra en ningún lado** | **28** |
+
+Las 369 + 45 están bien: `abppropiedades.com.ar` para `abp propiedades` es
+suya, aunque el directorio nunca haya cerrado la duda. Las 28 son el problema,
+y se parten justo por la mitad:
+
+- **14 son páginas de portal que al menos la identifican en la ruta** —`inmoup`,
+  `inmoclick`, `todoprops`, `century21`, `guiadebuenosaires`, `laguiaonline`,
+  `barilocheweb`, `colegioinmobiliariochaco`—. Traen algo suyo, probablemente
+  parcial.
+- **14 no la identifican en ningún lado**: dos notas periodísticas
+  (`economis.com.ar`, `unoentrerios.com.ar`, `puntoapunto.com.ar`), un padrón de
+  matriculados **en su página 33** (`cpicordoba.org.ar/matriculados/page/33/`),
+  dos uruguayas (`smartservices.uy`, `century21.com.uy`) y —la peor— **el sitio
+  de otra inmobiliaria**.
+
+## Por qué el guardián de forma no alcanza
+
+De las 14 sin identificación, 3 llegaron a la cola: `casagrande`, `arquitectura
+inmobiliaria` y `danisa robledo`. **Las 3 salieron `NEEDS_FIX`**, así que hoy no
+hay inventario ajeno certificado. Eso está medido, no supuesto.
+
+Pero las 3 se salvaron por la misma razón: la fuente **no era un sitio
+inmobiliario**, y sin precio ni schema el guardián de forma las frena.
+
+`Lien Negocios Inmobiliarios` apunta a `inmobiliariabertero.com.ar`, y ahí eso
+no pasa. Bertero es una inmobiliaria de verdad: cada ficha trae precio, schema
+y fotos. El guardián la dejaría pasar entera y **el inventario de Bertero
+quedaría atribuido a Lien**. `Lien` sigue pendiente en la cola.
+
+> El guardián de forma detecta fuentes que **no son inmobiliarias**.
+> Es ciego a fuentes que son inmobiliarias pero **de otro**.
+
+Son dos preguntas distintas y hoy sólo se hace una.
+
+## Un desvío que investigué y que resultó ser otra cosa
+
+Mientras medía esto encontré 8 agencias con conector `wordpress` y cero
+enumeradas, etiquetadas `publication_mechanism: SIN_INVENTARIO`, y bajé sus
+sitios porque «cero inventario» es justo lo que no hay que asumir. Tres de las
+ocho **sí publican**: `aguirre inmobiliaria` sirve `property` por
+`wp-json/wp/v2/properties` —corrí el `discover` real y hoy devuelve
+`WORDPRESS_REST, soportada=true`—, `franchi` tiene 13 fichas en `/propiedad/` y
+`cintia fonzo` publica como productos de WooCommerce en
+`/categoria-producto/venta`.
+
+Estuve a punto de escribir que eso era «certificar cero en silencio». **No lo
+es, y la diferencia importa.** Ninguna de las ocho está certificada: siete
+están en `NEEDS_FIX` y dos en `BLOCKED_EXTERNAL`, y la razón registrada es
+`one or both runs did not finish with connector state OK`. O sea que el sistema
+no concluyó «esta agencia no publica»: concluyó que la corrida no terminó, y
+paró. El guardián hizo lo suyo.
+
+Lo que queda mal es la **etiqueta**. `SIN_INVENTARIO` se escribe igual cuando
+la fuente no publica que cuando la corrida no llegó a mirar, y son dos cosas
+distintas leídas por un humano que abre el archivo. `base.py:475` tiene
+`hubo_contacto()` escrito exactamente contra esta confusión —su docstring
+nombra a `aguirreinmobiliaria.com.ar`, «publica 38 propiedades»— pero separa
+los estados terminales, no esta etiqueta.
+
+Es un defecto de nombre, no de decisión, y toca `connectors/*.py`, que sí entra
+en la huella. **Va a la tanda congelada, no se toca con la cola a mitad de
+pasada.**
+
+## Qué haría falta
+
+`scripts/de_quien_es_el_dominio.py` ya responde la segunda —es el dictamen que
+produjo esta tabla— pero corre a mano y después del hecho. Donde tiene que
+correr es **antes de certificar**, como condición de la fuente, no como
+auditoría posterior.
+
+Y la regla de precedencia necesita que **la duda viaje hacia arriba**: si el
+directorio dejó una agencia en `OFFICIAL_WEB_AMBIGUOUS`, la capa de plataforma
+no debería poder resolverla en silencio. Hoy puede, y por eso pasó.
+
+Nada de esto es de extracción, así que no toca huella y no invalida
+certificaciones. Es registro de fuentes.

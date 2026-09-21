@@ -540,6 +540,31 @@ def clasificar(resultado: dict[str, Any]) -> dict[str, Any]:
                           f"corrida anterior, asi que el catalogo se achico "
                           f"en {invisibles} ({proporcion:.1%}) o los perdimos, "
                           f"y todavia no sabemos cual de las dos")
+            elif not hoy:
+                # El arreglo de arriba cubrio el caso «la fuente declara algo
+                # hoy y ademas hay historico», y dejo pasar el de al lado, que
+                # es peor: cuando la fuente NO declara ningun total, `techo`
+                # sale ENTERO de `independent_max_inventory_signal` -nuestra
+                # propia corrida anterior- y el mensaje seguia diciendo «la
+                # fuente declara 104». La fuente no declara 104: no declara
+                # nada. El numero es nuestro.
+                #
+                # `carlos castano` lo mostro el 2026-09-21. Su catalogo
+                # responde 200 y dice «( 0 ) Propiedades / No se encontraron
+                # resultados»; el 104 es lo que enumeramos el 2026-09-14.
+                # Medido sobre los resultados de hoy: de 9 agencias que
+                # disparan este paro, 4 caen en esta rama.
+                #
+                # La DECISION no cambia -parar sigue siendo correcto: un
+                # catalogo que se vacio puede ser una baja real o una perdida,
+                # y el ciclo de vida todavia no las distingue-. Lo que no
+                # puede es atribuirle a la fuente un numero que nunca dijo.
+                origen = (f"la fuente NO declara ningun total y enumeramos "
+                          f"{enumeradas}: el techo de {techo} es nuestra "
+                          f"propia corrida anterior, asi que faltan "
+                          f"{invisibles} ({proporcion:.1%}) contra lo que "
+                          f"vimos la vez pasada, no contra lo que la fuente "
+                          f"afirma hoy")
             else:
                 origen = (f"la fuente declara {techo} y enumeramos "
                           f"{enumeradas}: {invisibles} propiedades "

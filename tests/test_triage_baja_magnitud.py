@@ -542,3 +542,39 @@ def test_un_hueco_de_verdad_sigue_diciendolo_como_antes():
     assert t["decision"] == STOP
     assert "la fuente declara 158 y enumeramos 44" in t["evidencia"]
     assert "HOY" not in t["evidencia"]
+
+
+def test_MUERDE_cuando_la_fuente_NO_declara_nada_no_se_le_atribuye_un_numero():
+    """El arreglo de arriba dejo pasar la rama de al lado, que es peor.
+
+    `carlos castano`, 2026-09-21: `declared_total` viene vacio, la senal
+    historica dice 104 y enumeramos 1. Como `hoy` es 0, el `if` anterior no
+    entraba y el `else` afirmaba «la fuente declara 104 y enumeramos 1». La
+    fuente no declara 104: su catalogo responde 200 y dice «( 0 ) Propiedades
+    / No se encontraron resultados». El 104 es lo que enumeramos nosotros la
+    semana anterior.
+
+    Medido sobre los resultados del dia: de 9 agencias que disparan este paro,
+    4 caen en esta rama —`carlos castano` 0/104, `civile` 0/3250, `forja`
+    0/350—. La decision sigue siendo STOP; lo que no puede es inventarle una
+    declaracion a la fuente.
+    """
+    r = resultado({})
+    r["enumeration_audit"] = {"enumerated": 1, "declared_total": None,
+                              "independent_max_inventory_signal": 104}
+    t = clasificar(r)
+    assert t["decision"] == STOP
+    assert t["componente_sospechoso"] == "catalogo_declarado_mayor_que_el_enumerado"
+    assert "NO declara ningun total" in t["evidencia"]
+    assert "nuestra propia corrida anterior" in t["evidencia"]
+    # Lo que no puede volver a decir nunca:
+    assert "la fuente declara 104" not in t["evidencia"]
+
+
+def test_sin_total_declarado_y_sin_historico_no_hay_paro_por_hueco():
+    """Sin ninguno de los dos no hay techo, y sin techo no hay hueco que medir."""
+    r = resultado({})
+    r["enumeration_audit"] = {"enumerated": 40, "declared_total": None,
+                              "independent_max_inventory_signal": 0}
+    t = clasificar(r)
+    assert t["componente_sospechoso"] != "catalogo_declarado_mayor_que_el_enumerado"

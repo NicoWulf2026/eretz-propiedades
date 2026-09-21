@@ -277,7 +277,31 @@ compartido, en vez de ir de a uno:
     **No es familia grande**: de las 6 agencias con 10+ fallos en un conteo,
     sólo ésta usa RealHomes.
 
-12. lo que aparezca de los paros que la cola encuentre de acá en adelante.
+12. **`SIN_INVENTARIO` significa dos cosas distintas y se escribe igual.**
+    Salió del paro de `carlos castano` el 2026-09-21. La etiqueta
+    `publication_mechanism` se pone en `SIN_INVENTARIO` tanto cuando la fuente
+    no publica nada como cuando la corrida **no llegó a mirar**, y quien abre
+    el archivo lee lo primero.
+
+    De 34 agencias con conector `wordpress`, 8 enumeraron cero y las 8 están
+    así etiquetadas. Bajé los 8 sitios: **3 publican de verdad**. `aguirre`
+    sirve el tipo `property` por `wp-json/wp/v2/properties` —corrí el
+    `discover` real y hoy devuelve `WORDPRESS_REST, soportada=true`—, `franchi`
+    tiene 13 fichas en `/propiedad/`, y `cintia fonzo` publica como productos
+    de WooCommerce en `/categoria-producto/venta`.
+
+    **No es un cero certificado**, y conviene decirlo porque yo mismo lo
+    escribí mal antes de verificarlo: las 8 están en `NEEDS_FIX` o
+    `BLOCKED_EXTERNAL`, con la razón `one or both runs did not finish with
+    connector state OK`. El sistema paró; no certificó nada. Es un defecto de
+    **nombre**, no de decisión.
+
+    `base.py:475` ya tiene `hubo_contacto()` escrito contra esta confusión —su
+    docstring nombra a `aguirreinmobiliaria.com.ar`, «publica 38
+    propiedades»—, pero separa los estados **terminales**, no esta etiqueta.
+    La misma regla en dos lugares que no se hablan, otra vez.
+
+13. lo que aparezca de los paros que la cola encuentre de acá en adelante.
 
 ### El crosswalk de identidad pública: no se puede construir acá
 
