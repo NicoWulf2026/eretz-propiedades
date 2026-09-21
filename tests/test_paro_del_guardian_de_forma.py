@@ -54,7 +54,7 @@ def test_MUERDE_un_descarte_con_precio_si_para():
     corrida = {"descartadas_por_forma": 3, "detalles_obtenidos": 200,
                "_descartes": [institucional(), institucional(),
                               {"source_url": "https://x.com/p/9-casa",
-                               "precio": 145000, "tipo_ld": None}]}
+                               "precio": 145000, "tipo_ld": None, "fotos": 8}]}
     motivo = paro_por_el_guardian_de_forma(corrida)
     assert motivo is not None
     assert "TENIAN precio o schema" in motivo
@@ -64,7 +64,8 @@ def test_MUERDE_un_descarte_con_precio_si_para():
 def test_MUERDE_un_descarte_con_schema_tambien_para():
     corrida = {"descartadas_por_forma": 1, "detalles_obtenidos": 50,
                "_descartes": [{"source_url": "https://x.com/p/1",
-                               "precio": None, "tipo_ld": "Product"}]}
+                               "precio": None, "tipo_ld": "Product",
+                               "fotos": 6}]}
     assert paro_por_el_guardian_de_forma(corrida) is not None
 
 
@@ -118,7 +119,8 @@ def test_un_precio_cero_cuenta_como_precio():
     Con `if descarte.get("precio")` este caso se leeria como institucional y
     el rechazo pasaria sin mirarse.
     """
-    assert descarte_parecia_una_propiedad({"precio": 0, "tipo_ld": None})
+    assert descarte_parecia_una_propiedad({"precio": 0, "tipo_ld": None,
+                                           "fotos": 8})
 
 
 def test_MUERDE_el_conteo_serializado_alcanza_sin_el_detalle():
@@ -152,3 +154,45 @@ def test_el_conteo_serializado_gana_sobre_el_detalle():
                "descartes_con_senal": 0, "descartes_con_senal_ejemplos": [],
                "_descartes": [{"source_url": "https://x/p/1", "precio": 1000}]}
     assert paro_por_el_guardian_de_forma(corrida) is None
+
+
+def test_MUERDE_una_pagina_de_categoria_con_un_precio_no_es_sospechosa():
+    """`arquitectura inmobiliaria` paro las dos colas por esto.
+
+    Sus 9 rechazos son paginas de CATEGORIA —`ventas-locales`,
+    `alquileres-monoambientes`, tituladas «3 dormitorios»— y una muestra un
+    precio en el listado. Con el precio solo, eso alcanzaba para sospechar.
+
+    Las nueve tienen exactamente UNA foto, y una pagina que no llega al piso
+    de fotos no es publicable como propiedad por ningun camino: el guardian
+    la rechaza por ahi, no por el precio.
+    """
+    categoria = {"source_url": "https://urbanorosario.com.ar/ventas-monoambientes",
+                 "precio": 21400.0, "tipo_ld": None, "fotos": 1}
+    assert not descarte_parecia_una_propiedad(categoria)
+    corrida = {"descartadas_por_forma": 9, "detalles_obtenidos": 40,
+               "_descartes": [categoria] + [institucional() for _ in range(8)]}
+    assert paro_por_el_guardian_de_forma(corrida) is None
+
+
+def test_MUERDE_el_afinado_no_apaga_el_caso_que_lo_justifica():
+    """Las fichas de `alma di matteo` traian 8 fotos y precio.
+
+    Si el piso de fotos apagara tambien ese caso, la regla dejaria de servir
+    justo para lo que se construyo.
+    """
+    real = {"source_url": "https://www.almadimatteo.com.ar/lotes/Ranelagh/ranelagh.html",
+            "precio": 130000.0, "tipo_ld": None, "fotos": 8}
+    assert descarte_parecia_una_propiedad(real)
+    corrida = {"descartadas_por_forma": 6, "detalles_obtenidos": 0,
+               "_descartes": [real]}
+    motivo = paro_por_el_guardian_de_forma(corrida)
+    assert motivo is not None and "TENIAN precio o schema" in motivo
+
+
+def test_un_schema_sin_fotos_tampoco_alcanza():
+    """El piso de fotos vale igual para la otra senal fuerte."""
+    assert not descarte_parecia_una_propiedad(
+        {"precio": None, "tipo_ld": "Product", "fotos": 0})
+    assert descarte_parecia_una_propiedad(
+        {"precio": None, "tipo_ld": "Product", "fotos": 5})

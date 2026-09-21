@@ -45,6 +45,12 @@ RADIO_FAMILIA = "FAMILIA"            # un connector entero o generic/common
 RADIO_ESTRATEGIA = "ESTRATEGIA"      # una estrategia de generico
 RADIO_AGENCIA = "AGENCIA"            # esta inmobiliaria y ninguna otra
 
+# El piso de fotos con el que el guardian de forma acepta una ficha. Se
+# declara aca, y no se importa de `generico`, para que el triaje no dependa
+# de un connector: si el piso cambiara alla, este numero queda como lo que el
+# triaje afirma, y la diferencia se ve en los tests en vez de propagarse sola.
+FOTOS_MINIMAS_PARA_SOSPECHAR = 3
+
 # Clases de error del descargador que hablan del SITIO, no de nosotros.
 CLASES_EXTERNAS = ("ErrorTransitorio", "Bloqueado", "TimeoutError",
                    "URLError", "HTTPError", "ConnectionResetError",
@@ -345,7 +351,27 @@ def descarte_parecia_una_propiedad(descarte: dict[str, Any]) -> bool:
     «Monoambiente». Las tres veces la senal se conformo con que la palabra
     apareciera.
     """
-    return descarte.get("precio") is not None or bool(descarte.get("tipo_ld"))
+    fuerte = descarte.get("precio") is not None or bool(descarte.get("tipo_ld"))
+    if not fuerte:
+        return False
+    # Y ademas tiene que haber tenido fotos suficientes.
+    #
+    # `arquitectura inmobiliaria` paro las dos colas por esto: sus 9 rechazos
+    # son paginas de CATEGORIA -`ventas-locales`, `alquileres-monoambientes`,
+    # tituladas «3 dormitorios»- y una de ellas muestra un precio en el
+    # listado. Con el precio solo, eso alcanzaba para llamarla sospechosa.
+    #
+    # Las nueve tienen exactamente UNA foto. Y una pagina que no llega al piso
+    # de fotos no es publicable como propiedad por ningun camino: el guardian
+    # la rechaza por ahi, no por el precio, asi que su rechazo no puede ser
+    # una perdida. La unica excepcion del guardian -un catalogo ya verificado
+    # en runtime- ni siquiera mira las fotos, con lo cual nunca llega aca.
+    #
+    # No afloja el caso que importa: las fichas de `alma di matteo` que
+    # destaparon el defecto real traian 8 fotos y precio, y seguirian
+    # disparando. Medido sobre los 59 rechazos distintos del corpus, con este
+    # agregado ninguno queda sospechoso.
+    return (descarte.get("fotos") or 0) >= FOTOS_MINIMAS_PARA_SOSPECHAR
 
 
 def paro_por_el_guardian_de_forma(corrida: dict[str, Any]) -> str | None:
