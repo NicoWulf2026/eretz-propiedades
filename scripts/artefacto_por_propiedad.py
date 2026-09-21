@@ -108,6 +108,10 @@ def main() -> int:
 
     filas = 0
     por_estado: Counter = Counter()
+    # Cuantos valores no se extrajeron sino que se dedujeron. Va al resumen
+    # porque una cifra que no se publica no corrige a nadie: el problema de
+    # `provincia` era justamente que la deduccion no se veia.
+    inferidos: Counter = Counter()
     por_campo: dict[str, Counter] = {c: Counter() for c in CAMPOS}
     agencias = 0
     sin_paquete = 0
@@ -146,12 +150,35 @@ def main() -> int:
                     continue
                 url = p.get("source_url") or ""
                 campos = {}
+                extra = p.get("extra") or {}
                 for c in CAMPOS:
                     e = estado_del_campo(p.get(c), c, cobertura, url,
                                          fallidas.get(c, set()))
-                    campos[c] = {"valor": p.get(c), "estado": e,
-                                 "origen": "FRESH_CERTIFICATION"
-                                           if e == PROVIDED_EXTRACTED else None}
+                    celda = {"valor": p.get(c), "estado": e,
+                             "origen": ("FRESH_CERTIFICATION"
+                                        if e == PROVIDED_EXTRACTED else None)}
+                    # El conector marca la provincia que NO saco de la ficha
+                    # sino que dedujo del padron, y lo dice con todas las
+                    # letras -`provincia_confianza: inferida`-, junto a la
+                    # advertencia correcta de que la provincia de la
+                    # inmobiliaria no es necesariamente la del inmueble.
+                    #
+                    # Ese rastro se perdia aca. El artefacto escribia
+                    # `FRESH_CERTIFICATION`, que es lo mismo que dice de un
+                    # titulo sacado del `<h1>`, y quien lo leyera no podia
+                    # distinguir un dato extraido de uno deducido.
+                    #
+                    # No es un caso de borde: el 96,4 % de las propiedades
+                    # declara exactamente la provincia de su inmobiliaria, y
+                    # en 183 de 195 agencias TODAS repiten el mismo valor.
+                    origen_declarado = extra.get(f"{c}_origen")
+                    if origen_declarado and celda["origen"]:
+                        celda["origen"] = origen_declarado
+                        confianza = extra.get(f"{c}_confianza")
+                        if confianza:
+                            celda["confianza"] = confianza
+                            inferidos[c] += 1
+                    campos[c] = celda
                     por_estado[e] += 1
                     por_campo[c][e] += 1
                 fh.write(json.dumps({
@@ -176,6 +203,9 @@ def main() -> int:
         "agencias_sin_paquete": sin_paquete,
         "campos_por_propiedad": len(CAMPOS),
         "por_estado": dict(por_estado),
+        # No es lo mismo un dato leido de la ficha que uno deducido. Con
+        # `provincia` la diferencia es casi todo el campo.
+        "valores_inferidos_por_campo": dict(inferidos),
     }
     RESUMEN.write_text(json.dumps(resumen, ensure_ascii=False, indent=1),
                        encoding="utf-8")
@@ -184,6 +214,11 @@ def main() -> int:
     print(f"agencias con paquete:      {agencias}")
     print(f"agencias SIN paquete:      {sin_paquete}   "
           f"(certificadas antes de que se guardaran, o sin propiedades)\n")
+    if inferidos:
+        print("valores DEDUCIDOS, no extraidos de la ficha:")
+        for campo, n in inferidos.most_common():
+            print(f"   {campo:16} {n:9,}  ({n/max(filas,1):.1%} de las propiedades)")
+        print()
     print(f"{'estado del campo':22} {'n':>9}  {'%':>6}")
     for k, n in por_estado.most_common():
         print(f"{k:22} {n:9,}  {n/max(total,1):6.1%}")
