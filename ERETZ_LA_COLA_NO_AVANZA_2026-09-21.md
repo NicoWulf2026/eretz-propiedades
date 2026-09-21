@@ -489,6 +489,32 @@ explicación de arriba: 219 propiedades por unos 20 s de handshake perdido son
 es que las muertes de worker no costaran nada —costaron—, es que **no eran lo
 dominante**, y yo había cerrado el análisis sin mirar el transporte.
 
+#### Primera medición en producción, con su límite dicho
+
+Relancé **sólo el worker 0** con el arreglo y dejé el worker 1 sin él, como
+control en la misma cola. La primera agencia que tocó fue justamente `alagna`.
+Las corridas de hoy sobre esa agencia, en orden:
+
+| hora | duración |
+|---|---:|
+| 05:34 | 934 s |
+| 06:34 | 1.158 s |
+| 07:54 | 2.001 s |
+| 09:04 | 3.020 s |
+| 10:14 | 3.370 s |
+| **12:38, con el arreglo** | **863 s** |
+
+Las cinco previas venían **creciendo monótonamente** toda la mañana y la
+primera con el arreglo cayó por debajo de todas. Eso es consistente con que el
+handshake fuera el costo dominante y con que la IPv6 se estuviera degradando
+durante el día.
+
+**No es prueba todavía**: es una sola corrida, y esta agencia tiene histórico
+de 884 s y 934 s sin el arreglo, así que 863 s no está fuera del rango que
+alcanzó alguna vez. Lo que sí es raro de explicar por azar es la forma —cinco
+crecientes y un corte— y eso se confirma o se cae con las próximas agencias
+contra el control.
+
 Arreglado en `scripts/ipv4_primero.py`, conectado en el runner de la cola.
 Reordena las direcciones para poner IPv4 adelante y **no descarta las IPv6**:
 de los 83 hosts con AAAA, 51 conectan rápido por IPv6 y hay redes donde es el
