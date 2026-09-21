@@ -217,7 +217,22 @@ compartido, en vez de ir de a uno:
    bis—. No es una pieza que falte inventar: es una diferencia entre dos
    caminos.
 
-9. lo que aparezca de los paros que la cola encuentre de acá en adelante.
+9. **La condición de fotos del triaje quedó inerte en el camino que
+   importa.** Hace unas horas agregué que un rechazo del guardián sólo es
+   sospechoso si traía precio o schema **y además fotos suficientes**, y lo
+   puse en `defect_triage.py`. Pero el contador que el triaje **prefiere**
+   —`descartes_con_senal`, calculado en `run_rollout.py:605`— se quedó sin
+   esa condición.
+
+   Lo destapó `bunader`: sus 8 rechazos tienen **cero fotos**, el triaje
+   actual da 0 sospechosos y veredicto `None`, y el paro salió igual del
+   contador, que dice 2.
+
+   Es la misma regla escrita en dos lugares y separada. El arreglo es una
+   línea —agregar `and (d.get("fotos") or 0) >= FOTOS_MINIMAS`— pero
+   `_procesar_con` **sí** está en la huella del certificador.
+
+10. lo que aparezca de los paros que la cola encuentre de acá en adelante.
 
 ### El crosswalk de identidad pública: no se puede construir acá
 
