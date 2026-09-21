@@ -105,6 +105,38 @@ RE_MARCADOR_ACF = re.compile(
     r'data-lat=["\'](-?\d{1,2}\.\d{3,})["\'][^>]{0,80}?'
     r'data-lng=["\'](-?\d{1,3}\.\d{3,})["\']', re.I)
 
+# Otros temas embeben el marcador como JSON dentro de un script, con las
+# claves escritas:
+#
+#   {"address":"W. de Tata 4551","lat":"-34.6011211","lng":"-58.5607976"}
+#
+# Ni el marcador ACF ni el respaldo de "dos numeros pegados" lo ven, porque
+# entre los dos valores hay `","lng":"`. `azpropiedades.com` perdia asi 11 de
+# sus 84 fichas -las que no traen el meta de la API-, y la coordenada es
+# justo el dato que despues resuelve municipio y departamento contra la
+# geometria oficial de GeoRef.
+#
+# Los dos valores van ROTULADOS, asi que esto no puede confundirse con un par
+# de numeros cualquiera. Es la trampa que ya costo 752 propiedades ubicadas
+# fuera del pais con el respaldo por adyacencia, y por eso el rango argentino
+# se sigue exigiendo igual.
+RE_LAT_LNG_JSON = re.compile(
+    r'"lat(?:itude)?"\s*:\s*"?(-?\d{1,2}\.\d{3,})"?\s*,\s*'
+    r'"(?:lng|lon|longitude)"\s*:\s*"?(-?\d{1,3}\.\d{3,})"?', re.I)
+
+
+def _coordenada_en_json(html: str) -> tuple[float, float] | None:
+    """La coordenada del marcador embebido como JSON, dentro de Argentina."""
+    m = RE_LAT_LNG_JSON.search(html or "")
+    if not m:
+        return None
+    lat, lon = float(m.group(1)), float(m.group(2))
+    # El mismo rango que aplica `_coordenadas_meta`. Un rotulo correcto con un
+    # valor imposible sigue siendo un valor imposible.
+    if not (-56 <= lat <= -21) or not (-74 <= lon <= -53):
+        return None
+    return lat, lon
+
 
 def _coordenada_del_marcador(html: str) -> tuple[float, float] | None:
     """La coordenada del marcador del mapa, si la ficha trae una."""
@@ -681,6 +713,13 @@ class WordPressConnector(Connector):
                            str(item or html))
             if mc:
                 lat, lon = float(mc.group(1)), float(mc.group(2))
+        if lat is None or lon is None:
+            # El marcador embebido como JSON, con las claves escritas. Va
+            # ultimo porque es el mas especifico: si el meta de la API o el
+            # par adyacente ya dieron una coordenada, esa manda.
+            enjson = _coordenada_en_json(str(item or "")) or _coordenada_en_json(html)
+            if enjson:
+                lat, lon = enjson
 
         is_post_catalog = bool(crudo.get("post_taxonomy_catalog"))
         operacion_fuente = (
