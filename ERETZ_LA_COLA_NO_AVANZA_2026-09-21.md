@@ -504,9 +504,26 @@ compartido, en vez de ir de a uno:
     1.209 sin precio tienen otra causa; `building` usa `US$` y `$`; `casamia`
     usa `U$S` y `$`.
 
-    Es una **cota inferior**: miré una ficha por agencia y sólo en las que ya
-    fallaban del todo. Una agencia que escriba `U$D` en la mitad de sus fichas
-    no aparece en esa lista.
+    Era una **cota inferior**, y la medí después sobre una ficha real de cada
+    una de **120 agencias**:
+
+    | | agencias |
+    |---|---:|
+    | usan otras formas (`U$S`, `US$`, `USD`, `$`) | 70 |
+    | sin moneda visible en la ficha mirada | 40 |
+    | **escriben `U$D`** | **8** |
+    | inaccesibles | 2 |
+
+    Ocho de 120 es el **6,7 %**, y tres de esas ocho escriben `U$D` **y**
+    otra forma en la misma página —`belvedere`, `bondar`, `carames`—, así que
+    una regla que sólo mire la primera moneda que encuentra puede acertar o
+    fallar según el orden.
+
+    **Y corrige algo que yo mismo escribí antes**: dije que `building
+    inmobiliaria` «no es este caso» porque la ficha que miré usaba `US$` y
+    `$`. Con otra ficha aparece `U$D`. Mirar una página por agencia alcanza
+    para encontrar el defecto, no para descartarlo — las 113 de 297 de
+    `building` sin precio pueden ser esto después de todo.
 
     Antes de tocar conviene buscar si hay una tercera copia de la regla: en
     este repo la misma regla suele estar escrita en varios lugares que ya
