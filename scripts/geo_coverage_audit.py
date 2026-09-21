@@ -25,12 +25,21 @@ tomada, y este script la mide en vez de discutirla.
 `AREA_BUSQUEDA` es la capa de descubrimiento y viaja con su nivel explicito,
 para que nadie la confunda con la ciudad.
 
-**GEO_CONFLICT.** La geometria oficial y la provincia que publica la fuente se
-contradicen en 3.852 de 36.552 puntos -el 10,5 %-. No se elige ninguna: una de
-las dos esta mal y quedarse con cualquiera seria decidir sin evidencia. Se
-declara el conflicto, se conservan las dos, y el municipio geometrico NO se usa
-como area de busqueda en esos casos: si la coordenada esta mal, su municipio
-tambien lo esta, y mandaria a una persona a buscar en la provincia equivocada.
+**GEO_CONFLICT.** Cuando la geometria oficial y la provincia que PUBLICA la
+fuente se contradicen, no se elige ninguna: una de las dos esta mal y quedarse
+con cualquiera seria decidir sin evidencia. Se declara el conflicto, se
+conservan las dos, y el municipio geometrico NO se usa como area de busqueda
+en esos casos: si la coordenada esta mal, su municipio tambien lo esta, y
+mandaria a una persona a buscar en la provincia equivocada.
+
+Una provincia que dedujimos del padron de la inmobiliaria **no es** la que
+publica la fuente, y tratarla como tal convertia una inferencia equivocada en
+un conflicto. Medido: 3.439 de 3.859 -el 89,1 %- eran de esa clase. Una
+inmobiliaria de Cordoba que vende en Neuquen no es una contradiccion. El costo
+era el maximo posible: la fila salia sin provincia, sin departamento, sin
+municipio, sin localidad y con `area_busqueda: SIN_AREA`, incluida la
+geografia que la coordenada SI demuestra -3.888 propiedades, el 6,7 % del
+catalogo-. Corregido, los conflictos bajaron a 462.
 
 No escribe en ninguna base.
 """
@@ -203,15 +212,48 @@ def main() -> int:
             muni_geo = (punto or {}).get("municipio")
             depto_geo = (punto or {}).get("departamento")
 
-            # GEO_CONFLICT: la coordenada dice una provincia y la fuente otra.
-            # No se elige. Y el municipio geometrico NO se usa como area: si la
-            # coordenada esta mal, su municipio tambien, y mandaria a una
-            # persona a buscar en la provincia equivocada.
+            # GEO_CONFLICT: la coordenada dice una provincia y la FUENTE otra.
+            # No se elige entre dos evidencias que se contradicen, y el
+            # municipio geometrico tampoco se usa: si la coordenada esta mal,
+            # su municipio tambien, y mandaria a una persona a buscar en la
+            # provincia equivocada.
+            #
+            # Pero una provincia que dedujimos nosotros del padron de la
+            # inmobiliaria NO es evidencia de la fuente, y tratarla como tal
+            # convertia una inferencia equivocada en un conflicto. Medido:
+            # **3.439 de los 3.859 conflictos -el 89,1 %- eran contra una
+            # provincia inferida**, no contra una publicada. Una inmobiliaria
+            # de Cordoba que vende en Neuquen no es una contradiccion: es una
+            # inmobiliaria que vende en Neuquen, y nuestra suposicion estaba
+            # mal.
+            #
+            # El costo de confundirlas era el maximo posible: la fila salia
+            # publicada SIN NADA -sin provincia, sin departamento, sin
+            # municipio, sin localidad y con `area_busqueda: SIN_AREA`-,
+            # incluida la geografia que la coordenada SI demuestra. 3.888
+            # propiedades, el 6,7 % del catalogo, invisibles para cualquier
+            # busqueda por area.
+            #
+            # Ahora: si la provincia la dedujimos, gana la geometria y no hay
+            # conflicto. Si la publico la ficha, el conflicto se mantiene tal
+            # cual, que es para lo que la regla existe.
+            provincia_inferida_corregida = False
+            origen_publicado = ((fila.get('extra') or {}).get('provincia_origen')
+                                or prop.extra.get('provincia_origen'))
+            provincia_es_inferida = origen_publicado == "padron_inmobiliaria"
             conflicto_estructurado = (prop.extra.get('geo_conflicto')
                                      or (fila.get('extra') or {}).get('geo_conflicto'))
-            conflicto = bool(conflicto_estructurado or (
+            discrepa = bool(
                 prov_geo and fila.get("provincia")
-                and _plegado(prov_geo) != _plegado(fila.get("provincia"))))
+                and _plegado(prov_geo) != _plegado(fila.get("provincia")))
+            if discrepa and provincia_es_inferida:
+                # La inferencia estaba mal y la geometria lo demuestra. Se
+                # corrige y se deja el rastro de lo que habiamos supuesto.
+                conflictos["inferencia_corregida_por_la_geometria"] += 1
+                discrepa = False
+                provincia_inferida_corregida = True
+                provincia_final = prov_geo
+            conflicto = bool(conflicto_estructurado or discrepa)
             if conflicto:
                 conflictos['provincia_vs_localidad' if conflicto_estructurado
                            else "provincia_geometrica_vs_publicada"] += 1
@@ -257,6 +299,11 @@ def main() -> int:
             # en silencio: quien lea la fila distingue el municipio que salio
             # de un nombre del que salio de un poligono.
             procedencia: dict[str, str] = {}
+            if provincia_inferida_corregida:
+                # Se dice de donde salio: la dedujimos mal y la geometria la
+                # corrigio. Sin esto seria una provincia mas, indistinguible
+                # de la que publico la fuente.
+                procedencia["provincia"] = POR_GEOMETRIA
             if _presente(municipio_nombre):
                 procedencia["municipio"] = POR_NOMBRE
             elif muni_geo and not conflicto:

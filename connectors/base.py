@@ -901,6 +901,28 @@ class Connector:
                                                 else "ciudad")
 
         from connectors.geografia import PROVINCE_CONFLICT_REASON
+        if (resolucion.motivo == PROVINCE_CONFLICT_REASON
+                and prop.extra.get("provincia_origen") == "padron_inmobiliaria"):
+            # La provincia que veta esta localidad no la publico la fuente: la
+            # dedujimos del padron de la inmobiliaria unas lineas antes, en
+            # `completar_ubicacion`. Una localidad que la ficha NOMBRA es
+            # evidencia; una provincia que supusimos, no.
+            #
+            # Tratarlas igual salia carisimo: el bloque de abajo borra
+            # `ciudad`, `provincia`, `latitud` y `longitud` de una sola vez.
+            # O sea que una inmobiliaria de Cordoba que publica una propiedad
+            # en Neuquen perdia la ciudad que la ficha decia Y las
+            # coordenadas, por una suposicion nuestra.
+            #
+            # Se resuelve de nuevo sin esa restriccion y se deja el rastro de
+            # lo que habiamos supuesto.
+            prop.extra["provincia_supuesta_descartada"] = prop.provincia
+            prop.provincia = None
+            resolucion = catalogo.resolver_localidad(
+                publicada, provincia=None,
+                lat=prop.latitud, lon=prop.longitud)
+            prop.extra["ciudad_match"] = resolucion.certeza
+            prop.extra["ciudad_provenance"] = resolucion.provenance
         if not desde_barrio and resolucion.motivo == PROVINCE_CONFLICT_REASON:
             # An explicit locality and province cannot both be true. Do not
             # simply reject the locality and keep advertising the province.
