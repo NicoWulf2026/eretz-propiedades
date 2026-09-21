@@ -549,7 +549,40 @@ compartido, en vez de ir de a uno:
 
     Toca `agency_certifier.py`, que es `shared/certifier` y entra en la huella.
 
-18. lo que aparezca de los paros que la cola encuentre de acá en adelante.
+18. **La operación se pierde, y son 245 propiedades.** Una propiedad sin
+    saber si se vende o se alquila casi no sirve para buscar, así que esto
+    pesa más que su lugar en la lista.
+
+    Hay 5 agencias con `operacion` sin extraer y **245 propiedades**. Bajé una
+    ficha de cada una y **no es una sola causa** —conviene no juntarlas—:
+
+    **(a) La operación está en la ficha y no la leemos.** `fenix
+    inmobiliaria` (323 de 502) la tiene en el `<title>`: «DF621 - Departamento
+    **en Venta** en Posadas». `ente inmobiliaria` (49 de 50) la dice en el
+    cuerpo, junto al precio: «$990,000 / DOLARES **En Venta**». Hueco de
+    extracción liso y llano.
+
+    **(b) La operación sólo está en el catálogo.** `cristina pozzobon` (7 de
+    8) y `constant propiedades` (**24 de 24**). En la ficha de pozzobon las
+    palabras «Venta» y «Alquiler» aparecen sólo en el menú y en el lema del
+    sitio; el cuerpo dice «Terreno», «USD198000» y la dirección. **No extraer
+    ahí es lo correcto**: contar el menú pondría «venta» en todas, incluidas
+    las de alquiler.
+
+    Pero el dato existe: bajé `/venta/` y `/alquiler/` y la ficha está en la
+    primera y no en la segunda. La operación es conocible **por la ruta desde
+    la que se llegó**. Lo que falta es que `generic/html_catalog` arrastre esa
+    procedencia: el registro guardado tiene `operacion: None` y su `extra` no
+    menciona la página de origen. El campo `pagina_listado` existe en
+    `generico.py` pero sólo en tres caminos (2255, 2527, 2730) y ninguno es
+    éste. **El conector de Tokko ya aprendió esto** —tiene
+    `RUTAS_POR_OPERACION` justamente para eso—; el genérico no.
+
+    Las dos de (b) usan códigos con el mismo prefijo —`CLA7919035` y
+    `CHO8029324`— así que probablemente son la misma plataforma. Queda sin
+    clasificar `christian arce` (9 de 77), que no miré.
+
+19. lo que aparezca de los paros que la cola encuentre de acá en adelante.
 
 ---
 
