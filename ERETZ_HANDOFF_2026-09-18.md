@@ -8,6 +8,15 @@ Este documento no cierra la misión. Es un punto de retomada.
 
 ---
 
+> ## ⚠ ESTE DOCUMENTO ES DEL 2026-09-18 Y QUEDÓ ATRÁS
+>
+> Hubo una jornada completa de trabajo el **20 y 21 de septiembre**: 54
+> commits, y varios pendientes que acá figuran como abiertos están cerrados.
+> **Leer primero la sección «13. QUÉ CAMBIÓ DESPUÉS», al final.**
+>
+> Lo que sigue se conserva tal cual porque es el registro de ese día, no el
+> estado de hoy.
+
 ## 1. REPO / BRANCH / HEAD
 
 | | |
@@ -586,3 +595,84 @@ Comprobado antes de dar el handoff por cerrado:
 
 Ninguno de estos hace falta para reproducir la candidata: el árbol versionado
 es autosuficiente para la suite. Hacen falta para **operar** la cola.
+
+
+---
+
+# 13. QUÉ CAMBIÓ DESPUÉS — 2026-09-20 y 21
+
+**HEAD `6392fb8033`** · rama `handoff/codex-unificacion-2026-09-18`, limpia y
+pusheada · **2.928 tests** · `database_writes: 0` · `production_connections: 0`
+
+## Lo que este documento daba por abierto y está cerrado
+
+| pendiente de la sección 5/6 | estado |
+|---|---|
+| Writer equivalence | **cerrado**: matriz de consumidores medida, `url_normalizada` producida, guarda en las tres puertas, acoplamiento geográfico resuelto. 10/10 checks de PGlite |
+| El schema 5 no captura la versión del INPUT GeoRef | **cerrado**: `shared/geo_input` está en la huella |
+| `validate_live_agency_identity` marca VALIDATED sin `domain_match` | **cerrado**: devuelve `NOMBRE_SIN_DOMINIO` |
+| NEXT-001, el ledger de certificación | **cerrado** |
+| 25 urls compartidas | **de 25 quedan 2**, y son empates reales de apellido |
+| `barrio` rechazado sin diagnóstico | **diagnosticado** |
+| Crosswalk de identidad pública | **bloqueado por acceso a producción**, con las dos razones medidas |
+
+## Los tres defectos más caros que aparecieron
+
+1. **Paginación de Tokko rota.** El template cambió de una url literal a un
+   ayudante de JavaScript, y sin url literal la enumeración cortaba en
+   exactamente 20 fichas. `aagaard` pasó de 20 a **295 de 295**. Evitó perder
+   **~6.445 propiedades, el 24 % del catálogo**.
+2. **Catálogos partidos.** Un sitio sin catálogo unificado se leía sólo por
+   `/Venta`. De 45 sitios tokko sondeados, **10 están partidos**; 291
+   propiedades invisibles.
+3. **La provincia que supusimos vetaba la geografía medida.** El 89,1 % de
+   los conflictos geográficos eran contra una provincia deducida del padrón
+   de la inmobiliaria, y la fila salía publicada **sin ninguna geografía**.
+   3.888 propiedades, el 6,7 % del catálogo.
+
+## Geografía: la conclusión se invirtió
+
+Separadas las siete causas, **el extractor explica el 0,2 %**. Lo que faltaba
+era publicar lo que ya estaba demostrado:
+
+| | antes | ahora |
+|---|---:|---:|
+| `municipio` | **0** | **36.281** |
+| `departamento` | 9.568 | 45.551 |
+| `provincia` | 52.849 | 56.246 |
+| `SIN_AREA` | 4.350 | **953** |
+
+`localidad` quedó intacta a propósito: el sondeo de 36.552 puntos demuestra
+que la coordenada **no** la determina, y forzarla sería inventar geografía.
+
+## El estado real de la cola, y cómo medirlo
+
+Con 767 en cola y dos workers, escribe **13 a 15 certificaciones vigentes por
+hora**. Una pasada completa son unas **55 horas**, y ese número sólo vale si
+nadie toca código compartido ni reinicia los workers mientras corre.
+
+**La métrica correcta es `code_fingerprint`**, que es el sha256 de los bytes
+de `connectors/base.py`, `connectors/<connector>.py` y
+`scripts/run_rollout.py` — **no** la huella de componentes. Medir la otra da
+cero siempre y lleva a conclusiones falsas; me pasó y está documentado en
+`ERETZ_LA_COLA_NO_AVANZA_2026-09-21.md`.
+
+Hoy: **429 agencias con resultado, 50 vigentes, 23.464 propiedades en el
+padrón.**
+
+## Lo que está congelado a propósito
+
+Ocho ítems de código compartido, todos medidos, en la lista de
+`ERETZ_LA_COLA_NO_AVANZA_2026-09-21.md`. El más caro: **las fotos con espacio
+en el nombre se pierden enteras** (`generico.py:2745`), y en `bottai` eso deja
+**71 de 232 propiedades sin ninguna foto**.
+
+Se juntan en una sola tanda porque cada cambio sobre código compartido
+invalida las certificaciones y reinicia el ciclo.
+
+## Documentos nuevos
+
+- `ERETZ_GEOGRAFIA_CAUSAS_2026-09-20.md` — las siete causas, separadas
+- `ERETZ_LA_COLA_NO_AVANZA_2026-09-21.md` — por qué no avanzaba y qué está congelado
+- `ERETZ_EQUIVALENCIA_DE_ESCRITORES.md` — actualizado y cerrado
+- `ERETZ_QA_BROWSER_2026-09-20.md` — segunda corrida, con las cuatro veces que me equivoqué midiendo
