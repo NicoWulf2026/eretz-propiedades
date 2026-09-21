@@ -599,7 +599,44 @@ compartido, en vez de ir de a uno:
     `CHO8029324`— así que probablemente son la misma plataforma. Queda sin
     clasificar `christian arce` (9 de 77), que no miré.
 
-19. lo que aparezca de los paros que la cola encuentre de acá en adelante.
+19. **El `www`: `compare_runs` compara urls crudas y no identidades.**
+    `eckert servicios inmobiliarios` paró diciendo «30 propiedades que la
+    primera corrida vio no aparecieron en la segunda». **No falta ninguna.**
+
+    La corrida 1 las vio como `https://www.inmobiliariaeckert.com/site/
+    properties/197993/…` y la 2 como `https://inmobiliariaeckert.com/site/
+    properties/197993/…`. Los ids coinciden uno a uno.
+
+    | | |
+    |---|---:|
+    | urls en común entre corridas | **0** |
+    | `hash_dedup` en común | **30** |
+    | sólo en run1, por hash | 0 |
+    | sólo en run2, por hash | **1** |
+
+    Hay una propiedad nueva de verdad y treinta que son las mismas.
+
+    `compare_runs` arma los conjuntos con `source_url` crudo, y de ahí salen
+    `same_url_set`, `missing_in_run2` y `new_in_run2`. Pero `hash_dedup` ya
+    normaliza la url, **y la propia función lo sabe**: dos líneas más abajo lo
+    usa para contar identidades, con un comentario que explica exactamente por
+    qué. El mismo criterio aplicado en un lugar y no en el de al lado, dentro
+    de la misma función.
+
+    Es el **tercer caso hoy** de esa forma: la regex de `<script>` escrita en
+    doce archivos que ya divergieron (ítem 13), el orden de los chequeos del
+    triaje, y esto.
+
+    **Tamaño:** recorrí todos los paquetes buscando agencias donde comparar
+    por url exagere el faltante respecto de comparar por hash. Hay **una**, y
+    con el máximo posible: 30 falsas contra 0 reales. Angosto hoy, pero el
+    disparador —un sitio que responde con y sin `www` según el momento— es
+    común, y cuando ocurre el falso positivo es del 100 %.
+
+    Toca `agency_certifier.py`, que es `shared/certifier` y entra en la
+    huella.
+
+20. lo que aparezca de los paros que la cola encuentre de acá en adelante.
 
 ---
 
