@@ -674,11 +674,33 @@ compartido, en vez de ir de a uno:
     | `ciudad` | **0** |
 
     Ese cero es la parte engañosa: cuando la ciudad llega con entidad no
-    resuelve contra GeoRef y **se descarta**, así que no queda guardada. El
-    costo geográfico no se ve contando entidades en el dato final; se ve en
-    las ciudades ausentes. Es un mecanismo concreto para la pregunta abierta
-    de por qué faltan ciudad y barrio, y cae del lado «la normalización lo
-    pierde», no del lado «la fuente no lo publica».
+    resuelve contra GeoRef y **se descarta**, así que no queda guardada.
+
+    **El costo geográfico, medido por `extra.ciudad_publicada`**, que es donde
+    sí queda el rastro —lo pude contar cuando `elgart propiedades` paró por lo
+    mismo media hora después—:
+
+    | | propiedades |
+    |---|---:|
+    | declaran una ciudad publicada | 16.504 |
+    | la traen con una entidad HTML | **349** |
+    | **y perdieron la ciudad** | **349 — el 100 %** |
+
+    Cuando la entidad está, la resolución **siempre** falla. Son 14 agencias
+    (`carames` 158, `aconcagua` 70, `federico negro` 53, `elgart` 17, `bondar`
+    12…) y 343 por el conector genérico contra 6 por tokko, así que no es una
+    peculiaridad del camino JSON de Xintel: `elgart` va por
+    `generic/sitemap`.
+
+    Y las ciudades que se pierden son reales y conocidas: **Lanús 159, Maipú
+    77, Muñiz 27, San Miguel de Tucumán 17, José C Paz 16, Garupá 12,
+    Guaymallén 6**. Todas resolverían decodificadas.
+
+    **Esto cierra una pregunta abierta con un número.** Sobre por qué faltan
+    ciudad y barrio, ésta es una de las causas y ya no es hipótesis: 349
+    propiedades donde la fuente publica la ciudad, la publica bien, y la
+    perdemos al normalizar. No es «la fuente no lo publica» ni «el dato es
+    desconocido»: es «la normalización lo pierde», con nombre y apellido.
 
 21. lo que aparezca de los paros que la cola encuentre de acá en adelante.
 
