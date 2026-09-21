@@ -577,6 +577,38 @@ def clasificar(resultado: dict[str, Any]) -> dict[str, Any]:
 
     faltantes = int(comparacion.get("missing_in_run2") or 0)
     if faltantes:
+        # Si una de las dos corridas ya dijo que SU paginacion se corto, el
+        # «mientras no se sepa por que» es falso: se sabe, y lo escribio el
+        # propio conector.
+        #
+        # `cidoni negocios inmobiliarios` lo mostro el 2026-09-21. La corrida 1
+        # recorrio 17 paginas y dejo `enumeracion_agotada`; la 2 recorrio 16 y
+        # dejo `paginacion_interrumpida`. Las dos propiedades que «faltan»
+        # estan en la pagina 17 que nunca se pidio, y la fuente sigue
+        # declarando 358 hoy. No es un inventario que se mueve: es una
+        # enumeracion que se corto.
+        #
+        # Es el mismo problema de ORDEN que ya documenta la cabecera de
+        # `test_triage_baja_magnitud.py` para otro par de chequeos: el
+        # generico se evaluaba antes que el especifico y lo tapaba. La
+        # decision no cambia -parar sigue siendo correcto- y el radio tampoco;
+        # cambia a que se le atribuye y que se lee en la bitacora.
+        #
+        # Medido sobre el corpus: de 14 agencias con propiedades que la
+        # segunda corrida no vio, 1 tiene la paginacion marcada. Es angosto, y
+        # se arregla igual porque una evidencia falsa manda a buscar al lugar
+        # equivocado.
+        cortadas = [lado for lado in ("run1", "run2")
+                    if (resultado.get(lado) or {}).get("paginacion_interrumpida")]
+        if cortadas:
+            return _veredicto(
+                STOP, resultado, "enumeracion_compartida", RADIO_FAMILIA,
+                f"{faltantes} propiedades faltan en la segunda corrida "
+                f"({comparacion.get('run1_urls')} contra "
+                f"{comparacion.get('run2_urls')} urls) y la causa esta "
+                f"registrada: la paginacion se interrumpio en "
+                f"{' y '.join(cortadas)}. No es el inventario que se mueve, es "
+                f"la enumeracion que se corto, y eso es codigo compartido")
         return _veredicto(
             STOP, resultado, "inventario_inestable_entre_corridas",
             RADIO_FAMILIA,

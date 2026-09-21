@@ -578,3 +578,50 @@ def test_sin_total_declarado_y_sin_historico_no_hay_paro_por_hueco():
                               "independent_max_inventory_signal": 0}
     t = clasificar(r)
     assert t["componente_sospechoso"] != "catalogo_declarado_mayor_que_el_enumerado"
+
+
+def test_MUERDE_si_la_paginacion_se_corto_no_se_culpa_al_inventario():
+    """`cidoni`, 2026-09-21: el paro decia «mientras no se sepa por que» y se
+    sabia, porque el propio conector lo habia escrito.
+
+    La corrida 1 recorrio 17 paginas y agoto la enumeracion; la 2 recorrio 16
+    y marco `paginacion_interrumpida`. Las dos propiedades que «faltan» estan
+    en la pagina 17 que nunca se pidio, y la fuente sigue declarando 358.
+
+    Es el mismo problema de ORDEN que la cabecera de este archivo ya documenta
+    para otro par: el chequeo generico se evaluaba antes que el especifico y
+    lo tapaba.
+    """
+    r = resultado({})
+    r["comparison"]["missing_in_run2"] = 2
+    r["comparison"]["run1_urls"] = 358
+    r["comparison"]["run2_urls"] = 356
+    r["run2"]["paginacion_interrumpida"] = True
+    t = clasificar(r)
+    assert t["decision"] == STOP
+    assert t["componente_sospechoso"] == "enumeracion_compartida"
+    assert "la paginacion se interrumpio en run2" in t["evidencia"]
+    # Lo que no puede volver a decir cuando la causa esta registrada:
+    assert "mientras no se sepa por que" not in t["evidencia"]
+
+
+def test_sin_paginacion_cortada_el_inventario_inestable_sigue_igual():
+    """La conducta vieja se conserva donde de verdad no se sabe: `alagna`
+    tuvo un intercambio 1 por 1 con la paginacion intacta, y ahi el mensaje
+    honesto es que no se sabe."""
+    r = resultado({})
+    r["comparison"]["missing_in_run2"] = 1
+    r["comparison"]["run1_urls"] = 218
+    r["comparison"]["run2_urls"] = 218
+    t = clasificar(r)
+    assert t["componente_sospechoso"] == "inventario_inestable_entre_corridas"
+    assert "mientras no se sepa por que" in t["evidencia"]
+
+
+def test_la_paginacion_cortada_en_la_primera_corrida_tambien_cuenta():
+    r = resultado({})
+    r["comparison"]["missing_in_run2"] = 5
+    r["run1"]["paginacion_interrumpida"] = True
+    t = clasificar(r)
+    assert t["componente_sospechoso"] == "enumeracion_compartida"
+    assert "run1" in t["evidencia"]
