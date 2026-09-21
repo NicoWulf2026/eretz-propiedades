@@ -282,6 +282,31 @@ Medido con la función correcta, desde que dejé de tocar código compartido:
 unas 55 horas —el número que ya había estimado, sólo que ahora es avance real
 y no repetición—. Los dos workers están en la letra B, no en la A.
 
+## Lo que descubrí después: firmar una diferida también reinicia el cursor
+
+El ritmo cayó de 13/h a 8/h entre las 07 y las 10, y la causa es mi propio
+ciclo de diagnóstico.
+
+El cursor se restaura **sólo si la cola no cambió** (`same_queue`). Y la cola
+cambia cada vez que se firma una diferida: un `NEEDS_FIX` con diferida fresca
+pasa a vigente y sale de la cola. **Hoy firmé 12.**
+
+Medido en el momento de escribir esto:
+
+```
+w1  huella_cola 5e08142b…  cursor 39 de 378  desde 06:34   -> ~11/h
+w0  huella_cola b8d14d46…  cursor  0 de 413  desde 09:04   -> reiniciado
+```
+
+w1 lleva tres horas y media con la misma cola y avanza parejo. w0 cambió de
+cola y volvió a empezar. Los dos workers tienen turnos distintos, así que una
+diferida reinicia sólo al que le toca.
+
+**La mitigación no es de código, es de método: firmar las diferidas en tanda.**
+Doce firmas espaciadas cambian la cola doce veces; las mismas doce juntas la
+cambian una. Diagnosticar en el momento sigue siendo lo correcto —la evidencia
+está fresca y el sitio está como estaba—, pero la firma puede esperar.
+
 ## Cómo saber si esto se repite
 
 La señal es **cuántas certificaciones tienen la huella vigente**, y hay que
