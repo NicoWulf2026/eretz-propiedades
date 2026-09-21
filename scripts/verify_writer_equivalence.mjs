@@ -145,32 +145,41 @@ try {
       /property identity changed before merge/);
   });
 
-  await check('MUERDE_provincia_y_pais_no_se_pueden_actualizar_nunca', async () => {
-    // Estan en la lista del INSERT y NO en la del UPDATE. Es deliberado, y
-    // deja un hueco: `ciudad` SI se actualiza.
-    await assert.rejects(() => merge({provincia: 'Cordoba'}), /forbidden merge keys/);
-    await assert.rejects(() => merge({pais: 'Uruguay'}), /forbidden merge keys/);
+  await check('MUERDE_la_ciudad_no_se_puede_mover_sola', async () => {
+    // Era el hueco abierto del informe de equivalencia: `ciudad` se
+    // actualizaba y `provincia` no, asi que una fila podia quedar con la
+    // ciudad de una provincia y la provincia de otra.
+    //
+    // La decision se tomo con datos y no a ojo: `ciudad` no cambio ni una vez
+    // en 22.963 propiedades comparadas entre dos corridas, y la coherencia
+    // ciudad/provincia contra GeoRef es del 98,9 % con UNA fila incoherente
+    // en 8.221. O sea que el hueco era una capacidad, no un dano observado.
+    //
+    // Por eso no se saco `ciudad` del UPDATE -eso cerraria el camino por el
+    // que la geografia MEJORA- sino que se acoplaron.
+    await assert.rejects(() => merge({ciudad: 'Cordoba Capital'}),
+                         /must move together/);
+    await assert.rejects(() => merge({provincia: 'Cordoba'}),
+                         /must move together/);
   });
 
-  await check('HUECO_la_ciudad_se_puede_mover_de_provincia_sin_que_nada_avise',
-    async () => {
-      // `ciudad` es actualizable y `provincia` no. Una fila puede quedar con
-      // la ciudad de una provincia y la provincia de otra, y ninguna regla lo
-      // impide. No es un bug del RPC: es una consecuencia de su lista blanca,
-      // y hay que decidirla, no descubrirla en produccion.
-      const antes = (await db.query(
-        'SELECT ciudad, provincia FROM public.propiedades WHERE id=$1', [id])).rows[0];
-      await merge({ciudad: 'Cordoba Capital'});
-      const despues = (await db.query(
-        'SELECT ciudad, provincia FROM public.propiedades WHERE id=$1', [id])).rows[0];
-      assert.equal(despues.ciudad, 'Cordoba Capital');
-      assert.equal(despues.provincia, antes.provincia);
-      hallazgos.push({
-        hueco: 'ciudad actualizable con provincia inmutable',
-        observado: `ciudad ${antes.ciudad} -> ${despues.ciudad}, provincia sigue ${despues.provincia}`,
-        consecuencia: 'la fila puede quedar geograficamente incoherente',
-      });
-    });
+  await check('MUERDE_el_pais_no_puede_moverse_sin_provincia', async () => {
+    // Un pais sin provincia no ubica nada: seria otra vez media geografia
+    // moviendose.
+    await assert.rejects(() => merge({pais: 'Uruguay'}),
+                         /pais cannot move without provincia/);
+  });
+
+  await check('la_geografia_se_mueve_entera_y_queda_coherente', async () => {
+    const antes = (await db.query(
+      'SELECT ciudad, provincia FROM public.propiedades WHERE id=$1', [id])).rows[0];
+    await merge({ciudad: 'Cordoba Capital', provincia: 'Cordoba'});
+    const despues = (await db.query(
+      'SELECT ciudad, provincia FROM public.propiedades WHERE id=$1', [id])).rows[0];
+    assert.equal(despues.ciudad, 'Cordoba Capital');
+    assert.equal(despues.provincia, 'Cordoba');
+    assert.notEqual(antes.provincia, despues.provincia);
+  });
 
   await check('toda_actualizacion_del_RPC_deja_auditoria', async () => {
     const n = Number((await db.query(

@@ -241,11 +241,45 @@ BEGIN
         'titulo', 'descripcion', 'precio', 'moneda', 'tipo_propiedad',
         'operacion', 'ambientes', 'dormitorios', 'banos',
         'superficie_total', 'superficie_cubierta', 'direccion', 'barrio', 'ciudad',
+        'provincia', 'pais',
         'latitud', 'longitud', 'imagenes'
     ]::text[]);
 
     IF forbidden_keys IS NOT NULL THEN
         RAISE EXCEPTION 'forbidden merge keys: %', forbidden_keys;
+    END IF;
+
+    -- La geografia se mueve entera o no se mueve.
+    --
+    -- `ciudad` era actualizable y `provincia` no, asi que una fila podia
+    -- pasar de Rosario a Cordoba Capital conservando Santa Fe. No era un
+    -- defecto del RPC sino la consecuencia de su lista blanca, y quedo
+    -- anotado como decision pendiente porque faltaba un dato: con que
+    -- frecuencia una ciudad cambia de verdad.
+    --
+    -- Medido, el dato aparecio:
+    --
+    --   * `ciudad` no cambio NI UNA VEZ en 22.963 propiedades comparadas
+    --     entre dos corridas de la misma certificacion;
+    --   * la coherencia entre ciudad y provincia contra el catalogo de
+    --     GeoRef es del 98,9 %, con UNA sola fila incoherente en 8.221.
+    --
+    -- O sea que el hueco es una capacidad, no un dano observado. Con eso, de
+    -- las tres salidas escritas la que corresponde no es sacar `ciudad` del
+    -- UPDATE -eso cerraria el camino por el que la geografia MEJORA, que es
+    -- justamente lo que acaba de pasar al publicar 36.281 municipios- sino
+    -- acoplarlas: se permite mover la ciudad, y si se mueve, la provincia
+    -- tiene que venir en el mismo patch.
+    IF (p_patch ? 'ciudad') <> (p_patch ? 'provincia') THEN
+        RAISE EXCEPTION
+            'ciudad and provincia must move together: %',
+            CASE WHEN p_patch ? 'ciudad' THEN 'provincia missing'
+                 ELSE 'ciudad missing' END;
+    END IF;
+    -- `pais` puede acompanar pero nunca ir solo: un pais sin provincia no
+    -- ubica nada y seria otra vez media geografia moviendose.
+    IF (p_patch ? 'pais') AND NOT (p_patch ? 'provincia') THEN
+        RAISE EXCEPTION 'pais cannot move without provincia';
     END IF;
     IF EXISTS (
         SELECT 1 FROM jsonb_each(COALESCE(p_patch, '{}'::jsonb))
@@ -274,6 +308,8 @@ BEGIN
             direccion = CASE WHEN p_patch ? 'direccion' THEN p_patch->>'direccion' ELSE current_row.direccion END,
             barrio = CASE WHEN p_patch ? 'barrio' THEN p_patch->>'barrio' ELSE current_row.barrio END,
             ciudad = CASE WHEN p_patch ? 'ciudad' THEN p_patch->>'ciudad' ELSE current_row.ciudad END,
+            provincia = CASE WHEN p_patch ? 'provincia' THEN p_patch->>'provincia' ELSE current_row.provincia END,
+            pais = CASE WHEN p_patch ? 'pais' THEN p_patch->>'pais' ELSE current_row.pais END,
             latitud = CASE WHEN p_patch ? 'latitud' THEN (p_patch->>'latitud')::double precision ELSE current_row.latitud END,
             longitud = CASE WHEN p_patch ? 'longitud' THEN (p_patch->>'longitud')::double precision ELSE current_row.longitud END,
             imagenes = CASE

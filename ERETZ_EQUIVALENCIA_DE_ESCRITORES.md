@@ -227,9 +227,48 @@ obliga a elegir entre proteger y funcionar no se aplica, y entonces no protege
 nada. Acá las lecturas pasan y lo que se enumera es la escritura, con lista
 blanca: un método nuevo queda bloqueado por defecto.
 
+### El acoplamiento geográfico: cerrado el 2026-09-21
+
+Era lo último que quedaba, y faltaba un dato para decidirlo: con qué
+frecuencia una ciudad cambia legítimamente en una propiedad ya publicada.
+Medido:
+
+| | |
+|---|---:|
+| propiedades comparadas entre las dos corridas de una certificación | **22.963** |
+| veces que `ciudad` cambió | **0** |
+| veces que `provincia` cambió | **0** |
+| coherencia ciudad↔provincia contra GeoRef | **98,9 %** |
+| filas incoherentes | **1 de 8.221** |
+
+La primera medición de coherencia daba 820 incoherentes (9,91 %), pero
+estaban dominadas por las etiquetas de zona en el campo `provincia`
+—`Mar del Plata` declarada en `Bs.As. Costa Atlántica`—. Aplicando la
+canonización que ya se arregló, quedan **1**.
+
+O sea que **el hueco era una capacidad, no un daño observado**.
+
+Con eso, de las tres salidas escritas la que corresponde es la primera.
+Sacar `ciudad` del UPDATE cerraría el camino por el que la geografía
+**mejora** —que es exactamente lo que acaba de pasar al publicar 36.281
+municipios por geometría—, y eso cuesta más que el riesgo que evita.
+
+Aplicado: `ciudad`, `provincia` y `pais` entran al UPDATE **acopladas**.
+
+```
+ciudad sola      -> ciudad and provincia must move together: provincia missing
+provincia sola   -> ciudad and provincia must move together: ciudad missing
+pais sin provincia -> pais cannot move without provincia
+las tres juntas  -> se aplica, y la fila queda coherente
+```
+
+Verificado con `node scripts/verify_writer_equivalence.mjs`: **10 de 10
+checks**, uno más que antes, y el hallazgo del hueco desapareció de la salida.
+
 ### Lo que sigue abierto
 
-**El acoplamiento geográfico** entre `ciudad` y `provincia` (sección anterior).
-Sigue necesitando el dato que no tengo: con qué frecuencia una ciudad cambia
-legítimamente en una propiedad ya publicada. Las tres salidas siguen escritas
-y ninguna elegida a ojo.
+**Nada de esta equivalencia.** El único hallazgo que el verificador sigue
+reportando es de diseño y ya está decidido: el PATCH por REST acepta
+`fuente_extraccion`, `estado`, `inmobiliaria_id` y `hash_dedup`, y el RPC los
+rechaza. No tiene consumidores y ahora tampoco se puede llamar desde ninguna
+de las tres entradas.
