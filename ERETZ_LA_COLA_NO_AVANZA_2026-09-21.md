@@ -421,7 +421,40 @@ compartido, en vez de ir de a uno:
     de sección, y `bertomeu` la ficha de inscripción de la cámara—. Son 16
     propiedades reales, todas de una agencia, que es todo lo que tiene.
 
-16. lo que aparezca de los paros que la cola encuentre de acá en adelante.
+16. **`U$D` no es una moneda para nosotros, y sí para media Argentina.**
+    Pariente del ítem 14 —las dos son formas de escribir argentinas que las
+    expresiones no cubren— pero mucho más caro.
+
+    `cipollone` publica «Lote en Venta Riccheri 489, San Lorenzo · Código: 0 ·
+    **U$D 70.000** · SUP. TOTAL 9mx15m» con 9 fotos, y la ficha se descarta por
+    no traer precio. Busqué todas las formas de moneda en esa página: hay seis
+    importes y los seis dicen `U$D`.
+
+    `RE_PRECIO_CON_MONEDA` acepta `u$s`, `us$`, `usd`, `ars` y `$`, pero no
+    `u$d`. El `$` suelto tampoco salva el caso: después del `$` viene una `D`
+    y no un dígito. **Y la misma falta está en la expresión que EXTRAE el
+    precio** (`generico.py:2025`, `(USD|U\$S|US\$|\$|ARS)`), así que no es sólo que
+    el guardián no lo vea: es que no lo leemos.
+
+    **Tamaño: al menos 359 propiedades.** Fui a las agencias con `precio` o
+    `moneda` en `EXTRACTION_FAILED` y bajé una ficha de cada una.
+    `brunetti propiedades` escribe `U$D` y tiene precio en **70 de 428**: son
+    358 sin precio por esto, más la de `cipollone`.
+
+    Conviene decir cuáles **no** son este caso, para no atribuirles algo que
+    no es: `blanco propiedades` escribe `U$S` —la regla sí lo acepta— y sus
+    1.209 sin precio tienen otra causa; `building` usa `US$` y `$`; `casamia`
+    usa `U$S` y `$`.
+
+    Es una **cota inferior**: miré una ficha por agencia y sólo en las que ya
+    fallaban del todo. Una agencia que escriba `U$D` en la mitad de sus fichas
+    no aparece en esa lista.
+
+    Antes de tocar conviene buscar si hay una tercera copia de la regla: en
+    este repo la misma regla suele estar escrita en varios lugares que ya
+    divergieron (ver ítems 13 y 15).
+
+17. lo que aparezca de los paros que la cola encuentre de acá en adelante.
 
 ---
 
