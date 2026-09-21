@@ -343,6 +343,30 @@ está fresca y el sitio está como estaba—, pero la firma puede esperar.
 4. Se relanza el worker que murió.
 5. Las firmas se aplican todas juntas, una sola vez.
 
+### CORRECCIÓN, después de aplicarlo: diferir la firma sale más caro
+
+El método era media verdad y `cantale` la mostró: paró **tres veces** en dos
+horas con la misma evidencia. **Una diferida sin firmar no evita que el paro
+se repita** —justamente la firma es lo que marca el defecto como atendido—,
+así que cada pasada vuelve a frenar los dos workers, a matarlos y a esperar
+hasta diez minutos al relanzador.
+
+La aritmética, medida:
+
+| | |
+|---|---|
+| firmar | 1 cambio de cola, 1 reinicio de cursor **de un turno** |
+| no firmar | el paro se repite en cada pasada, y cada uno mata **los dos** workers |
+
+Tres paros valen más que un reinicio de cursor. **La regla correcta no es
+diferir la firma, es agruparla:** si llegan varios paros seguidos se
+diagnostican todos y se firman juntos —una sola vez—, pero no se deja ninguno
+sin firmar esperando una tanda que no se sabe cuándo llega.
+
+Lo que sigue valiendo del hallazgo original: doce firmas espaciadas cambian la
+cola doce veces. Lo que estaba mal era la conclusión de que la solución fuera
+esperar.
+
 Un veredicto que conviene tener a mano: **`NO_REPRODUCIBLE`**. Si el paro
 denuncia un fallo que no se puede reproducir contra la fuente por ningún
 camino, eso es el resultado —no una causa inventada—, y la acción es
