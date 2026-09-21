@@ -373,6 +373,52 @@ camino, eso es el resultado —no una causa inventada—, y la acción es
 re-certificar, no tocar código. Cambiar un extractor por un fallo que no se
 reproduce es como se rompen las cosas que andaban.
 
+## El costo real de un paro no son los diez minutos de relanzador
+
+Medido al final del día, y corrige dos hipótesis mías que eran falsas.
+
+El ritmo cayó de 15 resultados/hora a 3. Probé dos explicaciones y las dos se
+cayeron: **no** es que los workers re-recorran un prefijo creciente de
+vigentes —los dos estaban haciendo trabajo nuevo cuando lo miré— y **no** es
+que el termómetro subcuente agencias sin conector —los 145 resultados de hoy
+tienen conector—.
+
+Lo que sí es:
+
+| | |
+|---|---:|
+| veces que el relanzador encontró workers faltando | **8** |
+| tiempo caído estimado | hasta **80 min** |
+| duración mediana por agencia | **320 s** (62 propiedades) |
+| ritmo teórico con 2 workers | **11,9 agencias/h** |
+
+Y el dato que lo explica:
+
+```
+3370 s   219 props   alagna propiedades
+3020 s   219 props   alagna propiedades
+2001 s   219 props   alagna propiedades
+```
+
+**La misma agencia, tres veces, 2,3 horas en total, y sin terminar.** Cada
+paro mató al worker mientras la procesaba y, al reiniciar, volvió a
+empezarla.
+
+Ahí está el costo real de un paro: no son los diez minutos que tarda el
+relanzador, son los **treinta a cincuenta y cinco minutos de trabajo en curso
+sobre una agencia grande** que se pierden y hay que rehacer. Con 8 muertes en
+un día y agencias de 200 a 450 propiedades, eso solo explica la diferencia
+entre 11,9/h teóricas y las 3 a 9 observadas.
+
+Queda anotado, no arreglado: el resume por checkpoint existe
+(`Checkpoint(packet_dir / "checkpoint.json")`) y evidentemente no está
+recuperando el trabajo de una agencia interrumpida. Mirarlo es trabajo de
+runner, y el runner **no** está en la huella —`shared/runner` es
+`run_rollout.py`, no `run_agency_certification_queue.py`—, así que se puede
+hacer sin esperar al lote. No lo hago ahora porque hoy ya toqué política
+operativa tres veces y dos salieron mal; esto merece una medición propia
+antes que un cambio.
+
 ## Cómo saber si esto se repite
 
 La señal es **cuántas certificaciones tienen la huella vigente**, y hay que
