@@ -502,6 +502,57 @@ def _sin_barra(url: str | None) -> str:
     return (url or "").strip().rstrip("/")
 
 
+def el_triaje_ya_decidio_no_parar(previous: dict[str, Any]) -> bool:
+    """¿Este `NEEDS_FIX` tiene sólo defectos que el triaje deja pasar?
+
+    El salteo por diferida, escrito el 2026-09-15, tiene un agujero justo
+    donde más cuesta, y es el reverso de lo que uno esperaría: **las agencias
+    que NO paran la cola son las únicas que se rehacen para siempre**.
+
+    El circuito es éste. Una agencia que para se diagnostica y se le firma una
+    diferida; con la firma, `diferida_vigente` la da por vigente y no se
+    repite. Una agencia cuyo defecto es de radio AGENCIA y `decision=CONTINUE`
+    nunca para, así que nadie la diagnostica, nadie le firma nada, y sin firma
+    su `NEEDS_FIX` no cuenta como vigente: cada reinicio la vuelve a correr.
+
+    Medido el 2026-09-21 sobre las corridas posteriores a las 05:00, o sea con
+    las huellas ya estables: 113 corridas, de las cuales **33 fueron
+    reintentos que no podían dar otro resultado** —misma huella, misma url— y
+    costaron **6,5 horas de worker**. Veintitrés de esas 33 son dos agencias:
+    `adrian ghio` (13) y `alder inmobiliaria` (10), las dos con cero firmas y
+    todos sus defectos en `decision=CONTINUE`. Ninguna certificada se rehizo
+    con la misma huella: el desperdicio es enteramente éste.
+
+    Lo que se afirma acá es modesto. Si el triaje, mirando el resultado
+    guardado, dice `CONTINUE`, entonces ya juzgó que ese defecto no amerita
+    parar; y con el mismo código, la misma estrategia y la misma url, volver a
+    correrla no puede cambiar ese juicio. No se certifica nada que antes no se
+    certificara: sólo se deja de reejecutar trabajo cuyo veredicto ya está
+    escrito.
+
+    El TTL se respeta igual, y por la misma razón por la que existe para las
+    diferidas: `baron inmobiliaria` pasó de enumerar 0 a 182 sin que tocáramos
+    una línea. Una fuente cambia sola.
+    """
+    if previous.get("status") != "NEEDS_FIX":
+        return False
+    try:
+        triage = clasificar(previous)
+    except Exception:
+        # Juzgar es opcional; equivocarse hacia el lado caro no lo es. Si el
+        # triaje no puede opinar, se rehace, que es lo que pasaba antes.
+        return False
+    if triage.get("decision") == STOP:
+        return False
+    mirada = _fecha(previous.get("checked_at"))
+    if mirada is None:
+        return False
+    edad = time.time() - mirada
+    # Una fecha futura no renueva nada: sin esto, un reloj mal puesto daria
+    # vigencia eterna.
+    return 0 <= edad <= TTL_DIFERIDA_HORAS * 3600
+
+
 def is_current_result(previous: dict[str, Any],
                       record: dict[str, dict[str, Any]],
                       postergadas: list[dict[str, str]] | None = None,
@@ -553,7 +604,8 @@ def is_current_result(previous: dict[str, Any],
         return False
 
     status = previous.get("status")
-    if status == "NEEDS_FIX" and diferida_vigente(previous, postergadas):
+    if status == "NEEDS_FIX" and (diferida_vigente(previous, postergadas)
+                                  or el_triaje_ya_decidio_no_parar(previous)):
         # La huella se comprueba igual, mas abajo: si el codigo cambio, hay que
         # rehacerla aunque el defecto este diagnosticado.
         connector = previous.get("connector")

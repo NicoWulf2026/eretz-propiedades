@@ -237,3 +237,119 @@ def test_J_bis_una_diferida_sin_fecha_en_disco_llega_vacia(tmp_path):
     fuera = diferidos(tmp_path)["roomix:otra"]
     assert fuera[0]["cuando"] == ""
     assert diferida_vigente({}, fuera) is False
+
+
+# --- El agujero al reves: las que NO paran son las que se rehacen ---------
+#
+# Medido el 2026-09-21 con las huellas ya estables: 113 corridas desde las
+# 05:00, 33 de ellas reintentos que no podian dar otro resultado, 6,5 h de
+# worker. Veintitres de esas 33 son `adrian ghio` (13) y `alder` (10), las dos
+# con CERO firmas porque su defecto es AGENCIA/CONTINUE y nunca paro nada.
+# Ninguna certificada se rehizo con la misma huella: el desperdicio era
+# enteramente este.
+
+from scripts.run_agency_certification_queue import (  # noqa: E402
+    el_triaje_ya_decidio_no_parar)
+
+
+def sano(**extra):
+    """La forma REAL de `adrian ghio`, la agencia que se rehizo 13 veces.
+
+    No vale inventar un resultado «limpio»: uno sin ninguna senal cae en
+    `sin_determinar` y el triaje PARA, que es su default conservador y esta
+    bien. Un `CONTINUE` de verdad necesita una causa acotada, y la de esta
+    agencia es exactamente esa: latitud y longitud fallan en 1 de 57 fichas.
+    """
+    base = {
+        "status": "NEEDS_FIX",
+        "canonical_agency_id": "roomix:prueba",
+        "checked_at": cuando(1.0),
+        "reasons": ["source fields not extracted: latitud, longitud"],
+        "comparison": {"run2_identities": 57, "identity_collisions": 0,
+                       "run1_urls": 57, "run2_urls": 57, "same_url_set": True,
+                       "missing_in_run2": 0, "new_in_run2": 0,
+                       "same_content_signature": True,
+                       "same_contract_signature": True,
+                       "run2_changes": {"SIN_CAMBIOS": 57}, "idempotent": True},
+        "enumeration_audit": {"enumerated": 57, "review_reasons": []},
+        "run1": {"estado": "OK", "enumeradas": 57, "detalles_fallidos": 0,
+                 "descartadas_por_forma": 0, "errores_por_etapa": {}},
+        "run2": {"estado": "OK", "enumeradas": 57, "detalles_fallidos": 0,
+                 "descartadas_por_forma": 0, "errores_por_etapa": {}},
+        "field_coverage": {
+            campo: {"state": "EXTRACTION_FAILED", "normalized_present": 56,
+                    "normalized_total": 57, "coverage": 0.9825,
+                    "source_provided": 57, "source_not_provided": 0,
+                    "source_unknown": 0, "source_signals_absent": 0,
+                    "extraction_failed": 1, "validation_rejected": 0,
+                    "failure_examples": ["https://ejemplo/propiedad/169255"]}
+            for campo in ("latitud", "longitud")},
+    }
+    base.update(extra)
+    return base
+
+
+def test_MUERDE_un_needs_fix_que_el_triaje_deja_pasar_no_se_repite():
+    """`adrian ghio`, 13 veces en un dia. Su defecto es de radio AGENCIA y
+    `decision=CONTINUE`: nunca para, nunca se firma, y sin firma se rehacia
+    en cada reinicio."""
+    assert el_triaje_ya_decidio_no_parar(sano()) is True
+
+
+def test_MUERDE_uno_que_el_triaje_PARA_si_se_repite():
+    """Lo que no puede pasar: que esto saltee una agencia cuyo diagnostico
+    todavia importa. Un catalogo corto para, y tiene que seguir parando."""
+    r = sano()
+    r["enumeration_audit"] = {"enumerated": 102, "declared_total": 168,
+                              "review_reasons": []}
+    assert el_triaje_ya_decidio_no_parar(r) is False
+
+
+def test_MUERDE_el_TTL_se_respeta():
+    """`baron inmobiliaria` paso de enumerar 0 a 182 sin que tocaramos una
+    linea. Una fuente cambia sola, asi que esto no puede ser eterno."""
+    assert el_triaje_ya_decidio_no_parar(sano(checked_at=cuando(TTL_DIFERIDA_HORAS - 1))) is True
+    assert el_triaje_ya_decidio_no_parar(sano(checked_at=cuando(TTL_DIFERIDA_HORAS + 1))) is False
+
+
+def test_MUERDE_una_fecha_futura_no_da_vigencia():
+    """Un reloj mal puesto no puede comprar vigencia eterna."""
+    assert el_triaje_ya_decidio_no_parar(sano(checked_at=cuando(-5))) is False
+
+
+def test_sin_fecha_no_se_puede_saber_y_se_rehace():
+    assert el_triaje_ya_decidio_no_parar(sano(checked_at=None)) is False
+    assert el_triaje_ya_decidio_no_parar(sano(checked_at="")) is False
+
+
+def test_solo_aplica_a_needs_fix():
+    for estado in ("CERTIFIED_COMPLETE", "BLOCKED_EXTERNAL", "IDENTITY_PENDING"):
+        assert el_triaje_ya_decidio_no_parar(sano(status=estado)) is False
+
+
+def test_si_el_triaje_no_puede_opinar_se_rehace():
+    """Equivocarse hacia el lado caro es aceptable; hacia el barato no."""
+    assert el_triaje_ya_decidio_no_parar({"status": "NEEDS_FIX"}) is False
+
+
+def test_MUERDE_la_huella_se_sigue_comprobando(huella_fija):
+    """El salteo nuevo no puede saltarse la comprobacion de huella: si el
+    codigo cambio, hay que rehacerla aunque el triaje no parara."""
+    r = sano(connector="generico", connector_strategy="generic/html_catalog",
+             strategy_fingerprint=HUELLA,
+             fingerprint_schema_version=FINGERPRINT_SCHEMA_VERSION,
+             certifier_version="agency_certifier_v1")
+    assert is_current_result(r, {}, None) is True
+    r["strategy_fingerprint"] = "otra"
+    assert is_current_result(r, {}, None) is False
+
+
+def test_MUERDE_sin_diferida_y_sin_triaje_favorable_se_rehace(huella_fija):
+    """La conducta vieja se conserva para lo que si hay que rehacer."""
+    r = sano(connector="generico", connector_strategy="generic/html_catalog",
+             strategy_fingerprint=HUELLA,
+             fingerprint_schema_version=FINGERPRINT_SCHEMA_VERSION,
+             certifier_version="agency_certifier_v1")
+    r["enumeration_audit"] = {"enumerated": 102, "declared_total": 168,
+                              "review_reasons": []}
+    assert is_current_result(r, {}, None) is False
