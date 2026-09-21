@@ -187,7 +187,29 @@ compartido, en vez de ir de a uno:
    algo falso, y el caso `eckert` muestra el mecanismo con claridad: la url es
    `/properties/446753/1200m2-…` y el id que guardamos es `1200`.
 
-7. lo que aparezca de los paros que la cola encuentre de acá en adelante.
+7. **Fotos con espacio en el nombre: se pierden enteras.**
+   `connectors/generico.py:2745` hace `m.group(1).split()[0]`, que se queda
+   con lo que hay antes del primer espacio —sirve para un `srcset`— y parte
+   cualquier url cuyo archivo tenga uno:
+
+   ```
+   images/20260819104926_ChatGPT Image 19 ago 2026, 09_45_36.jpg
+   -> images/20260819104926_ChatGPT   -> sin extensión -> descartada
+   ```
+
+   `RE_IMG`, el patrón de urls absolutas, tiene el mismo tope (`[^\s"'<>]+?`).
+
+   Medido contra la fuente en `bottai`, y la correlación es perfecta: toda
+   foto que falta tiene espacio, y toda foto con espacio falta. **71 de 232
+   propiedades quedan sin ninguna foto, el 30,6 %.** Afecta a cualquier sitio
+   que suba las fotos con su nombre original, y
+   `WhatsApp Image 2026-07-28 at 15.31.50 (3).jpg` es un nombre muy común.
+
+   El arreglo: quedarse con el token previo al espacio **sólo** cuando el
+   valor es un `srcset` de verdad, y si el valor entero termina en extensión
+   de imagen, usarlo entero.
+
+8. lo que aparezca de los paros que la cola encuentre de acá en adelante.
 
 ### El crosswalk de identidad pública: no se puede construir acá
 
