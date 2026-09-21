@@ -49,6 +49,23 @@ def _plegar(texto: Any) -> str:
     return re.sub(r"-{2,}", "-", re.sub(r"[^a-z0-9]+", "-", sin.lower())).strip("-")
 
 
+def sin_acento(texto: Any) -> str:
+    """Minusculas y sin acentos, CONSERVANDO los espacios.
+
+    No sirve `_plegar` para esto: convierte todo en slug con guiones, y
+    entonces `mar del` deja de ser prefijo de `mar del plata`. El
+    autocompletado compara prefijos de lo que una persona escribe.
+
+    `collate nocase` de SQLite solo pliega mayusculas ASCII y no toca los
+    acentos, asi que sin esto `cordo` no encuentra `Cordoba`: la comparacion
+    se rompe en la segunda letra.
+    """
+    if not isinstance(texto, str):
+        return ""
+    plano = unicodedata.normalize("NFD", texto.lower())
+    return "".join(c for c in plano if unicodedata.category(c) != "Mn")
+
+
 def segmento_geografico(geo: dict[str, Any] | None) -> str:
     """Lo unico que la URL puede afirmar sobre donde esta la propiedad."""
     geo = geo or {}

@@ -88,10 +88,20 @@ Lo que sí se puede hacer sin frenarla, porque no entra en ninguna huella:
 Y lo que hay que juntar en **una sola tanda** antes de volver a tocar código
 compartido, en vez de ir de a uno:
 
-1. los 1.022 barrios que son prosa recortada —la familia que no se arregla
-   cortando en «Fecha de entrega»—;
-2. las 32 ciudades de Jujuy escritas en el campo `provincia`;
-3. lo que aparezca de los paros que la cola encuentre de acá en adelante.
+1. **`Terreno NNN m²` pegado al barrio: 380 propiedades en 54 agencias.**
+   Apareció mirando el autocompletado —`Cordoba Capital Terreno 33729 m²`
+   compitiendo con `Córdoba` como sugerencia— y es la misma forma que
+   «Fecha de entrega»: el barrio está bien y se le pegó el campo siguiente.
+   `Banfield Oeste Terreno 358 m²`, `Centenario Terreno 10466 m²`,
+   `Añelo Terreno 20000 m²`. Recuperables cortando ahí.
+2. los 1.022 barrios que son prosa recortada —la familia que **no** se
+   arregla cortando en una etiqueta—;
+3. las 32 ciudades de Jujuy escritas en el campo `provincia`;
+4. lo que aparezca de los paros que la cola encuentre de acá en adelante.
+
+Para dimensionar la primera contra la que ya se arregló: «Fecha de entrega»
+son 1.242 propiedades en 64 agencias, y ese corte ya está aplicado —sólo
+falta que la cola vuelva a pasar—.
 
 ## Cómo saber si esto se repite
 

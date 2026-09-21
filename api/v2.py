@@ -33,6 +33,7 @@ from fastapi import APIRouter, Body, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from api.ranking import RANKING_VERSION, ordenar
+from api.slugs import sin_acento as _plano
 from api.models_v2 import AgencyResponse, BatchResponse, MapResponse, SearchResponse
 from api.property_visibility import public_document
 
@@ -129,7 +130,27 @@ def conexion() -> sqlite3.Connection:
         )
     con = sqlite3.connect(f"file:{SNAPSHOT.as_posix()}?mode=ro", uri=True)
     con.row_factory = sqlite3.Row
+    # `collate nocase` de SQLite solo pliega mayusculas ASCII: no toca los
+    # acentos. Con eso, `cordo` NO encuentra `Cordoba` -la comparacion se
+    # rompe en la segunda letra- mientras que `cordo` CON acento si. Medido
+    # contra la snapshot: la primera forma devuelve CERO areas y la segunda
+    # las tres -municipio 2.050, provincia 937, localidad 208-.
+    #
+    # Quien escribe sin acento es casi todo el mundo.
+    con.create_function("sin_acento", 1, _plano, deterministic=True)
     return con
+
+
+def _tiene_columnas_planas(con: sqlite3.Connection) -> bool:
+    """Si la snapshot guarda los nombres ya plegados.
+
+    Se pregunta por conexion y no se cachea a nivel modulo: la snapshot se
+    regenera debajo del proceso y una respuesta cacheada de la anterior
+    haria consultar una columna que dejo de existir -o peor, dejar de usar
+    una que ya esta-.
+    """
+    columnas = {f[1] for f in con.execute("pragma table_info(propiedades)")}
+    return {"area_nombre_plano", "barrio_plano"} <= columnas
 
 
 def _tiene_busqueda() -> bool:
@@ -615,17 +636,32 @@ def sugerencias(
     """Autocompletado sobre areas y barrios, con el nivel a la vista."""
     con = conexion()
     try:
+        # Se compara sin acentos de los dos lados: lo que la persona escribio
+        # y lo que la snapshot guarda. Con `collate nocase` a secas, `cordo`
+        # no encontraba `Cordoba`, porque ese COLLATE solo pliega mayusculas
+        # ASCII y no toca los acentos.
+        #
+        # Si la snapshot trae las columnas planas se usan esas, que estan
+        # indexadas: resolverlo con la funcion sobre las 57.665 filas medio
+        # 436 ms, y una caja de autocompletado se dispara con cada tecla. La
+        # funcion queda de respaldo para que una snapshot vieja siga
+        # respondiendo -lenta, pero bien- en vez de fallar con `no such
+        # column`.
+        planas = _tiene_columnas_planas(con)
+        col_area = "area_nombre_plano" if planas else "sin_acento(area_nombre)"
+        col_barrio = "barrio_plano" if planas else "sin_acento(barrio)"
+        patron = f"{_plano(q)}%"
         area = con.execute(
             "select area_nivel, area_nombre, count(*) as n from propiedades "
-            "where area_nombre like ? collate nocase "
+            f"where {col_area} like ? "
             "group by area_nivel, area_nombre order by n desc limit ?",
-            (f"{q}%", limit),
+            (patron, limit),
         ).fetchall()
         barrio = con.execute(
             "select barrio, count(*) as n from propiedades "
-            "where barrio like ? collate nocase group by barrio "
+            f"where {col_barrio} like ? group by barrio "
             "order by n desc limit ?",
-            (f"{q}%", limit),
+            (patron, limit),
         ).fetchall()
     finally:
         con.close()

@@ -28,6 +28,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.api_contract import CONTRATO_API_VERSION, fila_de_api  # noqa: E402
+from api.slugs import sin_acento  # noqa: E402
 from scripts.prepare_api_v2_snapshot import _publish_no_clobber  # noqa: E402
 
 
@@ -102,6 +103,13 @@ create table if not exists propiedades (
     barrio text,
     area_nivel text not null,
     area_nombre text,
+    -- Los mismos nombres sin acentos y en minuscula. Estan guardados en vez
+    -- de calcularse al vuelo porque el autocompletado se dispara con cada
+    -- tecla: resolverlo con una funcion de Python sobre las 57.665 filas
+    -- medio 436 ms, y con estas columnas indexadas vuelve a ser una busqueda
+    -- por prefijo. El dato original no se toca; esto es para comparar.
+    area_nombre_plano text,
+    barrio_plano text,
     geo_estado text,
     alcances text not null,
     documento text not null
@@ -118,6 +126,9 @@ create index if not exists ix_operacion_tipo
     on propiedades(operacion, tipo_propiedad);
 create index if not exists ix_precio on propiedades(moneda, precio);
 create index if not exists ix_area on propiedades(area_nivel, area_nombre);
+-- Prefijo sin acentos: es exactamente lo que consulta el autocompletado.
+create index if not exists ix_area_plano on propiedades(area_nombre_plano);
+create index if not exists ix_barrio_plano on propiedades(barrio_plano);
 create index if not exists ix_localidad on propiedades(localidad);
 create index if not exists ix_agencia on propiedades(agency_id);
 
@@ -236,7 +247,7 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
         area = documento["geo"]["area_busqueda"] or {}
         api.execute(
             "insert or replace into propiedades values "
-            "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (documento["id"], documento["agency_id"], documento["source_url"],
              documento["titulo"], documento["descripcion"], documento["operacion"],
              documento["tipo_propiedad"], documento["precio"], documento["moneda"],
@@ -251,6 +262,8 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
              documento["geo"]["barrio"]["nombre"],
              area.get("nivel") or "SIN_AREA",
              area.get("nombre"),
+             sin_acento(area.get("nombre")),
+             sin_acento(documento["geo"]["barrio"]["nombre"]),
              documento["geo"].get("estado"),
              json.dumps(documento["alcances"], ensure_ascii=False),
              json.dumps(documento, ensure_ascii=False)))
