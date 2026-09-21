@@ -382,7 +382,46 @@ compartido, en vez de ir de a uno:
     en ninguna agencia, así que el hueco tampoco está costando superficies por
     otro lado.
 
-15. lo que aparezca de los paros que la cola encuentre de acá en adelante.
+15. **Una foto sin extensión en el nombre no cuenta como foto.**
+    `chambouleyron` perdió sus 16 fichas —su catálogo entero— por esto, y el
+    triaje lo anunció bien: «16 de 16 fichas descartadas TENÍAN precio o
+    schema». Traen precio (7.000.000, 60.000, 2.000.000…), operación en el
+    texto, y `fotos: 0`.
+
+    La fuente **sí** publica fotos:
+
+    ```html
+    <img src="uploads/foto341-1" />
+    ```
+
+    Las bajé: 200, 523.431 / 426.789 / 383.461 bytes, y empiezan con los bytes
+    mágicos de JPEG. Son fotos de verdad. Lo que no tienen es extensión en el
+    nombre —ni cabecera `Content-Type`—.
+
+    `_imagenes_de` descarta toda url que no matchee
+    `RE_EXTENSION = r"\.(?:jpe?g|png|webp|avif)(?:$|[?#])"`. Las tres caen, la
+    ficha queda en cero fotos, y el guardián la rechaza por no llegar a
+    `FOTOS_MINIMAS`.
+
+    **Y es el mismo patrón que ya ocurrió en esta misma función.** Su docstring
+    cuenta que mirar sólo urls absolutas dejaba en cero a los sitios con ruta
+    relativa, y que «una fuente perdió 268 fichas reales por eso». Se arregló
+    la ruta relativa y se dejó la extensión ausente: el arreglo avanzó un paso
+    y se detuvo.
+
+    **Arreglo propuesto:** lo que captura `RE_IMG_ATRIBUTO` ya viene del `src`
+    de un `<img>`, así que es una imagen por construcción y exigirle extensión
+    es redundante. Aceptarla sin extensión, dejando que `RE_NO_ES_FOTO` siga
+    filtrando logos e iconos y que `FOTOS_MINIMAS` haga el resto. Un fallback
+    por `Content-Type` no serviría: este servidor no manda ninguno.
+
+    **Tamaño:** 19 descartes con precio y cero fotos en todo el corpus, en 3
+    agencias, y sólo ésta tiene esta causa. Las otras dos son rechazos
+    correctos —`bunader` descarta `/propiedades/proyectos`, que es una página
+    de sección, y `bertomeu` la ficha de inscripción de la cámara—. Son 16
+    propiedades reales, todas de una agencia, que es todo lo que tiene.
+
+16. lo que aparezca de los paros que la cola encuentre de acá en adelante.
 
 ---
 
