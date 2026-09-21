@@ -307,6 +307,24 @@ Doce firmas espaciadas cambian la cola doce veces; las mismas doce juntas la
 cambian una. Diagnosticar en el momento sigue siendo lo correcto —la evidencia
 está fresca y el sitio está como estaba—, pero la firma puede esperar.
 
+### Cómo se aplica, con lo que se aprendió aplicándolo
+
+1. Llega el paro. **Se diagnostica en el momento**, contra la fuente.
+2. El dictamen se guarda en
+   `ERETZ_AGENCY_CERTIFICATION_20260827/DIFERIDAS_PENDIENTES_DE_FIRMA.jsonl`,
+   **sin firmar**.
+3. **La bandera de paro sí se levanta igual.** Mata al worker y persiste hasta
+   que alguien la saca; levantarla **no** cambia la cola, sólo la firma lo
+   hace. Esto no era obvio y costó un worker caído hasta notarlo.
+4. Se relanza el worker que murió.
+5. Las firmas se aplican todas juntas, una sola vez.
+
+Un veredicto que conviene tener a mano: **`NO_REPRODUCIBLE`**. Si el paro
+denuncia un fallo que no se puede reproducir contra la fuente por ningún
+camino, eso es el resultado —no una causa inventada—, y la acción es
+re-certificar, no tocar código. Cambiar un extractor por un fallo que no se
+reproduce es como se rompen las cosas que andaban.
+
 ## Cómo saber si esto se repite
 
 La señal es **cuántas certificaciones tienen la huella vigente**, y hay que
