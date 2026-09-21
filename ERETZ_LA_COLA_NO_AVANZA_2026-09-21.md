@@ -586,6 +586,24 @@ compartido, en vez de ir de a uno:
 
 ---
 
+## El salteo de los `CONTINUE`, medido en produccion
+
+El arreglo de `el_triaje_ya_decidio_no_parar` se desplegó pasadas las 15:00.
+Contando reintentos de un `NEEDS_FIX` con la misma huella y la misma url que
+el resultado inmediato anterior:
+
+| tramo | corridas | agencias | reintentos inútiles |
+|---|---:|---:|---:|
+| 05:00–15:00, antes | 115 | 82 | **35 (30 %)** |
+| 15:00–en adelante, con el salteo | 41 | **41** | **1 (2 %)** |
+
+41 corridas para 41 agencias distintas: en ese tramo la cola dejó de rehacer.
+Es una medición más limpia que la del transporte, porque acá el mecanismo es
+determinista —una agencia se saltea o no— y no depende de la red.
+
+El único reintento que queda es correcto: una agencia cuyo resultado anterior
+sí pedía rehacerse.
+
 ## Lo que se está acumulando, medido
 
 169 defectos abiertos (el último por agencia y componente), repartidos así:
