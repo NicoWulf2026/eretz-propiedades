@@ -636,7 +636,51 @@ compartido, en vez de ir de a uno:
     Toca `agency_certifier.py`, que es `shared/certifier` y entra en la
     huella.
 
-20. lo que aparezca de los paros que la cola encuentre de acá en adelante.
+20. **Entidades HTML sin decodificar: 2.560 propiedades, y el costo es
+    geográfico.** El más grande de los encontrados hoy.
+
+    `bondar` paró por 3 fichas distintas entre corridas. En una, la corrida 1
+    trajo barrio `B&deg; GRAN BOEDO` y ciudad `None`; la 2 trajo `B° GRAN
+    BOEDO` y ciudad `Luján de Cuyo`. El rastro geo lo explica solo:
+
+    | corrida | rechazo / evidencia |
+    |---|---|
+    | 1 | «`Luj&aacute;n de Cuyo` no se pudo demostrar: **NOT_FOUND**» |
+    | 2 | «`Luján de Cuyo` **resolvió** contra georef:localidades_censales» |
+
+    La misma localidad. La única diferencia es la entidad HTML.
+
+    **El vaivén es de la fuente**: llamé a la API de Xintel hoy con las tres
+    variantes —con la clave como valor de `utf8decode`, que es lo que hace el
+    conector; con `1`; y sin el parámetro— y devuelven exactamente lo mismo,
+    sin una sola entidad. El parámetro que enviamos está inerte, y el propio
+    JS del sitio ni lo manda.
+
+    **Lo nuestro es no defendernos.** El camino xintel arma los campos con
+    `limpiar(...)`, que sólo colapsa espacios —probado:
+    `limpiar('Luj&aacute;n de Cuyo')` devuelve la cadena igual—. `unescape` se
+    usa en **ocho** lugares del camino HTML y en **ninguno** del camino JSON.
+    Otra vez la misma regla aplicada en un lado y no en el de al lado.
+
+    **Tamaño, sobre los 23.903 registros de todos los paquetes:**
+
+    | | propiedades |
+    |---|---:|
+    | con entidades sin decodificar | **2.560 (10,7 %)** en 50 agencias |
+    | `descripcion` | 1.744 |
+    | `titulo` | 734 |
+    | **`barrio`** | **396** |
+    | `direccion` | 21 |
+    | `ciudad` | **0** |
+
+    Ese cero es la parte engañosa: cuando la ciudad llega con entidad no
+    resuelve contra GeoRef y **se descarta**, así que no queda guardada. El
+    costo geográfico no se ve contando entidades en el dato final; se ve en
+    las ciudades ausentes. Es un mecanismo concreto para la pregunta abierta
+    de por qué faltan ciudad y barrio, y cae del lado «la normalización lo
+    pierde», no del lado «la fuente no lo publica».
+
+21. lo que aparezca de los paros que la cola encuentre de acá en adelante.
 
 ---
 
