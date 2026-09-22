@@ -301,3 +301,74 @@ Ninguna de las tres se veía sin separar las causas.
 4. Resolver por familia las 567 etiquetas de zona en `provincia`.
 5. Revisar las ~630 contradicciones de distancia imposible: son propiedades
    estampadas con la provincia de su inmobiliaria.
+
+---
+
+# 2026-09-21 · Por qué no resuelve la ciudad: medido, y no es lo que parecía
+
+Sobre el padrón certificado, **8.290 propiedades publican una ciudad y
+terminan sin ciudad**. Ése es el número que importa, y el motivo que registra
+el matcheo se reparte así:
+
+| motivo | propiedades |
+|---|---:|
+| `NOT_FOUND` | **7.531** |
+| `AMBIGUOUS` | 452 |
+| `CONTRADICTED_BY_COORDINATES` | 307 |
+
+## Lo que hay dentro de `NOT_FOUND`, que es casi todo
+
+De los 7.531, **349 traen una entidad HTML** (`Lan&uacute;s`,
+`San Miguel de Tucum&aacute;n`) y ésas **sí son pérdida nuestra**: la fuente
+publica bien y la perdemos al normalizar. Están medidas aparte en el ítem 20
+de `ERETZ_LA_COLA_NO_AVANZA_2026-09-21.md` —cuando la entidad está, la
+resolución falla el **100 %** de las veces—.
+
+Los otros **7.182** son otra cosa, y conviene decirlo claro porque cambia la
+conclusión de todo el capítulo:
+
+| | propiedades | |
+|---|---:|---:|
+| **`barrio` es exactamente igual a `ciudad_publicada`** | **6.761** | **94,1 %** |
+| tiene barrio propio y distinto | 321 | 4,5 % |
+| la publicada es una frase de más de 60 caracteres | 100 | 1,4 % |
+
+**El 94 % no es una ciudad que no resolvió: es un barrio escrito en el campo
+ciudad.** `La Cascada Country Golf`, `Colinas de Manantiales`, `Lomas de
+Manantiales`, `Solares de Manantiales` — todos están correctamente guardados
+en `barrio`, y el mismo valor se copió a `ciudad`, donde no puede resolver
+porque no es una localidad del catálogo.
+
+Los nombres más repetidos lo confirman solos: `Centro` (713), `Lanús Este`
+(117) y `Lanús Oeste` (58), `Quilmes Oeste` (95), `Abasto` (94), `Fisherton`
+(89), `Echesortu` (59), `Balvanera` (45), `Morón Sur` (49), `Banfield Oeste`
+(52). Son barrios y subdivisiones, no localidades.
+
+### Por qué esto importa para la pregunta original
+
+El pedido fue no asumir que la geografía faltante es un bug, y separar «la
+fuente no publica» de «la normalización pierde». La respuesta, medida:
+
+- **No es pérdida**: en 6.761 casos no había ciudad que perder. La fuente
+  publicó un barrio, y el barrio está guardado. Lo que falta es la ciudad que
+  la fuente nunca dijo.
+- **Sí es pérdida, y es chica**: 349 por entidades HTML.
+- **Es otra familia**: 321 donde la ciudad publicada difiere del barrio —y el
+  ejemplo delata cuál—: `Dr Manuel Belgrano Los Alisos` con barrio
+  `Los Alisos`. Es el departamento de Jujuy concatenado al barrio, o sea la
+  misma familia del ítem 3 de la tanda congelada.
+- **Es prosa**: 100 casos con la misma frase publicitaria en los dos campos
+  (`¡Sumérgete en el apasionante mundo de La…`), que es el ítem 2 visto desde
+  otro ángulo.
+
+### Un camino que parecía recuperable y no lo es
+
+283 de los `NOT_FOUND` traen una coma, y en 184 alguna de las partes coincide
+con una localidad del catálogo. Parecía «barrio, ciudad» y sería recuperable.
+No lo es: los ejemplos son direcciones metidas en el campo ciudad
+—`Bolla al 1400, Roque Perez`, `Alberdi 837,Lobos`— y también prosa
+—`Un lugar para empezar la vida que soñás! terreno…`—. Una regla que tome
+cualquier parte que coincida con una localidad inventaría geografía en el
+tercer caso. Queda descartado a propósito.
+
+`database_writes: 0`.
