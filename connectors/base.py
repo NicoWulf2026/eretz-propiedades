@@ -1118,9 +1118,17 @@ class Connector:
 # --------------------------------------------------------------------------
 # Utilidades de normalizacion compartidas por todos los connectors
 # --------------------------------------------------------------------------
-_MONEDAS = {"usd": "USD", "u$s": "USD", "us$": "USD", "dolares": "USD",
-            "dólares": "USD", "dolar": "USD", "ars": "ARS", "$": "ARS",
-            "pesos": "ARS", "peso": "ARS"}
+# El orden importa y `u$d` TIENE que ir antes que `$`.
+#
+# Sin esta entrada, `detectar_moneda("U$D 45.000")` devolvia ARS: el bucle
+# encuentra el `$` y se queda con pesos. Mientras la expresion de precio
+# tampoco reconocia `U$D` eso no se notaba, porque no se extraia ningun
+# precio. Al arreglar la expresion -2026-09-21, 359 propiedades medidas- este
+# agujero se habria convertido en algo peor que la perdida: un dolar
+# publicado como peso. Un precio ausente se ve; uno equivocado no.
+_MONEDAS = {"usd": "USD", "u$s": "USD", "u$d": "USD", "us$": "USD",
+            "dolares": "USD", "dólares": "USD", "dolar": "USD",
+            "ars": "ARS", "$": "ARS", "pesos": "ARS", "peso": "ARS"}
 
 _OPERACIONES = {"venta": "venta", "vender": "venta", "sale": "venta",
                 "alquiler": "alquiler", "alquilar": "alquiler", "rent": "alquiler",

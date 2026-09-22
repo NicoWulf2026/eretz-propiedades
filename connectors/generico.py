@@ -257,8 +257,17 @@ RE_EDITORIAL = re.compile(r'"@type"\s*:\s*"?(Article|NewsArticle|BlogPosting)|'
 # diciendo que distingue una ficha de una nota y no estaba implementado. Un
 # numero suelto no alcanza: "Analisis de la superficie construida en 2026"
 # tiene un numero y una palabra de atributo, y no es una propiedad.
+# `u$d` estaba afuera, y en Argentina se escribe tanto como `u$s`. Medido el
+# 2026-09-21 sobre una ficha real de 120 agencias: 8 la escriben asi, y tres
+# de esas ocho usan `u$d` Y otra forma en la misma pagina -`belvedere`,
+# `bondar`, `carames`-. `brunetti propiedades` tiene precio en 70 de 428
+# fichas y escribe `U$D`; `cipollone` perdio un lote de 9 fotos que publicaba
+# «U$D 70.000»; `cordoba propiedades` perdio dos fichas de 31 y 53 fotos que
+# decian «U$D 45.000».
+#
+# El `$` suelto no las salvaba: despues del `$` viene una `D` y no un digito.
 RE_PRECIO_CON_MONEDA = re.compile(
-    r"(?:u\$s|us\$|usd|ars|\$)\s*\d[\d.,]*"
+    r"(?:u\$[sd]|us\$|usd|ars|\$)\s*\d[\d.,]*"
     r"|\d[\d.,]*\s*(?:d[oó]lares|pesos|usd|ars)\b", re.I)
 FOTOS_MINIMAS = 3
 
@@ -879,7 +888,11 @@ class GenericoConnector(Connector):
 
         price = re.search(
             r'class=["\'][^"\']*\bprice\b[^"\']*["\'][^>]*>\s*'
-            r'(?:Valor\s*:\s*)?(USD|U\$S|US\$|ARS|\$)\s*([\d][\d.,]{1,15})',
+            # `U\$D` va aca tambien. Esta es la TERCERA copia de la misma
+            # regla -las otras dos son RE_PRECIO_CON_MONEDA y la busqueda de
+            # precio visible- y arreglar dos y dejar una es el patron que ya
+            # costo caro hoy en otros tres lugares del repo.
+            r'(?:Valor\s*:\s*)?(USD|U\$[SD]|US\$|ARS|\$)\s*([\d][\d.,]{1,15})',
             html or "", re.I)
         if price:
             result["moneda"] = detectar_moneda(price.group(1))
@@ -2023,7 +2036,11 @@ class GenericoConnector(Connector):
             # que nadie lo note.
             # Sin `re.I` se perdia `u$s 85.000` en minuscula, que es como lo
             # escriben las fuentes que arman la ficha a mano.
-            m = re.search(r"(USD|U\$S|US\$|\$|ARS)\s*([\d][\d.,]{2,15})",
+            # Y sin `U\$D` se perdia el precio ENTERO de las fuentes que lo
+            # escriben con D. No alcanzaba con arreglar el guardian de forma:
+            # el guardian decide si la ficha entra, esta expresion decide si
+            # el precio se lee. Ver el comentario de RE_PRECIO_CON_MONEDA.
+            m = re.search(r"(USD|U\$[SD]|US\$|\$|ARS)\s*([\d][\d.,]{2,15})",
                           texto, re.I)
             if m:
                 visible = a_numero(m.group(2))
