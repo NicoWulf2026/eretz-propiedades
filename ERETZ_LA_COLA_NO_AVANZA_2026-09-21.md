@@ -702,7 +702,35 @@ compartido, en vez de ir de a uno:
     perdemos al normalizar. No es «la fuente no lo publica» ni «el dato es
     desconocido»: es «la normalización lo pierde», con nombre y apellido.
 
-21. lo que aparezca de los paros que la cola encuentre de acá en adelante.
+21. **Una ficha real que su tema declara `og:type="article"`.** Chico y
+    verificado, con su contracara medida.
+
+    `cordoba propiedades` perdió sus 2 fichas —de **31 y 53 fotos**—. El texto
+    visible de una dice «Departamento en Venta San Luis 1038 | Bº Observatorio
+    | **U$D 45.000**»: es una propiedad, con precio y operación.
+
+    La página declara `property="og:type" content="article"`, que es el valor
+    por defecto de muchos temas de WordPress para cualquier entrada.
+    `RE_EDITORIAL` matchea eso y el guardián la trata como nota de blog.
+
+    **Y el ítem 16 está apilado encima**: aunque no estuviera la marca
+    editorial, el precio tampoco se leería, porque dice `U$D 45.000`.
+
+    **El filtro editorial acierta casi siempre, y conviene decirlo**: de los
+    320 descartes de todos los paquetes, 30 están marcados editorial y **28
+    están bien** —18 son las páginas del directorio uruguayo de `casagrande`,
+    10 son páginas de archivo de categoría de `austral`, y sus títulos lo
+    dicen: «Casa de río **archivos**», «Cochera **archivos**»—. Los 2
+    equivocados son éstos.
+
+    Así que no conviene aflojar el filtro. Conviene que una página con precio,
+    operación y 31 fotos pese más que una etiqueta de metadatos.
+
+    De paso **refuerza el ítem 17**: que `austral` enumere páginas de archivo
+    de categoría en vez de fichas es consecuencia de haber caído al conector
+    genérico cuando el de WordPress volvió vacío.
+
+22. lo que aparezca de los paros que la cola encuentre de acá en adelante.
 
 ---
 
