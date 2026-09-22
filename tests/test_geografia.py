@@ -392,3 +392,49 @@ def test_toda_ciudad_publicada_que_no_se_afirma_queda_como_rechazo() -> None:
 def test_si_la_fuente_no_publico_ciudad_no_hay_nada_que_rechazar() -> None:
     prop = _resolver(_propiedad(barrio="Alberdi"))
     assert prop.extra.get("atributos_descartados") is None
+
+
+# --------------------------------------------------- entidades HTML
+#
+# Medido el 2026-09-21 sobre los 16.504 registros que declaran una ciudad
+# publicada: 349 la traen escrita como entidad y las 349 pierden la ciudad.
+# Cuando la entidad esta, la resolucion falla el 100 % de las veces.
+
+def test_MUERDE_una_ciudad_con_entidad_html_resuelve_igual():
+    """`San Miguel de Tucum&aacute;n`: 17 propiedades de `elgart propiedades`
+    perdian la capital de una provincia por el `&aacute;`."""
+    prop = _resolver(_propiedad(ciudad="San Miguel de Tucum&aacute;n"))
+    assert prop.ciudad == "San Miguel de Tucumán"
+    assert prop.extra["ciudad_match"] != "NOT_FOUND"
+
+
+def test_MUERDE_el_caso_lujan_de_cuyo_de_bondar():
+    """La corrida 1 recibio la entidad y anoto NOT_FOUND; la corrida 2
+    recibio el texto y resolvio exacto. La misma localidad, dos corridas."""
+    prop = _resolver(_propiedad(ciudad="Luj&aacute;n de Cuyo"))
+    assert prop.ciudad == "Luján de Cuyo"
+
+
+def test_MUERDE_la_ciudad_mas_perdida_del_corpus():
+    """`Lan&uacute;s`, 159 propiedades."""
+    assert _resolver(_propiedad(ciudad="Lan&uacute;s")).ciudad == "Lanús"
+
+
+def test_MUERDE_un_barrio_con_entidad_queda_legible_aunque_no_resuelva():
+    """`B&deg; GRAN BOEDO` no es una localidad y no tiene que resolver. Pero
+    guardar la entidad en `barrio` no le sirve a nadie: son 396 propiedades."""
+    prop = _resolver(_propiedad(barrio="B&deg; GRAN BOEDO"))
+    assert prop.barrio == "B° GRAN BOEDO"
+    assert prop.ciudad is None
+
+
+def test_MUERDE_un_nombre_sin_entidades_no_se_toca():
+    """El arreglo no puede alterar lo que ya venia bien."""
+    prop = _resolver(_propiedad(ciudad="Luján de Cuyo"))
+    assert prop.ciudad == "Luján de Cuyo"
+
+
+def test_un_ampersand_literal_no_es_una_entidad():
+    """`Villa A & B` tiene un `&` y ninguna entidad: tiene que quedar igual."""
+    prop = _resolver(_propiedad(barrio="Villa A & B"))
+    assert prop.barrio == "Villa A & B"

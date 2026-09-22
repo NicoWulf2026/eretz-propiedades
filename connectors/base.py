@@ -881,6 +881,36 @@ class Connector:
         if prop.extra.get('geo_conflicto'):
             return  # Repeating normalization must not undo a recorded conflict.
         desde_barrio = not prop.ciudad
+        # Las entidades HTML se decodifican ANTES de preguntarle al catalogo.
+        #
+        # Medido el 2026-09-21 sobre los 16.504 registros que declaran una
+        # ciudad publicada: 349 la traen escrita como entidad y las 349
+        # pierden la ciudad. Cuando la entidad esta, la resolucion falla el
+        # CIEN POR CIENTO de las veces, y lo que se pierde son localidades que
+        # no tienen nada de dudoso: Lanus 159, Maipu 77, Muniz 27, San Miguel
+        # de Tucuman 17, Jose C Paz 16, Garupa 12, Guaymallen 6.
+        #
+        # El caso que lo mostro fue `bondar`: la corrida 1 recibio
+        # `Luj&aacute;n de Cuyo` y anoto «no se pudo demostrar: NOT_FOUND»; la
+        # corrida 2 recibio `Lujan de Cuyo` y resolvio exacto contra
+        # georef:localidades_censales. La misma localidad, dos corridas, y la
+        # unica diferencia era la entidad. La fuente manda una u otra segun el
+        # momento -lo verifique llamando a su API-, asi que defenderse aca es
+        # lo que hace el resultado estable.
+        #
+        # Va en este punto y no en cada conector a proposito: el defecto
+        # aparecio en `generic/xintel` y en `generic/sitemap`, y por conector
+        # se reparte 343 generico contra 6 tokko. Arreglarlo donde se PREGUNTA
+        # cubre todos los caminos, incluidos los que todavia no existen.
+        #
+        # El valor decodificado se conserva en el campo: si el catalogo
+        # resuelve, `prop.ciudad` pasa a ser el nombre canonico igual, pero si
+        # no resuelve, guardar `B&deg; GRAN BOEDO` en `barrio` no le sirve a
+        # nadie.
+        if prop.ciudad and "&" in prop.ciudad:
+            prop.ciudad = unescape(prop.ciudad)
+        if prop.barrio and "&" in prop.barrio:
+            prop.barrio = unescape(prop.barrio)
         publicada = prop.ciudad or prop.barrio
         if not publicada:
             return
