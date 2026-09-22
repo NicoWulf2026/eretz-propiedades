@@ -281,9 +281,43 @@ ATRIBUTOS_SIN_PRECIO = 4
 
 # `src` con ruta relativa, y los atributos con los que los sitios difieren la
 # carga. La url se resuelve contra la de la ficha.
+# La comilla simple es tan valida como la doble en HTML, y `corporacion
+# inmobiliaria` escribe `src='https://gvamax.ar/...'`: sus cinco fotos por
+# ficha no se veian por eso, antes incluso de llegar al asunto de la
+# extension.
 RE_IMG_ATRIBUTO = re.compile(
     r"<img[^>]{0,400}?\s(?:data-src|data-lazy-src|data-original|src)="
-    r"\"([^\"]{4,400})\"", re.I)
+    r"(?:\"([^\"]{4,400})\"|'([^']{4,400})')", re.I)
+
+# Un descriptor de `srcset`: el ancho o la densidad que va DESPUES de la url.
+RE_DESCRIPTOR = re.compile(r"^\d+(?:\.\d+)?[wx]$", re.I)
+
+
+def _url_del_atributo(crudo: str) -> str:
+    """La url de un `src`, aunque el nombre del archivo tenga espacios.
+
+    Esto era `crudo.split()[0]`, y partia el nombre en el primer espacio.
+    `cometto inmobiliaria` publica `images/propiedades/IMG_3859 (1).JPG` y lo
+    que quedaba era `images/propiedades/IMG_3859`, que devuelve 404. En
+    `bottai` costaba 71 de 232 fotos.
+
+    Mientras `_imagenes_de` exigia extension el estropicio no se notaba: la
+    url truncada se caia sola por no terminar en `.jpg`. Al dejar de exigirla
+    -para recuperar las fotos sin extension de `chambouleyron` y
+    `corporacion`- esa url rota habria empezado a entrar. Lo vi al probar el
+    arreglo contra la pagina real de `cometto`, no despues.
+
+    Un `src` lleva UNA url, asi que cortar por espacios no tiene sentido. El
+    unico caso donde el valor trae algo mas es un descriptor de `srcset`
+    -`foto.jpg 2x`-, y ese se reconoce por su forma en vez de asumirlo.
+    """
+    valor = (crudo or "").strip()
+    if not valor:
+        return ""
+    partes = valor.split()
+    if len(partes) > 1 and RE_DESCRIPTOR.match(partes[-1]):
+        return " ".join(partes[:-1])
+    return valor
 RE_EXTENSION = re.compile(r"\.(?:jpe?g|png|webp|avif)(?:$|[?#])", re.I)
 RE_WP_IMAGE_SIZE = re.compile(
     r"-(\d{2,4})x(\d{2,4})(?=\.[a-z]{3,4}(?:$|[?#]))", re.I)
@@ -2756,16 +2790,45 @@ class GenericoConnector(Connector):
         son muchos. Una fuente perdio 268 fichas reales por eso: el guardian
         las veia sin una sola foto, y las que si entraban entraban sin
         galeria.
+
+        Ese arreglo avanzo un paso y se detuvo, y el 2026-09-21 costo 46
+        propiedades reales en dos agencias, con dos formas distintas de la
+        misma causa:
+
+          - `chambouleyron` publica `<img src="uploads/foto341-1" />`, sin
+            extension NI cabecera Content-Type. Las baje: son JPEG de 380 a
+            520 KB. Sus 16 fichas traian precio y operacion y se rechazaron
+            por no llegar a FOTOS_MINIMAS.
+          - `corporacion inmobiliaria` publica
+            `<img src='https://gvamax.ar/serverdata/554/Fotos/Fi158411.554'>`.
+            Ahi fallan DOS cosas: la comilla simple, que `RE_IMG_ATRIBUTO` no
+            contemplaba, y el sufijo `.554` -el id de la agencia- que no es
+            una extension conocida. Sus 30 fichas se perdieron y lo que si
+            entraba eran cinco piezas de adorno: el logo de la plataforma, las
+            flechas del carrusel y dos sellos de colegiacion.
+
+        La regla nueva no afloja parejo, y la distincion es la que importa:
+
+          - lo que sale de un `src` de `<img>` **es una imagen por
+            construccion**, asi que exigirle extension es redundante;
+          - lo que se pesca del texto suelto con `RE_IMG` no tiene esa
+            garantia, y ahi la extension se sigue exigiendo.
+
+        Un respaldo por `Content-Type` no servia: el servidor de
+        `chambouleyron` no manda ninguno y el de `corporacion` manda
+        `image/jpeg`, asi que resolvia uno de los dos casos.
         """
-        crudas = list(RE_IMG.findall(html or ""))
+        del_texto = list(RE_IMG.findall(html or ""))
+        de_etiqueta = []
         for m in RE_IMG_ATRIBUTO.finditer(html or ""):
-            crudas.append(m.group(1).split()[0] if m.group(1).strip() else "")
+            de_etiqueta.append(_url_del_atributo(m.group(1) or m.group(2) or ""))
         salida, vistas = [], set()
-        for u in crudas:
+        for u, exige_extension in ([(x, True) for x in del_texto]
+                                   + [(x, False) for x in de_etiqueta]):
             if not u:
                 continue
             u = identidad_de_imagen(urllib.parse.urljoin(url, unescape(u.strip())))
-            if not RE_EXTENSION.search(u):
+            if exige_extension and not RE_EXTENSION.search(u):
                 continue
             if u in vistas or RE_NO_ES_FOTO.search(u):
                 continue
