@@ -249,8 +249,19 @@ RE_OPERACION_TXT = re.compile(r"\b(en venta|en alquiler|venta|alquiler|se vende|
                               r"se alquila)\b", re.I)
 # Lo que describe un inmueble y no una nota. Se piden DOS distintos:
 # "superficie" sola aparece en cualquier texto sobre el mercado.
+# `mts2` es la misma unidad que `m2` y es como la escribe media Argentina.
+# `alianza real estate` publica un terreno con «Precio: Consulte», «Area:
+# 382-mts2», «Dormitorios: 2», lista de comodidades y 16 fotos. Sin precio
+# numerico la regla exige cuatro atributos distintos y reconocia tres -bano,
+# cochera, dormitorio-; el cuarto era la superficie y no se veia.
+#
+# Se agrega la UNIDAD y no la palabra `area`. `area` aparece en prosa -«el
+# area de influencia», «gran area verde»- y aflojaria el umbral por el mismo
+# lado que este comentario ya advertia para `superficie`. Una unidad no tiene
+# ese problema.
 RE_ATRIBUTOS_TXT = re.compile(r"\b(dormitorio|ambiente|ba[nñ]o|superficie|"
-                              r"m2|m²|cubierta|cochera|antig[uü]edad)", re.I)
+                              r"m(?:ts)?2|m(?:ts)?²|cubierta|cochera|"
+                              r"antig[uü]edad)", re.I)
 RE_EDITORIAL = re.compile(r'"@type"\s*:\s*"?(Article|NewsArticle|BlogPosting)|'
                           r'property="og:type"\s+content="article"', re.I)
 # Un precio CON MONEDA al lado, que es lo que el comentario de arriba ya venia

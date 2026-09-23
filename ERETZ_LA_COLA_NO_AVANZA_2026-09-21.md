@@ -726,6 +726,36 @@ compartido, en vez de ir de a uno:
     Así que no conviene aflojar el filtro. Conviene que una página con precio,
     operación y 31 fotos pese más que una etiqueta de metadatos.
 
+    ### DESCARTADO el 2026-09-23, y la medición lo dio vuelta
+
+    Fui a escribir exactamente esa escapatoria —«si tiene precio con moneda y
+    fotos suficientes, la etiqueta `article` no manda»— y antes miré qué
+    tenían los 30 descartes editoriales:
+
+    | | tiene precio | 3+ fotos |
+    |---|---|---|
+    | `austral`, 10 páginas de archivo (**mal** rechazadas… no: bien) | **sí** | sí |
+    | `casagrande`, 18 del directorio uruguayo (bien) | no | sí |
+    | `cordoba propiedades`, 2 fichas reales (mal) | **no** | sí |
+
+    La escapatoria habría admitido las **10 páginas de archivo de categoría**
+    de `austral` —que tienen precio porque listan propiedades— y habría
+    seguido rechazando las 2 de `cordoba`, que en esa corrida tenían
+    `precio: None` justamente por el `U$D`.
+
+    O sea: el arreglo que iba a escribir invertía el resultado. Admitía las
+    equivocadas y no recuperaba las correctas.
+
+    **Queda sin arreglar, a propósito.** Cuesta 2 propiedades. La alternativa
+    era una heurística para distinguir una ficha de un listado —contar precios
+    en la página, mirar si hay un solo `<h1>`— y eso es adivinar: si se
+    calibra mal, entran diez páginas de archivo con todo su contenido mezclado.
+    Dos propiedades no pagan ese riesgo.
+
+    Lo que sí cambió: con `U$D` arreglado, la próxima corrida de `cordoba` va
+    a extraer el precio. Sigue sin entrar por la etiqueta `article`, pero el
+    defecto queda reducido a uno solo en vez de dos apilados.
+
     De paso **refuerza el ítem 17**: que `austral` enumere páginas de archivo
     de categoría en vez de fichas es consecuencia de haber caído al conector
     genérico cuando el de WordPress volvió vacío.
