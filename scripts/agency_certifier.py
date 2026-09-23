@@ -765,8 +765,52 @@ def debe_reintentar_con_generico(connector_name: str,
             and result.get("estado") != "BLOQUEADA")
 
 
+# Cuanto puede quedar por debajo del inventario ya demostrado el resultado del
+# respaldo antes de que convenga no usarlo. Ver `el_respaldo_mejora`.
+PISO_DEL_RESPALDO = 0.5
+
+
+def el_respaldo_mejora(alternate: dict[str, Any],
+                       baseline: int | None) -> bool:
+    """¿Conviene quedarse con lo que trajo `generico` en vez del connector?
+
+    El respaldo existe para un caso real y sigue siendo bueno: una plataforma
+    declarada puede haber cambiado, y su docstring cuenta el ejemplo
+    —`requenapropiedades.com.ar` es una app Laravel a la que se le habia
+    asignado el connector de WordPress—. Medido sobre todos los resultados: de
+    17 corridas que lo usaron, 14 salieron igual o mejor.
+
+    Lo que faltaba era comparar con algo. La condicion era «que haya obtenido
+    algo», y con eso alcanzaba para reemplazar una enumeracion de 196 por una
+    de 17.
+
+    `austral inmobiliaria` certifico CERTIFIED_COMPLETE el 2026-09-10 con el
+    connector de WordPress y 196 propiedades. El 2026-09-21 ese connector
+    volvio vacio —su API responde: se lo pregunte, declara X-WP-Total 200, y
+    su discover da WORDPRESS_REST soportada=true—, entro generico, trajo 17
+    recorriendo el menu, y se acepto contra un baseline de 191. Lo mismo
+    `forja propiedades`: de tokko a generico, 7 contra un baseline de 350.
+
+    La distincion es esta: un connector que vuelve vacio puede estar
+    equivocado —y entonces el respaldo es la salida— o puede haber tenido un
+    mal minuto —y entonces el respaldo es un downgrade—. El baseline los
+    separa: si la agencia ya demostro tener cientos de propiedades, 17 no es
+    «la plataforma cambio», es «algo fallo recien».
+
+    Sin baseline no hay con que comparar y se acepta, que es la conducta de
+    siempre. Es deliberado: la primera vez que se ve una agencia, cualquier
+    cosa es mejor que nada.
+    """
+    if not (alternate.get("detalles_obtenidos") or alternate.get("estado") == "OK"):
+        return False
+    if not baseline or baseline <= 0:
+        return True
+    return int(alternate.get("enumeradas") or 0) >= baseline * PISO_DEL_RESPALDO
+
+
 def run_once(connector_name: str, source: Fuente, checkpoint: Checkpoint,
-             interval: float, max_listings: int, budget: float) -> tuple[dict[str, Any], AuditDownloader]:
+             interval: float, max_listings: int, budget: float,
+             baseline: int | None = None) -> tuple[dict[str, Any], AuditDownloader]:
     downloader = AuditDownloader(LimitadorDeRitmo(interval), timeout=25,
                                  reintentos=3, limite_bytes=800_000)
     connector = CONNECTORS[connector_name](downloader, checkpoint)
@@ -774,9 +818,19 @@ def run_once(connector_name: str, source: Fuente, checkpoint: Checkpoint,
     if debe_reintentar_con_generico(connector_name, result):
         fallback = GenericoConnector(downloader, checkpoint)
         alternate = _procesar_con(fallback, source, max_listings, True, budget)
-        if alternate.get("detalles_obtenidos") or alternate.get("estado") == "OK":
+        if el_respaldo_mejora(alternate, baseline):
             alternate["fallback_from"] = connector_name
             result = alternate
+        else:
+            # Se deja constancia de que el respaldo corrio y no se uso. Sin
+            # esto el paro parece un catalogo que se achico en vez de un
+            # connector que fallo, y el diagnostico arranca mirando el lugar
+            # equivocado: fue lo que me paso con `austral`.
+            result["respaldo_descartado"] = {
+                "connector": "generico",
+                "enumeradas": int(alternate.get("enumeradas") or 0),
+                "baseline": baseline,
+            }
     checkpoint.guardar()
     return result, downloader
 
@@ -959,9 +1013,9 @@ def certify(canonical_id: str, catalog: dict[str, dict[str, Any]], output: Path,
     checkpoint = Checkpoint(packet_dir / "checkpoint.json")
     try:
         run1, download1 = run_once(connector_name, source, checkpoint, interval,
-                                   max_listings, budget)
+                                   max_listings, budget, baseline)
         run2, download2 = run_once(connector_name, source, checkpoint, interval,
-                                   max_listings, budget)
+                                   max_listings, budget, baseline)
     except Exception as error:
         result = {**base_result, "status": "NEEDS_FIX", "connector": connector_name,
                   "reasons": [f"unhandled {type(error).__name__}: {str(error)[:160]}"]}
