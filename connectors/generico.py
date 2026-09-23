@@ -411,6 +411,72 @@ def sin_marcado_comentado(html: str) -> str:
     return re.sub(r"<!--.*?-->", decidir, html or "", flags=re.S)
 
 
+RE_VENTA_CERCA = re.compile(r"\b(en\s+venta|se\s+vende|vendo|venta)\b", re.I)
+RE_ALQUILER_CERCA = re.compile(r"\b(en\s+alquiler|se\s+alquila|alquiler)\b", re.I)
+RE_TEMPORARIO_CERCA = re.compile(r"\b(temporari[oa]|temporal)\b", re.I)
+# Cuanto texto se mira a cada lado del precio. Con 60 caracteres entran las
+# formas medidas -«En venta U$S 440.000», «USD 30.000 En venta», «Venta: USD
+# 33.000»- y no entra la propiedad de al lado.
+CERCA_DEL_PRECIO = 60
+
+
+def formas_del_precio(precio: Any) -> "re.Pattern | None":
+    """El mismo numero como puede estar escrito en la pagina.
+
+    440000 se publica «440.000», «440,000» o «440 000`. Se arma el patron
+    desde el entero que ya extrajimos en vez de buscar cualquier numero:
+    anclar en ESTE precio es lo que distingue el aviso de sus vecinos.
+    """
+    try:
+        entero = int(round(float(precio)))
+    except (TypeError, ValueError):
+        return None
+    if entero <= 0:
+        return None
+    crudo, partes = str(entero), []
+    while len(crudo) > 3:
+        partes.insert(0, crudo[-3:])
+        crudo = crudo[:-3]
+    partes.insert(0, crudo)
+    cuerpo = r"[.,\s]?".join(re.escape(p) for p in partes)
+    return re.compile(rf"(?<![\d.,]){cuerpo}(?![\d])")
+
+
+def operacion_junto_al_precio(texto: str, precio: Any) -> str | None:
+    """La operacion escrita al lado del precio de ESTA propiedad.
+
+    Es la senal que distingue el aviso del resto de la pagina, y hacia falta
+    porque el menu y el buscador dicen «Venta | Alquiler` en todas las fichas
+    y dejan la ficha «ambigua» aunque el aviso lo diga clarisimo:
+
+        conti      «En venta U$S 440.000»      263 de 290 sin operacion
+        atencio    «USD 30.000 En venta»       256 de 328
+        eckert     «Venta : USD 248.800»        27 de  31
+
+    Se ancla en el precio ya extraido y no en cualquier numero: las
+    «Ultimas propiedades» del pie tienen sus propios precios y su propia
+    operacion, y son las del vecino. Por eso tampoco alcanza con mirar el
+    primer precio de la pagina.
+
+    Si las apariciones de este precio no coinciden todas en la misma
+    operacion, no devuelve nada: `bottai` publica un buscador con «Venta
+    Alquiler» y ahi la pagina no esta diciendo cual es.
+    """
+    patron = formas_del_precio(precio)
+    if patron is None or not texto:
+        return None
+    vistas: set[str] = set()
+    for m in patron.finditer(texto):
+        ventana = texto[max(0, m.start() - CERCA_DEL_PRECIO):
+                        m.end() + CERCA_DEL_PRECIO]
+        if RE_ALQUILER_CERCA.search(ventana):
+            vistas.add("alquiler_temporario"
+                       if RE_TEMPORARIO_CERCA.search(ventana) else "alquiler")
+        if RE_VENTA_CERCA.search(ventana):
+            vistas.add("venta")
+    return vistas.pop() if len(vistas) == 1 else None
+
+
 def cuerpo_principal(html: str) -> str:
     """Parte de la ficha anterior a relacionadas/footer.
 
@@ -1561,8 +1627,34 @@ class GenericoConnector(Connector):
         return plan
 
     @staticmethod
+    def _es_un_archivo(ruta: str) -> bool:
+        """Una imagen, un PDF o una hoja de estilo no es una ficha.
+
+        `building inmobiliaria` publica 77 propiedades y nosotros guardamos
+        **297**: 220 de esas eran las FOTOS. Sus imagenes cuelgan de
+        `/storage/properties/209/original_6aa2a3a24d3b3.jpg`, que para
+        `RE_FICHA_ANIDADA` es indistinguible de una ficha -seccion
+        `properties`, id `209`, un ultimo segmento cualquiera-. Cada una entro
+        como una propiedad con `titulo: None`, `operacion: None` y un precio
+        sacado de la nada: el 74 % del inventario de esa agencia era inventado.
+
+        La regla ya existia y este archivo no la usaba. `scraper/detail_urls`
+        descarta esas extensiones desde siempre; el `_es_ficha_url` de aca
+        tenia su propio criterio y nunca se entero. Por eso se importa la
+        lista de alla en vez de escribir una segunda: asi es exactamente como
+        dos copias de la misma regla terminan diciendo cosas distintas.
+        """
+        # Import diferido a proposito: `scraper.detail_urls` trae
+        # BeautifulSoup y este modulo evita pagar eso al importarse. Misma
+        # razon que en `_fichas_en`.
+        from scraper.detail_urls import _DETAIL_STATIC_EXTENSIONS
+        return ruta.lower().endswith(_DETAIL_STATIC_EXTENSIONS)
+
+    @staticmethod
     def _es_ficha_url(u: str, propia: "re.Pattern | None" = None) -> bool:
         ruta = urllib.parse.urlparse(u).path
+        if GenericoConnector._es_un_archivo(ruta):
+            return False
         return not RE_NO_FICHA.search(ruta) and bool(
             RE_FICHA.search(u) or RE_FICHA_ANIDADA.search(ruta)
             or RE_FICHA_RAIZ.search(ruta)
@@ -2165,7 +2257,7 @@ class GenericoConnector(Connector):
             "moneda": moneda,
             "operacion": (detectar_operacion(f"{titulo or ''} {url}")
                           or crudo.get("operacion_catalogo")
-                          or self._operacion_en_la_ficha(texto_campos)
+                          or self._operacion_en_la_ficha(texto_campos, precio)
                           or self._operacion_desde_title(html)),
             # El tipo tambien puede estar solo en el cuerpo. Se mira el
             # arranque de la ficha: mas abajo empiezan las "propiedades
@@ -2914,7 +3006,7 @@ class GenericoConnector(Connector):
                 if title else None)
 
     @staticmethod
-    def _operacion_en_la_ficha(texto: str) -> str | None:
+    def _operacion_en_la_ficha(texto: str, precio: Any = None) -> str | None:
         """La operacion cuando el titulo y la url no la dicen.
 
         Un tercio de las fichas de sitios propios titulan "Departamento 2
@@ -2922,6 +3014,18 @@ class GenericoConnector(Connector):
         tambien -"Ventas | Alquileres"-, asi que solo se acepta cuando aparece
         UNA de las dos operaciones en el arranque de la ficha. Si aparecen las
         dos, la pagina no esta diciendo cual es: se deja vacio antes que elegir.
+
+        El ORDEN de las cinco preguntas es el arreglo, no un detalle.
+        `alquilad[oa]` estaba antes que todo lo demas y convirtio **64
+        propiedades en venta en alquileres**: «IDEAL INVERSIONISTAS, SE VENDE
+        ALQUILADO» y «SE VENDE ALQUILADO!!!» son ventas con inquilino adentro,
+        y las publicamos como alquiler. Un dato equivocado es peor que uno
+        vacio: el que busca comprar no las ve y el que busca alquilar las ve y
+        no puede alquilarlas.
+
+        Lo que la propiedad ES manda sobre el estado en que ESTA. El estado
+        consumado sigue sirviendo -para eso se escribio- pero ultimo, cuando
+        la pagina no dijo la operacion de ninguna otra forma.
         """
         # Un rotulo explicito manda, este donde este: "Operacion: Venta" no se
         # puede confundir con el menu.
@@ -2932,22 +3036,43 @@ class GenericoConnector(Connector):
 
         if re.search(r"\balquiler\s+inicial\b", texto or "", re.I):
             return "alquiler"
-        # El estado consumado conserva la semantica de la operacion aunque el
-        # aviso ya no publique precio: "Alquilada" no debe quedar sin tipo de
-        # operacion. "Reservado" solo no alcanza porque puede ser venta o renta.
-        if re.search(r"\balquilad[oa]\b", texto or "", re.I):
-            return "alquiler"
-        if re.search(r"\bvendid[oa]\b", texto or "", re.I):
-            return "venta"
 
         arranque = (texto or "")[:600].lower()
         venta = bool(re.search(r"\b(en venta|se vende|venta)\b", arranque))
         alquiler = bool(re.search(r"\b(en alquiler|se alquila|alquiler)\b", arranque))
-        if venta == alquiler:
-            return None
-        if alquiler and re.search(r"\b(temporario|temporal)\b", arranque):
-            return "alquiler_temporario"
-        return "venta" if venta else "alquiler"
+        if venta != alquiler:
+            if alquiler and re.search(r"\b(temporario|temporal)\b", arranque):
+                return "alquiler_temporario"
+            return "venta" if venta else "alquiler"
+
+        junto_al_precio = operacion_junto_al_precio(texto, precio)
+        if junto_al_precio:
+            return junto_al_precio
+
+        # El estado consumado, y SOLO cuando el aviso ya no publica precio.
+        #
+        # Esa condicion es la que la regla decia tener y no tenia: se escribio
+        # para que «Alquilada» no dejara sin operacion a un aviso que ya no
+        # publica precio. Con precio adelante significa otra cosa. `bottai`
+        # cierra sus descripciones con el estado -«...cocina, lavadero y patio
+        # pequeno. Primer piso por escalera. Alquilado. Precio: U$S55.000»- y
+        # eso es un departamento EN VENTA con inquilino adentro: 48 de sus
+        # propiedades quedaron publicadas como alquileres de 55.000 a 250.000
+        # dolares. Lo mismo en `alma di matteo` -«IDEAL INVERSIONISTAS, SE
+        # VENDE ALQUILADO»- y en `buhler` -«En venta USD 33.000 ... Alquilado
+        # hasta 30-09-2026»-.
+        #
+        # 64 propiedades tenian el estado consumado en su texto y las 64
+        # estaban guardadas como alquiler. Con precio, el aviso esta vivo y la
+        # operacion tiene que salir de lo que el aviso dice; si no lo dice, se
+        # queda vacia. Un campo vacio se puede completar despues; uno
+        # equivocado se publica.
+        if not precio:
+            if re.search(r"\balquilad[oa]\b", texto or "", re.I):
+                return "alquiler"
+            if re.search(r"\bvendid[oa]\b", texto or "", re.I):
+                return "venta"
+        return None
 
     @staticmethod
     def _confirma_ficha(html: str, texto: str, precio, imagenes: list,

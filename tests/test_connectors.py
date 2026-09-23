@@ -1830,7 +1830,7 @@ def test_century21_lee_las_coordenadas_de_la_raiz():
 
 # ============================================================ connector generico
 from connectors.generico import (GenericoConnector, RE_FICHA,  # noqa: E402
-                                 patron_de_forma)
+                                 operacion_junto_al_precio, patron_de_forma)
 
 GEN_SITEMAP = """<?xml version="1.0"?><urlset>
 <url><loc>https://alfa.com.ar/propiedades/710944-casa-en-venta</loc></url>
@@ -4280,3 +4280,144 @@ def test_superficie_construida_en_femenino():
     assert W._superficie("Superficie construida: 150 m2", patron) == "150"
     assert W._superficie("Superficie cubierta: 150 m2", patron) == "150"
     assert W._superficie("Total construido 150 m2", patron) == "150"
+
+
+# ---------------------------------------------------------------------------
+# La operación junto al precio, y el orden de las preguntas.
+#
+# Medido sobre 73 fichas reales de 50 agencias del conector genérico, y sobre
+# las 10.985 propiedades guardadas de esa familia.
+# ---------------------------------------------------------------------------
+
+def test_MUERDE_se_vende_alquilado_es_una_venta():
+    """64 propiedades en venta quedaron guardadas como alquiler.
+
+    «IDEAL INVERSIONISTAS, SE VENDE ALQUILADO» y «SE VENDE ALQUILADO!!!» son
+    ventas con inquilino adentro: `alma di matteo` las publica a USD 79.900 y
+    USD 139.000. La regla del estado consumado —`alquilad[oa]` → alquiler—
+    estaba ANTES que todo lo demás y ganaba siempre.
+
+    Un dato equivocado es peor que uno vacío: el que busca comprar no las ve,
+    y el que busca alquilar las ve y no puede alquilarlas.
+    """
+    f = GenericoConnector._operacion_en_la_ficha
+    assert f("Quilmes Centro. IDEAL INVERSIONISTAS, SE VENDE ALQUILADO. "
+             "Se escuchan propuestas") == "venta"
+    assert f("En venta USD 33.000. Departamento Monoambiente Interno. "
+             "Alquilado hasta 30-09-2026.") == "venta"
+
+
+def test_el_estado_consumado_sigue_valiendo_cuando_es_lo_unico_que_hay():
+    """No se borró la regla: se la puso última y con la condición que decía
+    tener. Un aviso que ya no publica precio y dice «Alquilada» sigue siendo
+    un alquiler."""
+    f = GenericoConnector._operacion_en_la_ficha
+    assert f("Reservado. Alquilada. Consultar por credito hipotecario") == "alquiler"
+    assert f("Propiedad vendida. Consulte alternativas") == "venta"
+
+
+def test_MUERDE_alquilado_con_precio_adelante_no_es_un_alquiler():
+    """48 departamentos de `bottai` se publicaron como alquileres de U$S
+    55.000 a U$S 250.000.
+
+    Su ficha cierra la descripción con el estado —«Primer piso por escalera.
+    Alquilado. Precio: U$S55.000»— y no dice la operación en ningún lado. El
+    estado consumado se escribió para avisos que YA NO publican precio; con
+    precio adelante, el aviso está vivo y «Alquilado» describe al inquilino,
+    no a la operación.
+
+    Sin evidencia, el campo se queda vacío: uno vacío se completa después,
+    uno equivocado se publica.
+    """
+    f = GenericoConnector._operacion_en_la_ficha
+    bottai = ("Departamento de 1 dormitorio, living-comedor, cocina, lavadero "
+              "y patio pequeno. Primer piso por escalera. Alquilado. "
+              "Volver a la busqueda. Precio: U$S55.000")
+    assert f(bottai, 55000) is None
+    assert f(bottai) == "alquiler"  # sin precio, la regla vieja sigue valiendo
+
+
+def test_MUERDE_la_operacion_al_lado_del_precio_le_gana_al_menu():
+    """El caso de `conti` —263 de 290— y `atencio` —256 de 328—.
+
+    El menú dice «Venta Alquiler» en TODAS las fichas, así que el arranque
+    queda ambiguo y la ficha se guardaba sin operación aunque el aviso la
+    dijera pegada al precio.
+    """
+    f = GenericoConnector._operacion_en_la_ficha
+    # El menu y el precio estan separados por el encabezado de la ficha, como
+    # en las paginas reales: 60 caracteres a cada lado del precio no lo
+    # alcanzan.
+    menu = ("Inicio Propiedades Venta Alquiler Tasacion Sobre nosotros "
+            "Contacto. Inicio / Propiedades / Departamentos / ")
+    assert f(menu + "CHALET VILLA EDEN LA FALDA. En venta U$S 440.000",
+             440000) == "venta"
+    assert f(menu + "Casa en Catamarca. 1 Dorm 120 m2 USD 30.000 En venta",
+             30000) == "venta"
+    assert f(menu + "Alvear 530 Pichincha Rosario. En alquiler ARS 500.000",
+             500000) == "alquiler"
+
+
+def test_un_menu_pegado_al_precio_hace_que_se_abstenga():
+    """La duda se resuelve hacia el campo vacio, nunca hacia una mitad.
+
+    Si el sitio imprime «Venta | Alquiler» a veinte caracteres del precio, la
+    ventana ve las dos y no devuelve nada. Es el mismo criterio que el resto
+    de la funcion, y es el que hace que este rescate no pueda inventar.
+    """
+    f = GenericoConnector._operacion_en_la_ficha
+    assert f("Venta Alquiler Contacto. USD 30.000 En venta", 30000) is None
+
+
+def test_MUERDE_el_precio_del_vecino_no_decide_esta_propiedad():
+    """Las «Últimas propiedades» del pie traen su precio y su operación.
+
+    Anclar en el precio YA EXTRAÍDO es lo que separa el aviso de sus vecinos:
+    buscar cualquier número cercano a una palabra convertiría el listado del
+    pie en evidencia sobre esta ficha.
+    """
+    f = GenericoConnector._operacion_en_la_ficha
+    texto = ("Inicio Propiedades Venta Alquiler Tasacion Contacto. "
+             "Casa en Catamarca entre Lamadrid y Larrea, Victoria. "
+             "USD 30.000 En venta. Descripcion: casa de un dormitorio, "
+             "bano completo, cocina comedor y jardin posterior. Detalles. "
+             "Codigo KP575124. Enviar WhatsApp. "
+             "Ultimas Propiedades ALQUILER Departamento ARS 800.000")
+    assert f(texto, 30000) == "venta"
+    assert f(texto, 800000) == "alquiler"
+
+
+def test_una_pagina_que_no_lo_dice_sigue_sin_operacion():
+    """`bottai` publica un buscador con «Venta Alquiler» y nada más: sus 180
+    fichas se quedan sin operación, y está bien. Inventar la mitad del aviso
+    es peor que dejar el campo vacío."""
+    f = GenericoConnector._operacion_en_la_ficha
+    buscador = ("BOTTAI Inmobiliaria. Tipo de operacion seleccione Venta "
+                "Alquiler Tipo de inmueble seleccione Casas Departamentos. "
+                "GENERAL LOPEZ 2600 USD 540.000")
+    assert f(buscador, 540000) is None
+
+
+def test_operacion_junto_al_precio_reconoce_las_formas_del_numero():
+    assert operacion_junto_al_precio("En venta U$S 440.000", 440000) == "venta"
+    assert operacion_junto_al_precio("En venta USD 440,000", 440000) == "venta"
+    assert operacion_junto_al_precio("En venta USD 440000", 440000) == "venta"
+    assert operacion_junto_al_precio("En venta USD 1.440.000", 440000) is None
+    assert operacion_junto_al_precio("En venta USD 440.000", None) is None
+    assert operacion_junto_al_precio("", 440000) is None
+
+
+def test_MUERDE_una_imagen_no_es_una_ficha():
+    """`building inmobiliaria` publica 77 propiedades y guardamos 297.
+
+    220 de esas eran las FOTOS: `/storage/properties/209/original_6aa2a3.jpg`
+    tiene sección `properties`, id `209` y un último segmento, que es
+    exactamente la forma de una ficha anidada. Entraron con `titulo: None` y
+    un precio sacado del aire. El 74 % de ese inventario era inventado.
+    """
+    es = GenericoConnector._es_ficha_url
+    assert es("https://inmobiliariabuilding.com.ar/inmueble/209") is True
+    assert es("https://inmobiliariabuilding.com.ar/storage/properties/209/"
+              "original_6aa2a3a24d3b3.jpg") is False
+    assert es("https://x.test/properties/209/folleto.pdf") is False
+    assert es("https://x.test/propiedad/882/chalet-villa-eden") is True
