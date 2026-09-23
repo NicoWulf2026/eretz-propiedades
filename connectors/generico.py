@@ -31,7 +31,7 @@ from html import unescape
 from typing import Any, Iterator
 
 from .coherencia import NO_ES_FOTO, revisar
-from .texto import normalizar_campos
+from .texto import normalizar_campos, sin_bloques_no_textuales
 from .formularios import bajar_formulario
 from .base import (Bloqueado, Connector, ErrorPermanente, ErrorTransitorio,
                    Fuente, PropiedadNormalizada, a_numero, detectar_moneda,
@@ -162,7 +162,7 @@ RE_PIDE_JAVASCRIPT = re.compile(r"javascript|habilit\w*\s+js\b", re.I)
 
 def fuera_de_servicio(html: str) -> str | None:
     """El motivo por el que este host no esta sirviendo un sitio, si lo hay."""
-    cuerpo = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", html or "")
+    cuerpo = sin_bloques_no_textuales(html)
     texto = re.sub(r"\s+", " ", re.sub(r"(?s)<[^>]+>", " ", cuerpo)).strip()
     if len(texto) > TOPE_DE_PAGINA_DE_BAJA:
         return None
@@ -375,7 +375,7 @@ def _imagenes_galeria_wordpress(html: str, source_url: str) -> list[str]:
 
 
 def _texto(html: str) -> str:
-    t = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", html or "", flags=re.S | re.I)
+    t = sin_bloques_no_textuales(html)
     t = unescape(t)
     t = re.sub(r"<[^>]+>", " ", t)
     return re.sub(r"\s+", " ", unescape(t).replace("\xa0", " "))

@@ -60,6 +60,38 @@ URL = re.compile(r"^\s*(?:[a-z][a-z0-9+.-]*://|www\.)", re.I)
 SOLO_TECNICO = re.compile(r"^[\w\-.:/@+]*$")
 
 
+# Los bloques que no son texto visible, sacados de una sola vez y en un solo
+# lugar.
+#
+# Esta regla estaba escrita en trece lugares del repo y ya habian divergido:
+# `tokko.py` y `preingestion_rebuild.py` usaban `</\1\s*>` y los otros once
+# `</\1>`. Dos aprendieron algo y once no se enteraron, que es exactamente el
+# vicio que este modulo existe para evitar.
+#
+# Y la variante "tolerante" tampoco alcanzaba. `ceciliasarro.com.ar` publica:
+#
+#     <script src="...recaptcha/api.js" async defer></script </head>
+#
+# El cierre esta escrito `</script ` SIN su `>`. El navegador lo tolera; las
+# dos variantes buscan un `>` inmediato, no lo encuentran, y siguen tragando
+# hasta el SIGUIENTE `</script>` del documento. En esa pagina eso se llevo
+# 228.176 bytes de una vez: de 237.888 bytes el texto visible quedo en 212
+# caracteres, y sus 51 fichas -con el precio en el html, «U$D 45.000»- se
+# descartaron por parecer vacias.
+#
+# `\b[^>]*>` cierra en el primer `>` que aparezca despues del nombre de la
+# etiqueta, que es lo que hace cualquier parser real. Probado contra las tres
+# variantes con la estructura del caso: la estricta y la tolerante dejan el
+# texto en cero, esta lo conserva entero.
+BLOQUES_SIN_TEXTO = re.compile(r"<(script|style)[^>]*>.*?</\1\b[^>]*>",
+                               re.S | re.I)
+
+
+def sin_bloques_no_textuales(html: str | None) -> str:
+    """El documento sin `<script>` ni `<style>`, tolerando cierres rotos."""
+    return BLOQUES_SIN_TEXTO.sub(" ", html or "")
+
+
 def _es_intocable(texto: str) -> bool:
     """URLs, ids y numeros no tienen ortografia que arreglar."""
     if URL.match(texto):

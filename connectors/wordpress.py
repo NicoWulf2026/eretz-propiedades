@@ -31,6 +31,7 @@ from .base import (Bloqueado, Connector, ErrorPermanente, ErrorTransitorio,
                    Fuente, PropiedadNormalizada, a_entero, a_numero,
                    detectar_moneda, detectar_operacion, detectar_tipo, limpiar,
                    recorte_estable_de_imagenes)
+from .texto import sin_bloques_no_textuales
 
 TIPOS_INMO = ("property", "properties", "propiedad", "propiedades", "inmueble",
               "inmuebles", "listing", "listings", "estate", "houzez_property",
@@ -181,7 +182,7 @@ def _detalle_houzez(html: str, clase: str) -> str | None:
 
 
 def _texto(html: str) -> str:
-    t = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", html or "", flags=re.S | re.I)
+    t = sin_bloques_no_textuales(html)
     t = re.sub(r"<[^>]+>", " ", t)
     return re.sub(r"\s+", " ", unescape(t).replace("\xa0", " "))
 

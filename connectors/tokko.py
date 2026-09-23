@@ -31,6 +31,7 @@ from typing import Any, Iterator
 from .base import (Bloqueado, Connector, ErrorPermanente, ErrorTransitorio,
                    Fuente, PropiedadNormalizada, a_entero, a_numero,
                    detectar_moneda, detectar_operacion, detectar_tipo, limpiar)
+from .texto import sin_bloques_no_textuales
 
 RUTAS_LISTADO = ("/Propiedades", "/propiedades", "/Venta", "/venta", "/Buscar")
 
@@ -149,7 +150,7 @@ def _texto_plano(html: str) -> str:
     # (``\x01``), so no script/style block was ever removed.  Besides leaking
     # JavaScript into descriptions, that also exposed unrelated numbers to the
     # attribute parser.
-    t = re.sub(r"<(script|style)[^>]*>.*?</\1\s*>", " ", html, flags=re.S | re.I)
+    t = sin_bloques_no_textuales(html)
     t = unescape(t)
     t = re.sub(r"<[^>]+>", " ", t)
     t = unescape(t)
