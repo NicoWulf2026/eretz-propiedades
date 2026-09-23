@@ -962,9 +962,38 @@ class Connector:
                 'resolucion': resolucion.a_dict(),
             }
             prop.provincia = prop.ciudad = None
-            prop.latitud = prop.longitud = None
             Connector._marcar_descartado(prop, 'ciudad')
             Connector._marcar_descartado(prop, 'provincia')
+            # Las COORDENADAS se conservan, y el conflicto no las toca.
+            #
+            # El conflicto es entre dos campos de TEXTO: la localidad que la
+            # ficha nombra y la provincia que la ficha declara no pueden ser
+            # las dos ciertas. Eso no dice nada sobre el par lat/lon, que es
+            # evidencia independiente y la unica que no depende de como la
+            # fuente escriba los nombres.
+            #
+            # `analia requena propiedades` lo mostro el 2026-09-21: 107 de sus
+            # 152 propiedades salian sin nada de geografia, y el rastro
+            # guardaba `latitud -37.8326665, longitud -57.4969484` para una
+            # ficha de Santa Clara del Mar. Las coordenadas eran CORRECTAS; lo
+            # que estaba mal era la provincia publicada, «Ciudad Autonoma de
+            # Buenos Aires», que es un valor de plantilla. Se tiraba el dato
+            # bueno por culpa del malo.
+            #
+            # Medido sobre los 23.955 registros de todos los paquetes: 230
+            # propiedades tienen un conflicto registrado y 163 de ellas TENIAN
+            # coordenadas que se borraron, en 7 agencias -analia requena 107,
+            # cantale 34, agustin zlotnik 11, agostinelli 8-.
+            #
+            # Y ademas se borraban SIN marcarlas descartadas, asi que el
+            # auditor de campos las reportaba como EXTRACTION_FAILED: el paro
+            # acusaba a la extraccion de no haber leido algo que si habia
+            # leido. Eso tambien se termina, porque ya no se borran.
+            #
+            # Una propiedad sin provincia ni ciudad pero CON coordenadas se
+            # puede ubicar; sin ellas no se puede ubicar de ninguna manera.
+            # Si algun dia las coordenadas fueran las que contradicen, ese es
+            # otro veredicto -`CONTRADICTED_BY_COORDINATES`- y se trata aparte.
             Connector._escribir_dimensiones(prop, None, resolucion, desde_barrio, publicada)
             prop.geo['estado_geografico'] = GEO_CONFLICT
             return

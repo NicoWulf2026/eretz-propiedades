@@ -112,16 +112,42 @@ def test_alias_does_not_bypass_conflicting_province(city, province, geo):
 
 
 def test_explicit_locality_province_conflict_preserves_evidence_not_assertions():
+    """Lo que se deja caer son las AFIRMACIONES, no la evidencia.
+
+    Cambio del 2026-09-23: las coordenadas ahora se CONSERVAN. Antes se
+    borraban junto con la ciudad y la provincia, y eso contradecia el nombre
+    de este mismo test.
+
+    En el escenario de aca se ve solo: `-34.92, -57.95` ES La Plata. O sea que
+    las coordenadas corroboran la localidad que la ficha nombra y desmienten
+    la provincia que declara. Tirarlas era descartar al unico testigo que no
+    depende de como la fuente escriba los nombres.
+
+    Lo que el test protegia de verdad sigue intacto y se sigue afirmando mas
+    abajo: `area_busqueda` queda en `SIN_AREA`. Con la ciudad y la provincia
+    caidas el sistema no ubica la propiedad en ninguna faceta buscable, asi
+    que conservar el par lat/lon no afirma nada; solo evita perderlo.
+
+    Medido: 163 propiedades en 7 agencias tenian coordenadas y las perdian por
+    un conflicto entre dos campos de texto.
+    """
     from connectors.base import Connector, Fuente
     prop = _resolver(_propiedad(titulo='Casa real', ciudad='La Plata',
                                 provincia='Ciudad Autónoma de Buenos Aires',
                                 latitud=-34.92, longitud=-57.95))
     assert prop.ciudad is None and prop.provincia is None
-    assert prop.latitud is None and prop.longitud is None
+    assert prop.latitud == -34.92 and prop.longitud == -57.95
     assert prop.geo['estado_geografico'] == 'GEO_CONFLICT'
     assert prop.geo['area_busqueda']['nivel'] == 'SIN_AREA'
     assert prop.extra['geo_conflicto']['publicado']['localidad'] == 'La Plata'
     assert prop.extra['geo_conflicto']['publicado']['provincia'] == 'Ciudad Autónoma de Buenos Aires'
+    # Y no se marcan descartadas, porque no se descartaron: solo `ciudad` y
+    # `provincia` lo estan. Mientras se borraban SIN marcar, el auditor las
+    # reportaba como EXTRACTION_FAILED y el paro acusaba a la extraccion de
+    # no haber leido algo que si habia leido.
+    descartados = (prop.extra.get('atributos_descartados') or '').split(',')
+    assert 'latitud' not in descartados and 'longitud' not in descartados
+    assert sorted(x for x in descartados if x) == ['ciudad', 'provincia']
     assert prop.titulo == 'Casa real'
     Connector().completar_ubicacion(prop, Fuente('a', 'Agencia', 'https://a.test',
                                               extra={'province': 'Ciudad Autónoma de Buenos Aires'}))
@@ -438,3 +464,38 @@ def test_un_ampersand_literal_no_es_una_entidad():
     """`Villa A & B` tiene un `&` y ninguna entidad: tiene que quedar igual."""
     prop = _resolver(_propiedad(barrio="Villa A & B"))
     assert prop.barrio == "Villa A & B"
+
+
+def test_MUERDE_el_caso_analia_requena():
+    """107 de 152 propiedades salian sin nada de geografia.
+
+    El rastro guardaba `latitud -37.8326665, longitud -57.4969484` para una
+    ficha de Santa Clara del Mar, y las coordenadas eran CORRECTAS: lo que
+    estaba mal era la provincia publicada, «Ciudad Autonoma de Buenos Aires»,
+    que es un valor de plantilla. Se tiraba el dato bueno por culpa del malo.
+
+    Medido sobre los 23.955 registros de todos los paquetes: 230 propiedades
+    tienen un conflicto registrado y 163 tenian coordenadas que se borraban,
+    en 7 agencias.
+    """
+    prop = _resolver(_propiedad(ciudad='Santa Clara del Mar',
+                                provincia='Ciudad Autónoma de Buenos Aires',
+                                latitud=-37.8326665, longitud=-57.4969484))
+    assert prop.extra.get('geo_conflicto'), "el conflicto tiene que seguir viendose"
+    assert prop.latitud == -37.8326665
+    assert prop.longitud == -57.4969484
+    # Y la evidencia de lo publicado sigue guardada, como antes.
+    publicado = prop.extra['geo_conflicto']['publicado']
+    assert publicado['localidad'] == 'Santa Clara del Mar'
+    assert publicado['provincia'] == 'Ciudad Autónoma de Buenos Aires'
+
+
+def test_MUERDE_el_conflicto_sigue_sin_afirmar_un_area():
+    """La garantia que no se puede perder al conservar las coordenadas: una
+    propiedad en conflicto no entra en ninguna faceta de busqueda."""
+    prop = _resolver(_propiedad(ciudad='La Plata',
+                                provincia='Ciudad Autónoma de Buenos Aires',
+                                latitud=-34.92, longitud=-57.95))
+    assert prop.geo['estado_geografico'] == 'GEO_CONFLICT'
+    assert prop.geo['area_busqueda']['nivel'] == 'SIN_AREA'
+    assert prop.ciudad is None and prop.provincia is None
