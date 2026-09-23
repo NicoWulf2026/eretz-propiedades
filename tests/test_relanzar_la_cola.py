@@ -233,3 +233,208 @@ def test_MUERDE_si_el_precedente_no_cubre_ESE_paro_no_se_relanza(tmp_path, monke
     faltan, motivo = modulo.decidir(tmp_path)
     assert faltan == []
     assert "ninguna cubre este paro" in motivo
+
+
+# ---------------------------------------------------------------------------
+# Un paro FAMILIA detiene una familia, no la cola entera.
+#
+# El 2026-09-21 un paro FAMILIA sin firmar dejó los dos workers detenidos
+# 34 horas. No relanzar sin diferida firmada estaba bien y sigue igual; lo
+# desproporcionado era el alcance. Medido sobre todo el historial: de 613
+# paros STOP, **596 son FAMILIA y 17 COMPARTIDO**, y sobre las 791 agencias de
+# la cola `ready` detener `generico` deja corriendo el 53,7 %, `tokko` el
+# 62,2 %, `wordpress` el 85,6 % y `wasi` el 98,5 %.
+# ---------------------------------------------------------------------------
+
+def poner_paro_de_familia(salida: Path, agencia="roomix:fios",
+                          conector="tokko", radio="FAMILIA",
+                          cuando=None) -> None:
+    (salida / "AGENCY_CERTIFICATION_STOP.json").write_text(json.dumps({
+        "canonical_agency_id": agencia, "componente": "perdida_de_inventario",
+        "radio": radio, "conector": conector,
+        "cuando": cuando or ahora(-3600)}), encoding="utf-8")
+
+
+def test_MUERDE_un_paro_FAMILIA_deja_correr_a_las_demas_familias(tmp_path):
+    """El caso de las 34 horas.
+
+    La familia sospechada no se toca; las otras sí. Detener el 100 % de la
+    cola por sospechar del 35 % del código es desproporcionado en el 97 % de
+    los paros, que es la proporción medida de paros FAMILIA.
+    """
+    import relanzar_la_cola as modulo
+    poner_paro_de_familia(tmp_path, conector="tokko")
+    faltan, motivo, excluir = modulo.plan(tmp_path)
+    assert faltan == [0, 1], motivo
+    assert excluir == ["tokko"]
+    assert "tokko" in motivo
+
+
+def test_MUERDE_un_paro_COMPARTIDO_sigue_deteniendo_todo(tmp_path):
+    """La mitad que no se relaja.
+
+    COMPARTIDO sospecha del código que todas las familias comparten: excluir
+    una sola no acota nada y el resto correría con el código sospechado.
+    """
+    import relanzar_la_cola as modulo
+    poner_paro_de_familia(tmp_path, conector="tokko", radio="COMPARTIDO")
+    faltan, motivo, excluir = modulo.plan(tmp_path)
+    assert faltan == []
+    assert excluir == []
+    assert "sin diagnosticar" in motivo
+
+
+def test_MUERDE_un_paro_FAMILIA_sin_conector_anotado_detiene_todo(tmp_path):
+    """Sin saber QUÉ familia, «acotar» sería adivinar.
+
+    Las banderas viejas no traen `conector`. Ante la duda, el comportamiento
+    de antes: detener todo.
+    """
+    import relanzar_la_cola as modulo
+    poner_paro(tmp_path)  # radio FAMILIA, sin conector
+    faltan, motivo, excluir = modulo.plan(tmp_path)
+    assert faltan == []
+    assert excluir == []
+
+
+def test_una_bandera_ilegible_no_se_acota_a_ninguna_familia(tmp_path):
+    import relanzar_la_cola as modulo
+    (tmp_path / "AGENCY_CERTIFICATION_STOP.json").write_text(
+        "{roto", encoding="utf-8")
+    assert modulo.plan(tmp_path)[0] == []
+
+
+def test_MUERDE_la_familia_sigue_detenida_cuando_la_bandera_ya_no_esta(tmp_path):
+    """El agujero que haría inútil todo esto.
+
+    El runner BORRA la bandera al arrancar. Sin el libro, el primer
+    relanzamiento consumiría el paro y el siguiente volvería a correr la
+    familia sospechada como si nada: acotar el fail-closed se habría
+    convertido en perderlo.
+    """
+    import relanzar_la_cola as modulo
+    poner_paro_de_familia(tmp_path, conector="wordpress")
+    modulo.plan(tmp_path, anotar=True)
+    (tmp_path / "AGENCY_CERTIFICATION_STOP.json").unlink()
+
+    faltan, motivo, excluir = modulo.plan(tmp_path)
+    assert faltan == [0, 1]
+    assert excluir == ["wordpress"], motivo
+
+
+def test_la_familia_vuelve_a_correr_con_una_diferida_firmada_despues(tmp_path):
+    """La otra mitad: firmado el diagnóstico, la familia se reincorpora."""
+    import relanzar_la_cola as modulo
+    poner_paro_de_familia(tmp_path, agencia="roomix:fios",
+                          conector="wordpress", cuando=ahora(-3600))
+    modulo.plan(tmp_path, anotar=True)
+    (tmp_path / "AGENCY_CERTIFICATION_STOP.json").unlink()
+    poner_diferida(tmp_path, agencia="roomix:fios", cuando=ahora(-60))
+
+    faltan, motivo, excluir = modulo.plan(tmp_path)
+    assert faltan == [0, 1]
+    assert excluir == [], motivo
+
+
+def test_el_dry_run_no_anota_familias(tmp_path):
+    """Decir qué haría no puede cambiar el estado."""
+    import relanzar_la_cola as modulo
+    poner_paro_de_familia(tmp_path, conector="tokko")
+    _, _, excluir = modulo.plan(tmp_path, anotar=False)
+    assert excluir == ["tokko"]
+    assert not (tmp_path / modulo.LIBRO_DE_FAMILIAS).exists()
+
+
+def test_anotar_dos_veces_el_mismo_paro_no_duplica(tmp_path):
+    import relanzar_la_cola as modulo
+    poner_paro_de_familia(tmp_path, conector="tokko")
+    modulo.plan(tmp_path, anotar=True)
+    modulo.plan(tmp_path, anotar=True)
+    lineas = [l for l in (tmp_path / modulo.LIBRO_DE_FAMILIAS).read_text(
+        encoding="utf-8").splitlines() if l.strip()]
+    assert len(lineas) == 1
+
+
+def test_MUERDE_la_exclusion_llega_al_comando_del_worker(tmp_path, monkeypatch):
+    """Decidir excluir sin pasárselo al runner sería un arreglo de mentira."""
+    import relanzar_la_cola as modulo
+    capturado = {}
+
+    class FalsoProceso:
+        pid = 4242
+
+    def falso_popen(comando, **kwargs):
+        capturado["comando"] = comando
+        return FalsoProceso()
+
+    monkeypatch.setattr(modulo.subprocess, "Popen", falso_popen)
+    modulo.lanzar(0, tmp_path, ["tokko", "wordpress"])
+    comando = capturado["comando"]
+    assert comando.count("--excluir-conector") == 2
+    assert comando[comando.index("--excluir-conector") + 1] == "tokko"
+    assert "wordpress" in comando
+
+
+def test_sin_familias_detenidas_el_comando_queda_como_estaba(tmp_path, monkeypatch):
+    import relanzar_la_cola as modulo
+    capturado = {}
+
+    class FalsoProceso:
+        pid = 1
+
+    monkeypatch.setattr(modulo.subprocess, "Popen",
+                        lambda c, **k: (capturado.update(comando=c),
+                                        FalsoProceso())[1])
+    modulo.lanzar(1, tmp_path)
+    assert "--excluir-conector" not in capturado["comando"]
+
+
+def poner_triaje(salida: Path, agencia="roomix:fios",
+                 componente="perdida_de_inventario", conector="generico",
+                 cuando=None, radio="FAMILIA") -> None:
+    with (salida / "AGENCY_DEFECT_QUEUE.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"canonical_agency_id": agencia,
+                             "decision": "STOP",
+                             "componente_sospechoso": componente,
+                             "radio_estimado": radio,
+                             "connector": conector,
+                             "cuando": cuando}) + "\n")
+
+
+def test_MUERDE_una_bandera_vieja_saca_el_conector_del_triaje(tmp_path):
+    """El caso real del 2026-09-23 a las 12:29.
+
+    Los dos workers estaban corriendo el código anterior, así que `alagna`
+    paró con una bandera sin `conector`. El triaje SÍ lo había anotado —
+    `generico`— en su propia entrada, con la misma hora exacta.
+    """
+    import relanzar_la_cola as modulo
+    cuando_paro = ahora(-600)
+    poner_paro(tmp_path, agencia="roomix:alagna", cuando=cuando_paro)
+    poner_triaje(tmp_path, agencia="roomix:alagna", conector="generico",
+                 cuando=cuando_paro)
+    faltan, motivo, excluir = modulo.plan(tmp_path)
+    assert excluir == ["generico"], motivo
+    assert faltan == [0, 1]
+
+
+def test_MUERDE_una_entrada_de_triaje_de_OTRO_paro_no_sirve(tmp_path):
+    """Coincidir en agencia y componente no alcanza: la hora también.
+
+    Si bastara con la agencia, un paro de hoy heredaría el conector de uno de
+    hace dos semanas y se excluiría la familia equivocada —dejando correr la
+    sospechada—, que es peor que no acotar nada.
+    """
+    import relanzar_la_cola as modulo
+    poner_paro(tmp_path, agencia="roomix:alagna", cuando=ahora(-600))
+    poner_triaje(tmp_path, agencia="roomix:alagna", conector="generico",
+                 cuando=ahora(-99999))
+    faltan, motivo, excluir = modulo.plan(tmp_path)
+    assert excluir == []
+    assert faltan == []
+
+
+def test_sin_entrada_de_triaje_se_detiene_todo_como_antes(tmp_path):
+    import relanzar_la_cola as modulo
+    poner_paro(tmp_path, cuando=ahora(-600))
+    assert modulo.plan(tmp_path)[0] == []

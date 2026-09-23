@@ -214,3 +214,73 @@ def test_con_sin_estado_no_escribe_absolutamente_nada(entorno, capsys):
     finally:
         sys.argv = argv
     assert sorted(p.name for p in entorno.iterdir()) == antes
+
+
+# --- familias detenidas -------------------------------------------------
+#
+# El relanzador ahora acota un paro FAMILIA a su conector en vez de detener la
+# cola entera. Eso deja un agujero de vigilancia nuevo: el relanzamiento
+# CONSUME la bandera, así que el vigilante vería workers vivos, ninguna
+# bandera, y diría OK mientras una familia —hasta el 35 % de la cola, si es
+# `generico`— sigue sin tocarse. Sería el 2026-09-21 otra vez, más silencioso.
+
+
+def poner_familia(d, conector="generico", agencia="roomix:alguna",
+                  horas_atras=20.0):
+    with (d / "ERETZ_FAMILIAS_DETENIDAS.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"canonical_agency_id": agencia,
+                             "componente": "perdida_de_inventario",
+                             "radio": "FAMILIA", "conector": conector,
+                             "cuando": cuando(horas_atras * 60)},
+                            ensure_ascii=False) + "\n")
+
+
+def test_MUERDE_una_familia_detenida_hace_horas_no_puede_leerse_como_OK(
+        entorno, capsys):
+    poner_worker(entorno, 0, vivo=True)
+    poner_familia(entorno, conector="generico", horas_atras=20)
+    salida, estado = correr(capsys)
+    assert estado["stop_state"] == "FAMILIA_DETENIDA", salida
+    assert "generico" in estado["stop_signature"]
+    assert estado["detained_families"][0]["conector"] == "generico"
+
+
+def test_una_familia_recien_detenida_todavia_no_alarma(entorno, capsys):
+    """Dentro del umbral no interrumpe a nadie, pero se ve igual."""
+    poner_worker(entorno, 0, vivo=True)
+    poner_familia(entorno, horas_atras=1)
+    salida, estado = correr(capsys)
+    assert estado["stop_state"] == "OK"
+    assert estado["detained_families"][0]["horas"] == pytest.approx(1, abs=0.2)
+
+
+def test_MUERDE_una_familia_con_diferida_firmada_despues_deja_de_contar(
+        entorno, capsys):
+    """Firmado el diagnóstico, la familia volvió a la cola: no hay nada que
+    vigilar, y seguir avisando entrenaría a ignorar los avisos."""
+    poner_worker(entorno, 0, vivo=True)
+    poner_familia(entorno, agencia="roomix:alguna", horas_atras=20)
+    with (entorno / "AGENCY_DEFECTS_DIFERIDOS.jsonl").open(
+            "a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"canonical_agency_id": "roomix:alguna",
+                             "componente": "perdida_de_inventario",
+                             "cuando": cuando(10)}) + "\n")
+    salida, estado = correr(capsys)
+    assert estado["stop_state"] == "OK"
+    assert not estado.get("detained_families")
+
+
+def test_una_familia_detenida_alerta_y_se_deduplica_por_conjunto(entorno):
+    """Dos familias distintas son dos episodios; la misma, uno solo."""
+    una = {"stop_state": "FAMILIA_DETENIDA", "stop_signature": "familia tokko"}
+    otra = {"stop_state": "FAMILIA_DETENIDA",
+            "stop_signature": "familia generico, tokko"}
+    assert v.clave_de_alerta(una) is not None
+    assert v.clave_de_alerta(una) != v.clave_de_alerta(otra)
+    ahora = time.time()
+    hay, _ = v.decidir_alerta(una, {"alert_key": v.clave_de_alerta(una),
+                                    "last_alert_at": cuando(5)}, ahora, 60)
+    assert hay is False
+    hay, _ = v.decidir_alerta(otra, {"alert_key": v.clave_de_alerta(una),
+                                     "last_alert_at": cuando(5)}, ahora, 60)
+    assert hay is True

@@ -42,6 +42,20 @@ Un paro se considera atendido cuando hay una diferida firmada para esa agencia
 escrita DESPUES del paro. No alcanza con que exista una diferida vieja: si el
 paro es posterior, es informacion nueva.
 
+**Pero detiene la familia, no la cola.** El 2026-09-21 un paro FAMILIA sin
+firmar dejo los dos workers parados 34 horas. La regla estaba bien; el alcance
+no: de 613 paros STOP del historial, **596 son FAMILIA y 17 COMPARTIDO**, y
+sobre la cola `ready` de verdad -791 agencias- detener `generico` deja
+corriendo el 53,7 %, `tokko` el 62,2 %, `wordpress` el 85,6 % y `wasi` el
+98,5 %.
+
+Asi que un paro FAMILIA con conector conocido relanza con
+`--excluir-conector`: esa familia no se toca hasta que su paro este firmado -y
+queda anotada en `ERETZ_FAMILIAS_DETENIDAS` para que siga sin tocarse despues,
+porque el runner borra la bandera al arrancar-, y las demas avanzan. Un paro
+COMPARTIDO, uno sin conector anotado o una bandera ilegible siguen deteniendo
+todo.
+
 **Nunca mas de 2 workers.** Se comprueba tres veces, y ninguna sobra: aca antes
 de lanzar, el `MultipleInstancesPolicy: IgnoreNew` de la tarea, y el cerrojo
 por worker del propio runner, que verifica PID vivo y latido.
@@ -240,37 +254,193 @@ def intentar_precedente(salida: Path) -> int:
     return len(lista)
 
 
-def decidir(salida: Path) -> tuple[list[int], str]:
-    """Que workers lanzar, y por que no los otros."""
+# Que familias quedaron detenidas y todavia no tienen diferida firmada.
+#
+# Hace falta un libro propio porque la bandera de paro es EFIMERA: el runner
+# la borra al arrancar (`run_agency_certification_queue.py`, "una bandera de
+# una corrida anterior no puede frenar la siguiente"). Sin este archivo, el
+# primer relanzamiento consumiria el paro y el siguiente volveria a correr la
+# familia sospechada como si nada hubiera pasado. Eso no seria acotar el
+# fail-closed: seria perderlo.
+LIBRO_DE_FAMILIAS = "ERETZ_FAMILIAS_DETENIDAS.jsonl"
+
+
+def conector_del_triaje(salida: Path, paro: dict[str, Any]) -> str | None:
+    """El conector que el TRIAJE anoto para este mismo paro.
+
+    Hace falta porque la bandera no siempre lo trae: un worker que arranco
+    antes del cambio escribe la bandera vieja, y el 2026-09-23 a las 12:29
+    `alagna propiedades` paro asi -sin `conector`- con los dos workers en
+    memoria del codigo anterior.
+
+    No es adivinar. Se busca la entrada STOP de `AGENCY_DEFECT_QUEUE.jsonl`
+    que coincida en las TRES cosas -agencia, componente y hora exacta- y se
+    toma el conector que el triaje ya habia anotado ahi. Si no hay una que
+    coincida entera, devuelve None y se detiene todo, como antes.
+    """
+    ruta = salida / "AGENCY_DEFECT_QUEUE.jsonl"
+    if not ruta.exists():
+        return None
+    for linea in ruta.open(encoding="utf-8", errors="replace"):
+        linea = linea.strip()
+        if not linea:
+            continue
+        try:
+            fila = json.loads(linea)
+        except ValueError:
+            continue
+        if fila.get("decision") != "STOP":
+            continue
+        if fila.get("canonical_agency_id") != paro.get("canonical_agency_id"):
+            continue
+        if fila.get("componente_sospechoso") != paro.get("componente"):
+            continue
+        if str(fila.get("cuando") or "")[:19] != str(paro.get("cuando") or "")[:19]:
+            continue
+        if str(fila.get("radio_estimado") or "").upper() != "FAMILIA":
+            continue
+        conector = str(fila.get("connector") or "").strip().lower()
+        if conector:
+            return conector
+    return None
+
+
+def familia_de(paro: dict[str, Any] | None,
+               salida: Path | None = None) -> str | None:
+    """El conector del que sospecha un paro, si se puede acotar a uno.
+
+    Un paro de radio FAMILIA sospecha de UN conector; uno COMPARTIDO sospecha
+    del codigo que todos comparten. Confundirlos cuesta caro en una direccion
+    y es peligroso en la otra, asi que esto acota solo el primero y devuelve
+    `None` -o sea, detener todo- ante cualquier duda: otro radio, un paro sin
+    conector anotado, o un archivo ilegible.
+    """
+    if not isinstance(paro, dict):
+        return None
+    if str(paro.get("radio") or "").upper() != "FAMILIA":
+        return None
+    conector = str(paro.get("conector") or "").strip().lower()
+    if not conector and salida is not None:
+        conector = conector_del_triaje(salida, paro) or ""
+    return conector or None
+
+
+def familias_pendientes(salida: Path) -> list[dict[str, Any]]:
+    """Las anotaciones del libro que siguen sin diferida firmada."""
+    ruta = salida / LIBRO_DE_FAMILIAS
+    if not ruta.exists():
+        return []
+    pendientes: list[dict[str, Any]] = []
+    for linea in ruta.open(encoding="utf-8", errors="replace"):
+        linea = linea.strip()
+        if not linea:
+            continue
+        try:
+            fila = json.loads(linea)
+        except ValueError:
+            continue
+        if not fila.get("conector"):
+            continue
+        if paro_atendido(salida, fila):
+            continue
+        pendientes.append(fila)
+    return pendientes
+
+
+def anotar_familia(salida: Path, paro: dict[str, Any], conector: str) -> bool:
+    """Deja escrito que esta familia queda detenida. Idempotente por paro."""
+    clave = (paro.get("canonical_agency_id"), paro.get("componente"),
+             paro.get("cuando"))
+    for fila in familias_pendientes(salida):
+        if (fila.get("canonical_agency_id"), fila.get("componente"),
+                fila.get("cuando")) == clave:
+            return False
+    with (salida / LIBRO_DE_FAMILIAS).open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps({
+            "canonical_agency_id": paro.get("canonical_agency_id"),
+            "componente": paro.get("componente"),
+            "radio": paro.get("radio"),
+            "conector": conector,
+            "cuando": paro.get("cuando"),
+            "anotado": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "database_writes": 0}, ensure_ascii=False) + "\n")
+    return True
+
+
+def plan(salida: Path, anotar: bool = False) -> tuple[list[int], str, list[str]]:
+    """Que workers lanzar, por que no los otros, y que familias no tocar.
+
+    Un paro de radio FAMILIA sospecha de UN conector, no de la cola entera.
+    Medido sobre todo el historial: de 613 paros STOP, **596 son FAMILIA y 17
+    COMPARTIDO**. Y una familia no es la cola: sobre las 791 agencias de la
+    cola `ready`, detener `generico` deja corriendo el 53,7 %, `tokko` el
+    62,2 %, `wordpress` el 85,6 % y `wasi` el 98,5 %.
+
+    El 2026-09-21 un paro FAMILIA sin firmar dejo los dos workers detenidos
+    **34 horas**. No relanzar sin diferida firmada estaba bien y sigue igual;
+    lo desproporcionado era el alcance: detener el 100 % de la cola por
+    sospechar de una familia, en el 97 % de los paros.
+
+    El fail-closed se conserva donde importa. La familia sospechada NO se
+    toca hasta que su paro este diagnosticado y firmado -y queda anotada en
+    `LIBRO_DE_FAMILIAS` para que siga sin tocarse en los relanzamientos
+    siguientes, cuando la bandera ya no exista-. Lo que cambia es que las
+    demas avanzan. Un paro COMPARTIDO, uno sin conector o una bandera
+    ilegible siguen deteniendo todo.
+    """
+    bloqueadas = {str(f["conector"]).strip().lower()
+                  for f in familias_pendientes(salida)}
     paro = paro_vigente(salida)
+    motivo_extra = ""
     if paro is not None and not paro_atendido(salida, paro):
         escritas = intentar_precedente(salida)
         if escritas:
             paro = paro_vigente(salida)
         if paro is not None and not paro_atendido(salida, paro):
-            return [], (f"paro sin diagnosticar en "
-                        f"{paro.get('canonical_agency_id')} "
-                        f"({paro.get('componente')}, radio "
-                        f"{paro.get('radio')}): no se relanza hasta que haya "
-                        f"una diferida firmada"
-                        + (f" (se escribieron {escritas} por precedente, "
-                           f"ninguna cubre este paro)" if escritas else ""))
+            familia = familia_de(paro, salida)
+            if not familia:
+                return [], (f"paro sin diagnosticar en "
+                            f"{paro.get('canonical_agency_id')} "
+                            f"({paro.get('componente')}, radio "
+                            f"{paro.get('radio')}): no se relanza hasta que "
+                            f"haya una diferida firmada"
+                            + (f" (se escribieron {escritas} por precedente, "
+                               f"ninguna cubre este paro)"
+                               if escritas else "")), []
+            if anotar:
+                anotar_familia(salida, paro, familia)
+            bloqueadas.add(familia)
+            motivo_extra = (f"; paro FAMILIA sin diagnosticar en "
+                            f"{paro.get('canonical_agency_id')} "
+                            f"({paro.get('componente')})")
+    excluir = sorted(bloqueadas)
+    if excluir:
+        motivo_extra += f"; sin los conectores {', '.join(excluir)}"
     limpiar_cerrojos_huerfanos(salida, aplicar=True)
     vivos = workers_vivos(salida)
     faltan = [w for w in range(WORKERS) if w not in vivos]
     if not faltan:
-        return [], f"los {WORKERS} workers ya estan vivos: {vivos}"
+        return [], f"los {WORKERS} workers ya estan vivos: {vivos}{motivo_extra}", excluir
     return faltan, (f"faltan {len(faltan)} de {WORKERS}"
-                    + (f"; vivos: {vivos}" if vivos else ""))
+                    + (f"; vivos: {vivos}" if vivos else "")
+                    + motivo_extra), excluir
 
 
-def lanzar(worker: int, salida: Path) -> int:
+def decidir(salida: Path) -> tuple[list[int], str]:
+    """Que workers lanzar, y por que no los otros."""
+    faltan, motivo, _ = plan(salida)
+    return faltan, motivo
+
+
+def lanzar(worker: int, salida: Path, excluir: list[str] | None = None) -> int:
     """Un worker desprendido, con su log propio."""
     log = salida / f"cola_w{worker}.log"
     comando = [sys.executable, "-u",
                str(RAIZ / "scripts" / "run_agency_certification_queue.py"),
                "--ready", "--workers", str(WORKERS), "--worker", str(worker),
                "--limit", "0"]
+    for conector in (excluir or []):
+        comando += ["--excluir-conector", conector]
     with log.open("a", encoding="utf-8", errors="replace") as fh:
         fh.write(f"\n=== relanzado por relanzar_la_cola.py "
                  f"{time.strftime('%Y-%m-%dT%H:%M:%S')} ===\n")
@@ -289,12 +459,14 @@ def main() -> int:
     args = ap.parse_args()
     salida = Path(args.salida)
 
-    faltan, motivo = decidir(salida)
+    faltan, motivo, excluir = plan(salida, anotar=args.lanzar)
     print(f"{time.strftime('%Y-%m-%dT%H:%M:%S')}  {motivo}")
     if not faltan:
         print("nada que lanzar")
         return 0
     print(f"a lanzar: workers {faltan}")
+    if excluir:
+        print(f"familias detenidas, no se tocan: {', '.join(excluir)}")
     if not args.lanzar:
         print("\n  DRY-RUN. Para lanzar de verdad: --lanzar")
         print("\ndatabase_writes: 0")
@@ -303,13 +475,14 @@ def main() -> int:
     lanzados = {}
     for worker in faltan:
         try:
-            lanzados[worker] = lanzar(worker, salida)
+            lanzados[worker] = lanzar(worker, salida, excluir)
         except OSError as error:
             print(f"  worker {worker}: NO se pudo lanzar ({error})")
     with BITACORA.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps({
             "cuando": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "motivo": motivo, "lanzados": lanzados,
+            "conectores_excluidos": excluir,
             "database_writes": 0}, ensure_ascii=False) + "\n")
     for worker, pid in lanzados.items():
         print(f"  worker {worker} -> pid {pid}")

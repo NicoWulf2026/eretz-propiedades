@@ -275,6 +275,12 @@ def pedir_paro(output: Path, canonical_id: str, triage: dict[str, Any]) -> None:
         "canonical_agency_id": canonical_id,
         "componente": triage.get("componente_sospechoso"),
         "radio": triage.get("radio_estimado"),
+        # El conector de la agencia que paro. Es lo que convierte un radio
+        # FAMILIA en una familia concreta: sin esto, el relanzador solo sabe
+        # que hay que sospechar de "una familia" y termina deteniendo la cola
+        # entera. Ver `--excluir-conector`.
+        "conector": triage.get("connector"),
+        "connector_strategy": triage.get("connector_strategy"),
         "evidencia": triage.get("evidencia"),
         "cuando": time.strftime("%Y-%m-%dT%H:%M:%S")})
 
@@ -692,6 +698,20 @@ def bucket(record: dict[str, dict[str, Any]]) -> str:
     return "large"
 
 
+def sin_las_familias(queue: list[str], catalog: dict[str, dict[str, Any]],
+                     excluidos: set[str]) -> list[str]:
+    """La cola sin las agencias de los conectores bajo sospecha.
+
+    Saca familias enteras, no agencias sueltas: un paro de radio FAMILIA
+    sospecha del extractor, y el extractor es el mismo para todas las
+    agencias de esa familia. Una agencia sin conector resoluble se queda -no
+    se puede afirmar que pertenezca a la familia detenida-.
+    """
+    return [canonical_id for canonical_id in queue
+            if str(choose_connector(catalog[canonical_id])).strip().lower()
+            not in excluidos]
+
+
 def pilot_queue(catalog: dict[str, dict[str, Any]], limit: int) -> list[str]:
     groups: dict[tuple[str, str], list[str]] = defaultdict(list)
     for canonical_id in sorted(catalog):
@@ -896,6 +916,12 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=0,
                         help="cuantas inmobiliarias procesar en esta corrida "
                              "(0 = hasta agotar la cola)")
+    parser.add_argument("--excluir-conector", action="append", default=[],
+                        metavar="CONECTOR",
+                        help="no procesar las agencias de este conector. Se "
+                             "puede repetir. Sirve para que un paro de radio "
+                             "FAMILIA deje trabajando al resto de la cola en "
+                             "vez de detenerla entera.")
     args = parser.parse_args()
     if not 1 <= args.workers <= WORKERS_MAXIMO:
         raise SystemExit(
@@ -922,6 +948,36 @@ def main() -> int:
         queue, mode_name = ready_queue(catalog), "ready"
     else:
         queue, mode_name = full_queue(catalog), "full"
+    # Un paro de radio FAMILIA sospecha de UN conector, no de la cola entera.
+    #
+    # Medido el 2026-09-23 sobre todo el historial: de 613 paros STOP, 596 son
+    # FAMILIA y 17 COMPARTIDO. Y una familia no es la cola: sobre la cola
+    # `ready` de verdad -791 agencias- generico es el 46,3 %, tokko el 37,8 %,
+    # wordpress el 14,4 % y wasi el 1,5 %, asi que detener una sola familia
+    # deja corriendo entre el 53,7 % y el 98,5 % de la cola.
+    #
+    # El 2026-09-21 un paro FAMILIA sin firmar dejo los dos workers detenidos
+    # 34 horas. El relanzador hizo lo correcto -no relanzar sin diferida
+    # firmada es fail-closed y asi tiene que seguir- pero detener el 100 % de
+    # la cola por sospechar del 35 % es una reaccion desproporcionada en el
+    # 97 % de los paros.
+    #
+    # Con esto el fail-closed se conserva donde importa: la familia bajo
+    # sospecha NO se toca hasta que su paro este diagnosticado y firmado. Lo
+    # que cambia es que las demas siguen avanzando.
+    if args.excluir_conector:
+        excluidos = {str(c).strip().lower() for c in args.excluir_conector if c}
+        antes = len(queue)
+        queue = sin_las_familias(queue, catalog, excluidos)
+        mode_name = f"{mode_name}-sin-{'+'.join(sorted(excluidos))}"
+        print(f"### excluidas por paro de familia sin firmar: "
+              f"{antes - len(queue)} de {antes} "
+              f"(conectores: {', '.join(sorted(excluidos))})", flush=True)
+        if not queue:
+            raise SystemExit(
+                "la exclusion dejo la cola vacia: no hay nada que correr "
+                "fuera de la familia detenida.")
+
     existing = latest_results(output)
     if not args.pilot:
         # El universo no cambia; cambia el orden. Ver `ordenar_para_correr`.

@@ -91,3 +91,33 @@ def test_una_sola_corrida_inaccesible_no_manda_al_final():
     orden = ordenar_para_correr(cola, resultados)
     assert orden.index("intermitente") < len(orden)
     assert set(orden) == {"intermitente", "otra"}
+
+
+# ---------------------------------------------------------------------------
+# Excluir una familia detenida: saca esa familia, no la cola.
+# ---------------------------------------------------------------------------
+
+def test_MUERDE_excluir_una_familia_deja_pasar_a_las_demas(monkeypatch):
+    """De 613 paros STOP, 596 son FAMILIA. Detener todo por uno de ellos
+    detiene entre el 53,7 % y el 98,5 % de la cola sin motivo."""
+    from scripts import run_agency_certification_queue as modulo
+    catalogo = {"a": {"c": "tokko"}, "b": {"c": "wordpress"},
+                "c": {"c": "tokko"}, "d": {"c": "generico"}}
+    monkeypatch.setattr(modulo, "choose_connector", lambda r: r["c"])
+    assert modulo.sin_las_familias(list(catalogo), catalogo, {"tokko"}) == ["b", "d"]
+
+
+def test_excluir_no_distingue_mayusculas_ni_espacios(monkeypatch):
+    from scripts import run_agency_certification_queue as modulo
+    catalogo = {"a": {"c": " Tokko "}, "b": {"c": "wordpress"}}
+    monkeypatch.setattr(modulo, "choose_connector", lambda r: r["c"])
+    assert modulo.sin_las_familias(list(catalogo), catalogo, {"tokko"}) == ["b"]
+
+
+def test_MUERDE_excluir_una_familia_que_no_esta_no_saca_a_nadie(monkeypatch):
+    """El modo de falla caro sería que un nombre mal escrito vaciara la cola
+    en silencio; acá se ve que no saca nada, y `main` corta si queda vacía."""
+    from scripts import run_agency_certification_queue as modulo
+    catalogo = {"a": {"c": "tokko"}, "b": {"c": "wordpress"}}
+    monkeypatch.setattr(modulo, "choose_connector", lambda r: r["c"])
+    assert modulo.sin_las_familias(list(catalogo), catalogo, {"wasi"}) == ["a", "b"]

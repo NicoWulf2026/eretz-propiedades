@@ -68,7 +68,8 @@ BITACORA = CERT / "ERETZ_QUEUE_WATCH.log"
 # Los dos estados que sacan a alguien de lo que esta haciendo. `PARO_RECIENTE`
 # no alerta a proposito: todavia esta dentro del umbral y puede resolverse
 # solo. `PARO_DIAGNOSTICADO` tampoco: ya tiene diferida escrita.
-ALERTAN = ("PARO_DESATENDIDO", "CERO_WORKERS_SIN_BANDERA")
+ALERTAN = ("PARO_DESATENDIDO", "CERO_WORKERS_SIN_BANDERA",
+           "FAMILIA_DETENIDA")
 # Cada cuanto se repite el aviso mientras el mismo paro siga sin resolver.
 RECORDATORIO_MINUTOS = 60
 
@@ -142,6 +143,41 @@ def diagnosticada_despues(agencia: str, desde: float | None) -> str | None:
 
 
 
+# Una familia detenida no es tan urgente como la cola entera parada -el resto
+# sigue certificando- pero tampoco puede quedarse ahi para siempre: sobre las
+# 791 agencias de la cola `ready`, `generico` es el 46,3 % y `tokko` el 37,8 %.
+UMBRAL_FAMILIA_HORAS = 12.0
+
+
+def familias_detenidas() -> list[dict]:
+    """Las familias que el relanzador dejo fuera y siguen sin firma.
+
+    Se importa la funcion del relanzador en vez de releer el archivo aca: la
+    regla de «esta atendido» ya esta escrita una vez y escribirla dos veces es
+    como terminan divergiendo. Si el modulo no esta, se sigue sin esta vista
+    en lugar de romper la vigilancia que ya funcionaba.
+    """
+    try:
+        from relanzar_la_cola import familias_pendientes
+    except Exception:  # noqa: BLE001
+        return []
+    try:
+        return familias_pendientes(CERT)
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def horas_detenida(familia: dict, ahora: float) -> float | None:
+    desde = epoch(familia.get("cuando"))
+    return None if desde is None else (ahora - desde) / 3600
+
+
+def mas_vieja(familias: list[dict], ahora: float) -> float | None:
+    horas = [h for h in (horas_detenida(f, ahora) for f in familias)
+             if h is not None]
+    return max(horas) if horas else None
+
+
 def clave_de_alerta(estado: dict) -> str | None:
     """Que identifica a ESTE paro y no a otro.
 
@@ -153,6 +189,11 @@ def clave_de_alerta(estado: dict) -> str | None:
     e = estado.get("stop_state")
     if e not in ALERTAN:
         return None
+    if e == "FAMILIA_DETENIDA":
+        # La clave es el conjunto de familias, no la hora: mientras sean las
+        # mismas es el mismo episodio y alcanza con el recordatorio. Si se
+        # suma otra familia, la clave cambia y vuelve a avisar.
+        return f"FAMILIAS|{estado.get('stop_signature')}"
     if e == "CERO_WORKERS_SIN_BANDERA":
         # Sin bandera no hay firma ni hora: el episodio es "no hay nadie
         # certificando", y se deduplica como uno solo hasta que vuelva el OK.
@@ -217,6 +258,10 @@ def registrar_transicion(estado: dict, previo: dict) -> None:
         anotar(f"{antes or '(inicio)'} -> PARO_DESATENDIDO   {agencia}  "
                f"detenida hace {estado.get('minutes_paused')} min  "
                f"[{estado.get('stop_signature')}]")
+    elif ahora_e == "FAMILIA_DETENIDA":
+        anotar(f"{antes or '(inicio)'} -> FAMILIA_DETENIDA   "
+               f"{estado.get('stop_signature')}  "
+               f"detenida hace {estado.get('minutes_paused')} min")
     elif ahora_e == "PARO_DIAGNOSTICADO":
         anotar(f"{antes or '(inicio)'} -> DIAGNOSTICADO   {agencia}  "
                f"diferida escrita {estado.get('diagnosis_state')}")
@@ -295,6 +340,10 @@ def main() -> int:
                     help="cada cuanto repetir el aviso de un paro sin resolver")
     ap.add_argument("--sin-estado", action="store_true",
                     help="no escribir ERETZ_QUEUE_WATCH_STATUS.json")
+    ap.add_argument("--umbral-familia-horas", type=float,
+                    default=UMBRAL_FAMILIA_HORAS,
+                    help="a partir de cuantas horas una familia detenida sin "
+                         "diferida firmada se reporta como FAMILIA_DETENIDA")
     ap.add_argument("--umbral-minutos", type=float, default=30,
                     help="a partir de cuántos minutos un paro sin atender "
                          "se reporta como PARO_DESATENDIDO")
@@ -327,7 +376,45 @@ def main() -> int:
         "diagnosis_state": None, "agency": None,
     }
 
+    familias = familias_detenidas()
+    if familias:
+        estado["detained_families"] = [
+            {"conector": f.get("conector"),
+             "agencia": f.get("canonical_agency_id"),
+             "desde": f.get("cuando"),
+             "horas": round(horas_detenida(f, ahora) or 0, 1)}
+            for f in familias]
+        print(f"\nFAMILIAS_DETENIDAS    {len(familias)}")
+        for f in estado["detained_families"]:
+            print(f"   {str(f['conector']):12s} desde {f['desde']}  "
+                  f"({f['horas']} h)  por "
+                  f"{str(f['agencia']).split(':')[-1][:32]}")
+
     if not bandera:
+        vieja = mas_vieja(familias, ahora)
+        if vivos and vieja is not None and vieja >= args.umbral_familia_horas:
+            # La cola avanza, pero una familia entera lleva horas sin tocarse.
+            #
+            # Sin esto el acotamiento por familia se comeria su propia
+            # vigilancia: el relanzador consume la bandera, el vigilante ve
+            # workers vivos y dice OK, y una familia -hasta el 35 % de la
+            # cola, si es `generico`- se queda detenida sin que nadie se
+            # entere. Seria el 2026-09-21 otra vez, mas silencioso.
+            peor = max(familias, key=lambda f: horas_detenida(f, ahora) or 0)
+            estado.update({
+                "stop_state": "FAMILIA_DETENIDA",
+                "stop_signature": "familia " + ", ".join(sorted(
+                    {str(f.get("conector")) for f in familias})),
+                "paused_since": peor.get("cuando"),
+                "minutes_paused": round(vieja * 60),
+                "agency": peor.get("canonical_agency_id"),
+                "diagnosis_state": "SIN_DIAGNOSTICO"})
+            print(f"\nESTADO: FAMILIA_DETENIDA — {vieja:.1f} h sin diagnostico.")
+            print("   El resto de la cola avanza, pero esta familia no se")
+            print("   toca hasta que su paro tenga diferida firmada.")
+            cerrar(estado, previo, ahora, args)
+            print("\ndatabase_writes: 0")
+            return 0
         estado["stop_state"] = "OK" if vivos else "CERO_WORKERS_SIN_BANDERA"
         if vivos:
             print("\nESTADO: OK — la cola avanza y no hay bandera de paro.")
