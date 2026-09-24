@@ -545,11 +545,14 @@ def plan(salida: Path, anotar: bool = False) -> tuple[list[int], str, list[str]]
                   for f in familias_pendientes(salida)}
     paro = paro_vigente(salida)
     motivo_extra = ""
+    operacion = None
     if paro is not None and str(paro.get("radio") or "") == RADIO_OPERACION:
         # La pusimos nosotros para relanzar: no es un defecto que esperar. Los
-        # workers paran ante ella y el que arranque la borra.
+        # workers anteriores a ella paran al terminar su agencia; los
+        # posteriores la ignoran, y se limpia abajo cuando ya no queda
+        # ninguno anterior.
         motivo_extra = "; relanzamiento pedido por el propio relanzador"
-        paro = None
+        operacion, paro = paro, None
     if paro is not None and not paro_atendido(salida, paro):
         escritas = intentar_precedente(salida)
         if escritas:
@@ -593,6 +596,10 @@ def plan(salida: Path, anotar: bool = False) -> tuple[list[int], str, list[str]]
     limpiar_cerrojos_huerfanos(salida, aplicar=True)
     vivos = workers_vivos(salida)
     faltan = [w for w in range(WORKERS) if w not in vivos]
+    if operacion is not None and anotar and vivos and not faltan:
+        if pedido_cumplido(salida, operacion, vivos):
+            (salida / "AGENCY_CERTIFICATION_STOP.json").unlink(missing_ok=True)
+            motivo_extra += "; ya no queda ningun worker anterior al pedido"
     if not faltan:
         liberadas = familias_liberadas_en_curso(salida, vivos, set(excluir))
         if liberadas:
@@ -653,6 +660,43 @@ def familias_liberadas_en_curso(salida: Path, vivos: dict[int, int],
         if pid in por_pid:
             en_curso |= por_pid[pid]
     return en_curso - excluir
+
+
+def lanzado_en(salida: Path, pid: int) -> str | None:
+    """Cuando lanzo el relanzador a este pid, segun su bitacora."""
+    ruta = salida / "ERETZ_RELANZAMIENTOS.jsonl"
+    if not ruta.exists():
+        return None
+    cuando = None
+    for linea in ruta.open(encoding="utf-8", errors="replace"):
+        linea = linea.strip()
+        if not linea:
+            continue
+        try:
+            fila = json.loads(linea)
+        except ValueError:
+            continue
+        pids = {str(p) for p in (fila.get("lanzados") or {}).values()}
+        if str(pid) in pids:
+            cuando = str(fila.get("cuando") or "")[:19] or None
+    return cuando
+
+
+def pedido_cumplido(salida: Path, pedido: dict[str, Any],
+                    vivos: dict[int, int]) -> bool:
+    """Todos los workers vivos arrancaron DESPUES del pedido de relanzar.
+
+    Un worker que no figura en la bitacora -lanzado a mano- no prueba
+    nada: el pedido se deja en pie, y a lo sumo lo frena al terminar.
+    """
+    desde = str(pedido.get("cuando") or "")[:19]
+    if not desde:
+        return False
+    for pid in vivos.values():
+        lanzado = lanzado_en(salida, pid)
+        if not lanzado or lanzado < desde:
+            return False
+    return True
 
 
 def pedir_relanzamiento(salida: Path, liberadas: set[str]) -> bool:

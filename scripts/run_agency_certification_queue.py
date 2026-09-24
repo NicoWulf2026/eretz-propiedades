@@ -319,6 +319,19 @@ def sin_huella_ajena(output: Path, result: dict[str, Any],
     return corregido
 
 
+def es_pedido_viejo_para_mi(bandera: dict[str, Any], arranque: str) -> bool:
+    """Un pedido de relanzamiento escrito ANTES de que este proceso arrancara.
+
+    Ese pedido era para los workers con el codigo de antes; este ya es el
+    nuevo. Solo aplica a `OPERACION`: un paro por defecto frena a todos, se
+    haya escrito cuando se haya escrito.
+    """
+    if str(bandera.get("radio") or "") != "OPERACION":
+        return False
+    cuando = str(bandera.get("cuando") or "")[:19]
+    return bool(cuando) and cuando <= arranque
+
+
 def hay_que_parar(output: Path) -> dict[str, Any] | None:
     ruta = output / BANDERA_DE_PARO
     if not ruta.exists():
@@ -1069,7 +1082,17 @@ def main() -> int:
     cerrojo = tomar_cerrojo(output, args.worker, args.workers)
     # Una bandera de una corrida anterior no puede frenar la siguiente: si
     # quedo puesta, el defecto ya se atendio o el preflight lo habria visto.
-    (output / BANDERA_DE_PARO).unlink(missing_ok=True)
+    #
+    # Salvo un pedido de relanzamiento (`OPERACION`) mientras otro worker
+    # sigue con el codigo viejo. Si el primero en arrancar la borraba, el
+    # otro no se enteraba nunca: el 2026-09-24 a las 11:28 w1 habia parado y
+    # w0 seguia en su agencia. Ese pedido lo limpia el relanzador cuando ya no
+    # queda ningun worker anterior a el; este proceso lo ignora -ver
+    # `es_pedido_viejo_para_mi`-.
+    arranque_del_proceso = time.strftime("%Y-%m-%dT%H:%M:%S")
+    bandera_previa = hay_que_parar(output)
+    if not (bandera_previa and bandera_previa.get("radio") == "OPERACION"):
+        (output / BANDERA_DE_PARO).unlink(missing_ok=True)
     stopped_on: str | None = None
     defectos_pendientes: list[dict[str, Any]] = []
     # Que lotes ya provocaron un corte. Un corte es un pedido de atencion:
@@ -1081,6 +1104,8 @@ def main() -> int:
         # empezar la siguiente, que es el unico momento en que parar no
         # desperdicia una corrida a medias.
         ajeno = hay_que_parar(output) if args.workers > 1 else None
+        if ajeno and es_pedido_viejo_para_mi(ajeno, arranque_del_proceso):
+            ajeno = None
         if ajeno:
             stopped_on = ajeno.get("canonical_agency_id")
             print(json.dumps({"para_por_otro_worker": stopped_on,

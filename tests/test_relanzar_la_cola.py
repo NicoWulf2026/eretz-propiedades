@@ -722,3 +722,37 @@ def test_MUERDE_con_log_propio_la_salida_no_depende_de_una_consola(tmp_path):
     texto = log.read_text(encoding="utf-8")
     assert "arranca pid" in texto
     assert "DRY-RUN" in texto
+
+
+def test_MUERDE_un_pedido_de_relanzar_se_limpia_solo_cuando_no_queda_ningun_worker_viejo(
+        tmp_path, monkeypatch):
+    """El 2026-09-24 a las 11:28 w1 había parado y w0 seguía con el código
+    viejo. Si el pedido se borraba al relanzar w1, w0 no se enteraba nunca."""
+    import relanzar_la_cola as modulo
+    modulo.pedir_relanzamiento(tmp_path, {"tokko"})
+    pedido = json.loads((tmp_path / "AGENCY_CERTIFICATION_STOP.json").read_text(
+        encoding="utf-8"))
+    bitacora_de_lanzamiento(tmp_path, {"0": 111}, [])      # anterior al pedido
+    with (tmp_path / "ERETZ_RELANZAMIENTOS.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"cuando": ahora(60), "lanzados": {"1": 222},
+                             "conectores_excluidos": []}) + "\n")
+    monkeypatch.setattr(modulo, "workers_vivos", lambda s: {0: 111, 1: 222})
+    modulo.plan(tmp_path, anotar=True)
+    assert (tmp_path / "AGENCY_CERTIFICATION_STOP.json").exists()  # w0 es viejo
+
+    with (tmp_path / "ERETZ_RELANZAMIENTOS.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"cuando": ahora(120), "lanzados": {"0": 333},
+                             "conectores_excluidos": []}) + "\n")
+    monkeypatch.setattr(modulo, "workers_vivos", lambda s: {0: 333, 1: 222})
+    modulo.plan(tmp_path, anotar=True)
+    assert not (tmp_path / "AGENCY_CERTIFICATION_STOP.json").exists()
+    assert pedido["radio"] == "OPERACION"
+
+
+def test_un_worker_nuevo_ignora_un_pedido_de_relanzar_anterior_a_el():
+    from scripts.run_agency_certification_queue import es_pedido_viejo_para_mi
+    pedido = {"radio": "OPERACION", "cuando": "2026-09-24T11:25:00"}
+    assert es_pedido_viejo_para_mi(pedido, "2026-09-24T11:34:18") is True
+    assert es_pedido_viejo_para_mi(pedido, "2026-09-24T11:20:00") is False
+    paro = {"radio": "FAMILIA", "cuando": "2026-09-24T11:25:00"}
+    assert es_pedido_viejo_para_mi(paro, "2026-09-24T11:34:18") is False

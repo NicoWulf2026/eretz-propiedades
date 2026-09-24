@@ -36,6 +36,23 @@ Libro de familias detenidas: `ERETZ_FAMILIAS_DETENIDAS.jsonl`. Hoy: ninguna.
 
 ### 2026-09-24
 
+- **Huella en vuelo** (`f0556f8dc6`): `strategy_fingerprint` se leía de disco
+  al terminar la agencia; un worker con código viejo en memoria estampaba la
+  huella del código nuevo si alguien editaba con la cola corriendo. Ahora el
+  worker para entre agencias si cambió un archivo de la huella, y un
+  resultado producido durante un cambio queda sin huella (se recertifica).
+  **Regla operativa desde ya:** no editar archivos de la huella con workers
+  viejos (sin esta guarda) corriendo. Se pidió relanzamiento limpio con
+  bandera `OPERACION` a las 11:25.
+- **Pasadas con `pythonw` confirmadas**: 11:14 y 11:24, resultado 0, con
+  «arranca pid» y «plan en 1,3–1,7 s» en el log.
+- **Lote compartido en preparación** (tests escritos, código sin aplicar):
+  lista de portales por etiqueta en la política de fuentes (`buscainmueble`,
+  `todoprops.com`, `inmobusqueda.com`: 295 «propiedades» falsas en 4
+  agencias, 9 agencias de la cola con la web oficial en un portal),
+  `compare_runs` por identidad (ítem 19), contador de rechazos del runner con
+  la regla de fotos del triaje (ítem 9). Invalida las 60 certificaciones
+  vigentes (52 COMPLETE, 7 BEST_AVAILABLE, 1 NO_INVENTORY).
 - **Relanzador sin consola.** Desde las 08:30 tres o cuatro pasadas por hora
   morían con `0xC000013A` sin dejar rastro (09:54, 10:24, 10:44; 10:54 dejó
   sólo «arranca pid»). El 23 no falló ninguna. La tarea pasó de
