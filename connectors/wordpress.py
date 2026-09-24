@@ -147,6 +147,49 @@ def _coordenada_del_marcador(html: str) -> tuple[float, float] | None:
     return float(m.group(1)), float(m.group(2))
 
 
+# La misma pareja rotulo/valor, pero en ELEMENTOS y no con dos puntos:
+#
+#   <strong>Property status</strong>
+#   <span class="ere__property-status"><a href="/property-status/en-venta/">En Venta</a></span>
+#
+# Es el tema Essential Real Estate. `ente inmobiliaria` publica asi la
+# operacion y la ciudad -«City/Town: Ciudad de Mendoza»-, y el lector de arriba
+# exige «Rotulo: valor»: 49 de sus 50 fichas quedaban sin operacion y 18 sin
+# ciudad. Se toma solo el TEXTO VISIBLE del elemento siguiente al rotulo, que
+# tiene que estar solo en el suyo.
+RE_ROTULO_ESTRUCTURAL = (
+    r"<(strong|b|dt|th|label)\b[^>]*>\s*(?:{rotulo})\s*:?\s*</\1>\s*"
+    r"<(span|dd|td|div)\b[^>]*>(.{{0,300}}?)</\2>")
+
+
+# La moneda escrita DESPUES del numero: «$990,000 / DOLARES». El «$» de
+# adelante, por convencion, es ARS -ver el comentario de `detectar_moneda` en
+# el uso de abajo-, y asi `ente inmobiliaria` quedaba con una casa de 990.000
+# dolares guardada como 990.000 pesos: mil veces menos. Una palabra explicita
+# pegada al numero gana sobre un simbolo ambiguo; al reves no.
+RE_MONEDA_POSFIJA = re.compile(
+    r"^\s*(?:/|-)?\s*(d[oó]lares|d[oó]lar|usd|u\$s|us\$|u\$d)\b", re.I)
+
+
+def _moneda_con_posfijo(match: "re.Match[str]", texto: str) -> str | None:
+    """La moneda de un precio, mirando tambien lo que viene detras."""
+    if match.group(1).strip() == "$":
+        detras = texto[match.end():match.end() + 30]
+        if RE_MONEDA_POSFIJA.search(detras):
+            return "USD"
+    return detectar_moneda(match.group(1))
+
+
+def _rotulo_estructural(html: str, rotulo: str) -> str | None:
+    """El valor del elemento que sigue a `<strong>Rotulo</strong>`."""
+    m = re.search(RE_ROTULO_ESTRUCTURAL.format(rotulo=rotulo), html or "",
+                  re.I | re.S)
+    if not m:
+        return None
+    valor = limpiar(unescape(re.sub(r"<[^>]+>", " ", m.group(3))))
+    return valor if valor and len(valor) <= 80 else None
+
+
 def _rotulo_de_ubicacion(texto: str, rotulo: str) -> str | None:
     """Lo que la ficha dice despues de `Localidad:` o `Provincia:`."""
     m = re.search(RE_ROTULO_DE_UBICACION.format(rotulo=rotulo),
@@ -722,14 +765,14 @@ class WordPressConnector(Connector):
         if mp and precio is None:
             precio = a_numero(mp.group(2))
         if mp and moneda is None:
-            moneda = detectar_moneda(mp.group(1))
+            moneda = _moneda_con_posfijo(mp, texto)
         if item is not None and html and (precio is None or moneda is None):
             mp_html = re.search(r"(USD|U\$S|US\$|\$|ARS)\s*([\d][\d.,]{2,15})",
                                 _texto(html)[:6000], re.I)
             if mp_html and precio is None:
                 precio = a_numero(mp_html.group(2))
             if mp_html and moneda is None:
-                moneda = detectar_moneda(mp_html.group(1))
+                moneda = _moneda_con_posfijo(mp_html, _texto(html)[:6000])
         if precio is not None and precio <= 0:
             precio = None
 
@@ -786,11 +829,14 @@ class WordPressConnector(Connector):
         direccion = direccion or _detalle_houzez(html, "address")
         # Y otros temas lo publican con el rotulo escrito al lado.
         ciudad = ciudad or _rotulo_de_ubicacion(html, "Localidad")
+        ciudad = ciudad or _rotulo_estructural(html, r"City/Town|Localidad|Ciudad")
         provincia = provincia or _rotulo_de_ubicacion(html, "Provincia")
         # El mismo bloque trae la operacion y el tipo con su rotulo, y la
         # descripcion cuelga de su propio encabezado.
         operacion = operacion or detectar_operacion(
             _rotulo_de_ubicacion(html, "Tipo de operaci.n"))
+        operacion = operacion or detectar_operacion(
+            _rotulo_estructural(html, r"Property status|Tipo de operaci.n|Operaci.n"))
         tipo = tipo or detectar_tipo(
             _rotulo_de_ubicacion(html, "Tipo de inmueble"))
         descripcion = descripcion or _descripcion_rotulada(html)
