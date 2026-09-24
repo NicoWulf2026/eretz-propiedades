@@ -169,10 +169,24 @@ def strategy_for(connector: str, publication_mechanism: str | None) -> str:
 
 
 def _semantic_file(path: Path) -> bytes:
-    tree = ast.parse(path.read_text(encoding="utf-8"))
+    # Cacheado por archivo y por su estado en disco. Cada huella de estrategia
+    # recalculaba los mismos quince archivos compartidos: ~5 s por par
+    # conector/estrategia, medido con cProfile el 2026-09-24. El relanzador
+    # mira varias familias por pasada y con la maquina cargada eso lo acercaba
+    # al limite de cinco minutos de su tarea; dos corridas murieron ahi sin
+    # escribir una linea. `mtime_ns` y tamano cambian con cualquier edicion,
+    # asi que el valor es el mismo que sin cache: solo se deja de recalcular.
+    estado = path.stat()
+    return _semantic_file_cacheado(str(path), estado.st_mtime_ns, estado.st_size)
+
+
+@lru_cache(maxsize=64)
+def _semantic_file_cacheado(ruta: str, _mtime_ns: int, _tamano: int) -> bytes:
+    tree = ast.parse(Path(ruta).read_text(encoding="utf-8"))
     return ast.dump(tree, include_attributes=False).encode()
 
 
+@lru_cache(maxsize=16)
 def _archivo_sin_operativas(fuente: str, excluidas: frozenset[str]) -> bytes:
     """El archivo entero menos las funciones operativas nombradas.
 

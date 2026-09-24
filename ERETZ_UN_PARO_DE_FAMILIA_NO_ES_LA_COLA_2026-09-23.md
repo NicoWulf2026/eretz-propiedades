@@ -187,3 +187,60 @@ de **una sola ficha con un campo que pasa de ausente a presente** —que la
 fuente puede producir sola— del caso de inventario o contenido inestable a
 escala, que sí sospecha de nosotros.
 
+## 2026-09-24: los tres agujeros cerrados
+
+### Liberar una familia llega a los workers que ya corren
+
+A las 10:29 no quedaba ninguna familia detenida, pero los workers de las 10:04
+corrían con `tokko` y `wordpress` excluidas y las iban a seguir excluyendo
+días. El relanzador reconstruye desde su bitácora qué excluye cada worker
+vivo; si excluye una familia ya liberada, pone una bandera de radio
+`OPERACION` —el runner para al **terminar** la agencia en curso, el vigilante
+la reconoce— y la pasada siguiente relanza sin la exclusión. Nunca pisa una
+bandera existente, y no toma la suya por un paro sin firma.
+
+Verificado en producción: bandera a las 10:34, los dos workers pararon al
+cerrar su agencia, y a las 10:52 se relanzaron con `conectores_excluidos: []`.
+Ese último relanzamiento lo corrí a mano con el mismo `.bat`: la pasada
+programada de las 10:44 murió por el límite de cinco minutos de la tarea sin
+escribir nada. La causa medida: cada huella de estrategia recalculaba los
+mismos archivos compartidos, ~5 s por familia; ahora se cachean por archivo
+(valores idénticos, verificados sobre cinco estrategias) y el relanzador
+escribe una línea al arrancar para que un cuelgue futuro deje rastro.
+
+### Un defecto que nadie pudo atribuir detiene su familia
+
+**Los 19 paros `COMPARTIDO` de todo el historial son `sin_determinar`.** El
+triaje los marca así cuando no encuentra evidencia positiva de un radio
+acotado, y está bien: esa regla no se tocó.
+
+Lo que cambió es cómo degrada el relanzador. De un defecto desconocido se
+puede demostrar que corrió el código común más el de su familia; si estuviera
+en el común, aparecería en otra familia. Entonces:
+
+| situación | qué se detiene |
+|---|---|
+| primer `sin_determinar` | **su familia** |
+| otro `sin_determinar` en una familia **distinta**, con el primero abierto | todo |
+| otro en la **misma** familia | esa familia |
+| sin conector identificable | todo |
+| `COMPARTIDO` con causa nombrada (`shared/runner`) | todo |
+
+Nada se certifica: la agencia sigue en `NEEDS_FIX`. El riesgo aceptado —un
+defecto común tomado por local— queda acotado porque las demás familias
+pasan los mismos controles por agencia y porque la cola corre primero los
+canarios de cada familia.
+
+Simulado sobre los 19 históricos con sus ventanas reales: **11 se acotan a su
+familia y 8 escalan**. 7 de esos 8 escalan por un único paro de `arte
+propiedades` que quedó abierto trece días; con «el código cambió, se vuelve a
+probar» se habría liberado al primer commit.
+
+### Tres defectos reales que detenían familias
+
+| familia | agencia | causa | verificado |
+|---|---|---|---|
+| `generico` | `alagna` | el JSON-LD se descartaba entero: la página declara otra URL canónica | 0 → 229 fichas con ciudad |
+| `wordpress` | `austral` | 50 avisos por página = 2,3 MB contra un límite de 800 KB | 0 → 205, igual a `X-WP-Total` |
+| `tokko` | `di maria` | dos fichas distintas no bajaron, una en cada corrida | 10 de 1.353 históricos |
+

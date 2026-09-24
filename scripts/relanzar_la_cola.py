@@ -68,6 +68,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
@@ -708,8 +709,16 @@ def main() -> int:
     args = ap.parse_args()
     salida = Path(args.salida)
 
+    # Dos corridas programadas -09:54 y 10:44 del 2026-09-24- murieron por el
+    # limite de cinco minutos de la tarea SIN escribir una linea, y a mano la
+    # misma corrida tarda cinco segundos. Sin esta linea no se puede saber si
+    # el proceso llego a arrancar o se colgo adentro de `plan()`.
+    inicio = time.time()
+    print(f"{time.strftime('%Y-%m-%dT%H:%M:%S')}  arranca pid {os.getpid()}",
+          flush=True)
     faltan, motivo, excluir = plan(salida, anotar=args.lanzar)
-    print(f"{time.strftime('%Y-%m-%dT%H:%M:%S')}  {motivo}")
+    print(f"{time.strftime('%Y-%m-%dT%H:%M:%S')}  {motivo}  "
+          f"[plan en {time.time() - inicio:.1f} s]")
     if not faltan:
         print("nada que lanzar")
         return 0
