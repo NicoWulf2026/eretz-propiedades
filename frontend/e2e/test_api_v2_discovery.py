@@ -162,16 +162,25 @@ def test_filter_metadata_enriches_existing_controls_without_changing_values(page
     with page.expect_response(lambda response: "/api/properties/filter-metadata" in response.url) as response_info:
         open_explorer(page)
     assert response_info.value.status == 200
+    # The control must show the count the API reports, whatever the snapshot
+    # holds today. A literal number here broke with every catalogue refresh.
+    metadata = response_info.value.json()["metadata"]
+
+    def count(group: str, value: str) -> str:
+        total = next(item["propertyCount"] for item in metadata[group] if item["value"] == value)
+        return f"{total:,}".replace(",", ".")
 
     operation = page.locator('select[name="operacion"]')
-    expect(operation.locator('option[value="venta"]')).to_have_text("Comprar (42.536)")
-    expect(operation.locator('option[value="temporario"]')).to_have_text("Temporario (303)")
+    expect(operation.locator('option[value="venta"]')).to_have_text(
+        f"Comprar ({count('operations', 'venta')})")
+    expect(operation.locator('option[value="temporario"]')).to_have_text(
+        f"Temporario ({count('operations', 'alquiler_temporario')})")
     operation.select_option("venta")
     expect(operation).to_have_value("venta")
 
     page.get_by_role("button", name="Más filtros").click()
     currency = page.locator('select[name="moneda"]')
-    expect(currency.locator('option[value="USD"]')).to_have_text("USD (46.361)")
+    expect(currency.locator('option[value="USD"]')).to_have_text(f"USD ({count('currencies', 'USD')})")
     currency.select_option("USD")
     expect(currency).to_have_value("USD")
 

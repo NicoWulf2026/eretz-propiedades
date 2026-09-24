@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { DiscoveryAutocompleteResponse } from "@/lib/discovery-contract";
 import { interpretNaturalQuery } from "@/lib/nl-search";
 import type { SearchSuggestion } from "@/types/property";
@@ -63,6 +63,14 @@ export function SearchAutocomplete({ defaultValue }: { defaultValue: string }) {
   const [value, setValue] = useState(defaultValue);
   const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([]);
   const [open, setOpen] = useState(false);
+  // The blur closes after a delay so an option's mousedown lands first. That
+  // pending close must be cancelled when focus comes back, or it wins anyway.
+  const closeTimer = useRef<number | null>(null);
+  const cancelClose = () => {
+    if (closeTimer.current !== null) window.clearTimeout(closeTimer.current);
+    closeTimer.current = null;
+  };
+  useEffect(() => cancelClose, []);
   const [active, setActive] = useState(-1);
   const [ignoredFields, setIgnoredFields] = useState<string[]>([]);
   const [selectedSuggestion, setSelectedSuggestion] = useState<SearchSuggestion | null>(null);
@@ -161,8 +169,11 @@ export function SearchAutocomplete({ defaultValue }: { defaultValue: string }) {
         aria-controls={listId}
         aria-expanded={open && suggestions.length > 0}
         aria-activedescendant={active >= 0 ? `${listId}-${active}` : undefined}
-        onFocus={() => setOpen(true)}
-        onBlur={() => window.setTimeout(() => setOpen(false), 140)}
+        onFocus={() => { cancelClose(); setOpen(true); }}
+        onBlur={() => {
+          cancelClose();
+          closeTimer.current = window.setTimeout(() => { closeTimer.current = null; setOpen(false); }, 140);
+        }}
         onChange={(event) => {
           setValue(event.target.value);
           setSelectedSuggestion(null);

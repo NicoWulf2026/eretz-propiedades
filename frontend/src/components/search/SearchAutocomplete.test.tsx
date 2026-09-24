@@ -88,4 +88,30 @@ describe("SearchAutocomplete — puerta universal V2", () => {
     expect(await screen.findByText("No pudimos cargar sugerencias. Podés buscar igual.")).toBeInTheDocument();
     expect(screen.queryByText("No encontramos sugerencias. Podés buscar igual.")).toBeNull();
   });
+
+  it("volver al campo antes del cierre diferido no cierra la lista", async () => {
+    // El blur cierra con demora para que el mousedown de una opción llegue
+    // primero. Si el foco vuelve dentro de esa demora, el cierre pendiente
+    // no puede ganarle: la e2e lo veía como una opción que aparecía y se iba.
+    localStorage.setItem("eretz:recent-searches:v1", JSON.stringify(["Palermo"]));
+    render(<SearchAutocomplete defaultValue="" />);
+    const input = screen.getByRole("combobox");
+    fireEvent.focus(input);
+    expect(await screen.findByText("Palermo")).toBeInTheDocument();
+    fireEvent.blur(input);
+    fireEvent.focus(input);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(screen.getByText("Palermo")).toBeInTheDocument();
+  });
+
+  it("el blur sin volver al campo sigue cerrando la lista", async () => {
+    localStorage.setItem("eretz:recent-searches:v1", JSON.stringify(["Palermo"]));
+    render(<SearchAutocomplete defaultValue="" />);
+    const input = screen.getByRole("combobox");
+    fireEvent.focus(input);
+    expect(await screen.findByText("Palermo")).toBeInTheDocument();
+    fireEvent.blur(input);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(screen.queryByText("Palermo")).toBeNull();
+  });
 });
