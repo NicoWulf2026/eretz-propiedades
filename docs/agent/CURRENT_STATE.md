@@ -36,6 +36,17 @@ Libro de familias detenidas: `ERETZ_FAMILIAS_DETENIDAS.jsonl`. Hoy: ninguna.
 
 ### 2026-09-24
 
+- **`wordpress`/ERE** (`86c8cb1768`): «$990,000 / DOLARES» se guardaba como
+  990.000 **pesos**; ahora una moneda explícita pegada detrás del número gana
+  sobre el «$». Y el rótulo en elementos (`<strong>Property status</strong>
+  <span>En Venta</span>`) se lee: `ente` pasa de operación vacía en 49 de 50 a
+  `venta`. Verificado en 3 fichas reales. En `generico` el mismo patrón
+  aparece una sola vez en las descripciones guardadas (`conti`): no se tocó.
+- **Herramienta de heredoc, otra vez.** Un parche escrito por heredoc metió
+  caracteres de control en un regex de `wordpress.py` (`\1` → `\x01`). Se
+  reparó con un script escrito por Write y se revisaron todos los archivos
+  tocados hoy: ningún otro tiene caracteres de control. Regla: los parches
+  con regex, siempre por Write/Edit.
 - **Utilización de la cola.** Desde el 17-09: 81,6 h de worker en 604
   resultados (≈8 min por agencia), ninguna con presupuesto agotado, sobre 336
   h disponibles: 24 %. Hoy, con la máquina encendida, 45–92 % por hora. El
