@@ -2146,8 +2146,16 @@ def test_generico_normaliza_ficha_wordpress_editorial_sin_banners_ni_thumbnails(
     assert prop.extra["source_fields_provided"]["descripcion"] is True
 
 
+XINTEL_FICHA = (
+    "<html><body>Ficha publica<script>var ficha = {'suc': 'ABC', "
+    "'global': 'G1', 'apiK': 'publicada', 'id': '127'};</script></body></html>")
+# El detalle que la API devuelve para esa ficha. Vacio a proposito: la fila
+# del listado ya trae lo que estos tests miran.
+XINTEL_API = {"https://xintelapi.com.ar/?": json.dumps({"resultado": {"ficha": [{}]}})}
+
+
 def test_generico_normaliza_fila_xintel_estructurada() -> None:
-    c = gen_conector({})
+    c = gen_conector(XINTEL_API)
     prop = c._normalizar_xintel({
         "source_listing_id": "127",
         "source_url": "https://alfa.com.ar/casa-en-venta-ficha-abc127",
@@ -2162,7 +2170,7 @@ def test_generico_normaliza_fila_xintel_estructurada() -> None:
             "latitud": "-32.95", "longitud": "-60.66",
             "img_princ": "https://cdn.example/abc127_1.jpg",
         },
-    }, fuente(), "<html><body>Ficha publica</body></html>")
+    }, fuente(), XINTEL_FICHA)
     assert prop.precio == 450000
     assert prop.moneda == "USD"
     assert prop.operacion == "venta"
@@ -2173,13 +2181,13 @@ def test_generico_normaliza_fila_xintel_estructurada() -> None:
 
 
 def _xintel_con(**campos):
-    return gen_conector({})._normalizar_xintel({
+    return gen_conector(XINTEL_API)._normalizar_xintel({
         "source_listing_id": "131",
         "source_url": "https://alfa.com.ar/casa-en-venta-ficha-vrg131",
         "pagina": 1,
         "xintel": {"titulo": "Casa en venta", "tipo": "Casa", "operacion": "Venta",
                    "precio": "U$S 90.000", **campos},
-    }, fuente(), "<html><body>Ficha publica</body></html>")
+    }, fuente(), XINTEL_FICHA)
 
 
 def test_MUERDE_xintel_la_descripcion_es_in_obs_y_no_la_bandera_in_des() -> None:
@@ -2195,6 +2203,29 @@ def test_MUERDE_xintel_la_descripcion_es_in_obs_y_no_la_bandera_in_des() -> None
     prop = _xintel_con(in_des=True, in_obs="")
     assert prop.descripcion is None
     assert prop.extra["source_fields_provided"]["descripcion"] is False
+
+
+def test_MUERDE_xintel_sin_ficha_en_la_respuesta_es_un_detalle_fallido() -> None:
+    """La API a veces no aplico el detalle y la ficha quedaba con la fila del
+    listado: una foto, sin coordenadas, y esos campos marcados como no
+    provistos por la fuente. `bondar` perdio asi las coordenadas en 3 fichas
+    de una corrida y 1 de la otra (2026-09-24). Es un fallo, no una ausencia."""
+    c = gen_conector({"https://xintelapi.com.ar/?": json.dumps({"resultado": {}})})
+    with pytest.raises(B.ErrorTransitorio):
+        c._normalizar_xintel({"source_listing_id": "127",
+                              "source_url": "https://alfa.com.ar/casa-ficha-abc127",
+                              "xintel": {"titulo": "Casa"}}, fuente(), XINTEL_FICHA)
+
+
+def test_MUERDE_xintel_una_pagina_sin_parametros_de_detalle_no_se_normaliza() -> None:
+    """Las 10 agencias Xintel reales publican siempre los parametros del
+    detalle. Una pagina sin ellos es una respuesta anomala, no una ficha."""
+    c = gen_conector(XINTEL_API)
+    with pytest.raises(B.ErrorTransitorio):
+        c._normalizar_xintel({"source_listing_id": "127",
+                              "source_url": "https://alfa.com.ar/casa-ficha-abc127",
+                              "xintel": {"titulo": "Casa"}}, fuente(),
+                             "<html><body>Ficha publica</body></html>")
 
 
 def test_generico_query_php_no_confunde_extension_ph_con_departamento() -> None:

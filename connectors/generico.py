@@ -2873,26 +2873,34 @@ class GenericoConnector(Connector):
                          for name in ("suc", "global", "apiK", "id")}
         images = [row.get("img_princ")] if row.get("img_princ") else []
         province = None
-        if all(detail_params.values()):
-            query = urllib.parse.urlencode({
-                "json": "fichas.propiedades",
-                "suc": detail_params["suc"],
-                "global": detail_params["global"],
-                "apiK": detail_params["apiK"],
-                "id": detail_params["id"],
-                "compartida": "false",
-            })
-            body = self.descargador.bajar("https://xintelapi.com.ar/?" + query)
-            try:
-                result = (json.loads(body).get("resultado") or {})
-            except ValueError as error:
-                raise ErrorTransitorio("Xintel devolvio detalle JSON invalido") from error
-            details = result.get("ficha") or []
-            if details and isinstance(details[0], dict):
-                row.update(details[0])
-            if isinstance(result.get("img"), list):
-                images = result["img"]
-            province = result.get("provincia")
+        # Sin el detalle, la ficha quedaba con la fila del listado -una foto,
+        # sin coordenadas- y esos campos se marcaban como no provistos por la
+        # fuente: una ausencia inventada. `bondar` lo sufrio en 3 fichas de una
+        # corrida y 1 de la otra. Las 10 agencias Xintel publican siempre los
+        # parametros; si faltan, o la API no devuelve la ficha, es un fallo del
+        # detalle y se cuenta como tal.
+        if not all(detail_params.values()):
+            raise ErrorTransitorio("la ficha Xintel no trae los parametros del detalle")
+        query = urllib.parse.urlencode({
+            "json": "fichas.propiedades",
+            "suc": detail_params["suc"],
+            "global": detail_params["global"],
+            "apiK": detail_params["apiK"],
+            "id": detail_params["id"],
+            "compartida": "false",
+        })
+        body = self.descargador.bajar("https://xintelapi.com.ar/?" + query)
+        try:
+            result = (json.loads(body).get("resultado") or {})
+        except ValueError as error:
+            raise ErrorTransitorio("Xintel devolvio detalle JSON invalido") from error
+        details = result.get("ficha") or []
+        if not details or not isinstance(details[0], dict):
+            raise ErrorTransitorio("Xintel no devolvio la ficha")
+        row.update(details[0])
+        if isinstance(result.get("img"), list):
+            images = result["img"]
+        province = result.get("provincia")
 
         def number(*names: str) -> float | None:
             for name in names:
