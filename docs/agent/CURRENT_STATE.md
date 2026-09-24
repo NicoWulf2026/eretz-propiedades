@@ -36,6 +36,19 @@ Libro de familias detenidas: `ERETZ_FAMILIAS_DETENIDAS.jsonl`. Hoy: ninguna.
 
 ### 2026-09-24
 
+- **Descripciones que son el pie del sitio** (`18c476dc29`, `shared/runner`):
+  `coldwell banker de la vera cruz` estaba CERTIFIED_COMPLETE con la MISMA
+  descripción —«© 2026 Coldwell Banker. Todos los derechos reservados…»— en
+  sus 266 propiedades; `coldwell banker andes`, en 5 de 174. Regla nueva en
+  el runner, junto a la de fotos compartidas: texto repetido en ≥ la mitad
+  de las fichas (piso de 8) o que arranca con «©» → descripción vacía y
+  `extra.descripcion_descartada`. Invalida las certificaciones desde las
+  11:40. Suite: 3.154 en verde.
+- **Pendiente anotado, sin tocar**: páginas de aterrizaje guardadas como
+  propiedades en `fenix` (3) y `casablanca` (10), con operación y tipo
+  adivinados de la URL de la categoría. Ninguna agencia está certificada.
+  `ficha_sin_contenido` (en `shared/base`) cuenta esos campos como dato;
+  arreglarlo invalida todo, para el próximo lote compartido.
 - **`wordpress`/ERE** (`86c8cb1768`): «$990,000 / DOLARES» se guardaba como
   990.000 **pesos**; ahora una moneda explícita pegada detrás del número gana
   sobre el «$». Y el rótulo en elementos (`<strong>Property status</strong>
