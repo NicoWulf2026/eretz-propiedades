@@ -4633,3 +4633,30 @@ def test_MUERDE_el_id_de_la_ficha_no_es_cualquier_numero_del_slug(url, esperado)
     agencia: `alas` guardaba `d104` y `k104` las dos como `104`, y `caruso`
     guardaba la superficie. Un campo publicado que dice algo falso."""
     assert GenericoConnector._id_de(url) == esperado
+
+
+def test_MUERDE_un_icono_entre_el_rotulo_y_el_numero_no_pierde_el_atributo():
+    """Ítem 11: `alas propiedades` (tema RealHomes) perdía los dormitorios en
+    120 de 206 fichas porque la celda del valor empieza con un SVG."""
+    from connectors.generico import ETIQUETAS_DE_CONTEO
+    ficha = ('<p>ID de la propiedad: A222</p>'
+             '<div class="rh_property__meta prop_bedrooms">'
+             '<span class="rh_meta_titles"> Dormitorios </span>'
+             '<div> <svg class="rh_svg" viewBox="0 0 24 24"><path d="M1 2"/></svg>'
+             ' <span class="figure">4</span> </div></div>'
+             '<div class="rh_property__meta prop_bathrooms">'
+             '<span class="rh_meta_titles"> Baños </span>'
+             '<div> <svg class="rh_svg"><path d="M3 4"/></svg>'
+             ' <span class="figure">3</span> </div></div>')
+    cuenta = GenericoConnector._cuenta_de_ficha
+    assert cuenta(ficha, "", ETIQUETAS_DE_CONTEO["dormitorios"], None) == 4
+    assert cuenta(ficha, "", ETIQUETAS_DE_CONTEO["banos"], None) == 3
+
+
+def test_una_celda_de_valor_con_texto_ademas_del_numero_no_se_toma():
+    """La tolerancia es para el icono, no para el texto: si la celda dice
+    algo más que el número, no es la pareja rótulo/valor."""
+    from connectors.generico import ETIQUETAS_DE_CONTEO
+    ficha = ('<span>Dormitorios</span><div><svg></svg> 4 a estrenar en 2027</div>')
+    assert GenericoConnector._cuenta_de_ficha(
+        ficha, "", ETIQUETAS_DE_CONTEO["dormitorios"], None) is None

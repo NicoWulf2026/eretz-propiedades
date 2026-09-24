@@ -3519,6 +3519,25 @@ class GenericoConnector(Connector):
             rf"<{celda}[^>]*>\s*(\d{{1,2}})\s*</{celda}>", marcado, re.I)
         if rotulo and 1 <= int(rotulo.group(1)) <= 99:
             return int(rotulo.group(1))
+        # La misma pareja, con un ICONO delante del numero. El tema RealHomes
+        # publica `<span>Dormitorios</span><div><svg>…</svg><span
+        # class="figure">4</span></div>`, y la forma de arriba exige que la
+        # celda del valor contenga SOLO el numero: `alas propiedades` perdia
+        # asi los dormitorios en 120 de sus 206 fichas.
+        #
+        # No se afloja hacia el texto aplanado: ahi la ficha dice «ID de la
+        # propiedad: A222 Dormitorios 4», y el numero antes de la palabra es
+        # 222. Se exige la misma estructura -rotulo solo en su celda, valor en
+        # la siguiente- y que el TEXTO VISIBLE de la celda del valor sea
+        # unicamente el numero, con el icono y los envoltorios afuera.
+        sin_iconos = re.sub(r"<svg\b.*?</svg>", " ", marcado, flags=re.I | re.S)
+        for pareja in re.finditer(
+                rf"<{celda}[^>]*>\s*(?:{etiqueta})\s*</{celda}>\s*"
+                rf"<(div|span|dd|td|li|p)\b[^>]*>(.{{0,400}}?)</\1>",
+                sin_iconos, re.I | re.S):
+            visible = re.sub(r"<[^>]+>", " ", pareja.group(2)).strip()
+            if re.fullmatch(r"\d{1,2}", visible) and 1 <= int(visible) <= 99:
+                return int(visible)
         # El rotulo suelto adentro de la celda y el valor en un HIJO:
         # `<li>Ambientes <span>1</span></li>`. La forma de arriba exige que el
         # rotulo este solo en su propio elemento y no ve esta, que es de las
