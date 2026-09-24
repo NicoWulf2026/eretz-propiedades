@@ -4,7 +4,9 @@ Leer primero `docs/agent/CURRENT_STATE.md`.
 
 ## Reglas que no se negocian
 
-- Máximo 2 workers pesados. Nunca más.
+- Máximo 2 workers pesados. Nunca más. Un diagnóstico que corre
+  `_procesar_con` con 2–3 fichas por agencia no es un worker; una
+  certificación completa sí.
 - Nada productivo sin el usuario: ni writes a Supabase, ni migraciones, ni
   RLS/grants, ni deploy, ni DNS, ni restore, ni merge a `main`. Se preparan y
   se anotan en `CURRENT_STATE.md` → «READY_FOR_PRODUCTION_ACTION».
@@ -12,7 +14,21 @@ Leer primero `docs/agent/CURRENT_STATE.md`.
   `reset --hard`, sin `clean` destructivo.
 - Fail-closed: no certificar en falso, no inventar datos ni geografía, no
   mezclar agencias. Una propiedad real incompleta sobrevive.
-- Zonaprop/Argenprop no son fuentes de inventario.
+- Zonaprop/Argenprop (y ningún portal) son fuentes de inventario.
+
+## Cómo tocar código de la huella sin certificar en falso
+
+Los workers corren con `pythonw.exe`, lanzados por `ERETZ_relanzador` desde
+`eretz-unified`. Desde `f0556f8dc6` cada worker para entre agencias si
+cambió en disco un archivo de `archivos_de_la_huella()`, y un resultado que
+se produjo durante el cambio queda sin `strategy_fingerprint`. Entonces:
+
+1. Editar, testear, commitear. Los workers se detienen solos al terminar la
+   agencia en curso y el relanzador los levanta con el código nuevo en ≤10 min.
+2. Si hubiera un worker ANTERIOR a `f0556f8dc6` (sin guarda), primero pedir
+   relanzamiento con una bandera `OPERACION` y esperar a que pare.
+3. Agrupar cambios compartidos: cada cambio en `shared/*` invalida todas las
+   certificaciones vigentes.
 
 ## Trampas de herramienta que ya costaron
 
@@ -22,20 +38,30 @@ Leer primero `docs/agent/CURRENT_STATE.md`.
 - El heredoc de Bash sin comillas se come barras invertidas: usar `<<'EOF'`.
 - Un 200 en la ficha no prueba que la propiedad siga publicada: sólo el
   catálogo lo decide.
+- Para buscar workers por proceso filtrar por `run_agency_certification_queue`
+  en la línea de comandos: corren como `pythonw.exe`.
 
 ## Próximas tareas, en orden de impacto medido
 
-1. Confirmar que la pasada de `ERETZ_relanzador` de las 11:14 corrió con
-   `pythonw` y dejó «arranca pid» + «plan en …» en `relanzador.log`. Si el
-   vigilante (`_vigilante.bat`) también muestra muertes silenciosas, darle el
-   mismo tratamiento.
-2. Mirar el resultado de `alagna propiedades` (w0, recertificando): es el
-   canario del arreglo de JSON-LD de `generico`.
-3. Ítem 18(b): la operación que sólo existe en la ruta del catálogo
-   (`bottai` 180, `constant` 24, `pozzobon` 7). Tokko ya lo resuelve con
-   `RUTAS_POR_OPERACION`; `generic/html_catalog` no arrastra la procedencia.
-4. Ítem 19: `compare_runs` compara URLs crudas (`www` contra sin `www`);
-   `hash_dedup` ya las unifica. Ver `ERETZ_LA_COLA_NO_AVANZA_2026-09-21.md`.
+1. **`NEEDS_FIX` por fichas que no bajan** (30 agencias, 25 con esa única
+   razón). Las fallas son las MISMAS en las dos corridas: sistemáticas, no
+   pasajeras. Casi todos los resultados son del 21-09, anteriores a los
+   arreglos del 23; diagnóstico liviano con el código de hoy en
+   `scratchpad/diag_detalles.py`. Separar lo ya arreglado de lo que sigue.
+2. **Corridas que no terminan en estado OK** (29) y **cero inventario no
+   demostrado** (27): siguientes clases de `NEEDS_FIX` por tamaño.
+3. **Regression Gate**: línea base en
+   `_regresion/ANTES_DEL_LOTE_2026-09-24.jsonl`; comparar con
+   `scripts/regression_gate.py --old … --fresh … --output …` cuando la cola
+   haya recertificado una parte representativa.
+4. Ítem 18(b): la operación que sólo existe en la ruta del catálogo
+   (`bottai` 180, `constant` 24, `pozzobon` 7). Es un cambio de enumeración
+   de `generico`: más riesgoso que su retorno actual.
 5. `_de_json_ld` lee `dorm`/`banos`/`sup_*` que nunca se escriben: los
    atributos de schema.org (`numberOfRooms`, `floorSize`) no se usan.
-6. Semantic Window, Regression Gate, backend beta, production readiness.
+6. Ítem 12 (`SIN_INVENTARIO` con dos significados): defecto de nombre, no de
+   decisión; bajo retorno.
+7. Beta del backend (ver `docs/ERETZ_UNIFICATION_PLAN.md` § «Backend beta
+   confiable»): cohorte fresca con el HEAD actual —la está produciendo la
+   cola—, staging separado, QA de browser, puente histórico de IDs
+   (`BLOCKED_EXTERNAL_CREDENTIAL`: necesita datos productivos).
