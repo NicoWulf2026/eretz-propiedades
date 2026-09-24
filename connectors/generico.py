@@ -221,6 +221,15 @@ def patron_de_forma(forma: str) -> "re.Pattern | None":
 
 RE_LOC = re.compile(r"<loc>\s*([^<\s]+)\s*</loc>", re.I)
 RE_LD = re.compile(r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>', re.S | re.I)
+# Con que URL se identifica la pagina, dicho por ella misma. El orden de los
+# atributos varia entre temas, asi que se toma la etiqueta entera y despues el
+# valor: exigir `rel` antes que `href` es como se pierde la mitad de los sitios.
+RE_ETIQUETA_CANONICA = re.compile(
+    r'<link\b[^>]*\brel=["\']canonical["\'][^>]*>', re.I)
+RE_ETIQUETA_OG_URL = re.compile(
+    r'<meta\b[^>]*\bproperty=["\']og:url["\'][^>]*>', re.I)
+RE_HREF = re.compile(r'\bhref=["\']([^"\']+)', re.I)
+RE_CONTENT = re.compile(r'\bcontent=["\']([^"\']+)', re.I)
 RE_IMG = re.compile(r'https?://[^\s"\'<>]+?\.(?:jpe?g|png|webp)', re.I)
 # El menos NO es opcional. Argentina esta entera en el hemisferio sur y
 # oeste, y con el signo opcional el patron de WordPress tomo pares como
@@ -475,6 +484,62 @@ def operacion_junto_al_precio(texto: str, precio: Any) -> str | None:
         if RE_VENTA_CERCA.search(ventana):
             vistas.add("venta")
     return vistas.pop() if len(vistas) == 1 else None
+
+
+# Donde un aviso cuelga la cosa que se publica. `RealEstateListing` describe
+# el AVISO -nombre, descripcion, oferta- y el inmueble va adentro: la
+# direccion, las coordenadas y los ambientes de `alagna` estan en su
+# `mainEntity`, que es un `Place`. Mirar solo el nodo de arriba deja la ficha
+# sin ciudad teniendo `addressLocality: Rosario` escrito ahi abajo.
+#
+# Se mira UNICAMENTE dentro del nodo ya elegido. La regla que impide completar
+# una propiedad con los datos de otra no se toca: lo que cuelga de este aviso
+# es de este aviso.
+ENTIDAD_DEL_AVISO = ("mainEntity", "itemOffered", "about", "item")
+
+
+def _de_su_entidad(nodo: dict, clave: str) -> Any:
+    """`clave` buscada en la entidad que cuelga de ESTE nodo."""
+    for puerta in ENTIDAD_DEL_AVISO:
+        adentro = nodo.get(puerta)
+        if isinstance(adentro, list):
+            adentro = adentro[0] if adentro else None
+        if isinstance(adentro, dict) and adentro.get(clave) is not None:
+            return adentro[clave]
+    return None
+
+
+def identidades_de_la_pagina(html: str, url: str) -> set[str]:
+    """Con que URLs se identifica ESTA pagina: la pedida y la que declara.
+
+    `alagna propiedades` publica en su sitemap
+    `/alquiler/local/local-comercial-...-centro` y la misma pagina declara
+    `rel="canonical"` y `og:url` con el id al final:
+    `/alquiler/local/local-comercial-...-centro-8408054`. Su JSON-LD usa esa
+    segunda forma.
+
+    El filtro de identidad de `_de_json_ld` comparaba solo contra la URL
+    pedida, no encontraba ningun nodo que coincidiera y **descartaba el JSON-LD
+    entero**: 0 de 229 fichas con ciudad, teniendo la fuente
+    `addressLocality: Rosario` escrito en el contrato publico de todas. La
+    agencia paro la cola por «la fuente publica ciudad y la extraccion fallo»,
+    y tenia razon.
+
+    El filtro sigue siendo estricto -su motivo es que los campos de una
+    propiedad no completen los de otra- y lo unico que cambia es contra que se
+    compara: la identidad de una pagina es la que la pagina declara, no la que
+    nosotros hayamos usado para pedirla.
+    """
+    identidades = {url}
+    for patron, valor in ((RE_ETIQUETA_CANONICA, RE_HREF),
+                          (RE_ETIQUETA_OG_URL, RE_CONTENT)):
+        etiqueta = patron.search(html or "")
+        if not etiqueta:
+            continue
+        encontrado = valor.search(etiqueta.group(0))
+        if encontrado:
+            identidades.add(unescape(encontrado.group(1)).strip())
+    return identidades
 
 
 def cuerpo_principal(html: str) -> str:
@@ -3221,10 +3286,22 @@ class GenericoConnector(Connector):
                 if not isinstance(value, str):
                     return None
                 return urllib.parse.urldefrag(urllib.parse.urljoin(url, value))[0].rstrip('/')
-            objetivo = identidad(url)
-            coincidentes = [item for item in candidatos
-                            if any(identidad(item[2].get(key)) == objetivo
-                                   for key in ('url', '@id'))]
+            objetivos = {identidad(u) for u in identidades_de_la_pagina(html, url)}
+
+            def es_de_esta_pagina(nodo: dict) -> bool:
+                if any(identidad(nodo.get(key)) in objetivos for key in ('url', '@id')):
+                    return True
+                # Un `Product` sin url propia se identifica por su OFERTA, que
+                # es la que lleva la url. Sin esto, al sumar la identidad
+                # declarada, la oferta aplanada coincidia sola y le ganaba al
+                # producto que la contiene: el aviso quedaba con `titulo: None`
+                # teniendo el nombre escrito un nivel mas arriba.
+                ofertas = nodo.get('offers')
+                ofertas = ofertas if isinstance(ofertas, list) else [ofertas]
+                return any(isinstance(o, dict) and identidad(o.get('url')) in objetivos
+                           for o in ofertas)
+
+            coincidentes = [item for item in candidatos if es_de_esta_pagina(item[2])]
             if coincidentes:
                 candidatos = coincidentes
             else:
@@ -3253,12 +3330,12 @@ class GenericoConnector(Connector):
             moneda = oferta.get("priceCurrency")
             m = moneda.upper().strip() if isinstance(moneda, str) else ''
             out["moneda"] = m if m in ("ARS", "USD") else None
-        dire = nodo.get("address")
+        dire = nodo.get("address") or _de_su_entidad(nodo, "address")
         if isinstance(dire, dict):
             out["direccion"] = limpiar(dire.get("streetAddress"))
             out["ciudad"] = limpiar(dire.get("addressLocality"))
             out["provincia"] = limpiar(dire.get("addressRegion"))
-        geo = nodo.get("geo")
+        geo = nodo.get("geo") or _de_su_entidad(nodo, "geo")
         if isinstance(geo, dict):
             try:
                 lat, lon = float(geo.get("latitude")), float(geo.get("longitude"))

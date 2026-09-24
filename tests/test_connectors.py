@@ -4421,3 +4421,97 @@ def test_MUERDE_una_imagen_no_es_una_ficha():
               "original_6aa2a3a24d3b3.jpg") is False
     assert es("https://x.test/properties/209/folleto.pdf") is False
     assert es("https://x.test/propiedad/882/chalet-villa-eden") is True
+
+
+# ---------------------------------------------------------------------------
+# La identidad de una página la declara la página, y el inmueble cuelga del aviso.
+#
+# `alagna propiedades` paró la cola con «la fuente publica ciudad y la
+# extracción falló», y tenía razón: 0 de 229 fichas con ciudad teniendo
+# `addressLocality: Rosario` en el JSON-LD de todas.
+# ---------------------------------------------------------------------------
+
+FICHA_ALAGNA = """<html><head>
+<link rel="canonical" href="https://x.test/alquiler/local/un-local-centro-8408054">
+<meta property="og:url" content="https://x.test/alquiler/local/un-local-centro-8408054">
+<script type="application/ld+json">{"@context":"https://schema.org",
+ "@type":"RealEstateListing",
+ "@id":"https://x.test/alquiler/local/un-local-centro-8408054",
+ "url":"https://x.test/alquiler/local/un-local-centro-8408054",
+ "name":"Local comercial, 2 plantas, Centro",
+ "mainEntity":{"@type":"Place","name":"Local",
+   "address":{"@type":"PostalAddress","streetAddress":"Espana al 300",
+              "addressLocality":"Rosario","addressRegion":"Santa Fe"},
+   "geo":{"@type":"GeoCoordinates","latitude":-32.9391973,"longitude":-60.6451795}},
+ "offers":{"@type":"Offer","url":"https://x.test/alquiler/local/un-local-centro-8408054"}}
+</script></head><body>Local comercial</body></html>"""
+
+# La url por la que se llegó: la del sitemap, SIN el id al final.
+URL_ALAGNA = "https://x.test/alquiler/local/un-local-centro"
+
+
+def test_MUERDE_la_identidad_de_la_pagina_es_la_que_la_pagina_declara():
+    """El sitemap publica una URL y la página declara otra, con el id al final.
+
+    Comparando sólo contra la URL pedida no coincidía ningún nodo y se
+    descartaba el JSON-LD entero: 229 fichas sin ciudad, sin provincia, sin
+    coordenadas y sin precio, con todo eso escrito en el contrato público.
+    """
+    datos = GenericoConnector._de_json_ld(FICHA_ALAGNA, URL_ALAGNA)
+    assert datos.get("tipo_ld") == "RealEstateListing"
+    assert datos.get("ciudad") == "Rosario"
+
+
+def test_MUERDE_el_inmueble_cuelga_del_aviso_y_ahi_hay_que_buscarlo():
+    """`RealEstateListing` describe el AVISO; la dirección está en su
+    `mainEntity`. Mirar sólo el nodo de arriba deja la ficha sin ciudad."""
+    datos = GenericoConnector._de_json_ld(FICHA_ALAGNA, URL_ALAGNA)
+    assert datos["ciudad"] == "Rosario"
+    assert datos["provincia"] == "Santa Fe"
+    assert datos["direccion"] == "Espana al 300"
+    assert datos["lat"] == -32.9391973
+
+
+def test_el_nodo_de_OTRA_propiedad_sigue_sin_poder_completar_esta():
+    """La regla que el arreglo no toca.
+
+    Si el nodo no es de esta página —ni por la URL pedida ni por la que la
+    página declara— no se usa. Completar una propiedad con los campos de otra
+    es el modo de falla que el filtro de identidad existe para evitar.
+    """
+    ajena = FICHA_ALAGNA.replace("un-local-centro-8408054", "otra-propiedad-99")
+    ajena = ajena.replace(
+        '<link rel="canonical" href="https://x.test/alquiler/local/otra-propiedad-99">',
+        '<link rel="canonical" href="https://x.test/alquiler/local/un-local-centro">')
+    ajena = ajena.replace(
+        '<meta property="og:url" content="https://x.test/alquiler/local/otra-propiedad-99">',
+        '')
+    assert GenericoConnector._de_json_ld(ajena, URL_ALAGNA) == {}
+
+
+def test_las_identidades_salen_del_canonical_y_del_og_url():
+    from connectors.generico import identidades_de_la_pagina
+    ident = identidades_de_la_pagina(FICHA_ALAGNA, URL_ALAGNA)
+    assert URL_ALAGNA in ident
+    assert "https://x.test/alquiler/local/un-local-centro-8408054" in ident
+    # Sin etiquetas, la única identidad es la que se pidió.
+    assert identidades_de_la_pagina("<html></html>", URL_ALAGNA) == {URL_ALAGNA}
+
+
+def test_MUERDE_el_producto_se_identifica_por_su_oferta():
+    """`arte propiedades`: el `Product` no tiene url propia; la lleva su
+    `Offer`. Al sumar la identidad declarada, la oferta aplanada coincidía
+    sola y le ganaba al producto que la contiene, y el aviso quedaba con
+    `titulo: None` teniendo el nombre un nivel más arriba. Medido: 2 de 193
+    fichas, las dos de la misma agencia."""
+    ficha = """<html><head>
+<link rel="canonical" href="https://x.test/propiedad/lote-lujan-123">
+<script type="application/ld+json">{"@context":"https://schema.org",
+ "@type":"Product","name":"Terreno/Lote en Venta en Lujan Centro",
+ "offers":{"@type":"Offer","url":"https://x.test/propiedad/lote-lujan-123",
+           "price":"110000","priceCurrency":"USD"}}</script>
+</head><body></body></html>"""
+    datos = GenericoConnector._de_json_ld(ficha, "https://x.test/propiedad/lote-lujan")
+    assert datos.get("tipo_ld") == "Product"
+    assert datos.get("titulo") == "Terreno/Lote en Venta en Lujan Centro"
+    assert datos.get("precio") == 110000.0

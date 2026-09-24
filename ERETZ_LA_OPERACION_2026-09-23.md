@@ -47,9 +47,20 @@ Si las apariciones de ese precio no coinciden todas en la misma operación, no
 se devuelve nada. `bottai` publica un buscador con «Venta | Alquiler» y ahí la
 página no está diciendo cuál es.
 
-**Medido sobre 72 fichas reales de 50 agencias** (una descarga por ficha,
-contra la fuente): **22 pasan de vacío a tener operación**, ninguna correcta
-se pierde.
+**Medido con la cascada completa del conector —título, url, catálogo, ficha y
+`<title>`— sobre 260 fichas reales de 98 agencias**, una descarga por ficha
+contra la fuente:
+
+| | fichas |
+|---|---:|
+| igual que antes | 227 |
+| **de vacía a con operación** | **25** |
+| **de equivocada a correcta** | **3** |
+| de equivocada a vacía (`bottai`, ver §2) | 4 |
+| error de descarga | 1 |
+
+Ninguna operación correcta se pierde. Las tres correcciones son las del §2:
+`buhler` dos veces y `franco`, todas «En venta» guardadas como alquiler.
 
 ## 2. «Alquilado» no quiere decir alquiler (64 equivocadas)
 
