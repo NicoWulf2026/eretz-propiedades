@@ -151,11 +151,19 @@ acorta es la espera sobre evidencia vieja, no la exigencia sobre la nueva.
 Sólo para `FAMILIA`. Un paro `COMPARTIDO` sospecha del código común, y la
 huella de una estrategia cambia también cuando cambia sólo su archivo propio.
 
-### 2. `COMPARTIDO` por defecto detuvo todo 15 horas y media
+### 2. `COMPARTIDO` por defecto detuvo todo
 
 A las 18:25 `inmobiliaria varesse` (`wasi`) paró con `sin_determinar /
 COMPARTIDO`: «second run is not idempotent». La cola entera quedó detenida
-hasta la mañana siguiente.
+hasta las 10:04 del día siguiente.
+
+**Corrección sobre la cifra.** Primero escribí «15 h 30 min detenida», que
+es el tiempo de reloj entre el paro y el relanzamiento. El registro del
+relanzador —corre cada diez minutos— tiene un hueco de 21:14 a 08:34: la
+máquina estuvo apagada esas once horas y veinte. Con la máquina encendida
+la cola estuvo bloqueada **4 h 19 min** (18:25–21:14 y 08:34–10:04). El
+argumento no cambia —un campo de una ficha detuvo 791 agencias—, pero el
+número que lo acompañaba estaba inflado casi cuatro veces.
 
 Lo que había de verdad: **91 urls iguales, 90 fichas idénticas, y una ficha
 con `dormitorios` en `None` en la primera corrida y `3` en la segunda.** La
