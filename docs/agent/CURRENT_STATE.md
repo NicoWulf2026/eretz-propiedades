@@ -36,6 +36,18 @@ Libro de familias detenidas: `ERETZ_FAMILIAS_DETENIDAS.jsonl`. Hoy: ninguna.
 
 ### 2026-09-24
 
+- **Ventana corta de `generico`, 16:20–16:45** (`0bd66ac5e5`). Se reabrió con
+  números: con las huellas invalidadas a las 15:17, había 6 resultados
+  `generico` vigentes; cada hora que pasaba el cambio costaba más. Tres
+  arreglos, todos validados con `normalize` completo sobre 16 fichas reales
+  (HEAD vs nuevo: cambian sólo las esperadas):
+  - descripción: el rótulo propio de la ficha gana sobre el `og:description`
+    institucional. 28 agencias / 1.774 fichas guardaban el eslogan del sitio;
+    sondeo de 193 fichas: 47 pasan a su descripción propia (24 agencias).
+  - título: «Agencia | Título» ya no se descarta entero (`cortes`: 23 fichas
+    CERTIFIED_COMPLETE tituladas con el nombre de la agencia).
+  - conteos desde `additionalProperty` (`baron`).
+  **Ventana cerrada de nuevo a las 16:45.**
 - **API de búsqueda** (`09aba154c4`, no toca huellas): la snapshot se arma
   en orden de id, cada fila de `busqueda` lleva el rowid de su propiedad, y
   lo declara en `snapshot_meta`. La API sólo toma el atajo si está
@@ -48,10 +60,6 @@ Libro de familias detenidas: `ERETZ_FAMILIAS_DETENIDAS.jsonl`. Hoy: ninguna.
   `extra.descripcion_descartada`); 5 se bajaron de la fuente y se firmaron en
   `_regresion/REVISADAS.jsonl` (2 correcciones, 3 cambios en la fuente).
   Correrlo con `--desde 2026-09-24T11:39:00` cada tanto.
-- **Pendiente anotado (generico, próxima ventana)**: fichas Next.js que
-  publican los conteos sólo en `additionalProperty` de schema.org
-  (`baron`: «Ambientes 4», «Dormitorios 3»). No se leen; la agencia sale
-  NEEDS_FIX, no certifica en falso.
 - **VENTANA SEMÁNTICA CERRADA a las 15:25.** Hoy se invalidaron todas las
   huellas dos veces (lote compartido 11:40, runner 15:17). A las 15:20 la
   cola `ready` tenía **784 agencias y 509 nunca certificadas**; de las 275
@@ -204,3 +212,11 @@ Nada de esto se ejecuta sin el usuario; se consolida acá.
 - Credencial de mínimo privilegio para `eretz_direct_property_writer`:
   `BLOCKED_EXTERNAL_CREDENTIAL` (ver `MASTER_PROGRESS.md`, checkpoint 08-27).
 - Merge a `main` / deploy: no corresponde todavía.
+- **Snapshot servida de la API local** (`D:\INMO CAPITAL\ERETZ_API_CONTRACT\
+  ERETZ_API_SNAPSHOT.sqlite3`): hoy es una `api_snapshot_v2` del 08-09. Hay
+  una v4 del 24-09 construida y verificada (57.665 filas, `integrity_check`
+  ok, 14 casos del benchmark con su status) en
+  `_scratch/unification/snapshot_v4_2026-09-24/`. Con ella: explorer 307→83
+  ms, combinada 900→249, mapa grande 1.236→674. Reemplazarla la hace servir;
+  el clasificador de permisos lo trató como deploy, así que se revirtió y
+  queda para el usuario (respaldo de la actual en `_anteriores/`).

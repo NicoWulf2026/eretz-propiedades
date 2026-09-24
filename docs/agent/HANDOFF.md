@@ -59,10 +59,14 @@ se produjo durante el cambio queda sin `strategy_fingerprint`. Entonces:
 4. Ítem 18(b): la operación que sólo existe en la ruta del catálogo
    (`bottai` 180, `constant` 24, `pozzobon` 7). Es un cambio de enumeración
    de `generico`: más riesgoso que su retorno actual.
-5. `_de_json_ld`: `numberOfRooms`/`numberOfBedrooms`/`numberOfBathroomsTotal`
-   ya se leen (`af8be5820c`); faltan `additionalProperty` (PropertyValue
-   «Ambientes»/«Dormitorios», caso `baron`) y `floorSize`. Toca `generico`:
-   próxima ventana.
+5. **Guardia de título repetido** (runner, `shared`: próxima ventana
+   compartida). Un título idéntico en ≥ la mitad de las fichas de una agencia
+   es el del sitio, igual que la descripción. Hoy nada impide que certifique:
+   `cortes` era COMPLETE con 23 títulos «Cortes Propiedades» (arreglado en
+   `generico`, `0bd66ac5e5`, pero la guardia falta para la próxima plantilla).
+   Otras 5 agencias con el mismo patrón ya salen NEEDS_FIX por otra razón.
+   Junto con las páginas de aterrizaje (`ficha_sin_contenido`, `fenix`,
+   `casablanca`). `floorSize` sigue sin usarse (no dice total o cubierta).
 6. Ítem 12 (`SIN_INVENTARIO` con dos significados): defecto de nombre, no de
    decisión; bajo retorno.
 7. Beta del backend (ver `docs/ERETZ_UNIFICATION_PLAN.md` § «Backend beta
