@@ -473,6 +473,11 @@ def plan(salida: Path, anotar: bool = False) -> tuple[list[int], str, list[str]]
                   for f in familias_pendientes(salida)}
     paro = paro_vigente(salida)
     motivo_extra = ""
+    if paro is not None and str(paro.get("radio") or "") == RADIO_OPERACION:
+        # La pusimos nosotros para relanzar: no es un defecto que esperar. Los
+        # workers paran ante ella y el que arranque la borra.
+        motivo_extra = "; relanzamiento pedido por el propio relanzador"
+        paro = None
     if paro is not None and not paro_atendido(salida, paro):
         escritas = intentar_precedente(salida)
         if escritas:
@@ -510,10 +515,86 @@ def plan(salida: Path, anotar: bool = False) -> tuple[list[int], str, list[str]]
     vivos = workers_vivos(salida)
     faltan = [w for w in range(WORKERS) if w not in vivos]
     if not faltan:
+        liberadas = familias_liberadas_en_curso(salida, vivos, set(excluir))
+        if liberadas:
+            if anotar:
+                pedir_relanzamiento(salida, liberadas)
+            motivo_extra += (f"; se liberaron {', '.join(sorted(liberadas))} y "
+                             f"los workers corren sin ellas: paran en la "
+                             f"proxima agencia para tomarlas")
         return [], f"los {WORKERS} workers ya estan vivos: {vivos}{motivo_extra}", excluir
     return faltan, (f"faltan {len(faltan)} de {WORKERS}"
                     + (f"; vivos: {vivos}" if vivos else "")
                     + motivo_extra), excluir
+
+
+# Una bandera que ponemos NOSOTROS para relanzar, no un defecto. El runner para
+# ante cualquier bandera al terminar la agencia en curso -sin cortar una
+# corrida a medias- y la borra al arrancar; el vigilante la reconoce y no
+# alerta. Lo unico que faltaba es que el relanzador tampoco la tomara por un
+# paro sin diagnosticar.
+RADIO_OPERACION = "OPERACION"
+
+
+def familias_liberadas_en_curso(salida: Path, vivos: dict[int, int],
+                                excluir: set[str]) -> set[str]:
+    """Familias que los workers VIVOS excluyen y que ya no hace falta excluir.
+
+    Liberar una familia no llega sola a los workers que ya estan corriendo: el
+    2026-09-24 a las 10:29 se firmaron los dos paros de `tokko` y el codigo de
+    `wordpress` cambio, pero los workers lanzados a las 10:04 tenian las dos
+    familias excluidas y las iban a seguir excluyendo hasta terminar las otras
+    378 agencias. Dias.
+
+    Se reconstruye que excluye cada worker vivo desde la bitacora de
+    lanzamientos, por su pid. Un worker que no figura -lanzado a mano- no se
+    toca: sin saber con que exclusiones corre, no hay nada que comparar.
+    """
+    ruta = salida / "ERETZ_RELANZAMIENTOS.jsonl"
+    if not ruta.exists() or not vivos:
+        return set()
+    por_pid: dict[int, set[str]] = {}
+    for linea in ruta.open(encoding="utf-8", errors="replace"):
+        linea = linea.strip()
+        if not linea:
+            continue
+        try:
+            fila = json.loads(linea)
+        except ValueError:
+            continue
+        excluidos = {str(c).strip().lower()
+                     for c in (fila.get("conectores_excluidos") or [])}
+        for pid in (fila.get("lanzados") or {}).values():
+            try:
+                por_pid[int(pid)] = excluidos
+            except (TypeError, ValueError):
+                continue
+    en_curso: set[str] = set()
+    for pid in vivos.values():
+        if pid in por_pid:
+            en_curso |= por_pid[pid]
+    return en_curso - excluir
+
+
+def pedir_relanzamiento(salida: Path, liberadas: set[str]) -> bool:
+    """Pide a los workers que paren en la proxima agencia. Nunca pisa un paro.
+
+    Si ya hay una bandera -un defecto de verdad, u otro pedido nuestro- no se
+    escribe nada: la de un defecto tiene que seguir diciendo lo que dice.
+    """
+    ruta = salida / "AGENCY_CERTIFICATION_STOP.json"
+    if ruta.exists():
+        return False
+    ruta.write_text(json.dumps({
+        "canonical_agency_id": "(relanzamiento)",
+        "componente": "familias_liberadas",
+        "radio": RADIO_OPERACION,
+        "liberadas": sorted(liberadas),
+        "evidencia": (f"se liberaron {', '.join(sorted(liberadas))}: los "
+                      f"workers en curso las excluyen y hay que relanzarlos"),
+        "cuando": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "database_writes": 0}, ensure_ascii=False), encoding="utf-8")
+    return True
 
 
 def decidir(salida: Path) -> tuple[list[int], str]:

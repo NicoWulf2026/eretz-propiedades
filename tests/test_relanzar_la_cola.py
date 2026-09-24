@@ -531,3 +531,81 @@ def test_la_huella_se_toma_del_triaje_cuando_la_bandera_no_la_trae(
                              "cuando": cuando}) + "\n")
     faltan, motivo, excluir = modulo.plan(tmp_path)
     assert excluir == [] and faltan == [0, 1], motivo
+
+
+# ---------------------------------------------------------------------------
+# Liberar una familia tiene que llegar a los workers que ya están corriendo.
+#
+# El 2026-09-24 a las 10:29 se firmaron los paros de `tokko` y cambió el
+# código de `wordpress`; los workers lanzados a las 10:04 las excluían y las
+# iban a seguir excluyendo hasta terminar las otras 378 agencias. Días.
+# ---------------------------------------------------------------------------
+
+def bitacora_de_lanzamiento(salida: Path, pids: dict, excluidos: list) -> None:
+    with (salida / "ERETZ_RELANZAMIENTOS.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"cuando": ahora(-1800), "lanzados": pids,
+                             "conectores_excluidos": excluidos}) + "\n")
+
+
+def test_MUERDE_una_familia_liberada_hace_parar_a_los_workers_que_la_excluyen(
+        tmp_path, monkeypatch):
+    import relanzar_la_cola as modulo
+    monkeypatch.setattr(modulo, "workers_vivos", lambda s: {0: 111, 1: 222})
+    bitacora_de_lanzamiento(tmp_path, {"0": 111, "1": 222}, ["tokko", "wordpress"])
+    faltan, motivo, excluir = modulo.plan(tmp_path, anotar=True)
+    assert faltan == [] and excluir == []
+    bandera = json.loads((tmp_path / "AGENCY_CERTIFICATION_STOP.json").read_text(
+        encoding="utf-8"))
+    assert bandera["radio"] == "OPERACION"
+    assert bandera["liberadas"] == ["tokko", "wordpress"]
+    assert "paran en la proxima agencia" in motivo
+
+
+def test_MUERDE_el_pedido_de_relanzamiento_nunca_pisa_un_paro_de_verdad(
+        tmp_path, monkeypatch):
+    import relanzar_la_cola as modulo
+    poner_paro_de_familia(tmp_path, conector="generico")
+    antes = (tmp_path / "AGENCY_CERTIFICATION_STOP.json").read_text(encoding="utf-8")
+    assert modulo.pedir_relanzamiento(tmp_path, {"tokko"}) is False
+    assert (tmp_path / "AGENCY_CERTIFICATION_STOP.json").read_text(
+        encoding="utf-8") == antes
+
+
+def test_MUERDE_nuestra_propia_bandera_no_bloquea_el_relanzamiento(tmp_path):
+    """Sin esto, el pedido de relanzar se leería como un paro sin firma y
+    dejaría la cola parada: el arreglo produciría el problema que arregla."""
+    import relanzar_la_cola as modulo
+    modulo.pedir_relanzamiento(tmp_path, {"tokko"})
+    faltan, motivo, excluir = modulo.plan(tmp_path)
+    assert faltan == [0, 1], motivo
+    assert excluir == []
+
+
+def test_un_worker_lanzado_a_mano_no_se_toca(tmp_path, monkeypatch):
+    """Sin saber con qué exclusiones corre, no hay nada que comparar."""
+    import relanzar_la_cola as modulo
+    monkeypatch.setattr(modulo, "workers_vivos", lambda s: {0: 999, 1: 998})
+    bitacora_de_lanzamiento(tmp_path, {"0": 111, "1": 222}, ["tokko"])
+    modulo.plan(tmp_path, anotar=True)
+    assert not (tmp_path / "AGENCY_CERTIFICATION_STOP.json").exists()
+
+
+def test_si_la_familia_sigue_detenida_no_se_relanza_nada(tmp_path, monkeypatch):
+    import relanzar_la_cola as modulo
+    monkeypatch.setattr(modulo, "workers_vivos", lambda s: {0: 111, 1: 222})
+    monkeypatch.setattr(modulo, "huella_actual", lambda c, e: "igual")
+    bitacora_de_lanzamiento(tmp_path, {"0": 111, "1": 222}, ["tokko"])
+    poner_paro_con_huella(tmp_path, "igual", conector="tokko", estrategia="tokko")
+    modulo.plan(tmp_path, anotar=True)
+    bandera = json.loads((tmp_path / "AGENCY_CERTIFICATION_STOP.json").read_text(
+        encoding="utf-8"))
+    assert bandera["radio"] == "FAMILIA"  # la del paro, intacta
+
+
+def test_el_dry_run_no_pide_relanzar(tmp_path, monkeypatch):
+    import relanzar_la_cola as modulo
+    monkeypatch.setattr(modulo, "workers_vivos", lambda s: {0: 111, 1: 222})
+    bitacora_de_lanzamiento(tmp_path, {"0": 111, "1": 222}, ["tokko"])
+    _, motivo, _ = modulo.plan(tmp_path, anotar=False)
+    assert "tokko" in motivo
+    assert not (tmp_path / "AGENCY_CERTIFICATION_STOP.json").exists()
