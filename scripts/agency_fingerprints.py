@@ -258,6 +258,70 @@ def huella_del_input_geografico(directorio: "Path | None" = None) -> bytes:
     return ("georef:" + "|".join(partes)).encode()
 
 
+def archivos_de_la_huella() -> list[Path]:
+    """Todos los archivos que `fingerprint_components` lee, para cualquier
+    conector y estrategia. `test_la_guarda_conoce_todos_los_archivos_de_la_huella`
+    fija que no falte ninguno: un archivo que entra en la huella y no en esta
+    lista es un cambio que la guarda de abajo no veria."""
+    return [
+        ROOT / "scripts" / "image_quality.py",
+        ROOT / "scraper" / "network_security.py",
+        ROOT / "scraper" / "models.py",
+        ROOT / "scraper" / "detail_urls.py",
+        ROOT / "scripts" / "agency_web_discovery.py",
+        ROOT / "connectors" / "base.py",
+        ROOT / "scripts" / "run_rollout.py",
+        ROOT / "scripts" / "agency_certifier.py",
+        ROOT / "connectors" / "geografia.py",
+        ROOT / "scripts" / "geo_reference.py",
+        ROOT / "connectors" / "texto.py",
+        ROOT / "connectors" / "coherencia.py",
+        ROOT / "connectors" / "formularios.py",
+        ROOT / "connectors" / "generico.py",
+        ROOT / "connectors" / "tokko.py",
+        ROOT / "connectors" / "wasi.py",
+        ROOT / "connectors" / "wordpress.py",
+        ROOT / "connectors" / "century21.py",
+    ]
+
+
+def _estado_de_la_huella() -> tuple:
+    estados = []
+    for ruta in archivos_de_la_huella():
+        try:
+            st = ruta.stat()
+            estados.append((str(ruta), st.st_mtime_ns, st.st_size))
+        except OSError:
+            estados.append((str(ruta), None, None))
+    return tuple(estados), huella_del_input_geografico()
+
+
+# El estado de los archivos de la huella cuando este PROCESO los importo.
+#
+# `strategy_fingerprint` lee de disco en el momento en que se la pide. El
+# certificador la estampa al TERMINAR la agencia, y un worker corre con el
+# codigo que cargo al arrancar. Si alguien edita un conector con los workers
+# en marcha, la siguiente certificacion sale con la huella del codigo NUEVO
+# habiendo corrido el VIEJO: parece vigente y no lo es. Es la certificacion
+# falsa mas silenciosa posible, porque la huella existe justamente para
+# impedirla.
+_ESTADO_AL_IMPORTAR = _estado_de_la_huella()
+
+
+def codigo_cambiado_desde_el_arranque() -> list[str]:
+    """Que archivos de la huella cambiaron desde que este proceso arranco.
+
+    Vacio si ninguno. Si hay alguno, lo que este proceso tiene en memoria ya
+    no es lo que `strategy_fingerprint` describe.
+    """
+    antes, geo_antes = _ESTADO_AL_IMPORTAR
+    ahora, geo_ahora = _estado_de_la_huella()
+    cambiados = [a[0] for a, b in zip(antes, ahora) if a != b]
+    if geo_antes != geo_ahora:
+        cambiados.append("georef:MANIFEST.json")
+    return cambiados
+
+
 def fingerprint_components(connector: str, strategy: str) -> dict[str, bytes]:
     components = {
         "shared/image_quality": _semantic_file(ROOT / "scripts" / "image_quality.py"),

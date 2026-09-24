@@ -50,6 +50,7 @@ from scripts.agency_certifier import (
 from scripts.run_rollout import PRESUPUESTO_POR_FUENTE
 from scripts.agency_fingerprints import (
     GENERIC_STRATEGY_METHODS,
+    codigo_cambiado_desde_el_arranque,
     current_code_evidence,
     strategy_fingerprint,
     strategy_for,
@@ -287,6 +288,35 @@ def pedir_paro(output: Path, canonical_id: str, triage: dict[str, Any]) -> None:
         "strategy_fingerprint": triage.get("strategy_fingerprint"),
         "evidencia": triage.get("evidencia"),
         "cuando": time.strftime("%Y-%m-%dT%H:%M:%S")})
+
+
+def sin_huella_ajena(output: Path, result: dict[str, Any],
+                     cambiados: list[str]) -> dict[str, Any]:
+    """El resultado de una agencia durante la cual cambio el codigo en disco.
+
+    `certify` estampa `strategy_fingerprint` leyendo el disco al terminar, y
+    esta agencia corrio con el codigo que habia en memoria al arrancar el
+    proceso. Si alguien edito un archivo de la huella en el medio, esa huella
+    describe un codigo que no corrio: la certificacion pareceria vigente sin
+    serlo.
+
+    No se inventa la huella vieja -los archivos viejos ya no estan-: se quita.
+    Sin huella, `current_code_evidence` da falso y la agencia se vuelve a
+    certificar con el codigo nuevo. El estado, las razones y todo lo demas se
+    conservan tal cual: lo unico que se deja de afirmar es de que codigo sale.
+    El paquete se reescribe igual, para que no quede una copia que diga otra
+    cosa.
+    """
+    corregido = {**result, "strategy_fingerprint": None,
+                 "codigo_cambio_en_vuelo": cambiados}
+    canonical_id = result.get("canonical_agency_id")
+    if canonical_id:
+        paquete = (output / "agencies"
+                   / hashlib.sha256(canonical_id.encode()).hexdigest()[:16]
+                   / "certification.json")
+        if paquete.exists():
+            write_json(paquete, corregido)
+    return corregido
 
 
 def hay_que_parar(output: Path) -> dict[str, Any] | None:
@@ -1058,6 +1088,16 @@ def main() -> int:
                               "radio": ajeno.get("radio")},
                              ensure_ascii=False), flush=True)
             break
+        # El codigo en disco ya no es el que este proceso tiene en memoria: la
+        # proxima certificacion saldria con la huella de uno habiendo corrido
+        # el otro. Se para limpio, entre agencias, y el relanzador levanta un
+        # worker nuevo con el codigo nuevo. Ver `codigo_cambiado_desde_el_arranque`.
+        cambiados = codigo_cambiado_desde_el_arranque()
+        if cambiados:
+            stopped_on = "(codigo cambiado)"
+            print(json.dumps({"para_por_codigo_cambiado": cambiados},
+                             ensure_ascii=False), flush=True)
+            break
         write_json(progress_path, progress_payload(
             mode=mode_name, universe=len(catalog), queue=queue,
             pending=pending[index - 1:],
@@ -1074,6 +1114,9 @@ def main() -> int:
             raise
         except Exception as error:  # noqa: BLE001 - una fuente no tumba la cola
             result = runner_error(output, canonical_id, error)
+        en_vuelo = codigo_cambiado_desde_el_arranque()
+        if en_vuelo:
+            result = sin_huella_ajena(output, result, en_vuelo)
         update_rollups(output, result)
         # El registro de que se vio y cuando. Sin esto el ciclo de vida no se
         # puede activar nunca: el checkpoint y el paquete guardan la ultima
