@@ -625,3 +625,54 @@ def test_la_paginacion_cortada_en_la_primera_corrida_tambien_cuenta():
     t = clasificar(r)
     assert t["componente_sospechoso"] == "enumeracion_compartida"
     assert "run1" in t["evidencia"]
+
+
+# ---------------------------------------------------------------------------
+# Dos fallas cruzadas no son un catálogo que se mueve.
+# ---------------------------------------------------------------------------
+
+def test_MUERDE_dos_fichas_que_no_bajaron_no_paran_la_familia():
+    """`di maria`, 2026-09-23: paró `tokko` entera —299 agencias—.
+
+    Las dos corridas enumeraron 350; cada una falló al bajar UNA ficha, y fue
+    una distinta en cada corrida. La 2 «no vio» la que le falló a ella y «vio
+    de más» la que le había fallado a la 1.
+    """
+    t = clasificar(resultado(
+        reasons=["one or more listing details failed", "run inventories differ",
+                 "second run is not idempotent"],
+        comparison={"identity_collisions": 0, "missing_in_run2": 1,
+                    "new_in_run2": 1, "run1_urls": 349, "run2_urls": 349},
+        run1={"estado": "OK", "enumeradas": 350, "detalles_fallidos": 1,
+              "errores_por_etapa": {}},
+        run2={"estado": "OK", "enumeradas": 350, "detalles_fallidos": 1,
+              "errores_por_etapa": {}}))
+    assert t["decision"] == CONTINUE
+    assert t["radio_estimado"] == RADIO_AGENCIA
+    assert t["componente_sospechoso"] == "fichas_que_no_bajaron"
+
+
+def test_MUERDE_si_faltan_mas_de_las_que_fallaron_sigue_parando():
+    """Una ficha que no bajó explica una faltante, no cinco."""
+    t = clasificar(resultado(
+        comparison={"identity_collisions": 0, "missing_in_run2": 5,
+                    "new_in_run2": 0, "run1_urls": 350, "run2_urls": 345},
+        run1={"estado": "OK", "enumeradas": 350, "detalles_fallidos": 0,
+              "errores_por_etapa": {}},
+        run2={"estado": "OK", "enumeradas": 350, "detalles_fallidos": 1,
+              "errores_por_etapa": {}}))
+    assert t["decision"] == STOP
+    assert t["componente_sospechoso"] == "inventario_inestable_entre_corridas"
+
+
+def test_MUERDE_si_la_enumeracion_cambio_no_alcanza_con_contar_fallas():
+    """Con enumeraciones distintas, lo que falta puede ser el catálogo que se
+    corrió, y ahí sí se sospecha de la familia."""
+    t = clasificar(resultado(
+        comparison={"identity_collisions": 0, "missing_in_run2": 1,
+                    "new_in_run2": 0, "run1_urls": 350, "run2_urls": 349},
+        run1={"estado": "OK", "enumeradas": 350, "detalles_fallidos": 0,
+              "errores_por_etapa": {}},
+        run2={"estado": "OK", "enumeradas": 349, "detalles_fallidos": 1,
+              "errores_por_etapa": {}}))
+    assert t["decision"] == STOP

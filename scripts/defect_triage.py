@@ -609,6 +609,44 @@ def clasificar(resultado: dict[str, Any]) -> dict[str, Any]:
                 f"registrada: la paginacion se interrumpio en "
                 f"{' y '.join(cortadas)}. No es el inventario que se mueve, es "
                 f"la enumeracion que se corto, y eso es codigo compartido")
+        # Tampoco es «inventario inestable» cuando las dos corridas
+        # enumeraron lo mismo y lo que falta son fichas que no se pudieron
+        # BAJAR, y el propio conector lo dejo contado.
+        #
+        # `di maria` lo mostro el 2026-09-23 y paro la familia `tokko`
+        # entera -299 agencias-: las dos corridas enumeraron 350 en 18
+        # paginas, cada una fallo al bajar UNA ficha, y fue una distinta en
+        # cada corrida. La 2 «no vio» la que le fallo a ella y «vio de mas»
+        # la que le habia fallado a la 1. El catalogo no se movio: se
+        # cruzaron dos fallas.
+        #
+        # La prueba no es una suposicion. Si lo que falta en la 2 cabe en SUS
+        # fichas fallidas y lo que sobra cabe en las de la 1, con la misma
+        # enumeracion, las fallas fueron sobre propiedades DISTINTAS -si
+        # hubiera sido la misma, no apareceria ni como faltante ni como
+        # nueva-, y eso es lo que separa una falla pasajera de un defecto del
+        # codigo. Medido sobre el historial: 11 de los 53 resultados con
+        # propiedades faltantes en la segunda corrida son exactamente esto.
+        #
+        # No se certifica nada: la agencia sigue en NEEDS_FIX por «one or
+        # more listing details failed». Lo que cambia es el radio. Una ficha
+        # que no bajo es de esta agencia, no de la familia.
+        uno = resultado.get("run1") or {}
+        dos = resultado.get("run2") or {}
+        nuevas = int(comparacion.get("new_in_run2") or 0)
+        fallidas_1 = int(uno.get("detalles_fallidos") or 0)
+        fallidas_2 = int(dos.get("detalles_fallidos") or 0)
+        misma_enumeracion = bool(uno.get("enumeradas")
+                                 and uno.get("enumeradas") == dos.get("enumeradas"))
+        if (misma_enumeracion and faltantes <= fallidas_2
+                and nuevas <= fallidas_1):
+            return _veredicto(
+                CONTINUE, resultado, "fichas_que_no_bajaron", RADIO_AGENCIA,
+                f"las dos corridas enumeraron {uno.get('enumeradas')}; "
+                f"{faltantes} faltan en la segunda y la segunda no pudo bajar "
+                f"{fallidas_2} fichas, {nuevas} sobran y la primera no pudo "
+                f"bajar {fallidas_1}. Fallaron fichas distintas en cada "
+                f"corrida: no se movio el catalogo, se cruzaron dos fallas")
         return _veredicto(
             STOP, resultado, "inventario_inestable_entre_corridas",
             RADIO_FAMILIA,
