@@ -3733,7 +3733,12 @@ class GenericoConnector(Connector):
             rf"\s*:?\s*</{rotulo}>", html or "", re.I | re.S)
         if not etiqueta:
             return None
-        resto = (html or "")[etiqueta.end():]
+        # Sin scripts ANTES de cortar: `resto[:6000]` partia un `<script>` que
+        # empezaba adentro de la ventana y cerraba afuera, y sin su cierre el
+        # codigo pasaba como texto. `cbdestino.com.ar` guardo asi 4.000
+        # caracteres de JavaScript -con un token CSRF distinto en cada
+        # corrida- como descripcion de 16 fichas.
+        resto = sin_bloques_no_textuales((html or "")[etiqueta.end():])
         # La misma maqueta repite el rotulo, una vez por variante responsive.
         # Cortar en "el proximo encabezado" caia sobre ese duplicado y dejaba
         # el texto entero afuera.

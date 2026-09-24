@@ -87,6 +87,18 @@ def test_descripcion_ampliada_dentro_de_un_textarea():
     assert p.descripcion == PROPIA
 
 
+def test_MUERDE_un_script_partido_por_la_ventana_no_entra_como_descripcion():
+    # `cbdestino.com.ar`: el texto sigue al rotulo sin bloque propio y, mas
+    # abajo, un <script> que empieza adentro de la ventana de 6.000 caracteres
+    # y cierra afuera. Cortado, perdia su cierre y el codigo pasaba como texto.
+    script = "<script>" + "$('#contact_email').attr('placeholder', 'x'); " * 200 + "</script>"
+    cuerpo = (f"<h1>Depto</h1><h3>Descripción</h3>{PROPIA} "
+              + "Detalles de la ficha. " * 20 + script + "<h3>Contacto</h3>")
+    p = _normalizar(_pagina(ESLOGAN, cuerpo))
+    assert p.descripcion.startswith(PROPIA)
+    assert "contact_email" not in p.descripcion
+
+
 # --------------------------------------------------------------------- titulo
 
 def test_MUERDE_el_nombre_de_la_agencia_delante_del_titulo_no_tira_el_titulo():
