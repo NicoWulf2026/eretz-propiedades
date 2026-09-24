@@ -4660,3 +4660,43 @@ def test_una_celda_de_valor_con_texto_ademas_del_numero_no_se_toma():
     ficha = ('<span>Dormitorios</span><div><svg></svg> 4 a estrenar en 2027</div>')
     assert GenericoConnector._cuenta_de_ficha(
         ficha, "", ETIQUETAS_DE_CONTEO["dormitorios"], None) is None
+
+
+# ---------------------------------------------------------------------------
+# Los conteos de schema.org, y un «+4» que no es un 4.
+# ---------------------------------------------------------------------------
+
+def test_MUERDE_los_conteos_de_schema_org_se_leen():
+    """`normalize` pedía `datos["dorm"]` y `datos["banos"]` y `_de_json_ld`
+    nunca los escribía. En 58 fichas reales dormitorios coincidía con el texto
+    30 de 30 y baños 8 de 8."""
+    ficha = """<html><head><script type="application/ld+json">{"@context":"https://schema.org",
+     "@type":"House","name":"Casa en Sarandi","url":"https://x.test/propiedad/528377",
+     "numberOfRooms":5,"numberOfBedrooms":4,"numberOfBathroomsTotal":2}</script></head></html>"""
+    datos = GenericoConnector._de_json_ld(ficha, "https://x.test/propiedad/528377")
+    assert (datos["ambientes"], datos["dorm"], datos["banos"]) == (5, 4, 2)
+
+
+def test_un_conteo_de_schema_org_que_no_es_entero_no_se_toma():
+    ficha = """<html><head><script type="application/ld+json">{"@type":"House",
+     "url":"https://x.test/p/1","numberOfBathroomsTotal":1.5,"numberOfRooms":0}</script></head></html>"""
+    datos = GenericoConnector._de_json_ld(ficha, "https://x.test/p/1")
+    assert datos.get("banos") is None and datos.get("ambientes") is None
+
+
+def test_MUERDE_un_mas_cuatro_es_un_piso_no_una_cantidad():
+    """`danielerbiti` muestra «+4 Ambientes» —el contador topa en cuatro— y la
+    misma ficha dice «inmueble de 5 ambientes». Guardábamos 4."""
+    from connectors.generico import ETIQUETAS_DE_CONTEO
+    et = ETIQUETAS_DE_CONTEO["ambientes"]
+    texto = "Casas +4 Ambientes 2 baños 4 Dormitorios. Oportunidad de inmueble de 5 ambientes"
+    assert GenericoConnector._cuenta(texto, et, None) == 5
+    assert GenericoConnector._cuenta("Casas +4 Ambientes 2 baños", et, None) is None
+    assert GenericoConnector._cuenta("Ambientes: 4+ Dormitorios: 3", et, None) is None
+    assert GenericoConnector._cuenta("Casa de 4 ambientes", et, None) == 4
+
+
+def test_MUERDE_el_conteo_tipado_manda_sobre_el_texto():
+    from connectors.generico import ETIQUETAS_DE_CONTEO
+    et = ETIQUETAS_DE_CONTEO["ambientes"]
+    assert GenericoConnector._cuenta_de_ficha("<p>+4 Ambientes</p>", "+4 Ambientes", et, 5) == 5

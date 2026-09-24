@@ -2365,7 +2365,8 @@ class GenericoConnector(Connector):
             "banos": None if es_emprendimiento else self._cuenta_de_ficha(
                 principal, texto_campos, ETIQUETAS_DE_CONTEO["banos"], datos.get("banos")),
             "ambientes": None if es_emprendimiento else self._cuenta_de_ficha(
-                principal, texto_campos, ETIQUETAS_DE_CONTEO["ambientes"], None),
+                principal, texto_campos, ETIQUETAS_DE_CONTEO["ambientes"],
+                datos.get("ambientes")),
             "superficie_total": (mapaprop.get("superficie_total")
                                  or datos.get("sup_total")
                                  or self._sup(texto_campos, r"total|terreno")),
@@ -3361,6 +3362,32 @@ class GenericoConnector(Connector):
             out["direccion"] = limpiar(dire.get("streetAddress"))
             out["ciudad"] = limpiar(dire.get("addressLocality"))
             out["provincia"] = limpiar(dire.get("addressRegion"))
+        # Los conteos que schema.org publica tipados. `normalize` ya los pedia
+        # -`datos.get("dorm")`, `datos.get("banos")`- y nunca se escribian: el
+        # contrato publico de la ficha quedaba sin leer y los conteos salian
+        # solo del texto.
+        #
+        # Medido sobre 58 fichas reales con JSON-LD: dormitorios coincide con
+        # el texto en 30 de 30, banos en 8 de 8, ambientes en 13 de 15. Y en
+        # las dos de ambientes que no coinciden el que estaba mal era el
+        # TEXTO: la ficha muestra «+4 Ambientes» -un contador que topa en
+        # cuatro- y la descripcion y el JSON-LD dicen 5. `floorSize` no se
+        # usa: no dice si es superficie total o cubierta, y en 2 de 8 no
+        # coincidia con la total.
+        for clave, destino in (("numberOfRooms", "ambientes"),
+                               ("numberOfBedrooms", "dorm"),
+                               ("numberOfBathroomsTotal", "banos"),
+                               ("numberOfBathrooms", "banos")):
+            if out.get(destino) is not None:
+                continue
+            valor = nodo.get(clave)
+            if valor is None:
+                valor = _de_su_entidad(nodo, clave)
+            if isinstance(valor, dict):
+                valor = valor.get("value")
+            numero = a_numero(valor)
+            if numero is not None and float(numero).is_integer() and 1 <= numero <= 99:
+                out[destino] = int(numero)
         geo = nodo.get("geo") or _de_su_entidad(nodo, "geo")
         if isinstance(geo, dict):
             try:
@@ -3390,8 +3417,13 @@ class GenericoConnector(Connector):
         # demas. En una ficha real ``baño sauna ... Ambientes: 5 Dormitorios: 4
         # Baños: 5`` buscar el numero ANTES del rotulo tomaba el 5 de
         # ambientes como dormitorios y el 4 como baños.
+        #
+        # Y un numero con «+» -«+4 Ambientes», «Ambientes: 4+»- es un piso, no
+        # una cantidad: el contador de la ficha topa ahi. Leerlo como 4 guardaba
+        # 4 en una casa que la misma ficha describe como «de 5 ambientes». Se
+        # saltea y, si la ficha dice la cantidad en otro lado, se toma esa.
         for rotulo in re.finditer(
-                rf"(?:{etiqueta})\s*:\s*(\d{{1,2}})\b", texto, re.I):
+                rf"(?:{etiqueta})\s*:\s*(\d{{1,2}})\b(?!\s*\+)", texto, re.I):
             if 1 <= int(rotulo.group(1)) <= 99:
                 return int(rotulo.group(1))
         # Sin dos puntos la adyacencia es ambigua y hay que resolverla mirando
@@ -3403,7 +3435,7 @@ class GenericoConnector(Connector):
         # quedaban con los valores corridos un lugar.
         if GenericoConnector._es_tabla_de_atributos(texto):
             hallazgo = re.search(
-                rf"(?:{etiqueta})\s*(\d{{1,2}})\b", texto, re.I)
+                rf"(?:{etiqueta})\s*(\d{{1,2}})\b(?!\s*\+)", texto, re.I)
         else:
             # Cero en los CMS suele ser placeholder, no una afirmacion de que
             # la propiedad carece del atributo. Si la descripcion publica una
@@ -3413,7 +3445,7 @@ class GenericoConnector(Connector):
             # El limite de palabra evita leer el "2" de "196 m2 Ambientes"
             # como si fuera la cantidad de ambientes.
             hallazgo = re.search(
-                rf"\b([1-9]\d?)\s*(?:{etiqueta})", texto, re.I)
+                rf"(?<!\+)\b([1-9]\d?)\s*(?:{etiqueta})", texto, re.I)
         if not hallazgo:
             return None
         valor = int(hallazgo.group(1))
@@ -3490,6 +3522,15 @@ class GenericoConnector(Connector):
     def _cuenta_de_ficha(html: str, texto: str, etiqueta: str,
                          previo: Any) -> int | None:
         """Prioriza la pareja label/valor estructural de portales legacy."""
+        # Lo que la ficha publica tipado en schema.org manda: es un contrato
+        # publico, no una convencion visual. Hoy `previo` solo lo llena
+        # `_de_json_ld`; ver alli lo medido.
+        try:
+            tipado = int(previo) if previo is not None else None
+        except (TypeError, ValueError):
+            tipado = None
+        if tipado is not None and 1 <= tipado <= 99:
+            return tipado
         marcado = normalizar_texto_campos(unescape(html or ""))
         rotulo = re.search(
             rf'<div[^>]+class=["\'][^"\']*desc[^"\']*["\'][^>]*>\s*'
