@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
@@ -85,6 +86,19 @@ def _loss_reason(field: str, old: dict, fresh: dict) -> str:
     if (field == 'descripcion' and isinstance(extra, dict)
             and extra.get('descripcion_descartada')):
         return 'EXPLAINED_VALIDATION'
+    # Validation discards are also recorded on the row: `atributos_descartados`
+    # lists the fields it emptied ("dormitorios>ambientes" is an impossible
+    # pair, "dormitorios_en_un_terreno" a count a lot cannot have), and a
+    # province inferred from the agency registry that the coordinates
+    # contradict is kept in `provincia_supuesta_descartada`. Only an exact field
+    # (or the SAME province value) counts.
+    if isinstance(extra, dict):
+        tokens = re.split(r'[,>]', str(extra.get('atributos_descartados') or ''))
+        if any(t == field or t.startswith(field + '_') for t in tokens if t):
+            return 'EXPLAINED_VALIDATION'
+        if (field == 'provincia' and extra.get('provincia_supuesta_descartada')
+                and extra['provincia_supuesta_descartada'] == old.get(field)):
+            return 'EXPLAINED_VALIDATION'
     # A move only exists if the value is present in the FRESH neighboring field.
     neighbors = {'barrio': ('ciudad', 'provincia'), 'ciudad': ('barrio', 'provincia'),
                  'provincia': ('ciudad', 'barrio')}

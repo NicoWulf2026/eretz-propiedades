@@ -80,3 +80,17 @@ def test_a_description_discarded_by_the_runner_is_explained_for_that_row_only():
     # The same mark never explains another field of the row.
     report = compare([row(precio=10)], [row(precio=None, extra={'descripcion_descartada': 'x'})])
     assert report['counts'] == {'UNEXPLAINED_LOSS': 1}
+
+
+def test_validation_discards_recorded_on_the_row_explain_only_their_field():
+    old = [row(1, ambientes=1, dormitorios=2), row(2, dormitorios=3), row(3, provincia='Buenos Aires'),
+           row(4, provincia='Buenos Aires')]
+    fresh = [row(1, ambientes=None, dormitorios=None, extra={'atributos_descartados': 'dormitorios>ambientes'}),
+             row(2, dormitorios=None, extra={'atributos_descartados': 'dormitorios_en_un_terreno'}),
+             row(3, provincia=None, extra={'provincia_supuesta_descartada': 'Buenos Aires'}),
+             row(4, provincia=None, extra={'provincia_supuesta_descartada': 'Cordoba'})]
+    report = compare(old, fresh)
+    assert report['counts'] == {'EXPLAINED_VALIDATION': 4, 'UNEXPLAINED_LOSS': 1}
+    # A discard of one field never explains another one on the same row.
+    report = compare([row(banos=1)], [row(banos=None, extra={'atributos_descartados': 'ambientes'})])
+    assert report['counts'] == {'UNEXPLAINED_LOSS': 1}
