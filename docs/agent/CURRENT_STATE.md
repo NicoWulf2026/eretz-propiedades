@@ -36,6 +36,23 @@ Libro de familias detenidas: `ERETZ_FAMILIAS_DETENIDAS.jsonl`. Hoy: ninguna.
 
 ### 2026-09-24
 
+- **El vigilante corría un checkout del 17-09.** La tarea ejecutaba
+  `D:\INMO CAPITAL\eretz-agency\_vigilante.bat` (worktree
+  `feat/roomix-agency-coverage` @ `d9238e64be`): `FAMILIA_DETENIDA` y todo lo
+  posterior no estaba corriendo. Ahora corre `eretz-unified` con `pythonw` y
+  `--log`; sus subprocesos van con `CREATE_NO_WINDOW`. Se deshabilitaron
+  `ERETZ_cola_w0/w1/certificacion` (sin horario, pero apuntaban al mismo
+  worktree viejo). Copias de las definiciones anteriores:
+  `ERETZ_relanzador.antes.xml` y `ERETZ_vigilante_paros.antes.xml` en el
+  scratchpad de la sesión.
+- **Los workers ahora corren con `pythonw.exe`** (el relanzador los lanza con
+  `sys.executable`). Para buscarlos por proceso, filtrar por
+  `run_agency_certification_queue` en la línea de comandos, no por
+  `python.exe`.
+- **Pedido de relanzar que no se borraba bien** (`c10a6e7309`): el primer
+  worker nuevo borraba la bandera `OPERACION` y el otro, viejo, no se
+  enteraba. Verificado: w1 nuevo a las 11:34 dejó la bandera en pie; w0 viejo
+  para al terminar `alas propiedades`.
 - **Huella en vuelo** (`f0556f8dc6`): `strategy_fingerprint` se leía de disco
   al terminar la agencia; un worker con código viejo en memoria estampaba la
   huella del código nuevo si alguien editaba con la cola corriendo. Ahora el

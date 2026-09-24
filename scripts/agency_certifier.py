@@ -464,18 +464,28 @@ def compare_runs(run1: dict[str, Any], run2: dict[str, Any]) -> dict[str, Any]:
     # que compartian una unica identidad: la certificacion informaba tres
     # propiedades donde el pipeline habria guardado una, y nada lo decia.
     ids2 = {p.get("hash_dedup") for p in props2 if p.get("hash_dedup")}
+    # Y por eso el inventario se compara por IDENTIDAD y no por url cruda.
+    # `eckert` paro diciendo «30 propiedades que la primera corrida vio no
+    # aparecieron en la segunda», y no faltaba ninguna: la corrida 1 las vio
+    # con `www.` y la 2 sin. `hash_dedup` normaliza justamente eso, y esta
+    # misma funcion ya lo usaba dos lineas mas arriba para contar identidades.
+    # Una propiedad sin `hash_dedup` se compara por su url, como antes.
+    def identidad(p: dict[str, Any]) -> Any:
+        return p.get("hash_dedup") or p.get("source_url")
+    idents1 = {identidad(p) for p in props1 if identidad(p)}
+    idents2 = {identidad(p) for p in props2 if identidad(p)}
     return {
         "run2_identities": len(ids2),
         "identity_collisions": max(len(urls2) - len(ids2), 0),
         "run1_urls": len(urls1), "run2_urls": len(urls2),
-        "same_url_set": urls1 == urls2,
-        "missing_in_run2": len(urls1 - urls2),
-        "new_in_run2": len(urls2 - urls1),
+        "same_url_set": idents1 == idents2,
+        "missing_in_run2": len(idents1 - idents2),
+        "new_in_run2": len(idents2 - idents1),
         "same_content_signature": stable_signature(props1) == stable_signature(props2),
         "same_contract_signature": (firma_de_columnas(props1)
                                     == firma_de_columnas(props2)),
         "run2_changes": dict(changes),
-        "idempotent": (urls1 == urls2 and not changes.get("NUEVA", 0)
+        "idempotent": (idents1 == idents2 and not changes.get("NUEVA", 0)
                        and not changes.get("MODIFICADA", 0)),
     }
 

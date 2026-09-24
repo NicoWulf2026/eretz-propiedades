@@ -273,6 +273,20 @@ def descartar_imagenes_compartidas(objetos: list) -> int:
     return descartadas
 
 
+def descartes_sospechosos(descartes: list[dict]) -> list[dict]:
+    """Los rechazos del guardian que si tenian pinta de ficha.
+
+    La regla vive en `defect_triage.descarte_parecia_una_propiedad` y se usa
+    desde aca en vez de escribirla otra vez. Estaba escrita dos veces: el
+    triaje le agrego la condicion de fotos y este contador -el que el triaje
+    PREFIERE, porque es el que llega al paquete- se quedo sin ella. `bunader`
+    lo mostro: sus 8 rechazos tienen cero fotos, el triaje los daba por
+    buenos, y el paro salio igual por la cuenta de aca.
+    """
+    from scripts.defect_triage import descarte_parecia_una_propiedad
+    return [d for d in descartes if descarte_parecia_una_propiedad(d)]
+
+
 def procesar(con, fuente: Fuente, max_fichas: int, observacion: bool,
              respaldo=None, presupuesto: float = PRESUPUESTO_POR_FUENTE) -> dict:
     """Procesa una fuente; si el connector de plataforma no la reconoce, prueba
@@ -602,8 +616,7 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
     # de la cuenta: cuantos de esos rechazos traian precio o schema, que es lo
     # unico que una pagina institucional no tiene. Sin esto el triaje solo
     # puede elegir entre parar siempre o aflojar a ciegas.
-    con_senal = [d for d in descartes
-                 if d.get("precio") is not None or d.get("tipo_ld")]
+    con_senal = descartes_sospechosos(descartes)
     r["descartes_con_senal"] = len(con_senal)
     r["descartes_con_senal_ejemplos"] = [str(d.get("source_url"))[:200]
                                          for d in con_senal[:3]]

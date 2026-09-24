@@ -130,9 +130,49 @@ def dominio(url: str) -> str:
     return re.sub(r"^www\.", "", s)
 
 
+# Marcas de portal, comparadas contra CADA ETIQUETA del dominio y nunca como
+# subcadena. La lista de arriba es de dominios exactos y se quedo corta:
+# `buscainmueble.com` figuraba como web oficial de 4 agencias de la cola y
+# produjo 295 «propiedades» que eran paginas de categoria del portal -las
+# MISMAS 98 para tres agencias distintas-. `verificador_identidad_v2` ya lo
+# conocia; esta lista, que es la que consulta el certificador, no. Otra vez
+# la misma regla escrita en dos lugares que no se hablan, y por eso
+# `test_MUERDE_las_dos_listas_de_portales_no_pueden_divergir` las compara.
+#
+# Por NOMBRE REGISTRABLE y no por subcadena: `navent` es la duena de Zonaprop
+# e `inmobiliarianaventura.com.ar` es una inmobiliaria. Tampoco por cualquier
+# etiqueta: `zonaprop.com.ar.official.test` no es Zonaprop, es un sitio de
+# `official.test` que se llama asi -lo fija un test que ya existia-. Las
+# redes de franquicia
+# -RE/MAX, Century 21- no van aca: su pagina de oficina ES la casa de la
+# inmobiliaria, y se tratan en `DOMINIOS_FRANQUICIA`.
+PORTALES_POR_NOMBRE = {
+    "zonaprop", "argenprop", "mercadolibre", "properati", "inmoup",
+    "puntoclick", "buscainmueble", "inmobusqueda", "icasas", "lamudi",
+    "toctocventas", "navent", "clasificados", "yably", "slideprop",
+    "comunidadinmobiliaria", "redinmosoft", "choza", "agroads", "inmoclick",
+    "realedo", "mudafy", "apuntavamos", "todoprops", "datoinmobiliario",
+}
+
+
 def es_portal(url: str) -> bool:
     dom = dominio(url)
-    return any(dom == p or dom.endswith("." + p) for p in NO_OFICIALES)
+    if any(dom == p or dom.endswith("." + p) for p in NO_OFICIALES):
+        return True
+    return nombre_registrable(dom) in PORTALES_POR_NOMBRE
+
+
+def nombre_registrable(dom: str) -> str:
+    """`buscainmueble` de `www.buscainmueble.com`, `inmoup` de `inmoup.com.ar`.
+
+    El mismo corte que `verificador_identidad_v2.registrable`, que queda
+    fuera de la huella: por eso se escribe aca y no se importa, y
+    `test_el_nombre_registrable_coincide_con_el_del_verificador` los compara.
+    """
+    partes = (dom or "").lower().removeprefix("www.").split(".")
+    if len(partes) >= 3 and partes[-2] in ("com", "net", "org", "gob", "edu"):
+        return partes[-3]
+    return partes[-2] if len(partes) >= 2 else (dom or "")
 
 
 def franquicia_de_dominio(url: str) -> str | None:
