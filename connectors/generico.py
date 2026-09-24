@@ -2108,10 +2108,36 @@ class GenericoConnector(Connector):
             # Preserve evidence of an ambiguous identity, never collapse it
             # into "ficha.php". The write gate rejects this serialized ID.
             return url
-        ruta = parsed.path.rstrip("/")
-        ultimo = ruta.rsplit("/", 1)[-1] if "/" in ruta else ruta
-        m = re.search(r"-(\d{3,})$", ultimo) or re.search(r"(\d{3,})", ultimo)
-        return m.group(1) if m else (ultimo or url)[:120]
+        # Se tomaba el PRIMER numero de tres o mas cifras del ultimo segmento,
+        # y en un slug ese numero suele ser otra cosa: la superficie
+        # (`lote-de-1200-m2-en-venta` -> `1200`), la altura de la calle
+        # (`/properties/446609/genova-1327-casa` -> `1327`, con el id real un
+        # segmento antes) o un codigo al que se le cortaba la letra (`alas`
+        # publica `venta-...-d104` y `venta-...-k104`, y las dos quedaban como
+        # `104` dentro de la misma agencia). Medido sobre 10.337 fichas de
+        # `generico`: 968 compartian id con otra de SU agencia y 2.190 con la de
+        # otra; con el orden de abajo, 639 y 846, y lo que queda son en buena
+        # parte la misma ficha publicada con dos rutas, donde el id igual dice
+        # la verdad.
+        #
+        # El orden, del indicio mas fuerte al mas debil:
+        #   1. un codigo al final del slug, con hasta cuatro letras delante:
+        #      `...-57931`, `inmueble_6076`, `...-a222`, `...-ficha-flm423`;
+        #   2. un segmento que es solo un numero: `/propiedad/882/chalet`;
+        #   3. un numero al principio del slug: `/7920515-departamento-...`;
+        #   4. si no, el slug entero. Nunca un numero suelto del medio.
+        segmentos = [s for s in parsed.path.split("/") if s]
+        ultimo = segmentos[-1] if segmentos else ""
+        m = re.search(r"[-_]([a-z]{0,4}\d{3,})$", ultimo, re.I)
+        if m:
+            return m.group(1)
+        for segmento in reversed(segmentos):
+            if re.fullmatch(r"\d{3,}", segmento):
+                return segmento
+        m = re.match(r"^(?:[a-z]{1,3}[-_])?(\d{3,})[-_]", ultimo, re.I)
+        if m:
+            return m.group(1)
+        return (ultimo or url)[:120]
 
     # --------------------------------------------------------------- normalize
     def normalize(self, crudo: dict, fuente: Fuente) -> PropiedadNormalizada | None:

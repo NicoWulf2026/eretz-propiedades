@@ -4608,3 +4608,28 @@ def test_sin_limite_alcanzado_el_pedido_es_el_mismo_de_siempre():
     c.paginacion_interrumpida = False
     list(c._rest({"base": "https://wp.test", "rest_base": "properties"}))
     assert all("per_page=50&page=" in u and "offset" not in u for u in d.pedidos_urls)
+
+
+# ---------------------------------------------------------------------------
+# El id de la ficha no es cualquier número del slug (ítem 6).
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("url,esperado", [
+    # la superficie no es un id: sin código, el slug entero
+    ("https://carusopropiedades.com/ad/lote-de-1200-m2-en-venta-la-reja-centro",
+     "lote-de-1200-m2-en-venta-la-reja-centro"),
+    # la altura de la calle tampoco: el id está un segmento antes
+    ("https://x.test/site/properties/446609/genova-1327-casa-en-venta", "446609"),
+    # un código con letra no pierde la letra: `d104` y `k104` no son lo mismo
+    ("https://alaspropiedades.com/propiedad/venta-locales-la-falda-d104/", "d104"),
+    ("https://alaspropiedades.com/propiedad/venta-inmueble-valle-hermoso-k104/", "k104"),
+    ("https://bottai.com.ar/inmueble_6076", "6076"),
+    ("https://x.test/cochera-en-venta-en-recoleta-ficha-amn3465", "amn3465"),
+    ("https://x.test/propiedad/882/chalet-b-villa-eden-la-falda", "882"),
+    ("https://x.test/p/7920515-Departamento-en-Venta", "7920515"),
+])
+def test_MUERDE_el_id_de_la_ficha_no_es_cualquier_numero_del_slug(url, esperado):
+    """Sobre 10.337 fichas de `generico`, 968 compartían id con otra de SU
+    agencia: `alas` guardaba `d104` y `k104` las dos como `104`, y `caruso`
+    guardaba la superficie. Un campo publicado que dice algo falso."""
+    assert GenericoConnector._id_de(url) == esperado
