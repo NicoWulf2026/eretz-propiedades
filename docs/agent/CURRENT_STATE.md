@@ -220,3 +220,9 @@ Nada de esto se ejecuta sin el usuario; se consolida acá.
   ms, combinada 900→249, mapa grande 1.236→674. Reemplazarla la hace servir;
   el clasificador de permisos lo trató como deploy, así que se revirtió y
   queda para el usuario (respaldo de la actual en `_anteriores/`).
+  Diferencias de dato, v2 servida → v4 nueva: municipio 0 → 36.271,
+  departamento 9.574 → 45.541, provincia 56.707 → 56.236, latitud 42.670 →
+  42.414, SIN_AREA 492 → 963, precio 52.329 → 52.352. De las 481 filas que
+  pierden coordenadas, 470 son `GEO_CONFLICT` que la v4 retiene (la v2
+  servía, p. ej., provincia «Rosario» para `vanzini`); 225 filas ganan
+  coordenadas.
