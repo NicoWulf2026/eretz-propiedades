@@ -273,6 +273,50 @@ def descartar_imagenes_compartidas(objetos: list) -> int:
     return descartadas
 
 
+def descartar_descripciones_compartidas(objetos: list) -> int:
+    """Un texto que es el mismo en la mitad de las fichas no describe a ninguna.
+
+    `coldwell banker de la vera cruz` tenia la MISMA descripcion en sus 266
+    propiedades, y era el pie del sitio: «© 2026 Coldwell Banker. Todos los
+    derechos reservados...». La API REST de ese WordPress con Elementor
+    devuelve eso como `content`, y la agencia quedo CERTIFIED_COMPLETE con
+    266 descripciones falsas: la cobertura de `descripcion` contaba el campo
+    como presente.
+
+    Dos reglas, las dos sin adivinar por palabras de la ficha:
+
+    - la misma descripcion en al menos la mitad de las fichas de la agencia
+      -con el mismo piso de ocho fichas que las fotos- es un texto del sitio,
+      no de la propiedad. Las unidades de un mismo edificio pueden compartir
+      texto, pero no son la mitad del catalogo;
+    - un texto que ARRANCA con la marca de copyright es un aviso legal: ninguna
+      descripcion de una propiedad empieza asi. `coldwell banker andes` lo
+      tenia en 5 de 174, que la primera regla no ve.
+
+    La descripcion se deja vacia -un campo vacio no afirma nada- y se anota en
+    `extra` por que.
+    """
+    descartadas = 0
+    for p in objetos:
+        texto = (p.descripcion or "").lstrip()
+        if texto[:1] == "©" or texto[:9].lower() == "copyright":
+            p.descripcion = None
+            p.extra["descripcion_descartada"] = "aviso_legal"
+            descartadas += 1
+    if len(objetos) < MINIMO_PARA_JUZGAR:
+        return descartadas
+    veces = Counter(p.descripcion for p in objetos
+                    if p.descripcion and len(p.descripcion) >= 40)
+    tope = max(MINIMO_PARA_JUZGAR // 2, len(objetos) * FRACCION_COMPARTIDA)
+    repetidas = {d for d, n in veces.items() if n >= tope}
+    for p in objetos:
+        if p.descripcion in repetidas:
+            p.descripcion = None
+            p.extra["descripcion_descartada"] = "compartida_por_la_agencia"
+            descartadas += 1
+    return descartadas
+
+
 def descartes_sospechosos(descartes: list[dict]) -> list[dict]:
     """Los rechazos del guardian que si tenian pinta de ficha.
 
@@ -574,6 +618,7 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
     r["fichas_sin_contenido"] = fichas_vacias
 
     r["imagenes_compartidas_descartadas"] = descartar_imagenes_compartidas(objetos)
+    r["descripciones_compartidas_descartadas"] = descartar_descripciones_compartidas(objetos)
 
     for p in objetos:
         cambio = con.registrar(fuente, p)
