@@ -112,8 +112,11 @@ def _vive(pid: int) -> bool:
             return True
         except OSError:
             return False
+    # Sin ventana: la tarea corre con `pythonw.exe` desde el 2026-09-24 y
+    # esto se llama en cada pasada, cada cinco minutos.
     r = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True,
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     return str(pid) in (r.stdout or "")
 
 
@@ -347,7 +350,15 @@ def main() -> int:
     ap.add_argument("--umbral-minutos", type=float, default=30,
                     help="a partir de cuántos minutos un paro sin atender "
                          "se reporta como PARO_DESATENDIDO")
+    ap.add_argument("--log", default=None,
+                    help="escribir la salida en este archivo (modo tarea, sin "
+                         "consola). Ver `relanzar_la_cola.escribir_en_el_log`.")
     args = ap.parse_args()
+    if args.log:
+        # La misma razon y el mismo mecanismo que el relanzador: con consola
+        # las pasadas morian con 0xC000013A sin dejar rastro.
+        from relanzar_la_cola import escribir_en_el_log
+        escribir_en_el_log(Path(args.log))
 
     ahora = time.time()
     previo = estado_previo()

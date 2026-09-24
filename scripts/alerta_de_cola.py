@@ -37,12 +37,19 @@ def _texto(estado: dict) -> str:
             f"Workers vivos: {estado.get('workers_alive')}")
 
 
+# Desde el 2026-09-24 la tarea corre con `pythonw.exe`, sin consola. Un
+# proceso de consola lanzado desde ahi abre su propia ventana cada vez;
+# esto la suprime.
+SIN_VENTANA = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+
 def _ps(script: str, timeout: float = 25) -> bool:
     try:
         r = subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive",
              "-ExecutionPolicy", "Bypass", "-Command", script],
-            capture_output=True, text=True, timeout=timeout)
+            capture_output=True, text=True, timeout=timeout,
+            creationflags=SIN_VENTANA)
         return r.returncode == 0 and "ERROR_ALERTA" not in (r.stdout or "")
     except Exception:
         return False
@@ -76,7 +83,8 @@ def _msg(titulo: str, cuerpo: str) -> bool:
     texto = (titulo + "  ||  " + cuerpo.replace("\n", "  |  ")).replace('"', "'")
     try:
         r = subprocess.run(["msg", "*", "/TIME:600", texto],
-                           capture_output=True, text=True, timeout=20)
+                           capture_output=True, text=True, timeout=20,
+                           creationflags=SIN_VENTANA)
         return r.returncode == 0
     except Exception:
         return False
