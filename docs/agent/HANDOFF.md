@@ -72,6 +72,8 @@ se produjo durante el cambio queda sin `strategy_fingerprint`. Entonces:
    descarte, y sumar la marca del título del sitio (`Guía Inmobiliaria`,
    `Fénix Inmobiliaria en Posadas`) como título del sitio cuando se repite.
    `floorSize` sigue sin usarse (no dice total o cubierta).
+5b. `wordpress` (Houzez): conteos con punto final («1.») no se leen
+   (`gustavo teruel`). Próxima ventana de `wordpress`; «Si.» NO es un conteo.
 6. Ítem 12 (`SIN_INVENTARIO` con dos significados): defecto de nombre, no de
    decisión; bajo retorno.
 7. Beta del backend (ver `docs/ERETZ_UNIFICATION_PLAN.md` § «Backend beta

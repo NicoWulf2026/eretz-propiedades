@@ -36,6 +36,16 @@ Libro de familias detenidas: `ERETZ_FAMILIAS_DETENIDAS.jsonl`. Hoy: ninguna.
 
 ### 2026-09-24
 
+- **Regresión propia, detectada por la cola y arreglada** (`2bf6903d9f`). El
+  cambio de descripciones de `0bd66ac5e5` activó un camino que truncaba antes
+  de quitar `<script>`: `coldwell banker destino` guardó JavaScript como
+  descripción en 19 de 22 fichas. Falló cerrada (el token CSRF cambia entre
+  corridas → no idempotente) y detuvo `generico` 18:45–20:10. Radio: 1 agencia
+  en 43 paquetes. Diferida firmada con las dos causas.
+- **Paro de `wordpress` (19:25, `gustavo teruel`)**: la agencia carga los
+  conteos como «1.», «2.» (y «Si.» en baños); verificado en 10 fichas. Radio
+  real AGENCIA, falla cerrada, diferida firmada. Arreglo candidato para la
+  próxima ventana de `wordpress`: aceptar punto final tras un conteo.
 - **Browser QA contra la v4 nueva: 65 de 65** (7 skipped: asistente de
   publicación apagado). Un defecto real del buscador arreglado (`c4051b4a21`:
   el cierre diferido del blur no se cancelaba al volver el foco) y el test de
