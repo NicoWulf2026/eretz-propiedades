@@ -702,12 +702,41 @@ def lanzar(worker: int, salida: Path, excluir: list[str] | None = None) -> int:
     return proceso.pid
 
 
+def escribir_en_el_log(ruta: Path) -> None:
+    """La salida va a un archivo propio, sin depender de una consola.
+
+    La tarea corria `_relanzador.bat`, que redirige la salida de `python.exe`
+    con `>>`. Desde las 08:30 del 2026-09-24 tres o cuatro pasadas por hora
+    terminaron con `0xC000013A` -la consola se cerro o recibio un Ctrl+C- sin
+    dejar traceback: 09:54, 10:24, 10:44 sin una linea, y 10:54 con «arranca
+    pid» y nada mas. El 23, de 12:04 a 21:14, ninguna. Las que corren a mano o
+    con la consola tranquila terminan en uno o dos segundos.
+
+    Con `pythonw.exe` no hay consola que cerrar ni eventos de consola que
+    recibir. Pero `pythonw` no tiene stdout, asi que la salida tiene que
+    escribirla el propio proceso. Ademas, si una pasada se cuelga, `faulthandler`
+    deja en el log la pila de donde estaba a los 120 s, antes del limite de
+    cinco minutos de la tarea.
+    """
+    import faulthandler
+    ruta.parent.mkdir(parents=True, exist_ok=True)
+    fh = ruta.open("a", encoding="utf-8", errors="replace", buffering=1)
+    sys.stdout = sys.stderr = fh
+    faulthandler.enable(file=fh)
+    faulthandler.dump_traceback_later(120, exit=False, file=fh)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--lanzar", action="store_true")
     ap.add_argument("--salida", default=str(SALIDA))
+    ap.add_argument("--log", default=None,
+                    help="escribir la salida en este archivo (modo tarea, sin "
+                         "consola). Ver `escribir_en_el_log`.")
     args = ap.parse_args()
     salida = Path(args.salida)
+    if args.log:
+        escribir_en_el_log(Path(args.log))
 
     # Dos corridas programadas -09:54 y 10:44 del 2026-09-24- murieron por el
     # limite de cinco minutos de la tarea SIN escribir una linea, y a mano la

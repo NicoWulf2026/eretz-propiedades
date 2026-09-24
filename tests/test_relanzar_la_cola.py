@@ -703,3 +703,22 @@ def test_MUERDE_sin_conector_identificable_no_hay_familia_que_acotar(tmp_path):
     faltan, motivo, _ = modulo.plan(tmp_path)
     assert faltan == []
     assert "sin conector identificable" in motivo
+
+
+def test_MUERDE_con_log_propio_la_salida_no_depende_de_una_consola(tmp_path):
+    """La tarea corre con `pythonw.exe`, que no tiene stdout.
+
+    Desde las 08:30 del 2026-09-24 las pasadas lanzadas desde un `.bat` con
+    consola morían con 0xC000013A sin dejar rastro. Sin consola no hay nada
+    que cerrar, pero entonces la salida la tiene que escribir el proceso.
+    """
+    import subprocess
+    log = tmp_path / "relanzador.log"
+    r = subprocess.run([sys.executable, str(RAIZ / "scripts" / "relanzar_la_cola.py"),
+                        "--salida", str(tmp_path), "--log", str(log)],
+                       capture_output=True, text=True, timeout=120)
+    assert r.returncode == 0, r.stderr
+    assert r.stdout == ""  # todo fue al archivo
+    texto = log.read_text(encoding="utf-8")
+    assert "arranca pid" in texto
+    assert "DRY-RUN" in texto
