@@ -278,31 +278,10 @@ def conector_del_triaje(salida: Path, paro: dict[str, Any]) -> str | None:
     toma el conector que el triaje ya habia anotado ahi. Si no hay una que
     coincida entera, devuelve None y se detiene todo, como antes.
     """
-    ruta = salida / "AGENCY_DEFECT_QUEUE.jsonl"
-    if not ruta.exists():
+    fila = fila_del_triaje(salida, paro)
+    if not fila or str(fila.get("radio_estimado") or "").upper() != "FAMILIA":
         return None
-    for linea in ruta.open(encoding="utf-8", errors="replace"):
-        linea = linea.strip()
-        if not linea:
-            continue
-        try:
-            fila = json.loads(linea)
-        except ValueError:
-            continue
-        if fila.get("decision") != "STOP":
-            continue
-        if fila.get("canonical_agency_id") != paro.get("canonical_agency_id"):
-            continue
-        if fila.get("componente_sospechoso") != paro.get("componente"):
-            continue
-        if str(fila.get("cuando") or "")[:19] != str(paro.get("cuando") or "")[:19]:
-            continue
-        if str(fila.get("radio_estimado") or "").upper() != "FAMILIA":
-            continue
-        conector = str(fila.get("connector") or "").strip().lower()
-        if conector:
-            return conector
-    return None
+    return str(fila.get("connector") or "").strip().lower() or None
 
 
 def familia_de(paro: dict[str, Any] | None,
@@ -325,8 +304,101 @@ def familia_de(paro: dict[str, Any] | None,
     return conector or None
 
 
+def fila_del_triaje(salida: Path, paro: dict[str, Any]) -> dict[str, Any] | None:
+    """La entrada STOP del triaje que es ESTE paro: agencia, componente y hora.
+
+    Las tres, o ninguna. Heredar datos de otro paro de la misma agencia
+    -otra hora, otro componente- seria atribuirle a este una evidencia que no
+    es suya.
+    """
+    ruta = salida / "AGENCY_DEFECT_QUEUE.jsonl"
+    if not ruta.exists():
+        return None
+    for linea in ruta.open(encoding="utf-8", errors="replace"):
+        linea = linea.strip()
+        if not linea:
+            continue
+        try:
+            fila = json.loads(linea)
+        except ValueError:
+            continue
+        if fila.get("decision") != "STOP":
+            continue
+        if fila.get("canonical_agency_id") != paro.get("canonical_agency_id"):
+            continue
+        if fila.get("componente_sospechoso") != paro.get("componente"):
+            continue
+        if str(fila.get("cuando") or "")[:19] != str(paro.get("cuando") or "")[:19]:
+            continue
+        return fila
+    return None
+
+
+# Cuanto cuesta recalcular una huella: parsear el AST de quince archivos. El
+# relanzador corre cada diez minutos y puede tener varias familias anotadas,
+# asi que se calcula una vez por conector y estrategia en cada corrida.
+_HUELLAS: dict[tuple[str, str], str | None] = {}
+
+
+def huella_actual(conector: str, estrategia: str) -> str | None:
+    clave = (conector, estrategia)
+    if clave not in _HUELLAS:
+        try:
+            from agency_fingerprints import strategy_fingerprint
+            _HUELLAS[clave] = strategy_fingerprint(conector, estrategia)
+        except Exception:  # noqa: BLE001 - sin huella no se libera nada
+            _HUELLAS[clave] = None
+    return _HUELLAS[clave]
+
+
+def la_huella_ya_cambio(salida: Path, paro: dict[str, Any]) -> bool:
+    """¿El paro hablaba de un codigo que ya no existe?
+
+    Es la mitad que faltaba para que un paro no vuelva a costar 34 horas.
+
+    Un paro FAMILIA dice «este codigo, en esta familia, hace algo mal». La
+    diferida firmada es una forma de levantarlo: alguien miro y decidio. La
+    otra forma, que no existia, es que el codigo CAMBIE. El 2026-09-23
+    `alagna` paro por «la fuente publica ciudad y la extraccion fallo»; se
+    encontro la causa -el JSON-LD se descartaba entero por una url con el id
+    al final- y se arreglo. El paro seguia en pie esperando una firma sobre
+    un defecto que ya no estaba, con 366 agencias detenidas detras.
+
+    Esto NO certifica nada. Libera la familia para que la cola la vuelva a
+    PROBAR con el codigo nuevo, y el triaje decide de cero: si el defecto
+    sigue, para otra vez, ahora con la huella nueva, y ese paro si espera. Lo
+    que se acorta es la espera sobre evidencia vieja, no la exigencia sobre
+    la evidencia nueva.
+
+    Solo aplica a FAMILIA. Un paro COMPARTIDO sospecha del codigo comun, y la
+    huella de una estrategia cambia tambien cuando cambia solo su archivo
+    propio; liberarlo por eso seria confundir cualquier cambio con el cambio
+    que hacia falta.
+    """
+    if str(paro.get("radio") or "").upper() != "FAMILIA":
+        return False
+    huella = str(paro.get("strategy_fingerprint") or "")
+    estrategia = str(paro.get("connector_strategy") or "")
+    conector = str(paro.get("conector") or "").strip().lower()
+    if not (huella and estrategia and conector):
+        triaje = fila_del_triaje(salida, paro) or {}
+        huella = huella or str(triaje.get("strategy_fingerprint") or "")
+        estrategia = estrategia or str(triaje.get("connector_strategy") or "")
+        conector = conector or str(triaje.get("connector") or "").strip().lower()
+    if not (huella and estrategia and conector):
+        return False  # sin saber que codigo sospechaba, no se libera
+    actual = huella_actual(conector, estrategia)
+    if not actual:
+        return False
+    return actual[:len(huella)] != huella[:len(actual)]
+
+
 def familias_pendientes(salida: Path) -> list[dict[str, Any]]:
-    """Las anotaciones del libro que siguen sin diferida firmada."""
+    """Las anotaciones del libro que siguen detenidas.
+
+    Deja de estarlo una familia con diferida firmada despues del paro, o una
+    cuyo codigo cambio desde entonces -ver `la_huella_ya_cambio`-.
+    """
     ruta = salida / LIBRO_DE_FAMILIAS
     if not ruta.exists():
         return []
@@ -343,6 +415,8 @@ def familias_pendientes(salida: Path) -> list[dict[str, Any]]:
             continue
         if paro_atendido(salida, fila):
             continue
+        if la_huella_ya_cambio(salida, fila):
+            continue
         pendientes.append(fila)
     return pendientes
 
@@ -355,12 +429,19 @@ def anotar_familia(salida: Path, paro: dict[str, Any], conector: str) -> bool:
         if (fila.get("canonical_agency_id"), fila.get("componente"),
                 fila.get("cuando")) == clave:
             return False
+    triaje = fila_del_triaje(salida, paro) or {}
     with (salida / LIBRO_DE_FAMILIAS).open("a", encoding="utf-8") as fh:
         fh.write(json.dumps({
             "canonical_agency_id": paro.get("canonical_agency_id"),
             "componente": paro.get("componente"),
             "radio": paro.get("radio"),
             "conector": conector,
+            # Que codigo se sospechaba. Sin esto no hay forma de saber
+            # despues si el paro habla de algo que todavia existe.
+            "connector_strategy": (paro.get("connector_strategy")
+                                   or triaje.get("connector_strategy")),
+            "strategy_fingerprint": (paro.get("strategy_fingerprint")
+                                     or triaje.get("strategy_fingerprint")),
             "cuando": paro.get("cuando"),
             "anotado": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "database_writes": 0}, ensure_ascii=False) + "\n")
@@ -407,12 +488,21 @@ def plan(salida: Path, anotar: bool = False) -> tuple[list[int], str, list[str]]
                             + (f" (se escribieron {escritas} por precedente, "
                                f"ninguna cubre este paro)"
                                if escritas else "")), []
-            if anotar:
-                anotar_familia(salida, paro, familia)
-            bloqueadas.add(familia)
-            motivo_extra = (f"; paro FAMILIA sin diagnosticar en "
-                            f"{paro.get('canonical_agency_id')} "
-                            f"({paro.get('componente')})")
+            if la_huella_ya_cambio(salida, {**paro, "conector": familia}):
+                # El codigo del que sospechaba ya no es el que va a correr:
+                # la familia se vuelve a probar en vez de esperar una firma
+                # sobre un defecto que quizas ya no esta.
+                motivo_extra = (f"; paro FAMILIA en "
+                                f"{paro.get('canonical_agency_id')} sobre un "
+                                f"codigo que ya cambio: `{familia}` se vuelve "
+                                f"a probar")
+            else:
+                if anotar:
+                    anotar_familia(salida, paro, familia)
+                bloqueadas.add(familia)
+                motivo_extra = (f"; paro FAMILIA sin diagnosticar en "
+                                f"{paro.get('canonical_agency_id')} "
+                                f"({paro.get('componente')})")
     excluir = sorted(bloqueadas)
     if excluir:
         motivo_extra += f"; sin los conectores {', '.join(excluir)}"

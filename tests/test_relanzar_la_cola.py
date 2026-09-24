@@ -438,3 +438,96 @@ def test_sin_entrada_de_triaje_se_detiene_todo_como_antes(tmp_path):
     import relanzar_la_cola as modulo
     poner_paro(tmp_path, cuando=ahora(-600))
     assert modulo.plan(tmp_path)[0] == []
+
+
+# ---------------------------------------------------------------------------
+# Un paro sobre un código que ya cambió se vuelve a probar, no se espera.
+#
+# El 2026-09-23 `alagna` paró por «la fuente publica ciudad y la extracción
+# falló». Se encontró la causa y se arregló, y el paro seguía esperando una
+# firma sobre un defecto que ya no estaba, con 366 agencias detrás.
+# ---------------------------------------------------------------------------
+
+def poner_paro_con_huella(salida: Path, huella: str, radio="FAMILIA",
+                          conector="generico", estrategia="generic/sitemap",
+                          cuando=None) -> str:
+    cuando = cuando or ahora(-3600)
+    (salida / "AGENCY_CERTIFICATION_STOP.json").write_text(json.dumps({
+        "canonical_agency_id": "roomix:alagna", "componente": "extraccion",
+        "radio": radio, "conector": conector, "connector_strategy": estrategia,
+        "strategy_fingerprint": huella, "cuando": cuando}), encoding="utf-8")
+    return cuando
+
+
+def test_MUERDE_un_paro_sobre_codigo_que_ya_cambio_libera_la_familia(
+        tmp_path, monkeypatch):
+    import relanzar_la_cola as modulo
+    monkeypatch.setattr(modulo, "huella_actual", lambda c, e: "huella-nueva")
+    poner_paro_con_huella(tmp_path, "huella-vieja")
+    faltan, motivo, excluir = modulo.plan(tmp_path, anotar=True)
+    assert faltan == [0, 1]
+    assert excluir == [], motivo
+    assert "ya cambio" in motivo
+
+
+def test_MUERDE_con_el_mismo_codigo_la_familia_sigue_detenida(tmp_path, monkeypatch):
+    """La mitad que no se relaja: si el código es el mismo, el paro habla de
+    algo que todavía existe y la familia espera su firma."""
+    import relanzar_la_cola as modulo
+    monkeypatch.setattr(modulo, "huella_actual", lambda c, e: "huella-igual")
+    poner_paro_con_huella(tmp_path, "huella-igual")
+    faltan, motivo, excluir = modulo.plan(tmp_path, anotar=True)
+    assert excluir == ["generico"], motivo
+
+
+def test_MUERDE_un_paro_COMPARTIDO_no_se_libera_porque_cambie_una_huella(
+        tmp_path, monkeypatch):
+    """COMPARTIDO sospecha del código común. La huella de una estrategia
+    cambia también cuando cambia sólo su archivo propio: liberarlo por eso
+    sería confundir cualquier cambio con el cambio que hacía falta."""
+    import relanzar_la_cola as modulo
+    monkeypatch.setattr(modulo, "huella_actual", lambda c, e: "huella-nueva")
+    poner_paro_con_huella(tmp_path, "huella-vieja", radio="COMPARTIDO")
+    faltan, motivo, _ = modulo.plan(tmp_path)
+    assert faltan == []
+    assert "sin diagnosticar" in motivo
+
+
+def test_una_familia_anotada_se_libera_cuando_su_codigo_cambia(tmp_path, monkeypatch):
+    """Lo mismo para el libro: la bandera ya no está, la anotación sí."""
+    import relanzar_la_cola as modulo
+    monkeypatch.setattr(modulo, "huella_actual", lambda c, e: "huella-igual")
+    poner_paro_con_huella(tmp_path, "huella-igual")
+    modulo.plan(tmp_path, anotar=True)
+    (tmp_path / "AGENCY_CERTIFICATION_STOP.json").unlink()
+    assert modulo.plan(tmp_path)[2] == ["generico"]
+
+    monkeypatch.setattr(modulo, "huella_actual", lambda c, e: "huella-nueva")
+    assert modulo.plan(tmp_path)[2] == []
+
+
+def test_sin_saber_que_codigo_se_sospechaba_no_se_libera_nada(tmp_path, monkeypatch):
+    """Un paro viejo sin huella ni entrada de triaje: no hay con qué comparar,
+    y ante la duda se queda detenido."""
+    import relanzar_la_cola as modulo
+    monkeypatch.setattr(modulo, "huella_actual", lambda c, e: "cualquiera")
+    poner_paro_de_familia(tmp_path, conector="tokko")
+    assert modulo.plan(tmp_path)[2] == ["tokko"]
+
+
+def test_la_huella_se_toma_del_triaje_cuando_la_bandera_no_la_trae(
+        tmp_path, monkeypatch):
+    import relanzar_la_cola as modulo
+    monkeypatch.setattr(modulo, "huella_actual", lambda c, e: "huella-nueva")
+    cuando = ahora(-600)
+    poner_paro(tmp_path, agencia="roomix:alagna", cuando=cuando)
+    with (tmp_path / "AGENCY_DEFECT_QUEUE.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"canonical_agency_id": "roomix:alagna",
+                             "decision": "STOP",
+                             "componente_sospechoso": "perdida_de_inventario",
+                             "radio_estimado": "FAMILIA", "connector": "generico",
+                             "connector_strategy": "generic/sitemap",
+                             "strategy_fingerprint": "huella-vieja",
+                             "cuando": cuando}) + "\n")
+    faltan, motivo, excluir = modulo.plan(tmp_path)
+    assert excluir == [] and faltan == [0, 1], motivo

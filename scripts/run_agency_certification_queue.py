@@ -281,6 +281,10 @@ def pedir_paro(output: Path, canonical_id: str, triage: dict[str, Any]) -> None:
         # entera. Ver `--excluir-conector`.
         "conector": triage.get("connector"),
         "connector_strategy": triage.get("connector_strategy"),
+        # Que codigo se sospechaba. Con esto el relanzador puede ver que el
+        # codigo ya cambio y volver a probar la familia en vez de esperar una
+        # firma sobre un defecto que quizas ya no esta.
+        "strategy_fingerprint": triage.get("strategy_fingerprint"),
         "evidencia": triage.get("evidencia"),
         "cuando": time.strftime("%Y-%m-%dT%H:%M:%S")})
 

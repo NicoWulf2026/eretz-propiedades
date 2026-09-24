@@ -114,3 +114,68 @@ diferida comparten firma con una que sí la tiene.
 - `tests/test_vigilante_de_paros.py` — 4 tests: una familia detenida hace
   horas no puede leerse como OK; dentro del umbral no alarma; con diferida
   firmada deja de contar; la deduplicación es por conjunto.
+
+## Lo que pasó en producción, la primera noche
+
+**Funcionó para lo que fue hecho.** A las 12:29 del 2026-09-23 `alagna`
+detuvo `generico`; a las 14:19 `austral` detuvo `wordpress`. Sin nadie
+mirando, el relanzador siguió con las otras 311 agencias: `### worker 0 de 2:
+151 de 311 inmobiliarias ###`. Con la regla anterior la cola habría quedado
+entera parada desde las 12:29.
+
+**Y mostró dos agujeros.**
+
+### 1. Una familia esperaba una firma sobre un defecto que ya no existía
+
+El paro de `alagna` tenía razón: la fuente publica `addressLocality: Rosario`
+en el JSON-LD de las 229 fichas y extraíamos 0. La causa eran dos defectos
+apilados en `_de_json_ld`:
+
+- el sitemap publica `/local-comercial-...-centro` y la página declara
+  `rel="canonical"` con el id al final, `...-centro-8408054`. El filtro de
+  identidad comparaba sólo contra la url pedida, no encontraba ningún nodo y
+  **descartaba el JSON-LD entero**;
+- `RealEstateListing` describe el aviso, y la dirección está en su
+  `mainEntity`, un `Place` que no se miraba.
+
+Arreglado y verificado contra la fuente. Pero el paro seguía en pie: esperaba
+una diferida firmada, y 366 agencias esperaban con él.
+
+Ahora el relanzador compara la **huella del código** que el paro sospechaba
+—`strategy_fingerprint`, anotada por el triaje— con la huella de hoy. Si
+cambió, la familia se vuelve a **probar**: no se certifica nada, la cola la
+corre con el código nuevo y el triaje decide de cero. Si el defecto sigue,
+para otra vez con la huella nueva, y ese paro sí espera su firma. Lo que se
+acorta es la espera sobre evidencia vieja, no la exigencia sobre la nueva.
+
+Sólo para `FAMILIA`. Un paro `COMPARTIDO` sospecha del código común, y la
+huella de una estrategia cambia también cuando cambia sólo su archivo propio.
+
+### 2. `COMPARTIDO` por defecto detuvo todo 15 horas y media
+
+A las 18:25 `inmobiliaria varesse` (`wasi`) paró con `sin_determinar /
+COMPARTIDO`: «second run is not idempotent». La cola entera quedó detenida
+hasta la mañana siguiente.
+
+Lo que había de verdad: **91 urls iguales, 90 fichas idénticas, y una ficha
+con `dormitorios` en `None` en la primera corrida y `3` en la segunda.** La
+fuente, bajada tres veces a la mañana, publica «Habitaciones: 3» siempre. Es
+la firma de un aviso editado entre corridas o de una respuesta parcial, no de
+un extractor que cambia de opinión.
+
+El triaje no pudo atribuirlo y cayó en `COMPARTIDO` porque esa es su regla:
+«no encontrar razones para parar no es tener razones para seguir». La regla
+es correcta —sin atribución no hay forma de acotar— y no se toca. Se firmó el
+diagnóstico, verificado contra la fuente.
+
+Pero deja escrito **cuál es ahora el riesgo dominante**: no los paros
+`FAMILIA` —acotados y, si el código cambia, reintentados— sino los
+`COMPARTIDO` por defecto, donde un campo opcional de una sola ficha detiene
+791 agencias. `maximiliano castanos`, veinte minutos antes, había parado igual
+y se certificó sola en el reintento: 44 de 44, idéntica.
+
+Queda como trabajo siguiente distinguir, dentro de «no idempotente», el caso
+de **una sola ficha con un campo que pasa de ausente a presente** —que la
+fuente puede producir sola— del caso de inventario o contenido inestable a
+escala, que sí sospecha de nosotros.
+
