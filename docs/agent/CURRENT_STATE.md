@@ -36,6 +36,15 @@ Libro de familias detenidas: `ERETZ_FAMILIAS_DETENIDAS.jsonl`. Hoy: ninguna.
 
 ### 2026-09-24
 
+- **Utilización de la cola.** Desde el 17-09: 81,6 h de worker en 604
+  resultados (≈8 min por agencia), ninguna con presupuesto agotado, sobre 336
+  h disponibles: 24 %. Hoy, con la máquina encendida, 45–92 % por hora. El
+  agujero de anoche no fue la cola: el registro del sistema muestra un
+  reinicio pedido por el usuario a las 20:32 y un **apagado inesperado a las
+  21:12:54** (evento 6008: corte de luz o apagado forzado); volvió a las
+  08:29 y las tareas retomaron solas a las 08:34. Recomendación para el
+  usuario (no la ejecuto: es configuración del equipo): UPS o mantener el
+  equipo encendido; `WakeToRun` no sirve contra un apagado.
 - **Tarde (14:50–15:00).** Paro `generico` por `alta inmobiliaria` a las
   14:28: la fuente declaró 18 y después 16, y enumeramos exactamente eso las
   dos veces. Triaje nuevo `catalogo_que_cambio_la_fuente` (`771666e47a`,
