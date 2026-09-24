@@ -69,7 +69,7 @@ BITACORA = CERT / "ERETZ_QUEUE_WATCH.log"
 # no alerta a proposito: todavia esta dentro del umbral y puede resolverse
 # solo. `PARO_DIAGNOSTICADO` tampoco: ya tiene diferida escrita.
 ALERTAN = ("PARO_DESATENDIDO", "CERO_WORKERS_SIN_BANDERA",
-           "FAMILIA_DETENIDA")
+           "FAMILIA_DETENIDA", "COLA_SIN_AVANCE")
 # Cada cuanto se repite el aviso mientras el mismo paro siga sin resolver.
 RECORDATORIO_MINUTOS = 60
 
@@ -181,6 +181,78 @@ def mas_vieja(familias: list[dict], ahora: float) -> float | None:
     return max(horas) if horas else None
 
 
+# Un worker actualiza su latido cada minuto desde un hilo aparte, tambien a
+# mitad de una agencia de tres horas. Quince minutos quieto con el proceso vivo
+# es un proceso colgado, no una agencia larga.
+LATIDO_QUIETO_MINUTOS = 15
+# Una agencia puede tardar hasta tres horas -dos corridas con presupuesto de
+# 5.400 s-, asi que cuatro sin un solo resultado de ninguno de los dos
+# workers ya no es una agencia larga.
+UMBRAL_SIN_AVANCE_HORAS = 4.0
+
+
+def ultimo_resultado() -> str | None:
+    """El `checked_at` mas reciente del ledger, leyendo solo su final."""
+    ruta = CERT / "AGENCY_CERTIFICATION_RESULTS.jsonl"
+    if not ruta.exists():
+        return None
+    with ruta.open("rb") as fh:
+        fh.seek(0, 2)
+        fh.seek(max(0, fh.tell() - 262_144))
+        cola = fh.read().decode("utf-8", errors="replace")
+    ultimo = None
+    for linea in cola.splitlines():
+        try:
+            cuando = str(json.loads(linea).get("checked_at") or "")[:19]
+        except (ValueError, AttributeError):
+            continue
+        if cuando and (ultimo is None or cuando > ultimo):
+            ultimo = cuando
+    return ultimo
+
+
+def ultimo_lanzamiento() -> str | None:
+    """Cuando lanzo el relanzador por ultima vez, segun su bitacora."""
+    ruta = CERT / "ERETZ_RELANZAMIENTOS.jsonl"
+    if not ruta.exists():
+        return None
+    ultimo = None
+    for linea in ruta.read_text(encoding="utf-8", errors="replace").splitlines()[-50:]:
+        try:
+            fila = json.loads(linea)
+        except ValueError:
+            continue
+        cuando = str(fila.get("cuando") or "")[:19]
+        if fila.get("lanzados") and cuando and (ultimo is None or cuando > ultimo):
+            ultimo = cuando
+    return ultimo
+
+
+def sin_avance(vivos: list[dict], ahora: float,
+               umbral_horas: float = UMBRAL_SIN_AVANCE_HORAS) -> dict | None:
+    """Por que la cola no avanza aunque haya workers vivos, o None."""
+    for w in vivos:
+        latido = epoch(w.get("heartbeat"))
+        if latido is not None and (ahora - latido) / 60 > LATIDO_QUIETO_MINUTOS:
+            minutos = round((ahora - latido) / 60)
+            return {"firma": f"{w['worker']} sin latido", "desde": w.get("heartbeat"),
+                    "minutos": minutos, "agencia": w.get("current_agency"),
+                    "texto": (f"{w['worker']} (pid {w.get('pid')}) vivo y sin latido "
+                              f"hace {minutos} min: el proceso esta colgado")}
+    # Desde el resultado o el lanzamiento mas reciente: despues de una noche
+    # con la maquina apagada el ultimo resultado tiene horas, y los workers
+    # recien arrancados no llevan horas sin avanzar.
+    ultimo = max(filter(None, (ultimo_resultado(), ultimo_lanzamiento())),
+                 default=None)
+    desde = epoch(ultimo)
+    if desde is not None and (ahora - desde) / 3600 > umbral_horas:
+        minutos = round((ahora - desde) / 60)
+        return {"firma": "sin resultados", "desde": ultimo, "minutos": minutos,
+                "texto": (f"workers vivos y ningun resultado nuevo desde {ultimo} "
+                          f"({minutos} min)")}
+    return None
+
+
 def clave_de_alerta(estado: dict) -> str | None:
     """Que identifica a ESTE paro y no a otro.
 
@@ -261,6 +333,9 @@ def registrar_transicion(estado: dict, previo: dict) -> None:
         anotar(f"{antes or '(inicio)'} -> PARO_DESATENDIDO   {agencia}  "
                f"detenida hace {estado.get('minutes_paused')} min  "
                f"[{estado.get('stop_signature')}]")
+    elif ahora_e == "COLA_SIN_AVANCE":
+        anotar(f"{antes or '(inicio)'} -> COLA_SIN_AVANCE   "
+               f"{estado.get('stop_signature')}  hace {estado.get('minutes_paused')} min")
     elif ahora_e == "FAMILIA_DETENIDA":
         anotar(f"{antes or '(inicio)'} -> FAMILIA_DETENIDA   "
                f"{estado.get('stop_signature')}  "
@@ -347,6 +422,10 @@ def main() -> int:
                     default=UMBRAL_FAMILIA_HORAS,
                     help="a partir de cuantas horas una familia detenida sin "
                          "diferida firmada se reporta como FAMILIA_DETENIDA")
+    ap.add_argument("--umbral-sin-avance-horas", type=float,
+                    default=UMBRAL_SIN_AVANCE_HORAS,
+                    help="horas sin ningun resultado nuevo, con workers vivos, "
+                         "para reportar COLA_SIN_AVANCE")
     ap.add_argument("--umbral-minutos", type=float, default=30,
                     help="a partir de cuántos minutos un paro sin atender "
                          "se reporta como PARO_DESATENDIDO")
@@ -423,6 +502,22 @@ def main() -> int:
             print(f"\nESTADO: FAMILIA_DETENIDA — {vieja:.1f} h sin diagnostico.")
             print("   El resto de la cola avanza, pero esta familia no se")
             print("   toca hasta que su paro tenga diferida firmada.")
+            cerrar(estado, previo, ahora, args)
+            print("\ndatabase_writes: 0")
+            return 0
+        motivo = sin_avance(vivos, ahora, args.umbral_sin_avance_horas)
+        if vivos and motivo:
+            # Workers vivos y ninguna bandera no es lo mismo que una cola que
+            # avanza. Un worker con el proceso vivo y el latido quieto esta
+            # colgado; dos workers que no escriben un resultado en horas estan
+            # trabajando en algo que no termina. Las dos cosas se veian OK.
+            estado.update({"stop_state": "COLA_SIN_AVANCE",
+                           "stop_signature": motivo["firma"],
+                           "paused_since": motivo["desde"],
+                           "minutes_paused": motivo["minutos"],
+                           "agency": motivo.get("agencia"),
+                           "diagnosis_state": "SIN_DIAGNOSTICO"})
+            print(f"\nESTADO: COLA_SIN_AVANCE — {motivo['texto']}")
             cerrar(estado, previo, ahora, args)
             print("\ndatabase_writes: 0")
             return 0
