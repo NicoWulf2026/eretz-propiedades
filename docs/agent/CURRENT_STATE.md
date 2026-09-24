@@ -36,6 +36,22 @@ Libro de familias detenidas: `ERETZ_FAMILIAS_DETENIDAS.jsonl`. Hoy: ninguna.
 
 ### 2026-09-24
 
+- **Tarde (14:50–15:00).** Paro `generico` por `alta inmobiliaria` a las
+  14:28: la fuente declaró 18 y después 16, y enumeramos exactamente eso las
+  dos veces. Triaje nuevo `catalogo_que_cambio_la_fuente` (`771666e47a`,
+  replay: 3 cambios sobre 1.359, todos el patrón) y diagnóstico firmado.
+- **Conteos de schema.org** (`af8be5820c`): `numberOfRooms/Bedrooms/
+  BathroomsTotal` se leen y mandan; un «+4 Ambientes» ya no se guarda como 4.
+- **Diagnóstico de `NEEDS_FIX` con el código de hoy** (livianos, 3 fichas
+  por agencia, `scratchpad/diag_detalles.py`):
+  - ya funcionan y van a certificar cuando la cola llegue: `cecilia sarro`,
+    `corporacion`, `chambouleyron`, `a varela`, `beltramone`;
+  - rechazo del guardián de forma en las 3 fichas: `cometto`, `cuini`,
+    `aris` (2 de 3) — mirar qué rechaza;
+  - sitios lentos (el presupuesto se va en enumerar): `casagrande`,
+    `benitez`, `crestale`, `battista` (Xintel, 480);
+  - descubrimiento sin plan: `eduardo fernandez`, `coviella`, `de ruyck`,
+    `andrade`; WordPress sin inventario: `aguirre`, `estela d onofrio`.
 - **La guarda de huella en vuelo, verificada en producción.** w0 (arrancado
   11:44) certificó `9010 inmobiliaria` mientras cambiaba
   `agency_web_discovery.py`: el resultado quedó `CERTIFIED_COMPLETE` con
