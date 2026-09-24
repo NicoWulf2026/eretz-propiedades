@@ -4515,3 +4515,96 @@ def test_MUERDE_el_producto_se_identifica_por_su_oferta():
     assert datos.get("tipo_ld") == "Product"
     assert datos.get("titulo") == "Terreno/Lote en Venta en Lujan Centro"
     assert datos.get("precio") == 110000.0
+
+
+# ---------------------------------------------------------------------------
+# Una página de REST que no entra en el límite de bytes se pide más chica.
+# ---------------------------------------------------------------------------
+
+class _RestPesado(B.Descargador):
+    """Un WordPress cuyos avisos pesan tanto que más de 12 por página no entran.
+
+    Sirve por `page` y por `offset`, como WordPress, y falla como falla el
+    descargador de verdad cuando la respuesta supera `limite_bytes`.
+    """
+
+    def __init__(self, total: int, maximo: int = 12):
+        super().__init__(B.LimitadorDeRitmo(0.0))
+        self.total, self.maximo, self.pedidos_urls = total, maximo, []
+
+    def bajar(self, url: str) -> str:
+        import urllib.parse as up
+        self.pedidos_urls.append(url)
+        q = dict(up.parse_qsl(up.urlparse(url).query))
+        por = int(q["per_page"])
+        if por > self.maximo:
+            raise B.ErrorTransitorio("OutboundResponseError")
+        desde = int(q["offset"]) if "offset" in q else (int(q.get("page", 1)) - 1) * por
+        if desde >= self.total:
+            raise B.ErrorPermanente("http 400")
+        ids = range(desde + 1, min(desde + por, self.total) + 1)
+        return json.dumps([{"id": i, "link": f"https://wp.test/property/p-{i}/"}
+                           for i in ids])
+
+
+def test_MUERDE_una_pagina_que_no_entra_se_pide_mas_chica():
+    """`austral inmobiliaria`: 0 propiedades en las dos corridas, con la
+    fuente declarando `X-WP-Total: 205`.
+
+    Cada aviso pesa ~43 KB aun pidiendo sólo los campos que usamos, así que
+    50 por página son 2,3 MB contra un límite de 800 KB. El descargador lo
+    reportaba como error transitorio, la paginación quedaba «interrumpida» en
+    la primera página, y la familia `wordpress` entera —114 agencias— se
+    detuvo por un defecto que se iba a repetir siempre.
+    """
+    c = WordPressConnector(descargador=_RestPesado(total=205))
+    c.paginacion_interrumpida = False
+    filas = list(c._rest({"base": "https://wp.test", "rest_base": "properties"}))
+    assert len({f["source_listing_id"] for f in filas}) == 205
+    assert c.paginacion_interrumpida is False
+    assert c.pagina_achicada == 12
+
+
+def test_MUERDE_achicar_a_mitad_de_camino_no_saltea_ni_repite_avisos():
+    """El límite puede aparecer en la página 3 y no en la 1. Cambiar el tamaño
+    corre la numeración de `page`, por eso se sigue por `offset` desde donde
+    se estaba."""
+    class Crece(_RestPesado):
+        def bajar(self, url):
+            import urllib.parse as up
+            q = dict(up.parse_qsl(up.urlparse(url).query))
+            # Las dos primeras páginas de 50 entran; desde la tercera, no.
+            if "page" in q and int(q["page"]) <= 2:
+                self.maximo = 50
+            else:
+                self.maximo = 12
+            return super().bajar(url)
+
+    c = WordPressConnector(descargador=Crece(total=180))
+    c.paginacion_interrumpida = False
+    ids = [f["source_listing_id"] for f in c._rest(
+        {"base": "https://wp.test", "rest_base": "properties"})]
+    assert sorted(map(int, ids)) == list(range(1, 181))
+    assert len(ids) == len(set(ids))
+
+
+def test_una_red_caida_sigue_siendo_una_paginacion_interrumpida():
+    """Achicar es sólo para el límite de bytes. Un timeout no se arregla
+    pidiendo menos, y no puede leerse como el fin del catálogo."""
+    class Caida(_RestPesado):
+        def bajar(self, url):
+            raise B.ErrorTransitorio("timeout")
+
+    c = WordPressConnector(descargador=Caida(total=100))
+    c.paginacion_interrumpida = False
+    assert list(c._rest({"base": "https://wp.test", "rest_base": "properties"})) == []
+    assert c.paginacion_interrumpida is True
+
+
+def test_sin_limite_alcanzado_el_pedido_es_el_mismo_de_siempre():
+    """Las 19 agencias REST que funcionaban no cambian ni un parámetro."""
+    d = _RestPesado(total=30, maximo=50)
+    c = WordPressConnector(descargador=d)
+    c.paginacion_interrumpida = False
+    list(c._rest({"base": "https://wp.test", "rest_base": "properties"}))
+    assert all("per_page=50&page=" in u and "offset" not in u for u in d.pedidos_urls)

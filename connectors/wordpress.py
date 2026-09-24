@@ -523,16 +523,50 @@ class WordPressConnector(Connector):
         base, ruta = plan["base"], plan["rest_base"]
         fields = plan.get("rest_fields") or REST_FIELDS
         vistos: set[str] = set()
-        for pagina in range(1, MAX_PAGINAS + 1):
-            url = (f"{base}/wp-json/wp/v2/{ruta}?per_page={POR_PAGINA}&page={pagina}"
-                   f"&_fields={fields}")
+        # Cuantos avisos por pedido, y desde donde, una vez que hubo que
+        # achicar. Ver el `except ErrorTransitorio` de abajo.
+        por_pagina, desde = POR_PAGINA, None
+        pagina = 1
+        while pagina <= MAX_PAGINAS * max(1, POR_PAGINA // por_pagina):
+            if desde is None:
+                url = (f"{base}/wp-json/wp/v2/{ruta}?per_page={por_pagina}"
+                       f"&page={pagina}&_fields={fields}")
+            else:
+                url = (f"{base}/wp-json/wp/v2/{ruta}?per_page={por_pagina}"
+                       f"&offset={desde}&_fields={fields}")
             try:
                 items = json.loads(self.descargador.bajar(url))
             except (ValueError, ErrorPermanente):
                 # WordPress devuelve 400 cuando se pide una pagina inexistente:
                 # es el final del listado, no un fallo.
                 break
-            except (ErrorTransitorio, Bloqueado):
+            except (ErrorTransitorio, Bloqueado) as error:
+                # Una pagina que no entra en el limite de bytes no es la red
+                # caida: es la MISMA respuesta cada vez, y reintentarla igual
+                # no la achica.
+                #
+                # `austral inmobiliaria` publica cada aviso con su contenido
+                # completo -unos 43 KB aun pidiendo solo los campos que
+                # usamos-, asi que 50 por pagina son 2,3 MB contra un limite
+                # de 800 KB. El descargador lo reportaba como error
+                # transitorio, esto marcaba la paginacion como interrumpida
+                # en la primera pagina, y la agencia quedaba con 0 propiedades
+                # en las dos corridas. Paro la familia `wordpress` entera -114
+                # agencias- por un defecto que iba a repetirse siempre.
+                #
+                # El limite no se afloja: se piden menos avisos por vez. Desde
+                # donde se estaba, por `offset`, porque cambiar el tamano de
+                # pagina corre la numeracion de `page`. Las agencias que nunca
+                # llegan al limite siguen pidiendo exactamente lo mismo que
+                # antes.
+                if (isinstance(error, ErrorTransitorio)
+                        and str(error) == "OutboundResponseError"
+                        and por_pagina > 1):
+                    if desde is None:
+                        desde = (pagina - 1) * por_pagina
+                    por_pagina = max(1, por_pagina // 2)
+                    self.pagina_achicada = por_pagina
+                    continue
                 # Cortar por red caida no es haber llegado al final.
                 self.paginacion_interrumpida = True
                 break
@@ -551,8 +585,11 @@ class WordPressConnector(Connector):
                        "taxonomy_terms": plan.get("taxonomy_terms") or {},
                        "post_taxonomy_catalog": bool(
                            plan.get("post_taxonomy_catalog"))}
-            if nuevos == 0 or len(items) < POR_PAGINA:
+            if nuevos == 0 or len(items) < por_pagina:
                 break
+            if desde is not None:
+                desde += len(items)
+            pagina += 1
 
     def _sitemap(self, plan: dict[str, Any]) -> Iterator[dict]:
         vistos: set[str] = set()
