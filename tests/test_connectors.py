@@ -2172,6 +2172,31 @@ def test_generico_normaliza_fila_xintel_estructurada() -> None:
     assert prop.imagenes == ["https://cdn.example/abc127_1.jpg"]
 
 
+def _xintel_con(**campos):
+    return gen_conector({})._normalizar_xintel({
+        "source_listing_id": "131",
+        "source_url": "https://alfa.com.ar/casa-en-venta-ficha-vrg131",
+        "pagina": 1,
+        "xintel": {"titulo": "Casa en venta", "tipo": "Casa", "operacion": "Venta",
+                   "precio": "U$S 90.000", **campos},
+    }, fuente(), "<html><body>Ficha publica</body></html>")
+
+
+def test_MUERDE_xintel_la_descripcion_es_in_obs_y_no_la_bandera_in_des() -> None:
+    """`in_des` es una bandera («True»/«False»); el texto viaja en `in_obs`,
+    escapado. Medido el 2026-09-24 en 10 agencias Xintel: 256 fichas guardaban
+    «True» como descripcion y 1.014 la perdian, ninguna tenia la real."""
+    prop = _xintel_con(in_des="True",
+                       in_obs="&lt;p&gt;UNA CASA INCRE&Iacute;BLE con jard&iacute;n&lt;/p&gt;")
+    assert prop.descripcion == "UNA CASA INCREÍBLE con jardín"
+    assert prop.extra["source_fields_provided"]["descripcion"] is True
+    prop = _xintel_con(in_des="False", in_obs="Base de varios destinos, con oficinas.")
+    assert prop.descripcion == "Base de varios destinos, con oficinas."
+    prop = _xintel_con(in_des=True, in_obs="")
+    assert prop.descripcion is None
+    assert prop.extra["source_fields_provided"]["descripcion"] is False
+
+
 def test_generico_query_php_no_confunde_extension_ph_con_departamento() -> None:
     html = ("<html><head><meta property=\"og:title\" content=\"Terreno en La Falda\">"
             "</head><body>Venta USD 12.500 Superficie total: 640 m2"

@@ -2939,9 +2939,11 @@ class GenericoConnector(Connector):
                 continue
             seen.add(current)
             clean_images.append(current)
-        description = row.get("in_des")
-        if str(description).lower() in {"", "false", "none", "null"}:
-            description = None
+        # El texto de la ficha viaja en `in_obs`, como HTML escapado. `in_des`
+        # es una BANDERA -«True»/«False»-: leerla como descripcion guardo
+        # «True» en 256 fichas y perdio el texto en otras 1.014, en las 10
+        # agencias Xintel (medido 2026-09-24); ninguna tenia la real.
+        description = limpiar(_texto(unescape(str(row.get("in_obs") or "")))) or None
         url = crudo["source_url"]
         source_fields = {
             "titulo": bool(row.get("titulo")),
