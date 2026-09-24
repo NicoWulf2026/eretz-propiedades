@@ -36,6 +36,16 @@ Libro de familias detenidas: `ERETZ_FAMILIAS_DETENIDAS.jsonl`. Hoy: ninguna.
 
 ### 2026-09-24
 
+- **Xintel certificaba en falso** (`79fa5ae1dd`, `fa6eba6970`; excepción de
+  ventana cerrada). `in_des` es una bandera: 256 fichas guardaban «True» como
+  descripción y 1.014 la perdían; la real está en `in_obs`. 10 agencias, 6
+  eran CERTIFIED_COMPLETE (sus certificados ya no tienen huella vigente).
+  Además, si la API no aplicaba el detalle la ficha seguía con la fila del
+  listado y marcaba coordenadas como «no provistas» (`bondar`, 4 fichas
+  intermitentes); ahora es detalle fallido. Validado con fichas reales.
+- **Regression Gate** (`686b134930`): lee también `atributos_descartados` y
+  `provincia_supuesta_descartada`. Desde 11:39: 56 agencias, **0 pendientes**
+  (6 pérdidas firmadas en `REVISADAS.jsonl`).
 - **Regresión propia, detectada por la cola y arreglada** (`2bf6903d9f`). El
   cambio de descripciones de `0bd66ac5e5` activó un camino que truncaba antes
   de quitar `<script>`: `coldwell banker destino` guardó JavaScript como
