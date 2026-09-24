@@ -437,27 +437,43 @@ def mapa(
         municipio,
         departamento,
     )
+    solo_el_mapa = not donde and not q
     tabla, donde, valores = _tabla_y_where(q, donde, valores)
     total_matches_where = donde
-    viewport = (
-        "coalesce(propiedades.geo_estado, '') != 'GEO_CONFLICT' and "
-        "latitud between -90 and -21 and longitud between -74 and -53 "
-        "and latitud <= ? and latitud >= ? and longitud <= ? and longitud >= ?"
-    )
-    viewport_where = donde + (" and " if donde else " where ") + viewport
-    viewport_values = valores + [north, south, east, west]
+
+    def viewport(indexable: bool) -> str:
+        # `+columna` le prohibe al planificador el indice por coordenadas
+        # (`ix_coord_geo`). Medido sobre las 57.665 de la v4: el mapa SIN otros
+        # filtros cuenta con el indice en 4 ms en vez de 549; con filtros a
+        # escala pais el planificador lo elige igual y tarda 780 ms en vez de
+        # ~520, y para los puntos -ordenados por id- lo usa y despues ordena:
+        # 101 -> 196 ms. Por eso se usa solo en el conteo del mapa pelado.
+        c = "" if indexable else "+"
+        return (
+            "coalesce(propiedades.geo_estado, '') != 'GEO_CONFLICT' and "
+            f"{c}propiedades.latitud <= ? and {c}propiedades.latitud >= ? and "
+            f"{c}propiedades.longitud <= ? and {c}propiedades.longitud >= ?"
+        )
+
+    y = " and " if donde else " where "
+    # La caja se recorta a Argentina en vez de sumar `latitud between -90 and
+    # -21`: es la misma condicion y deja un solo rango, el que el indice usa.
+    viewport_values = valores + [min(north, -21), max(south, -90),
+                                 min(east, -53), max(west, -74)]
     con = conexion()
     try:
         total_matches = con.execute(
             f"select count(*) from {tabla}{total_matches_where}", valores
         ).fetchone()[0]
         viewport_matches = con.execute(
-            f"select count(*) from {tabla}{viewport_where}", viewport_values
+            f"select count(*) from {tabla}{donde}{y}{viewport(solo_el_mapa)}",
+            viewport_values,
         ).fetchone()[0]
         filas = con.execute(
             f"select propiedades.id, propiedades.latitud, propiedades.longitud, "
             f"propiedades.precio, propiedades.moneda, propiedades.operacion, "
-            f"propiedades.tipo_propiedad, propiedades.titulo from {tabla}{viewport_where} "
+            f"propiedades.tipo_propiedad, propiedades.titulo "
+            f"from {tabla}{donde}{y}{viewport(False)} "
             f"order by propiedades.id limit ?",
             viewport_values + [limit],
         ).fetchall()

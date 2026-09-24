@@ -498,6 +498,34 @@ def test_mapa_aplica_viewport_filtros_y_declara_truncamiento(v2):
     assert empty["viewport_matches"] == 0 and empty["data"] == []
 
 
+def test_mapa_recorta_la_caja_a_argentina_y_el_indice_no_cambia_la_respuesta(v2):
+    """La caja se recorta en vez de sumar `latitud between -90 and -21`, y el
+    indice por coordenadas es solo un camino mas rapido: misma respuesta."""
+    base = dict(q=None, operacion=None, tipo=None, moneda=None, precio_min=None,
+                precio_max=None, area=None, nivel=None, localidad=None,
+                municipio=None, departamento=None, provincia=None, barrio=None,
+                ambientes=None, dormitorios=None, banos=None, superficie_min=None,
+                limit=10)
+    argentina = dict(base, north=-21.0, south=-56.0, east=-53.0, west=-74.0)
+    # Una caja que se sale de Argentina por los cuatro lados cuenta lo mismo.
+    mundo = dict(base, north=80.0, south=-89.0, east=170.0, west=-170.0)
+    # Y una que queda entera fuera no cuenta nada, aunque recortada se invierta.
+    afuera = dict(base, north=10.0, south=0.0, east=-40.0, west=-50.0)
+    sin_indice = [v2.mapa(**a) for a in (argentina, mundo, afuera)]
+    assert sin_indice[0] == sin_indice[1]
+    assert sin_indice[0]["viewport_matches"] == 2
+    assert sin_indice[2]["viewport_matches"] == 0 and sin_indice[2]["data"] == []
+
+    con = sqlite3.connect(v2.SNAPSHOT)
+    con.execute("create index ix_coord_geo on propiedades(latitud, longitud, geo_estado)")
+    con.commit()
+    con.close()
+    con_indice = [v2.mapa(**a) for a in (argentina, mundo, afuera)]
+    assert con_indice == sin_indice
+    filtrado = dict(argentina, operacion="venta")
+    assert v2.mapa(**filtrado)["viewport_matches"] == 1
+
+
 def test_detail_resuelve_alias_publico_sin_cambiar_id_canonico(v2):
     con = sqlite3.connect(v2.SNAPSHOT)
     con.execute("create table property_aliases(alias text primary key, property_id text not null)")

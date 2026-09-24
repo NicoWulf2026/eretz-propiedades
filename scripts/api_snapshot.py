@@ -138,6 +138,10 @@ create index if not exists ix_barrio_plano
     on propiedades(barrio_plano, barrio);
 create index if not exists ix_localidad on propiedades(localidad);
 create index if not exists ix_agencia on propiedades(agency_id);
+-- El conteo del mapa sin otros filtros: con `geo_estado` adentro es un
+-- indice cubriente y cuenta la caja en 4 ms en vez de 549. La API lo usa
+-- SOLO en ese caso; ver `mapa` en `api/v2.py`, donde esta lo medido.
+create index if not exists ix_coord_geo on propiedades(latitud, longitud, geo_estado);
 
 -- Busqueda por texto. Sin esto, `/buscar` hace un scan completo: 409 ms
 -- medidos sobre las 58.427, que para una caja de busqueda es demasiado.
