@@ -676,3 +676,46 @@ def test_MUERDE_si_la_enumeracion_cambio_no_alcanza_con_contar_fallas():
         run2={"estado": "OK", "enumeradas": 349, "detalles_fallidos": 1,
               "errores_por_etapa": {}}))
     assert t["decision"] == STOP
+
+
+# ---------------------------------------------------------------------------
+# Un catálogo que movió la fuente, declarado por ella.
+# ---------------------------------------------------------------------------
+
+def test_MUERDE_la_fuente_cambio_su_catalogo_entre_corridas_y_lo_declaro():
+    """`alta inmobiliaria`: 18 de 18 declaradas, después 16 de 16. Paró la
+    familia `generico` entera por «inventario inestable»."""
+    t = clasificar(resultado(
+        reasons=["run inventories differ", "second run is not idempotent"],
+        comparison={"identity_collisions": 0, "missing_in_run2": 2,
+                    "new_in_run2": 0, "run1_urls": 18, "run2_urls": 16},
+        run1={"estado": "OK", "enumeradas": 18, "total_declarado": 18,
+              "detalles_fallidos": 0, "errores_por_etapa": {}},
+        run2={"estado": "OK", "enumeradas": 16, "total_declarado": 16,
+              "detalles_fallidos": 0, "errores_por_etapa": {}}))
+    assert t["decision"] == CONTINUE
+    assert t["radio_estimado"] == RADIO_AGENCIA
+    assert t["componente_sospechoso"] == "catalogo_que_cambio_la_fuente"
+
+
+def test_MUERDE_si_la_diferencia_no_cuadra_con_lo_declarado_sigue_parando():
+    """La fuente bajó 2 pero faltan 5: tres se perdieron por nuestro lado."""
+    t = clasificar(resultado(
+        comparison={"identity_collisions": 0, "missing_in_run2": 5,
+                    "new_in_run2": 0, "run1_urls": 18, "run2_urls": 13},
+        run1={"estado": "OK", "enumeradas": 18, "total_declarado": 18,
+              "detalles_fallidos": 0, "errores_por_etapa": {}},
+        run2={"estado": "OK", "enumeradas": 16, "total_declarado": 16,
+              "detalles_fallidos": 0, "errores_por_etapa": {}}))
+    assert t["decision"] == STOP
+
+
+def test_MUERDE_si_no_enumeramos_todo_lo_declarado_sigue_parando():
+    t = clasificar(resultado(
+        comparison={"identity_collisions": 0, "missing_in_run2": 2,
+                    "new_in_run2": 0, "run1_urls": 18, "run2_urls": 14},
+        run1={"estado": "OK", "enumeradas": 18, "total_declarado": 18,
+              "detalles_fallidos": 0, "errores_por_etapa": {}},
+        run2={"estado": "OK", "enumeradas": 14, "total_declarado": 16,
+              "detalles_fallidos": 0, "errores_por_etapa": {}}))
+    assert t["decision"] == STOP

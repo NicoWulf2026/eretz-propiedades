@@ -468,6 +468,50 @@ def _detalle_menor(resultado: dict[str, Any], fallidos: list[str]) -> str:
     return "; ".join(partes)
 
 
+def _catalogo_que_cambio_la_fuente(resultado: dict[str, Any],
+                                   comparacion: dict[str, Any]) -> dict[str, Any] | None:
+    # Se consulta en DOS lugares y no antes: dentro de la rama de faltantes y
+    # justo antes de `sin_determinar`. Puesta antes de los chequeos de
+    # atributos tapaba un defecto real -`alagna` 2026-09-23, la ciudad sin
+    # extraer- solo porque ademas habia cambiado el catalogo.
+    #
+    # El catalogo lo cambio la FUENTE entre las dos corridas, y lo dijo ella.
+    #
+    # `alta inmobiliaria`, 2026-09-24 14:27: la corrida 1 enumero 18 de 18
+    # declaradas; la 2, 16 de 16 declaradas. Faltan exactamente las 2 que la
+    # fuente dejo de declarar. Nuestra enumeracion fue completa las dos veces
+    # segun la propia fuente; lo que se movio fue el catalogo. Paro la familia
+    # `generico` entera -359 agencias- como «inventario inestable», y el
+    # 2026-09-20 la misma agencia, al reves (16 -> 18), habia parado TODO como
+    # COMPARTIDO sin determinar.
+    #
+    # Las tres condiciones juntas, o no aplica: cada corrida enumero
+    # exactamente lo que la fuente declaraba en ESE momento, ninguna corto su
+    # paginacion, y la diferencia neta entre corridas es exactamente la
+    # diferencia entre lo declarado. Medido en el historial: 6 resultados con
+    # el total declarado distinto entre corridas; 5 cumplen las tres.
+    #
+    # No se certifica: dos corridas que no coinciden no son idempotentes, y la
+    # agencia sigue en NEEDS_FIX hasta una corrida estable. Cambia el radio:
+    # un catalogo que se mueve es de esta agencia, no de la familia.
+    faltantes_ = int(comparacion.get("missing_in_run2") or 0)
+    nuevas_ = int(comparacion.get("new_in_run2") or 0)
+    uno_ = resultado.get("run1") or {}
+    dos_ = resultado.get("run2") or {}
+    d1, d2 = uno_.get("total_declarado"), dos_.get("total_declarado")
+    if ((faltantes_ or nuevas_) and d1 and d2 and d1 != d2
+            and uno_.get("enumeradas") == d1 and dos_.get("enumeradas") == d2
+            and not uno_.get("paginacion_interrumpida")
+            and not dos_.get("paginacion_interrumpida")
+            and (faltantes_ - nuevas_) == (int(d1) - int(d2))):
+        return _veredicto(
+            CONTINUE, resultado, "catalogo_que_cambio_la_fuente", RADIO_AGENCIA,
+            f"la fuente declaro {d1} en la primera corrida y {d2} en la "
+            f"segunda, y enumeramos exactamente eso las dos veces: faltan "
+            f"{faltantes_} y sobran {nuevas_}, que es lo que cambio su propio "
+            f"catalogo. No es nuestra enumeracion la que se movio")
+    return None
+
 def clasificar(resultado: dict[str, Any]) -> dict[str, Any]:
     """STOP o CONTINUE, con la evidencia que lo justifica."""
     razones = list(resultado.get("reasons") or [])
@@ -647,6 +691,9 @@ def clasificar(resultado: dict[str, Any]) -> dict[str, Any]:
                 f"{fallidas_2} fichas, {nuevas} sobran y la primera no pudo "
                 f"bajar {fallidas_1}. Fallaron fichas distintas en cada "
                 f"corrida: no se movio el catalogo, se cruzaron dos fallas")
+        movido = _catalogo_que_cambio_la_fuente(resultado, comparacion)
+        if movido:
+            return movido
         return _veredicto(
             STOP, resultado, "inventario_inestable_entre_corridas",
             RADIO_FAMILIA,
@@ -818,6 +865,9 @@ def clasificar(resultado: dict[str, Any]) -> dict[str, Any]:
             f"encontro nada: {_detalle_menor(resultado, fallidos)}")
 
     # ---------------- Sin evidencia para acotar: se para ------------------
+    movido = _catalogo_que_cambio_la_fuente(resultado, comparacion)
+    if movido:
+        return movido
     return _veredicto(
         STOP, resultado, "sin_determinar", RADIO_COMPARTIDO,
         "no hay evidencia positiva de que la causa sea externa o acotada; "
