@@ -36,6 +36,17 @@ Libro de familias detenidas: `ERETZ_FAMILIAS_DETENIDAS.jsonl`. Hoy: ninguna.
 
 ### 2026-09-24
 
+- **VENTANA SEMÁNTICA CERRADA a las 15:25.** Hoy se invalidaron todas las
+  huellas dos veces (lote compartido 11:40, runner 15:17). A las 15:20 la
+  cola `ready` tenía **784 agencias y 509 nunca certificadas**; de las 275
+  con resultado, sólo 1 con huella vigente. Desde ahora no se tocan archivos
+  de `archivos_de_la_huella()` salvo un defecto que certifique en falso; lo
+  demás se acumula para la próxima ventana (ver «Pendiente anotado»). A ~8
+  min por agencia y 2 workers, recorrer las 784 lleva ~52 h de máquina
+  encendida.
+- **Orden de la cola** (`082c805687`, no toca huellas): las nuevas iban al
+  final del bulk y cada invalidación las volvía a postergar. Ahora canarios
+  → nuevas y conocidas intercaladas 1:1 → cola larga.
 - **Descripciones que son el pie del sitio** (`18c476dc29`, `shared/runner`):
   `coldwell banker de la vera cruz` estaba CERTIFIED_COMPLETE con la MISMA
   descripción —«© 2026 Coldwell Banker. Todos los derechos reservados…»— en
