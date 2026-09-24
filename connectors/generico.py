@@ -2203,10 +2203,20 @@ class GenericoConnector(Connector):
             titulo = limpiar(unescape(m.group(1))) if m else None
 
         descripcion = mapaprop.get("descripcion") or datos.get("descripcion")
+        # El meta description se lee, pero va DESPUES de los rotulos
+        # explicitos de la ficha. Muchos sitios ponen el mismo texto
+        # institucional en todas sus paginas -«AB Negocios Inmobiliarios es
+        # una inmobiliaria de la ciudad de Rafaela…»- y la ficha tiene debajo
+        # su «Descripcion de la Propiedad». Tomando el meta primero, el rotulo
+        # no se leia nunca y el runner, con razon, descartaba el texto
+        # repetido: 28 agencias, 1.774 fichas (medido 2026-09-24). En 22 de 68
+        # fichas sondeadas el rotulo trae la descripcion propia donde el meta
+        # traia el eslogan del sitio o un resumen de una linea.
+        meta = None
         if not descripcion:
             m = re.search(r'<meta[^>]+(?:name|property)="(?:og:)?description"'
                           r'[^>]+content="([^"]{20,600})"', html, re.I)
-            descripcion = limpiar(unescape(m.group(1))) if m else None
+            meta = limpiar(unescape(m.group(1))) if m else None
         if not descripcion:
             # Portales legacy sin metadata: una seccion rotulada
             # "Descripcion" es evidencia explicita y acotada. No se toma
@@ -2218,7 +2228,8 @@ class GenericoConnector(Connector):
                 principal, re.I | re.S)
             visible = limpiar(_texto(m.group(1))) if m else None
             descripcion = visible if visible and len(visible) >= 20 else None
-        if not descripcion and crudo.get("wordpress_category_catalog"):
+        if (not descripcion and meta is None
+                and crudo.get("wordpress_category_catalog")):
             # En Divi, el contenido de la ficha vive en el unico ``article``
             # y no lleva el rotulo "Descripcion". La URL ya fue cruzada
             # contra categoria, catalogo y REST; por eso es seguro tomar solo
@@ -2255,6 +2266,13 @@ class GenericoConnector(Connector):
             # palabra es prosa de la ficha, y tomar lo que le sigue traeria
             # cualquier cosa.
             descripcion = self._descripcion_rotulada(principal)
+        if descripcion and meta and self._es_su_comienzo(descripcion, meta):
+            # El rotulo solo trajo el comienzo de lo que el meta dice entero:
+            # `funesinmobiliaria` rotula «VENTA - Casa de 4 dormitorios -
+            # Roldan.» y el meta sigue con la descripcion.
+            descripcion = meta
+        if not descripcion:
+            descripcion = meta
 
         precio = mapaprop.get("precio", datos.get("precio"))
         moneda = mapaprop.get("moneda") or datos.get("moneda")
@@ -3058,21 +3076,40 @@ class GenericoConnector(Connector):
         nombre de la inmobiliaria.
         """
         candidatos = [datos.get("titulo")]
+        # El tope de 200 es para el TEXTO del titulo, no para su marcado: el h1
+        # de `cortespropiedades.com.ar` son dos spans con sangria -mas de 200
+        # caracteres de HTML para 60 de texto- y no entraba.
         for patron in (r'<meta[^>]+property="og:title"[^>]+content="([^"]{1,200})"',
-                       r"<h1[^>]*>(.{3,200}?)</h1>",
+                       r"<h1[^>]*>(.{3,2000}?)</h1>",
                        r"<title[^>]*>(.{1,200}?)</title>"):
             m = re.search(patron, html, re.S | re.I)
             if m:
-                candidatos.append(limpiar(unescape(re.sub(r"<[^>]+>", " ", m.group(1)))))
+                visible = limpiar(unescape(re.sub(r"<[^>]+>", " ", m.group(1))))
+                if visible and len(visible) <= 200:
+                    candidatos.append(visible)
 
         agencia = (fuente.agency_name or "").lower().strip()
+        restos: list[str] = []
         for c in candidatos:
             if not c:
                 continue
-            limpio = re.split(r"\s*[|–—]\s*", c)[0].strip()
+            partes = re.split(r"\s*[|–—]\s*", c)
+            limpio = partes[0].strip()
             if agencia and limpio.lower() in (agencia, agencia.replace("  ", " ")):
-                continue          # es el nombre de la inmobiliaria, no la ficha
+                # Es el nombre de la inmobiliaria, no la ficha. Pero puede venir
+                # DELANTE del titulo: `cortespropiedades.com.ar` publica el h1
+                # «Cortes Propiedades | Departamento 1 dormitorio en villa
+                # sarita» y se descartaba entero; las 23 fichas quedaban
+                # tituladas con el nombre de la agencia. Lo que sigue se guarda
+                # como segunda opcion: un candidato limpio sigue ganando, y un
+                # «Agencia | Inicio» no le quita el lugar a un h1 bueno.
+                resto = " | ".join(p.strip() for p in partes[1:] if p.strip())
+                if len(resto) >= 8:
+                    restos.append(resto)
+                continue
             return c
+        if restos:
+            return restos[0]
         return next((c for c in candidatos if c), None)
 
     @staticmethod
@@ -3388,6 +3425,28 @@ class GenericoConnector(Connector):
             numero = a_numero(valor)
             if numero is not None and float(numero).is_integer() and 1 <= numero <= 99:
                 out[destino] = int(numero)
+        # Los mismos conteos como `additionalProperty`: pares nombre/valor
+        # que el sitio declara uno por uno. `baroninmobiliaria.com.ar` es una
+        # app Next.js que muestra los conteos recien en el navegador; en el
+        # HTML solo estan aca -«Ambientes 4», «Dormitorios 3»- y la casa
+        # salia sin ninguno. Se exige el nombre EXACTO del atributo: «Baños
+        # en suite» o «Ambientes de servicio» son otra cosa y no se leen.
+        # Medido: 1 de 98 agencias generico publica asi (2026-09-24).
+        extras = nodo.get("additionalProperty")
+        for par in (extras if isinstance(extras, list) else []):
+            if not isinstance(par, dict):
+                continue
+            nombre = "".join(
+                c for c in unicodedata.normalize(
+                    "NFKD", normalizar_texto_campos(str(par.get("name") or "")))
+                if not unicodedata.combining(c)).strip().lower()
+            destino = {"ambientes": "ambientes", "dormitorios": "dorm",
+                       "banos": "banos"}.get(nombre)
+            if not destino or out.get(destino) is not None:
+                continue
+            numero = a_numero(par.get("value"))
+            if numero is not None and float(numero).is_integer() and 1 <= numero <= 99:
+                out[destino] = int(numero)
         geo = nodo.get("geo") or _de_su_entidad(nodo, "geo")
         if isinstance(geo, dict):
             try:
@@ -3616,6 +3675,14 @@ class GenericoConnector(Connector):
         return GenericoConnector._cuenta(texto, etiqueta, previo)
 
     @staticmethod
+    def _es_su_comienzo(parte: str, entero: str) -> bool:
+        """Si `entero` empieza con `parte` y dice mas: la misma prosa, cortada."""
+        def plano(texto: str) -> str:
+            return re.sub(r"[\W_]+", " ", texto or "").strip().lower()
+        corto, largo = plano(parte), plano(entero)
+        return bool(corto) and len(largo) > len(corto) and largo.startswith(corto)
+
+    @staticmethod
     def _descripcion_rotulada(html: str) -> str | None:
         """El bloque que sigue a un rotulo de descripcion.
 
@@ -3625,6 +3692,8 @@ class GenericoConnector(Connector):
 
         - el rotulo puede traer una coletilla: "Descripcion DE LA PROPIEDAD".
           Se acepta una corta, porque una larga ya no es un rotulo sino texto.
+          Tambien un adjetivo de una lista cerrada: «Descripcion ampliada»
+          (`cortespropiedades.com.ar`, que la sirve dentro de un textarea).
         - la fuente puede servir la vocal acentuada rota. Es el mismo problema
           de alfabetos distintos que ya aparecio entre la senal de fuente y su
           extraccion, y entre el guardian de tabla y su marcado.
@@ -3635,7 +3704,8 @@ class GenericoConnector(Connector):
         acento = r"(?:[o\u00f3]|&oacute;|.)"
         m = re.search(
             rf"<{rotulo}[^>]*>\s*Descripci{acento}n"
-            rf"(?:\s+(?:de|del)\s+(?:la\s+|el\s+)?[\w\u00c0-\u017f]{{3,20}})?"
+            rf"(?:\s+(?:de|del)\s+(?:la\s+|el\s+)?[\w\u00c0-\u017f]{{3,20}}"
+            rf"|\s+(?:ampliada|completa|general))?"
             # El rotulo puede venir repetido -la misma maqueta lo pone en el
             # encabezado y en la celda-, y entre el rotulo y el texto puede
             # haber envoltorios vacios.
@@ -3658,7 +3728,8 @@ class GenericoConnector(Connector):
         # la pagina entera.
         etiqueta = re.search(
             rf"<{rotulo}[^>]*>\s*Descripci{acento}n"
-            rf"(?:\s+(?:de|del)\s+(?:la\s+|el\s+)?[\w\u00c0-\u017f]{{3,20}})?"
+            rf"(?:\s+(?:de|del)\s+(?:la\s+|el\s+)?[\w\u00c0-\u017f]{{3,20}}"
+            rf"|\s+(?:ampliada|completa|general))?"
             rf"\s*:?\s*</{rotulo}>", html or "", re.I | re.S)
         if not etiqueta:
             return None
