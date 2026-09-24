@@ -421,6 +421,74 @@ def familias_pendientes(salida: Path) -> list[dict[str, Any]]:
     return pendientes
 
 
+COMPONENTE_SIN_DETERMINAR = "sin_determinar"
+
+
+def es_sin_determinar(paro: dict[str, Any]) -> bool:
+    """Un paro COMPARTIDO porque el triaje no pudo atribuirlo, no porque sepa
+    que el defecto esta en el codigo comun.
+
+    Los COMPARTIDO con componente nombrado -`shared/runner`, un KeyError del
+    runner- SI saben donde esta el defecto, y esos siguen deteniendo todo.
+    """
+    return (str(paro.get("radio") or "").upper() == "COMPARTIDO"
+            and paro.get("componente") == COMPONENTE_SIN_DETERMINAR)
+
+
+def degradar_sin_determinar(salida: Path,
+                            paro: dict[str, Any]) -> tuple[str | None, str]:
+    """El radio minimo DEMOSTRABLE de un defecto que nadie pudo atribuir.
+
+    El triaje dice COMPARTIDO cuando no encuentra evidencia positiva de un
+    radio acotado, y hace bien: «no encontrar razones para parar no es tener
+    razones para seguir». Esa regla no se toca y el veredicto sigue diciendo
+    lo que dice. Lo que se decide aca es como DEGRADAR.
+
+    Medido sobre el historial: de 622 paros STOP, 19 son COMPARTIDO y los 19
+    son `sin_determinar`, en 19 agencias distintas. 18 de ellos se cerraron
+    solos -certificaron en el reintento o se diagnosticaron como externos-, la
+    mayoria en dos a cinco minutos. El de `varesse` dejo las 791 agencias
+    paradas 4 h 19 min por UN campo de UNA ficha.
+
+    Lo que si se puede demostrar de un defecto desconocido es que corrio el
+    codigo comun MAS el de su familia. Si estuviera en el comun, se va a ver
+    tambien en otra familia; mientras aparezca en una sola, la sospecha
+    minima demostrable es esa familia. Entonces:
+
+    - el primer defecto sin atribuir detiene SU familia, no el universo. La
+      familia no se toca hasta que haya firma o cambie su codigo; nada se
+      certifica -la agencia sigue en NEEDS_FIX-;
+    - si aparece otro sin atribuir en una familia DISTINTA mientras el
+      primero sigue abierto, eso ya es evidencia de algo transversal y se
+      detiene todo, como antes;
+    - sin conector identificable no hay familia que acotar: se detiene todo.
+
+    El riesgo aceptado es el que el triaje describe: un defecto del codigo
+    comun que se toma por local. Queda acotado porque las otras familias se
+    certifican con los mismos controles por agencia -un defecto que se
+    manifiesta en ellas las deja en NEEDS_FIX y escala esto- y porque la cola
+    corre primero los canarios de cada familia. Simulado sobre los 19
+    historicos: 11 se acotan y 8 escalan; 7 de esos 8 por un unico paro de
+    `arte propiedades` que quedo abierto trece dias sin que nadie lo cerrara,
+    y que hoy se liberaria al primer cambio de codigo.
+    """
+    conector = str(paro.get("conector") or "").strip().lower()
+    if not conector:
+        conector = str((fila_del_triaje(salida, paro) or {}).get("connector")
+                       or "").strip().lower()
+    if not conector:
+        return None, " (sin conector identificable: no se puede acotar)"
+    otras = sorted({str(f["conector"]).strip().lower()
+                    for f in familias_pendientes(salida)
+                    if f.get("degradado_de")
+                    and str(f["conector"]).strip().lower() != conector})
+    if otras:
+        return None, (f" (escala a todo: ya hay un defecto sin atribuir abierto "
+                      f"en {', '.join(otras)}, y dos familias con defectos "
+                      f"sin causa apuntan al codigo comun)")
+    return conector, ""
+
+
 def anotar_familia(salida: Path, paro: dict[str, Any], conector: str) -> bool:
     """Deja escrito que esta familia queda detenida. Idempotente por paro."""
     clave = (paro.get("canonical_agency_id"), paro.get("componente"),
@@ -436,6 +504,9 @@ def anotar_familia(salida: Path, paro: dict[str, Any], conector: str) -> bool:
             "componente": paro.get("componente"),
             "radio": paro.get("radio"),
             "conector": conector,
+            # Si el triaje no lo pudo atribuir y se acoto a la familia. Es lo
+            # que despues decide si un segundo defecto sin causa escala.
+            "degradado_de": paro.get("degradado_de"),
             # Que codigo se sospechaba. Sin esto no hay forma de saber
             # despues si el paro habla de algo que todavia existe.
             "connector_strategy": (paro.get("connector_strategy")
@@ -484,12 +555,19 @@ def plan(salida: Path, anotar: bool = False) -> tuple[list[int], str, list[str]]
             paro = paro_vigente(salida)
         if paro is not None and not paro_atendido(salida, paro):
             familia = familia_de(paro, salida)
+            escalado = ""
+            if not familia and es_sin_determinar(paro):
+                familia, escalado = degradar_sin_determinar(salida, paro)
+                if familia:
+                    paro = {**paro, "radio": "FAMILIA",
+                            "degradado_de": "COMPARTIDO/sin_determinar"}
             if not familia:
                 return [], (f"paro sin diagnosticar en "
                             f"{paro.get('canonical_agency_id')} "
                             f"({paro.get('componente')}, radio "
                             f"{paro.get('radio')}): no se relanza hasta que "
                             f"haya una diferida firmada"
+                            + escalado
                             + (f" (se escribieron {escritas} por precedente, "
                                f"ninguna cubre este paro)"
                                if escritas else "")), []

@@ -609,3 +609,97 @@ def test_el_dry_run_no_pide_relanzar(tmp_path, monkeypatch):
     _, motivo, _ = modulo.plan(tmp_path, anotar=False)
     assert "tokko" in motivo
     assert not (tmp_path / "AGENCY_CERTIFICATION_STOP.json").exists()
+
+
+# ---------------------------------------------------------------------------
+# Un defecto que nadie pudo atribuir se degrada al radio mínimo demostrable.
+#
+# 19 paros COMPARTIDO en todo el historial, los 19 `sin_determinar`. El de
+# `varesse` detuvo las 791 agencias 4 h 19 min por un campo de una ficha.
+# ---------------------------------------------------------------------------
+
+def poner_sin_determinar(salida: Path, agencia="roomix:varesse", conector="wasi",
+                         cuando=None) -> None:
+    (salida / "AGENCY_CERTIFICATION_STOP.json").write_text(json.dumps({
+        "canonical_agency_id": agencia, "componente": "sin_determinar",
+        "radio": "COMPARTIDO", "conector": conector, "connector_strategy": conector,
+        "strategy_fingerprint": "igual", "cuando": cuando or ahora(-600)}),
+        encoding="utf-8")
+
+
+def test_MUERDE_un_defecto_sin_atribuir_detiene_su_familia_no_el_universo(
+        tmp_path, monkeypatch):
+    import relanzar_la_cola as modulo
+    monkeypatch.setattr(modulo, "huella_actual", lambda c, e: "igual")
+    poner_sin_determinar(tmp_path, conector="wasi")
+    faltan, motivo, excluir = modulo.plan(tmp_path, anotar=True)
+    assert faltan == [0, 1], motivo
+    assert excluir == ["wasi"]
+    libro = [json.loads(l) for l in (tmp_path / modulo.LIBRO_DE_FAMILIAS)
+             .read_text(encoding="utf-8").splitlines() if l.strip()]
+    assert libro[0]["degradado_de"] == "COMPARTIDO/sin_determinar"
+
+
+def test_MUERDE_un_segundo_defecto_sin_atribuir_en_OTRA_familia_detiene_todo(
+        tmp_path, monkeypatch):
+    """Dos familias con defectos sin causa ya son evidencia de algo transversal."""
+    import relanzar_la_cola as modulo
+    monkeypatch.setattr(modulo, "huella_actual", lambda c, e: "igual")
+    poner_sin_determinar(tmp_path, agencia="roomix:varesse", conector="wasi",
+                         cuando=ahora(-900))
+    modulo.plan(tmp_path, anotar=True)
+    (tmp_path / "AGENCY_CERTIFICATION_STOP.json").unlink()
+    poner_sin_determinar(tmp_path, agencia="roomix:castro", conector="tokko",
+                         cuando=ahora(-300))
+    faltan, motivo, excluir = modulo.plan(tmp_path, anotar=True)
+    assert faltan == [] and excluir == []
+    assert "escala a todo" in motivo
+    assert "wasi" in motivo
+
+
+def test_otro_defecto_sin_atribuir_en_la_MISMA_familia_no_escala(tmp_path, monkeypatch):
+    import relanzar_la_cola as modulo
+    monkeypatch.setattr(modulo, "huella_actual", lambda c, e: "igual")
+    poner_sin_determinar(tmp_path, agencia="roomix:varesse", conector="wasi",
+                         cuando=ahora(-900))
+    modulo.plan(tmp_path, anotar=True)
+    (tmp_path / "AGENCY_CERTIFICATION_STOP.json").unlink()
+    poner_sin_determinar(tmp_path, agencia="roomix:castanos", conector="wasi",
+                         cuando=ahora(-300))
+    faltan, motivo, excluir = modulo.plan(tmp_path, anotar=True)
+    assert faltan == [0, 1] and excluir == ["wasi"], motivo
+
+
+def test_un_defecto_sin_atribuir_ya_firmado_no_hace_escalar_a_otro(tmp_path, monkeypatch):
+    """Lo cerrado no es evidencia de nada abierto."""
+    import relanzar_la_cola as modulo
+    monkeypatch.setattr(modulo, "huella_actual", lambda c, e: "igual")
+    poner_sin_determinar(tmp_path, agencia="roomix:varesse", conector="wasi",
+                         cuando=ahora(-900))
+    modulo.plan(tmp_path, anotar=True)
+    poner_diferida(tmp_path, agencia="roomix:varesse", cuando=ahora(-600))
+    (tmp_path / "AGENCY_CERTIFICATION_STOP.json").unlink()
+    poner_sin_determinar(tmp_path, agencia="roomix:castro", conector="tokko",
+                         cuando=ahora(-300))
+    faltan, motivo, excluir = modulo.plan(tmp_path, anotar=True)
+    assert excluir == ["tokko"], motivo
+
+
+def test_MUERDE_un_COMPARTIDO_con_causa_nombrada_sigue_deteniendo_todo(tmp_path):
+    """`shared/runner` sabe dónde está el defecto: no hay nada que degradar."""
+    import relanzar_la_cola as modulo
+    (tmp_path / "AGENCY_CERTIFICATION_STOP.json").write_text(json.dumps({
+        "canonical_agency_id": "roomix:x", "componente": "shared/runner",
+        "radio": "COMPARTIDO", "conector": "tokko", "cuando": ahora(-60)}),
+        encoding="utf-8")
+    assert modulo.plan(tmp_path)[0] == []
+
+
+def test_MUERDE_sin_conector_identificable_no_hay_familia_que_acotar(tmp_path):
+    import relanzar_la_cola as modulo
+    (tmp_path / "AGENCY_CERTIFICATION_STOP.json").write_text(json.dumps({
+        "canonical_agency_id": "roomix:x", "componente": "sin_determinar",
+        "radio": "COMPARTIDO", "cuando": ahora(-60)}), encoding="utf-8")
+    faltan, motivo, _ = modulo.plan(tmp_path)
+    assert faltan == []
+    assert "sin conector identificable" in motivo
