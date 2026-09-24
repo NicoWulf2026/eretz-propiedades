@@ -36,6 +36,17 @@ Libro de familias detenidas: `ERETZ_FAMILIAS_DETENIDAS.jsonl`. Hoy: ninguna.
 
 ### 2026-09-24
 
+- **Browser QA contra la v4 nueva: 65 de 65** (7 skipped: asistente de
+  publicación apagado). Un defecto real del buscador arreglado (`c4051b4a21`:
+  el cierre diferido del blur no se cancelaba al volver el foco) y el test de
+  conteo literal ahora compara contra la API. Vitest 1.237, tsc y eslint
+  limpios. Detalle en `ERETZ_QA_BROWSER_2026-09-20.md` § tercera corrida.
+- **Mapa sin filtros** (`b84aba8b86`): índice cubriente por coordenadas, usado
+  sólo para contar la caja cuando no hay otros filtros ni texto. Conteo 549→4
+  ms; endpoint 520–550→90–165 ms con caché caliente; respuestas idénticas en 8
+  casos. La v4 de `_scratch` ya tiene el índice.
+- **`ab negocios` recertificada con el `generico` nuevo: CERTIFIED_COMPLETE**,
+  24 descripciones propias (antes: el eslogan de la agencia en las 24).
 - **Ventana corta de `generico`, 16:20–16:45** (`0bd66ac5e5`). Se reabrió con
   números: con las huellas invalidadas a las 15:17, había 6 resultados
   `generico` vigentes; cada hora que pasaba el cambio costaba más. Tres
