@@ -868,9 +868,27 @@ def ordenar_para_correr(cola: list[str],
             bulk.append(canonical_id)
 
     # Las que nunca se certificaron no tienen familia conocida todavia: van al
-    # bulk, que es donde se descubre.
-    bulk.extend(c for c in cola if c not in resultados)
-    return canarios + bulk + larga
+    # bulk, que es donde se descubre. Pero INTERCALADAS con las conocidas, no
+    # detras de todas.
+    #
+    # Detras, cada cambio de codigo compartido las volvia a postergar: la
+    # huella invalida todas las conocidas, y las conocidas iban primero. El
+    # 2026-09-24 a las 15:20 la cola `ready` tenia 784 agencias y 509 NUNCA
+    # habian tenido un resultado, mientras los workers recertificaban otra vez
+    # las que empiezan con «a» -el mismo sintoma que el 2026-09-21, con otra
+    # causa-. Una agencia nueva certificada con el codigo de hoy es evidencia
+    # igual de fresca que una recertificacion, y ademas suma cobertura.
+    #
+    # Una y una: ni la cobertura espera a que termine la recertificacion, ni
+    # la recertificacion espera a que se agote la cobertura.
+    nuevas = [c for c in cola if c not in resultados]
+    intercalado: list[str] = []
+    for i in range(max(len(bulk), len(nuevas))):
+        if i < len(nuevas):
+            intercalado.append(nuevas[i])
+        if i < len(bulk):
+            intercalado.append(bulk[i])
+    return canarios + intercalado + larga
 
 
 def latest_results(output: Path) -> dict[str, dict[str, Any]]:
