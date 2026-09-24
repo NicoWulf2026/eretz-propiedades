@@ -186,3 +186,39 @@ Get-NetTCPConnection -LocalPort 8099 -State Listen |
 - Los dos tests que fallaban en la corrida anterior: el de conteo literal
   sigue siendo un conteo literal, y el de niveles debería cerrarse solo, pero
   **no está comprobado**.
+
+---
+
+# Tercera corrida, 2026-09-24: suite completa contra la snapshot v4 nueva
+
+**`database_writes: 0` · `production_connections: 0`**
+
+- API: sólo el router `/v2`, en `127.0.0.1:8099`, sin `.env` ni Supabase,
+  leyendo en solo lectura `_scratch/unification/snapshot_v4_2026-09-24/`
+  (57.665 filas, municipio 36.271). La snapshot servida no se tocó.
+- Frontend: `next dev` en `:3100` con `ERETZ_API_V2_BASE_URL` en un
+  `.env.development.local` temporal (ignorado por git, borrado al terminar).
+- Antes de medir se verificó desde cuándo corría cada puerto (16:39 y 16:40):
+  la lección de la segunda corrida.
+
+| | primera pasada | tras los arreglos |
+|---|---:|---:|
+| Playwright e2e | 63 passed, 2 failed, 7 skipped | **65 passed**, 7 skipped |
+| Vitest | — | 1.237 passed, 9 skipped |
+| tsc / eslint | — | limpios |
+
+Los 7 skipped siguen siendo el asistente de publicación con su bandera apagada.
+
+## Los dos que fallaban
+
+1. **`test_mouse_keyboard_close_requery_and_typed_url` era un defecto real**,
+   no del test. El `onBlur` del buscador programaba `setOpen(false)` a 140 ms
+   y nunca lo cancelaba: si el foco volvía antes, la lista se abría y se
+   cerraba sola. En la e2e, una opción visible que desaparecía antes del
+   `mousedown` — 1 de 3 corridas en verde. Arreglado en `c4051b4a21` (el
+   cierre pendiente vive en un ref y se cancela al volver el foco); 4 de 4.
+2. **El conteo literal** («Comprar (42.536)») ahora se compara contra lo que
+   devuelve `/api/properties/filter-metadata`. Era el cambio que la primera
+   corrida propuso y dejó sin hacer.
+
+El de niveles de `ros` que fallaba el 20-09 pasa: la jerarquía está en la v4.
