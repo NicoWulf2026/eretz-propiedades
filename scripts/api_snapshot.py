@@ -146,6 +146,13 @@ create virtual table if not exists busqueda using fts5(
     id unindexed, titulo, descripcion, barrio, area_nombre,
     tokenize = "unicode61 remove_diacritics 2"
 );
+
+-- Lo que la snapshot declara de si misma y la API puede usar:
+-- `orden_de_filas = id`: las filas se insertaron en orden de `id`, y por eso
+--   el `rowid` de `busqueda` sigue ese orden.
+-- `busqueda_rowid = propiedades`: cada fila de `busqueda` lleva el `rowid` de
+--   su fila en `propiedades`, y las dos se pueden unir por `rowid`.
+create table if not exists snapshot_meta (clave text primary key, valor text);
 """
 
 
@@ -225,8 +232,17 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
     imagenes_compartidas = 0
     imagenes_repetidas_sin_evidencia = 0
     fichas_sin_foto_propia = 0
+    anterior: tuple[str | None, int | None] = (None, None)
+    # En orden de `hash_dedup`, que es el `id` de la API. La busqueda rankeada
+    # elige su ventana de candidatos «por id» -una muestra estable y diversa:
+    # 207 inmobiliarias distintas en los 400 candidatos de «casa», contra 9 en
+    # orden de insercion- y ordenar 16.965 coincidencias por id costaba 243 ms
+    # de los 330 de la consulta. Insertando en orden de id, el `rowid` del
+    # indice de texto YA es ese orden y la API lo usa gratis: 9 ms, la misma
+    # muestra. Ver `orden_de_filas` en `snapshot_meta`.
     for (crudo,) in origen.execute(
-            "select row_json from rows where status = 'CANDIDATE'"):
+            "select row_json from rows where status = 'CANDIDATE' "
+            "order by hash_dedup"):
         cruda = fusionar(json.loads(crudo),
                          frescas.get(json.loads(crudo).get("hash_dedup")),
                          CAMPOS_FUSIONABLES)
@@ -252,7 +268,7 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
         scopes = sorted(actual_scopes & set(previous_scopes)) if previous_scopes is not None else sorted(actual_scopes)
         documento = fila_de_api(cruda, g, scopes)
         area = documento["geo"]["area_busqueda"] or {}
-        api.execute(
+        propiedad = api.execute(
             "insert or replace into propiedades values "
             "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (documento["id"], documento["agency_id"], documento["source_url"],
@@ -274,14 +290,29 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
              documento["geo"].get("estado"),
              json.dumps(documento["alcances"], ensure_ascii=False),
              json.dumps(documento, ensure_ascii=False)))
+        # `insert or replace` de arriba deja UNA fila por id en `propiedades`;
+        # el indice de texto tiene que quedar igual, o un id repetido en el
+        # origen apareceria dos veces en la busqueda. Como las filas llegan en
+        # orden de id, un repetido es siempre el anterior: se borra por
+        # `rowid`, que en FTS5 es directo (`id` no esta indexado y borrar por
+        # el recorreria el indice entero en cada fila).
+        #
+        # Y la fila de texto lleva el MISMO `rowid` que la de `propiedades`:
+        # asi la API une las dos por `rowid` (207 ms el conteo de una busqueda
+        # combinada) en vez de por `id` (351 ms). Ver `busqueda_rowid`.
+        if documento["id"] == anterior[0] and anterior[1] is not None:
+            api.execute("delete from busqueda where rowid = ?", (anterior[1],))
         api.execute(
-            "insert into busqueda (id, titulo, descripcion, barrio, area_nombre) "
-            "values (?,?,?,?,?)",
-            (documento["id"], documento["titulo"] or "",
+            "insert into busqueda (rowid, id, titulo, descripcion, barrio, area_nombre) "
+            "values (?,?,?,?,?,?)",
+            (propiedad.lastrowid, documento["id"], documento["titulo"] or "",
              documento["descripcion"] or "",
              documento["geo"]["barrio"]["nombre"] or "",
              area.get("nombre") or ""))
+        anterior = (documento["id"], propiedad.lastrowid)
         filas += 1
+    api.executemany("insert or replace into snapshot_meta values (?, ?)",
+                    [("orden_de_filas", "id"), ("busqueda_rowid", "propiedades")])
     api.commit()
 
     resumen = {

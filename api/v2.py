@@ -153,6 +153,36 @@ def _tiene_columnas_planas(con: sqlite3.Connection) -> bool:
     return {"area_nombre_plano", "barrio_plano"} <= columnas
 
 
+def _orden_de_candidatos(con: sqlite3.Connection, con_texto: bool) -> str:
+    """Con que se ordena la ventana de candidatos de la busqueda rankeada.
+
+    La ventana se elige «por id», que es un hash: una muestra estable y
+    diversa -207 inmobiliarias distintas en los 400 candidatos de «casa»,
+    contra 9 en orden de insercion-. Ordenar 16.965 coincidencias por id
+    costaba 243 ms de los 330 de la consulta. Si la snapshot declara que
+    inserto sus filas en orden de id, el `rowid` del indice de texto YA es ese
+    orden y se usa gratis: la misma muestra. Una snapshot que no lo declara
+    sigue ordenando por id, como antes.
+    """
+    if con_texto and _declara(con, "orden_de_filas") == "id":
+        return "busqueda.rowid"
+    return "propiedades.id"
+
+
+def _declara(con: sqlite3.Connection, clave: str) -> Optional[str]:
+    """Lo que la snapshot declara de si misma en `snapshot_meta`, o None.
+
+    Una snapshot vieja no tiene la tabla: no declara nada y la API hace lo de
+    siempre. Nada se deduce de como se ven los datos.
+    """
+    try:
+        fila = con.execute(
+            "select valor from snapshot_meta where clave = ?", (clave,)).fetchone()
+    except sqlite3.Error:
+        return None
+    return fila[0] if fila else None
+
+
 def _tiene_busqueda() -> bool:
     """Si la snapshot trae el indice de texto.
 
@@ -284,11 +314,20 @@ def _tabla_y_where(q: Optional[str], donde: str, valores: list[Any]) -> tuple[st
         con = conexion()
         try:
             linked = bool(con.execute("select 1 from sqlite_master where name='search_property_ids'").fetchone())
+            alineada = _declara(con, "busqueda_rowid") == "propiedades"
         finally:
             con.close()
-        tabla = ("busqueda join search_property_ids si on si.search_rowid=busqueda.rowid "
-                 "join propiedades on propiedades.id=si.property_id" if linked else
-                 "propiedades join busqueda on busqueda.id = propiedades.id")
+        if linked:
+            tabla = ("busqueda join search_property_ids si on si.search_rowid=busqueda.rowid "
+                     "join propiedades on propiedades.id=si.property_id")
+        elif alineada:
+            # Cada fila de texto lleva el rowid de su propiedad: se une por la
+            # clave del arbol y no por un `id` de texto. El conteo de una
+            # busqueda combinada pasa de 351 a 207 ms. `cross join` fija el
+            # orden: el indice de texto primero, que es el que filtra.
+            tabla = "busqueda cross join propiedades on propiedades.rowid = busqueda.rowid"
+        else:
+            tabla = "propiedades join busqueda on busqueda.id = propiedades.id"
         donde += (" and " if donde else " where ") + "busqueda match ?"
         valores = valores + [_termino(q)]
     return tabla, donde, valores
@@ -789,8 +828,9 @@ def buscar(
         # documento completo de cuatrocientas filas para quedarse con
         # veinticuatro es pagar el JSON de las otras trescientas setenta y seis.
         if sort == "relevance":
+            orden = _orden_de_candidatos(con, bool(q))
             candidates = con.execute(
-                f"select propiedades.id from {tabla}{donde} order by propiedades.id limit ?",
+                f"select propiedades.id from {tabla}{donde} order by {orden} limit ?",
                 valores + [ventana]).fetchall()
             crudas = []
             if candidates:
