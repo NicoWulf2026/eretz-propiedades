@@ -78,6 +78,13 @@ def _loss_reason(field: str, old: dict, fresh: dict) -> str:
                 return 'EXPLAINED_VALIDATION'
             if evidence.get('state') == 'NOT_PROVIDED':
                 return 'SOURCE_CHANGED_RECORDED'
+    # The runner empties a description that is the site's own boilerplate
+    # (repeated across the agency's listings, or a copyright footer) and marks
+    # THAT row with the reason. Row-scoped, so it explains this row only.
+    extra = fresh.get('extra')
+    if (field == 'descripcion' and isinstance(extra, dict)
+            and extra.get('descripcion_descartada')):
+        return 'EXPLAINED_VALIDATION'
     # A move only exists if the value is present in the FRESH neighboring field.
     neighbors = {'barrio': ('ciudad', 'provincia'), 'ciudad': ('barrio', 'provincia'),
                  'provincia': ('ciudad', 'barrio')}

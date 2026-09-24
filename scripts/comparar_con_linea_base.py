@@ -82,6 +82,43 @@ def resumir(reporte: dict[str, Any]) -> dict[str, Any]:
             "por_agencia": {a: dict(n) for a, n in sorted(por_agencia.items())}}
 
 
+# Lo que una persona -o el agente- tiene que mirar contra la fuente. El resto
+# (`FIELD_CHANGED`, `FIELD_RECOVERED`, `NEWLY_OBSERVED`) no pide revision.
+PIDEN_REVISION = ("UNEXPLAINED_LOSS", "DIMENSION_MOVE_REVIEW")
+
+
+def _clave(cambio: dict[str, Any]) -> tuple[str, str, str, str]:
+    return (str(cambio.get("agency") or ""), str(cambio.get("url") or ""),
+            str(cambio.get("field") or ""), str(cambio.get("kind") or ""))
+
+
+def aplicar_revisiones(changes: list[dict[str, Any]],
+                       revisadas: list[dict[str, Any]]) -> dict[str, Any]:
+    """Separa las perdidas ya revisadas contra la fuente de las pendientes.
+
+    Una revision vale para esa agencia, esa url, ese campo y ese tipo de
+    cambio, y nada mas: no hay comodines. Tiene que traer `veredicto` y
+    `evidencia`; una sin evidencia no cuenta, y la perdida sigue pendiente.
+    Esto no cambia el `status` del gate, que sigue diciendo lo que el gate
+    vio: agrega `pendientes_de_revision` al lado.
+    """
+    firmadas = {_clave(r): r for r in revisadas
+                if r.get("veredicto") and r.get("evidencia")}
+    pendientes: list[dict[str, Any]] = []
+    resueltas: list[dict[str, Any]] = []
+    for cambio in changes:
+        if cambio.get("kind") not in PIDEN_REVISION:
+            continue
+        revision = firmadas.get(_clave(cambio))
+        if revision is None:
+            pendientes.append(cambio)
+        else:
+            resueltas.append({**cambio, "veredicto": revision["veredicto"]})
+    return {"pendientes_de_revision": len(pendientes),
+            "revisadas": dict(Counter(r["veredicto"] for r in resueltas)),
+            "pendientes": pendientes}
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--linea-base", type=Path, required=True)
@@ -90,6 +127,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--cert", type=Path, default=CERT)
     ap.add_argument("--salida", type=Path, default=None,
                     help="reporte completo; por defecto junto a la linea base")
+    ap.add_argument("--revisadas", type=Path, default=None,
+                    help="JSONL de perdidas ya revisadas contra la fuente; por "
+                         "defecto _regresion/REVISADAS.jsonl si existe")
     args = ap.parse_args(argv)
 
     base = args.linea_base if args.linea_base.is_absolute() else args.cert / args.linea_base
@@ -97,7 +137,13 @@ def main(argv: list[str] | None = None) -> int:
     antes = [f for f in leer_jsonl(base) if f.get("canonical_agency_id") in agencias]
     despues = filas_actuales(args.cert, agencias)
     reporte = compare(antes, despues)
-    resumen = {"agencias_recertificadas": len(agencias), **resumir(reporte)}
+    ruta_revisadas = args.revisadas or base.with_name("REVISADAS.jsonl")
+    revisadas = list(leer_jsonl(ruta_revisadas)) if ruta_revisadas.exists() else []
+    revision = aplicar_revisiones(reporte["changes"], revisadas)
+    resumen = {"agencias_recertificadas": len(agencias), **resumir(reporte),
+               "pendientes_de_revision": revision["pendientes_de_revision"],
+               "revisadas": revision["revisadas"],
+               "pendientes": revision["pendientes"]}
     salida = args.salida or base.with_name(
         f"GATE_{args.desde[:19].replace(':', '')}.json")
     salida.write_text(json.dumps({**resumen, "changes": reporte["changes"]},

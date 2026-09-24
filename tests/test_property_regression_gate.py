@@ -67,3 +67,16 @@ def test_credentials_in_urls_are_not_serialized():
 def test_malformed_field_evidence_cannot_explain_a_loss_or_crash_batch():
     report = compare([row(banos=2)], [row(field_evidence=['not a field map'])])
     assert report['counts'] == {'UNEXPLAINED_LOSS': 1}
+
+
+def test_a_description_discarded_by_the_runner_is_explained_for_that_row_only():
+    old = [row(1, descripcion='AB Negocios es una inmobiliaria de Rafaela'),
+           row(2, descripcion='Casa con patio'), row(3, descripcion='Depto')]
+    fresh = [row(1, descripcion=None, extra={'descripcion_descartada': 'compartida_por_la_agencia'}),
+             row(2, descripcion=None),
+             row(3, descripcion=None, extra={'otra_cosa': 'x'})]
+    report = compare(old, fresh)
+    assert report['counts'] == {'EXPLAINED_VALIDATION': 1, 'UNEXPLAINED_LOSS': 2}
+    # The same mark never explains another field of the row.
+    report = compare([row(precio=10)], [row(precio=None, extra={'descripcion_descartada': 'x'})])
+    assert report['counts'] == {'UNEXPLAINED_LOSS': 1}
