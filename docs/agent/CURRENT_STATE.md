@@ -36,6 +36,23 @@ Libro de familias detenidas: `ERETZ_FAMILIAS_DETENIDAS.jsonl`. Hoy: ninguna.
 
 ### 2026-09-24
 
+- **La guarda de huella en vuelo, verificada en producción.** w0 (arrancado
+  11:44) certificó `9010 inmobiliaria` mientras cambiaba
+  `agency_web_discovery.py`: el resultado quedó `CERTIFIED_COMPLETE` con
+  `strategy_fingerprint: None` y `codigo_cambio_en_vuelo` (se va a
+  recertificar), y el worker paró con `para_por_codigo_cambiado`. Sin la
+  guarda habría quedado vigente habiendo corrido el código viejo.
+- **Lote compartido aplicado** (`d3afa4fd3e`): portales por nombre
+  registrable, `compare_runs` por identidad, contador de rechazos con la
+  regla del triaje. Cola `ready` 791 → 784. Recalculado sobre los 281
+  paquetes: cambia sólo `eckert` (30 faltantes falsas → 0). Invalida las 60
+  certificaciones vigentes.
+- **`generico`**: id de la ficha sin números sueltos del slug (`feb5f5eca6`,
+  ítem 6: choques dentro de una agencia 968 → 639) e ícono entre rótulo y
+  número (`78349978a0`, ítem 11: `alas` 120 de 206 sin dormitorios).
+- **Línea base para el Regression Gate**: 23.593 filas de 281 agencias en
+  `ERETZ_AGENCY_CERTIFICATION_20260827/_regresion/ANTES_DEL_LOTE_2026-09-24.jsonl`
+  (11:39, antes del lote compartido). Comparar contra la recertificación.
 - **El vigilante corría un checkout del 17-09.** La tarea ejecutaba
   `D:\INMO CAPITAL\eretz-agency\_vigilante.bat` (worktree
   `feat/roomix-agency-coverage` @ `d9238e64be`): `FAMILIA_DETENIDA` y todo lo
