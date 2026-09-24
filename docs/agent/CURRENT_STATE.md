@@ -36,6 +36,22 @@ Libro de familias detenidas: `ERETZ_FAMILIAS_DETENIDAS.jsonl`. Hoy: ninguna.
 
 ### 2026-09-24
 
+- **API de búsqueda** (`09aba154c4`, no toca huellas): la snapshot se arma
+  en orden de id, cada fila de `busqueda` lleva el rowid de su propiedad, y
+  lo declara en `snapshot_meta`. La API sólo toma el atajo si está
+  declarado. Mismas respuestas en 9 consultas sobre las 57.665: explorer
+  304→75 ms, combinada 908→251, mapa con texto y filtros 1.618→604, precio
+  selectivo 1.788→837. Se nota recién con una snapshot reconstruida.
+- **Regression Gate con revisiones** (`6543624a97`): 36 agencias
+  recertificadas desde las 11:39, 29 pérdidas sin explicar → 0 pendientes.
+  24 eran la descripción institucional de `ab negocios` (el gate ahora lee
+  `extra.descripcion_descartada`); 5 se bajaron de la fuente y se firmaron en
+  `_regresion/REVISADAS.jsonl` (2 correcciones, 3 cambios en la fuente).
+  Correrlo con `--desde 2026-09-24T11:39:00` cada tanto.
+- **Pendiente anotado (generico, próxima ventana)**: fichas Next.js que
+  publican los conteos sólo en `additionalProperty` de schema.org
+  (`baron`: «Ambientes 4», «Dormitorios 3»). No se leen; la agencia sale
+  NEEDS_FIX, no certifica en falso.
 - **VENTANA SEMÁNTICA CERRADA a las 15:25.** Hoy se invalidaron todas las
   huellas dos veces (lote compartido 11:40, runner 15:17). A las 15:20 la
   cola `ready` tenía **784 agencias y 509 nunca certificadas**; de las 275

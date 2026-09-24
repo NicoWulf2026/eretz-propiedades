@@ -50,15 +50,19 @@ se produjo durante el cambio queda sin `strategy_fingerprint`. Entonces:
    `scratchpad/diag_detalles.py`. Separar lo ya arreglado de lo que sigue.
 2. **Corridas que no terminan en estado OK** (29) y **cero inventario no
    demostrado** (27): siguientes clases de `NEEDS_FIX` por tamaño.
-3. **Regression Gate**: línea base en
-   `_regresion/ANTES_DEL_LOTE_2026-09-24.jsonl`; comparar con
-   `scripts/regression_gate.py --old … --fresh … --output …` cuando la cola
-   haya recertificado una parte representativa.
+3. **Regression Gate**: `python scripts/comparar_con_linea_base.py
+   --linea-base _regresion/ANTES_DEL_LOTE_2026-09-24.jsonl --desde
+   2026-09-24T11:39:00`. Mirar `pendientes_de_revision`; cada pérdida se baja
+   de la fuente y se firma en `_regresion/REVISADAS.jsonl` (agencia, url,
+   campo, tipo, veredicto, evidencia). Una pérdida que el código de hoy
+   produce y el de la línea base no, sobre el MISMO HTML, es regresión real.
 4. Ítem 18(b): la operación que sólo existe en la ruta del catálogo
    (`bottai` 180, `constant` 24, `pozzobon` 7). Es un cambio de enumeración
    de `generico`: más riesgoso que su retorno actual.
-5. `_de_json_ld` lee `dorm`/`banos`/`sup_*` que nunca se escriben: los
-   atributos de schema.org (`numberOfRooms`, `floorSize`) no se usan.
+5. `_de_json_ld`: `numberOfRooms`/`numberOfBedrooms`/`numberOfBathroomsTotal`
+   ya se leen (`af8be5820c`); faltan `additionalProperty` (PropertyValue
+   «Ambientes»/«Dormitorios», caso `baron`) y `floorSize`. Toca `generico`:
+   próxima ventana.
 6. Ítem 12 (`SIN_INVENTARIO` con dos significados): defecto de nombre, no de
    decisión; bajo retorno.
 7. Beta del backend (ver `docs/ERETZ_UNIFICATION_PLAN.md` § «Backend beta
