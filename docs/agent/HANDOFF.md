@@ -104,6 +104,9 @@ se produjo durante el cambio queda sin `strategy_fingerprint`. Entonces:
    Además `bottai`: páginas de resultados de búsqueda guardadas como fichas
    (`inmuebles_list_Venta_seleccione_…`, título «BOTTAI Inmobiliaria», precio de
    un aviso). La agencia está NEEDS_FIX, pero el dato es falso.
+   Y `cantale`: la operación es una etiqueta suelta «Venta» junto al tipo
+   (`PROP-75947 Vendido / Venta Departamento`), sin «En»; el menú dice lo
+   mismo como enlaces. Distinguir etiqueta (span/div) de enlace de menú.
 6. Ítem 12 (`SIN_INVENTARIO` con dos significados): defecto de nombre, no de
    decisión; bajo retorno.
 7. Beta del backend (ver `docs/ERETZ_UNIFICATION_PLAN.md` § «Backend beta
