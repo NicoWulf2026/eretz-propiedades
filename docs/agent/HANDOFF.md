@@ -43,6 +43,11 @@ se produjo durante el cambio queda sin `strategy_fingerprint`. Entonces:
 
 ## Próximas tareas, en orden de impacto medido
 
+0. **Verificar el orden rotado de la cola** (`4f377ad210`, relanzamiento
+   pedido 21:15 del 24-09). Medir en las horas siguientes: proporción de
+   resultados sobre agencias nunca certificadas (antes: 6 de 58) y horas en
+   agencias repetidas el mismo día (antes: 12,5 de 15,8). Y **agrupar los
+   cambios de huella**: cada uno cuesta ~3 h de canarios.
 1. **`NEEDS_FIX` por fichas que no bajan** (30 agencias, 25 con esa única
    razón). Las fallas son las MISMAS en las dos corridas: sistemáticas, no
    pasajeras. Casi todos los resultados son del 21-09, anteriores a los
