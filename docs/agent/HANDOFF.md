@@ -98,7 +98,10 @@ se produjo durante el cambio queda sin `strategy_fingerprint`. Entonces:
 5e. Señal de operación sin precio: RESUELTO en `da4df01820`. Quedan para
    la próxima ventana compartida: 5 (título repetido) y re-evaluar
    `ficha_sin_contenido` después del descarte de descripciones.
-5d. **Próximo lote de `generico`** (agrupar; cada cambio de huella cuesta
+5d. **Próximo lote de `generico`** — decisión 25-09 08:30: NO aplicar solos;
+   cada ítem afecta a UNA agencia y un cambio en `generico` invalida toda la
+   familia. Agruparlos con el próximo cambio de `generico` que lo justifique.
+   (agrupar; cada cambio de huella cuesta
    recertificaciones). Plantilla de `fios` (diferida firmada 25-09 00:36):
    descripción en `.property-description .show-more` sin rótulo; 7 páginas
    de categoría en singular (`/Casa-en-venta`, título «Casa», precio de la
