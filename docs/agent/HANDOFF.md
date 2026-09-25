@@ -81,11 +81,13 @@ se produjo durante el cambio queda sin `strategy_fingerprint`. Entonces:
 5b. `wordpress` (Houzez): conteos con punto final («1.») no se leen
    (`gustavo teruel`). Radio medido: 1 de 26 agencias `wordpress` (52 fichas
    sondeadas). Bajo retorno; «Si.» NO es un conteo.
-5c. **Hueco del certificador** (compartido, próxima ventana): `altos`,
-   `amadeo`, `caruso`, `emir` estaban CERTIFIED_COMPLETE con la mayoría de
-   las fichas sin operación, que la fuente publica en una etiqueta. La señal
-   de fuente del auditor no la vio, así que contó el campo como no provisto.
-   El extractor ya la lee (`5977acb741`); falta que el auditor la cuente.
+5c. **Señal de fuente = extractor** (diseño). Para `operacion`, la señal del
+   auditor llama a las mismas funciones que el extractor: lo que el extractor
+   no ve, el auditor lo cuenta como «no provisto» y la agencia pasa COMPLETE.
+   Así pasaron `altos`, `amadeo`, `caruso`, `emir`; parcheado para la
+   etiqueta en `896238f7ae`. El arreglo de fondo es una señal más amplia que
+   el extractor (que vea «Venta/Alquiler» rotulados aunque el extractor no
+   pueda decidir), aceptando más NEEDS_FIX. Medir antes.
 6. Ítem 12 (`SIN_INVENTARIO` con dos significados): defecto de nombre, no de
    decisión; bajo retorno.
 7. Beta del backend (ver `docs/ERETZ_UNIFICATION_PLAN.md` § «Backend beta
