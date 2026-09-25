@@ -36,6 +36,9 @@ Libro de familias detenidas: `ERETZ_FAMILIAS_DETENIDAS.jsonl`. Hoy: ninguna.
 
 ### 2026-09-25
 
+- **Verificado en una recertificación real** (`caruso`, 04:11, COMPLETE):
+  operación en 64 de 65 fichas (antes 25 de 63) y 64 descripciones propias
+  (antes el eslogan del sitio en todas).
 - **Señal de operación del auditor con precio** (`da4df01820`): deja de dar
   por publicada la operación a partir de «ALQUILADA/Vendido» cuando hay precio.
 - **Fichas Xintel por HTML** (`960a148e44`): `cannone` guardaba título «en»,
