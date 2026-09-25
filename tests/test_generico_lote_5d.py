@@ -288,3 +288,11 @@ def test_MUERDE_una_ficha_con_id_titulada_como_categoria_no_es_contenedora():
     url = "https://alfa.test/propiedad/186944_lotes-en-venta-zona-turistica-tematica/"
     assert not GenericoConnector._es_pagina_contenedora(html, url)
     assert GenericoConnector._es_pagina_contenedora(html, "https://alfa.test/lotes-en-venta/")
+
+
+def test_una_taxonomia_de_wordpress_no_es_ficha():
+    html = ('<html><body><div class="property-card"><a href="/estado-propiedad/venta">Venta</a></div>'
+            '<div class="property-card"><a href="/propiedad/casa-en-venta-en-rosario-123">Casa</a></div>'
+            '</body></html>')
+    fichas = GenericoConnector._fichas_en(html, "https://alfa.test/propiedades")
+    assert not any("/estado-propiedad/" in u for u in fichas)

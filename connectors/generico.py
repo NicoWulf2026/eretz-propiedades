@@ -190,7 +190,12 @@ RE_FICHA_RAIZ = re.compile(
 # (`fernandez marull` 59 de 59, `crestale` 59 de 131, el 25-09).
 RE_NO_FICHA = re.compile(
     r"/propiedades/(?:destacadas|mas-nuevas|mas-viejas|"
-    r"precio-(?:mayor|menor)-a-(?:mayor|menor))/?$|^/cdn-cgi/", re.I)
+    r"precio-(?:mayor|menor)-a-(?:mayor|menor))/?$|^/cdn-cgi/"
+    # Taxonomias de WordPress: /estado-propiedad/venta (`garbero`) lista
+    # avisos, no es uno.
+    r"|^/(?:(?:estado|tipo|ciudad|zona|barrio|caracteristica|categoria|localidad)"
+    r"-(?:de-)?propiedad(?:es)?|property-(?:status|type|city|area|feature|label|state))/",
+    re.I)
 
 # Traduccion de la FORMA descubierta de una fuente a un patron de ruta.
 # La forma la produjo el descubrimiento (/p-1749_departamento -> /<slug-con-id>)
