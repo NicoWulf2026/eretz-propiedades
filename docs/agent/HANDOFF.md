@@ -114,6 +114,14 @@ se produjo durante el cambio queda sin `strategy_fingerprint`. Entonces:
    (coincidencias), 1 falsa, 1 ambigua. Riesgo bajo; no se tocó. Si se
    aborda: no tomar como precio un monto precedido por «opcional»/«cochera
    (valor».
+5g. **Frescura de la snapshot sólo desde cierres certificados** (decisión de
+   diseño, medida 25-09): `mas_frescas` toma campos de paquetes COMPLETE/BEST.
+   Una agencia NEEDS_FIX sigue sirviendo la preingestión del 03-09 aunque su
+   paquete de hoy sea mejor: `blanco` sirve 1.204 títulos «Blanco
+   Propiedades» y su paquete del 25-09 tiene los reales (falla por precio,
+   moneda y ciudad, no por texto). Opción a evaluar: tomar de un NEEDS_FIX
+   sólo los campos que su `field_coverage` da por EXTRACTED. Afecta a qué
+   se publica: medir antes, con Regression Gate sobre la snapshot.
 6. Ítem 12 (`SIN_INVENTARIO` con dos significados): defecto de nombre, no de
    decisión; bajo retorno.
 7. Beta del backend (ver `docs/ERETZ_UNIFICATION_PLAN.md` § «Backend beta

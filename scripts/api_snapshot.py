@@ -67,6 +67,17 @@ from scripts.image_quality import is_known_page_asset  # noqa: E402
 from scripts.plan_de_escritura import agencias_con_web_ajena  # noqa: E402
 from scripts.property_freshest import (CAMPOS_FUSIONABLES,  # noqa: E402
                                        fusionar, mas_frescas)
+from scripts.run_rollout import (FRACCION_COMPARTIDA,  # noqa: E402
+                                 MINIMO_PARA_JUZGAR)
+from connectors.base import RE_TIPO_ACCESORIO, detectar_tipo  # noqa: E402
+import re  # noqa: E402
+import unicodedata  # noqa: E402
+
+
+def _sin_tildes(texto: str) -> str:
+    texto = re.sub(r"\s+", " ", (texto or "").lower())
+    return "".join(c for c in unicodedata.normalize("NFKD", texto)
+                   if not unicodedata.combining(c))
 from scripts.preingestion_manifest import (base_canonica,  # noqa: E402
                                            exigir_base_vigente)
 
@@ -222,16 +233,41 @@ def main() -> int:
 def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
     # Frecuencia por agencia para revisión; repetir no demuestra ser un logo.
     apariciones: dict[str, Counter] = defaultdict(Counter)
+    # El texto del sitio, con la MISMA regla del runner
+    # (`descartar_descripciones_compartidas`): la v4 del 2026-09-24 traia
+    # 4.813 filas en 61 agencias con la descripcion institucional, de agencias
+    # todavia no recertificadas con el codigo que la descarta.
+    descripciones: dict[str, Counter] = defaultdict(Counter)
+    fichas_de: Counter = Counter()
     for crudo, canonical in origen.execute(
             "select row_json, canonical_id from rows where status = 'CANDIDATE'"):
         if canonical in ajenas:
             continue
-        for url in set(json.loads(crudo).get("imagenes") or []):
+        fila = json.loads(crudo)
+        for url in set(fila.get("imagenes") or []):
             apariciones[canonical][url] += 1
+        texto = fusionar(fila, frescas.get(fila.get("hash_dedup")),
+                         CAMPOS_FUSIONABLES).get("descripcion")
+        fichas_de[canonical] += 1
+        if texto and len(texto) >= 40:
+            descripciones[canonical][texto] += 1
+
+    def es_del_sitio(canonical: str, texto: Any) -> bool:
+        if not texto:
+            return False
+        inicio = str(texto).lstrip()
+        if inicio[:1] == "©" or inicio[:9].lower() == "copyright":
+            return True
+        n = fichas_de[canonical]
+        return (n >= MINIMO_PARA_JUZGAR
+                and descripciones[canonical][texto]
+                >= max(MINIMO_PARA_JUZGAR // 2, n * FRACCION_COMPARTIDA))
 
     api.executescript(ESQUEMA)
 
     filas = 0
+    descripciones_del_sitio = 0
+    tipos_cochera_corregidos = 0
     ajenas_omitidas = 0
     imagenes_compartidas = 0
     imagenes_repetidas_sin_evidencia = 0
@@ -255,6 +291,21 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
         if canonical in ajenas:
             ajenas_omitidas += 1
             continue
+        # Sin titulo, la descripcion se conserva: el contrato promete que
+        # nunca faltan las dos, y una fila sin ningun texto no se entiende.
+        if cruda.get("titulo") and es_del_sitio(canonical, cruda.get("descripcion")):
+            cruda = dict(cruda, descripcion=None)
+            descripciones_del_sitio += 1
+        # «Dúplex … con cochera» no es una cochera: 272 filas de la v4 venian
+        # de la regla vieja. Solo si el titulo tiene la forma accesoria, el
+        # tipo se vuelve a derivar del titulo con la regla de hoy; sin otro
+        # tipo, queda vacio antes que falso.
+        if (cruda.get("tipo_propiedad") == "cochera" and cruda.get("titulo")
+                and RE_TIPO_ACCESORIO.search(_sin_tildes(cruda["titulo"]))):
+            nuevo_tipo = detectar_tipo(cruda["titulo"])
+            if nuevo_tipo != "cochera":
+                cruda = dict(cruda, tipo_propiedad=nuevo_tipo)
+                tipos_cochera_corregidos += 1
         propias = [u for u in (cruda.get("imagenes") or [])
                    if not is_known_page_asset(u)]
         imagenes_repetidas_sin_evidencia += sum(
@@ -325,6 +376,8 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
         "propiedades": filas,
         "omitidas_por_web_ajena": ajenas_omitidas,
         "imagenes_compartidas_descartadas": imagenes_compartidas,
+        "descripciones_del_sitio_descartadas": descripciones_del_sitio,
+        "tipos_cochera_por_accesorio_corregidos": tipos_cochera_corregidos,
         "imagenes_repetidas_sin_evidencia_de_descarte": imagenes_repetidas_sin_evidencia,
         "fichas_que_quedaron_sin_foto_propia": fichas_sin_foto_propia,
         "fichas_para_ser_compartida": FICHAS_PARA_SER_COMPARTIDA,

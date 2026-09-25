@@ -298,3 +298,14 @@ def test_invalid_run_metadata_is_not_accepted(tmp_path, metadata):
     _declare_run(folder, 'run1', metadata)
     with pytest.raises(ValueError, match='run metadata must be an object'):
         mas_frescas(tmp_path)
+
+
+
+def test_la_descripcion_descartada_por_el_runner_no_vuelve_de_la_base_vieja():
+    """El runner vacia la descripcion que es el texto del sitio. Como
+    `descripcion` es un campo volatil, la fresca vacia gana y el eslogan viejo no
+    vuelve a la snapshot. Fija ese comportamiento (verificado 2026-09-25)."""
+    vieja = {"descripcion": "Silvina Hill Propiedades es una inmobiliaria de Tucuman."}
+    fresca = {"descripcion": None,
+              "extra": {"descripcion_descartada": "compartida_por_la_agencia"}}
+    assert fusionar(vieja, fresca, CAMPOS_FUSIONABLES)["descripcion"] is None
