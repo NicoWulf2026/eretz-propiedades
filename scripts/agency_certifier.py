@@ -47,7 +47,9 @@ from scripts.agency_fingerprints import (
 )
 from scripts.run_rollout import (PRESUPUESTO_POR_FUENTE, _procesar_con,
                                  version_del_codigo)
-from scripts.agency_web_discovery import es_portal, franquicia_de_dominio
+from scripts.agency_web_discovery import (PORTALES, PORTALES_POR_NOMBRE, dominio,
+                                         es_portal, franquicia_de_dominio,
+                                         nombre_registrable)
 
 CERTIFIER_VERSION = "agency_certifier_v1"
 IDENTITY_STRATEGY_VERSION = "canonical_main_exact_live_v2"
@@ -403,6 +405,23 @@ def host(url: str | None) -> str:
     return (urllib.parse.urlparse(url or "").hostname or "").lower().removeprefix("www.")
 
 
+def portal_inmobiliario(url: str | None) -> bool:
+    """Un portal de avisos inmobiliarios, no cualquier sitio que no es la web oficial.
+
+    `external_portal` responde otra pregunta -si una url puede ser la web
+    de la inmobiliaria- y por eso incluye redes, medios y agregadores. Para
+    decir que un sitio DELEGA su inventario hace falta un portal de avisos:
+    el 25-09, 15 de las 22 agencias BLOCKED_EXTERNAL por esa razon solo
+    enlazaban WhatsApp, Facebook, Instagram o Google Maps.
+    """
+    dom = dominio(url or "")
+    if not dom:
+        return False
+    return (any(dom == p or dom.endswith("." + p) for p in PORTALES)
+            or nombre_registrable(dom) in PORTALES_POR_NOMBRE
+            or any(dom == p or dom.endswith("." + p) for p in EXTERNAL_PORTAL_HOSTS))
+
+
 def external_portal(url: str | None) -> bool:
     current = host(url)
     return es_portal(url or '') or any(
@@ -657,7 +676,7 @@ class AuditDownloader(Descargador):
         external_hosts = sorted({
             host(urllib.parse.urljoin(url, match.group(1)))
             for match in re.finditer(r'href=["\']([^"\']{4,600})', body, re.I)
-            if external_portal(urllib.parse.urljoin(url, match.group(1)))
+            if portal_inmobiliario(urllib.parse.urljoin(url, match.group(1)))
         })
         self.pages[url] = {
             "bytes": len(body.encode("utf-8", "ignore")),
