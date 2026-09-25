@@ -1164,11 +1164,15 @@ _OPERACIONES = {"venta": "venta", "vender": "venta", "sale": "venta",
                 "alquiler temporario": "alquiler_temporario",
                 "temporario": "alquiler_temporario", "temporal": "alquiler_temporario"}
 
+# El orden importa: gana la primera clave que aparece. «dúplex» va DESPUES de
+# departamento/PH -«Depto. tipo dúplex», «PH … dúplex» son departamentos- y
+# ANTES de lote y cochera, que en un titulo de dúplex suelen ser lo que trae.
 _TIPOS = {
-    "casa": "casa", "chalet": "casa", "quinta": "casa", "duplex": "casa",
+    "casa": "casa", "chalet": "casa", "quinta": "casa",
     "departamento": "departamento", "depto": "departamento",
     "dpto": "departamento", "ph": "departamento",
     "loft": "departamento", "monoambiente": "departamento",
+    "duplex": "casa",
     "terreno": "terreno", "lote": "terreno", "campo": "terreno", "fraccion": "terreno",
     "local": "local", "fondo de comercio": "local",
     "oficina": "oficina", "consultorio": "oficina",
@@ -1463,10 +1467,24 @@ def ficha_sin_contenido(prop: "PropiedadNormalizada") -> bool:
     return titulo <= agencia or agencia <= titulo
 
 
+# Lo que la propiedad TRAE, no lo que ES: «con cochera», «y cochera», «+
+# cochera», «c/cochera», y la zonificacion «apto dúplex» de un lote. El
+# 2026-09-25, 44 fichas en 24 agencias eran «cochera» siendo dúplex o
+# departamentos con cochera.
+RE_TIPO_ACCESORIO = re.compile(
+    r"(?:\bcon\s+|\by\s+|\bmas\s+|\+\s*|\bc/\s*)(?:\w+\s+){0,2}?(?:cocheras?|garages?)\b"
+    r"|\bapto\s+duplex\b")
+
+
 def detectar_tipo(texto: Any) -> str | None:
     if not texto:
         return None
     t = re.sub(r"\s+", " ", str(texto).lower())
+    # Sin tildes, como las claves: «Galpón», «Dúplex» y «Fracción» quedaban sin
+    # tipo (266, 61 y 7 titulos guardados). Tokko ya lo hacia antes de llamar.
+    t = "".join(c for c in unicodedata.normalize("NFKD", t)
+                if not unicodedata.combining(c))
+    t = RE_TIPO_ACCESORIO.sub(" ", t)
     for clave, val in _TIPOS.items():
         if re.search(rf"\b{re.escape(clave)}", t):
             return val
