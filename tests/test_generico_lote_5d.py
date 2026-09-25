@@ -178,3 +178,21 @@ def test_un_titulo_xintel_con_ambientes_reales_se_conserva():
     import test_connectors as TC
     assert TC._xintel_con(titulo="Oficina en alquiler Sexta Secci&oacute;n 3 ambientes").titulo == \
         "Oficina en alquiler Sexta Sección 3 ambientes"
+
+
+# --- propiedades similares del tema RealHomes -----------------------------------
+# `fernando villalba`: la parcela de 1,3 ha salia con 4 dormitorios y la casona
+# con 16, alternando entre corridas: eran las «Habitaciones» de las tarjetas
+# `rh_prop_card--similar`, elegidas al azar en cada carga.
+
+def test_MUERDE_las_tarjetas_similares_de_realhomes_no_son_la_ficha():
+    similares = ('<section class="rh_property__similar_properties">'
+                 '<article class="rh_prop_card rh_prop_card--similar">'
+                 '<h3><a href="/property/otra/">Otra casa</a></h3>'
+                 '<div class="rh_prop_card__meta"><h4>Habitaciones</h4><div><span class="figure">16</span></div></div>'
+                 '</article></section>')
+    html = ('<html><body><h1>VENTA-Parcela de 1,3 hectareas</h1><main>'
+            '<p>Venta. Parcela de 1,3 hectáreas. Precio USD 90.000</p>' + VISOR + RELLENO +
+            similares + '</main></body></html>')
+    p = _normalizar(html)
+    assert p.dormitorios is None

@@ -557,8 +557,12 @@ def cuerpo_principal(html: str) -> str:
     descartar; el dato nunca debió entrar al parser.
     """
     html = sin_marcado_comentado(html)
+    # RealHomes (`fernando villalba`): sus similares van en
+    # `rh_property__similar_properties`, elegidas al azar en cada carga; sus
+    # «Habitaciones» daban 4 dormitorios a una parcela de 1,3 ha.
     return re.split(
         r"id=[\"'](?:relacionadas|bottom)[\"']|<footer\b|"
+        r"class=[\"'][^\"']*rh_property__similar_properties|"
         r"<div[^>]+class=[\"'][^\"']*titulo_prod_int[^\"']*[\"'][^>]*>\s*"
         r"Otras\s+Propiedades\s*</div>",
                     html or "", maxsplit=1, flags=re.I)[0]
