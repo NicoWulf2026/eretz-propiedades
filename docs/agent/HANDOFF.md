@@ -63,20 +63,12 @@ se produjo durante el cambio queda sin `strategy_fingerprint`. Entonces:
 4. Ítem 18(b): la operación que sólo existe en la ruta del catálogo
    (`bottai` 180, `constant` 24, `pozzobon` 7). Es un cambio de enumeración
    de `generico`: más riesgoso que su retorno actual.
-5. **Guardia de título repetido** (runner, `shared`: próxima ventana
-   compartida). Un título idéntico en ≥ la mitad de las fichas de una agencia
-   es el del sitio, igual que la descripción. Hoy nada impide que certifique:
-   `cortes` era COMPLETE con 23 títulos «Cortes Propiedades» (arreglado en
-   `generico`, `0bd66ac5e5`, pero la guardia falta para la próxima plantilla).
-   Otras 5 agencias con el mismo patrón ya salen NEEDS_FIX por otra razón.
-   Páginas de aterrizaje: las de categoría con grilla (`casablanca`,
-   `cbdestino`) ya van a revisión en `generico` (`cfd040385a`). Queda `fenix`
-   (3): su grilla se arma con JavaScript (1 enlace visible) y la regla no la
-   alcanza. Causa de fondo, compartida: `run_rollout` evalúa
-   `ficha_sin_contenido` por ficha (~569/602) ANTES de
-   `descartar_descripciones_compartidas` (~621), y el eslogan del sitio cuenta
-   como contenido. Re-evaluar después del descarte.
-   `floorSize` sigue sin usarse (no dice total o cubierta).
+5. **Guardia de título repetido**: DESCARTADA con medición (25-09). De las 9
+   agencias con un título en ≥50 % de sus fichas, la mitad son títulos del
+   sitio que `generico` ya resuelve (`0bd66ac5e5`) y el resto incluye títulos
+   legítimos repetidos («casa» 7 de 8 en `pozzobon`): vaciarlos sería un
+   NEEDS_FIX injusto. Páginas de aterrizaje: resueltas en `generico`
+   (`cfd040385a`, `a8f4c13e3e`); queda sólo `fenix` (grilla por JavaScript).
 5b. `wordpress` (Houzez): conteos con punto final («1.») no se leen
    (`gustavo teruel`). Radio medido: 1 de 26 agencias `wordpress` (52 fichas
    sondeadas). Bajo retorno; «Si.» NO es un conteo.
@@ -114,9 +106,7 @@ se produjo durante el cambio queda sin `strategy_fingerprint`. Entonces:
    Y `cantale`: la operación es una etiqueta suelta «Venta» junto al tipo
    (`PROP-75947 Vendido / Venta Departamento`), sin «En»; el menú dice lo
    mismo como enlaces. Distinguir etiqueta (span/div) de enlace de menú.
-   Y `elgart`: JSON-LD con `@type: CommercialRealEstate` (no está en los tipos
-   aceptados de `_de_json_ld`), así que sólo entra el `Offer` hijo y se pierde
-   `addressLocality` (3 fichas sin ciudad; la agencia sale NEEDS_FIX).
+   `elgart` (`CommercialRealEstate`): RESUELTO en `2a63479959`.
 5f. **Precio tomado de un monto accesorio** (`generico`, respaldo por texto):
    `caruso` guarda USD 15.000 que es «Opcional: cochera (valor: U$S 15.000)»;
    la ficha no publica precio propio. Muestra de 10 fichas cuyo precio coincide
