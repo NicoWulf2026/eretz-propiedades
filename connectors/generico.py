@@ -2512,7 +2512,7 @@ class GenericoConnector(Connector):
             operacion=campos["operacion"],
             tipo_propiedad=campos["tipo_propiedad"],
             direccion=direccion,
-            barrio=mapaprop.get("barrio"),
+            barrio=mapaprop.get("barrio") or datos.get("barrio"),
             ciudad=mapaprop.get("ciudad") or datos.get("ciudad"),
             provincia=mapaprop.get("provincia") or datos.get("provincia"),
             latitud=lat,
@@ -3557,6 +3557,12 @@ class GenericoConnector(Connector):
             out["direccion"] = texto_de(dire.get("streetAddress"))
             out["ciudad"] = texto_de(dire.get("addressLocality"))
             out["provincia"] = texto_de(dire.get("addressRegion"))
+            # `fenixxweb.com` pone la localidad aca y el departamento en
+            # `addressLocality`; la geografia compartida decide cual es cual.
+            # Si repite la ciudad no agrega nada y no se afirma como barrio.
+            barrio = texto_de(dire.get("addressNeighborhood"))
+            if barrio and (barrio or "").strip().lower() != (out["ciudad"] or "").strip().lower():
+                out["barrio"] = barrio
         # Los conteos que schema.org publica tipados. `normalize` ya los pedia
         # -`datos.get("dorm")`, `datos.get("banos")`- y nunca se escribian: el
         # contrato publico de la ficha quedaba sin leer y los conteos salian

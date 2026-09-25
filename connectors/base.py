@@ -953,6 +953,30 @@ class Connector:
                 lat=prop.latitud, lon=prop.longitud)
             prop.extra["ciudad_match"] = resolucion.certeza
             prop.extra["ciudad_provenance"] = resolucion.provenance
+        if (not desde_barrio and prop.barrio
+                and resolucion.certeza == GEO_NO_ENCONTRADA):
+            # La «ciudad» publicada puede ser el DEPARTAMENTO de la localidad:
+            # `fenixxweb.com` publica `addressLocality: Capital` y
+            # `addressNeighborhood: Posadas` -«Posadas, Capital» en la ficha-,
+            # y «Capital» sola no resuelve porque el departamento tiene varias
+            # localidades: 512 fichas sin ciudad. Se acepta el barrio publicado
+            # solo si resuelve exacto y su departamento es LITERALMENTE lo que
+            # se publico como ciudad; cualquier otra cosa sigue sin afirmarse.
+            from connectors.geografia import normalizar as normalizar_geo
+            alternativa = catalogo.resolver_localidad(
+                prop.barrio, provincia=prop.provincia,
+                lat=prop.latitud, lon=prop.longitud)
+            entidad = alternativa.entidad if alternativa.resuelta else None
+            if (entidad is not None and normalizar_geo(entidad.departamento or "")
+                    == normalizar_geo(publicada)):
+                prop.extra["ciudad_era_departamento"] = publicada
+                publicada = prop.barrio
+                desde_barrio = True
+                resolucion = alternativa
+                prop.extra["ciudad_publicada"] = publicada
+                prop.extra["ciudad_match"] = resolucion.certeza
+                prop.extra["ciudad_provenance"] = resolucion.provenance
+                prop.extra["ciudad_campo_de_origen"] = "barrio"
         if not desde_barrio and resolucion.motivo == PROVINCE_CONFLICT_REASON:
             # An explicit locality and province cannot both be true. Do not
             # simply reject the locality and keep advertising the province.

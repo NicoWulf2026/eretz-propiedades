@@ -121,3 +121,29 @@ def test_un_titulo_de_varias_unidades_no_dice_los_ambientes():
                    "2 casas de 4 y 5 amb. en venta",
                    "Edificio en block de 3 ambientes"):
         assert _normalizar(_ficha_titulo(titulo)).ambientes is None, titulo
+
+
+def test_MUERDE_addressNeighborhood_llega_como_barrio_para_que_la_geografia_decida():
+    """`fenix`: addressLocality «Capital» (departamento), addressNeighborhood
+    «Posadas» (localidad). Sin leer el barrio, la geografia no tenia con que."""
+    import json as _json
+    ld = {"@context": "https://schema.org", "@type": "Residence", "name": "Casa en venta",
+          "address": {"@type": "PostalAddress", "addressLocality": "Capital",
+                      "addressRegion": "Misiones", "addressNeighborhood": "Posadas"}}
+    html = ('<html><head><script type="application/ld+json">' + _json.dumps(ld) +
+            '</script></head><body><main><h1>Casa en venta</h1>'
+            '<p>Venta. 3 dormitorios, 2 baños. Precio USD 100.000</p>' + VISOR + RELLENO +
+            '</main></body></html>')
+    p = _normalizar(html)
+    assert (p.ciudad, p.barrio, p.provincia) == ("Capital", "Posadas", "Misiones")
+
+
+def test_un_barrio_que_repite_la_ciudad_no_se_afirma():
+    import json as _json
+    ld = {"@type": "Residence", "name": "Casa", "address": {
+        "addressLocality": "Rosario", "addressRegion": "Santa Fe", "addressNeighborhood": "Rosario"}}
+    html = ('<html><head><script type="application/ld+json">' + _json.dumps(ld) +
+            '</script></head><body><main><h1>Casa en venta</h1>'
+            '<p>Venta. 3 dormitorios. Precio USD 100.000</p>' + VISOR + RELLENO +
+            '</main></body></html>')
+    assert _normalizar(html).barrio is None
