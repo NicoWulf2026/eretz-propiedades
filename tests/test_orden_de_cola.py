@@ -26,7 +26,9 @@ def test_una_familia_se_prueba_antes_del_bulk():
     resultados["w1"] = _res("wordpress")
 
     orden = ordenar_para_correr(cola, resultados)
-    canarios = orden[:CANARIOS_POR_FAMILIA + 1]
+    # Las nuevas se intercalan desde el principio; entre las CONOCIDAS los
+    # canarios siguen primero.
+    canarios = [c for c in orden if c in resultados][:CANARIOS_POR_FAMILIA + 1]
 
     # Las dos familias conocidas aparecen antes de agotar tokko.
     assert "w1" in canarios

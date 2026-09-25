@@ -890,14 +890,22 @@ def ordenar_para_correr(cola: list[str],
     #
     # Una y una: ni la cobertura espera a que termine la recertificacion, ni
     # la recertificacion espera a que se agote la cobertura.
+    #
+    # Y desde el PRINCIPIO, no despues de los canarios. Con 3 por familia y ~17
+    # familias, ~51 conocidas iban antes de la primera nueva, y cada cambio de
+    # huella reabria esa fase: desde el relanzamiento del 2026-09-24 21:24, 38
+    # resultados y ninguna agencia nueva. Entre las conocidas los canarios
+    # siguen primero, asi que una familia rota se sigue viendo temprano, a la
+    # mitad de velocidad.
     nuevas = [c for c in cola if c not in resultados]
+    conocidas_en_orden = canarios + bulk
     intercalado: list[str] = []
-    for i in range(max(len(bulk), len(nuevas))):
+    for i in range(max(len(conocidas_en_orden), len(nuevas))):
+        if i < len(conocidas_en_orden):
+            intercalado.append(conocidas_en_orden[i])
         if i < len(nuevas):
             intercalado.append(nuevas[i])
-        if i < len(bulk):
-            intercalado.append(bulk[i])
-    return canarios + intercalado + larga
+    return intercalado + larga
 
 
 def latest_results(output: Path) -> dict[str, dict[str, Any]]:

@@ -44,7 +44,8 @@ def test_los_canarios_siguen_primero():
     conocidas = [f"t{i}" for i in range(10)]
     orden = ordenar_para_correr(conocidas + ["nueva"],
                                 {c: _res("tokko") for c in conocidas})
-    assert orden[:CANARIOS_POR_FAMILIA] == conocidas[:CANARIOS_POR_FAMILIA]
+    solo_conocidas = [x for x in orden if x != "nueva"]
+    assert solo_conocidas[:CANARIOS_POR_FAMILIA] == conocidas[:CANARIOS_POR_FAMILIA]
 
 
 def test_MUERDE_un_reinicio_no_repite_las_que_se_acaban_de_rehacer():
@@ -61,3 +62,15 @@ def test_MUERDE_un_reinicio_no_repite_las_que_se_acaban_de_rehacer():
     orden = ordenar_para_correr(conocidas, resultados)
     assert orden[0] == "t5"
     assert orden[-1] == "t0"
+
+
+def test_MUERDE_las_nuevas_no_esperan_a_que_terminen_los_canarios():
+    """Con 3 canarios por familia y ~17 familias, ~51 conocidas iban antes de
+    la primera nueva, y cada cambio de huella reabria esa fase. Desde el
+    relanzamiento del 2026-09-24 21:24: 38 resultados, 0 agencias nuevas."""
+    conocidas = [f"k{i:02d}" for i in range(60)]
+    resultados = {c: _res(f"familia{i % 20}") for i, c in enumerate(conocidas)}
+    nuevas = [f"n{i:02d}" for i in range(30)]
+    orden = ordenar_para_correr(conocidas + nuevas, resultados)
+    assert orden[1].startswith("n")
+    assert sum(c.startswith("n") for c in orden[:20]) == 10
