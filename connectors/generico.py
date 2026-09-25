@@ -3188,8 +3188,15 @@ class GenericoConnector(Connector):
         """
         # Un rotulo explicito manda, este donde este: "Operacion: Venta" no se
         # puede confundir con el menu.
-        rotulo = re.search(r"operaci[oó]n\s*:?\s*(venta|alquiler|"
-                           r"alquiler temporario)", texto or "", re.I)
+        # «alquiler temporario» va ANTES que «alquiler»: en el orden inverso la
+        # alternativa larga no ganaba nunca. Y «Tipo de operación En venta»
+        # (la plantilla `/site/properties/`: ferrari, ciam, bottega, espina)
+        # tambien es un rotulo; el «en» solo se acepta detras de «tipo de», no
+        # en prosa como «excelente operación en alquiler».
+        rotulo = (re.search(r"tipo\s+de\s+operaci[oó]n\s*:?\s*en\s+"
+                            r"(alquiler temporario|venta|alquiler)\b", texto or "", re.I)
+                  or re.search(r"operaci[oó]n\s*:?\s*(alquiler temporario|venta|alquiler)\b",
+                               texto or "", re.I))
         if rotulo:
             return rotulo.group(1).lower().replace(" ", "_")
 

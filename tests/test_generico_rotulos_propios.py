@@ -99,6 +99,28 @@ def test_MUERDE_un_script_partido_por_la_ventana_no_entra_como_descripcion():
     assert "contact_email" not in p.descripcion
 
 
+# ------------------------------------------------------------------ operacion
+
+def test_MUERDE_tipo_de_operacion_en_venta_es_un_rotulo():
+    # La plantilla `/site/properties/` (ferrari, ciam, bottega, espina) publica
+    # «Tipo de operación En venta»; el rótulo exigía la operación pegada.
+    texto = "Inicio Venta Alquiler Tasación Detalles Tipo de operación En venta Ambientes 2"
+    assert GenericoConnector._operacion_en_la_ficha(texto, 105000) == "venta"
+    texto = "Inicio Venta Alquiler Tipo de operación: En alquiler Dormitorios 1"
+    assert GenericoConnector._operacion_en_la_ficha(texto, 160000) == "alquiler"
+
+
+def test_MUERDE_el_rotulo_alquiler_temporario_no_se_corta_en_alquiler():
+    texto = "Inicio Venta Alquiler Operación: Alquiler temporario Huéspedes 4"
+    assert GenericoConnector._operacion_en_la_ficha(texto, 90) == "alquiler_temporario"
+
+
+def test_una_operacion_en_prosa_no_es_un_rotulo():
+    # «en venta» sin «tipo de» adelante es prosa: el menú y el texto la usan.
+    texto = "Inicio Venta Alquiler Excelente operación en alquiler para inversores. Venta"
+    assert GenericoConnector._operacion_en_la_ficha(texto, 100) is None
+
+
 # ----------------------------------------------------- paginas de categoria
 
 def _grilla(n: int) -> str:
