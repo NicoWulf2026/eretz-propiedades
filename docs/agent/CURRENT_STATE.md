@@ -36,6 +36,10 @@ Libro de familias detenidas: `ERETZ_FAMILIAS_DETENIDAS.jsonl`. Hoy: ninguna.
 
 ### 2026-09-25
 
+- **Paro de `tokko` 02:04 (`drovetta`)**: la corrida 2 recibió HTTP 500 en el
+  descubrimiento; el triaje lo tomaba como inventario inestable de la familia.
+  Arreglado en el triaje (`722cbd9bb8`, sin huella; 1 cambio en 1.398 NEEDS_FIX
+  del historial), diferida 02:10, `tokko` liberada.
 - **Paro de `generico` 01:44 (`arquitectura`)**: falso positivo de la señal de
   operación del auditor (estado consumado sin precio). Diferida 01:45, familia
   liberada; arreglo anotado en HANDOFF 5e.
