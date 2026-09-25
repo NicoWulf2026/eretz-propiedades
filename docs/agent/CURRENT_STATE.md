@@ -36,6 +36,10 @@ Libro de familias detenidas: `ERETZ_FAMILIAS_DETENIDAS.jsonl`. Hoy: ninguna.
 
 ### 2026-09-25
 
+- **Orden de la cola, segunda parte** (`f742f35255`). La rotación eliminó el
+  retrabajo (desde 21:24: 38 resultados, 38 agencias, 0 h repetidas; antes
+  13,3 de 16,6 h) pero no entró ninguna nueva: los ~51 canarios iban antes.
+  Ahora nuevas y conocidas 1:1 desde el principio. Relanzamiento 01:17.
 - **Paro de `generico` 00:34 (`fios`)**: plantilla propia (descripción sin
   rótulo, categorías en singular, foto ajena por ficha). Radio AGENCIA,
   diferida firmada 00:36, familia liberada; arreglos anotados en HANDOFF 5d.
