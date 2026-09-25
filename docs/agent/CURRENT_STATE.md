@@ -36,6 +36,13 @@ Libro de familias detenidas: `ERETZ_FAMILIAS_DETENIDAS.jsonl`. Hoy: ninguna.
 
 ### 2026-09-25
 
+- **Gate 00:29: 83 agencias, 0 pendientes.** Patrón de las revisiones: casi
+  todas las «pérdidas» eran datos falsos de la línea base que el código de hoy
+  ya no produce — dirección y ciudad de la OFICINA de la agencia tomadas del
+  nodo `RealEstateAgent` (`ferrari` 156×2, `diaz collins` 8×2, `franco`),
+  conteos de propiedades del lateral (`cip`), operaciones al revés
+  (`alma di matteo`, `filippini`). Las reales se arreglaron (tokko ubicación,
+  Xintel detalle).
 - **Paro de `generico` 23:57 (`gianini`, sin_determinar)**: la fuente sirvió una
   página degradada en la corrida 1 (643 s contra 98 s): una ficha con título
   «en» y descripción del meta. Radio AGENCIA, diferida firmada 00:06,
