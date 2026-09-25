@@ -44,3 +44,16 @@ def test_el_nombre_se_compara_entero_no_por_subcadena(url):
 def test_el_verificador_por_subcadena_no_atrapa_inmobiliarias(url):
     from scripts.verificador_identidad_v2 import es_portal_url
     assert not es_portal_url(url)
+
+
+@pytest.mark.parametrize("url", [
+    # `danisa robledo`: portal multi-corredor de Santa Fe («Ser corredor en MU»).
+    "https://www.mercado-unico.com/propiedades/69019270b5bada00113d470b",
+    # `casagrande`: directorio de comercios de Uruguay (restaurantes).
+    "https://www.smartservices.uy/agencia-inmobiliaria/montevideo/index.php?p=2",
+    # `gama`: guia turistica de Rosario (historia.php, ubicacion.php).
+    "http://www.365litoralargentino.com/santa_fe/rosario/gama-inmobiliaria_e.html",
+])
+def test_MUERDE_un_directorio_general_tampoco_es_la_web_de_la_inmobiliaria(url):
+    assert es_portal(url)
+    assert external_portal(url)

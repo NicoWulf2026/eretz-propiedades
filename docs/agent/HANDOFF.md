@@ -107,6 +107,11 @@ se produjo durante el cambio queda sin `strategy_fingerprint`. Entonces:
    (`PROP-75947 Vendido / Venta Departamento`), sin «En»; el menú dice lo
    mismo como enlaces. Distinguir etiqueta (span/div) de enlace de menú.
    `elgart` (`CommercialRealEstate`): RESUELTO en `2a63479959`.
+   Enlaces señuelo de Cloudflare («AI Labyrinth», `/cdn-cgi/content?id=…`,
+   artículos inventados): `generico` los enumera como fichas. Hoy fallan
+   cerrado por forma (`fernandez marull` 59/59, `crestale` 59 de 131). En el
+   lote: no enumerar nada bajo `/cdn-cgi/`, y que su presencia cuente como
+   señal de bloqueo (el sitio detectó un bot), no como ficha fallida.
 5f. **Precio tomado de un monto accesorio** (`generico`, respaldo por texto):
    `caruso` guarda USD 15.000 que es «Opcional: cochera (valor: U$S 15.000)»;
    la ficha no publica precio propio. Muestra de 10 fichas cuyo precio coincide

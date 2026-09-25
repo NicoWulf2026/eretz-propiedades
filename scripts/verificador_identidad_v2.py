@@ -122,7 +122,7 @@ PORTALES = (
     # compara por subcadena: `propia`, `lujanprop` y `liderprop` atraparian
     # `inmobiliariapropia`, `lujanpropiedades`, `liderpropiedades`. Esos
     # quedan solo en `agency_web_discovery`, que compara el nombre entero.
-    "proppies", "aspenbienesraices",
+    "proppies", "aspenbienesraices", "mercado-unico",
 )
 # No venden propiedades: publican avisos de empleo. Se mira aparte de
 # PORTALES porque no son lo mismo, pero el desenlace es el mismo: NO es el

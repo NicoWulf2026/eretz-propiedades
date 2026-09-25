@@ -104,6 +104,9 @@ AGREGADORES = {
     # Indices de los propios buscadores: Exa devolvio su pagina de la
     # organizacion como si fuera la web de la inmobiliaria.
     "exa.ai", "tavily.com", "jina.ai", "serper.dev", "perplexity.ai",
+    # 25-09: guia de comercios uruguaya y guia turistica de Rosario, cada
+    # una como web oficial de una inmobiliaria con identidad READY.
+    "smartservices.uy", "365litoralargentino.com",
 }
 NO_OFICIALES = PORTALES | MEDIOS | EMPLEO | REDES | AGREGADORES
 
@@ -155,6 +158,7 @@ PORTALES_POR_NOMBRE = {
     # Medidos el 25-09 con identidad READY: `proppies` (842 fichas de
     # `benjamin ferreyra`), `propia` (portal de Rosario), y tres directorios.
     "proppies", "propia", "liderprop", "lujanprop", "aspenbienesraices",
+    "mercado-unico",
 }
 
 
