@@ -831,6 +831,31 @@ def el_respaldo_mejora(alternate: dict[str, Any],
     return int(alternate.get("enumeradas") or 0) >= baseline * PISO_DEL_RESPALDO
 
 
+RE_TOKKO_TFW = re.compile(r"static\.tokkobroker\.com/tfw", re.I)
+
+
+def conector_por_la_portada(connector_name: str, source: Fuente,
+                            interval: float) -> str:
+    """El conector Tokko para un sitio TFW que el catalogo manda a generico.
+
+    `fjlujan.com.ar` y `cbdestino.com.ar` son la plantilla web estandar de
+    Tokko pero no tienen registro en el directorio de plataformas: con
+    generico, fj lujan enumeraba 2 de ~113 fichas y cb destino 21 de ~500;
+    con Tokko, 3/3 fichas OK en las dos (25-09). Solo se cambia generico por
+    tokko ante la marca TFW en la portada; si la portada no responde manda el
+    catalogo, como antes.
+    """
+    if connector_name != "generico":
+        return connector_name
+    downloader = AuditDownloader(LimitadorDeRitmo(interval), timeout=25,
+                                 reintentos=2, limite_bytes=800_000)
+    try:
+        html = downloader.bajar(source.official_url)
+    except Exception:
+        return connector_name
+    return "tokko" if RE_TOKKO_TFW.search(html or "") else connector_name
+
+
 def run_once(connector_name: str, source: Fuente, checkpoint: Checkpoint,
              interval: float, max_listings: int, budget: float,
              baseline: int | None = None) -> tuple[dict[str, Any], AuditDownloader]:
@@ -1033,6 +1058,11 @@ def certify(canonical_id: str, catalog: dict[str, dict[str, Any]], output: Path,
                            "province": record["directory"].get("province"),
                            "patron_ficha": (None if recovered_source
                                             else record["platform"].get("pattern_ficha"))})
+    if not recovered_source:
+        ruteado = conector_por_la_portada(connector_name, source, interval)
+        if ruteado != connector_name:
+            base_result["ruteo_por_la_portada"] = f"{connector_name}->{ruteado}"
+            connector_name = ruteado
     checkpoint = Checkpoint(packet_dir / "checkpoint.json")
     try:
         run1, download1 = run_once(connector_name, source, checkpoint, interval,
