@@ -3433,9 +3433,12 @@ class GenericoConnector(Connector):
                 tipos = [tipos] if isinstance(tipos, str) else tipos
                 if not isinstance(tipos, list):
                     continue
+                # `CommercialRealEstate` no es de schema.org pero lo publica
+                # `elgart` con la direccion; sin el, solo entraba el `Offer`
+                # hijo y la ficha se quedaba sin localidad.
                 permitidos = {"Residence", "Apartment", "House", "Product", "Offer",
                               "RealEstateListing", "SingleFamilyResidence", "Place",
-                              "Accommodation", "ApartmentComplex"}
+                              "Accommodation", "ApartmentComplex", "CommercialRealEstate"}
                 tipos = [t.rsplit("/", 1)[-1] for t in tipos if isinstance(t, str)]
                 tipo = next((t for t in tipos if t in permitidos), None)
                 # RealEstateAgent describe una agencia, no su inventario.
@@ -3443,7 +3446,8 @@ class GenericoConnector(Connector):
                 if not tipo:
                     continue
                 concretos = {"Residence", "Apartment", "House", "RealEstateListing",
-                             "SingleFamilyResidence", "Accommodation", "ApartmentComplex"}
+                             "SingleFamilyResidence", "Accommodation", "ApartmentComplex",
+                             "CommercialRealEstate"}
                 # Flattening also yields nested Offer nodes. They are not a
                 # second property and must not compete with their parent.
                 prioridad = 0 if tipo in concretos else (2 if tipo == 'Offer' else 1)
@@ -3504,9 +3508,13 @@ class GenericoConnector(Connector):
             out["moneda"] = m if m in ("ARS", "USD") else None
         dire = nodo.get("address") or _de_su_entidad(nodo, "address")
         if isinstance(dire, dict):
-            out["direccion"] = limpiar(dire.get("streetAddress"))
-            out["ciudad"] = limpiar(dire.get("addressLocality"))
-            out["provincia"] = limpiar(dire.get("addressRegion"))
+            # Algunos sitios escriben entidades HTML dentro del JSON:
+            # «San Miguel de Tucum&aacute;n». Se desescapa aca, en la fuente.
+            def texto_de(valor: Any) -> str | None:
+                return limpiar(unescape(valor)) if isinstance(valor, str) else limpiar(valor)
+            out["direccion"] = texto_de(dire.get("streetAddress"))
+            out["ciudad"] = texto_de(dire.get("addressLocality"))
+            out["provincia"] = texto_de(dire.get("addressRegion"))
         # Los conteos que schema.org publica tipados. `normalize` ya los pedia
         # -`datos.get("dorm")`, `datos.get("banos")`- y nunca se escribian: el
         # contrato publico de la ficha quedaba sin leer y los conteos salian

@@ -259,6 +259,25 @@ def test_el_conteo_tipado_de_schema_org_gana_sobre_additional_property():
     assert datos["ambientes"] == 5
 
 
+def test_MUERDE_commercial_real_estate_es_la_propiedad_y_no_solo_su_oferta():
+    # `elgartpropiedades.com.ar`: el nodo es `CommercialRealEstate` con la
+    # direccion; solo entraba el `Offer` hijo y se perdia la localidad.
+    base = {"@context": "https://schema.org", "@type": "CommercialRealEstate",
+            "name": "Lote en venta Alderetes",
+            "address": {"@type": "PostalAddress", "streetAddress": "Prados del Libertador",
+                        "addressLocality": "Cruz Alta", "addressRegion": "Tucumán"},
+            "offers": {"@type": "Offer", "priceCurrency": "ARS", "price": 27000000}}
+    html = ('<script type="application/ld+json">' + json.dumps(base, ensure_ascii=False)
+            + "</script>")
+    datos = GenericoConnector._de_json_ld(html, URL)
+    assert datos["tipo_ld"] == "CommercialRealEstate"
+    assert datos["ciudad"] == "Cruz Alta" and datos["precio"] == 27000000
+    base["address"]["addressLocality"] = "San Miguel de Tucum&aacute;n"
+    html = ('<script type="application/ld+json">' + json.dumps(base, ensure_ascii=False)
+            + "</script>")
+    assert GenericoConnector._de_json_ld(html, URL)["ciudad"] == "San Miguel de Tucumán"
+
+
 def test_los_conteos_llegan_a_la_ficha_normalizada():
     p = _normalizar(_pagina(_ld(additionalProperty=[
         _par("Ambientes", "4"), _par("Dormitorios", "3")],
