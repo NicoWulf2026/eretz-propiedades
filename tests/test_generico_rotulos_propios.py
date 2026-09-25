@@ -115,6 +115,30 @@ def test_MUERDE_el_rotulo_alquiler_temporario_no_se_corta_en_alquiler():
     assert GenericoConnector._operacion_en_la_ficha(texto, 90) == "alquiler_temporario"
 
 
+def test_MUERDE_la_etiqueta_en_venta_de_la_plantilla_ad():
+    # `filippiniprop.com.ar/ad/…`: el menú dice «Venta Alquiler Temporal» y la
+    # ficha lleva la etiqueta `<div class="sale"><div>En Venta</div></div>`.
+    cuerpo = ('<div class="menu"><a>Venta</a><a>Alquiler</a><a>Temporal</a>'
+              '<a>Contáctenos</a><a>Ingresar</a></div>'
+              '<div class="sale bg-pixel"><div>En Venta</div></div>'
+              '<h5>LOCAL + FONDO DE COMERCIO</h5>'
+              '<h6>Código: 235271 12 de Octubre 3500, Mar del Plata, Buenos Aires</h6>'
+              '<p>Local con fondo de comercio, dos baños, depósito y patio.</p>')
+    # El precio va lejos de la etiqueta, como en la ficha real: la regla de
+    # cercanía no alcanza y el arranque ve «Venta» y «Alquiler» del menú.
+    html = _pagina("", cuerpo).replace("<p>Precio USD 100.000</p>", "")
+    html = html.replace("</main>", "<p>" + "Detalle del local. " * 5 + "</p><p>USD 100.000</p></main>")
+    p = _normalizar(html)
+    assert p.operacion == "venta"
+
+
+def test_dos_etiquetas_distintas_no_eligen_ninguna():
+    cuerpo = ('<nav><a>Venta</a><a>Alquiler</a></nav>'
+              '<div class="sale"><div>En Alquiler</div></div><h5>Depto</h5>'
+              '<aside><div class="sale"><div>En Venta</div></div>Otra propiedad</aside>')
+    assert GenericoConnector._operacion_de_la_etiqueta(cuerpo) is None
+
+
 def test_una_operacion_en_prosa_no_es_un_rotulo():
     # «en venta» sin «tipo de» adelante es prosa: el menú y el texto la usan.
     texto = "Inicio Venta Alquiler Excelente operación en alquiler para inversores. Venta"

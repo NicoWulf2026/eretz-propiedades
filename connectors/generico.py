@@ -2367,6 +2367,7 @@ class GenericoConnector(Connector):
             "operacion": (detectar_operacion(f"{titulo or ''} {url}")
                           or crudo.get("operacion_catalogo")
                           or self._operacion_en_la_ficha(texto_campos, precio)
+                          or self._operacion_de_la_etiqueta(principal_campos)
                           or self._operacion_desde_title(html)),
             # El tipo tambien puede estar solo en el cuerpo. Se mira el
             # arranque de la ficha: mas abajo empiezan las "propiedades
@@ -3163,6 +3164,26 @@ class GenericoConnector(Connector):
         title = re.search(r"<title\b[^>]*>(.*?)</title>", html or "", re.I | re.S)
         return (GenericoConnector._operacion_en_la_ficha(_texto(title.group(1)))
                 if title else None)
+
+    @staticmethod
+    def _operacion_de_la_etiqueta(html: str) -> str | None:
+        """Un elemento cuyo texto ENTERO es «En venta» o «En alquiler».
+
+        La plantilla `/ad/` (filippini, altos servicios, amadeo, caruso, emir,
+        clavero…) marca la ficha con `<div class="sale"><div>En Venta</div>
+        </div>` y nada mas la dice: el menu repite «Venta Alquiler Temporal» y
+        el precio queda lejos. 205 de 380 fichas de esas 13 agencias estaban
+        sin operacion (medido 2026-09-24). El menu dice «Venta» a secas; la
+        etiqueta lleva el «En». Si aparecen dos operaciones distintas -las
+        etiquetas de propiedades relacionadas- no se elige ninguna.
+        """
+        marcado = normalizar_texto_campos(unescape(html or ""))
+        halladas = {m.group(1).lower().replace(" ", "_")
+                    for m in re.finditer(
+                        r">\s*en\s+(alquiler\s+temporario|venta|alquiler)\s*<",
+                        marcado, re.I)}
+        halladas = {re.sub(r"_+", "_", h) for h in halladas}
+        return halladas.pop() if len(halladas) == 1 else None
 
     @staticmethod
     def _operacion_en_la_ficha(texto: str, precio: Any = None) -> str | None:
