@@ -103,6 +103,13 @@ se produjo durante el cambio queda sin `strategy_fingerprint`. Entonces:
    Y `cantale`: la operación es una etiqueta suelta «Venta» junto al tipo
    (`PROP-75947 Vendido / Venta Departamento`), sin «En»; el menú dice lo
    mismo como enlaces. Distinguir etiqueta (span/div) de enlace de menú.
+5f. **Precio tomado de un monto accesorio** (`generico`, respaldo por texto):
+   `caruso` guarda USD 15.000 que es «Opcional: cochera (valor: U$S 15.000)»;
+   la ficha no publica precio propio. Muestra de 10 fichas cuyo precio coincide
+   con un monto precedido por cochera/expensas/seña/cuota: 8 correctas
+   (coincidencias), 1 falsa, 1 ambigua. Riesgo bajo; no se tocó. Si se
+   aborda: no tomar como precio un monto precedido por «opcional»/«cochera
+   (valor».
 6. Ítem 12 (`SIN_INVENTARIO` con dos significados): defecto de nombre, no de
    decisión; bajo retorno.
 7. Beta del backend (ver `docs/ERETZ_UNIFICATION_PLAN.md` § «Backend beta
