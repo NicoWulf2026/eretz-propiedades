@@ -36,6 +36,9 @@ Libro de familias detenidas: `ERETZ_FAMILIAS_DETENIDAS.jsonl`. Hoy: ninguna.
 
 ### 2026-09-25
 
+- **Gate 08:25: 155 agencias, 0 pendientes** (17 de `elgart`: ciudad antes
+  guardada sin desescapar como barrio). `elgart` NEEDS_FIX por 3 fichas con
+  `CommercialRealEstate`; anotado en HANDOFF 5d.
 - **Corte por lote 06:23 (`domus`, firma `704a5072c251`)**: dos agencias `wasi`
   con «Precio: Consultar» y montos en la descripción; falso positivo de la
   señal de precio. Diferida 06:25; cola destrabada.

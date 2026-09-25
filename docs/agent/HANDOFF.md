@@ -111,6 +111,9 @@ se produjo durante el cambio queda sin `strategy_fingerprint`. Entonces:
    Y `cantale`: la operación es una etiqueta suelta «Venta» junto al tipo
    (`PROP-75947 Vendido / Venta Departamento`), sin «En»; el menú dice lo
    mismo como enlaces. Distinguir etiqueta (span/div) de enlace de menú.
+   Y `elgart`: JSON-LD con `@type: CommercialRealEstate` (no está en los tipos
+   aceptados de `_de_json_ld`), así que sólo entra el `Offer` hijo y se pierde
+   `addressLocality` (3 fichas sin ciudad; la agencia sale NEEDS_FIX).
 5f. **Precio tomado de un monto accesorio** (`generico`, respaldo por texto):
    `caruso` guarda USD 15.000 que es «Opcional: cochera (valor: U$S 15.000)»;
    la ficha no publica precio propio. Muestra de 10 fichas cuyo precio coincide
