@@ -496,3 +496,10 @@ def test_el_censo_de_wasi_conserva_la_evidencia_de_cada_fuente():
                 assert f.get("enumerated_unique")
                 assert f.get("enumeration_method")
                 assert f.get("coverage_status")
+
+
+def test_MUERDE_habitaciones_son_los_dormitorios():
+    """`varesse` rotula <strong>Habitaciones:</strong> 3 y quedaban vacios."""
+    c = campos_de_ficha('<li><strong>Habitaciones:</strong> 3</li>'
+                        '<li><strong>Baños:</strong> 2</li>')
+    assert c["dormitorios"] == 3

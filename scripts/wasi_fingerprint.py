@@ -252,6 +252,9 @@ _ETIQUETAS = {
     "codigo": "codigo", "area construida": "superficie_cubierta",
     "area terreno": "superficie_total", "area privada": "superficie_privada",
     "dormitorios": "dormitorios", "banos": "banos", "garaje": "cocheras",
+    # La plataforma tambien rotula «Habitaciones:» (`varesse`, 86 de 91
+    # fichas sin dormitorios el 25-09). Son los dormitorios, como en generico.
+    "habitaciones": "dormitorios",
     "tipo de inmueble": "tipo_propiedad", "tipo de negocio": "operacion",
     "numero de plantas": "plantas", "estado": "estado",
 }

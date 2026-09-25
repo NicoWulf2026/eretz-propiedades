@@ -280,6 +280,7 @@ def archivos_de_la_huella() -> list[Path]:
         ROOT / "connectors" / "generico.py",
         ROOT / "connectors" / "tokko.py",
         ROOT / "connectors" / "wasi.py",
+        ROOT / "scripts" / "wasi_fingerprint.py",
         ROOT / "connectors" / "wordpress.py",
         ROOT / "connectors" / "century21.py",
     ]
@@ -366,6 +367,11 @@ def fingerprint_components(connector: str, strategy: str) -> dict[str, bytes]:
     if connector != "generico":
         components[f"connector/{connector}"] = _semantic_file(
             ROOT / "connectors" / f"{connector}.py")
+        if connector == "wasi":
+            # `wasi.py` lee cada ficha con `scripts.wasi_fingerprint`: sin
+            # esto, cambiar un rotulo cambiaba lo extraido sin invalidar nada.
+            components["connector/wasi_parser"] = _semantic_file(
+                ROOT / "scripts" / "wasi_fingerprint.py")
         return components
     comunes_m, comunes_f = _comunes()
     components["generic/common"] = _selected_nodes(
