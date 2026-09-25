@@ -36,6 +36,9 @@ Libro de familias detenidas: `ERETZ_FAMILIAS_DETENIDAS.jsonl`. Hoy: ninguna.
 
 ### 2026-09-25
 
+- **Paro de `generico` 00:34 (`fios`)**: plantilla propia (descripción sin
+  rótulo, categorías en singular, foto ajena por ficha). Radio AGENCIA,
+  diferida firmada 00:36, familia liberada; arreglos anotados en HANDOFF 5d.
 - **Gate 00:29: 83 agencias, 0 pendientes.** Patrón de las revisiones: casi
   todas las «pérdidas» eran datos falsos de la línea base que el código de hoy
   ya no produce — dirección y ciudad de la OFICINA de la agencia tomadas del

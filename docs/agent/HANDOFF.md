@@ -88,6 +88,13 @@ se produjo durante el cambio queda sin `strategy_fingerprint`. Entonces:
    etiqueta en `896238f7ae`. El arreglo de fondo es una señal más amplia que
    el extractor (que vea «Venta/Alquiler» rotulados aunque el extractor no
    pueda decidir), aceptando más NEEDS_FIX. Medir antes.
+5d. **Próximo lote de `generico`** (agrupar; cada cambio de huella cuesta
+   recertificaciones). Plantilla de `fios` (diferida firmada 25-09 00:36):
+   descripción en `.property-description .show-more` sin rótulo; 7 páginas
+   de categoría en singular (`/Casa-en-venta`, título «Casa», precio de la
+   grilla) que la regla de plural no alcanza; 1 foto de OTRA propiedad por
+   ficha en 192 fichas (IDs de Tokko distintos, fuera de enlaces). Radio
+   medido: sólo `fios`. Falla cerrada mientras tanto.
 6. Ítem 12 (`SIN_INVENTARIO` con dos significados): defecto de nombre, no de
    decisión; bajo retorno.
 7. Beta del backend (ver `docs/ERETZ_UNIFICATION_PLAN.md` § «Backend beta
