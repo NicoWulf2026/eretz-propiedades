@@ -20,7 +20,13 @@ Historia: Git (`git log --since=2026-09-25`).
   fichas); `generico`: contador de visitas (`54db367d5a`), título Xintel (`9db61ad774`),
   similares RealHomes (`1dc3ba7998`), tipo `berrueta` (`7404dfe9b0`), operación como etiqueta
   suelta (`b24c8c42cd`); snapshot: mojibake por tramos (`953f3ed137`).
-- Diferidas firmadas 16:0x: `garcia andreu` (rangos de emprendimiento), `domus propiedades` (bloqueo
+- Noche (17:xx): «Consultar» de Wasi no es precio (`e6947fc6dd`); delegar inventario = portal
+  inmobiliario, no red social (`316068e149`: 15 BLOCKED_EXTERNAL pasan a NEEDS_FIX honesto);
+  cochera con dormitorios decidida por el título en coherencia (`4fc408a05b`, 157 fichas) y en la
+  snapshot (`17bf526a1b`); `generico`: pares rótulo/valor (`484a5da006`, bardi), acordeón de
+  descripción (`70f9be373c`, alianza), ficha con id no es categoría (`71d43466dd`, fogliese),
+  taxonomías WP (`904ab50852`). Guarda: ningún .py con caracteres de control.
+- Diferidas firmadas 16:0x/17:08: `garcia andreu` (rangos de emprendimiento), `domus propiedades` (bloqueo
   puntual), `fj lujan` (TFW mal ruteado), `garbero` (1 ficha + taxonomía como ficha).
 - Optimización de Claude Code: `docs/agent/CLAUDE_CODE_OPTIMIZATION.md`.
 
@@ -36,16 +42,14 @@ Historia: Git (`git log --since=2026-09-25`).
 - 5h (mínimo de 40 caracteres en el runner): radio 0 en los paquetes vigentes.
 
 ## Próxima prioridad (por impacto medido)
-1. **Auditor** (`shared/certifier`, un solo commit): «Consultar» en el precio estructurado de
-   `wasi` (3 fichas); señal de operación más amplia que el extractor (5c). Ruteo TFW y rangos:
-   RESUELTOS.
+1. **Auditor**: señal de operación más amplia que el extractor (5c) — deuda de diseño, medir
+   sobre páginas reales antes. Ruteo TFW, rangos, «Consultar» y portales: RESUELTOS.
 2. **NEEDS_FIX no idempotentes** (21): contador de visitas, título Xintel y similares RealHomes
    RESUELTOS; `dorsoli` ya estable con el código de hoy. Quedan por mirar: `blangiforti` (precio e
    imágenes entre corridas), `brikel`/`di maria`/`cocucci` (tokko, inventario o descripción).
-3. **Lote `generico` de radio chico** (agrupar): `bardi` dirección/barrio como pares rótulo/valor
-   (90 fichas); taxonomías WordPress como ficha (`/estado-propiedad/`, `garbero`); `cometto`
-   (categorías `propiedades_ver2.php`); `del parque` (`og:type=article` en fichas reales);
-   `bunader` (enumera listados); `alianza` (descripción `<ul>` bajo acordeón); `fios`
+3. **Lote `generico` de radio chico** (agrupar): `cometto` (categorías `propiedades_ver2.php`);
+   `del parque` (`og:type=article`; solo 1 ficha pasaría: no se afloja la guarda);
+   `bunader` (enumera listados); `fios`
    (`.show-more`, foto ajena); precio accesorio `caruso`; tipo de respaldo leído del menú
    (parcela → casa en `fernando villalba`); operación
    solo en la ruta del catálogo (`bottai` 180, `constant` 24).

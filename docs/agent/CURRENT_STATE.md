@@ -3,7 +3,7 @@
 Estado VIGENTE, no bitácora. La historia está en Git (`git log`; la bitácora anterior de este
 archivo: `git show 6ee927bb80:docs/agent/CURRENT_STATE.md`). `database_writes: 0` en todo.
 
-**Actualizado:** 2026-09-25 17:05 · **Rama:** `handoff/codex-unificacion-2026-09-18` (push solo acá)
+**Actualizado:** 2026-09-25 17:45 · **Rama:** `handoff/codex-unificacion-2026-09-18` (push solo acá)
 **Fase:** certificación/recertificación continua + calidad de lo servido + preparación productiva.
 
 ## Cola de certificación
