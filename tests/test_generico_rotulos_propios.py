@@ -164,6 +164,30 @@ def test_MUERDE_una_pagina_de_categoria_no_se_guarda_como_ficha():
     assert c.descartes[-1]["motivo"] == "PAGINA_CONTENEDORA_REQUIERE_REVISION"
 
 
+def test_MUERDE_un_listado_titulado_con_el_sitio_va_a_revision():
+    # `bottai.com.ar/inmuebles_list_Venta_seleccione_…`: sin h1, titulado
+    # «BOTTAI Inmobiliaria» y 225 fichas enlazadas; se guardaba con el precio
+    # de un aviso.
+    c = GenericoConnector(descargador=Falso(_pagina(
+        "<title>Alfa Propiedades</title>", _grilla(9) + "<p>USD 540.000</p>")))
+    f = B.Fuente(canonical_agency_id="roomix:alfa propiedades", agency_name="Alfa Propiedades",
+                 official_url="https://alfa.test/", inmobiliaria_id=1)
+    assert c.normalize({"source_url": URL, "source_listing_id": "123"}, f) is None
+    assert c.descartes[-1]["motivo"] == "PAGINA_CONTENEDORA_REQUIERE_REVISION"
+
+
+def test_una_ficha_titulada_con_el_sitio_y_pocas_relacionadas_no_va_a_revision():
+    p = _normalizar(_pagina("<title>Alfa Propiedades</title>",
+                            _grilla(4) + f"<h3>Descripción</h3><p>{PROPIA}</p>"))
+    assert p is not None
+
+
+def test_MUERDE_la_categoria_titulada_con_el_tipo_solo():
+    # `fios.com.ar/Casa-en-venta`: encabezado «Casa» y la grilla debajo.
+    assert GenericoConnector._es_pagina_contenedora("<h1>Casa</h1>" + _grilla(6), URL)
+    assert not GenericoConnector._es_pagina_contenedora("<h1>Casa</h1>" + _grilla(3), URL)
+
+
 def test_una_ficha_con_el_encabezado_de_sitio_propiedades_no_es_contenedora():
     assert not GenericoConnector._es_pagina_contenedora(
         "<h1>Propiedades</h1>" + _grilla(8), URL)

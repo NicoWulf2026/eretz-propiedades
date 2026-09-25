@@ -2183,16 +2183,7 @@ class GenericoConnector(Connector):
             _texto(sin_filtros_catalogo(principal_campos)))
         datos = self._de_json_ld(html, url)
         if not datos.get("tipo_ld") and self._es_pagina_contenedora(principal, url):
-            # Review is explicit; this is not proof that the source is empty.
-            # The runner counts the unresolved candidate as a failed detail,
-            # so two identical mistakes cannot become CERTIFIED_COMPLETE.
-            if not hasattr(self, "descartes"):
-                self.descartes = []
-            if len(self.descartes) < 500:
-                self.descartes.append({"source_url": url,
-                                      "canonical_agency_id": fuente.canonical_agency_id,
-                                      "motivo": "PAGINA_CONTENEDORA_REQUIERE_REVISION"})
-            return None
+            return self._a_revision(url, fuente)
         mapaprop = (self._detalle_mapaprop(html, url)
                     if crudo.get("mapaprop_catalog") else {})
 
@@ -2201,6 +2192,17 @@ class GenericoConnector(Connector):
         if not titulo:
             m = re.search(r"<title[^>]*>(.{1,200}?)</title>", html, re.S | re.I)
             titulo = limpiar(unescape(m.group(1))) if m else None
+        if (not datos.get("tipo_ld") and not crudo.get("titulo_catalogo")
+                and self._es_titulo_del_sitio(titulo, fuente)
+                and len(self._fichas_en(principal, url)) >= 8):
+            # Una pagina que solo se titula con el nombre de la inmobiliaria y
+            # enlaza 8 o mas fichas es un LISTADO: `bottai`
+            # (`inmuebles_list_Venta_seleccione_…`, 225 enlaces), `conti`
+            # (`propiedades.php?tipoPropiedad=16`), `cannone`
+            # (`propiedades.php?ope=v&p=0`) se guardaban como fichas con el
+            # precio de un aviso de la grilla. Medido sobre ~170 fichas reales
+            # de las agencias generico: 0 falsos positivos.
+            return self._a_revision(url, fuente)
 
         descripcion = mapaprop.get("descripcion") or datos.get("descripcion")
         # El meta description se lee, pero va DESPUES de los rotulos
@@ -3124,6 +3126,32 @@ class GenericoConnector(Connector):
         return next((c for c in candidatos if c), None)
 
     @staticmethod
+    def _es_titulo_del_sitio(titulo: str | None, fuente: Fuente) -> bool:
+        """El titulo es solo el nombre de la inmobiliaria, antes del separador."""
+        def plano(texto: str) -> str:
+            texto = unicodedata.normalize("NFKD", texto or "")
+            texto = "".join(c for c in texto if not unicodedata.combining(c))
+            return re.sub(r"\s+", " ", texto).strip().lower()
+        nombre = plano(fuente.agency_name)
+        primero = plano(re.split(r"\s*[|–—-]\s*", titulo or "")[0])
+        return bool(nombre) and primero == nombre
+
+    def _a_revision(self, url: str, fuente: Fuente) -> None:
+        """Una pagina que no es ficha: se cuenta como detalle a revisar.
+
+        No es prueba de que la fuente este vacia. El runner la cuenta como
+        detalle fallido, asi que dos errores iguales no pueden volverse
+        CERTIFIED_COMPLETE.
+        """
+        if not hasattr(self, "descartes"):
+            self.descartes = []
+        if len(self.descartes) < 500:
+            self.descartes.append({"source_url": url,
+                                   "canonical_agency_id": fuente.canonical_agency_id,
+                                   "motivo": "PAGINA_CONTENEDORA_REQUIERE_REVISION"})
+        return None
+
+    @staticmethod
     def _es_pagina_contenedora(html: str, url: str | None = None) -> bool:
         """A generic catalogue heading AND an explicit filter form, not a slug.
 
@@ -3150,6 +3178,16 @@ class GenericoConnector(Connector):
         # reales de las agencias generico: 0 falsos positivos.
         plano = "".join(c for c in unicodedata.normalize("NFKD", titulo)
                         if not unicodedata.combining(c))
+        plano = re.sub(r"\s+", " ", plano).strip()
+        # Tambien la categoria titulada con el tipo SOLO, en singular:
+        # `fios.com.ar/Casa-en-venta` tiene de encabezado «Casa» y 23 fichas
+        # debajo. Con 5 o mas fichas enlazadas y sin JSON-LD, 0 falsos
+        # positivos sobre ~170 fichas reales (2026-09-25).
+        sueltos = (r"casas?|departamentos?|deptos?|ph|duplex|oficinas?|locales?|terrenos?|"
+                   r"lotes?|galpon(?:es)?|cocheras?|campos?|quintas?|chacras?|fincas?|"
+                   r"salon(?:es)?|depositos?")
+        if re.fullmatch(sueltos, plano):
+            return len(GenericoConnector._fichas_en(html, url)) >= 5 if url else False
         tipos = (r"casas|departamentos|deptos|duplex|oficinas|locales|terrenos|lotes|"
                  r"galpones|cocheras|campos|quintas|chacras|fincas|salones|naves|depositos")
         if not re.fullmatch(
