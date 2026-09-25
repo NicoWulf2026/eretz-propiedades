@@ -36,6 +36,8 @@ Libro de familias detenidas: `ERETZ_FAMILIAS_DETENIDAS.jsonl`. Hoy: ninguna.
 
 ### 2026-09-25
 
+- **Señal de operación del auditor con precio** (`da4df01820`): deja de dar
+  por publicada la operación a partir de «ALQUILADA/Vendido» cuando hay precio.
 - **Fichas Xintel por HTML** (`960a148e44`): `cannone` guardaba título «en»,
   sin descripción y 2 fotos; ahora usa la API (título, descripción, coordenadas,
   20–28 fotos). 0 de 52 fichas no-Xintel cambian de camino.
