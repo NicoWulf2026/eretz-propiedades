@@ -36,6 +36,9 @@ Libro de familias detenidas: `ERETZ_FAMILIAS_DETENIDAS.jsonl`. Hoy: ninguna.
 
 ### 2026-09-24
 
+- **Etiqueta «En Venta» de la plantilla `/ad/`** (`5977acb741`): 205 de 380
+  fichas de 13 agencias sin operación, varias CERTIFIED_COMPLETE así. En 30
+  fichas reales: 12 ganan, 0 cambian, 0 pierden.
 - **Operación por rótulo** (`88f5a46c60`): «Tipo de operación En venta» (plantilla
   `/site/properties/`) y «alquiler temporario» que se cortaba en «alquiler». 6 de
   22 fichas reales ganan su operación, ninguna otra cambia. El gate de las
