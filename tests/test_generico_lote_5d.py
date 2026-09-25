@@ -296,3 +296,19 @@ def test_una_taxonomia_de_wordpress_no_es_ficha():
             '</body></html>')
     fichas = GenericoConnector._fichas_en(html, "https://alfa.test/propiedades")
     assert not any("/estado-propiedad/" in u for u in fichas)
+
+
+def test_MUERDE_la_descripcion_en_el_contenedor_property_description():
+    """`fios` (122 de 276 fichas sin descripcion): <div class="property-description
+    propiedad-detalles"><div class="show-more"><p>… sin rotulo."""
+    bloque = ('<!-- Property Description --><div class="property-description propiedad-detalles">'
+              '<!-- Details --><div class="show-more"><p> Venta de casa ubicada sobre calle '
+              'Sarmiento al 3900, en Funes, dentro de un entorno residencial consolidado.</p></div></div>'
+              '<!-- Features --><h3>Características</h3><ul><li>Pileta</li></ul>')
+    html = ('<html><head><meta name="description" content="FIOS Consultoría Inmobiliaria, '
+            'propiedades en venta y alquiler en Rosario y zona."></head><body><main>'
+            '<h1>VENTA CASA 1 DORMITORIO</h1><p>Venta. Precio USD 199.000</p>' + bloque + VISOR +
+            RELLENO + '</main></body></html>')
+    p = _normalizar(html)
+    assert (p.descripcion or "").startswith("Venta de casa ubicada sobre calle Sarmiento")
+    assert "Características" not in p.descripcion

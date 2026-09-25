@@ -2294,6 +2294,19 @@ class GenericoConnector(Connector):
             # palabra es prosa de la ficha, y tomar lo que le sigue traeria
             # cualquier cosa.
             descripcion = self._descripcion_rotulada(principal)
+        if not descripcion:
+            # El contenedor de la plantilla, sin rotulo: `fios` publica
+            # <div class="property-description …"><div class="show-more"><p>…
+            # y 122 de sus 276 fichas quedaban sin descripcion. Se toma hasta el
+            # proximo encabezado o comentario de seccion, como el rotulo.
+            contenedor = re.search(
+                r"<div\b[^>]*class=[\"'][^\"']*\bproperty-description\b[^\"']*[\"'][^>]*>",
+                principal, re.I)
+            if contenedor:
+                resto = sin_bloques_no_textuales(principal[contenedor.end():])
+                corte = re.search(r"<h[1-6]\b|<footer\b|<!--\s*(?!Details)", resto, re.I)
+                visible = limpiar(_texto((resto[:corte.start()] if corte else resto)[:6000]))
+                descripcion = visible if visible and len(visible) >= 40 else None
         if descripcion and meta and self._es_su_comienzo(descripcion, meta):
             # El rotulo solo trajo el comienzo de lo que el meta dice entero:
             # `funesinmobiliaria` rotula «VENTA - Casa de 4 dormitorios -
