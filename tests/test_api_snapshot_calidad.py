@@ -145,3 +145,14 @@ def test_MUERDE_un_eslogan_corto_repetido_tampoco_describe_a_la_ficha(tmp_path, 
     resumen, docs = _correr(tmp_path, monkeypatch, filas)
     assert [docs[f"h{i:03d}"][1] for i in range(9)] == [None] * 9
     assert docs["h009"][1] == "Luminoso."
+
+
+def test_MUERDE_un_titulo_que_es_solo_el_nombre_no_necesita_repetirse(tmp_path, monkeypatch):
+    """`blanco` tras la frescura parcial: 88 de 1.215 siguen diciendo solo
+    «Blanco Propiedades», lejos de la mitad del catalogo."""
+    filas = [("roomix:blanco propiedades", f"Casa {i} en Pilar", f"Texto propio {i}.") for i in range(9)]
+    filas += [("roomix:blanco propiedades", "BLANCO PROPIEDADES", "Casa con pileta.")]
+    resumen, docs = _correr(tmp_path, monkeypatch, filas)
+    assert docs["h009"][0] is None
+    assert docs["h000"][0] == "Casa 0 en Pilar"
+    assert resumen["titulos_del_sitio_descartados"] == 1

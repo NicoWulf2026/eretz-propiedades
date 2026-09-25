@@ -314,6 +314,11 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
                   if parte.strip()]
         if not nombre or not partes or nombre not in (partes[0], partes[-1]):
             return False
+        # Solo el nombre, sin nada mas, no dice nada de la ficha: no hace
+        # falta que se repita (`blanco`, tras la frescura parcial, quedo con
+        # 88 de 1.215, lejos de la mitad).
+        if partes == [nombre]:
+            return True
         n = fichas_de[canonical]
         return (n >= MINIMO_PARA_JUZGAR
                 and titulos[canonical][titulo]
