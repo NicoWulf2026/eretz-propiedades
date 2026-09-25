@@ -3282,6 +3282,14 @@ class GenericoConnector(Connector):
         plano = "".join(c for c in unicodedata.normalize("NFKD", titulo)
                         if not unicodedata.combining(c))
         plano = re.sub(r"\s+", " ", plano).strip()
+        # Una ficha lleva su id en la ruta; una categoria no. `fogliese`
+        # publica un emprendimiento de lotes como
+        # /propiedad/186944_lotes-en-venta-zona-turistica-tematica/, titulado
+        # «Lotes En Venta …» y con 6 relacionadas: con esto quedaba afuera y
+        # paraba la familia. Las categorias medidas (/Casa-en-venta,
+        # /venta-casas-posadas/, /inmuebles/salones-para-venta) no tienen id.
+        if url and re.search(r"\d{4,}", urllib.parse.urlparse(url).path):
+            return False
         # Tambien la categoria titulada con el tipo SOLO, en singular:
         # `fios.com.ar/Casa-en-venta` tiene de encabezado «Casa» y 23 fichas
         # debajo. Con 5 o mas fichas enlazadas y sin JSON-LD, 0 falsos

@@ -277,3 +277,14 @@ def test_MUERDE_el_rotulo_de_descripcion_dentro_de_un_enlace_de_acordeon():
     p = _normalizar(html)
     assert "Living" in (p.descripcion or "") and "Patio Mediano" in p.descripcion
     assert "Inmobiliaria ubicada" not in p.descripcion
+
+
+def test_MUERDE_una_ficha_con_id_titulada_como_categoria_no_es_contenedora():
+    """`fogliese`: «Lotes En Venta Zona Turistica Temática» en
+    /propiedad/186944_lotes-en-venta-…/ con 6 relacionadas."""
+    relacionadas = "".join(f'<a href="/propiedad/{1000 + i}_casa-en-venta/">Casa {i}</a>' for i in range(6))
+    html = ('<html><body><main><h1>Lotes En Venta Zona Turistica Temática</h1>'
+            '<p>Venta. Lotes desde USD 20.000</p>' + relacionadas + '</main></body></html>')
+    url = "https://alfa.test/propiedad/186944_lotes-en-venta-zona-turistica-tematica/"
+    assert not GenericoConnector._es_pagina_contenedora(html, url)
+    assert GenericoConnector._es_pagina_contenedora(html, "https://alfa.test/lotes-en-venta/")
