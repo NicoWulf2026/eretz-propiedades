@@ -41,7 +41,7 @@ Libro de familias detenidas: `ERETZ_FAMILIAS_DETENIDAS.jsonl`. Hoy: ninguna.
   certificadas 2+ veces el mismo día; sólo 6 nuevas. Los canarios (3 por
   familia, ~51) eran siempre los primeros alfabéticos y cada cambio de huella
   los rehacía (~3 h). Ahora las conocidas van de la intentada hace más tiempo
-  a la más reciente. Relanzamiento pedido con bandera OPERACION a las 21:3x.
+  a la más reciente. Relanzamiento pedido con bandera OPERACION a las 21:15.
   **Lección**: cada cambio de huella cuesta ~3 h de canarios; agrupar cambios.
 - **Páginas de categoría guardadas como fichas** (`cfd040385a`): van a
   revisión (detalle fallido), no se borran. Regla medida sobre 157 fichas
