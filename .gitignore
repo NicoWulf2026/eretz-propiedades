@@ -17,7 +17,8 @@ logs/
 node_modules/
 
 # Local AI/editor state
-.claude/
+.claude/*
+!.claude/rules/
 
 # Local artifacts and temp files
 reports/
@@ -30,6 +31,7 @@ _run_*.log
 _deep_scan_results.json
 .env.bak*
 docs/obsidian/.obsidian/
+docs/.obsidian/
 
 # Runtime scraper checkpoints are local operational state, never source code.
 scraper/checkpoint*.txt
