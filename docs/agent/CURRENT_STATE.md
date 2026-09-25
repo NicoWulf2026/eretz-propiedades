@@ -36,6 +36,13 @@ Libro de familias detenidas: `ERETZ_FAMILIAS_DETENIDAS.jsonl`. Hoy: ninguna.
 
 ### 2026-09-25
 
+- **Calidad de la snapshot servible** (`504a9a537d`, `6b4414c97d`): auditada la
+  v4 del 24-09 → 4.813 descripciones del sitio, 272 cocheras por accesorio,
+  1.524 textos con entidades HTML crudas. El constructor aplica ahora las
+  reglas del runner y limpia entidades. Queda: 1.945 filas con título = sólo
+  el nombre de la agencia (`blanco` 1.215; su paquete de hoy es mejor pero
+  NEEDS_FIX y no se fusiona: HANDOFF 5g). Lista única de acciones
+  productivas en `docs/agent/READY_FOR_PRODUCTION_ACTION.md`.
 - **Tipo de propiedad** (`210f84eb9c`, compartido): 44 fichas en 24 agencias
   eran «cochera» siendo dúplex/departamentos con cochera; «Galpón/Dúplex/
   Fracción» quedaban sin tipo por la tilde. 528 de 26.993 títulos cambian, todos
