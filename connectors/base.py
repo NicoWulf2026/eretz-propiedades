@@ -1198,12 +1198,16 @@ _TIPOS = {
     "departamento": "departamento", "depto": "departamento",
     "dpto": "departamento", "ph": "departamento",
     "loft": "departamento", "monoambiente": "departamento",
-    "duplex": "casa",
+    "duplex": "casa", "triplex": "casa",
     "terreno": "terreno", "lote": "terreno", "campo": "terreno", "fraccion": "terreno",
     "local": "local", "fondo de comercio": "local",
     "oficina": "oficina", "consultorio": "oficina",
     "cochera": "cochera", "garage": "cochera",
     "galpon": "galpon", "deposito": "galpon", "nave industrial": "galpon",
+    # "Semi piso" y "semipiso" (`cocciolo`: 13 sin tipo, 8 como cochera). Al
+    # final: "OFICINA EN SEMIPISO" es una oficina. "Piso" solo no entra: es
+    # tambien el nivel ("1er piso").
+    "semipiso": "departamento", "semi piso": "departamento",
 }
 
 

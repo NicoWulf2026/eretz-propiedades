@@ -3772,7 +3772,7 @@ class GenericoConnector(Connector):
         """
         if not titulo:
             return None
-        hallazgos = re.findall(r"(?<![\d+])\b([1-9])\s*amb(?:ientes?\b|\.)",
+        hallazgos = re.findall(r"(?<![\d+])\b([1-9])\s*amb(?:ientes?\b|\.|\b)",
                                titulo, re.I)
         if len(hallazgos) != 1 or re.search(
                 r"\+|monoamb|\b(?:casas|deptos|departamentos|unidades|"

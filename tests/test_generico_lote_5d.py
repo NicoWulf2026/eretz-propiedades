@@ -312,3 +312,10 @@ def test_MUERDE_la_descripcion_en_el_contenedor_property_description():
     p = _normalizar(html)
     assert (p.descripcion or "").startswith("Venta de casa ubicada sobre calle Sarmiento")
     assert "Características" not in p.descripcion
+
+
+def test_cinco_amb_sin_punto_tambien_es_una_cantidad():
+    """`cocciolo`: «Amplio departamento de 5 amb Uso profesional o vivienda»."""
+    assert GenericoConnector._ambientes_del_titulo(
+        "Amplio departamento de 5 amb Uso profesional o vivienda") == 5
+    assert GenericoConnector._ambientes_del_titulo("Casa con ambos patios") is None
