@@ -135,3 +135,13 @@ def test_sin_descripcion_el_titulo_del_sitio_se_conserva(tmp_path, monkeypatch):
     filas = [("roomix:meta inmobiliaria", "Meta Inmobiliaria", None) for _ in range(9)]
     _, docs = _correr(tmp_path, monkeypatch, filas)
     assert all(t == "Meta Inmobiliaria" for t, _, _ in docs.values())
+
+
+def test_MUERDE_un_eslogan_corto_repetido_tampoco_describe_a_la_ficha(tmp_path, monkeypatch):
+    """`metro`: «Inversión segura, Negocio rentable» (35 caracteres) en 407 de
+    407 fichas; `fdc` «Encontrá tu propiedad» en 201 de 201."""
+    filas = [("roomix:metro", f"Casa {i}", "Inversión segura, Negocio rentable") for i in range(9)]
+    filas += [("roomix:metro", "Depto", "Luminoso.")]
+    resumen, docs = _correr(tmp_path, monkeypatch, filas)
+    assert [docs[f"h{i:03d}"][1] for i in range(9)] == [None] * 9
+    assert docs["h009"][1] == "Luminoso."

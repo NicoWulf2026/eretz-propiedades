@@ -279,7 +279,11 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
                              CAMPOS_FUSIONABLES)
         texto = fusionada.get("descripcion")
         fichas_de[canonical] += 1
-        if texto and len(texto) >= 40:
+        # Sin el minimo de 40 caracteres del runner: la preingestion trae
+        # esloganes cortos en TODAS las fichas de 9 agencias (898 filas,
+        # «Encontrá tu propiedad» en 201 de 201 de `fdc`). Repetido en la
+        # mitad del catalogo, corto o largo, no describe a ninguna ficha.
+        if texto:
             descripciones[canonical][texto] += 1
         if fusionada.get("titulo"):
             titulos[canonical][fusionada["titulo"]] += 1
