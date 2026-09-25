@@ -36,6 +36,14 @@ Libro de familias detenidas: `ERETZ_FAMILIAS_DETENIDAS.jsonl`. Hoy: ninguna.
 
 ### 2026-09-25
 
+- **Snapshot: frescura desde NEEDS_FIX y textos del sitio** (`609c0f5e82`,
+  `89e69cc75b`, `cbf1f330de`; no tocan huellas). Un NEEDS_FIX que sólo falla
+  por campos aporta sus campos EXTRACTED con valor (4.678 filas, 33
+  agencias, 0 pérdidas; `blanco` recupera 1.127 títulos). Título = nombre de
+  la agencia repetido y esloganes cortos repetidos dejan de servirse. v4 del
+  25-09 (sin estas tres): 57.665 filas, `integrity_check` ok. La v4c con
+  todo se arma en `_scratch/unification/snapshot_v4c_2026-09-25/`. Gate
+  11:2x: 172 agencias, 0 pendientes. Suite: 3.247 passed.
 - **Calidad de la snapshot servible** (`504a9a537d`, `6b4414c97d`): auditada la
   v4 del 24-09 → 4.813 descripciones del sitio, 272 cocheras por accesorio,
   1.524 textos con entidades HTML crudas. El constructor aplica ahora las

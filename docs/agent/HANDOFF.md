@@ -114,14 +114,25 @@ se produjo durante el cambio queda sin `strategy_fingerprint`. Entonces:
    (coincidencias), 1 falsa, 1 ambigua. Riesgo bajo; no se tocó. Si se
    aborda: no tomar como precio un monto precedido por «opcional»/«cochera
    (valor».
-5g. **Frescura de la snapshot sólo desde cierres certificados** (decisión de
-   diseño, medida 25-09): `mas_frescas` toma campos de paquetes COMPLETE/BEST.
-   Una agencia NEEDS_FIX sigue sirviendo la preingestión del 03-09 aunque su
-   paquete de hoy sea mejor: `blanco` sirve 1.204 títulos «Blanco
-   Propiedades» y su paquete del 25-09 tiene los reales (falla por precio,
-   moneda y ciudad, no por texto). Opción a evaluar: tomar de un NEEDS_FIX
-   sólo los campos que su `field_coverage` da por EXTRACTED. Afecta a qué
-   se publica: medir antes, con Regression Gate sobre la snapshot.
+5g. Frescura desde NEEDS_FIX: RESUELTO en `609c0f5e82` (sólo la snapshot;
+   quality gate e image_contamination siguen con cierres certificados).
+   Criterio: identidad READY y TODOS los motivos de campo; campos EXTRACTED
+   con valor presente; precio+moneda juntos; sin su `extra`. Medido: 4.678
+   filas en 33 agencias, 0 pérdidas. Snapshot además: título = nombre de la
+   agencia repetido (`89e69cc75b`, 1.980 filas) y eslogan corto repetido
+   (`cbf1f330de`, 898 filas).
+5h. **Alinear el runner con la snapshot** (próxima ventana compartida,
+   `run_rollout` es huella global): `descartar_descripciones_compartidas`
+   exige ≥40 caracteres sin justificación registrada; la snapshot ya no. Hoy
+   no muerde con el código vigente (los paquetes de `fdc` y `ciam` extraen
+   las descripciones reales); `diaz collins` trae su eslogan en 2 de 12.
+5i. `VARIANTE_NO_SOPORTADA` del 25-09 (6 agencias `generico`): SPAs sin
+   inventario en el HTML. `armanino`: React que consulta la API de Tokko con
+   una clave embebida en su bundle — **decisión: no se usan claves ajenas
+   extraídas de un sitio**; queda no soportada. `dacal`: Vue contra su API
+   propia (`api.<dominio>/api/v1`), radio 1. `gestionato`: SPA que enlaza a
+   portales. `bergo` responde vacío. `diego martin`: Wix. Todas radio 1;
+   bajo retorno salvo que aparezca una familia.
 6. Ítem 12 (`SIN_INVENTARIO` con dos significados): defecto de nombre, no de
    decisión; bajo retorno.
 7. Beta del backend (ver `docs/ERETZ_UNIFICATION_PLAN.md` § «Backend beta
