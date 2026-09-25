@@ -38,6 +38,7 @@ from connectors.tokko import (RE_COORD as TOKKO_RE_COORD, TokkoConnector,
                               _texto_plano as tokko_texto)
 from connectors.wasi import (WasiConnector, _campos_descriptivos,
                              _campos_wasi, _descripcion_wasi)
+from scripts.wasi_fingerprint import RE_PRECIO as RE_PRECIO_WASI  # noqa: E402
 from connectors.wordpress import WordPressConnector
 from scripts.agency_fingerprints import (
     FINGERPRINT_SCHEMA_VERSION,
@@ -337,6 +338,14 @@ def wasi_source_signals(body: str) -> dict[str, bool]:
                   "superficie_total", "superficie_cubierta"):
         signals[campo] = bool(campos.get(campo) is not None
                               or campo in descriptivos or campo in ambiguos)
+    # «Precio de alquiler: Consultar» en el bloque estructurado es la
+    # respuesta de la fuente: no publica precio. Los montos de la descripcion
+    # (por oficina, alquiler anual) no lo desmienten. `casamia` y `domus`
+    # dispararon asi el corte por lote que detuvo toda la cola (25-09 06:23).
+    bloque = RE_PRECIO_WASI.search(body or "")
+    if bloque and campos.get("precio") is None and re.search(
+            r"\bconsultar\b", re.sub(r"<[^>]+>", " ", bloque.group(1)), re.I):
+        signals["precio"] = signals["moneda"] = False
     return signals
 
 
