@@ -87,6 +87,12 @@ se produjo durante el cambio queda sin `strategy_fingerprint`. Entonces:
    etiqueta en `896238f7ae`. El arreglo de fondo es una señal más amplia que
    el extractor (que vea «Venta/Alquiler» rotulados aunque el extractor no
    pueda decidir), aceptando más NEEDS_FIX. Medir antes.
+5e'. **Señal de precio con «Consultar»** (auditor, compartido): en `wasi` el
+   campo estructurado dice «Precio de alquiler: Consultar» y la descripción
+   trae montos (por unidad, alquiler anual). El auditor cuenta el precio como
+   provisto y la agencia cae en NEEDS_FIX; dos seguidas dispararon el «corte
+   por lote» que detiene TODA la cola (`casamia`, `domus`, 25-09 06:23;
+   diferida firmada 06:25). Medir cuántas fichas wasi dicen «Consultar».
 5e. Señal de operación sin precio: RESUELTO en `da4df01820`. Quedan para
    la próxima ventana compartida: 5 (título repetido) y re-evaluar
    `ficha_sin_contenido` después del descarte de descripciones.

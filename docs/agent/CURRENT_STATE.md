@@ -36,6 +36,9 @@ Libro de familias detenidas: `ERETZ_FAMILIAS_DETENIDAS.jsonl`. Hoy: ninguna.
 
 ### 2026-09-25
 
+- **Corte por lote 06:23 (`domus`, firma `704a5072c251`)**: dos agencias `wasi`
+  con «Precio: Consultar» y montos en la descripción; falso positivo de la
+  señal de precio. Diferida 06:25; cola destrabada.
 - **Xintel verificado en recertificaciones reales**: `fernandez` 157/157
   descripciones reales (antes 148 «True»), `farina` 45/45; localidades bien
   desescapadas como ciudad. Gate 05:59: 138 agencias, 0 pendientes.
