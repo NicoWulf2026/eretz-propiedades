@@ -36,6 +36,9 @@ Libro de familias detenidas: `ERETZ_FAMILIAS_DETENIDAS.jsonl`. Hoy: ninguna.
 
 ### 2026-09-25
 
+- **Xintel verificado en recertificaciones reales**: `fernandez` 157/157
+  descripciones reales (antes 148 «True»), `farina` 45/45; localidades bien
+  desescapadas como ciudad. Gate 05:59: 138 agencias, 0 pendientes.
 - **Verificado en una recertificación real** (`caruso`, 04:11, COMPLETE):
   operación en 64 de 65 fichas (antes 25 de 63) y 64 descripciones propias
   (antes el eslogan del sitio en todas).
