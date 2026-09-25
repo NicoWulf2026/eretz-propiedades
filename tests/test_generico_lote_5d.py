@@ -196,3 +196,25 @@ def test_MUERDE_las_tarjetas_similares_de_realhomes_no_son_la_ficha():
             similares + '</main></body></html>')
     p = _normalizar(html)
     assert p.dormitorios is None
+
+
+def test_MUERDE_el_tooltip_de_una_tarjeta_relacionada_no_es_el_tipo():
+    """`berrueta`: «3 AMBIENTES AL FRENTE» quedaba como cochera por el
+    <span class="card__highlights__tooltip">Cochera</span> de una relacionada."""
+    relacionadas = ('<section id="propiedades"><h2>Propiedades Relacionadas</h2>'
+                    '<div class="ficha__related swiper-container"><a class="card" href="/propiedad/1">'
+                    '<p class="card__title">3 AMBIENTES CON COCHERA</p>'
+                    '<span class="card__highlights__tooltip">Cochera</span></a></div></section>')
+    html = ('<html><body><main><h2>3 AMBIENTES AL FRENTE - OPORTUNIDAD</h2>'
+            '<p>Venta USD 100.000. 3 ambientes, 2 dormitorios.</p>' + VISOR + RELLENO +
+            relacionadas + '</main></body></html>')
+    assert _normalizar(html).tipo_propiedad != "cochera"
+
+
+def test_MUERDE_el_tipo_como_parrafo_de_la_ficha_y_sin_cochera_no_es_tipo():
+    html = ('<html><body><main><h2>3 AMBIENTES AL FRENTE - OPORTUNIDAD</h2>'
+            '<div class="highlights"><p class="highlights__text">Departamentos</p></div>'
+            '<div class="highlights"><p class="highlights__text">Sin cochera</p></div>'
+            '<p>Venta USD 100.000. 3 ambientes, 2 dormitorios.</p>' + VISOR + RELLENO +
+            '</main></body></html>')
+    assert _normalizar(html).tipo_propiedad == "departamento"

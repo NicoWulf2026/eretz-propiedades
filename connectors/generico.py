@@ -563,6 +563,10 @@ def cuerpo_principal(html: str) -> str:
     return re.split(
         r"id=[\"'](?:relacionadas|bottom)[\"']|<footer\b|"
         r"class=[\"'][^\"']*rh_property__similar_properties|"
+        # Y la plantilla de `berrueta` (Template3): el tooltip «Cochera» de una
+        # tarjeta relacionada era el unico tipo que veia la ficha, y 24
+        # departamentos quedaban guardados como cocheras.
+        r"class=[\"'][^\"']*ficha__related|"
         r"<div[^>]+class=[\"'][^\"']*titulo_prod_int[^\"']*[\"'][^>]*>\s*"
         r"Otras\s+Propiedades\s*</div>",
                     html or "", maxsplit=1, flags=re.I)[0]
@@ -3765,12 +3769,16 @@ class GenericoConnector(Connector):
         tipo que figure mas arriba en la navegacion.
         """
         tipos = set()
+        # Tambien <p>: la plantilla de `berrueta` publica el tipo como
+        # <p class="highlights__text">Departamentos</p> junto a «Sin cochera».
+        # Medido sobre 31 fichas de 31 agencias generico: cambia 1, y a mejor.
         for match in re.finditer(
-                r"<(?:li|span)[^>]*>\s*([^<>]{3,24}?)\s*</(?:li|span)>",
+                r"<(?:li|span|p)[^>]*>\s*([^<>]{3,24}?)\s*</(?:li|span|p)>",
                 html or "", re.I):
             texto = match.group(1).strip()
             # Un elemento con una frase es texto de la ficha, no una etiqueta.
-            if len(texto.split()) > 2:
+            # «Sin cochera» dice lo que la propiedad NO tiene.
+            if len(texto.split()) > 2 or re.match(r"sin\b", texto, re.I):
                 continue
             tipo = detectar_tipo(texto)
             if tipo:
