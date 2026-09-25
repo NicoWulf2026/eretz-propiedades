@@ -221,9 +221,13 @@ def source_signals(body: str, url: str = "") -> dict[str, bool]:
     title_match = re.search(
         r"<title[^>]*>(.{1,200}?)</title>", main, re.S | re.I)
     title = _texto(title_match.group(1)) if title_match else ""
+    # La etiqueta «En Venta» de la ficha tambien es la fuente publicando la
+    # operacion. Sin esto, `altos`, `amadeo`, `caruso` y `emir` pasaban
+    # CERTIFIED_COMPLETE con la mayoria de las fichas sin operacion.
     signals["operacion"] = bool(
         detectar_operacion(f"{title} {url}")
-        or GenericoConnector._operacion_en_la_ficha(text))
+        or GenericoConnector._operacion_en_la_ficha(text)
+        or GenericoConnector._operacion_de_la_etiqueta(main))
     # Para cantidades y moneda auditamos texto visible, no atributos meta ni
     # bloques estructurales invisibles. Un cero explicito (p. ej. dormitorios
     # de un terreno) no constituye un valor extraible del campo.

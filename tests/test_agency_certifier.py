@@ -1163,3 +1163,15 @@ def test_un_enlace_muerto_de_la_fuente_no_es_un_fallo_de_lectura():
     # Una baja que aparece en una sola corrida no cuenta como baja.
     estado, razones = _estado(3, 3, 0)
     assert "one or more listing details failed" in razones
+
+
+
+def test_MUERDE_la_etiqueta_en_venta_cuenta_como_operacion_provista() -> None:
+    """La senal de fuente usa las mismas reglas que el extractor. Sin la
+    etiqueta, `altos`, `amadeo`, `caruso` y `emir` quedaban CERTIFIED_COMPLETE
+    con la mayoria de las fichas sin operacion: la fuente la publicaba y el
+    auditor la contaba como no provista."""
+    html = ('<html><body><main><div class="menu"><a>Venta</a><a>Alquiler</a></div>'
+            '<div class="sale"><div>En Venta</div></div><h5>Casa en Toay</h5>'
+            '<p>' + 'Detalle de la casa. ' * 10 + '</p></main></body></html>')
+    assert source_signals(html)["operacion"] is True
