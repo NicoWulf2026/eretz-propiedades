@@ -36,6 +36,10 @@ Libro de familias detenidas: `ERETZ_FAMILIAS_DETENIDAS.jsonl`. Hoy: ninguna.
 
 ### 2026-09-25
 
+- **Orden de la cola verificado**: desde 01:17, 4 de 10 resultados son
+  agencias nunca certificadas (antes 0 de 38). Gate 02:21: 106 agencias, 0
+  pendientes (34 más firmadas: operaciones «alquiler» que eran ventas con
+  inquilino, un «cochera» que era un tríplex).
 - **Paro de `tokko` 02:04 (`drovetta`)**: la corrida 2 recibió HTTP 500 en el
   descubrimiento; el triaje lo tomaba como inventario inestable de la familia.
   Arreglado en el triaje (`722cbd9bb8`, sin huella; 1 cambio en 1.398 NEEDS_FIX

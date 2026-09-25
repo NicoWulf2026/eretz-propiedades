@@ -101,6 +101,9 @@ se produjo durante el cambio queda sin `strategy_fingerprint`. Entonces:
    grilla) que la regla de plural no alcanza; 1 foto de OTRA propiedad por
    ficha en 192 fichas (IDs de Tokko distintos, fuera de enlaces). Radio
    medido: sólo `fios`. Falla cerrada mientras tanto.
+   Además `bottai`: páginas de resultados de búsqueda guardadas como fichas
+   (`inmuebles_list_Venta_seleccione_…`, título «BOTTAI Inmobiliaria», precio de
+   un aviso). La agencia está NEEDS_FIX, pero el dato es falso.
 6. Ítem 12 (`SIN_INVENTARIO` con dos significados): defecto de nombre, no de
    decisión; bajo retorno.
 7. Beta del backend (ver `docs/ERETZ_UNIFICATION_PLAN.md` § «Backend beta
