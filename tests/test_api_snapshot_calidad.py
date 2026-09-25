@@ -78,3 +78,14 @@ def test_MUERDE_una_cochera_que_es_lo_que_trae_la_propiedad_no_es_su_tipo(tmp_pa
     resumen, docs = _correr(tmp_path, monkeypatch, filas)
     assert [docs[f"h00{i}"][2] for i in range(3)] == ["casa", None, "cochera"]
     assert resumen["tipos_cochera_por_accesorio_corregidos"] == 2
+
+
+def test_MUERDE_las_entidades_html_no_llegan_al_texto_servido(tmp_path, monkeypatch):
+    filas = [("roomix:cip", "Venta de lote en Carpinter&iacute;a &#8211; Inmobiliaria CIP",
+              "&lt;p&gt;Departamento de 2 Amb.&amp;nbsp; en PH&lt;/p&gt;\nCon patio y cochera."),
+             ("roomix:cip", "Casa 3 < 4 dormitorios", "Texto sin entidades, largo y normal.")]
+    resumen, docs = _correr(tmp_path, monkeypatch, filas)
+    assert docs["h000"][0] == "Venta de lote en Carpintería – Inmobiliaria CIP"
+    assert docs["h000"][1] == "Departamento de 2 Amb. en PH\nCon patio y cochera."
+    assert docs["h001"][0] == "Casa 3 < 4 dormitorios"
+    assert resumen["textos_con_entidades_limpiados"] == 2

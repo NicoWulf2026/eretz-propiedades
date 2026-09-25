@@ -15,6 +15,7 @@ No escribe en ninguna base productiva.
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import os
 import sqlite3
@@ -78,6 +79,30 @@ def _sin_tildes(texto: str) -> str:
     texto = re.sub(r"\s+", " ", (texto or "").lower())
     return "".join(c for c in unicodedata.normalize("NFKD", texto)
                    if not unicodedata.combining(c))
+
+
+def _texto_servible(valor: Any) -> Any:
+    """El texto sin entidades HTML crudas, que el frontend mostraria tal cual.
+
+    La v4 del 24-09 servia 1.524 titulos y descripciones de 102 agencias con
+    «&amp;», «&#8211;» o «&lt;p&gt;». Se desescapa hasta dos veces (hay dobles:
+    «&amp;nbsp;») y SOLO si hubo entidades se quitan las etiquetas que quedan
+    a la vista. Los saltos de linea se conservan.
+    """
+    if not isinstance(valor, str):
+        return valor
+    texto = valor
+    for _ in range(2):
+        nuevo = html.unescape(texto)
+        if nuevo == texto:
+            break
+        texto = nuevo
+    if texto == valor:
+        return valor
+    texto = re.sub(r"</?[A-Za-z][^<>]{0,200}>", " ", texto).replace("\xa0", " ")
+    texto = re.sub(r"[ \t]+", " ", texto)
+    texto = re.sub(r" *\n *", "\n", texto).strip()
+    return texto or None
 from scripts.preingestion_manifest import (base_canonica,  # noqa: E402
                                            exigir_base_vigente)
 
@@ -268,6 +293,7 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
     filas = 0
     descripciones_del_sitio = 0
     tipos_cochera_corregidos = 0
+    textos_limpiados = 0
     ajenas_omitidas = 0
     imagenes_compartidas = 0
     imagenes_repetidas_sin_evidencia = 0
@@ -306,6 +332,11 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
             if nuevo_tipo != "cochera":
                 cruda = dict(cruda, tipo_propiedad=nuevo_tipo)
                 tipos_cochera_corregidos += 1
+        for campo in ("titulo", "descripcion"):
+            limpio = _texto_servible(cruda.get(campo))
+            if limpio != cruda.get(campo):
+                cruda = dict(cruda, **{campo: limpio})
+                textos_limpiados += 1
         propias = [u for u in (cruda.get("imagenes") or [])
                    if not is_known_page_asset(u)]
         imagenes_repetidas_sin_evidencia += sum(
@@ -378,6 +409,7 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
         "imagenes_compartidas_descartadas": imagenes_compartidas,
         "descripciones_del_sitio_descartadas": descripciones_del_sitio,
         "tipos_cochera_por_accesorio_corregidos": tipos_cochera_corregidos,
+        "textos_con_entidades_limpiados": textos_limpiados,
         "imagenes_repetidas_sin_evidencia_de_descarte": imagenes_repetidas_sin_evidencia,
         "fichas_que_quedaron_sin_foto_propia": fichas_sin_foto_propia,
         "fichas_para_ser_compartida": FICHAS_PARA_SER_COMPARTIDA,
