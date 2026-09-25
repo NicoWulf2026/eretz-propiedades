@@ -3014,7 +3014,12 @@ class GenericoConnector(Connector):
             source_listing_id=str(crudo["source_listing_id"]),
             source_url=url,
             connector=self.nombre,
-            titulo=limpiar(str(row.get("titulo") or "")) or None,
+            # La API compone el titulo y escribe el cero de ambientes a veces
+            # «0 ambientes» y a veces «monoambiente ambientes», con o sin
+            # entidades: `bondar` nunca repetia sus titulos entre corridas.
+            titulo=re.sub(r"\s+(?:0|monoambiente)\s+ambientes\s*$", "",
+                          limpiar(unescape(str(row.get("titulo") or ""))) or "",
+                          flags=re.I) or None,
             descripcion=limpiar(str(description))[:4000] if description else None,
             precio=fields["precio"], moneda=fields["moneda"],
             operacion=fields["operacion"], tipo_propiedad=fields["tipo_propiedad"],

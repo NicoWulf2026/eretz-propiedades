@@ -160,3 +160,21 @@ def test_MUERDE_el_contador_de_visitas_no_es_parte_de_la_descripcion():
     p = _normalizar(_ficha(cuerpo + VISOR))
     assert p.descripcion.endswith("cocina integrada.")
     assert "Visitas" not in p.descripcion
+
+
+# --- titulo de la API Xintel ----------------------------------------------------
+# `bondar`: la API compone el titulo y representa el cero de ambientes a veces
+# como «0 ambientes» y a veces como «monoambiente ambientes», con o sin
+# entidades HTML: las dos corridas nunca coinciden (NEEDS_FIX no idempotente).
+
+def test_MUERDE_el_titulo_xintel_es_el_mismo_en_las_dos_formas_del_cero():
+    import test_connectors as TC
+    a = TC._xintel_con(titulo="Departamento en venta Primera Secci&oacute;n 0 ambientes")
+    b = TC._xintel_con(titulo="Departamento en venta Primera Sección monoambiente ambientes")
+    assert a.titulo == b.titulo == "Departamento en venta Primera Sección"
+
+
+def test_un_titulo_xintel_con_ambientes_reales_se_conserva():
+    import test_connectors as TC
+    assert TC._xintel_con(titulo="Oficina en alquiler Sexta Secci&oacute;n 3 ambientes").titulo == \
+        "Oficina en alquiler Sexta Sección 3 ambientes"
