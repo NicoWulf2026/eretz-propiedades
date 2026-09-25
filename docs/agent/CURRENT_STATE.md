@@ -36,6 +36,9 @@ Libro de familias detenidas: `ERETZ_FAMILIAS_DETENIDAS.jsonl`. Hoy: ninguna.
 
 ### 2026-09-25
 
+- **Paro de `generico` 01:44 (`arquitectura`)**: falso positivo de la señal de
+  operación del auditor (estado consumado sin precio). Diferida 01:45, familia
+  liberada; arreglo anotado en HANDOFF 5e.
 - **Orden de la cola, segunda parte** (`f742f35255`). La rotación eliminó el
   retrabajo (desde 21:24: 38 resultados, 38 agencias, 0 h repetidas; antes
   13,3 de 16,6 h) pero no entró ninguna nueva: los ~51 canarios iban antes.

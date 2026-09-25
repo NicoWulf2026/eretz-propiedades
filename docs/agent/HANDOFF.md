@@ -87,6 +87,13 @@ se produjo durante el cambio queda sin `strategy_fingerprint`. Entonces:
    etiqueta en `896238f7ae`. El arreglo de fondo es una señal más amplia que
    el extractor (que vea «Venta/Alquiler» rotulados aunque el extractor no
    pueda decidir), aceptando más NEEDS_FIX. Medir antes.
+5e. **Próximo lote compartido (auditor)**: la señal de `operacion` llama a
+   `_operacion_en_la_ficha(texto)` SIN precio, así que el estado consumado
+   («OBSERVACIONES: ALQUILADA» en una venta de US$ 400.000) la da por provista y
+   la agencia cae en NEEDS_FIX injusto (`arquitectura inmobiliaria`, paro
+   25-09 01:44, diferida firmada). Arreglo: pasarle si el texto tiene precio
+   (`SOURCE_SIGNALS['precio']`), igual que el extractor. Agrupar con 5 (título
+   repetido) y la re-evaluación de `ficha_sin_contenido`.
 5d. **Próximo lote de `generico`** (agrupar; cada cambio de huella cuesta
    recertificaciones). Plantilla de `fios` (diferida firmada 25-09 00:36):
    descripción en `.property-description .show-more` sin rótulo; 7 páginas
