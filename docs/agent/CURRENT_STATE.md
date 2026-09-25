@@ -34,6 +34,14 @@ Libro de familias detenidas: `ERETZ_FAMILIAS_DETENIDAS.jsonl`. Hoy: ninguna.
 
 ## Bitácora
 
+### 2026-09-25
+
+- **Paro de `generico` 23:57 (`gianini`, sin_determinar)**: la fuente sirvió una
+  página degradada en la corrida 1 (643 s contra 98 s): una ficha con título
+  «en» y descripción del meta. Radio AGENCIA, diferida firmada 00:06,
+  familia liberada. `conti` (151 descripciones con HTML crudo) es un
+  resultado del 21-09: el código de hoy las lee limpias.
+
 ### 2026-09-24
 
 - **Tokko perdía la ubicación** (`41eb162786`) cuando la seguía la lista de
