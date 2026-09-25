@@ -93,7 +93,10 @@ def _loss_reason(field: str, old: dict, fresh: dict) -> str:
     # contradict is kept in `provincia_supuesta_descartada`. Only an exact field
     # (or the SAME province value) counts.
     if isinstance(extra, dict):
-        tokens = re.split(r'[,>]', str(extra.get('atributos_descartados') or ''))
+        # "cubierta>total" names the two surfaces by their short form.
+        cortos = {'cubierta': 'superficie_cubierta', 'total': 'superficie_total'}
+        tokens = [cortos.get(t, t) for t in
+                  re.split(r'[,>]', str(extra.get('atributos_descartados') or ''))]
         if any(t == field or t.startswith(field + '_') for t in tokens if t):
             return 'EXPLAINED_VALIDATION'
         if (field == 'provincia' and extra.get('provincia_supuesta_descartada')

@@ -94,3 +94,11 @@ def test_validation_discards_recorded_on_the_row_explain_only_their_field():
     # A discard of one field never explains another one on the same row.
     report = compare([row(banos=1)], [row(banos=None, extra={'atributos_descartados': 'ambientes'})])
     assert report['counts'] == {'UNEXPLAINED_LOSS': 1}
+
+
+
+def test_a_surface_pair_discard_explains_both_surfaces():
+    old = [row(superficie_total=97.0, superficie_cubierta=57.0)]
+    fresh = [row(superficie_total=None, superficie_cubierta=None,
+                 extra={'atributos_descartados': 'cubierta>total,dormitorios'})]
+    assert compare(old, fresh)['counts'] == {'EXPLAINED_VALIDATION': 2}
