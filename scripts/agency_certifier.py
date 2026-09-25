@@ -23,7 +23,7 @@ from typing import Any, Iterable
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from connectors.base import (ESQUEMA_CHECKPOINT, HUELLA_VERSION, Checkpoint,
-                             Descargador, Fuente, LimitadorDeRitmo,
+                             Descargador, Fuente, LimitadorDeRitmo, a_numero,
                              detectar_operacion, detectar_tipo)
 from connectors.century21 import Century21Connector
 from connectors.generico import (ETIQUETAS_DE_CONTEO, GenericoConnector,
@@ -224,9 +224,18 @@ def source_signals(body: str, url: str = "") -> dict[str, bool]:
     # La etiqueta «En Venta» de la ficha tambien es la fuente publicando la
     # operacion. Sin esto, `altos`, `amadeo`, `caruso` y `emir` pasaban
     # CERTIFIED_COMPLETE con la mayoria de las fichas sin operacion.
+    #
+    # Y el precio se pasa como lo recibe el extractor: con precio, un estado
+    # consumado («OBSERVACIONES: ALQUILADA» en una venta de US$ 400.000) no
+    # dice la operacion. Sin esto la senal la daba por publicada y la agencia
+    # caia en NEEDS_FIX por un dato que la fuente no da (`arquitectura`,
+    # `dtm`, 2026-09-25).
+    visto = SOURCE_SIGNALS["precio"].search(text)
+    precio_visto = (a_numero(re.sub(r"^\D+", "", visto.group(0)))
+                    if visto else None)
     signals["operacion"] = bool(
         detectar_operacion(f"{title} {url}")
-        or GenericoConnector._operacion_en_la_ficha(text)
+        or GenericoConnector._operacion_en_la_ficha(text, precio_visto)
         or GenericoConnector._operacion_de_la_etiqueta(main))
     # Para cantidades y moneda auditamos texto visible, no atributos meta ni
     # bloques estructurales invisibles. Un cero explicito (p. ej. dormitorios

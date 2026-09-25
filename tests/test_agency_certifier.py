@@ -1175,3 +1175,17 @@ def test_MUERDE_la_etiqueta_en_venta_cuenta_como_operacion_provista() -> None:
             '<div class="sale"><div>En Venta</div></div><h5>Casa en Toay</h5>'
             '<p>' + 'Detalle de la casa. ' * 10 + '</p></main></body></html>')
     assert source_signals(html)["operacion"] is True
+
+
+
+def test_MUERDE_un_estado_consumado_con_precio_no_prueba_la_operacion() -> None:
+    """`arquitectura inmobiliaria` (2026-09-25): una VENTA de US$ 400.000 con
+    «OBSERVACIONES: ALQUILADA». El extractor, con el precio, no infiere nada;
+    la senal, sin el precio, concluia «alquiler» y la agencia caia en
+    NEEDS_FIX por una operacion que la fuente no publica."""
+    base = ('<html><body><main><div class="menu"><a>Ventas</a><a>Alquileres</a></div>'
+            '<h1>Montevideo 745</h1><p>US$ 400.000</p><p>' + 'Detalle. ' * 20 +
+            'OBSERVACIONES: {estado}</p></main></body></html>')
+    assert source_signals(base.format(estado="ALQUILADA"))["operacion"] is False
+    sin_precio = base.replace("<p>US$ 400.000</p>", "")
+    assert source_signals(sin_precio.format(estado="ALQUILADA"))["operacion"] is True
