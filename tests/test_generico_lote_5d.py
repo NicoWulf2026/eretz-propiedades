@@ -260,3 +260,20 @@ def test_un_barrio_que_repite_la_ciudad_del_par_no_se_afirma_y_ubicacion_no_es_b
              '<div><p>Barrio</p><p>Lomas De Zamora, Lomas de Zamora, Buenos Aires</p></div>')
     p = _normalizar(_ficha(pares + VISOR))
     assert (p.barrio, p.ciudad) == (None, "Lomas de Zamora")
+
+
+def test_MUERDE_el_rotulo_de_descripcion_dentro_de_un_enlace_de_acordeon():
+    """`alianza` (27 fichas): <h4><a href="#collapseTwo">Descripción</a></h4> y
+    una lista de ambientes; se guardaba el eslogan del meta, descartado por
+    compartido, y la agencia quedaba NEEDS_FIX."""
+    bloque = ('<div class="panel-heading"><h4 class="panel-title"> '
+              '<a data-parent="#accordion" href="#collapseTwo">Descripción</a> </h4></div>'
+              '<div id="collapseTwo"><div class="panel-body"><ul><li>Living</li><li>Comedor</li>'
+              '<li>Cocina</li><li>Baño</li><li>Patio Mediano</li></ul></div></div>')
+    html = ('<html><head><meta name="description" content="Alianza Real Estate. Inmobiliaria '
+            'ubicada en santa fe, Venta y alquiler de inmuebles"></head><body><main>'
+            '<h2>Castelli 900</h2><p>Venta. Precio U$S 210000</p>' + bloque + VISOR + RELLENO +
+            '</main></body></html>')
+    p = _normalizar(html)
+    assert "Living" in (p.descripcion or "") and "Patio Mediano" in p.descripcion
+    assert "Inmobiliaria ubicada" not in p.descripcion

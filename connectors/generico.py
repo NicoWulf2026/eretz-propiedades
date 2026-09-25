@@ -3947,17 +3947,19 @@ class GenericoConnector(Connector):
           extraccion, y entre el guardian de tabla y su marcado.
         """
         bloque = r"(?:p|div|section|article|td)"
+        # El rotulo puede venir envuelto en el enlace de un acordeon:
+        # <h4><a href="#collapseTwo">Descripción</a></h4> (`alianza`).
         rotulo = r"(?:h[1-6]|div|span|strong|b|p|td)"
         # `.` cubre la vocal rota que sirven algunas fuentes legacy.
         acento = r"(?:[o\u00f3]|&oacute;|.)"
         m = re.search(
-            rf"<{rotulo}[^>]*>\s*Descripci{acento}n"
+            rf"<{rotulo}[^>]*>\s*(?:<a\b[^>]*>\s*)?Descripci{acento}n"
             rf"(?:\s+(?:de|del)\s+(?:la\s+|el\s+)?[\w\u00c0-\u017f]{{3,20}}"
             rf"|\s+(?:ampliada|completa|general))?"
             # El rotulo puede venir repetido -la misma maqueta lo pone en el
             # encabezado y en la celda-, y entre el rotulo y el texto puede
             # haber envoltorios vacios.
-            rf"\s*:?\s*</{rotulo}>"
+            rf"\s*:?\s*(?:</a>\s*)?</{rotulo}>"
             rf"(?:\s*<[^>]*>\s*|\s*Descripci{acento}n[^<]{{0,25}}\s*)*?"
             rf"<{bloque}[^>]*>(.*?)</{bloque}>",
             html or "", re.I | re.S)
@@ -3975,10 +3977,10 @@ class GenericoConnector(Connector):
         # proximo encabezado. Eso es lo que se toma, acotado para no arrastrar
         # la pagina entera.
         etiqueta = re.search(
-            rf"<{rotulo}[^>]*>\s*Descripci{acento}n"
+            rf"<{rotulo}[^>]*>\s*(?:<a\b[^>]*>\s*)?Descripci{acento}n"
             rf"(?:\s+(?:de|del)\s+(?:la\s+|el\s+)?[\w\u00c0-\u017f]{{3,20}}"
             rf"|\s+(?:ampliada|completa|general))?"
-            rf"\s*:?\s*</{rotulo}>", html or "", re.I | re.S)
+            rf"\s*:?\s*(?:</a>\s*)?</{rotulo}>", html or "", re.I | re.S)
         if not etiqueta:
             return None
         # Sin scripts ANTES de cortar: `resto[:6000]` partia un `<script>` que
