@@ -36,6 +36,13 @@ Libro de familias detenidas: `ERETZ_FAMILIAS_DETENIDAS.jsonl`. Hoy: ninguna.
 
 ### 2026-09-24
 
+- **La cola repetía trabajo** (`4f377ad210`, no toca huellas). Hoy: 125
+  resultados sobre 58 agencias; 12,5 de 15,8 h de worker en agencias
+  certificadas 2+ veces el mismo día; sólo 6 nuevas. Los canarios (3 por
+  familia, ~51) eran siempre los primeros alfabéticos y cada cambio de huella
+  los rehacía (~3 h). Ahora las conocidas van de la intentada hace más tiempo
+  a la más reciente. Relanzamiento pedido con bandera OPERACION a las 21:3x.
+  **Lección**: cada cambio de huella cuesta ~3 h de canarios; agrupar cambios.
 - **Páginas de categoría guardadas como fichas** (`cfd040385a`): van a
   revisión (detalle fallido), no se borran. Regla medida sobre 157 fichas
   reales: 0 falsos positivos. `cbdestino` había guardado una con el precio de
