@@ -240,3 +240,23 @@ def test_MUERDE_la_etiqueta_suelta_de_operacion_fuera_del_menu():
 def test_dos_operaciones_sueltas_no_se_elige_ninguna():
     p = _normalizar(_ficha_op('<span class="tag">Venta</span><div class="tab">Alquiler</div>'))
     assert p.operacion is None
+
+
+# --- direccion y barrio como pares rotulo/valor --------------------------------
+# `bardi` (90 fichas): <p>Dirección</p><p>Av. Rosales 515</p> y
+# <p>Barrio</p><p>Remedios de Escalada, Lanús, Buenos Aires</p>, sin ubicacion.
+
+def test_MUERDE_direccion_y_barrio_en_pares_rotulo_valor():
+    pares = ('<div><p class="text-gray-500">Dirección</p><p class="text-sm">Av. Rosales 515</p></div>'
+             '<div><p class="text-gray-500">Barrio</p>'
+             '<p class="text-sm">Remedios de Escalada, Lanús, Buenos Aires</p></div>')
+    p = _normalizar(_ficha(pares + VISOR))
+    assert p.direccion == "Av. Rosales 515"
+    assert (p.barrio, p.ciudad, p.provincia) == ("Remedios de Escalada", "Lanús", "Buenos Aires")
+
+
+def test_un_barrio_que_repite_la_ciudad_del_par_no_se_afirma_y_ubicacion_no_es_barrio():
+    pares = ('<div><p>Ubicación</p><p>Frente</p></div>'
+             '<div><p>Barrio</p><p>Lomas De Zamora, Lomas de Zamora, Buenos Aires</p></div>')
+    p = _normalizar(_ficha(pares + VISOR))
+    assert (p.barrio, p.ciudad) == (None, "Lomas de Zamora")

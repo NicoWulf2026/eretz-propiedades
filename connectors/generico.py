@@ -2454,7 +2454,23 @@ class GenericoConnector(Connector):
 
         estado_fuente = self._estado_fuente(titulo)
         direccion = (mapaprop.get("direccion") or datos.get("direccion")
-                     or self._direccion_de(principal))
+                     or self._direccion_de(principal)
+                     or self._par_rotulado(principal, r"direcci[oó]n"))
+        # «Barrio: Remedios de Escalada, Lanús, Buenos Aires» (`bardi`): con
+        # tres tramos o mas son barrio, ciudad y provincia, como la ficha los
+        # escribe. La geografia compartida los valida despues contra el
+        # catalogo («Lanús» resuelve exacto; lo que no resuelve no se afirma).
+        barrio_par = ciudad_par = provincia_par = None
+        # Solo «Barrio»: «Ubicación» es tambien la posicion en el edificio
+        # («Ubicación: Frente» en la misma ficha de bardi).
+        ubicacion_par = self._par_rotulado(principal, r"barrio")
+        if ubicacion_par:
+            tramos = [t.strip() for t in ubicacion_par.split(",") if t.strip()]
+            barrio_par = tramos[0] if tramos else None
+            if len(tramos) >= 3:
+                ciudad_par, provincia_par = tramos[1], tramos[-1]
+                if barrio_par.casefold() == ciudad_par.casefold():
+                    barrio_par = None
         if (not direccion and crudo.get("wordpress_category_catalog") and titulo
                 and re.search(r"\b\d{2,5}\b", titulo)
                 and len(titulo) <= 120):
@@ -2525,9 +2541,10 @@ class GenericoConnector(Connector):
             operacion=campos["operacion"],
             tipo_propiedad=campos["tipo_propiedad"],
             direccion=direccion,
-            barrio=mapaprop.get("barrio") or datos.get("barrio"),
-            ciudad=mapaprop.get("ciudad") or datos.get("ciudad"),
-            provincia=mapaprop.get("provincia") or datos.get("provincia"),
+            barrio=mapaprop.get("barrio") or datos.get("barrio") or barrio_par,
+            ciudad=mapaprop.get("ciudad") or datos.get("ciudad") or ciudad_par,
+            provincia=(mapaprop.get("provincia") or datos.get("provincia")
+                       or provincia_par),
             latitud=lat,
             longitud=lon,
             dormitorios=campos["dormitorios"],
@@ -3148,6 +3165,20 @@ class GenericoConnector(Connector):
             if texto and len(texto) >= 4:
                 return texto
         return None
+
+    @staticmethod
+    def _par_rotulado(html: str, etiqueta: str) -> str | None:
+        """El valor de un par rotulo/valor: <p>Dirección</p><p>Av. Rosales 515</p>.
+
+        Solo la estructura -rotulo solo en su elemento, valor en el siguiente
+        y sin marcado adentro-: el texto aplanado no dice donde termina el
+        valor. `bardi` publica asi direccion y barrio en sus 90 fichas.
+        """
+        m = re.search(
+            rf"<(p|span|dt|th|td|div|label|strong|h[1-6])\b[^>]*>\s*(?:{etiqueta})\s*:?\s*"
+            rf"</\1>\s*<(p|span|dd|td|div)\b[^>]*>\s*([^<>]{{2,150}}?)\s*</\2>",
+            html or "", re.I)
+        return limpiar(unescape(m.group(3))) if m else None
 
     @staticmethod
     def _titulo_de_la_ficha(html: str, datos: dict, fuente: Fuente) -> str | None:
