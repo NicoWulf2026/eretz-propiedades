@@ -2506,7 +2506,12 @@ class GenericoConnector(Connector):
             source_url=url,
             connector=self.nombre,
             titulo=titulo,
-            descripcion=(descripcion or "")[:4000] or None,
+            # «627 Visitas al momento» al final de la descripcion (`ferrari`,
+            # `bottega`, `diaz collins`: 173 fichas) es un contador que nuestra
+            # propia visita incrementa: con el, la segunda corrida nunca es
+            # igual a la primera. No describe a la propiedad.
+            descripcion=(re.sub(r"\s*\b\d[\d.,]*\s+visitas\s+al\s+momento\s*$", "",
+                                descripcion or "", flags=re.I)[:4000] or None),
             precio=precio,
             moneda=moneda,
             operacion=campos["operacion"],

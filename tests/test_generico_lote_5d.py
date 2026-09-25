@@ -147,3 +147,16 @@ def test_un_barrio_que_repite_la_ciudad_no_se_afirma():
             '<p>Venta. 3 dormitorios. Precio USD 100.000</p>' + VISOR + RELLENO +
             '</main></body></html>')
     assert _normalizar(html).barrio is None
+
+
+# --- contador de visitas pegado a la descripcion ------------------------------
+# `ferrari` (149 de 157), `bottega` (22 de 30), `diaz collins`: la descripcion
+# termina en «627 Visitas al momento» y nuestra propia visita lo sube a 628, asi
+# que la segunda corrida nunca es igual a la primera: NEEDS_FIX no idempotente.
+
+def test_MUERDE_el_contador_de_visitas_no_es_parte_de_la_descripcion():
+    cuerpo = ('<h3>Descripción</h3><p>Departamento de un dormitorio al frente, luminoso, '
+              'con balcón y cocina integrada. 627 Visitas al momento</p>')
+    p = _normalizar(_ficha(cuerpo + VISOR))
+    assert p.descripcion.endswith("cocina integrada.")
+    assert "Visitas" not in p.descripcion
