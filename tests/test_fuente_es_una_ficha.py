@@ -76,20 +76,32 @@ def test_MUERDE_la_raiz_de_un_marketplace_no_se_propone(monkeypatch):
     """El error que la primera versión sí cometió.
 
     Sin comprobar propiedad, subir de una ficha a la raíz cambia UNA propiedad
-    ajena por TODAS. Y no alcanza con `es_portal_url()`: no conoce
-    `mercado-unico.com`, que es justamente el caso.
+    ajena por TODAS. Y no alcanza con `es_portal_url()`: no conoce a todos los
+    portales. `mercado-unico.com` era el caso real y ya está listado (25-09);
+    el camino que se prueba acá es el de un marketplace que la lista no conoce.
     """
     import fuente_es_una_ficha as modulo
 
-    html = ('<title>Mercado Unico - Portal inmobiliario</title>'
+    html = ('<title>Mercadito Regional - Portal inmobiliario</title>'
             '<a href="/propiedades/1">x</a><a href="/propiedades">todas</a>')
     monkeypatch.setattr(modulo, "bajar",
-                        lambda u, limite=0: (200, "https://www.mercado-unico.com/", html))
+                        lambda u, limite=0: (200, "https://www.mercadito-regional.com/", html))
+    señal = modulo.verificar_raiz(
+        "https://www.mercadito-regional.com/propiedades/69019270b5bada00113d470b",
+        "Danisa Robledo Servicios Inmobiliarios")
+    assert señal["propuesta"] is None
+    assert "no nombra a la agencia" in señal["porque"]
+
+
+def test_mercado_unico_ya_se_reconoce_como_portal(monkeypatch):
+    import fuente_es_una_ficha as modulo
+
+    monkeypatch.setattr(modulo, "bajar", lambda u, limite=0: (200, u, "<title>x</title>"))
     señal = modulo.verificar_raiz(
         "https://www.mercado-unico.com/propiedades/69019270b5bada00113d470b",
         "Danisa Robledo Servicios Inmobiliarios")
     assert señal["propuesta"] is None
-    assert "no nombra a la agencia" in señal["porque"]
+    assert "portal" in señal["porque"]
 
 
 def test_si_hay_un_catalogo_que_declara_inventario_si_se_propone(monkeypatch):
