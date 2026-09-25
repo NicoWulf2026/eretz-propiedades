@@ -47,11 +47,21 @@ se produjo durante el cambio queda sin `strategy_fingerprint`. Entonces:
    nuevas intercaladas desde el inicio; relanzado 25-09 01:17). Medir: la
    mitad de los resultados deberían ser agencias nunca certificadas, y 0 h en
    agencias repetidas el mismo día. Agrupar cambios de huella.
-1. **`NEEDS_FIX` por fichas que no bajan** (30 agencias, 25 con esa única
-   razón). Las fallas son las MISMAS en las dos corridas: sistemáticas, no
-   pasajeras. Casi todos los resultados son del 21-09, anteriores a los
-   arreglos del 23; diagnóstico liviano con el código de hoy en
-   `scratchpad/diag_detalles.py`. Separar lo ya arreglado de lo que sigue.
+1. **`NEEDS_FIX` por fichas que no bajan** — clasificado 25-09 11:50 (39
+   agencias, 26 con esa única razón; diagnóstico con el código de hoy):
+   - identidad = portal o directorio: `fernandez marull` (propia),
+     `benjamin ferreyra` (proppies), `danisa robledo` (mercado-unico),
+     `casagrande` (smartservices.uy), `gama` (365litoralargentino):
+     RESUELTO en `62dbc899c4` + `eeabc94083`.
+   - ya arreglado por el código actual: `corporacion` (3/3 ok).
+   - `generico`, al lote 5d: `forchino` (19 fichas reales; fotos como
+     `background-image: url(fotos/imagen_…)` que el extractor no ve),
+     `benitez` (7, 1 foto), `cometto` (40, título «Buscas Propiedades?»),
+     `del parque` (`og:type=article` en fichas reales, `contenido.asp?id=`),
+     `bunader` (enumera `/propiedades/venta` y no las fichas).
+   - `estela d onofrio`: hoy elige `wordpress` y da SIN_INVENTARIO; mirar.
+   Medido: 71 fichas con precio+operación rechazadas sólo por fotos, en 7
+   agencias (30 de `corporacion`, ya resueltas).
 2. **Corridas que no terminan en estado OK** (29) y **cero inventario no
    demostrado** (27): siguientes clases de `NEEDS_FIX` por tamaño.
 3. **Regression Gate**: `python scripts/comparar_con_linea_base.py
