@@ -642,6 +642,19 @@ def clasificar(resultado: dict[str, Any]) -> dict[str, Any]:
         # segunda corrida no vio, 1 tiene la paginacion marcada. Es angosto, y
         # se arregla igual porque una evidencia falsa manda a buscar al lugar
         # equivocado.
+        # Si la segunda corrida ni siquiera llego al sitio, lo que «falta» es
+        # todo lo que no pudo ver. `drovetta` (2026-09-25): la 1 enumero 192,
+        # la 2 recibio HTTP 500 en el descubrimiento y esta rama paraba la
+        # familia `tokko` entera por inventario inestable. La regla de fuente
+        # inaccesible ya existia, mas abajo, y esta la tapaba.
+        segunda = resultado.get("run2") or {}
+        if segunda.get("estado") in ("ERROR_DISCOVERY", "ERROR_LISTADO"):
+            return _veredicto(
+                CONTINUE, resultado, "fuente_inaccesible", RADIO_AGENCIA,
+                f"la segunda corrida no llego al sitio "
+                f"({str(segunda.get('detalle') or 'sin detalle')[:60]}); las "
+                f"{faltantes} propiedades que faltan son las que no pudo ver, "
+                f"no un inventario que se mueve")
         cortadas = [lado for lado in ("run1", "run2")
                     if (resultado.get(lado) or {}).get("paginacion_interrumpida")]
         if cortadas:
