@@ -92,7 +92,9 @@ se produjo durante el cambio queda sin `strategy_fingerprint`. Entonces:
    trae montos (por unidad, alquiler anual). El auditor cuenta el precio como
    provisto y la agencia cae en NEEDS_FIX; dos seguidas dispararon el «corte
    por lote» que detiene TODA la cola (`casamia`, `domus`, 25-09 06:23;
-   diferida firmada 06:25). Medir cuántas fichas wasi dicen «Consultar».
+   diferida firmada 06:25). Radio medido: 3 fichas en 3 agencias de 1.326
+   fichas wasi (casamia, domus, varesse). Bajo; agrupar con la próxima
+   ventana compartida.
 5e. Señal de operación sin precio: RESUELTO en `da4df01820`. Quedan para
    la próxima ventana compartida: 5 (título repetido) y re-evaluar
    `ficha_sin_contenido` después del descarte de descripciones.
