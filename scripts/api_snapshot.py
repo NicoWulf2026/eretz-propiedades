@@ -238,7 +238,10 @@ def main() -> int:
     # escritura tiene que aplicar el indice de lectura.
     ajenas = agencias_con_web_ajena(Path(args.directorio))
     geo = _leer_jsonl(Path(args.cobertura))
-    frescas = mas_frescas(args.paquetes)
+    # Tambien los NEEDS_FIX que solo fallan por campos, con sus campos
+    # EXTRACTED y valores presentes: `blanco` servia 1.127 titulos «Blanco
+    # Propiedades» del 03-09 teniendo los reales en su paquete del 25-09.
+    frescas = mas_frescas(args.paquetes, parciales=True)
     gate = _leer_jsonl(Path(args.gate))
 
     salida.mkdir(parents=True, exist_ok=True)
@@ -298,6 +301,7 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
     imagenes_compartidas = 0
     imagenes_repetidas_sin_evidencia = 0
     fichas_sin_foto_propia = 0
+    filas_con_frescura_parcial = 0
     anterior: tuple[str | None, int | None] = (None, None)
     # En orden de `hash_dedup`, que es el `id` de la API. La busqueda rankeada
     # elige su ventana de candidatos «por id» -una muestra estable y diversa:
@@ -309,9 +313,10 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
     for (crudo,) in origen.execute(
             "select row_json from rows where status = 'CANDIDATE' "
             "order by hash_dedup"):
-        cruda = fusionar(json.loads(crudo),
-                         frescas.get(json.loads(crudo).get("hash_dedup")),
-                         CAMPOS_FUSIONABLES)
+        fresca = frescas.get(json.loads(crudo).get("hash_dedup"))
+        if fresca is not None and "_campos_confiables" in fresca:
+            filas_con_frescura_parcial += 1
+        cruda = fusionar(json.loads(crudo), fresca, CAMPOS_FUSIONABLES)
         hash_dedup = cruda.get("hash_dedup")
         canonical = cruda.get("canonical_agency_id")
         if canonical in ajenas:
@@ -410,6 +415,7 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
         "descripciones_del_sitio_descartadas": descripciones_del_sitio,
         "tipos_cochera_por_accesorio_corregidos": tipos_cochera_corregidos,
         "textos_con_entidades_limpiados": textos_limpiados,
+        "filas_con_frescura_parcial": filas_con_frescura_parcial,
         "imagenes_repetidas_sin_evidencia_de_descarte": imagenes_repetidas_sin_evidencia,
         "fichas_que_quedaron_sin_foto_propia": fichas_sin_foto_propia,
         "fichas_para_ser_compartida": FICHAS_PARA_SER_COMPARTIDA,

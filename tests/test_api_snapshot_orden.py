@@ -48,8 +48,8 @@ def _construir(tmp_path, monkeypatch, hashes):
         "snap", "--db", str(origen), "--gate", str(vacio),
         "--cobertura", str(vacio), "--salida", str(salida)])
     monkeypatch.setattr(api_snapshot, "exigir_base_vigente", lambda r: Path(r))
-    monkeypatch.setattr(api_snapshot, "mas_frescas", lambda root: {})
-    monkeypatch.setattr(api_snapshot, "agencias_con_web_ajena", lambda root: set())
+    monkeypatch.setattr(api_snapshot, "mas_frescas", lambda root, **_: {})
+    monkeypatch.setattr(api_snapshot, "agencias_con_web_ajena", lambda root, **_: set())
     assert api_snapshot.main() == 0
     return sqlite3.connect(salida / "ERETZ_API_SNAPSHOT.sqlite3")
 

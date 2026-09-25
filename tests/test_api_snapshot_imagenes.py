@@ -45,8 +45,8 @@ def _correr(tmp_path, filas, monkeypatch, values=None, fresh=None, gate=None):
         "snap", "--db", str(db), "--gate", str(gate_path),
         "--cobertura", str(vacio), "--salida", str(salida)])
     monkeypatch.setattr(api_snapshot, "exigir_base_vigente", lambda r: Path(r))
-    monkeypatch.setattr(api_snapshot, 'mas_frescas', lambda root: fresh or {})
-    monkeypatch.setattr(api_snapshot, 'agencias_con_web_ajena', lambda root: set())
+    monkeypatch.setattr(api_snapshot, 'mas_frescas', lambda root, **_: fresh or {})
+    monkeypatch.setattr(api_snapshot, 'agencias_con_web_ajena', lambda root, **_: set())
     assert api_snapshot.main() == 0
     resumen = json.loads(
         (salida / "ERETZ_API_SNAPSHOT_SUMMARY.json").read_text(encoding="utf-8"))
@@ -132,8 +132,8 @@ def test_failed_snapshot_build_preserves_the_served_artifact(tmp_path, monkeypat
     monkeypatch.setattr(sys, 'argv', ['snap', '--db', str(db), '--salida', str(tmp_path), '--replace-derived'])
     monkeypatch.setattr(api_snapshot, 'exigir_base_vigente', lambda path: Path(path))
     monkeypatch.setattr(api_snapshot, '_leer_jsonl', lambda *args: {})
-    monkeypatch.setattr(api_snapshot, 'mas_frescas', lambda root: {})
-    monkeypatch.setattr(api_snapshot, 'agencias_con_web_ajena', lambda root: set())
+    monkeypatch.setattr(api_snapshot, 'mas_frescas', lambda root, **_: {})
+    monkeypatch.setattr(api_snapshot, 'agencias_con_web_ajena', lambda root, **_: set())
     def failed(*args):
         raise RuntimeError('intentional fixture failure')
     monkeypatch.setattr(api_snapshot, 'fila_de_api', failed)

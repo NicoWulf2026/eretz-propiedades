@@ -309,3 +309,101 @@ def test_la_descripcion_descartada_por_el_runner_no_vuelve_de_la_base_vieja():
     fresca = {"descripcion": None,
               "extra": {"descripcion_descartada": "compartida_por_la_agencia"}}
     assert fusionar(vieja, fresca, CAMPOS_FUSIONABLES)["descripcion"] is None
+
+
+# --- NEEDS_FIX: sus campos EXTRACTED, y sólo si nada cuestiona el inventario ---
+# `blanco` sirve 1.204 títulos «Blanco Propiedades» de la preingestión del
+# 03-09; su paquete del 25-09 trae los reales y cae en NEEDS_FIX por precio,
+# moneda y ciudad, no por texto.
+
+def _parcial(folder, reasons, coverage, row, status="NEEDS_FIX", identity="READY"):
+    folder.mkdir()
+    (folder / "certification.json").write_text(json.dumps({
+        "canonical_agency_id": "roomix:blanco", "status": status,
+        "identity_status": identity, "checked_at": "2026-09-25T07:51:25",
+        "reasons": reasons,
+        "field_coverage": {c: {"state": s} for c, s in coverage.items()}}),
+        encoding="utf-8")
+    (folder / "properties_run1.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
+
+
+COBERTURA_BLANCO = {"titulo": "EXTRACTED", "descripcion": "EXTRACTED",
+                    "operacion": "EXTRACTED", "precio": "EXTRACTION_FAILED",
+                    "moneda": "EXTRACTION_FAILED", "ciudad": "EXTRACTION_FAILED",
+                    "banos": "EXTRACTED"}
+FILA_BLANCO = {"hash_dedup": "h1", "titulo": "Casa en Pilar", "descripcion": "Casa real.",
+               "operacion": "venta", "precio": None, "moneda": None, "ciudad": None,
+               "banos": 3, "extra": {"atributos_descartados": "precio"}}
+VIEJA_BLANCO = {"hash_dedup": "h1", "titulo": "Blanco Propiedades", "descripcion": "Texto viejo",
+                "operacion": "venta", "precio": 250000, "moneda": "USD",
+                "ciudad": "Pilar", "banos": 2, "extra": {"viejo": True}}
+
+
+def test_MUERDE_un_needs_fix_por_campos_aporta_sus_campos_extraidos(tmp_path):
+    _parcial(tmp_path / "blanco", ["one or more listing details failed",
+                                   "source fields not extracted: precio, moneda, ciudad"],
+             COBERTURA_BLANCO, FILA_BLANCO)
+    frescas = mas_frescas(tmp_path, parciales=True)
+    m = fusionar(VIEJA_BLANCO, frescas.get("h1"), CAMPOS_FUSIONABLES)
+    assert (m["titulo"], m["descripcion"], m["banos"]) == ("Casa en Pilar", "Casa real.", 3)
+    # Lo que ese cierre no extrajo sigue siendo la lectura anterior, aun con
+    # un descarte anotado: ese campo no es evidencia aceptada.
+    assert (m["precio"], m["moneda"], m["ciudad"]) == (250000, "USD", "Pilar")
+    assert m["extra"] == {"viejo": True}
+
+
+def test_por_defecto_un_needs_fix_sigue_sin_leerse(tmp_path):
+    _parcial(tmp_path / "blanco", ["source fields not extracted: precio"],
+             COBERTURA_BLANCO, FILA_BLANCO)
+    assert mas_frescas(tmp_path) == {}
+
+
+@pytest.mark.parametrize("reason", [
+    "second run is not idempotent", "run inventories differ",
+    "inventory collapsed by more than 80% against baseline",
+    "one or both runs did not finish with connector state OK",
+    "zero inventory was not exhaustively proven"])
+def test_un_needs_fix_que_cuestiona_el_inventario_no_aporta_nada(tmp_path, reason):
+    _parcial(tmp_path / "blanco", ["source fields not extracted: precio", reason],
+             COBERTURA_BLANCO, FILA_BLANCO)
+    assert mas_frescas(tmp_path, parciales=True) == {}
+
+
+@pytest.mark.parametrize("status,identity", [
+    ("NEEDS_FIX", "PENDING"), ("BLOCKED_EXTERNAL", "READY"), ("IDENTITY_PENDING", "READY")])
+def test_sin_identidad_o_sin_cierre_parcial_no_aporta_nada(tmp_path, status, identity):
+    _parcial(tmp_path / "blanco", ["source fields not extracted: precio"],
+             COBERTURA_BLANCO, FILA_BLANCO, status=status, identity=identity)
+    assert mas_frescas(tmp_path, parciales=True) == {}
+
+
+def test_precio_y_moneda_se_toman_juntos_o_ninguno(tmp_path):
+    cobertura = dict(COBERTURA_BLANCO, precio="EXTRACTED")
+    fila = dict(FILA_BLANCO, precio=300000, moneda="ARS")
+    _parcial(tmp_path / "blanco", ["source fields not extracted: moneda"], cobertura, fila)
+    m = fusionar(VIEJA_BLANCO, mas_frescas(tmp_path, parciales=True)["h1"], CAMPOS_FUSIONABLES)
+    assert (m["precio"], m["moneda"]) == (250000, "USD")
+
+
+def test_un_cierre_certificado_no_se_restringe(tmp_path):
+    _parcial(tmp_path / "blanco", [], COBERTURA_BLANCO, FILA_BLANCO,
+             status="CERTIFIED_COMPLETE")
+    m = fusionar(VIEJA_BLANCO, mas_frescas(tmp_path, parciales=True)["h1"], CAMPOS_FUSIONABLES)
+    assert (m["precio"], m["moneda"], m["titulo"]) == (None, None, "Casa en Pilar")
+
+
+def test_MUERDE_un_vacio_de_un_cierre_parcial_no_borra_lo_leido(tmp_path):
+    """`conti` vaciaba 86 operaciones: su cierre fallo, su vacio no prueba nada."""
+    fila = dict(FILA_BLANCO, operacion=None, banos=None)
+    _parcial(tmp_path / "blanco", ["source fields not extracted: precio"],
+             COBERTURA_BLANCO, fila)
+    m = fusionar(VIEJA_BLANCO, mas_frescas(tmp_path, parciales=True)["h1"], CAMPOS_FUSIONABLES)
+    assert (m["operacion"], m["banos"], m["titulo"]) == ("venta", 2, "Casa en Pilar")
+
+
+def test_un_precio_parcial_sin_moneda_no_se_casa_con_la_moneda_vieja(tmp_path):
+    cobertura = dict(COBERTURA_BLANCO, precio="EXTRACTED", moneda="EXTRACTED")
+    fila = dict(FILA_BLANCO, precio=300000, moneda=None)
+    _parcial(tmp_path / "blanco", ["source fields not extracted: ciudad"], cobertura, fila)
+    m = fusionar(VIEJA_BLANCO, mas_frescas(tmp_path, parciales=True)["h1"], CAMPOS_FUSIONABLES)
+    assert (m["precio"], m["moneda"]) == (250000, "USD")

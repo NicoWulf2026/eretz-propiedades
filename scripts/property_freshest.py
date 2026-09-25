@@ -43,6 +43,14 @@ CAMPOS_VOLATILES = frozenset({'precio', 'moneda', 'operacion', 'titulo',
 # Cierres utilizables para comparar lecturas; BEST_AVAILABLE no afirma completo.
 CIERRES_CONFIABLES = ("CERTIFIED_COMPLETE", "CERTIFIED_BEST_AVAILABLE")
 
+# Un NEEDS_FIX que solo falla por campos leyo cada ficha que conservo, y su
+# field_coverage dice campo por campo que extrajo. Esos campos son una
+# lectura posterior aceptada; el resto no. Si algo cuestiona el inventario o
+# su repeticion (no idempotente, inventarios distintos, colapso), nada.
+CIERRE_PARCIAL = "NEEDS_FIX"
+MOTIVOS_DE_CAMPO = ("source fields not extracted",
+                    "one or more listing details failed")
+
 # Los campos que se toman de la version mas fresca. La identidad no entra:
 # `hash_dedup` y `source_url` definen a la propiedad y cambiarlos seria otra
 # propiedad, no la misma mas nueva.
@@ -51,6 +59,25 @@ CAMPOS_FUSIONABLES = ("titulo", "descripcion", "operacion", "tipo_propiedad",
                       "direccion", "superficie_total", "superficie_cubierta",
                       "ambientes", "dormitorios", "banos", "latitud",
                       "longitud", "imagenes")
+
+
+def _campos_confiables(paquete: dict[str, Any]) -> frozenset[str]:
+    """Los campos que un cierre parcial puede aportar; vacio si ninguno."""
+    motivos = paquete.get("reasons")
+    if (paquete.get("status") != CIERRE_PARCIAL
+            or paquete.get("identity_status") != "READY"
+            or not isinstance(motivos, list) or not motivos
+            or not all(str(m).startswith(MOTIVOS_DE_CAMPO) for m in motivos)):
+        return frozenset()
+    cobertura = paquete.get("field_coverage")
+    if not isinstance(cobertura, dict):
+        return frozenset()
+    campos = {c for c, v in cobertura.items()
+              if isinstance(v, dict) and v.get("state") == "EXTRACTED"}
+    # Un precio sin su moneda fabricaria una oferta: juntos o ninguno.
+    if not {"precio", "moneda"} <= campos:
+        campos -= {"precio", "moneda"}
+    return frozenset(campos)
 
 
 
@@ -119,7 +146,8 @@ def _package_rows(folder: Path, certificate: dict[str, Any]) -> list[dict[str, A
     return next((rows for rows in runs if rows), [])
 
 
-def mas_frescas(paquetes: Path) -> dict[str, dict[str, Any]]:
+def mas_frescas(paquetes: Path,
+                parciales: bool = False) -> dict[str, dict[str, Any]]:
     """Por `hash_dedup`, la propiedad mas reciente de los paquetes.
 
     Si una propiedad aparece en dos paquetes -no deberia, pero el mundo no
@@ -139,11 +167,16 @@ def mas_frescas(paquetes: Path) -> dict[str, dict[str, Any]]:
             raise ValueError('Invalid certification JSON') from None
         if not isinstance(paquete, dict):
             raise ValueError('Certification must be an object')
+        confiables = None
         if paquete.get("status") not in CIERRES_CONFIABLES:
-            continue
+            confiables = _campos_confiables(paquete) if parciales else None
+            if not confiables:
+                continue
         instante = _certification_time(paquete.get("checked_at"))
         cuando = instante.isoformat()
         for fila in _package_rows(carpeta, paquete):
+            if confiables is not None:
+                fila = dict(fila, _campos_confiables=sorted(confiables))
             h = fila.get("hash_dedup")
             if not h:
                 continue
@@ -185,6 +218,19 @@ def fusionar(vieja: dict[str, Any], fresca: dict[str, Any] | None,
     """
     if not fresca:
         return vieja
+    confiables = fresca.get("_campos_confiables")
+    if confiables is not None:
+        # Cierre parcial: solo lo que extrajo; su `extra` describe campos
+        # que aca no se toman, y mezclarlo explicaria valores que no son.
+        # Y solo valores presentes: un vacio de un cierre que fallo no
+        # demuestra ausencia (`conti` vaciaba 86 operaciones), y un precio
+        # sin moneda se toma junto con ella o no se toma.
+        presentes = {c for c in confiables
+                     if fresca.get(c) not in (None, "", [])}
+        if not {"precio", "moneda"} <= presentes:
+            presentes -= {"precio", "moneda"}
+        campos = tuple(c for c in campos if c in presentes)
+        fresca = {k: v for k, v in fresca.items() if k != "extra"}
     rechazados = set()
     descartes = (fresca.get("extra") or {}).get("atributos_descartados")
     if isinstance(descartes, str):

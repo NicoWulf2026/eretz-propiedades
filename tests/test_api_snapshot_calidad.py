@@ -17,7 +17,7 @@ sys.path.insert(0, str(RAIZ))
 ESLOGAN = "Silvina Hill Propiedades es una inmobiliaria de la ciudad de Tucuman, con 20 anos."
 
 
-def _correr(tmp_path, monkeypatch, filas):
+def _correr(tmp_path, monkeypatch, filas, frescas=None):
     origen = tmp_path / "pre.sqlite3"
     con = sqlite3.connect(origen)
     con.execute("create table rows (row_json text, canonical_id text, "
@@ -40,13 +40,16 @@ def _correr(tmp_path, monkeypatch, filas):
         "snap", "--db", str(origen), "--gate", str(vacio),
         "--cobertura", str(vacio), "--salida", str(salida)])
     monkeypatch.setattr(api_snapshot, "exigir_base_vigente", lambda r: Path(r))
-    monkeypatch.setattr(api_snapshot, "mas_frescas", lambda root: {})
-    monkeypatch.setattr(api_snapshot, "agencias_con_web_ajena", lambda root: set())
+    llamadas = []
+    monkeypatch.setattr(api_snapshot, "mas_frescas",
+                        lambda root, **k: llamadas.append(k) or (frescas or {}))
+    monkeypatch.setattr(api_snapshot, "agencias_con_web_ajena", lambda root, **_: set())
     assert api_snapshot.main() == 0
     resumen = json.loads((salida / "ERETZ_API_SNAPSHOT_SUMMARY.json").read_text(encoding="utf-8"))
     con = sqlite3.connect(salida / "ERETZ_API_SNAPSHOT.sqlite3")
     docs = {i: (t, d, tp) for i, t, d, tp in con.execute(
         "select id, titulo, descripcion, tipo_propiedad from propiedades")}
+    assert llamadas == [{"parciales": True}]
     return resumen, docs
 
 
@@ -89,3 +92,14 @@ def test_MUERDE_las_entidades_html_no_llegan_al_texto_servido(tmp_path, monkeypa
     assert docs["h000"][1] == "Departamento de 2 Amb. en PH\nCon patio y cochera."
     assert docs["h001"][0] == "Casa 3 < 4 dormitorios"
     assert resumen["textos_con_entidades_limpiados"] == 2
+
+
+def test_MUERDE_la_snapshot_toma_los_campos_extraidos_de_un_cierre_parcial(tmp_path, monkeypatch):
+    """`blanco`: NEEDS_FIX por precio, moneda y ciudad; sus titulos reales si."""
+    frescas = {"h000": {"hash_dedup": "h000", "titulo": "Casa en Pilar",
+                        "_campos_confiables": ["titulo"]}}
+    resumen, docs = _correr(tmp_path, monkeypatch,
+                            [("roomix:blanco", "Blanco Propiedades", "Texto propio largo uno")],
+                            frescas)
+    assert docs["h000"][0] == "Casa en Pilar"
+    assert resumen["filas_con_frescura_parcial"] == 1
