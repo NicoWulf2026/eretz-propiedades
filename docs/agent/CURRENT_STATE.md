@@ -247,6 +247,13 @@ Nada de esto se ejecuta sin el usuario; se consolida acá.
 - Credencial de mínimo privilegio para `eretz_direct_property_writer`:
   `BLOCKED_EXTERNAL_CREDENTIAL` (ver `MASTER_PROGRESS.md`, checkpoint 08-27).
 - Merge a `main` / deploy: no corresponde todavía.
+- **Decisión de costo (no productiva, pero gasta dinero)**: 140 agencias en
+  `IDENTITY_PENDING` desde el 31-08/01-09 (134 sin clave ERETZ resuelta, 111
+  sin web oficial conocida). Resolverlas necesita la fase C de
+  `scripts/run_web_discovery.py` (Brave, paga). Costo medido el 14-09: USD
+  2,38 por 250 agencias → ~USD 1,35 para estas 140. No se corrió: además,
+  `search_provider.py` carga `.env` por su cuenta y podría activar la fase paga
+  sin que se note.
 - **Snapshot servida de la API local** (`D:\INMO CAPITAL\ERETZ_API_CONTRACT\
   ERETZ_API_SNAPSHOT.sqlite3`): hoy es una `api_snapshot_v2` del 08-09. Hay
   una v4 del 24-09 construida y verificada (57.665 filas, `integrity_check`
