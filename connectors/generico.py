@@ -3293,6 +3293,15 @@ class GenericoConnector(Connector):
                         r">\s*en\s+(alquiler\s+temporario|venta|alquiler)\s*<",
                         marcado, re.I)}
         halladas = {re.sub(r"_+", "_", h) for h in halladas}
+        if not halladas:
+            # Sin «En»: `cantale` (<span class="rounded-full …">Venta</span>) y
+            # `altos` (<span class="tag tag--op">Venta</span>). Solo en <span>
+            # o <div> -el menu va en <a>- y con la misma regla de una sola
+            # operacion. Muestra de 25 fichas que ya tenian operacion: donde
+            # la etiqueta aparece (6), coincide en las 6.
+            halladas = {re.sub(r"\s+", "_", m.group(1).lower()) for m in re.finditer(
+                r"<(?:span|div)\b[^>]*>\s*(alquiler\s+temporario|venta|alquiler)\s*"
+                r"</(?:span|div)>", marcado, re.I)}
         return halladas.pop() if len(halladas) == 1 else None
 
     @staticmethod

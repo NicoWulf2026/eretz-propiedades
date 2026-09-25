@@ -218,3 +218,25 @@ def test_MUERDE_el_tipo_como_parrafo_de_la_ficha_y_sin_cochera_no_es_tipo():
             '<p>Venta USD 100.000. 3 ambientes, 2 dormitorios.</p>' + VISOR + RELLENO +
             '</main></body></html>')
     assert _normalizar(html).tipo_propiedad == "departamento"
+
+
+# --- la operacion como etiqueta suelta ------------------------------------------
+# `cantale` (<span class="rounded-full …">Venta</span>) y `altos`
+# (<span class="tag tag--op">Venta</span>): sin «En», que es lo que la regla
+# anterior exigia para no confundirla con el menu. El menu va en <a>.
+
+def _ficha_op(badges: str) -> str:
+    return ('<html><body><nav><a href="/listing?purpose=sale">Venta</a>'
+            '<a href="/listing?purpose=rent">Alquiler</a></nav><main>'
+            '<h2>Lote 866 x 3418 orientacion este</h2>' + badges +
+            '<p>Precio USD 45.000. Lote de 866 m2.</p>' + VISOR + RELLENO + '</main></body></html>')
+
+
+def test_MUERDE_la_etiqueta_suelta_de_operacion_fuera_del_menu():
+    p = _normalizar(_ficha_op('<span class="rounded-full bg-blue-600"> Venta </span>'))
+    assert p.operacion == "venta"
+
+
+def test_dos_operaciones_sueltas_no_se_elige_ninguna():
+    p = _normalizar(_ficha_op('<span class="tag">Venta</span><div class="tab">Alquiler</div>'))
+    assert p.operacion is None
