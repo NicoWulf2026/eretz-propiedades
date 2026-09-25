@@ -184,9 +184,13 @@ RE_FICHA_RAIZ = re.compile(
 
 # Rutas de orden del LISTADO que por tener varios guiones parecen slugs de
 # ficha. En BuscadorProp eran dos propiedades fantasma por inmobiliaria.
+#
+# Y `/cdn-cgi/`, la ruta reservada de Cloudflare: nunca es contenido del sitio.
+# Su «AI Labyrinth» siembra enlaces a articulos inventados para los bots
+# (`fernandez marull` 59 de 59, `crestale` 59 de 131, el 25-09).
 RE_NO_FICHA = re.compile(
     r"/propiedades/(?:destacadas|mas-nuevas|mas-viejas|"
-    r"precio-(?:mayor|menor)-a-(?:mayor|menor))/?$", re.I)
+    r"precio-(?:mayor|menor)-a-(?:mayor|menor))/?$|^/cdn-cgi/", re.I)
 
 # Traduccion de la FORMA descubierta de una fuente a un patron de ruta.
 # La forma la produjo el descubrimiento (/p-1749_departamento -> /<slug-con-id>)
@@ -308,6 +312,9 @@ ATRIBUTOS_SIN_PRECIO = 4
 RE_IMG_ATRIBUTO = re.compile(
     r"<img[^>]{0,400}?\s(?:data-src|data-lazy-src|data-original|src)="
     r"(?:\"([^\"]{4,400})\"|'([^']{4,400})')", re.I)
+# El enlace del visor de fotos (lightbox): `<a href="fotos/x.jpeg">`.
+RE_ENLACE_A_FOTO = re.compile(
+    r"<a[^>]{0,400}?\shref=(?:\"([^\"]{4,400})\"|'([^']{4,400})')", re.I)
 
 # Un descriptor de `srcset`: el ancho o la densidad que va DESPUES de la url.
 RE_DESCRIPTOR = re.compile(r"^\d+(?:\.\d+)?[wx]$", re.I)
@@ -2323,6 +2330,13 @@ class GenericoConnector(Connector):
                 image for image in imagenes
                 if not re.search(r"/header-(?:venta|alquiler)(?:[-.])", image, re.I)
             ])
+        if not gallery_images and len(imagenes) < FOTOS_MINIMAS:
+            # Solo como respaldo: con fotos propias el visor suele enlazar la
+            # version grande de las mismas, y sumarlas duplicaria la galeria.
+            for u in self._fotos_de_enlaces(principal, url):
+                if u not in vistas:
+                    vistas.add(u)
+                    imagenes.append(u)
 
         if crudo.get("por_forma") and not self._confirma_ficha(
                 html, texto, precio, imagenes, datos.get("tipo_ld"),
@@ -3069,6 +3083,32 @@ class GenericoConnector(Connector):
             if exige_extension and not RE_EXTENSION.search(u):
                 continue
             if u in vistas or RE_NO_ES_FOTO.search(u):
+                continue
+            vistas.add(u)
+            salida.append(u)
+        return salida
+
+    @staticmethod
+    def _fotos_de_enlaces(html: str, url: str) -> list[str]:
+        """Las fotos que la ficha solo publica como enlace de su visor.
+
+        `forchino` perdio 19 fichas reales -precio, operacion, 20 fotos- por
+        no llegar a FOTOS_MINIMAS: el `<img>` del carrusel esta comentado y
+        las fotos quedan como `<a href="fotos/imagen_…jpeg" class=
+        "popup-image">` y como fondo CSS. Un enlace no es una imagen por
+        construccion, asi que se exige la extension, como a lo que se pesca
+        del texto suelto.
+        """
+        salida, vistas = [], set()
+        for m in RE_ENLACE_A_FOTO.finditer(html or ""):
+            u = _url_del_atributo(m.group(1) or m.group(2) or "")
+            if not u:
+                continue
+            u = identidad_de_imagen(urllib.parse.urljoin(url, unescape(u.strip())))
+            # En la RUTA: un «compartir en Pinterest» lleva la foto en la
+            # query (`?media=…/foto.jpg`) y no es una foto de la ficha.
+            if (not RE_EXTENSION.search(urllib.parse.urlparse(u).path)
+                    or u in vistas or RE_NO_ES_FOTO.search(u)):
                 continue
             vistas.add(u)
             salida.append(u)
