@@ -36,6 +36,12 @@ Libro de familias detenidas: `ERETZ_FAMILIAS_DETENIDAS.jsonl`. Hoy: ninguna.
 
 ### 2026-09-24
 
+- **Tokko perdía la ubicación** (`41eb162786`) cuando la seguía la lista de
+  servicios («Victoria Agua Corriente No…»): patrón en 32 de 33 agencias tokko
+  muestreadas con fichas sin geografía (hasta 294 fichas). 15 de 15 fichas
+  reales la recuperan; 14 de 15 controles iguales, 1 mejora. Y la señal de
+  fuente de operación del certificador ve la etiqueta (`896238f7ae`).
+  Gate desde 11:39: 73 agencias, 0 pendientes (5 más firmadas 23:12).
 - **Etiqueta «En Venta» de la plantilla `/ad/`** (`5977acb741`): 205 de 380
   fichas de 13 agencias sin operación, varias CERTIFIED_COMPLETE así. En 30
   fichas reales: 12 ganan, 0 cambian, 0 pierden.
