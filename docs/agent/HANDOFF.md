@@ -25,7 +25,9 @@ Historia: Git (`git log --since=2026-09-25`).
   cochera con dormitorios decidida por el título en coherencia (`4fc408a05b`, 157 fichas) y en la
   snapshot (`17bf526a1b`); `generico`: pares rótulo/valor (`484a5da006`, bardi), acordeón de
   descripción (`70f9be373c`, alianza), ficha con id no es categoría (`71d43466dd`, fogliese),
-  taxonomías WP (`904ab50852`). Guarda: ningún .py con caracteres de control.
+  taxonomías WP (`904ab50852`), `property-description` de fios (`a282e80af0`); tipos «semipiso» y
+  «tríplex» + «5 amb» sin punto (`8b44bc4a61`). Guarda: ningún .py con caracteres de control.
+  Gate 17:3x: 222 agencias; 5 pérdidas de cocciolo firmadas (correcciones).
 - Diferidas firmadas 16:0x/17:08: `garcia andreu` (rangos de emprendimiento), `domus propiedades` (bloqueo
   puntual), `fj lujan` (TFW mal ruteado), `garbero` (1 ficha + taxonomía como ficha).
 - Optimización de Claude Code: `docs/agent/CLAUDE_CODE_OPTIMIZATION.md`.
@@ -56,7 +58,13 @@ Historia: Git (`git log --since=2026-09-25`).
 4. Regression Gate tras cada tanda (comando en `.claude/rules/scraper.md`).
 5. Beta del backend (`docs/ERETZ_UNIFICATION_PLAN.md` § «Backend beta confiable»).
 
+## Decisiones de producto abiertas (no técnicas)
+- Con título vacío (título = agencia descartado en la snapshot) el frontend muestra «Propiedad sin
+  título» (`frontend/src/lib/api-v2/property-boundary.ts`). Alternativa: componer «{tipo} en
+  {operación} · {localidad}» con campos reales. Decide el producto; mobile sigue congelado.
+
 ## Trampas actuales
+- Cada commit de huella detiene los workers entre agencias hasta ~10 min: agrupar cambios.
 - Un cambio de huella sin commitear lo levantan los workers al relanzarse: commitear enseguida.
 - Un archivo que la guarda de workers VIEJOS no vigila (p. ej. uno recién agregado a la huella)
   no los detiene: pedir relanzamiento con bandera `OPERACION` (formato en `relanzar_la_cola.py`).
