@@ -266,6 +266,7 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
     # 4.813 filas en 61 agencias con la descripcion institucional, de agencias
     # todavia no recertificadas con el codigo que la descarta.
     descripciones: dict[str, Counter] = defaultdict(Counter)
+    titulos: dict[str, Counter] = defaultdict(Counter)
     fichas_de: Counter = Counter()
     for crudo, canonical in origen.execute(
             "select row_json, canonical_id from rows where status = 'CANDIDATE'"):
@@ -274,11 +275,14 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
         fila = json.loads(crudo)
         for url in set(fila.get("imagenes") or []):
             apariciones[canonical][url] += 1
-        texto = fusionar(fila, frescas.get(fila.get("hash_dedup")),
-                         CAMPOS_FUSIONABLES).get("descripcion")
+        fusionada = fusionar(fila, frescas.get(fila.get("hash_dedup")),
+                             CAMPOS_FUSIONABLES)
+        texto = fusionada.get("descripcion")
         fichas_de[canonical] += 1
         if texto and len(texto) >= 40:
             descripciones[canonical][texto] += 1
+        if fusionada.get("titulo"):
+            titulos[canonical][fusionada["titulo"]] += 1
 
     def es_del_sitio(canonical: str, texto: Any) -> bool:
         if not texto:
@@ -291,10 +295,31 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
                 and descripciones[canonical][texto]
                 >= max(MINIMO_PARA_JUZGAR // 2, n * FRACCION_COMPARTIDA))
 
+    # El nombre de la agencia como titulo, repetido como el texto del sitio:
+    # la v4 del 25-09 servia 1.980 («Patagonica Propiedades» en 320 fichas,
+    # «Meta Inmobiliaria | Propiedades en Tucuman»). Las dos condiciones: un
+    # titulo repetido que no es la agencia («Casa» en `pozzobon`) es pobre pero
+    # propio, y «Blanco Propiedades - Casa en Pilar» nombra a la agencia y
+    # tambien a la casa.
+    def es_titulo_del_sitio(canonical: str, titulo: Any) -> bool:
+        if not titulo:
+            return False
+        nombre = _sin_tildes(str(canonical).split(":", 1)[-1]).strip()
+        partes = [_sin_tildes(parte).strip()
+                  for parte in re.split(r"\s*[|–—-]\s*", str(titulo))
+                  if parte.strip()]
+        if not nombre or not partes or nombre not in (partes[0], partes[-1]):
+            return False
+        n = fichas_de[canonical]
+        return (n >= MINIMO_PARA_JUZGAR
+                and titulos[canonical][titulo]
+                >= max(MINIMO_PARA_JUZGAR // 2, n * FRACCION_COMPARTIDA))
+
     api.executescript(ESQUEMA)
 
     filas = 0
     descripciones_del_sitio = 0
+    titulos_del_sitio = 0
     tipos_cochera_corregidos = 0
     textos_limpiados = 0
     ajenas_omitidas = 0
@@ -327,6 +352,10 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
         if cruda.get("titulo") and es_del_sitio(canonical, cruda.get("descripcion")):
             cruda = dict(cruda, descripcion=None)
             descripciones_del_sitio += 1
+        elif (cruda.get("descripcion")
+              and es_titulo_del_sitio(canonical, cruda.get("titulo"))):
+            cruda = dict(cruda, titulo=None)
+            titulos_del_sitio += 1
         # «Dúplex … con cochera» no es una cochera: 272 filas de la v4 venian
         # de la regla vieja. Solo si el titulo tiene la forma accesoria, el
         # tipo se vuelve a derivar del titulo con la regla de hoy; sin otro
@@ -413,6 +442,7 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
         "omitidas_por_web_ajena": ajenas_omitidas,
         "imagenes_compartidas_descartadas": imagenes_compartidas,
         "descripciones_del_sitio_descartadas": descripciones_del_sitio,
+        "titulos_del_sitio_descartados": titulos_del_sitio,
         "tipos_cochera_por_accesorio_corregidos": tipos_cochera_corregidos,
         "textos_con_entidades_limpiados": textos_limpiados,
         "filas_con_frescura_parcial": filas_con_frescura_parcial,

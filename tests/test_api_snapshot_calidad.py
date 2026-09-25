@@ -103,3 +103,35 @@ def test_MUERDE_la_snapshot_toma_los_campos_extraidos_de_un_cierre_parcial(tmp_p
                             frescas)
     assert docs["h000"][0] == "Casa en Pilar"
     assert resumen["filas_con_frescura_parcial"] == 1
+
+
+def test_MUERDE_el_nombre_de_la_agencia_repetido_como_titulo_no_se_sirve(tmp_path, monkeypatch):
+    """La v4 del 25-09 servia 1.980 titulos que son el nombre de la agencia
+    (`patagonica` 320, `meta` «Meta Inmobiliaria | Propiedades en Tucuman»)."""
+    filas = [("roomix:meta inmobiliaria", "Meta Inmobiliaria | Propiedades en Tucumán",
+              f"Departamento {i} de dos ambientes al frente.") for i in range(9)]
+    filas += [("roomix:meta inmobiliaria", "Casa en Yerba Buena", "Casa con pileta y quincho.")]
+    resumen, docs = _correr(tmp_path, monkeypatch, filas)
+    assert [docs[f"h{i:03d}"][0] for i in range(9)] == [None] * 9
+    assert docs["h009"][0] == "Casa en Yerba Buena"
+    assert resumen["titulos_del_sitio_descartados"] == 9
+
+
+def test_un_titulo_propio_con_el_nombre_de_la_agencia_se_conserva(tmp_path, monkeypatch):
+    filas = [("roomix:blanco propiedades", f"Blanco Propiedades - Casa {i} en Pilar",
+              f"Texto propio {i} de la ficha.") for i in range(9)]
+    _, docs = _correr(tmp_path, monkeypatch, filas)
+    assert all(t.startswith("Blanco Propiedades - Casa") for t, _, _ in docs.values())
+
+
+def test_un_titulo_repetido_que_no_es_la_agencia_se_conserva(tmp_path, monkeypatch):
+    """`pozzobon`: «casa» en 7 de 8 fichas es un titulo pobre, no del sitio."""
+    filas = [("roomix:pozzobon", "Casa", f"Texto propio {i} de la ficha.") for i in range(9)]
+    _, docs = _correr(tmp_path, monkeypatch, filas)
+    assert all(t == "Casa" for t, _, _ in docs.values())
+
+
+def test_sin_descripcion_el_titulo_del_sitio_se_conserva(tmp_path, monkeypatch):
+    filas = [("roomix:meta inmobiliaria", "Meta Inmobiliaria", None) for _ in range(9)]
+    _, docs = _correr(tmp_path, monkeypatch, filas)
+    assert all(t == "Meta Inmobiliaria" for t, _, _ in docs.values())
