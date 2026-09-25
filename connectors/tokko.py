@@ -189,6 +189,15 @@ ETIQUETAS = (
     # aca. Los que quedan son otra cosa -listas de amenities y prosa de la
     # descripcion- y piden otra frontera, no esta.
     "Fecha de entrega", "Fecha de Entrega",
+    # La lista de servicios sigue a la ubicacion en cocheras, lotes y locales:
+    # «Ubicación Victoria Agua Corriente No Agua Potable No Cable No Cloaca No
+    # (REF. …)». Sin estas fronteras el valor no cortaba dentro de los 70
+    # caracteres y la ubicacion quedaba VACIA: 32 de 33 agencias muestreadas
+    # con fichas sin ciudad ni barrio tenian este patron (2026-09-24). «Gas» y
+    # «Luz» sueltos no van: son parte de nombres («Villa Luz»).
+    "Agua Corriente", "Agua Potable", "Cloaca", "Cable", "Gas Natural",
+    "Electricidad", "Internet", "Pavimento", "Teléfono", "Telefono",
+    "Zonificación", "Zonificacion", "SERVICIOS",
 )
 _STOP = "|".join(re.escape(e) for e in sorted(ETIQUETAS, key=len, reverse=True))
 
