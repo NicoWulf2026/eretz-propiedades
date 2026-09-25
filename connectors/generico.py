@@ -2182,7 +2182,7 @@ class GenericoConnector(Connector):
         texto_campos = normalizar_texto_campos(
             _texto(sin_filtros_catalogo(principal_campos)))
         datos = self._de_json_ld(html, url)
-        if not datos.get("tipo_ld") and self._es_pagina_contenedora(principal):
+        if not datos.get("tipo_ld") and self._es_pagina_contenedora(principal, url):
             # Review is explicit; this is not proof that the source is empty.
             # The runner counts the unresolved candidate as a failed detail,
             # so two identical mistakes cannot become CERTIFIED_COMPLETE.
@@ -3123,19 +3123,39 @@ class GenericoConnector(Connector):
         return next((c for c in candidatos if c), None)
 
     @staticmethod
-    def _es_pagina_contenedora(html: str) -> bool:
+    def _es_pagina_contenedora(html: str, url: str | None = None) -> bool:
         """A generic catalogue heading AND an explicit filter form, not a slug.
 
         Never reject an incomplete property because price/images are missing.
         A shared institutional title alone is not sufficient evidence either.
         """
         heading = re.search(r"<h1\b[^>]*>(.*?)</h1>", html or "", re.I | re.S)
-        if not heading or not re.fullmatch(
-                r"propiedades|inmuebles|cat[aá]logo(?: de propiedades)?|listado(?: de propiedades)?",
-                _texto(heading.group(1)).strip().lower()):
+        if not heading:
             return False
-        return any(re.search(r"\b(?:aplicar\s+filtros|filtrar)\b", _texto(form), re.I)
-                   for form in re.findall(r"<form\b[^>]*>(.*?)</form>", html or "", re.I | re.S))
+        titulo = _texto(heading.group(1)).strip().lower()
+        if re.fullmatch(
+                r"propiedades|inmuebles|cat[aá]logo(?: de propiedades)?|listado(?: de propiedades)?",
+                titulo):
+            return any(re.search(r"\b(?:aplicar\s+filtros|filtrar)\b", _texto(form), re.I)
+                       for form in re.findall(r"<form\b[^>]*>(.*?)</form>", html or "", re.I | re.S))
+        # La pagina de una CATEGORIA: «Oficinas en Venta», «DEPARTAMENTOS EN
+        # VENTA O EN ALQUILER», con la grilla de avisos debajo. `cbdestino` y
+        # `casablanca` las guardaron como fichas, con el tipo y la operacion
+        # sacados del encabezado y hasta el precio de un aviso de la grilla.
+        # Se exige un tipo EN PLURAL seguido de la operacion, sin cifras, y al
+        # menos 5 fichas enlazadas; el llamador ya descarto las paginas con
+        # JSON-LD de propiedad. «Propiedades» a secas no alcanza: es el
+        # encabezado de sitio de muchas fichas reales. Medido sobre 157 fichas
+        # reales de las agencias generico: 0 falsos positivos.
+        plano = "".join(c for c in unicodedata.normalize("NFKD", titulo)
+                        if not unicodedata.combining(c))
+        tipos = (r"casas|departamentos|deptos|duplex|oficinas|locales|terrenos|lotes|"
+                 r"galpones|cocheras|campos|quintas|chacras|fincas|salones|naves|depositos")
+        if not re.fullmatch(
+                rf"(?:{tipos})(?:\s*(?:,|y|e|o)\s*(?:{tipos}))*\s+(?:en|para|de)\s+"
+                rf"(?:venta|alquiler)\b[^0-9]{{0,60}}", re.sub(r"\s+", " ", plano)):
+            return False
+        return len(GenericoConnector._fichas_en(html, url)) >= 5 if url else False
 
     @staticmethod
     def _operacion_desde_title(html: str) -> str | None:

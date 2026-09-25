@@ -99,6 +99,39 @@ def test_MUERDE_un_script_partido_por_la_ventana_no_entra_como_descripcion():
     assert "contact_email" not in p.descripcion
 
 
+# ----------------------------------------------------- paginas de categoria
+
+def _grilla(n: int) -> str:
+    return "".join(f'<a href="https://alfa.test/propiedades/71094{i}-casa-en-venta">Casa {i}</a>'
+                   for i in range(n))
+
+
+def test_MUERDE_una_pagina_de_categoria_no_se_guarda_como_ficha():
+    # `cbdestino.com.ar/Departamento`: «DEPARTAMENTOS EN VENTA O EN ALQUILER»
+    # y la grilla debajo; se guardaba como ficha con el precio de un aviso.
+    c = GenericoConnector(descargador=Falso(_pagina(
+        "", "<h1>DEPARTAMENTOS EN VENTA O EN ALQUILER</h1>" + _grilla(6)
+        + "<p>USD 635.000</p>")))
+    f = B.Fuente(canonical_agency_id="roomix:alfa propiedades", agency_name="Alfa Propiedades",
+                 official_url="https://alfa.test/", inmobiliaria_id=1)
+    assert c.normalize({"source_url": URL, "source_listing_id": "123"}, f) is None
+    assert c.descartes[-1]["motivo"] == "PAGINA_CONTENEDORA_REQUIERE_REVISION"
+
+
+def test_una_ficha_con_el_encabezado_de_sitio_propiedades_no_es_contenedora():
+    assert not GenericoConnector._es_pagina_contenedora(
+        "<h1>Propiedades</h1>" + _grilla(8), URL)
+
+
+def test_un_emprendimiento_con_pocas_unidades_enlazadas_no_es_contenedora():
+    assert not GenericoConnector._es_pagina_contenedora(
+        "<h1>Departamentos en venta en Nordelta</h1>" + _grilla(3), URL)
+    assert GenericoConnector._es_pagina_contenedora(
+        "<h1>Oficinas en Venta</h1>" + _grilla(5), URL)
+    assert not GenericoConnector._es_pagina_contenedora(
+        "<h1>Casas en venta: 3 dormitorios</h1>" + _grilla(9), URL)
+
+
 # --------------------------------------------------------------------- titulo
 
 def test_MUERDE_el_nombre_de_la_agencia_delante_del_titulo_no_tira_el_titulo():
