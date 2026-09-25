@@ -2228,6 +2228,23 @@ def test_MUERDE_xintel_una_pagina_sin_parametros_de_detalle_no_se_normaliza() ->
                              "<html><body>Ficha publica</body></html>")
 
 
+def test_MUERDE_una_ficha_xintel_que_entro_por_html_usa_la_api() -> None:
+    """`cannonepropiedades.com.ar`: la ficha Xintel entro por el camino HTML,
+    que sin JavaScript ve el titulo «en», la descripcion vacia y 2 fotos. La
+    API trae el titulo, la descripcion, las coordenadas y la galeria."""
+    ficha = ("<html><head><title>en</title></head><body><h1>en</h1>"
+             "<p class='txtobs'></p>" + "<p>relleno de la plantilla</p>" * 30 + XINTEL_FICHA[6:])
+    api = {"https://xintelapi.com.ar/?": json.dumps({"resultado": {"ficha": [{
+        "titulo": "Casa en venta Villa Devoto", "operacion": "Venta", "precio": "U$S 570.000",
+        "in_obs": "OPORTUNIDAD - IDEAL INVERSOR", "latitud": "-34.599", "longitud": "-58.51"}]}})}
+    c = gen_conector({"https://alfa.com.ar/casa-en-venta-ficha-can827": ficha, **api})
+    prop = c.normalize({"source_listing_id": "can827",
+                        "source_url": "https://alfa.com.ar/casa-en-venta-ficha-can827"}, fuente())
+    assert prop.titulo == "Casa en venta Villa Devoto"
+    assert prop.descripcion == "OPORTUNIDAD - IDEAL INVERSOR"
+    assert prop.extra["via"] == "xintel_api"
+
+
 def test_generico_query_php_no_confunde_extension_ph_con_departamento() -> None:
     html = ("<html><head><meta property=\"og:title\" content=\"Terreno en La Falda\">"
             "</head><body>Venta USD 12.500 Superficie total: 640 m2"

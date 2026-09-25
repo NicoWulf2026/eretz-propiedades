@@ -2166,7 +2166,13 @@ class GenericoConnector(Connector):
             return None
         if not html or len(html) < 400:
             return None
-        if crudo.get("xintel"):
+        # Una ficha Xintel que entro por el camino HTML tambien se lee de la
+        # API. Sin JavaScript, la plantilla muestra el titulo «en», la
+        # descripcion vacia (`<p class="txtobs"></p>`) y dos fotos:
+        # `cannonepropiedades.com.ar` se guardaba asi en sus 16 fichas, y la
+        # API trae titulo, descripcion, coordenadas y 20 a 28 fotos. La senal
+        # es la que la propia plantilla usa para pedir el detalle.
+        if crudo.get("xintel") or self._es_ficha_xintel(html):
             return self._normalizar_xintel(crudo, fuente, html)
 
         principal = cuerpo_principal(html)
@@ -2860,6 +2866,12 @@ class GenericoConnector(Connector):
             extra={"tokko_proxy": True},
         )
         return propiedad
+
+    @staticmethod
+    def _es_ficha_xintel(html: str) -> bool:
+        """La ficha trae los cuatro parametros con que pide su detalle."""
+        return all(re.search(rf'["\']{nombre}["\']\s*:\s*["\'][^"\']+["\']', html or "", re.I)
+                   for nombre in ("suc", "global", "apiK", "id"))
 
     def _normalizar_xintel(self, crudo: dict, fuente: Fuente,
                            html: str) -> PropiedadNormalizada:
