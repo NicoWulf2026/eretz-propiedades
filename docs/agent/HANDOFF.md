@@ -102,9 +102,8 @@ se produjo durante el cambio queda sin `strategy_fingerprint`. Entonces:
    ficha en 192 fichas (IDs de Tokko distintos, fuera de enlaces). Radio
    medido: sólo `fios`. Falla cerrada mientras tanto.
    Listados/categorías como fichas (`bottai`, `conti`, `cannone`, `fios`):
-   RESUELTO en `a8f4c13e3e`. Queda: sitios Xintel que entran por HTML
-   (`cannone`: la descripción la llena la API; usar el camino Xintel cuando la
-   página trae `suc/global/apiK/id`).
+   RESUELTO en `a8f4c13e3e`. Xintel por HTML (`cannone`): RESUELTO en
+   `960a148e44`.
    Y `cantale`: la operación es una etiqueta suelta «Venta» junto al tipo
    (`PROP-75947 Vendido / Venta Departamento`), sin «En»; el menú dice lo
    mismo como enlaces. Distinguir etiqueta (span/div) de enlace de menú.
