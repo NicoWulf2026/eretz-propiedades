@@ -36,6 +36,10 @@ Libro de familias detenidas: `ERETZ_FAMILIAS_DETENIDAS.jsonl`. Hoy: ninguna.
 
 ### 2026-09-25
 
+- **Tipo de propiedad** (`210f84eb9c`, compartido): 44 fichas en 24 agencias
+  eran «cochera» siendo dúplex/departamentos con cochera; «Galpón/Dúplex/
+  Fracción» quedaban sin tipo por la tilde. 528 de 26.993 títulos cambian, todos
+  revisados por clase. Gate 09:14: 161 agencias, 0 pendientes.
 - **Gate 08:25: 155 agencias, 0 pendientes** (17 de `elgart`: ciudad antes
   guardada sin desescapar como barrio). `elgart` NEEDS_FIX por 3 fichas con
   `CommercialRealEstate`; anotado en HANDOFF 5d.
