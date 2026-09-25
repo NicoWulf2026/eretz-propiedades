@@ -13,7 +13,13 @@ Historia: Git (`git log --since=2026-09-25`).
   huella (`942e0825e2`). Test general: todo módulo propio que importa un conector está en su huella.
 - Geografía compartida: la «ciudad» publicada que es el departamento de la localidad publicada como
   barrio (`fenix` Capital→Posadas, 512 fichas; 7 más, todas correctas) — `2961c3ec68`.
-- Gate 14:3x: 200 agencias; 3 pérdidas revisadas y firmadas (alpha ×2 CORRECCION, varesse arreglado).
+- Gate 14:3x y 16:3x: 217 agencias; 5 pérdidas revisadas y firmadas (alpha ×2 y altos
+  CORRECCION; varesse y domus arreglados).
+- Tarde: ruteo TFW por la portada (`f44e3f691d`, compartido); rangos de emprendimientos en
+  `wordpress` (`232a1b606d`); descripción Wasi como JSON, sin mojibake (`67f6c8ba44`, 208
+  fichas); `generico`: contador de visitas (`54db367d5a`), título Xintel (`9db61ad774`),
+  similares RealHomes (`1dc3ba7998`), tipo `berrueta` (`7404dfe9b0`), operación como etiqueta
+  suelta (`b24c8c42cd`); snapshot: mojibake por tramos (`953f3ed137`).
 - Diferidas firmadas 16:0x: `garcia andreu` (rangos de emprendimiento), `domus propiedades` (bloqueo
   puntual), `fj lujan` (TFW mal ruteado), `garbero` (1 ficha + taxonomía como ficha).
 - Optimización de Claude Code: `docs/agent/CLAUDE_CODE_OPTIMIZATION.md`.
@@ -30,20 +36,18 @@ Historia: Git (`git log --since=2026-09-25`).
 - 5h (mínimo de 40 caracteres en el runner): radio 0 en los paquetes vigentes.
 
 ## Próxima prioridad (por impacto medido)
-1. **Ventana compartida del auditor/certificador** (`shared/certifier`, invalida todo; hacerla en
-   un solo commit):
-   - ruteo: sondear la portada y usar `tokko` si es TFW (`static.tokkobroker.com/tfw`) —
-     `fj lujan` (98→2 por ruteo), `coldwell banker destino`; 4.244 agencias sin plataforma detectada;
-   - señal de fuente: un rango «N - M» no es valor provisto (`garcia andreu`); «Consultar» en el
-     precio estructurado de `wasi` (3 fichas); señal de operación más amplia que el extractor (5c).
-2. **NEEDS_FIX no idempotentes** (21): la mayoría difiere en `descripcion` (ferrari 149/157,
-   bottega 22/30) o por entidades HTML en `titulo` (bondar, dorsoli). Script de medición:
-   comparar `properties_run1/2.jsonl` por `hash_dedup`. Ver si la descripción varía en la fuente.
+1. **Auditor** (`shared/certifier`, un solo commit): «Consultar» en el precio estructurado de
+   `wasi` (3 fichas); señal de operación más amplia que el extractor (5c). Ruteo TFW y rangos:
+   RESUELTOS.
+2. **NEEDS_FIX no idempotentes** (21): contador de visitas, título Xintel y similares RealHomes
+   RESUELTOS; `dorsoli` ya estable con el código de hoy. Quedan por mirar: `blangiforti` (precio e
+   imágenes entre corridas), `brikel`/`di maria`/`cocucci` (tokko, inventario o descripción).
 3. **Lote `generico` de radio chico** (agrupar): `bardi` dirección/barrio como pares rótulo/valor
    (90 fichas); taxonomías WordPress como ficha (`/estado-propiedad/`, `garbero`); `cometto`
    (categorías `propiedades_ver2.php`); `del parque` (`og:type=article` en fichas reales);
    `bunader` (enumera listados); `alianza` (descripción `<ul>` bajo acordeón); `fios`
-   (`.show-more`, foto ajena); `cantale` («Venta» suelta); precio accesorio `caruso`; operación
+   (`.show-more`, foto ajena); precio accesorio `caruso`; tipo de respaldo leído del menú
+   (parcela → casa en `fernando villalba`); operación
    solo en la ruta del catálogo (`bottai` 180, `constant` 24).
 4. Regression Gate tras cada tanda (comando en `.claude/rules/scraper.md`).
 5. Beta del backend (`docs/ERETZ_UNIFICATION_PLAN.md` § «Backend beta confiable»).
