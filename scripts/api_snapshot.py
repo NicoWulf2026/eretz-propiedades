@@ -356,6 +356,7 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
     descripciones_del_sitio = 0
     titulos_del_sitio = 0
     tipos_cochera_corregidos = 0
+    cocheras_incoherentes = 0
     textos_limpiados = 0
     ajenas_omitidas = 0
     imagenes_compartidas = 0
@@ -401,6 +402,23 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
             if nuevo_tipo != "cochera":
                 cruda = dict(cruda, tipo_propiedad=nuevo_tipo)
                 tipos_cochera_corregidos += 1
+        # Una cochera no tiene dormitorios ni varios ambientes: 169 de 957 en
+        # la v4e. Decide el titulo: si dice cochera y no describe ambientes,
+        # sobran los conteos (`farina` «Newbery 9192 – Cochera», 1 dormitorio);
+        # si describe ambientes o no nombra tipo, sobra el tipo (`berrueta`
+        # «3 AMBIENTES AL FRENTE»). El tipo que falta nunca se inventa.
+        if (cruda.get("tipo_propiedad") == "cochera"
+                and ((cruda.get("dormitorios") or 0) >= 1
+                     or (cruda.get("ambientes") or 0) >= 2)):
+            titulo_plano = _sin_tildes(cruda.get("titulo") or "")
+            describe_ambientes = re.search(
+                r"\b\d+\s*(?:amb|dorm)|\b(?:semipiso|piso|departamento|depto|casa|duplex|triplex|ph)\b",
+                titulo_plano)
+            if detectar_tipo(cruda.get("titulo")) == "cochera" and not describe_ambientes:
+                cruda = dict(cruda, dormitorios=None, ambientes=None)
+            else:
+                cruda = dict(cruda, tipo_propiedad=None)
+            cocheras_incoherentes += 1
         for campo in ("titulo", "descripcion"):
             limpio = _sin_mojibake(_texto_servible(cruda.get(campo)))
             if limpio != cruda.get(campo):
@@ -479,6 +497,7 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
         "descripciones_del_sitio_descartadas": descripciones_del_sitio,
         "titulos_del_sitio_descartados": titulos_del_sitio,
         "tipos_cochera_por_accesorio_corregidos": tipos_cochera_corregidos,
+        "cocheras_incoherentes_resueltas": cocheras_incoherentes,
         "textos_con_entidades_limpiados": textos_limpiados,
         "filas_con_frescura_parcial": filas_con_frescura_parcial,
         "imagenes_repetidas_sin_evidencia_de_descarte": imagenes_repetidas_sin_evidencia,

@@ -26,6 +26,7 @@ def _correr(tmp_path, monkeypatch, filas, frescas=None):
         fila = {"hash_dedup": f"h{i:03d}", "canonical_agency_id": agencia,
                 "source_url": f"https://a.com/{i}", "titulo": titulo,
                 "descripcion": descripcion, "tipo_propiedad": (resto or [None])[0]}
+        fila.update(resto[1] if len(resto) > 1 else {})
         con.execute("insert into rows values (?,?,?,?)",
                     (json.dumps(fila), agencia, f"h{i:03d}", "CANDIDATE"))
     con.commit()
@@ -166,3 +167,25 @@ def test_MUERDE_el_mojibake_por_tramos_se_repara_al_servir():
         "la realización de cualquier operación, 195 m² 🏠"
     assert _sin_mojibake("Ñandú y Ã solo") == "Ñandú y Ã solo"
     assert _sin_mojibake(None) is None
+
+
+def test_MUERDE_una_cochera_con_dormitorios_es_incoherente_y_se_resuelve_por_el_titulo(tmp_path, monkeypatch):
+    """169 de 957 cocheras servidas en la v4e tenian dormitorios o 2+ ambientes.
+    Titulo que dice cochera -> los conteos sobran; titulo que describe ambientes o
+    no nombra tipo -> el tipo sobra. Nunca se inventa el tipo que falta."""
+    filas = [("roomix:farina", "Newbery 9192 – Cochera", "Texto propio uno largo suficiente", "cochera",
+              {"dormitorios": 1}),
+             ("roomix:berrueta", "3 AMBIENTES AL FRENTE - OPORTUNIDAD", "Texto propio dos largo suficiente",
+              "cochera", {"dormitorios": 2, "ambientes": 3}),
+             ("roomix:dardo", "Excelente Semipiso 2 Ambientes a estrenar, cochera", "Texto propio tres largo",
+              "cochera", {"ambientes": 2}),
+             ("roomix:ok", "Cochera cubierta en venta", "Texto propio cuatro largo suficiente", "cochera", {})]
+    resumen, docs = _correr(tmp_path, monkeypatch, filas)
+    con = sqlite3.connect(tmp_path / "out" / "ERETZ_API_SNAPSHOT.sqlite3")
+    fil = {i: (tp, json.loads(d)) for i, tp, d in con.execute(
+        "select id, tipo_propiedad, documento from propiedades")}
+    assert fil["h000"][0] == "cochera" and fil["h000"][1].get("dormitorios") is None
+    assert fil["h001"][0] is None and fil["h001"][1].get("dormitorios") == 2
+    assert fil["h002"][0] is None and fil["h002"][1].get("ambientes") == 2
+    assert fil["h003"][0] == "cochera"
+    assert resumen["cocheras_incoherentes_resueltas"] == 3
