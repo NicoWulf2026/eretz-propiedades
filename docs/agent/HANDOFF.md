@@ -101,9 +101,10 @@ se produjo durante el cambio queda sin `strategy_fingerprint`. Entonces:
    grilla) que la regla de plural no alcanza; 1 foto de OTRA propiedad por
    ficha en 192 fichas (IDs de Tokko distintos, fuera de enlaces). Radio
    medido: sólo `fios`. Falla cerrada mientras tanto.
-   Además `bottai`: páginas de resultados de búsqueda guardadas como fichas
-   (`inmuebles_list_Venta_seleccione_…`, título «BOTTAI Inmobiliaria», precio de
-   un aviso). La agencia está NEEDS_FIX, pero el dato es falso.
+   Listados/categorías como fichas (`bottai`, `conti`, `cannone`, `fios`):
+   RESUELTO en `a8f4c13e3e`. Queda: sitios Xintel que entran por HTML
+   (`cannone`: la descripción la llena la API; usar el camino Xintel cuando la
+   página trae `suc/global/apiK/id`).
    Y `cantale`: la operación es una etiqueta suelta «Venta» junto al tipo
    (`PROP-75947 Vendido / Venta Departamento`), sin «En»; el menú dice lo
    mismo como enlaces. Distinguir etiqueta (span/div) de enlace de menú.
