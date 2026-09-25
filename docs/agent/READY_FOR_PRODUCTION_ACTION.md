@@ -60,7 +60,7 @@ respondía 200). `mark_as_inactive` existe y no tiene consumidores.
 
 ### 7. Snapshot de la API local
 Hoy se sirve una `api_snapshot_v2` del 08-09. La v4 más reciente está en
-`_scratch/unification/snapshot_v4d_2026-09-25/` (ver §«Snapshot» abajo) con
+`_scratch/unification/snapshot_v4e_2026-09-25/` (ver §«Snapshot» abajo) con
 índices y orden declarados (explorer 307→83 ms, combinada 900→249, mapa sin
 filtros ~550→90–165) y con las reglas de calidad del runner aplicadas.
 Reemplazar `D:\INMO CAPITAL\ERETZ_API_CONTRACT\ERETZ_API_SNAPSHOT.sqlite3`
@@ -77,22 +77,22 @@ Rama de trabajo: `handoff/codex-unificacion-2026-09-18`. Nada se mergea a
 `main` ni se despliega sin autorización.
 
 ## Snapshot
-Construida el 25-09 12:11 en `_scratch/unification/snapshot_v4d_2026-09-25/` (HEAD `b8d1f52eef`
-para el constructor), `pragma integrity_check` = ok, `database_writes: 0`.
+Construida el 25-09 17:16 en `_scratch/unification/snapshot_v4e_2026-09-25/`,
+`pragma integrity_check` = ok, `database_writes: 0`. Reemplaza a la v4d (misma base, más reglas).
 
 | medida | valor |
 |---|---|
 | propiedades | 57.665 |
-| descripciones del sitio descartadas | 2.558 |
+| descripciones del sitio descartadas | 2.492 |
 | títulos que son solo la agencia, descartados | 639 |
-| cocheras por accesorio corregidas | 178 |
-| textos con entidades HTML limpiados | 2.454 |
-| filas con frescura desde NEEDS_FIX por campos | 4.678 (0 pérdidas medidas contra la preingestión) |
+| cocheras por accesorio corregidas | 177 |
+| textos con entidades HTML o mojibake limpiados | 2.723 (descripciones con «Ã»: 89 → 4) |
+| filas con frescura desde NEEDS_FIX por campos | 5.358 (0 pérdidas medidas contra la preingestión en la v4c) |
 
-Auditoría de patrones (v4c, mismas reglas salvo el título solo-nombre): títulos = agencia
-1.980 → 326 (los restantes no tienen descripción y el contrato conserva el título), descripción
-repetida del sitio 898 → 0.
+Patrones que quedan (auditoría sobre la v4e): título = agencia 215 filas en 16 agencias (sin
+descripción: el contrato conserva el título), 104 «cochera» sin forma accesoria en el título, 25
+URLs de listado heredadas de la preingestión, 3 geografías con entidades.
 
-Latencias (v4c, en proceso, con 2 workers y un diagnóstico corriendo a la vez): explorer 92 ms,
+Latencias (v4c, en proceso, con 2 workers y un diagnóstico corriendo): explorer 92 ms,
 combinada 305 ms, mapa chico 193 ms, mapa combinado 721 ms, detalle 12 ms. Medir de nuevo en
 reposo antes de decidir; el 24-09 en reposo la combinada daba 249 ms.

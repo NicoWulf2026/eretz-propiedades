@@ -38,7 +38,7 @@ rotación las recertifica sola.
 
 ## Snapshot de la API local
 - Servida: `api_snapshot_v2` del 08-09 (`D:\INMO CAPITAL\ERETZ_API_CONTRACT\`). Reemplazarla = deploy.
-- Lista para servir: `_scratch/unification/snapshot_v4d_2026-09-25/` — 57.665 propiedades,
+- Lista para servir: `_scratch/unification/snapshot_v4e_2026-09-25/` — 57.665 propiedades,
   `integrity_check` ok, reglas de calidad del runner + frescura desde NEEDS_FIX por campos.
   Detalle y latencias en `READY_FOR_PRODUCTION_ACTION.md` §7.
 
