@@ -34,6 +34,7 @@ publico no expone: no hay via gratuita y no se intenta.
 """
 from __future__ import annotations
 
+import json
 import re
 import sys
 import urllib.parse
@@ -72,7 +73,16 @@ def _descripcion_wasi(html: str) -> str | None:
                       html or "", re.S)
     if not match:
         return None
-    texto = match.group(1).encode().decode("unicode_escape", "ignore")
+    # Es un string JSON: `unicode_escape` solo servia con los acentos
+    # escapados (á) y rompia el UTF-8 crudo -«panorÃ¡micas», «195 mÂ²»-
+    # en 208 de 1.353 descripciones. Si no parsea, se desescapa a mano sin
+    # tocar los caracteres que ya vienen bien.
+    try:
+        texto = json.loads(f'"{match.group(1)}"')
+    except ValueError:
+        texto = re.sub(r"\\u([0-9a-fA-F]{4})", lambda m: chr(int(m.group(1), 16)),
+                       match.group(1))
+        texto = texto.replace("\\n", "\n").replace('\\"', '"').replace("\\/", "/")
     return limpiar(unescape(re.sub(r"<[^>]+>", " ", texto)))
 
 
