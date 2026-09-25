@@ -103,6 +103,32 @@ def _texto_servible(valor: Any) -> Any:
     texto = re.sub(r"[ \t]+", " ", texto)
     texto = re.sub(r" *\n *", "\n", texto).strip()
     return texto or None
+
+
+# Una secuencia UTF-8 leida como latin-1: el byte inicial (C2-F4) seguido de
+# sus bytes de continuacion (80-BF), que en latin-1 son «Ã³», «Â²», «ð\x9f…».
+RE_MOJIBAKE = re.compile("[Â-ô][\u0080-¿]{1,3}")
+
+
+def _sin_mojibake(valor: Any) -> Any:
+    """Repara el mojibake por TRAMOS, cuando cada tramo se puede demostrar.
+
+    La v4d servia 89 descripciones con «Ã³», muchas mezcladas con acentos
+    buenos («realización … operaciÃ³n»): `connectors.texto.reparar` recodifica
+    el texto ENTERO y ahi falla. Cada tramo se decodifica solo si es UTF-8
+    valido; «Ã» suelta o «Ñandú» no se tocan.
+    """
+    if not isinstance(valor, str):
+        return valor
+
+    def tramo(m: "re.Match") -> str:
+        try:
+            return m.group(0).encode("latin-1").decode("utf-8")
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            return m.group(0)
+    return RE_MOJIBAKE.sub(tramo, valor)
+
+
 from scripts.preingestion_manifest import (base_canonica,  # noqa: E402
                                            exigir_base_vigente)
 
@@ -376,7 +402,7 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
                 cruda = dict(cruda, tipo_propiedad=nuevo_tipo)
                 tipos_cochera_corregidos += 1
         for campo in ("titulo", "descripcion"):
-            limpio = _texto_servible(cruda.get(campo))
+            limpio = _sin_mojibake(_texto_servible(cruda.get(campo)))
             if limpio != cruda.get(campo):
                 cruda = dict(cruda, **{campo: limpio})
                 textos_limpiados += 1

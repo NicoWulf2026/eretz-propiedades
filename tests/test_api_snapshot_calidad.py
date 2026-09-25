@@ -156,3 +156,13 @@ def test_MUERDE_un_titulo_que_es_solo_el_nombre_no_necesita_repetirse(tmp_path, 
     assert docs["h009"][0] is None
     assert docs["h000"][0] == "Casa 0 en Pilar"
     assert resumen["titulos_del_sitio_descartados"] == 1
+
+
+def test_MUERDE_el_mojibake_por_tramos_se_repara_al_servir():
+    """89 descripciones de la v4d con «Ã³», a veces mezcladas con acentos
+    buenos («realización … operaciÃ³n»), que la reparacion entera no toca."""
+    from scripts.api_snapshot import _sin_mojibake
+    assert _sin_mojibake("la realización de cualquier operaciÃ³n, 195 mÂ² ð\x9f\x8f\xa0") == \
+        "la realización de cualquier operación, 195 m² 🏠"
+    assert _sin_mojibake("Ñandú y Ã solo") == "Ñandú y Ã solo"
+    assert _sin_mojibake(None) is None
