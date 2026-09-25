@@ -854,7 +854,16 @@ def ordenar_para_correr(cola: list[str],
     larga: list[str] = []
     vistos_por_familia: Counter = Counter()
 
-    conocidos = [c for c in cola if c in resultados]
+    # Las conocidas, de la que hace mas tiempo que no se intenta a la mas
+    # reciente. En orden alfabetico, los canarios eran siempre los mismos: tras
+    # cada cambio de huella se rehacian las primeras tres de cada familia -~51
+    # agencias, ~3 h de worker- antes de cualquier otra. El 2026-09-24, 12,5 de
+    # 15,8 horas fueron agencias certificadas 2+ veces ese dia y solo 6 nuevas
+    # avanzaron. Rotando, un reinicio valida el codigo sobre otras agencias y
+    # la recertificacion avanza en vez de repetirse. El orden estable deja el
+    # alfabetico como desempate.
+    conocidos = sorted((c for c in cola if c in resultados),
+                       key=lambda c: str(resultados[c].get("checked_at") or ""))
     for canonical_id in conocidos:
         resultado = resultados[canonical_id]
         if _es_cola_larga(resultado):

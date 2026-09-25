@@ -45,3 +45,19 @@ def test_los_canarios_siguen_primero():
     orden = ordenar_para_correr(conocidas + ["nueva"],
                                 {c: _res("tokko") for c in conocidas})
     assert orden[:CANARIOS_POR_FAMILIA] == conocidas[:CANARIOS_POR_FAMILIA]
+
+
+def test_MUERDE_un_reinicio_no_repite_las_que_se_acaban_de_rehacer():
+    """Tras cada cambio de huella los canarios eran siempre los mismos -los
+    primeros en orden alfabetico-. El 2026-09-24, 12,5 de 15,8 horas de worker
+    fueron agencias certificadas 2+ veces ese dia; solo 6 nuevas avanzaron.
+    Primero va la que hace mas tiempo que no se intenta."""
+    conocidas = [f"t{i}" for i in range(6)]
+    resultados = {c: dict(_res("tokko"), checked_at=f"2026-09-24T1{i}:00:00")
+                  for i, c in enumerate(conocidas)}
+    # t0..t2 se rehicieron hace un rato; t5 es la mas vieja
+    resultados["t0"]["checked_at"] = "2026-09-24T19:00:00"
+    resultados["t5"]["checked_at"] = "2026-09-20T08:00:00"
+    orden = ordenar_para_correr(conocidas, resultados)
+    assert orden[0] == "t5"
+    assert orden[-1] == "t0"
