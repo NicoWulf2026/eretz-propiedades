@@ -911,6 +911,33 @@ class WordPressConnector(Connector):
                 descartados.append("superficie_total:formato_no_confiable")
             if source_fields["superficie_cubierta"] and superficie_cubierta is None:
                 descartados.append("superficie_cubierta:formato_no_confiable")
+            # Un emprendimiento publica un RANGO por unidad -«Dormitorios: 2 - 3»,
+            # meta «2 - 3»- (`garcia andreu`: edificio-dot, firenze-xi). No es un
+            # valor de la propiedad y no se afirma; decirlo evita que el auditor
+            # lo cuente como un campo provisto que no se supo leer.
+            # Y con un rango a la vista tampoco se toma un numero suelto del
+            # texto: `firenze-xi` guardaba 3 dormitorios de «pisos exclusivos de
+            # 3 dormitorios», que es la unidad mas grande, no la propiedad.
+            # Guion ASCII, sin ceros a la izquierda y ordenado: «Dormitorios:
+            # 08 – 02 –» en `eigen` es una lista de unidades, no un rango.
+            rango = r"([1-9]\d?)\s*-\s*([1-9]\d?)"
+
+            def es_rango(m: "re.Match | None") -> bool:
+                return bool(m) and int(m.group(1)) <= int(m.group(2))
+
+            en_rango = set()
+            for campo, clave, etiqueta in (
+                    ("dormitorios", "fave_property_bedrooms", r"dormitorios?|habitaciones?"),
+                    ("banos", "fave_property_bathrooms", r"ba[nñ]os?"),
+                    ("ambientes", "fave_property_rooms", r"ambientes?")):
+                if (es_rango(re.fullmatch(rf"\s*{rango}\s*", str(_primero(meta, clave) or "")))
+                        or any(es_rango(m) for m in re.finditer(
+                            rf"(?:{etiqueta})\s*:?\s*{rango}\b", texto or "", re.I))):
+                    en_rango.add(campo)
+                    descartados.append(f"{campo}:rango_de_unidades")
+            dormitorios = None if "dormitorios" in en_rango else dormitorios
+            banos = None if "banos" in en_rango else banos
+            ambientes = None if "ambientes" in en_rango else ambientes
 
         return PropiedadNormalizada(
             canonical_agency_id=fuente.canonical_agency_id,
