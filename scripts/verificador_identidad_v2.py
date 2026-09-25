@@ -118,6 +118,11 @@ PORTALES = (
     # /uruguay/profile/agency/156-, y `mudafy.com.ar` una. Los tres se habian
     # declarado OFFICIAL_WEB, o sea "su sitio propio".
     "realedo", "mudafy", "apuntavamos",
+    # 25-09: con identidad READY apuntando a un portal o directorio. Aca se
+    # compara por subcadena: `propia`, `lujanprop` y `liderprop` atraparian
+    # `inmobiliariapropia`, `lujanpropiedades`, `liderpropiedades`. Esos
+    # quedan solo en `agency_web_discovery`, que compara el nombre entero.
+    "proppies", "aspenbienesraices",
 )
 # No venden propiedades: publican avisos de empleo. Se mira aparte de
 # PORTALES porque no son lo mismo, pero el desenlace es el mismo: NO es el

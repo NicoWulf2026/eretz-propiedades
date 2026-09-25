@@ -152,6 +152,9 @@ PORTALES_POR_NOMBRE = {
     "toctocventas", "navent", "clasificados", "yably", "slideprop",
     "comunidadinmobiliaria", "redinmosoft", "choza", "agroads", "inmoclick",
     "realedo", "mudafy", "apuntavamos", "todoprops", "datoinmobiliario",
+    # Medidos el 25-09 con identidad READY: `proppies` (842 fichas de
+    # `benjamin ferreyra`), `propia` (portal de Rosario), y tres directorios.
+    "proppies", "propia", "liderprop", "lujanprop", "aspenbienesraices",
 }
 
 
