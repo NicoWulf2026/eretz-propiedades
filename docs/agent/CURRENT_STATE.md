@@ -36,6 +36,10 @@ Libro de familias detenidas: `ERETZ_FAMILIAS_DETENIDAS.jsonl`. Hoy: ninguna.
 
 ### 2026-09-24
 
+- **Páginas de categoría guardadas como fichas** (`cfd040385a`): van a
+  revisión (detalle fallido), no se borran. Regla medida sobre 157 fichas
+  reales: 0 falsos positivos. `cbdestino` había guardado una con el precio de
+  un aviso de la grilla.
 - **Xintel certificaba en falso** (`79fa5ae1dd`, `fa6eba6970`; excepción de
   ventana cerrada). `in_des` es una bandera: 256 fichas guardaban «True» como
   descripción y 1.014 la perdían; la real está en `in_obs`. 10 agencias, 6

@@ -65,12 +65,13 @@ se produjo durante el cambio queda sin `strategy_fingerprint`. Entonces:
    `cortes` era COMPLETE con 23 títulos «Cortes Propiedades» (arreglado en
    `generico`, `0bd66ac5e5`, pero la guardia falta para la próxima plantilla).
    Otras 5 agencias con el mismo patrón ya salen NEEDS_FIX por otra razón.
-   Junto con las páginas de aterrizaje (`fenix` 3, `casablanca` 10): causa
-   medida — `run_rollout` evalúa `ficha_sin_contenido` por ficha (líneas
-   ~569/602) ANTES de `descartar_descripciones_compartidas` (~621), así que
-   el eslogan del sitio cuenta como contenido. Re-evaluar después del
-   descarte, y sumar la marca del título del sitio (`Guía Inmobiliaria`,
-   `Fénix Inmobiliaria en Posadas`) como título del sitio cuando se repite.
+   Páginas de aterrizaje: las de categoría con grilla (`casablanca`,
+   `cbdestino`) ya van a revisión en `generico` (`cfd040385a`). Queda `fenix`
+   (3): su grilla se arma con JavaScript (1 enlace visible) y la regla no la
+   alcanza. Causa de fondo, compartida: `run_rollout` evalúa
+   `ficha_sin_contenido` por ficha (~569/602) ANTES de
+   `descartar_descripciones_compartidas` (~621), y el eslogan del sitio cuenta
+   como contenido. Re-evaluar después del descarte.
    `floorSize` sigue sin usarse (no dice total o cubierta).
 5b. `wordpress` (Houzez): conteos con punto final («1.») no se leen
    (`gustavo teruel`). Próxima ventana de `wordpress`; «Si.» NO es un conteo.
