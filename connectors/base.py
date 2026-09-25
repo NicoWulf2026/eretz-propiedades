@@ -173,6 +173,8 @@ CAMPOS_DE_COHERENCIA = (
     "tipo_propiedad", "superficie_total", "superficie_cubierta",
     "dormitorios", "ambientes", "banos", "latitud", "longitud",
     "precio", "moneda",
+    # Solo de lectura: la regla de la cochera decide con el titulo.
+    "titulo",
 )
 
 # `imagenes` queda AFUERA a proposito, y no por olvido.

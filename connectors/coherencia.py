@@ -72,6 +72,21 @@ def _es_relleno(precio: float, moneda: Any) -> bool:
     return precio >= tope
 
 
+RE_COCHERA = re.compile(r"\b(?:cocheras?|garages?|estacionamientos?)\b")
+# Cualquier mencion de ambientes o dormitorios -en cifras o en letras:
+# «TRES AMBIENTE CON COCHERA»-, «con cochera», o un tipo edificado.
+RE_DESCRIBE_VIVIENDA = re.compile(
+    r"\bambientes?\b|\bamb\b|\bdormitorios?\b|\bdorm\b|\b\d+\s*(?:amb|dorm)|\bcon\s+cocheras?\b"
+    r"|\b(?:semi\s*piso|semipiso|piso|departamento|depto|casa|chalet|duplex|triplex|ph"
+    r"|monoambiente|galpon|local|oficina|complejo|edificio|quinta)\b")
+
+
+def _sin_tildes(texto: str) -> str:
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFKD", texto.lower())
+                   if not unicodedata.combining(c))
+
+
 def revisar(p: dict) -> list[str]:
     """Corrige `p` en el lugar y devuelve que se descarto y por que."""
     fuera: list[str] = []
@@ -112,6 +127,25 @@ def revisar(p: dict) -> list[str]:
     if tot and tipo and tipo not in TIPOS_DE_TIERRA and tot > SUPERFICIE_EDIFICADA_MAXIMA:
         p["superficie_total"] = None
         fuera.append("superficie_total_absurda_para_el_tipo")
+
+    # Una cochera no tiene dormitorios ni varios ambientes: 157 de 594 en los
+    # paquetes del 25-09. Decide el titulo, que viaja en `p` como dato de
+    # solo lectura: si dice cochera y no describe una vivienda sobran los
+    # conteos (`farina` «Newbery 9192 – Cochera», 1 dormitorio de la meta de
+    # Houzez); si describe una vivienda o no nombra tipo, sobra el tipo
+    # (`berrueta` «3 AMBIENTES AL FRENTE»). Sin titulo no se decide.
+    if (p.get("tipo_propiedad") == "cochera" and "titulo" in p
+            and ((_num(p.get("dormitorios")) or 0) >= 1
+                 or (_num(p.get("ambientes")) or 0) >= 2)):
+        titulo = _sin_tildes(str(p.get("titulo") or ""))
+        if RE_COCHERA.search(titulo) and not RE_DESCRIBE_VIVIENDA.search(titulo):
+            for campo in ("dormitorios", "ambientes"):
+                if p.get(campo):
+                    p[campo] = None
+                    fuera.append(f"{campo}_en_una_cochera")
+        else:
+            p["tipo_propiedad"] = None
+            fuera.append("tipo_propiedad_cochera_con_dormitorios")
 
     if p.get("tipo_propiedad") == "terreno":
         for campo in ATRIBUTOS_DE_VIVIENDA:
