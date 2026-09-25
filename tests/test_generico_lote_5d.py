@@ -86,3 +86,38 @@ def test_un_compartir_con_la_foto_en_la_query_no_es_foto():
         f'<a href="https://pinterest.com/pin/create/button/?media=https://alfa.test/f{i}.jpg">p</a>'
         for i in range(5))
     assert _normalizar(_ficha(compartir)) is None
+
+
+# --- ambientes que la ficha solo dice en el titulo ---------------------------
+# 156 fichas `generico` en 21 agencias (`bardi` 40, `blanco` 33): «Casa de 5
+# Ambientes en Remedios de Escalada.» y el cuerpo rotula dormitorios y banos
+# pero no ambientes. Las 46 que discrepan con el cuerpo son titulos de varias
+# unidades («Casa de 3 amb. + depto. de 2 amb.»): ahi el cuerpo suma y manda.
+
+def _ficha_titulo(titulo: str, cuerpo: str = "") -> str:
+    # El titulo fuera del cuerpo principal, como en `bardi`.
+    return (f"<html><body><header><h1>{titulo}</h1></header><main>"
+            "<p>Venta. Precio USD 260.000</p>"
+            '<div><p class="text-sm">Baños</p><p class="text-sm">3</p></div>'
+            '<div><p class="text-sm">Dormitorios</p><p class="text-sm">3</p></div>'
+            f"{cuerpo}"
+            f"{VISOR}{RELLENO}</main></body></html>")
+
+
+def test_MUERDE_los_ambientes_del_titulo_cuando_el_cuerpo_no_los_dice():
+    p = _normalizar(_ficha_titulo("Casa de 5 Ambientes en Remedios de Escalada."))
+    assert p.ambientes == 5
+
+
+def test_el_cuerpo_manda_sobre_el_titulo():
+    p = _normalizar(_ficha_titulo(
+        "Casa de 5 Ambientes", '<div><p class="text-sm">Ambientes</p><p class="text-sm">4</p></div>'))
+    assert p.ambientes == 4
+
+
+def test_un_titulo_de_varias_unidades_no_dice_los_ambientes():
+    for titulo in ("Casa de 3 amb. + depto. de 2 amb. en venta",
+                   "Casa de 3 amb. con monoambiente en venta",
+                   "2 casas de 4 y 5 amb. en venta",
+                   "Edificio en block de 3 ambientes"):
+        assert _normalizar(_ficha_titulo(titulo)).ambientes is None, titulo

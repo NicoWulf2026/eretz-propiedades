@@ -2405,9 +2405,11 @@ class GenericoConnector(Connector):
                 datos.get("dorm")),
             "banos": None if es_emprendimiento else self._cuenta_de_ficha(
                 principal, texto_campos, ETIQUETAS_DE_CONTEO["banos"], datos.get("banos")),
-            "ambientes": None if es_emprendimiento else self._cuenta_de_ficha(
-                principal, texto_campos, ETIQUETAS_DE_CONTEO["ambientes"],
-                datos.get("ambientes")),
+            "ambientes": None if es_emprendimiento else (
+                self._cuenta_de_ficha(principal, texto_campos,
+                                      ETIQUETAS_DE_CONTEO["ambientes"],
+                                      datos.get("ambientes"))
+                or self._ambientes_del_titulo(titulo)),
             "superficie_total": (mapaprop.get("superficie_total")
                                  or datos.get("sup_total")
                                  or self._sup(texto_campos, r"total|terreno")),
@@ -3665,6 +3667,28 @@ class GenericoConnector(Connector):
             return None
         valor = int(hallazgo.group(1))
         return valor if 1 <= valor <= 99 else None
+
+    @staticmethod
+    def _ambientes_del_titulo(titulo: str | None) -> int | None:
+        """Los ambientes que la ficha solo dice en su titulo.
+
+        `bardi` rotula dormitorios y banos como pares y titula «Casa de 5
+        Ambientes»: la tabla estructurada corta, con razon, la caida al texto
+        plano, y el titulo quedaba sin leer. 156 fichas en 21 agencias.
+
+        Solo un titulo de UNA unidad: en los 46 que discrepaban con el cuerpo
+        el titulo nombraba varias («Casa de 3 amb. + depto. de 2 amb.») y el
+        cuerpo sumaba.
+        """
+        if not titulo:
+            return None
+        hallazgos = re.findall(r"(?<![\d+])\b([1-9])\s*amb(?:ientes?\b|\.)",
+                               titulo, re.I)
+        if len(hallazgos) != 1 or re.search(
+                r"\+|monoamb|\b(?:casas|deptos|departamentos|unidades|"
+                r"locales|en\s+block)\b", titulo, re.I):
+            return None
+        return int(hallazgos[0])
 
     @staticmethod
     def _es_tabla_de_atributos(texto: str) -> bool:
