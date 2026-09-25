@@ -36,6 +36,12 @@ Libro de familias detenidas: `ERETZ_FAMILIAS_DETENIDAS.jsonl`. Hoy: ninguna.
 
 ### 2026-09-24
 
+- **Operación por rótulo** (`88f5a46c60`): «Tipo de operación En venta» (plantilla
+  `/site/properties/`) y «alquiler temporario» que se cortaba en «alquiler». 6 de
+  22 fichas reales ganan su operación, ninguna otra cambia. El gate de las
+  21:49 marcó 322 pérdidas: 312 eran `ferrari` perdiendo la dirección y ciudad
+  de la OFICINA de la inmobiliaria (nodo `RealEstateAgent`), firmadas como
+  corrección; el resto, fichas con dos ofertas o conteos de emprendimiento.
 - **La cola repetía trabajo** (`4f377ad210`, no toca huellas). Hoy: 125
   resultados sobre 58 agencias; 12,5 de 15,8 h de worker en agencias
   certificadas 2+ veces el mismo día; sólo 6 nuevas. Los canarios (3 por
