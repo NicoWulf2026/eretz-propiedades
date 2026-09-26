@@ -84,6 +84,11 @@ la noche del 25-09 (bottai, battista, cuini, WordPress→generico, Terravirtual�
 cola recertifique esas agencias: reconstruir entonces (v4g) antes de proponer el reemplazo.
 Comando: `python scripts/api_snapshot.py --salida <carpeta en _scratch>` — **sin `--salida`
 escribe en la ruta servida** (= deploy).
+QA de API en proceso sobre la v4f (`scripts/benchmark_unified_api.py`, 00:0x, con 2 workers
+corriendo): 14/14 casos con el estado esperado (400 ventana, 422 orden inválido, 200 vacío);
+mediana explorer 201 ms, combinada 260 ms, mapa chico 184 ms, mapa combinado 620 ms, detalle
+8 ms, lote de 100 22 ms; 476 GEO_CONFLICT y 0 de ellos en el mapa. Salida:
+`_scratch/unification/snapshot_v4f_2026-09-26/API_BENCHMARK.json`. No es TTFB remoto.
 
 Detalle de la v4e:
 Construida el 25-09 17:16 en `_scratch/unification/snapshot_v4e_2026-09-25/`,
