@@ -45,6 +45,9 @@ Historia: Git (`git log --since=2026-09-25`).
   NEEDS_FIX, 394 fichas), «$X / DOLARES» = USD, similares/destacadas de inspiry fuera del
   cuerpo, tipo rotulado antes que el menú — `9947dccc14`. Mirar en el próximo gate: cip,
   christian arce, ente, gonzalez theyler, constant, berardi (cambian muchos campos, a favor).
+- Medianoche: título h2-h4 sin og/h1 y «Cocheras: 1» no es tipo (`candoli`) — `b812dfc03b`;
+  Terravirtual `/ficha/<md5>` (`blangiforti`, `g calvo`: dejan de guardar tarjetas del listado)
+  — `d3f1a7960b`. Gate 23:4x: 266 agencias, 14 firmadas (13 blangiforti + calzetta), 0 pendientes.
 
 ## Corriendo
 - Cola con 2 workers + relanzador + vigilante. Mirarla solo si hay paradas.
@@ -72,11 +75,7 @@ Historia: Git (`git log --since=2026-09-25`).
    (`.show-more`, foto ajena); precio accesorio `caruso`; tipo de respaldo leído del menú
    (parcela → casa en `fernando villalba`); operación
    solo en la ruta del catálogo: `bottai` RESUELTO; `constant` 24 (wordpress) pendiente.
-   Diagnosticados 25-09 noche, sin arreglar: `blangiforti` (sus propios enlaces
-   `/propiedades/ficha/<hash>` sirven el LISTADO; la ficha real es `/ficha/<hash>`: la corrida
-   guarda datos de una tarjeta al azar → no idempotente; hace falta un criterio general de
-   «la url de ficha sirve un listado», el conteo de tarjetas no separa: la ficha real también trae
-   una grilla); `harfouche` (WP sin CPT en REST, sitemaps con 429: dejar a la cola);
+   Diagnosticados 25-09 noche, sin arreglar: `harfouche` (WP sin CPT en REST, sitemaps con 429: dejar a la cola);
    `gaggiotti` (SPA Vite, catálogo por JS); `i alfredo gonzalez theyler`: tipo, precio y relacionadas RESUELTOS; queda el título con
    sufijo del sitio.
 4. Regression Gate tras cada tanda (comando en `.claude/rules/scraper.md`).
