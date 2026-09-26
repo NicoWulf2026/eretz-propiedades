@@ -53,6 +53,9 @@ Historia: Git (`git log --since=2026-09-25`).
 - Cola con 2 workers + relanzador + vigilante. Mirarla solo si hay paradas.
 
 ## No rehacer
+- **`gaggiotti`**: SPA; el catálogo solo sale de `https://www.gaggiotti.com.ar/api/Property/Search`
+  y su robots.txt prohíbe `/api/`; el sitemap no lista fichas. **No se usa la API**: queda como
+  bloqueo de la fuente (misma regla que argencasas).
 - **Argencasas** (`coviella`, `eduardo fernandez`, `de ruyck`): responde 404 vacío a nuestro UA
   declarado en TODO el sitio y su robots.txt prohíbe `/motor/`. **No se evade** (ni UA de
   navegador ni /motor/). Acción externa: pedir habilitación a argencasas o dejarlas BLOCKED_EXTERNAL.
@@ -76,7 +79,7 @@ Historia: Git (`git log --since=2026-09-25`).
    (parcela → casa en `fernando villalba`); operación
    solo en la ruta del catálogo: `bottai` RESUELTO; `constant` 24 (wordpress) pendiente.
    Diagnosticados 25-09 noche, sin arreglar: `harfouche` (WP sin CPT en REST, sitemaps con 429: dejar a la cola);
-   `gaggiotti` (SPA Vite, catálogo por JS); `i alfredo gonzalez theyler`: tipo, precio y relacionadas RESUELTOS; queda el título con
+`i alfredo gonzalez theyler`: tipo, precio y relacionadas RESUELTOS; queda el título con
    sufijo del sitio.
 4. Regression Gate tras cada tanda (comando en `.claude/rules/scraper.md`).
 5. Beta del backend (`docs/ERETZ_UNIFICATION_PLAN.md` § «Backend beta confiable»).
