@@ -294,6 +294,46 @@ def _rendered(valor: Any) -> str | None:
     return limpiar(_texto(str(valor))) if valor else None
 
 
+# RealHomes guarda lo mismo que Houzez con otros nombres. `alas` (215 fichas)
+# publica direccion, dormitorios, banos y superficies en REAL_HOMES_property_*
+# y se certificaba sin ninguno de esos campos porque solo se leian las claves
+# `fave_*`. Se traducen, sin pisar una clave Houzez que ya este.
+REAL_HOMES_A_HOUZEZ = {
+    "REAL_HOMES_property_address": "fave_property_address",
+    "REAL_HOMES_property_bedrooms": "fave_property_bedrooms",
+    "REAL_HOMES_property_bathrooms": "fave_property_bathrooms",
+    "REAL_HOMES_property_size": "fave_property_size",
+    "REAL_HOMES_property_lot_size": "fave_property_land",
+    "REAL_HOMES_property_price": "fave_property_price",
+    "REAL_HOMES_property_price_prefix": "fave_currency",
+}
+
+
+def meta_con_claves_houzez(meta: dict[str, Any]) -> dict[str, Any]:
+    salida = dict(meta)
+    for origen, destino in REAL_HOMES_A_HOUZEZ.items():
+        valor = meta.get(origen)
+        if valor not in (None, "", []) and salida.get(destino) in (None, "", []):
+            salida[destino] = valor
+    ubicacion = meta.get("REAL_HOMES_property_location")
+    if (isinstance(ubicacion, dict) and ubicacion.get("latitude") and ubicacion.get("longitude")
+            and salida.get("fave_property_location") in (None, "", [])):
+        salida["fave_property_location"] = f"{ubicacion['latitude']},{ubicacion['longitude']}"
+    return salida
+
+
+def meta_de_propiedad(meta: dict[str, Any]) -> bool:
+    """Si el objeto REST trae datos de la propiedad o solo meta del tema.
+
+    `echesortu` y `fiorio` exponen el tipo de post por REST, pero su meta es
+    solo el del constructor de paginas (`_acf_changed`, `site-sidebar-layout`):
+    sin direccion, ciudad, banos ni superficie. El HTML de la misma ficha si
+    los publica.
+    """
+    return any(re.search(r"price|precio|bath|bed|room|size|area|address|direcc|fave_|REAL_HOMES", k, re.I)
+               and v not in (None, "", [], {}) for k, v in meta.items())
+
+
 def _primero(meta: dict[str, Any], clave: str) -> Any:
     valor = meta.get(clave)
     if isinstance(valor, list):
@@ -714,6 +754,14 @@ class WordPressConnector(Connector):
         item = crudo.get("rest")
         if item is None:
             return self._normalizar_con_generico(crudo, fuente)
+        meta_rest = item.get("property_meta") or item.get("meta") or {}
+        if (not crudo.get("post_taxonomy_catalog")
+                and not (isinstance(meta_rest, dict) and meta_de_propiedad(meta_rest))):
+            # Solo si el HTML da una ficha; si no, el objeto REST como antes.
+            alternativa = self._normalizar_con_generico(
+                {k: v for k, v in crudo.items() if k != "rest"}, fuente)
+            if alternativa is not None:
+                return alternativa
         html = ""
         if item is None:
             try:
@@ -733,7 +781,7 @@ class WordPressConnector(Connector):
             texto = (texto.replace("Ba�o", "Baño").replace("ba�o", "baño")
                      .replace("m�", "m²"))
             meta_cruda = item.get("property_meta") or item.get("meta") or {}
-            meta = meta_cruda if isinstance(meta_cruda, dict) else {}
+            meta = meta_con_claves_houzez(meta_cruda) if isinstance(meta_cruda, dict) else {}
             imagenes = []
             for clave in ("_thumbnail_url", "featured_image", "image"):
                 v = (meta or {}).get(clave)
