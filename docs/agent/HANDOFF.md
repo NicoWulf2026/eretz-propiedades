@@ -48,6 +48,8 @@ Historia: Git (`git log --since=2026-09-25`).
 - Medianoche: título h2-h4 sin og/h1 y «Cocheras: 1» no es tipo (`candoli`) — `b812dfc03b`;
   Terravirtual `/ficha/<md5>` (`blangiforti`, `g calvo`: dejan de guardar tarjetas del listado)
   — `d3f1a7960b`. Gate 23:4x: 266 agencias, 14 firmadas (13 blangiforti + calzetta), 0 pendientes.
+- Paro 26-09 00:11 FAMILIA generico (`fandino`: 10 órdenes del listado `venta_mas-nuevas`… como
+  fichas) → `c7f463090c`; la familia se libera sola por cambio de huella en el próximo relanzamiento.
 
 ## Corriendo
 - Cola con 2 workers + relanzador + vigilante. Mirarla solo si hay paradas.
