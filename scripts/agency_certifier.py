@@ -26,7 +26,7 @@ from connectors.base import (ESQUEMA_CHECKPOINT, HUELLA_VERSION, Checkpoint,
                              Descargador, Fuente, LimitadorDeRitmo, a_numero,
                              detectar_operacion, detectar_tipo)
 from connectors.century21 import Century21Connector
-from connectors.generico import (ETIQUETAS_DE_CONTEO, GenericoConnector,
+from connectors.generico import (ETIQUETA_SUP_TOTAL, ETIQUETAS_DE_CONTEO, GenericoConnector,
                                  _texto, cuerpo_principal,
                                  normalizar_texto_campos,
                                  sin_filtros_catalogo)
@@ -270,7 +270,7 @@ def source_signals(body: str, url: str = "") -> dict[str, bool]:
     # Un valor como 1 m2 es provisto pero inválido para una propiedad. No es
     # un fallo del extractor que la normalización conservadora lo descarte.
     signals["superficie_total"] = bool(
-        GenericoConnector._sup(text, r"total|terreno"))
+        GenericoConnector._sup(text, ETIQUETA_SUP_TOTAL))
     signals["superficie_cubierta"] = bool(
         GenericoConnector._sup(text, r"cubiert|construid"))
     return signals

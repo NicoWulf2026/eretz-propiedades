@@ -82,6 +82,11 @@ TOPE_TOKKO_PROXY = 5000
 # conjunto viene reordenado entre pedidos.
 MAX_BARRIDOS_TOKKO_PROXY = 4
 
+# Rotulos de la superficie total. «Sup. Lote 1340 m²» (`conti`, 74 fichas que
+# guardaban el lote de una tarjeta vecina); «Lote» a secas no: «Lote 12
+# Manzana 3» es un numero de lote.
+ETIQUETA_SUP_TOTAL = r"total|terreno|sup(?:erficie)?\.?\s*(?:del\s+)?lote"
+
 # Parametro de paginacion que el listado DECLARA en sus propios enlaces.
 PARAMS_DE_PAGINA = ("start", "pagina", "page", "offset", "pg", "p")
 TOPE_PAGINAS_DECLARADAS = 200
@@ -219,6 +224,9 @@ RE_NO_FICHA = re.compile(
     # Filtros del catalogo como ruta: /propiedades-venta/tipo/casa-1/dormitorios/
     # 2-dormitorios-9/ (`cuini`, 16 del menu enumeradas como fichas).
     r"|^/propiedades-(?:venta|alquiler)/(?:tipo|dormitorios|ciudad|zona|barrio)/"
+    # Un resultado de busqueda no es una ficha: /buscar/alquileres
+    # (`global inmobiliaria`).
+    r"|^/(?:buscar|busqueda)(?:/|$)"
     # Y la pagina N del listado: /propiedades/pagina-3/ es un listado.
     r"|/(?:pagina|page)[-/]\d+/?$",
     re.I)
@@ -2675,7 +2683,7 @@ class GenericoConnector(Connector):
                 or self._ambientes_del_titulo(titulo)),
             "superficie_total": (mapaprop.get("superficie_total")
                                  or datos.get("sup_total")
-                                 or self._sup(texto_campos, r"total|terreno")),
+                                 or self._sup(texto_campos, ETIQUETA_SUP_TOTAL)),
             "superficie_cubierta": (mapaprop.get("superficie_cubierta")
                                     or datos.get("sup_cubierta")
                                     or self._sup(texto_campos, r"cubiert|construid")),

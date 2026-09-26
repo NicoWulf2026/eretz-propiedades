@@ -541,3 +541,17 @@ def test_paginacion_declarada_por_start_y_sin_variantes_de_orden():
     items = list(c._paginacion_declarada(pagina(1, [13]), lista, base, None, vistas))
     codigos = sorted(int(i["source_url"].rsplit("=", 1)[1]) for i in items)
     assert codigos == [20, 21, 22, 30, 31, 32]
+
+
+def test_sup_lote_es_la_superficie_total():
+    """`conti`: «Sup. Cubierta 317 m² Sup. Lote 1340 m²»."""
+    from connectors.generico import ETIQUETA_SUP_TOTAL
+    assert GenericoConnector._sup("Sup. Cubierta 317 m² Sup. Lote 1340 m²", ETIQUETA_SUP_TOTAL) == 1340
+    assert GenericoConnector._sup("Lote 12 Manzana 3", ETIQUETA_SUP_TOTAL) is None
+
+
+def test_un_resultado_de_busqueda_no_es_una_ficha():
+    html = ('<a href="/buscar/alquileres">Alquileres</a>'
+            '<a href="/propiedad/venta-de-casa-en-obera-11304-2615242">Casa</a>')
+    fichas = GenericoConnector._fichas_en(html, "https://g.test")
+    assert not any("/buscar/" in f for f in fichas)
