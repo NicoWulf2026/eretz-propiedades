@@ -85,6 +85,11 @@ Historia: Git (`git log --since=2026-09-25`).
 5. Beta del backend (`docs/ERETZ_UNIFICATION_PLAN.md` § «Backend beta confiable»).
 
 ## Decisiones de producto abiertas (no técnicas)
+- **robots.txt**: el pipeline no lo consulta. Medido 26-09 00:1x: 283 agencias certificadas o en
+  NEEDS_FIX, 31.354 URLs de ficha, **0 prohibidas** para nuestro UA. Los dos casos que sí prohíben
+  (argencasas `/motor/`, gaggiotti `/api/`) se dejaron sin leer a mano. Falta decidir si se agrega
+  una guarda general en el descargador (toca la huella y también los endpoints de listado/API:
+  medir antes esos, no solo las fichas).
 - Con título vacío (título = agencia descartado en la snapshot) el frontend muestra «Propiedad sin
   título» (`frontend/src/lib/api-v2/property-boundary.ts`). Alternativa: componer «{tipo} en
   {operación} · {localidad}» con campos reales. Decide el producto; mobile sigue congelado.
