@@ -58,6 +58,10 @@ Historia: Git (`git log --since=2026-09-25`).
   `?page=`, `?pagina=` (ahora se recorren esas páginas en vez de las convenciones).
 - 02:4x: «Sup. Lote» = superficie total (`conti`, 74 fichas que guardaban el lote de una vecina) y
   `/buscar/` no es ficha — `2385c5c0d7`. Gate 02:5x: 293 agencias, 86 firmadas, 0 pendientes.
+- 03:2x `cuini`: catálogo por operación no es ficha — `a161c7b3f2`.
+- Paro 03:56 COMPARTIDO (`ramirez`, nueva): `<base href>` en el catálogo por categorías y
+  `/propiedad/<id>-slug.html` es ficha — `b95ce8b7a8` + diferida firmada 04:04. Mirar en el gate:
+  RE_FICHA ahora acepta `.html`/`.php` al final (más urls entran como ficha sin guardián).
 
 ## Corriendo
 - Cola con 2 workers + relanzador + vigilante. Mirarla solo si hay paradas.
