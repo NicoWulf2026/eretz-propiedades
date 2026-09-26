@@ -65,6 +65,8 @@ Historia: Git (`git log --since=2026-09-25`).
 - Paro 05:1x FAMILIA generico (`zamorano`, plataforma ASP de Miramar como ballarre): todos los
   catálogos con paginación declarada y solo su grilla (sin «Destacadas»/«Últimos Ingresos» al azar)
   — `af75580ceb` + diferida firmada 05:49. Dos corridas idénticas: zamorano 125, ballarre 193.
+- Paro 06:2x COMPARTIDO (`berrino`, wordpress REST): miniaturas -WxH al azar del respaldo HTML
+  — `ecf733964d` + diferida firmada 06:49. Gate 06:2x: 320 agencias, 0 pendientes.
 
 ## Corriendo
 - Cola con 2 workers + relanzador + vigilante. Mirarla solo si hay paradas.
