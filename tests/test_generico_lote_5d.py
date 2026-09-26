@@ -555,3 +555,11 @@ def test_un_resultado_de_busqueda_no_es_una_ficha():
             '<a href="/propiedad/venta-de-casa-en-obera-11304-2615242">Casa</a>')
     fichas = GenericoConnector._fichas_en(html, "https://g.test")
     assert not any("/buscar/" in f for f in fichas)
+
+
+def test_el_catalogo_por_operacion_no_es_una_ficha():
+    """`cuini`: /propiedades-venta/ y /propiedades-alquiler/?tipo=2."""
+    html = ('<a href="propiedades-venta/">Venta</a><a href="propiedades-alquiler/?tipo=2">Deptos</a>'
+            '<a class="propiedad" href="propiedad/1681/italia-27-bis/">Italia</a>')
+    assert GenericoConnector._fichas_en(html, "https://cuini.test") == [
+        "https://cuini.test/propiedad/1681/italia-27-bis/"]

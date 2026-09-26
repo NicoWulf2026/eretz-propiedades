@@ -223,7 +223,8 @@ RE_NO_FICHA = re.compile(
     r"-(?:de-)?propiedad(?:es)?|property-(?:status|type|city|area|feature|label|state))/"
     # Filtros del catalogo como ruta: /propiedades-venta/tipo/casa-1/dormitorios/
     # 2-dormitorios-9/ (`cuini`, 16 del menu enumeradas como fichas).
-    r"|^/propiedades-(?:venta|alquiler)/(?:tipo|dormitorios|ciudad|zona|barrio)/"
+    # Y el catalogo mismo, con o sin ?tipo=2 (`cuini`, 26-09: 4 de 41).
+    r"|^/propiedades-(?:venta|alquiler)/(?:(?:tipo|dormitorios|ciudad|zona|barrio)/|$)"
     # Un resultado de busqueda no es una ficha: /buscar/alquileres
     # (`global inmobiliaria`).
     r"|^/(?:buscar|busqueda)(?:/|$)"
