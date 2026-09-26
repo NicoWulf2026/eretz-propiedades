@@ -50,6 +50,8 @@ Historia: Git (`git log --since=2026-09-25`).
   — `d3f1a7960b`. Gate 23:4x: 266 agencias, 14 firmadas (13 blangiforti + calzetta), 0 pendientes.
 - Paro 26-09 00:11 FAMILIA generico (`fandino`: 10 órdenes del listado `venta_mas-nuevas`… como
   fichas) → `c7f463090c` + diferida firmada 00:25 (la familia volvió a la cola).
+- Paro 00:28 FAMILIA wordpress (`ingar`, tema ERE: ubicación rotulada con enlace, descripción con
+  su propio h2) → `7d94edd1a5` + diferida firmada 00:36.
 
 ## Corriendo
 - Cola con 2 workers + relanzador + vigilante. Mirarla solo si hay paradas.
