@@ -74,6 +74,9 @@ Historia: Git (`git log --since=2026-09-25`).
   precio): verificado, el sitio no publica precios en ninguna ficha — no es defecto.
 - Paro 08:3x COMPARTIDO (`martinez quiles`: galpón con 2 fotos) → `6d399aa72a` + diferida firmada.
 - Paro 09:0x COMPARTIDO (`lizio albarello`: `/resultado/…` como fichas) → se recorren como catálogos; 24 fichas reales + diferida firmada.
+- Paro 09:3x FAMILIA wordpress (`landart`): 429 del hosting wnpservers (igual que harfouche) — causa
+  externa, diferida firmada sin cambio de código. Mejora posible: que un 429 en el descubrimiento
+  deje la corrida como bloqueada y no como «inventario colapsado».
 
 ## Corriendo
 - Cola con 2 workers + relanzador + vigilante. Mirarla solo si hay paradas.
