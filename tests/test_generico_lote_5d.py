@@ -583,3 +583,10 @@ def test_la_grilla_del_listado_sin_destacadas_al_azar():
             '<h2 class="section-title">Ventas Destacadas</h2><a href="ficha.asp?codigo=9">z</a>')
     cuerpo = GenericoConnector._solo_el_listado(html)
     assert "codigo=1" in cuerpo and "codigo=9" not in cuerpo
+
+
+def test_dos_fotos_con_precio_y_operacion_alcanzan():
+    texto = "Locales A la Calle OPERACIÓN Alquiler $ 5200000.00 galpon en alquiler"
+    assert GenericoConnector._confirma_ficha("", texto, 5200000.0, ["a.jpg", "b.jpg"])
+    assert not GenericoConnector._confirma_ficha("", texto, 5200000.0, ["a.jpg"])
+    assert not GenericoConnector._confirma_ficha("", "Quienes somos", None, ["a.jpg", "b.jpg"])

@@ -3873,6 +3873,13 @@ class GenericoConnector(Connector):
         if (not fotos_suficientes and tipo_ld and imagenes and precio is not None
                 and RE_PRECIO_CON_MONEDA.search(t) and RE_OPERACION_TXT.search(t)):
             fotos_suficientes = True
+        # Sin schema, dos fotos con precio con moneda y operacion tambien:
+        # `martinez quiles` publica un galpon en alquiler, $ 5.200.000, con 2
+        # fotos, y era la unica ficha descartada de la agencia (paro 08:3x).
+        # Una pagina institucional no trae precio con moneda Y operacion.
+        if (not fotos_suficientes and len(imagenes) >= 2 and precio is not None
+                and RE_PRECIO_CON_MONEDA.search(t) and RE_OPERACION_TXT.search(t)):
+            fotos_suficientes = True
         # Sin precio numerico, pero describiendo el inmueble en detalle.
         #
         # La concesion de "consultar precio" ya estaba razonada mas arriba
