@@ -197,8 +197,8 @@ def source_signals(body: str, url: str = "") -> dict[str, bool]:
     # Lo que viene despues de relacionadas, footer o scripts de filtros no
     # describe la ficha principal y no puede probar que un campo fue provisto.
     main = cuerpo_principal(sin_ficha_de_la_agencia(body))
-    is_development = (
-        "/emprendimiento/" in urllib.parse.urlparse(url).path.lower())
+    is_development = bool(re.search(
+        r"/emprendimientos?/", urllib.parse.urlparse(url).path.lower()))
     if is_development:
         main = re.split(r">\s*UNIDADES\s*<", main, maxsplit=1, flags=re.I)[0]
     # Portales legacy insertan el formulario de busqueda dentro del mismo
@@ -736,8 +736,16 @@ def field_audit(properties: list[dict[str, Any]], pages: dict[str, dict[str, Any
                          and "dormitorios>ambientes" in discarded) or
                         (field in {"superficie_total", "superficie_cubierta"}
                          and "cubierta>total" in discarded) or
+                        # Precio y moneda viajan juntos: el precio de relleno
+                        # (`ciam`: USD 11.111.111) se lleva la moneda con el.
+                        (field == "moneda" and "precio" in discarded) or
                         (field in {"latitud", "longitud"}
-                         and "coordenada_fuera_de_argentina" in discarded))
+                         and "coordenada_fuera_de_argentina" in discarded) or
+                        # El runner vacia la descripcion que era el pie legal
+                        # del sitio o un texto repetido en media agencia, y lo
+                        # anota: es la validacion, no un campo sin leer.
+                        (field == "descripcion" and bool((prop.get("extra") or {})
+                                                        .get("descripcion_descartada"))))
             if rejected:
                 validation_rejected += 1
             elif signal:

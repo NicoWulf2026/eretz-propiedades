@@ -2200,8 +2200,11 @@ class GenericoConnector(Connector):
         # Un emprendimiento contiene fichas de unidades debajo de ``UNIDADES``.
         # Esos ambientes/precios/operaciones pertenecen a las unidades, no al
         # desarrollo padre. Mezclarlos inventa atributos para el proyecto.
-        es_emprendimiento = (
-            "/emprendimiento/" in urllib.parse.urlparse(url).path.lower())
+        # `alagna` publica los suyos en /emprendimientos/ (plural): 21 edificios
+        # salian tipo «casa» -del menu del sitio- con los dormitorios de una
+        # unidad cualquiera.
+        es_emprendimiento = bool(re.search(
+            r"/emprendimientos?/", urllib.parse.urlparse(url).path.lower()))
         principal_campos = (re.split(
             r">\s*UNIDADES\s*<", principal, maxsplit=1, flags=re.I)[0]
             if es_emprendimiento else principal)
@@ -2424,8 +2427,11 @@ class GenericoConnector(Connector):
                                or detectar_tipo(urllib.parse.unquote(
                                    urllib.parse.urlparse(url).path)
                                    .replace(".php", " ").replace("-", " "))
-                               or detectar_tipo(texto_campos[:300])
-                               or self._tipo_en_la_ficha(principal)),
+                               # En un emprendimiento el arranque del texto es
+                               # el menu y las tipologias de sus unidades.
+                               or (None if es_emprendimiento else (
+                                   detectar_tipo(texto_campos[:300])
+                                   or self._tipo_en_la_ficha(principal)))),
             "dormitorios": None if es_emprendimiento else self._cuenta_de_ficha(
                 principal, texto_campos, ETIQUETAS_DE_CONTEO["dormitorios"],
                 datos.get("dorm")),

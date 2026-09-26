@@ -319,3 +319,23 @@ def test_cinco_amb_sin_punto_tambien_es_una_cantidad():
     assert GenericoConnector._ambientes_del_titulo(
         "Amplio departamento de 5 amb Uso profesional o vivienda") == 5
     assert GenericoConnector._ambientes_del_titulo("Casa con ambos patios") is None
+
+
+def test_un_emprendimiento_en_plural_no_toma_tipo_ni_conteos_del_menu():
+    """`alagna`: /emprendimientos/edificio-en-dorrego-1400 salia «casa» con 3
+    dormitorios -el menu del sitio y una unidad de la tabla-."""
+    html = ("<html><head><title>Edificio en Dorrego 1400</title></head><body>"
+            "<nav><a href='/venta/casas'>Casas</a></nav><main>"
+            "<h1>Edificio en Dorrego 1400</h1>"
+            "<p>Descripcion: edificio con departamentos de 1 y 2 dormitorios, "
+            "3 ambientes, cocheras.</p><p>Dormitorios: 3</p>"
+            "<p>Precio U$S 76.050</p></main></body></html>")
+    c = GenericoConnector(descargador=Falso(html + RELLENO))
+    f = B.Fuente(canonical_agency_id="roomix:alagna", agency_name="Alagna",
+                 official_url="https://a.test/", inmobiliaria_id=1)
+    p = c.normalize({"source_listing_id": "57931",
+                     "source_url": "https://a.test/emprendimientos/edificio-en-dorrego-1400-57931"},
+                    f)
+    assert p is not None
+    assert p.tipo_propiedad is None
+    assert (p.dormitorios, p.ambientes, p.banos) == (None, None, None)

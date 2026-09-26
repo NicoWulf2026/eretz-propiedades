@@ -435,6 +435,25 @@ class LimitadorDeRitmo:
             self._ultimo[host] = ahora
 
 
+def contexto_tls() -> ssl.SSLContext:
+    """Verificacion completa contra el almacen del sistema MAS el de certifi.
+
+    `andradeinmobiliaria.com.ar` tiene un certificado valido cuya raiz no
+    esta en el almacen de Windows de esta maquina y si en el de certifi (el
+    que usa `requests`): cada pedido fallaba con CERTIFICATE_VERIFY_FAILED,
+    se leia como ErrorTransitorio y la agencia quedaba en NEEDS_FIX con
+    «zero inventory was not exhaustively proven». Sumar raices no afloja
+    nada: el nombre y la cadena se siguen verificando igual.
+    """
+    ctx = ssl.create_default_context()
+    try:
+        import certifi
+        ctx.load_verify_locations(certifi.where())
+    except (ImportError, OSError, ssl.SSLError):
+        pass
+    return ctx
+
+
 class Descargador:
     """Descarga cortes: identificado, con backoff y sin insistir cuando molesta."""
 
@@ -498,7 +517,7 @@ class Descargador:
         for intento in range(1, self.reintentos + 1):
             self.limitador.esperar(host)
             try:
-                ctx = ssl.create_default_context()
+                ctx = contexto_tls()
                 req = urllib.request.Request(url, headers={
                     "User-Agent": self.UA, "Accept-Encoding": "gzip",
                     "Accept": "text/html,application/xhtml+xml,application/json"})

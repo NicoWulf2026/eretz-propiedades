@@ -93,12 +93,18 @@ def query_de_paginacion(html: str) -> str | None:
     ayudante. Si no hay ninguna de las dos no se inventa nada: pedir una
     paginacion equivocada devuelve cero, que es peor que quedarse en 20.
     """
-    literal = RE_AJAX.search(html or "")
-    if literal:
-        return literal.group(1)
+    # Un `$.ajax('...')` literal no es siempre la paginacion: `global
+    # propiedades` abre antes el globo del mapa con
+    # `$.ajax('/infowindow_premium/'`, y quedarse con el primero dejaba el
+    # catalogo en 20 de 114 aunque el ayudante de paginacion estaba mas abajo.
+    literales = [m.group(1) for m in RE_AJAX.finditer(html or "")]
+    paginada = next((q for q in literales if q.rstrip().endswith(
+        ("&p=", "?p=", "&page=", "?page=", "&pagina=", "?pagina="))), None)
+    if paginada:
+        return paginada
     ayudante = RE_AJAX_AYUDANTE.search(html or "")
     if not ayudante:
-        return None
+        return literales[0] if literales else None
     busqueda, cuerpo = ayudante.group(1), ayudante.group(2)
     fijos: list[str] = []
     clave_pagina: str | None = None
