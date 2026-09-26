@@ -682,9 +682,38 @@ class WordPressConnector(Connector):
                 break
 
     # --------------------------------------------------------------- normalize
+    def _normalizar_con_generico(self, crudo: dict,
+                                 fuente: Fuente) -> PropiedadNormalizada | None:
+        """La ficha sin objeto REST se lee con el extractor HTML de `generico`.
+
+        El camino HTML propio de este connector leia el texto plano entero
+        -menu, destacadas y relacionadas incluidas-: las SEIS agencias que lo
+        usaban (`cip`, `christian arce`, `ente`, `gonzalez theyler`,
+        `constant`, `berardi`; 394 fichas) estaban en NEEDS_FIX, con operacion,
+        tipo, superficie y coordenadas sin leer y corridas no idempotentes.
+        `generico` ya resuelve esas fichas (medido en `constant`: operacion,
+        tipo, precio, banos, superficie y coordenadas). Se comparten errores
+        y descartes para que el runner los vea igual; el nombre del connector
+        de la fila sigue siendo `wordpress`.
+        """
+        from .generico import GenericoConnector
+        gen = getattr(self, "_generico", None)
+        if gen is None:
+            gen = GenericoConnector(self.descargador, self.checkpoint)
+            gen.nombre = self.nombre
+            gen.errores = self.errores
+            self._generico = gen
+        propiedad = gen.normalize(crudo, fuente)
+        if hasattr(gen, "descartes"):
+            self.descartes = gen.descartes
+        self.descartadas_por_forma = getattr(gen, "descartadas_por_forma", 0)
+        return propiedad
+
     def normalize(self, crudo: dict, fuente: Fuente) -> PropiedadNormalizada | None:
         url = crudo["source_url"]
         item = crudo.get("rest")
+        if item is None:
+            return self._normalizar_con_generico(crudo, fuente)
         html = ""
         if item is None:
             try:

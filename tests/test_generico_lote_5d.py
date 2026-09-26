@@ -429,3 +429,38 @@ def test_catalogos_gemelos_dan_la_operacion_que_la_ficha_no_dice():
     assert [op for _, op in fichas] == ["venta", "alquiler"]
     # Sin el gemelo no se asigna nada.
     assert c._catalogos_por_operacion(home.split("</a>")[0] + "</a>", base, None) == ({}, [])
+
+
+def test_signo_pesos_con_dolares_detras_es_usd():
+    """`ente`: «Price $990,000 / DOLARES»."""
+    html = ("<html><head><title>CASA BARRIO DALVIAN</title></head><body><main>"
+            "<h1>CASA BARRIO DALVIAN</h1><p>Price $990,000 / DOLARES En Venta</p>"
+            "<p>3 dormitorios 2 baños</p>"
+            "<img src='/f/1.jpg'><img src='/f/2.jpg'><img src='/f/3.jpg'>"
+            "</main></body></html>" + RELLENO)
+    p = _normalizar(html)
+    assert p is not None and (p.precio, p.moneda) == (990000.0, "USD")
+
+
+def test_similares_y_destacadas_de_inspiry_no_son_la_ficha():
+    """`gonzalez theyler`: el precio «Consultar» de la ficha y los USD de la barra lateral."""
+    from connectors.generico import cuerpo_principal
+    html = ('<h1>URQUIZA Y ENTRE RIOS</h1><span class="price">Consultar</span>'
+            '<aside class="sidebar"><section class="similar-properties meta-item-half">'
+            'CASA A RECICLAR $49,000 Dolares</section></aside>'
+            '<section class="widget clearfix Inspiry_Featured_Properties_Widget">$188,000</section>')
+    cuerpo = cuerpo_principal(html)
+    assert "Consultar" in cuerpo and "49,000" not in cuerpo and "188,000" not in cuerpo
+
+
+def test_el_tipo_rotulado_manda_sobre_el_menu():
+    """`gonzalez theyler`: menu «Venta Casa Departamento…» y rotulo «Oficina / Local»."""
+    html = ("<html><head><title>URQUIZA Y ENTRE RIOS</title></head><body><main>"
+            "<p>Venta Casa Departamento Oficina / Local Cochera</p>"
+            "<h1>URQUIZA Y ENTRE RIOS</h1><p>USD 90.000 venta</p>"
+            '<span class="meta-item-label">Tipo Propiedad</span>'
+            '<span class="meta-item-value">Venta Oficina / Local</span>'
+            "<img src='/f/1.jpg'><img src='/f/2.jpg'><img src='/f/3.jpg'>"
+            "</main></body></html>" + RELLENO)
+    p = _normalizar(html)
+    assert p is not None and p.tipo_propiedad == "local"

@@ -587,6 +587,11 @@ def cuerpo_principal(html: str) -> str:
         # tarjeta relacionada era el unico tipo que veia la ficha, y 24
         # departamentos quedaban guardados como cocheras.
         r"class=[\"'][^\"']*ficha__related|"
+        # Tema WordPress inspiry-real-places (`gonzalez theyler`): «Propiedades
+        # Similares» y «Destacadas» van en la barra lateral, despues de la
+        # ficha; su precio y su tipo se leian como los de la propiedad.
+        r"class=[\"'][^\"']*\bsimilar-properties\b|"
+        r"class=[\"'][^\"']*\bInspiry_Featured_Properties_Widget\b|"
         r"<div[^>]+class=[\"'][^\"']*titulo_prod_int[^\"']*[\"'][^>]*>\s*"
         r"Otras\s+Propiedades\s*</div>",
                     html or "", maxsplit=1, flags=re.I)[0]
@@ -2445,14 +2450,17 @@ class GenericoConnector(Connector):
             # escriben con D. No alcanzaba con arreglar el guardian de forma:
             # el guardian decide si la ficha entra, esta expresion decide si
             # el precio se lee. Ver el comentario de RE_PRECIO_CON_MONEDA.
-            m = re.search(r"(USD|U\$[SD]|US\$|\$|ARS)\s*([\d][\d.,]{2,15})",
+            # «$990,000 / DOLARES» (`ente`, tema Houzez): el signo es el
+            # generico y la moneda viene DETRAS de la cifra.
+            m = re.search(r"(USD|U\$[SD]|US\$|\$|ARS)\s*([\d][\d.,]{2,15})"
+                          r"(\s*/?\s*(?:d[oó]lares|usd)\b)?",
                           texto, re.I)
             if m:
                 visible = a_numero(m.group(2))
                 # La moneda de otra cifra (expensas, otra unidad) no puede
                 # completar un precio estructurado. Se exige concordancia.
                 if precio is None or visible == a_numero(precio):
-                    moneda = moneda or detectar_moneda(m.group(1))
+                    moneda = moneda or ("USD" if m.group(3) else detectar_moneda(m.group(1)))
                     if precio is None:
                         precio = visible
 
@@ -2542,6 +2550,12 @@ class GenericoConnector(Connector):
                                or detectar_tipo(urllib.parse.unquote(
                                    urllib.parse.urlparse(url).path)
                                    .replace(".php", " ").replace("-", " "))
+                               # El par rotulado «Tipo Propiedad | Venta Oficina /
+                               # Local» (`gonzalez theyler`) manda sobre el arranque
+                               # del texto, que ahi es el menu («Casa Departamento…»).
+                               or detectar_tipo(self._par_rotulado(
+                                   principal_campos,
+                                   r"Tipo(?:\s+de)?\s+(?:propiedad|inmueble)") or "")
                                # En un emprendimiento el arranque del texto es
                                # el menu y las tipologias de sus unidades.
                                or (None if es_emprendimiento else (
