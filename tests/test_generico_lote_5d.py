@@ -563,3 +563,9 @@ def test_el_catalogo_por_operacion_no_es_una_ficha():
             '<a class="propiedad" href="propiedad/1681/italia-27-bis/">Italia</a>')
     assert GenericoConnector._fichas_en(html, "https://cuini.test") == [
         "https://cuini.test/propiedad/1681/italia-27-bis/"]
+
+
+def test_ficha_con_extension_html_es_ficha():
+    """`ramirez`: /propiedad/275-corrientes-sn.html."""
+    assert GenericoConnector._es_ficha_url("https://r.test/propiedad/275-corrientes-sn.html")
+    assert GenericoConnector._es_ficha_url("https://r.test/propiedad/89-barrio-los-parasos.html")

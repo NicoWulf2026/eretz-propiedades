@@ -119,7 +119,8 @@ SITEMAPS = ("/sitemap.xml", "/sitemap_index.xml", "/wp-sitemap.xml",
 RE_FICHA = re.compile(
     r"/(?:propiedad(?:es)?|inmueble[s]?|emprendimiento[s]?|ficha[s]?|"
     r"propert(?:y|ies)|listing[s]?|aviso[s]?|anuncio[s]?|ad|venta|alquiler)/"
-    r"(?:[^/?#]*?(?:\d{3,}|[a-z0-9]+(?:-[a-z0-9]+){2,}))/?$", re.I)
+    # Tambien con extension: /propiedad/275-corrientes-sn.html (`ramirez`).
+    r"(?:[^/?#]*?(?:\d{3,}|[a-z0-9]+(?:-[a-z0-9]+){2,}))(?:\.html?|\.php)?/?$", re.I)
 
 # Muchos frontends propios cuelgan la ficha de la RAIZ, sin seccion:
 # /8471-venta-casa-3-ambientes-en-adrogue. Ni el patron de Tokko ni el de arriba
@@ -1342,7 +1343,19 @@ class GenericoConnector(Connector):
                 paginas.append((categoria, self.descargador.bajar(categoria)))
             except (ErrorTransitorio, ErrorPermanente, Bloqueado):
                 continue
+        def raiz_de(cuerpo: str, pagina: str) -> str:
+            # <base href> manda sobre la url de la pagina: `ramirez` enlaza
+            # «propiedad/275-….html» desde /tipos/casas.html con
+            # <base href="https://www.ramirez-inmobiliaria.com.ar/">, y unirlo
+            # a la categoria daba /tipos/propiedad/… y /tipos/tipos/… (175 404).
+            declarada = re.search(r"<base\b[^>]*href=[\"']([^\"']+)[\"']", cuerpo or "", re.I)
+            if not declarada:
+                return pagina
+            ruta = urllib.parse.urlparse(urllib.parse.urljoin(pagina, declarada.group(1))).path
+            return base + (ruta if ruta.startswith("/") else "/" + ruta)
+
         for categoria, cuerpo in paginas:
+            raiz = raiz_de(cuerpo, categoria)
             # La navegacion por desplegable no pasa por la regla de
             # profundidad: no hay nada que inferir cuando el sitio puso la
             # ficha en su propio indice. En `amipropiedades.com.ar` la ficha
@@ -1355,7 +1368,7 @@ class GenericoConnector(Connector):
                 vistas.add(destino)
                 fichas.append(destino)
             for coincidencia in re.finditer(r'href=["\']([^"\']+)["\']', cuerpo):
-                destino = urllib.parse.urljoin(categoria, unescape(coincidencia.group(1)))
+                destino = urllib.parse.urljoin(raiz, unescape(coincidencia.group(1)))
                 if not destino.startswith(base):
                     continue
                 ruta = urllib.parse.urlparse(destino).path
