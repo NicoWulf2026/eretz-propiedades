@@ -85,6 +85,10 @@ Historia: Git (`git log --since=2026-09-25`).
    Diagnosticados 25-09 noche, sin arreglar: `harfouche` (WP sin CPT en REST, sitemaps con 429: dejar a la cola);
 `i alfredo gonzalez theyler`: tipo, precio y relacionadas RESUELTOS; queda el título con
    sufijo del sitio.
+   **Próximo lote de huella (juntar, no commitear de a uno):** `global inmobiliaria` enumera
+   `/buscar/alquileres` como ficha (agregar `^/(?:buscar|busqueda)(?:/|$)` a RE_NO_FICHA, cuidando
+   que `de leo` tiene su catálogo en `/busqueda/todo/venta`, que es fuente, no ficha).
+   `habita`: sitio institucional sin catálogo (no es defecto).
 4. Regression Gate tras cada tanda (comando en `.claude/rules/scraper.md`).
 5. Beta del backend (`docs/ERETZ_UNIFICATION_PLAN.md` § «Backend beta confiable»).
 
