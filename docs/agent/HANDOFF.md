@@ -31,11 +31,21 @@ Historia: Git (`git log --since=2026-09-25`).
 - Diferidas firmadas 16:0x/17:08: `garcia andreu` (rangos de emprendimiento), `domus propiedades` (bloqueo
   puntual), `fj lujan` (TFW mal ruteado), `garbero` (1 ficha + taxonomía como ficha).
 - Optimización de Claude Code: `docs/agent/CLAUDE_CODE_OPTIMIZATION.md`.
+- Noche (21-22h): TLS con raíces de certifi (`andrade`), paginación Tokko ≠ globo del mapa
+  (`global` 20→114), emprendimientos en plural (`alagna`), descartes de validación en el auditor
+  (pie legal, moneda del precio de relleno) — `49fa3cadbf`; fichas por `onclick` (`aris`) e
+  iframe Amaira de Xintel (`battista`, 480) — `2a6560bd9b`; `og:type=article` solo no veta y
+  schema+precio con una foto (`gandino` 0→10, `benitez` 1→8), «+4 amb» es cota, 3 directorios
+  (cia.org.ar, empresasdecordoba, propuestasinmobiliarias) — `76f1b30211`; «Propiedad
+  inexistente.» = baja (`d uva`) — `036ba1d549`. Gate 22:1x: 258 agencias, 8 firmadas, 0 pendientes.
 
 ## Corriendo
 - Cola con 2 workers + relanzador + vigilante. Mirarla solo si hay paradas.
 
 ## No rehacer
+- **Argencasas** (`coviella`, `eduardo fernandez`, `de ruyck`): responde 404 vacío a nuestro UA
+  declarado en TODO el sitio y su robots.txt prohíbe `/motor/`. **No se evade** (ni UA de
+  navegador ni /motor/). Acción externa: pedir habilitación a argencasas o dejarlas BLOCKED_EXTERNAL.
 - Guardia de título repetido en el runner: descartada con medición.
 - `armanino`: API de Tokko con clave embebida en su bundle → **no se usan claves ajenas**.
 - `estela d onofrio`: el certificador tiene respaldo a `generico`; el diagnóstico liviano no.
@@ -55,6 +65,10 @@ Historia: Git (`git log --since=2026-09-25`).
    (`.show-more`, foto ajena); precio accesorio `caruso`; tipo de respaldo leído del menú
    (parcela → casa en `fernando villalba`); operación
    solo en la ruta del catálogo (`bottai` 180, `constant` 24).
+   Diagnosticados 25-09 noche, sin arreglar: `cuini` (catálogos `/propiedades-venta/pagina-N/`
+   declarados, se enumeran 16 de ~70: falta seguir la paginación que el sitio declara);
+   `gaggiotti` (SPA Vite, catálogo por JS); `i alfredo gonzalez theyler` (tema WP
+   inspiry-real-places: operación/tipo/área rotulados, título con sufijo del sitio).
 4. Regression Gate tras cada tanda (comando en `.claude/rules/scraper.md`).
 5. Beta del backend (`docs/ERETZ_UNIFICATION_PLAN.md` § «Backend beta confiable»).
 
