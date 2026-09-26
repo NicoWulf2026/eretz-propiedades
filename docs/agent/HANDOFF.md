@@ -72,6 +72,7 @@ Historia: Git (`git log --since=2026-09-25`).
   ciudad, baños y superficie en 0 % y CERTIFIED_COMPLETE) se lee del HTML — `5b6a432310`. Gate
   08:1x: 335 agencias, 0 pendientes. `coldwell banker de la vera cruz` (262 COMPLETE con 0 % de
   precio): verificado, el sitio no publica precios en ninguna ficha — no es defecto.
+- Paro 08:3x COMPARTIDO (`martinez quiles`: galpón con 2 fotos) → `6d399aa72a` + diferida firmada.
 
 ## Corriendo
 - Cola con 2 workers + relanzador + vigilante. Mirarla solo si hay paradas.
