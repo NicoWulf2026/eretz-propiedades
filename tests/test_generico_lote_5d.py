@@ -569,3 +569,17 @@ def test_ficha_con_extension_html_es_ficha():
     """`ramirez`: /propiedad/275-corrientes-sn.html."""
     assert GenericoConnector._es_ficha_url("https://r.test/propiedad/275-corrientes-sn.html")
     assert GenericoConnector._es_ficha_url("https://r.test/propiedad/89-barrio-los-parasos.html")
+
+
+def test_un_listado_que_declara_paginacion():
+    """`zamorano`: venta-de-propiedades.asp?start=13& declara su paginacion."""
+    lista = "https://z.test/venta-de-propiedades.asp?cmd=reset"
+    assert GenericoConnector._declara_paginacion('<a href="venta-de-propiedades.asp?start=13&">2</a>', lista)
+    assert not GenericoConnector._declara_paginacion('<a href="otra.asp?start=13">2</a>', lista)
+
+
+def test_la_grilla_del_listado_sin_destacadas_al_azar():
+    html = ('<div class="property-listing"><a href="ficha.asp?codigo=1">a</a></div>'
+            '<h2 class="section-title">Ventas Destacadas</h2><a href="ficha.asp?codigo=9">z</a>')
+    cuerpo = GenericoConnector._solo_el_listado(html)
+    assert "codigo=1" in cuerpo and "codigo=9" not in cuerpo

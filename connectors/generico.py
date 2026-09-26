@@ -1707,6 +1707,7 @@ class GenericoConnector(Connector):
         candidatos = ([] if ya_es_el_catalogo else [base + "/propiedades"])
         candidatos += [c for c in self._catalogos_enlazados(html, base)
                        if c.rstrip("/") != fuente.official_url.rstrip("/")]
+        paginados: list[tuple[str, str]] = []
         if candidatos:
             for candidato in candidatos:
                 try:
@@ -1716,6 +1717,8 @@ class GenericoConnector(Connector):
                 runtime_listado = runtime or self._patron_raiz_local(html_listado)
                 enlaces_listado = self._fichas_en(html_listado, base,
                                                   runtime_listado)
+                if enlaces_listado and self._declara_paginacion(html_listado, candidato):
+                    paginados.append((candidato, html_listado))
                 catalogo_explicito = bool(re.search(
                     r"Se encontraron\s+[\d.]+\s+resultados|"
                     r"params\.append\(['\"]infinito['\"]|id=['\"]prop-list['\"]",
@@ -1738,6 +1741,12 @@ class GenericoConnector(Connector):
                          "patron_runtime": runtime,
                          "patron_catalogo": patron_catalogo,
                          "catalogo_runtime_verificado": bool(runtime and not propia)})
+            if paginados:
+                plan["catalogos_paginados"] = paginados
+            if self._declara_paginacion(html, listado):
+                grilla = self._fichas_en(self._solo_el_listado(html), base, runtime)
+                if grilla:
+                    plan["fichas_home"] = grilla
             mapa, extra_fichas = self._catalogos_por_operacion(html_portada, base, runtime)
             if mapa:
                 plan["operacion_por_ficha"] = mapa
@@ -2200,15 +2209,32 @@ class GenericoConnector(Connector):
         # la convencion `/?page=N` recorria 50 veces la portada, que muestra
         # destacadas AL AZAR: 235 fichas en una corrida y 259 en la otra, con 35
         # distintas, y la cola paro la familia.
+        # Y TODOS los catalogos que la declaran, no solo el elegido: `zamorano`
+        # (misma plataforma que `ballarre`) reparte venta, alquiler temporario
+        # y permutas en tres listados paginados, y su portada muestra
+        # destacadas al azar; elegir uno solo dejaba fuera a los otros y la
+        # eleccion misma cambiaba de corrida a corrida (165 contra 162).
+        catalogos = list(plan.get("catalogos_paginados") or [])
         declarada = plan.get("listing_url")
-        if declarada and plan.get("html_home"):
-            aporto = False
-            for item in self._paginacion_declarada(plan["html_home"], declarada, base,
-                                                   propia, vistas):
+        if declarada and plan.get("html_home") and all(u != declarada for u, _ in catalogos):
+            catalogos.insert(0, (declarada, plan["html_home"]))
+        aporto = False
+        for orden, (catalogo, primera) in enumerate(catalogos):
+            if catalogo != declarada:
+                for u in self._fichas_en(self._solo_el_listado(primera), base, propia):
+                    c = u.rstrip("/")
+                    if c in vistas:
+                        continue
+                    vistas.add(c)
+                    aporto = True
+                    yield {"source_listing_id": self._id_de(u), "source_url": u,
+                           "pagina": 1, "por_forma": self._solo_por_forma(u, propia),
+                           "catalogo_runtime_verificado": False}
+            for item in self._paginacion_declarada(primera, catalogo, base, propia, vistas):
                 aporto = True
                 yield item
-            if aporto:
-                return
+        if aporto:
+            return
 
         # BuscadorProp pagina mediante JSON con fragmentos HTML. No se puede
         # leer como HTML crudo porque las comillas de href vienen escapadas.
@@ -2279,6 +2305,32 @@ class GenericoConnector(Connector):
                 if paginas_con_nuevas >= 2:
                     break
 
+    @staticmethod
+    def _solo_el_listado(html: str) -> str:
+        """La grilla del listado, sin los bloques que rotan en cada carga.
+
+        `zamorano`: cada pagina de su listado trae la grilla (estable) y
+        despues «Ventas Destacadas» y «Últimos Ingresos», elegidas al azar en
+        cada pedido: sumarlas hacia que dos corridas enumeraran conjuntos
+        distintos. Se corta en el primer encabezado de uno de esos bloques.
+        """
+        cuerpo = cuerpo_principal(html)
+        return re.split(r"<h[1-6][^>]*>[^<]{0,40}(?:destacad|ingresos|relacionad|similares)",
+                        cuerpo, maxsplit=1, flags=re.I)[0]
+
+    @staticmethod
+    def _declara_paginacion(html: str, listado: str) -> bool:
+        """El listado enlaza su propia ruta con un parametro numerico de pagina."""
+        ruta = urllib.parse.urlparse(listado).path
+        for crudo in re.findall(r'href=["\']([^"\']+)["\']', html or ""):
+            partes = urllib.parse.urlparse(urllib.parse.urljoin(listado, unescape(crudo)))
+            if partes.path != ruta:
+                continue
+            pares = [(k, v) for k, v in urllib.parse.parse_qsl(partes.query) if v != ""]
+            if [v for k, v in pares if k.lower() in PARAMS_DE_PAGINA and v.isdigit()]:
+                return True
+        return False
+
     def _paginacion_declarada(self, html: str, listado: str, base: str,
                               propia: "re.Pattern | None",
                               vistas: set[str]) -> Iterator[dict]:
@@ -2324,7 +2376,7 @@ class GenericoConnector(Connector):
             except (ErrorTransitorio, ErrorPermanente, Bloqueado):
                 self.paginacion_interrumpida = True
                 return
-            for u in self._fichas_en(cuerpo, base, propia):
+            for u in self._fichas_en(self._solo_el_listado(cuerpo), base, propia):
                 c = u.rstrip("/")
                 if c in vistas:
                     continue
