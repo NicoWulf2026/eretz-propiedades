@@ -82,6 +82,11 @@ TOPE_TOKKO_PROXY = 5000
 # conjunto viene reordenado entre pedidos.
 MAX_BARRIDOS_TOKKO_PROXY = 4
 
+# Terravirtual (`blangiforti`, `g calvo`): la ficha es /ficha/<md5>. Sus
+# catalogos enlazan /propiedades/ficha/<md5>, que el sitio responde con el
+# LISTADO (23 tarjetas, sin bloque de ficha), y la portada //ficha/<md5>.
+RE_FICHA_TERRAVIRTUAL = re.compile(r"^/+(?:propiedades/)?ficha/([0-9a-f]{32})/?$", re.I)
+
 # La pagina entera dice que la ficha ya no existe.
 RE_FICHA_INEXISTENTE = re.compile(
     r"(?:la\s+)?(?:propiedad|inmueble|aviso|ficha)\s+(?:inexistente|no\s+existe"
@@ -1826,6 +1831,10 @@ class GenericoConnector(Connector):
             # veces es una regla que miente en uno de los dos lados.
             if not GenericoConnector._es_ficha_url(u, extra) and u not in recovered_set:
                 continue
+            partes = urllib.parse.urlparse(u)
+            terravirtual = RE_FICHA_TERRAVIRTUAL.match(partes.path)
+            if terravirtual:
+                u = f"{partes.scheme}://{partes.netloc}/ficha/{terravirtual.group(1).lower()}"
             c = u.split("#")[0].rstrip("/")
             if c not in vistas:
                 vistas.add(c)

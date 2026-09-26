@@ -484,3 +484,11 @@ def test_un_conteo_rotulado_no_es_el_chip_del_tipo():
     """`candoli`: «Cocheras: 1» en un complejo turistico no lo vuelve cochera."""
     assert GenericoConnector._tipo_en_la_ficha("<span>Cocheras: 1</span><span>Amb. 2</span>") is None
     assert GenericoConnector._tipo_en_la_ficha("<span>Departamentos</span>") == "departamento"
+
+
+def test_terravirtual_la_ficha_es_barra_ficha_md5():
+    """`blangiforti`/`g calvo`: /propiedades/ficha/<md5> sirve el listado."""
+    h = "020361f6469f2e2127550b960d9df335"
+    html = (f'<a href="https://b.test/propiedades/ficha/{h}">a</a>'
+            f'<a href="https://b.test//ficha/{h}">b</a>')
+    assert GenericoConnector._fichas_en(html, "https://b.test") == [f"https://b.test/ficha/{h}"]
