@@ -373,3 +373,17 @@ def test_schema_con_precio_y_operacion_alcanza_con_una_foto():
     assert GenericoConnector._confirma_ficha("", texto, 65000.0, ["a.jpg"], tipo_ld="Product")
     assert not GenericoConnector._confirma_ficha("", texto, 65000.0, ["a.jpg"])
     assert not GenericoConnector._confirma_ficha("", texto, 65000.0, [], tipo_ld="Product")
+
+
+def test_propiedad_inexistente_se_anota_como_baja_de_la_ficha():
+    """`d uva`: las 9 fichas del sitemap responden 200 «Propiedad inexistente.»."""
+    c = GenericoConnector(descargador=Falso("Propiedad inexistente."))
+    f = B.Fuente(canonical_agency_id="roomix:d uva", agency_name="D Uva",
+                 official_url="https://duva.test/", inmobiliaria_id=1)
+    assert c.normalize({"source_url": "https://duva.test/propiedades/calle-eolo-53/",
+                        "source_listing_id": "53"}, f) is None
+    assert c.errores and c.errores[-1]["etapa"] == "detalle_permanente"
+    c = GenericoConnector(descargador=Falso("<p>Hola</p>"))
+    assert c.normalize({"source_url": "https://duva.test/propiedades/x-1/",
+                        "source_listing_id": "1"}, f) is None
+    assert not c.errores

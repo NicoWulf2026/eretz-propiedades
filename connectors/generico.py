@@ -82,6 +82,11 @@ TOPE_TOKKO_PROXY = 5000
 # conjunto viene reordenado entre pedidos.
 MAX_BARRIDOS_TOKKO_PROXY = 4
 
+# La pagina entera dice que la ficha ya no existe.
+RE_FICHA_INEXISTENTE = re.compile(
+    r"(?:la\s+)?(?:propiedad|inmueble|aviso|ficha)\s+(?:inexistente|no\s+existe"
+    r"|no\s+encontrad[ao]|no\s+disponible)\.?", re.I)
+
 # Ficha Xintel/Amaira embebida: la pagina de la agencia es un marco y la
 # ficha -con los parametros del detalle- vive en el iframe del proveedor.
 RE_IFRAME_AMAIRA = re.compile(
@@ -2201,6 +2206,13 @@ class GenericoConnector(Connector):
             self.anotar_error(fuente, "detalle", e)
             return None
         if not html or len(html) < 400:
+            # «Propiedad inexistente.» con 200 (`d uva`: las 9 fichas de su
+            # sitemap) es la baja de la ficha dicha por el sitio, no una
+            # lectura fallida nuestra: se anota como el 404 para que el runner
+            # la cuente como desaparecida.
+            if RE_FICHA_INEXISTENTE.fullmatch(_texto(html or "").strip()):
+                self.anotar_error(fuente, "detalle_permanente",
+                                  ErrorPermanente("ficha inexistente"))
             return None
         # Una ficha Xintel que entro por el camino HTML tambien se lee de la
         # API. Sin JavaScript, la plantilla muestra el titulo «en», la
