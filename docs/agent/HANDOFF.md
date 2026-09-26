@@ -38,6 +38,9 @@ Historia: Git (`git log --since=2026-09-25`).
   schema+precio con una foto (`gandino` 0→10, `benitez` 1→8), «+4 amb» es cota, 3 directorios
   (cia.org.ar, empresasdecordoba, propuestasinmobiliarias) — `76f1b30211`; «Propiedad
   inexistente.» = baja (`d uva`) — `036ba1d549`. Gate 22:1x: 258 agencias, 8 firmadas, 0 pendientes.
+- 23h: paginación que ignora el parámetro ya no tapa la real + `/propiedades/pagina-N/` + filtros
+  de catálogo no son fichas (`cuini` 16→37) — `43a0ddd1cd`; operación desde catálogos gemelos
+  venta/alquiler (`bottai` 226→317 enumeradas, 314 con operación) — `091b71fa67`.
 
 ## Corriendo
 - Cola con 2 workers + relanzador + vigilante. Mirarla solo si hay paradas.
@@ -64,9 +67,12 @@ Historia: Git (`git log --since=2026-09-25`).
    `bunader` (enumera listados); `fios`
    (`.show-more`, foto ajena); precio accesorio `caruso`; tipo de respaldo leído del menú
    (parcela → casa en `fernando villalba`); operación
-   solo en la ruta del catálogo (`bottai` 180, `constant` 24).
-   Diagnosticados 25-09 noche, sin arreglar: `cuini` (catálogos `/propiedades-venta/pagina-N/`
-   declarados, se enumeran 16 de ~70: falta seguir la paginación que el sitio declara);
+   solo en la ruta del catálogo: `bottai` RESUELTO; `constant` 24 (wordpress) pendiente.
+   Diagnosticados 25-09 noche, sin arreglar: `blangiforti` (sus propios enlaces
+   `/propiedades/ficha/<hash>` sirven el LISTADO; la ficha real es `/ficha/<hash>`: la corrida
+   guarda datos de una tarjeta al azar → no idempotente; hace falta un criterio general de
+   «la url de ficha sirve un listado», el conteo de tarjetas no separa: la ficha real también trae
+   una grilla); `harfouche` (WP sin CPT en REST, sitemaps con 429: dejar a la cola);
    `gaggiotti` (SPA Vite, catálogo por JS); `i alfredo gonzalez theyler` (tema WP
    inspiry-real-places: operación/tipo/área rotulados, título con sufijo del sitio).
 4. Regression Gate tras cada tanda (comando en `.claude/rules/scraper.md`).
