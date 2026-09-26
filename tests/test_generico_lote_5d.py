@@ -403,3 +403,29 @@ def test_la_pagina_n_del_listado_no_es_una_ficha():
             '<a class="propiedad" href="propiedad/1681/italia-27-bis/">Italia</a>')
     assert GenericoConnector._fichas_en(html, "https://cuini.test") == [
         "https://cuini.test/propiedad/1681/italia-27-bis/"]
+
+
+class FalsoPorUrl(B.Descargador):
+    def __init__(self, paginas: dict):
+        super().__init__(B.LimitadorDeRitmo(0.0))
+        self.paginas = paginas
+
+    def bajar(self, url: str) -> str:
+        return self.paginas.get(url, "")
+
+
+def test_catalogos_gemelos_dan_la_operacion_que_la_ficha_no_dice():
+    """`bottai`: la operacion solo esta en `inmuebles_list_Venta_…`/`…_Alquiler_…`."""
+    base = "https://bottai.test"
+    home = ('<a href="inmuebles_list_Venta_x_0">Venta</a>'
+            '<a href="inmuebles_list_Alquiler_x_0">Alquiler</a>')
+    paginas = {
+        base + "/inmuebles_list_Venta_x_0": '<a href="propiedad.php?id=1">a</a><a href="propiedad.php?id=3">c</a>',
+        base + "/inmuebles_list_Alquiler_x_0": '<a href="propiedad.php?id=2">b</a><a href="propiedad.php?id=3">c</a>',
+    }
+    c = GenericoConnector(descargador=FalsoPorUrl(paginas))
+    mapa, fichas = c._catalogos_por_operacion(home, base, None)
+    assert mapa == {base + "/propiedad.php?id=1": "venta", base + "/propiedad.php?id=2": "alquiler"}
+    assert [op for _, op in fichas] == ["venta", "alquiler"]
+    # Sin el gemelo no se asigna nada.
+    assert c._catalogos_por_operacion(home.split("</a>")[0] + "</a>", base, None) == ({}, [])

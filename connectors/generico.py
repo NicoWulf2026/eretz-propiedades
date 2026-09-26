@@ -1665,6 +1665,7 @@ class GenericoConnector(Connector):
         # declara 266 y enlaza catorce `listado.php?...&pagina=N`, y las fichas
         # estan en esas y no en ella. La agencia enumeraba CERO y paraba la cola
         # con radio FAMILIA.
+        html_portada = html
         candidatos = ([] if ya_es_el_catalogo else [base + "/propiedades"])
         candidatos += [c for c in self._catalogos_enlazados(html, base)
                        if c.rstrip("/") != fuente.official_url.rstrip("/")]
@@ -1699,6 +1700,10 @@ class GenericoConnector(Connector):
                          "patron_runtime": runtime,
                          "patron_catalogo": patron_catalogo,
                          "catalogo_runtime_verificado": bool(runtime and not propia)})
+            mapa, extra_fichas = self._catalogos_por_operacion(html_portada, base, runtime)
+            if mapa:
+                plan["operacion_por_ficha"] = mapa
+                plan["fichas_por_operacion"] = extra_fichas
         # --- ultimo recurso: catalogo repartido en paginas de categoria -----
         # Va al final a proposito: cualquier detector especifico describe mejor
         # al sitio que recorrerle el menu. Solo cuando ninguno reconocio la
@@ -1824,7 +1829,73 @@ class GenericoConnector(Connector):
         return salida
 
     # ----------------------------------------------------------- fetch_listing
+    def _catalogos_por_operacion(self, html: str, base: str,
+                                 runtime: "re.Pattern | None"
+                                 ) -> tuple[dict[str, str], list[tuple[str, str]]]:
+        """Operacion de cada ficha segun los catalogos gemelos de venta y alquiler.
+
+        `bottai` publica la operacion SOLO en el catalogo que la lista
+        -`inmuebles_list_Venta_...` e `inmuebles_list_Alquiler_...`, 219 y 93
+        fichas- y ninguna en la ficha: 180 salian sin operacion. Se exige que
+        la portada enlace los DOS catalogos con la misma ruta salvo la palabra
+        de la operacion; una ficha listada en ambos queda sin operacion. Las
+        fichas de esos catalogos que la enumeracion no vio se agregan despues.
+        """
+        token = re.compile(r"(?<![a-z])(venta|alquiler)(?![a-z])", re.I)
+        gemelos: dict[str, dict[str, str]] = {}
+        for coincidencia in re.finditer(r'href=["\']([^"\']+)["\']', html or ""):
+            destino = urllib.parse.urljoin(base + "/", unescape(coincidencia.group(1)))
+            if not self._mismo_sitio(destino, base):
+                continue
+            partes = urllib.parse.urlparse(destino)
+            ruta = partes.path + ("?" + partes.query if partes.query else "")
+            hallados = token.findall(ruta)
+            if len(hallados) != 1:
+                continue
+            clave = token.sub("{op}", ruta).lower()
+            gemelos.setdefault(clave, {}).setdefault(hallados[0].lower(), destino.split("#")[0])
+        par = next((v for v in gemelos.values() if set(v) == {"venta", "alquiler"}), None)
+        if not par:
+            return {}, []
+        por_url: dict[str, set[str]] = {}
+        orden: list[str] = []
+        for operacion, catalogo in par.items():
+            try:
+                cuerpo = self.descargador.bajar(catalogo)
+            except (ErrorTransitorio, ErrorPermanente, Bloqueado):
+                return {}, []
+            for u in self._fichas_en(cuerpo, base, runtime):
+                c = u.split("#")[0].rstrip("/")
+                if c not in por_url:
+                    orden.append(u)
+                por_url.setdefault(c, set()).add(operacion)
+        mapa = {c: next(iter(ops)) for c, ops in por_url.items() if len(ops) == 1}
+        return mapa, [(u, mapa[u.split("#")[0].rstrip("/")]) for u in orden
+                      if u.split("#")[0].rstrip("/") in mapa]
+
     def fetch_listing(self, fuente: Fuente, plan: dict[str, Any]) -> Iterator[dict]:
+        mapa = plan.get("operacion_por_ficha")
+        if not mapa:
+            yield from self._fetch_listing(fuente, plan)
+            return
+        vistas: set[str] = set()
+        for item in self._fetch_listing(fuente, plan):
+            c = item["source_url"].split("#")[0].rstrip("/")
+            vistas.add(c)
+            if c in mapa:
+                item.setdefault("operacion_catalogo", mapa[c])
+            yield item
+        for u, operacion in plan.get("fichas_por_operacion") or []:
+            c = u.split("#")[0].rstrip("/")
+            if c in vistas:
+                continue
+            vistas.add(c)
+            yield {"source_listing_id": self._id_de(u), "source_url": u, "pagina": 9000,
+                   "por_forma": self._solo_por_forma(u, plan.get("patron_runtime")),
+                   "catalogo_runtime_verificado": plan.get("catalogo_runtime_verificado", False),
+                   "operacion_catalogo": operacion}
+
+    def _fetch_listing(self, fuente: Fuente, plan: dict[str, Any]) -> Iterator[dict]:
         if not plan.get("soportada"):
             return
         if plan["variante"] == "EMPTY_CATALOG_HTML":
