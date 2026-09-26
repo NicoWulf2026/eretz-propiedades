@@ -70,8 +70,8 @@ Historia: Git (`git log --since=2026-09-25`).
 - Gate 07:5x (594 pérdidas en `alas`): WordPress REST solo leía claves Houzez; RealHomes se traduce
   y el REST sin meta de propiedad (`echesortu`, `fiorio`, `esnal`, `daniel`, `berrino`…: dirección,
   ciudad, baños y superficie en 0 % y CERTIFIED_COMPLETE) se lee del HTML — `5b6a432310`. Gate
-  08:1x: 335 agencias, 0 pendientes. Pendiente de mirar: `coldwell banker de la vera cruz`
-  (262 fichas COMPLETE con 0 % de precio; REST y HTML dan lo mismo).
+  08:1x: 335 agencias, 0 pendientes. `coldwell banker de la vera cruz` (262 COMPLETE con 0 % de
+  precio): verificado, el sitio no publica precios en ninguna ficha — no es defecto.
 
 ## Corriendo
 - Cola con 2 workers + relanzador + vigilante. Mirarla solo si hay paradas.
