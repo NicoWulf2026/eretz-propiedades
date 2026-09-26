@@ -524,3 +524,20 @@ def test_descripcion_ere_con_encabezado_propio_y_subtitulos():
     p = _normalizar(html)
     assert p is not None and p.descripcion and "zonas más buscadas" in p.descripcion
     assert not p.descripcion.lower().startswith("descripci")
+
+
+def test_paginacion_declarada_por_start_y_sin_variantes_de_orden():
+    """`ballarre`: venta-de-propiedades.asp?start=13, 25… (la portada es al azar)."""
+    base = "https://b.test"
+    lista = base + "/venta.asp?cmd=reset"
+    def pagina(n, siguientes):
+        fichas = "".join(f'<a href="ficha.asp?id=casa&codigo={n * 10 + i}">c</a>' for i in range(3))
+        enlaces = "".join(f'<a href="venta.asp?start={s}&">{s}</a>' for s in siguientes)
+        return fichas + enlaces + '<a href="venta.asp?orden=precio&start=13">orden</a>'
+    paginas = {base + "/venta.asp?start=13&": pagina(2, [25]),
+               base + "/venta.asp?start=25&": pagina(3, [13])}
+    c = GenericoConnector(descargador=FalsoPorUrl(paginas))
+    vistas: set = set()
+    items = list(c._paginacion_declarada(pagina(1, [13]), lista, base, None, vistas))
+    codigos = sorted(int(i["source_url"].rsplit("=", 1)[1]) for i in items)
+    assert codigos == [20, 21, 22, 30, 31, 32]

@@ -82,6 +82,10 @@ TOPE_TOKKO_PROXY = 5000
 # conjunto viene reordenado entre pedidos.
 MAX_BARRIDOS_TOKKO_PROXY = 4
 
+# Parametro de paginacion que el listado DECLARA en sus propios enlaces.
+PARAMS_DE_PAGINA = ("start", "pagina", "page", "offset", "pg", "p")
+TOPE_PAGINAS_DECLARADAS = 200
+
 # Terravirtual (`blangiforti`, `g calvo`): la ficha es /ficha/<md5>. Sus
 # catalogos enlazan /propiedades/ficha/<md5>, que el sitio responde con el
 # LISTADO (23 tarjetas, sin bloque de ficha), y la portada //ficha/<md5>.
@@ -2169,6 +2173,21 @@ class GenericoConnector(Connector):
                    "por_forma": self._solo_por_forma(u, propia),
                    "catalogo_runtime_verificado": plan.get("catalogo_runtime_verificado", False)}
 
+        # La paginacion que el listado declara en sus enlaces va antes que las
+        # convenciones: `ballarre` pagina con ?start=13, 25, 37… y, sin leerla,
+        # la convencion `/?page=N` recorria 50 veces la portada, que muestra
+        # destacadas AL AZAR: 235 fichas en una corrida y 259 en la otra, con 35
+        # distintas, y la cola paro la familia.
+        declarada = plan.get("listing_url")
+        if declarada and plan.get("html_home"):
+            aporto = False
+            for item in self._paginacion_declarada(plan["html_home"], declarada, base,
+                                                   propia, vistas):
+                aporto = True
+                yield item
+            if aporto:
+                return
+
         # BuscadorProp pagina mediante JSON con fragmentos HTML. No se puede
         # leer como HTML crudo porque las comillas de href vienen escapadas.
         # Se prueba antes de los patrones genericos y se detiene al agotarse.
@@ -2237,6 +2256,63 @@ class GenericoConnector(Connector):
                 # Se sigue probando; lo ya visto no se repite.
                 if paginas_con_nuevas >= 2:
                     break
+
+    def _paginacion_declarada(self, html: str, listado: str, base: str,
+                              propia: "re.Pattern | None",
+                              vistas: set[str]) -> Iterator[dict]:
+        """Recorre las paginas que el listado enlaza por un parametro de pagina.
+
+        Solo enlaces a la MISMA ruta del listado cuyo resto de la query ya esta
+        en el listado (una variante de orden o de filtro no entra). Las paginas
+        nuevas que aparecen al avanzar -la ventana 1..10 que se corre- se
+        agregan a la cola. Corta sin mas paginas o en el tope.
+        """
+        destino_listado = urllib.parse.urlparse(listado)
+        propios = {k: v for k, v in urllib.parse.parse_qsl(destino_listado.query)
+                   if k.lower() not in PARAMS_DE_PAGINA}
+
+        def paginas_en(cuerpo: str, desde: str) -> list[str]:
+            salida = []
+            for crudo in re.findall(r'href=["\']([^"\']+)["\']', cuerpo or ""):
+                u = urllib.parse.urljoin(desde, unescape(crudo))
+                partes = urllib.parse.urlparse(u)
+                if partes.path != destino_listado.path or not self._mismo_sitio(u, base):
+                    continue
+                pares = [(k, v) for k, v in urllib.parse.parse_qsl(partes.query) if v != ""]
+                pagina = [v for k, v in pares if k.lower() in PARAMS_DE_PAGINA]
+                resto = {k: v for k, v in pares if k.lower() not in PARAMS_DE_PAGINA}
+                if len(pagina) != 1 or not pagina[0].isdigit():
+                    continue
+                if any(propios.get(k) != v for k, v in resto.items()):
+                    continue
+                salida.append(u.split("#")[0])
+            return salida
+
+        pendientes = list(dict.fromkeys(paginas_en(html, listado)))
+        pedidas: set[str] = set()
+        n = 0
+        while pendientes and n < TOPE_PAGINAS_DECLARADAS:
+            pagina_url = pendientes.pop(0)
+            if pagina_url in pedidas:
+                continue
+            pedidas.add(pagina_url)
+            n += 1
+            try:
+                cuerpo = self.descargador.bajar(pagina_url)
+            except (ErrorTransitorio, ErrorPermanente, Bloqueado):
+                self.paginacion_interrumpida = True
+                return
+            for u in self._fichas_en(cuerpo, base, propia):
+                c = u.rstrip("/")
+                if c in vistas:
+                    continue
+                vistas.add(c)
+                yield {"source_listing_id": self._id_de(u), "source_url": u,
+                       "pagina": n + 1, "por_forma": self._solo_por_forma(u, propia),
+                       "catalogo_runtime_verificado": False}
+            for nueva in paginas_en(cuerpo, pagina_url):
+                if nueva not in pedidas and nueva not in pendientes:
+                    pendientes.append(nueva)
 
     @staticmethod
     def _id_de(url: str) -> str:
