@@ -590,3 +590,28 @@ def test_dos_fotos_con_precio_y_operacion_alcanzan():
     assert GenericoConnector._confirma_ficha("", texto, 5200000.0, ["a.jpg", "b.jpg"])
     assert not GenericoConnector._confirma_ficha("", texto, 5200000.0, ["a.jpg"])
     assert not GenericoConnector._confirma_ficha("", "Quienes somos", None, ["a.jpg", "b.jpg"])
+
+
+def test_resultado_de_categoria_no_es_ficha():
+    html = ('<a href="/resultado/1/1/10/campo-en-venta/">Campos</a>'
+            '<a href="/propiedad/casa-en-venta-centro-1234/">Casa</a>')
+    fichas = GenericoConnector._fichas_en(html, "https://l.test")
+    assert not any("/resultado/" in f for f in fichas)
+
+
+def test_las_fichas_de_los_resultados_por_categoria_se_enumeran():
+    """`lizio albarello`: la portada muestra 9; /resultado/…/casas-en-venta/ lista otras."""
+    base = "https://l.test"
+    fichas = lambda ids: "".join(
+        f'<div class="item"><a href="/detalle/{i}/casa-en-venta-centro/">Casa</a>'
+        f'<img src="/f/{i}.jpg"></div>' for i in ids)
+    home = fichas([1, 2, 3]) + '<a href="/resultado/1/1/2/casas-en-venta/">Casas</a>'
+    paginas = {base: home, base + "/": home,
+               base + "/resultado/1/1/2/casas-en-venta/": fichas([3, 4, 5])}
+    c = GenericoConnector(descargador=FalsoPorUrl(paginas))
+    f = B.Fuente(canonical_agency_id="roomix:lizio", agency_name="Lizio",
+                 official_url=base, inmobiliaria_id=1)
+    plan = c.discover(f)
+    urls = {x["source_url"] for x in c.fetch_listing(f, plan)}
+    assert {f"{base}/detalle/{i}/casa-en-venta-centro/" for i in (1, 2, 3, 4, 5)} <= urls
+    assert not any("/resultado/" in u for u in urls)

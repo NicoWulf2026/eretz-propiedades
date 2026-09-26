@@ -228,7 +228,8 @@ RE_NO_FICHA = re.compile(
     r"|^/propiedades-(?:venta|alquiler)/(?:(?:tipo|dormitorios|ciudad|zona|barrio)/|$)"
     # Un resultado de busqueda no es una ficha: /buscar/alquileres
     # (`global inmobiliaria`).
-    r"|^/(?:buscar|busqueda)(?:/|$)"
+    # Y /resultado/1/1/10/campo-en-venta/ (`lizio albarello`, 9 de 25).
+    r"|^/(?:buscar|busqueda|resultados?)(?:/|$)"
     # Y la pagina N del listado: /propiedades/pagina-3/ es un listado.
     r"|/(?:pagina|page)[-/]\d+/?$",
     re.I)
@@ -1747,6 +1748,24 @@ class GenericoConnector(Connector):
                 grilla = self._fichas_en(self._solo_el_listado(html), base, runtime)
                 if grilla:
                     plan["fichas_home"] = grilla
+            resultados: list[str] = []
+            for crudo in re.findall(r'href=["\']([^"\']+)["\']', html_portada or ""):
+                destino = urllib.parse.urljoin(base + "/", unescape(crudo)).split("#")[0]
+                if (self._mismo_sitio(destino, base)
+                        and re.match(r"^/resultados?/", urllib.parse.urlparse(destino).path, re.I)
+                        and destino not in resultados):
+                    resultados.append(destino)
+            fichas_resultados: list[str] = []
+            for pagina_resultado in resultados[:MAX_CATEGORIAS * 2]:
+                try:
+                    cuerpo_resultado = self.descargador.bajar(pagina_resultado)
+                except (ErrorTransitorio, ErrorPermanente, Bloqueado):
+                    continue
+                for u in self._fichas_en(self._solo_el_listado(cuerpo_resultado), base, runtime):
+                    if u not in fichas_resultados:
+                        fichas_resultados.append(u)
+            if fichas_resultados:
+                plan["fichas_de_resultados"] = fichas_resultados
             mapa, extra_fichas = self._catalogos_por_operacion(html_portada, base, runtime)
             if mapa:
                 plan["operacion_por_ficha"] = mapa
@@ -1925,10 +1944,7 @@ class GenericoConnector(Connector):
                       if u.split("#")[0].rstrip("/") in mapa]
 
     def fetch_listing(self, fuente: Fuente, plan: dict[str, Any]) -> Iterator[dict]:
-        mapa = plan.get("operacion_por_ficha")
-        if not mapa:
-            yield from self._fetch_listing(fuente, plan)
-            return
+        mapa = plan.get("operacion_por_ficha") or {}
         vistas: set[str] = set()
         for item in self._fetch_listing(fuente, plan):
             c = item["source_url"].split("#")[0].rstrip("/")
@@ -1945,6 +1961,17 @@ class GenericoConnector(Connector):
                    "por_forma": self._solo_por_forma(u, plan.get("patron_runtime")),
                    "catalogo_runtime_verificado": plan.get("catalogo_runtime_verificado", False),
                    "operacion_catalogo": operacion}
+        # Las fichas de las paginas de resultados por categoria que enlaza la
+        # portada (`lizio albarello`: /resultado/1/1/2/casas-en-venta/ lista 7
+        # fichas que la portada no muestra).
+        for u in plan.get("fichas_de_resultados") or []:
+            c = u.split("#")[0].rstrip("/")
+            if c in vistas:
+                continue
+            vistas.add(c)
+            yield {"source_listing_id": self._id_de(u), "source_url": u, "pagina": 9500,
+                   "por_forma": self._solo_por_forma(u, plan.get("patron_runtime")),
+                   "catalogo_runtime_verificado": plan.get("catalogo_runtime_verificado", False)}
 
     def _fetch_listing(self, fuente: Fuente, plan: dict[str, Any]) -> Iterator[dict]:
         if not plan.get("soportada"):
