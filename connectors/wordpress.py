@@ -752,8 +752,13 @@ class WordPressConnector(Connector):
                 except (ErrorTransitorio, ErrorPermanente, Bloqueado):
                     html = ""
                 if html:
-                    imagenes += RE_IMG.findall(
+                    # Las miniaturas recortadas (-244x163) del HTML son las
+                    # tarjetas de otras propiedades que el tema elige al azar
+                    # en cada carga: `berrino` quedaba no idempotente por una
+                    # sola de ellas. Las fotos de la ficha van en tamano propio.
+                    imagenes += [i for i in RE_IMG.findall(
                         sin_fichas_vecinas(html, url))
+                        if not re.search(r"-\d{2,4}x\d{2,4}\.(?:jpe?g|png|webp)$", i, re.I)]
                     if not descripcion:
                         m = re.search(
                             r'<meta[^>]+name="description"[^>]+content="([^"]{1,400})"',
