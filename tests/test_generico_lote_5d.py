@@ -464,3 +464,23 @@ def test_el_tipo_rotulado_manda_sobre_el_menu():
             "</main></body></html>" + RELLENO)
     p = _normalizar(html)
     assert p is not None and p.tipo_propiedad == "local"
+
+
+def test_sin_h1_el_titulo_es_el_h2_que_nombra_la_propiedad():
+    """`candoli`: <title> es el nombre de la agencia y el h2 describe la ficha."""
+    from connectors.base import Fuente
+    f = Fuente(canonical_agency_id="roomix:candoli", agency_name="Candoli Propiedades",
+               official_url="https://c.test/", inmobiliaria_id=1)
+    html = ("<title>Candoli Propiedades</title>"
+            "<h2>Complejo turistico en venta a metros del mar, Camet Norte</h2>"
+            "<h2>Propiedades en venta destacadas del mes</h2>")
+    assert GenericoConnector._titulo_de_la_ficha(html, {}, f) == (
+        "Complejo turistico en venta a metros del mar, Camet Norte")
+    con_h1 = "<title>Candoli Propiedades</title><h1>Casa en Mar del Plata</h1>" + html
+    assert GenericoConnector._titulo_de_la_ficha(con_h1, {}, f) == "Casa en Mar del Plata"
+
+
+def test_un_conteo_rotulado_no_es_el_chip_del_tipo():
+    """`candoli`: «Cocheras: 1» en un complejo turistico no lo vuelve cochera."""
+    assert GenericoConnector._tipo_en_la_ficha("<span>Cocheras: 1</span><span>Amb. 2</span>") is None
+    assert GenericoConnector._tipo_en_la_ficha("<span>Departamentos</span>") == "departamento"

@@ -3373,6 +3373,20 @@ class GenericoConnector(Connector):
                 visible = limpiar(unescape(re.sub(r"<[^>]+>", " ", m.group(1))))
                 if visible and len(visible) <= 200:
                     candidatos.append(visible)
+        # Sin og:title ni h1, el titulo de la ficha puede ser su primer h2-h4:
+        # `candoli` tiene <title> = «Candoli Propiedades» y el h2 «Complejo
+        # turistico en venta a metros del mar, Camet Norte». Solo si el h2
+        # nombra una operacion o un tipo y no es un encabezado de seccion.
+        if not re.search(r'property="og:title"|<h1\b', html, re.I):
+            for m in re.finditer(r"<h([2-4])[^>]*>(.{3,2000}?)</h\1>", html, re.S | re.I):
+                visible = limpiar(unescape(re.sub(r"<[^>]+>", " ", m.group(2)))) or ""
+                if (20 <= len(visible) <= 200
+                        and not re.match(r"(?i)(?:propiedades|inmuebles|ultimas|[uú]ltimas|"
+                                         r"destacad|similares|otras|busc)", visible)
+                        and (detectar_operacion(visible) or detectar_tipo(visible))):
+                    candidatos.insert(len(candidatos) - 1 if len(candidatos) > 1 else 1,
+                                      visible)
+                    break
 
         agencia = (fuente.agency_name or "").lower().strip()
         restos: list[str] = []
@@ -4014,6 +4028,10 @@ class GenericoConnector(Connector):
             # Un elemento con una frase es texto de la ficha, no una etiqueta.
             # «Sin cochera» dice lo que la propiedad NO tiene.
             if len(texto.split()) > 2 or re.match(r"sin\b", texto, re.I):
+                continue
+            # «Cocheras: 1» es un conteo con su rotulo, no el chip del tipo:
+            # `candoli` guardaba dos complejos turisticos como cocheras.
+            if re.search(r"[\d:]", texto):
                 continue
             tipo = detectar_tipo(texto)
             if tipo:
