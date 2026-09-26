@@ -77,6 +77,15 @@ Rama de trabajo: `handoff/codex-unificacion-2026-09-18`. Nada se mergea a
 `main` ni se despliega sin autorización.
 
 ## Snapshot
+**v4f** (25-09 23:57, `_scratch/unification/snapshot_v4f_2026-09-26/`, integrity ok,
+`database_writes: 0`): mismas 57.665 propiedades que la v4e; frescura desde NEEDS_FIX por campos
+5.358 → 5.429 y 165 cocheras incoherentes resueltas por la regla de coherencia. Los arreglos de
+la noche del 25-09 (bottai, battista, cuini, WordPress→generico, Terravirtual…) entran cuando la
+cola recertifique esas agencias: reconstruir entonces (v4g) antes de proponer el reemplazo.
+Comando: `python scripts/api_snapshot.py --salida <carpeta en _scratch>` — **sin `--salida`
+escribe en la ruta servida** (= deploy).
+
+Detalle de la v4e:
 Construida el 25-09 17:16 en `_scratch/unification/snapshot_v4e_2026-09-25/`,
 `pragma integrity_check` = ok, `database_writes: 0`. Reemplaza a la v4d (misma base, más reglas).
 

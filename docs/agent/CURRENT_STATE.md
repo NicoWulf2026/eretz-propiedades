@@ -33,12 +33,13 @@ Los cambios del 25-09 (source_policy, base, generico, wasi) invalidaron certific
 rotación las recertifica sola.
 
 ## Calidad
-- Regression Gate (22:1x): 258 agencias recertificadas, 0 pendientes tras firmar 8.
-- Suite completa (23:0x): 3.355 passed.
+- Regression Gate (23:4x): 266 agencias recertificadas, 0 pendientes tras firmar 14.
+- Suite completa (23:4x): 3.362 passed.
 
 ## Snapshot de la API local
 - Servida: `api_snapshot_v2` del 08-09 (`D:\INMO CAPITAL\ERETZ_API_CONTRACT\`). Reemplazarla = deploy.
-- Lista para servir: `_scratch/unification/snapshot_v4e_2026-09-25/` — 57.665 propiedades,
+- Candidata más nueva: `_scratch/unification/snapshot_v4f_2026-09-26/` (v4e + frescura de la
+  tarde; reconstruir cuando la cola recertifique el lote de la noche). Anterior: `_scratch/unification/snapshot_v4e_2026-09-25/` — 57.665 propiedades,
   `integrity_check` ok, reglas de calidad del runner + frescura desde NEEDS_FIX por campos.
   Detalle y latencias en `READY_FOR_PRODUCTION_ACTION.md` §7.
 
