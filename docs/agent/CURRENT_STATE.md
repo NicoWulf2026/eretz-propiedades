@@ -3,7 +3,7 @@
 Estado VIGENTE, no bitácora. La historia está en Git (`git log`; la bitácora anterior de este
 archivo: `git show 6ee927bb80:docs/agent/CURRENT_STATE.md`). `database_writes: 0` en todo.
 
-**Actualizado:** 2026-09-25 17:45 · **Rama:** `handoff/codex-unificacion-2026-09-18` (push solo acá)
+**Actualizado:** 2026-09-25 23:00 · **Rama:** `handoff/codex-unificacion-2026-09-18` (push solo acá)
 **Fase:** certificación/recertificación continua + calidad de lo servido + preparación productiva.
 
 ## Cola de certificación
@@ -19,13 +19,13 @@ archivo: `git show 6ee927bb80:docs/agent/CURRENT_STATE.md`). `database_writes: 0
   cambio de huella. Libro: `ERETZ_FAMILIAS_DETENIDAS.jsonl`.
 - Orden: conocidas por `checked_at` ascendente, intercaladas 1:1 con nuevas.
 
-## Resultados (paquetes en `ERETZ_AGENCY_CERTIFICATION_20260827/agencies`, 14:00)
+## Resultados (paquetes en `ERETZ_AGENCY_CERTIFICATION_20260827/agencies`, 21:15)
 | estado | agencias |
 |---|---|
-| CERTIFIED_COMPLETE | 157 |
-| CERTIFIED_BEST_AVAILABLE | 17 |
-| NEEDS_FIX | 117 |
-| BLOCKED_EXTERNAL | 44 |
+| CERTIFIED_COMPLETE | 175 |
+| CERTIFIED_BEST_AVAILABLE | 16 |
+| NEEDS_FIX | 124 |
+| BLOCKED_EXTERNAL | 46 |
 | IDENTITY_PENDING | 140 |
 | NO_INVENTORY_CONFIRMED | 1 |
 
@@ -33,8 +33,8 @@ Los cambios del 25-09 (source_policy, base, generico, wasi) invalidaron certific
 rotación las recertifica sola.
 
 ## Calidad
-- Regression Gate (16:3x): 217 agencias recertificadas, 0 pendientes tras firmar 5.
-- Suite completa (16:5x): 3.302 passed.
+- Regression Gate (22:1x): 258 agencias recertificadas, 0 pendientes tras firmar 8.
+- Suite completa (23:0x): 3.355 passed.
 
 ## Snapshot de la API local
 - Servida: `api_snapshot_v2` del 08-09 (`D:\INMO CAPITAL\ERETZ_API_CONTRACT\`). Reemplazarla = deploy.
