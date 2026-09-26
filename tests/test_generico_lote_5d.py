@@ -501,3 +501,26 @@ def test_los_ordenes_del_listado_con_operacion_no_son_fichas():
     html += '<a href="/propiedades/venta_casa-en-funes-123">Casa</a>'
     fichas = GenericoConnector._fichas_en(html, "https://f.test")
     assert not any(o in f for f in fichas for o in ("destacadas", "precio-menor", "mas-viejas"))
+
+
+def test_rotulos_de_ubicacion_del_tema_ere():
+    """`ingar`: <strong>City/Town</strong><span><a rel="tag">Rosario</a></span>."""
+    html = ('<li><div><strong class="mr-2">City/Town</strong> <span><a href="/c/rosario/" '
+            'rel="tag">Rosario</a></span></div></li><li><div><strong class="mr-2">Barrio</strong>'
+            ' <span><a href="/b/centro/" rel="tag">Centro</a></span></div></li>')
+    assert GenericoConnector._par_rotulado(html, r"city\s*/\s*town|ciudad|localidad") == "Rosario"
+    assert GenericoConnector._par_rotulado(html, r"barrio") == "Centro"
+
+
+def test_descripcion_ere_con_encabezado_propio_y_subtitulos():
+    """`ingar`: <div class="property-description"><h2>Descripción</h2><h3>…</h3><p>…</p>."""
+    html = ("<html><head><title>Atlantida 38</title></head><body><main><h1>Atlantida 38</h1>"
+            "<p>USD 90.000 venta departamento</p>"
+            '<div class="single-property-element property-description"><div><h2>Descripción</h2></div>'
+            "<div><p>&nbsp;</p><h3>Departamentos de 1 Dormitorio en Venta</h3>"
+            "<p>Viví o invertí en una de las zonas más buscadas de Rosario, a pasos del parque.</p>"
+            "</div></div><img src='/f/1.jpg'><img src='/f/2.jpg'><img src='/f/3.jpg'>"
+            "</main></body></html>" + RELLENO)
+    p = _normalizar(html)
+    assert p is not None and p.descripcion and "zonas más buscadas" in p.descripcion
+    assert not p.descripcion.lower().startswith("descripci")

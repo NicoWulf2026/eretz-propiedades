@@ -2440,6 +2440,21 @@ class GenericoConnector(Connector):
                 resto = sin_bloques_no_textuales(principal[contenedor.end():])
                 corte = re.search(r"<h[1-6]\b|<footer\b|<!--\s*(?!Details)", resto, re.I)
                 visible = limpiar(_texto((resto[:corte.start()] if corte else resto)[:6000]))
+                if not visible or len(visible) < 40:
+                    # El contenedor abre con su propio encabezado «Descripción»
+                    # y el texto trae subtitulos (tema ERE, `ingar`): cortar en
+                    # el primer encabezado lo dejaba vacio. Se lee el contenedor
+                    # entero, sin ese encabezado.
+                    from bs4 import BeautifulSoup
+                    sopa = BeautifulSoup(principal[contenedor.start():contenedor.start() + 60000],
+                                         "html.parser")
+                    caja = sopa.find(True)
+                    if caja is not None:
+                        for titulo_caja in caja.find_all(re.compile(r"^h[1-6]$")):
+                            if re.fullmatch(r"descripci[oó]n", titulo_caja.get_text(strip=True), re.I):
+                                titulo_caja.decompose()
+                        visible = limpiar(re.sub(r"\s+", " ", caja.get_text(" ")))[:6000]
+                    sopa.decompose()
                 descripcion = visible if visible and len(visible) >= 40 else None
         if descripcion and meta and self._es_su_comienzo(descripcion, meta):
             # El rotulo solo trajo el comienzo de lo que el meta dice entero:
@@ -2635,6 +2650,13 @@ class GenericoConnector(Connector):
                 ciudad_par, provincia_par = tramos[1], tramos[-1]
                 if barrio_par.casefold() == ciudad_par.casefold():
                     barrio_par = None
+        # Ciudad y provincia en su propio rotulo: «City/Town | Rosario»,
+        # «Province/State | Santa Fe» (`ingar`, 21 de 26 sin barrio y 5 sin
+        # ciudad). La geografia compartida los valida despues.
+        ciudad_par = ciudad_par or self._par_rotulado(
+            principal, r"city\s*/\s*town|ciudad|localidad")
+        provincia_par = provincia_par or self._par_rotulado(
+            principal, r"province\s*/\s*state|provincia")
         if (not direccion and crudo.get("wordpress_category_catalog") and titulo
                 and re.search(r"\b\d{2,5}\b", titulo)
                 and len(titulo) <= 120):
@@ -3357,7 +3379,10 @@ class GenericoConnector(Connector):
         """
         m = re.search(
             rf"<(p|span|dt|th|td|div|label|strong|h[1-6])\b[^>]*>\s*(?:{etiqueta})\s*:?\s*"
-            rf"</\1>\s*<(p|span|dd|td|div)\b[^>]*>\s*([^<>]{{2,150}}?)\s*</\2>",
+            # El valor puede ser el enlace a su taxonomia: <span><a rel="tag">
+            # Centro</a></span> (tema ERE de WordPress, `ingar`).
+            rf"</\1>\s*<(p|span|dd|td|div)\b[^>]*>\s*(?:<a\b[^>]*>\s*)?"
+            rf"([^<>]{{2,150}}?)\s*(?:</a>\s*)?</\2>",
             html or "", re.I)
         return limpiar(unescape(m.group(3))) if m else None
 
