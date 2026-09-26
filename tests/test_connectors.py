@@ -4773,3 +4773,15 @@ def test_MUERDE_el_conteo_tipado_manda_sobre_el_texto():
     from connectors.generico import ETIQUETAS_DE_CONTEO
     et = ETIQUETAS_DE_CONTEO["ambientes"]
     assert GenericoConnector._cuenta_de_ficha("<p>+4 Ambientes</p>", "+4 Ambientes", et, 5) == 5
+
+
+def test_xintel_sigue_el_iframe_amaira_cuando_la_pagina_es_un_marco() -> None:
+    """`battista`: la ficha es `<iframe src="https://ficha.amaira.com.ar/...">`
+    y los parametros del detalle viven en el iframe; las 480 fallaban."""
+    marco = ('<html><body><iframe src="https://ficha.amaira.com.ar/nue/ficha.php?'
+             'ficha=abc127&amp;urlcompleta=x"></iframe></body></html>')
+    c = gen_conector({**XINTEL_API, "https://ficha.amaira.com.ar/nue/ficha.php?ficha=abc127": XINTEL_FICHA})
+    assert c._ficha_xintel_embebida(marco) == XINTEL_FICHA
+    assert "https://ficha.amaira.com.ar/nue/ficha.php?ficha=abc127&urlcompleta=x" in c.descargador.pedidos_urls
+    sin_marco = "<html><body>nada</body></html>"
+    assert c._ficha_xintel_embebida(sin_marco) == sin_marco

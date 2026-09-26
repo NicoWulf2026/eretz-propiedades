@@ -82,6 +82,11 @@ TOPE_TOKKO_PROXY = 5000
 # conjunto viene reordenado entre pedidos.
 MAX_BARRIDOS_TOKKO_PROXY = 4
 
+# Ficha Xintel/Amaira embebida: la pagina de la agencia es un marco y la
+# ficha -con los parametros del detalle- vive en el iframe del proveedor.
+RE_IFRAME_AMAIRA = re.compile(
+    r"""<iframe[^>]+src=["'](https://ficha\.amaira\.com\.ar/[^"']+)["']""", re.I)
+
 SITEMAPS = ("/sitemap.xml", "/sitemap_index.xml", "/wp-sitemap.xml",
             "/sitemap-index.xml", "/sitemapindex.xml")
 
@@ -1769,7 +1774,8 @@ class GenericoConnector(Connector):
         nada para los otros 2.258.
         """
         from bs4 import BeautifulSoup
-        from scraper.detail_urls import (extract_candidate_detail_urls_from_card,
+        from scraper.detail_urls import (_looks_like_detail_url, _onclick_urls,
+                                         extract_candidate_detail_urls_from_card,
                                          extract_candidate_detail_urls_from_document)
         host = (urllib.parse.urlparse(base).hostname or '').lower().removeprefix('www.')
         salida, vistas = [], set()
@@ -1777,6 +1783,16 @@ class GenericoConnector(Connector):
         recovered = [url for url, _ in extract_candidate_detail_urls_from_document(soup, base)]
         for card in soup.select("article, [class*='property'], [class*='propiedad'], [class*='listing'], [class*='card']"):
             recovered.extend(extract_candidate_detail_urls_from_card(card, base))
+        # Tarjetas que navegan por `onclick` sin enlace: `aris propiedades`
+        # publica sus doce fichas como `<li onclick="location.href='ficha.php?
+        # ficha=ARI2829'" class="col-sm-6 ...">`, sin clase de tarjeta ni
+        # `href`, y se enumeraban 4 (las del carrusel). Solo entra lo que el
+        # detector conservador acepta como ficha, y el detalle la confirma.
+        for elemento in soup.select("[onclick]"):
+            for crudo in _onclick_urls(str(elemento.get("onclick") or "")):
+                u = urllib.parse.urljoin(base, crudo)
+                if _looks_like_detail_url(u, base):
+                    recovered.append(u)
         hrefs = [urllib.parse.urljoin(base, a.get('href', '')) for a in soup.select('a[href]')]
         recovered_set = set(recovered)
         for u in hrefs + recovered:
@@ -2193,7 +2209,8 @@ class GenericoConnector(Connector):
         # API trae titulo, descripcion, coordenadas y 20 a 28 fotos. La senal
         # es la que la propia plantilla usa para pedir el detalle.
         if crudo.get("xintel") or self._es_ficha_xintel(html):
-            return self._normalizar_xintel(crudo, fuente, html)
+            return self._normalizar_xintel(crudo, fuente,
+                                           self._ficha_xintel_embebida(html))
 
         principal = cuerpo_principal(html)
         texto = normalizar_texto_campos(_texto(sin_filtros_catalogo(principal)))
@@ -2936,6 +2953,23 @@ class GenericoConnector(Connector):
             extra={"tokko_proxy": True},
         )
         return propiedad
+
+    def _ficha_xintel_embebida(self, html: str) -> str:
+        """La ficha con los parametros del detalle, siguiendo el iframe Amaira.
+
+        `battista` (480 propiedades) publica cada ficha como un marco vacio
+        con `<iframe src="https://ficha.amaira.com.ar/nue/ficha.php?ficha=
+        bat2953...">`: los parametros estan en el iframe y no en la pagina, y
+        las 480 fallaban con «la ficha Xintel no trae los parametros del
+        detalle». Si el iframe no los trae tampoco, sigue fallando igual.
+        """
+        if self._es_ficha_xintel(html):
+            return html
+        marco = RE_IFRAME_AMAIRA.search(html or "")
+        if not marco:
+            return html
+        embebida = self.descargador.bajar(unescape(marco.group(1)))
+        return embebida if self._es_ficha_xintel(embebida) else html
 
     @staticmethod
     def _es_ficha_xintel(html: str) -> bool:

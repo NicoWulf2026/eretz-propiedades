@@ -339,3 +339,16 @@ def test_un_emprendimiento_en_plural_no_toma_tipo_ni_conteos_del_menu():
     assert p is not None
     assert p.tipo_propiedad is None
     assert (p.dormitorios, p.ambientes, p.banos) == (None, None, None)
+
+
+def test_fichas_que_navegan_por_onclick_se_enumeran():
+    """`aris`: doce `<li onclick="location.href='ficha.php?ficha=ARI…'">`."""
+    html = ("<ul>" + "".join(
+        f"<li onclick=\"location.href='ficha.php?ficha=ARI{n}'\" class='col-sm-6'>"
+        f"<img src='x{n}.jpg'><p>Departamento en venta U$S 100.000</p></li>"
+        for n in (2829, 3092)) +
+        "<li onclick=\"location.href='contacto.php'\">Contacto</li></ul>")
+    fichas = GenericoConnector._fichas_en(html, "https://aris.test")
+    assert "https://aris.test/ficha.php?ficha=ARI2829" in fichas
+    assert "https://aris.test/ficha.php?ficha=ARI3092" in fichas
+    assert not any("contacto" in f for f in fichas)
