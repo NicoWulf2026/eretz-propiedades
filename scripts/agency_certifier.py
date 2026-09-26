@@ -101,7 +101,9 @@ SOURCE_SIGNALS = {
         r"(?:class=[\"'][^\"']*(?:ciudad|localidad)[^\"']*[\"']|"
         r"[\"'](?:ciudad|localidad|addressLocality)[\"']\s*:)", re.I),
     "provincia": re.compile(r"\bprovincia\s*:?", re.I),
-    "ambientes": re.compile(r"(?:\b[1-9]\d?\s*\b(?:ambientes?\b|amb\.)|\b(?:ambientes?\b|amb\.)\s*:?\s*[1-9]\d?\b)", re.I),
+    # "+4 Ambientes" es una cota, no una cantidad: el extractor no la afirma
+    # y la senal tampoco puede exigirla (`dragone`, local comercial).
+    "ambientes": re.compile(r"(?:(?<!\+)\b[1-9]\d?\s*\b(?:ambientes?\b|amb\.)|\b(?:ambientes?\b|amb\.)\s*:?\s*[1-9]\d?\b)", re.I),
     "dormitorios": re.compile(r"(?:\b[1-9]\d?\s*(?:dormitorios?|habitaciones?)|(?:dormitorios?|habitaciones?)\s*:?\s*[1-9]\d?)", re.I),
     "banos": re.compile(r"(?:\b[1-9]\d?\s*(?:ba[nñ]os?|toilettes?)|(?:ba[nñ]os?|toilettes?)\s*:?\s*[1-9]\d?)", re.I),
     "superficie_total": re.compile(r"(?:superficie\s+total|sup\.?\s*total)[^\d]{0,18}[\d.,]+\s*m", re.I),

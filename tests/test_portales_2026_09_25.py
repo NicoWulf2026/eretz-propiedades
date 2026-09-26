@@ -53,7 +53,18 @@ def test_el_verificador_por_subcadena_no_atrapa_inmobiliarias(url):
     "https://www.smartservices.uy/agencia-inmobiliaria/montevideo/index.php?p=2",
     # `gama`: guia turistica de Rosario (historia.php, ubicacion.php).
     "http://www.365litoralargentino.com/santa_fe/rosario/gama-inmobiliaria_e.html",
+    # `bertomeu`: directorio de socios de la Camara Inmobiliaria Argentina.
+    "https://cia.org.ar/nuevo-directorio/",
+    # `cerro`: guia de empresas de Cordoba.
+    "https://empresasdecordoba.com/pagina/Cerro-Inmobiliaria-Miguel-A-Caceres/",
+    # `chenlo`: portal de la Asociacion de Martilleros de Lanus.
+    "https://propuestasinmobiliarias.com.ar/agents.php",
 ])
 def test_MUERDE_un_directorio_general_tampoco_es_la_web_de_la_inmobiliaria(url):
     assert es_portal(url)
     assert external_portal(url)
+
+
+def test_cia_org_ar_se_compara_por_dominio_entero():
+    assert not es_portal("https://agencia.org.ar/")
+    assert not es_portal("https://garcia.org.ar/")

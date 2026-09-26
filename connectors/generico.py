@@ -3506,9 +3506,20 @@ class GenericoConnector(Connector):
         # ``og:type=article``. Esa declaracion sigue bloqueando formas amplias,
         # pero no debe invalidar una URL que vino de un catalogo inmobiliario
         # paginado y verificado en runtime.
-        if RE_EDITORIAL.search(html or "") and not catalogo_verificado:
-            return False
         t = texto or ""
+        # `og:type=article` SOLO (sin schema Article/BlogPosting) no veta una
+        # pagina que publica un inmueble con todas las letras: `gandino
+        # galetto` lo declara en sus 12 fichas -«Casa en venta Ambrosetti
+        # 300», USD 130.000, 14 fotos- y quedaba en cero. Una nota de blog no
+        # trae precio con moneda, operacion Y tres fotos a la vez.
+        solo_og_article = bool(RE_EDITORIAL.search(html or "")) and not re.search(
+            r'"@type"\s*:\s*"?(?:Article|NewsArticle|BlogPosting)', html or "", re.I)
+        con_todo = (precio is not None and bool(RE_PRECIO_CON_MONEDA.search(t))
+                    and bool(RE_OPERACION_TXT.search(t))
+                    and len(imagenes) >= FOTOS_MINIMAS)
+        if (RE_EDITORIAL.search(html or "") and not catalogo_verificado
+                and not (solo_og_article and con_todo)):
+            return False
         atributos = {x.lower() for x in RE_ATRIBUTOS_TXT.findall(t)}
         describe = bool(RE_OPERACION_TXT.search(t)) or len(atributos) >= 2
         # UN atributo alcanza si la pagina ademas publica precio.
@@ -3544,6 +3555,12 @@ class GenericoConnector(Connector):
         # La ausencia de fotos no invalida una ficha cuya pertenencia al
         # catalogo ya se demostro. Las formas amplias siguen exigiendo fotos.
         fotos_suficientes = catalogo_verificado or len(imagenes) >= FOTOS_MINIMAS
+        # Un schema.org con precio con moneda y operacion es una ficha aunque
+        # la galeria la cargue un script: `benitez` publica una sola foto en
+        # el HTML (la del JSON-LD `Product`) y perdia 7 de 8 fichas reales.
+        if (not fotos_suficientes and tipo_ld and imagenes and precio is not None
+                and RE_PRECIO_CON_MONEDA.search(t) and RE_OPERACION_TXT.search(t)):
+            fotos_suficientes = True
         # Sin precio numerico, pero describiendo el inmueble en detalle.
         #
         # La concesion de "consultar precio" ya estaba razonada mas arriba

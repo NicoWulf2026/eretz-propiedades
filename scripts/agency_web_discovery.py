@@ -107,6 +107,9 @@ AGREGADORES = {
     # 25-09: guia de comercios uruguaya y guia turistica de Rosario, cada
     # una como web oficial de una inmobiliaria con identidad READY.
     "smartservices.uy", "365litoralargentino.com",
+    # 25-09 noche: directorio de la Camara Inmobiliaria Argentina y guia de
+    # empresas de Cordoba, como web oficial de `bertomeu` y `cerro`.
+    "cia.org.ar", "empresasdecordoba.com",
 }
 NO_OFICIALES = PORTALES | MEDIOS | EMPLEO | REDES | AGREGADORES
 
@@ -159,6 +162,8 @@ PORTALES_POR_NOMBRE = {
     # `benjamin ferreyra`), `propia` (portal de Rosario), y tres directorios.
     "proppies", "propia", "liderprop", "lujanprop", "aspenbienesraices",
     "mercado-unico",
+    # Portal de la Asociacion de Martilleros de Lanus (`chenlo`: /agents.php).
+    "propuestasinmobiliarias",
 }
 
 

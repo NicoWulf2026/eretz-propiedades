@@ -352,3 +352,24 @@ def test_fichas_que_navegan_por_onclick_se_enumeran():
     assert "https://aris.test/ficha.php?ficha=ARI2829" in fichas
     assert "https://aris.test/ficha.php?ficha=ARI3092" in fichas
     assert not any("contacto" in f for f in fichas)
+
+
+def test_og_article_solo_no_veta_una_ficha_con_precio_operacion_y_fotos():
+    """`gandino galetto`: og:type=article en sus 12 fichas reales."""
+    html = '<meta property="og:type" content="article">'
+    texto = "Casa en venta Ambrosetti 300 USD 130.000 3 dormitorios 2 banos"
+    fotos = ["a.jpg", "b.jpg", "c.jpg"]
+    assert GenericoConnector._confirma_ficha(html, texto, 130000.0, fotos)
+    # Una nota con schema de articulo sigue afuera.
+    nota = html + '<script type="application/ld+json">{"@type": "BlogPosting"}</script>'
+    assert not GenericoConnector._confirma_ficha(nota, texto, 130000.0, fotos)
+    # Y sin precio con moneda tambien.
+    assert not GenericoConnector._confirma_ficha(html, "Nota: casas en venta", None, fotos)
+
+
+def test_schema_con_precio_y_operacion_alcanza_con_una_foto():
+    """`benitez`: una foto en el HTML (la del JSON-LD `Product`)."""
+    texto = "Departamento 1 dormitorio en venta USD 65.000"
+    assert GenericoConnector._confirma_ficha("", texto, 65000.0, ["a.jpg"], tipo_ld="Product")
+    assert not GenericoConnector._confirma_ficha("", texto, 65000.0, ["a.jpg"])
+    assert not GenericoConnector._confirma_ficha("", texto, 65000.0, [], tipo_ld="Product")

@@ -49,3 +49,11 @@ def test_emprendimientos_en_plural_no_exigen_conteos():
     assert not (s["ambientes"] or s["dormitorios"] or s["banos"])
     s = source_signals(html, "https://a.test/propiedades/depto-57931")
     assert s["ambientes"] and s["dormitorios"]
+
+
+def test_mas_cuatro_ambientes_es_una_cota_y_no_se_exige():
+    """`dragone`: «Locales +4 Ambientes» no publica una cantidad exacta."""
+    html = "<html><body><main><p>Locales +4 Ambientes Sup. cubierta 400m2</p></main></body></html>"
+    assert not source_signals(html, "https://a.test/propiedad/606002")["ambientes"]
+    html = "<html><body><main><p>Departamento 4 Ambientes</p></main></body></html>"
+    assert source_signals(html, "https://a.test/propiedad/606003")["ambientes"]

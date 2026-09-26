@@ -122,7 +122,7 @@ PORTALES = (
     # compara por subcadena: `propia`, `lujanprop` y `liderprop` atraparian
     # `inmobiliariapropia`, `lujanpropiedades`, `liderpropiedades`. Esos
     # quedan solo en `agency_web_discovery`, que compara el nombre entero.
-    "proppies", "aspenbienesraices", "mercado-unico",
+    "proppies", "aspenbienesraices", "mercado-unico", "propuestasinmobiliarias",
 )
 # No venden propiedades: publican avisos de empleo. Se mira aparte de
 # PORTALES porque no son lo mismo, pero el desenlace es el mismo: NO es el
@@ -131,7 +131,7 @@ PORTALES = (
 BOLSAS_DE_TRABAJO = ("computrabajo", "bumeran", "zonajobs", "indeed")
 DIRECTORIOS = ("cuitonline", "dateas", "universidad", "paginasamarillas",
                "guiaempresas", "informacion-empresas", "opendata", "nosis",
-               "einforma", "empresite")
+               "einforma", "empresite", "empresasdecordoba")
 MEDIOS = ("lanacion", "clarin", "infobae", "pagina12", "eldia", "lavoz",
           "perfil.com", "ambito.com", "cronista", "iprofesional", "telam",
           "diario", "noticias",
