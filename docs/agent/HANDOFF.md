@@ -41,6 +41,10 @@ Historia: Git (`git log --since=2026-09-25`).
 - 23h: paginación que ignora el parámetro ya no tapa la real + `/propiedades/pagina-N/` + filtros
   de catálogo no son fichas (`cuini` 16→37) — `43a0ddd1cd`; operación desde catálogos gemelos
   venta/alquiler (`bottai` 226→317 enumeradas, 314 con operación) — `091b71fa67`.
+- 23:5x: WordPress sin REST se normaliza con `generico` (las 6 agencias de ese camino estaban en
+  NEEDS_FIX, 394 fichas), «$X / DOLARES» = USD, similares/destacadas de inspiry fuera del
+  cuerpo, tipo rotulado antes que el menú — `9947dccc14`. Mirar en el próximo gate: cip,
+  christian arce, ente, gonzalez theyler, constant, berardi (cambian muchos campos, a favor).
 
 ## Corriendo
 - Cola con 2 workers + relanzador + vigilante. Mirarla solo si hay paradas.
@@ -73,8 +77,8 @@ Historia: Git (`git log --since=2026-09-25`).
    guarda datos de una tarjeta al azar → no idempotente; hace falta un criterio general de
    «la url de ficha sirve un listado», el conteo de tarjetas no separa: la ficha real también trae
    una grilla); `harfouche` (WP sin CPT en REST, sitemaps con 429: dejar a la cola);
-   `gaggiotti` (SPA Vite, catálogo por JS); `i alfredo gonzalez theyler` (tema WP
-   inspiry-real-places: operación/tipo/área rotulados, título con sufijo del sitio).
+   `gaggiotti` (SPA Vite, catálogo por JS); `i alfredo gonzalez theyler`: tipo, precio y relacionadas RESUELTOS; queda el título con
+   sufijo del sitio.
 4. Regression Gate tras cada tanda (comando en `.claude/rules/scraper.md`).
 5. Beta del backend (`docs/ERETZ_UNIFICATION_PLAN.md` § «Backend beta confiable»).
 
