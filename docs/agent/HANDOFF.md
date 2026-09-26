@@ -52,6 +52,10 @@ Historia: Git (`git log --since=2026-09-25`).
   fichas) → `c7f463090c` + diferida firmada 00:25 (la familia volvió a la cola).
 - Paro 00:28 FAMILIA wordpress (`ingar`, tema ERE: ubicación rotulada con enlace, descripción con
   su propio h2) → `7d94edd1a5` + diferida firmada 00:36.
+- Paro 01:43 FAMILIA generico (`ballarre`: la convención `/?page=N` muestreaba destacadas al azar
+  de la portada) → paginación DECLARADA por el listado antes que las convenciones `018f2a565e` +
+  diferida firmada 02:08. Mirar en el gate: agencias LISTADO_HTML cuyo listado enlaza `?start=`,
+  `?page=`, `?pagina=` (ahora se recorren esas páginas en vez de las convenciones).
 
 ## Corriendo
 - Cola con 2 workers + relanzador + vigilante. Mirarla solo si hay paradas.
