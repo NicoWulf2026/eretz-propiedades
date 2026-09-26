@@ -204,7 +204,12 @@ RE_NO_FICHA = re.compile(
     # Taxonomias de WordPress: /estado-propiedad/venta (`garbero`) lista
     # avisos, no es uno.
     r"|^/(?:(?:estado|tipo|ciudad|zona|barrio|caracteristica|categoria|localidad)"
-    r"-(?:de-)?propiedad(?:es)?|property-(?:status|type|city|area|feature|label|state))/",
+    r"-(?:de-)?propiedad(?:es)?|property-(?:status|type|city|area|feature|label|state))/"
+    # Filtros del catalogo como ruta: /propiedades-venta/tipo/casa-1/dormitorios/
+    # 2-dormitorios-9/ (`cuini`, 16 del menu enumeradas como fichas).
+    r"|^/propiedades-(?:venta|alquiler)/(?:tipo|dormitorios|ciudad|zona|barrio)/"
+    # Y la pagina N del listado: /propiedades/pagina-3/ es un listado.
+    r"|/(?:pagina|page)[-/]\d+/?$",
     re.I)
 
 # Traduccion de la FORMA descubierta de una fuente a un patron de ruta.
@@ -2094,11 +2099,14 @@ class GenericoConnector(Connector):
         # todo lo que la fuente sirve por este camino, mientras que cortar por
         # un error no prueba nada sobre el inventario restante.
         self.paginacion_interrumpida = False
+        # `/propiedades/pagina-N/` (`cuini`: 6 por pagina, 37 en siete paginas;
+        # la portada solo enlaza 16).
         for patron in (patron_infinito, "{b}/propiedades/page/{n}/", "{b}/propiedades?page={n}",
-                       "{b}?page={n}"):
+                       "{b}/propiedades/pagina-{n}/", "{b}?page={n}"):
             inicio_patron = len(vistas)
             duplicados_patron = 0
             sin_nuevas = 0
+            paginas_con_nuevas = 0
             interrumpido = False
             for n in range(2, 60):
                 try:
@@ -2131,10 +2139,17 @@ class GenericoConnector(Connector):
                         break
                 else:
                     sin_nuevas = 0
+                    paginas_con_nuevas += 1
             if len(vistas) > inicio_patron:
                 self.duplicados_origen = duplicados_patron
                 self.paginacion_interrumpida = interrumpido
-                break
+                # Una sola pagina con novedades puede ser el sitio IGNORANDO el
+                # parametro y sirviendo la primera del listado: `cuini`
+                # responde /propiedades/page/2/ con /propiedades/ y cortar ahi
+                # tapaba su paginacion real, /propiedades/pagina-N/ (16 de 37).
+                # Se sigue probando; lo ya visto no se repite.
+                if paginas_con_nuevas >= 2:
+                    break
 
     @staticmethod
     def _id_de(url: str) -> str:

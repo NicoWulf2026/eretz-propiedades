@@ -387,3 +387,19 @@ def test_propiedad_inexistente_se_anota_como_baja_de_la_ficha():
     assert c.normalize({"source_url": "https://duva.test/propiedades/x-1/",
                         "source_listing_id": "1"}, f) is None
     assert not c.errores
+
+
+def test_los_filtros_del_catalogo_como_ruta_no_son_fichas():
+    """`cuini`: el menu enlaza /propiedades-venta/tipo/casa-1/dormitorios/..."""
+    html = ('<nav><a href="propiedades-venta/tipo/casa-1/">Casa</a>'
+            '<a href="propiedades-alquiler/tipo/departamento-2/dormitorios/1-dormitorio-8/">1 dorm</a></nav>'
+            '<a class="propiedad" href="propiedad/1681/italia-27-bis/"><h3>Italia 27 bis</h3></a>')
+    fichas = GenericoConnector._fichas_en(html, "https://cuini.test")
+    assert fichas == ["https://cuini.test/propiedad/1681/italia-27-bis/"]
+
+
+def test_la_pagina_n_del_listado_no_es_una_ficha():
+    html = ('<a href="propiedades/pagina-2/">2</a><a href="propiedades/page/3/">3</a>'
+            '<a class="propiedad" href="propiedad/1681/italia-27-bis/">Italia</a>')
+    assert GenericoConnector._fichas_en(html, "https://cuini.test") == [
+        "https://cuini.test/propiedad/1681/italia-27-bis/"]
