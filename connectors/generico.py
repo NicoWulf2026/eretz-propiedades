@@ -204,7 +204,9 @@ RE_FICHA_RAIZ = re.compile(
 # Su «AI Labyrinth» siembra enlaces a articulos inventados para los bots
 # (`fernandez marull` 59 de 59, `crestale` 59 de 131, el 25-09).
 RE_NO_FICHA = re.compile(
-    r"/propiedades/(?:destacadas|mas-nuevas|mas-viejas|"
+    # Tambien con la operacion delante: /propiedades/venta_mas-nuevas
+    # (`fandino`, 10 ordenes del listado enumerados como fichas el 26-09).
+    r"/propiedades/(?:(?:venta|alquiler)[_-])?(?:destacadas|mas-nuevas|mas-viejas|"
     r"precio-(?:mayor|menor)-a-(?:mayor|menor))/?$|^/cdn-cgi/"
     # Taxonomias de WordPress: /estado-propiedad/venta (`garbero`) lista
     # avisos, no es uno.

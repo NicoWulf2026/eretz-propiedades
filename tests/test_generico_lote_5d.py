@@ -492,3 +492,12 @@ def test_terravirtual_la_ficha_es_barra_ficha_md5():
     html = (f'<a href="https://b.test/propiedades/ficha/{h}">a</a>'
             f'<a href="https://b.test//ficha/{h}">b</a>')
     assert GenericoConnector._fichas_en(html, "https://b.test") == [f"https://b.test/ficha/{h}"]
+
+
+def test_los_ordenes_del_listado_con_operacion_no_son_fichas():
+    """`fandino`: /propiedades/venta_mas-nuevas y nueve mas."""
+    html = "".join(f'<a href="/propiedades/{o}">x</a>' for o in (
+        "venta_destacadas", "alquiler_precio-menor-a-mayor", "venta_mas-viejas"))
+    html += '<a href="/propiedades/venta_casa-en-funes-123">Casa</a>'
+    fichas = GenericoConnector._fichas_en(html, "https://f.test")
+    assert not any(o in f for f in fichas for o in ("destacadas", "precio-menor", "mas-viejas"))
