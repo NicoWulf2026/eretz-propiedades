@@ -813,3 +813,11 @@ def test_url_con_token_se_lleva_su_img():
     from connectors.generico import RE_URL_CON_TOKEN
     texto = 'Ubicacion en el mapa <img src="https://k.test/maps/view/eyJ' + "a" * 50 + '"> Fin'
     assert RE_URL_CON_TOKEN.sub("", texto) == "Ubicacion en el mapa  Fin"
+
+
+def test_ficha_amaira_pasada_por_parametro():
+    u = ("https://larpropiedades.com.ar/ficha?url=https%3A%2F%2Fficha.amaira.com.ar"
+         "%2Fnue%2Fficha.php%3Fficha%3DRAL102")
+    assert GenericoConnector._es_ficha_url(u)
+    assert GenericoConnector._id_de(u) == "RAL102"
+    assert not GenericoConnector._es_ficha_url("https://l.test/ficha?url=https%3A%2F%2Fotro.test%2Fx")

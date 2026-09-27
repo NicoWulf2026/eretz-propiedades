@@ -107,6 +107,20 @@ RE_FICHA_INEXISTENTE = re.compile(
 RE_IFRAME_AMAIRA = re.compile(
     r"""<iframe[^>]+src=["'](https://ficha\.amaira\.com\.ar/[^"']+)["']""", re.I)
 
+# Y la ficha Amaira pasada como parametro de una pagina propia:
+# /ficha?url=https%3A%2F%2Fficha.amaira.com.ar%2Fnue%2Fficha.php%3Fficha%3DRAL102
+# (`lar`, 111 fichas). La pagina propia la carga con JavaScript; la ficha real
+# es la del proveedor que la agencia misma declara.
+RE_FICHA_AMAIRA_EN_QUERY = re.compile(
+    r"[?&]url=(https?(?::|%3A)(?://|%2F%2F)ficha\.amaira\.com\.ar[^&#]+)", re.I)
+
+
+def ficha_amaira_en_query(url: str) -> str | None:
+    """La url de la ficha Amaira que la pagina propia recibe por parametro."""
+    m = RE_FICHA_AMAIRA_EN_QUERY.search(url or "")
+    return urllib.parse.unquote(m.group(1)) if m else None
+
+
 SITEMAPS = ("/sitemap.xml", "/sitemap_index.xml", "/wp-sitemap.xml",
             "/sitemap-index.xml", "/sitemapindex.xml")
 
@@ -1881,6 +1895,7 @@ class GenericoConnector(Connector):
         return not RE_NO_FICHA.search(ruta) and bool(
             RE_FICHA.search(u) or RE_FICHA_ANIDADA.search(ruta)
             or RE_FICHA_CON_ID.search(u)
+            or (ficha_amaira_en_query(u) is not None and "ficha=" in ficha_amaira_en_query(u))
             or RE_FICHA_RAIZ.search(ruta)
             or RE_FICHA_OPERACION.search(ruta)
             or (propia is not None and propia.match(ruta)))
@@ -2496,6 +2511,11 @@ class GenericoConnector(Connector):
         """Id de la plataforma si lo hay; si no, el slug. Nunca un hash propio:
         tiene que poder rastrearse hasta la ficha de origen."""
         parsed = urllib.parse.urlparse(url)
+        amaira = ficha_amaira_en_query(url)
+        if amaira:
+            codigo = urllib.parse.parse_qs(urllib.parse.urlparse(amaira).query).get("ficha")
+            if codigo and codigo[0].strip():
+                return codigo[0].strip()
         from scraper.detail_urls import detail_query_identifier, _DETAIL_QUERY_KEYS
         query_id = detail_query_identifier(url)
         if query_id is not None:
@@ -2575,6 +2595,14 @@ class GenericoConnector(Connector):
         # `cannonepropiedades.com.ar` se guardaba asi en sus 16 fichas, y la
         # API trae titulo, descripcion, coordenadas y 20 a 28 fotos. La senal
         # es la que la propia plantilla usa para pedir el detalle.
+        amaira = ficha_amaira_en_query(url)
+        if amaira and not self._es_ficha_xintel(html):
+            try:
+                envuelta = self.descargador.bajar(amaira)
+            except (ErrorTransitorio, ErrorPermanente, Bloqueado):
+                envuelta = ""
+            if self._es_ficha_xintel(envuelta):
+                html = envuelta
         if crudo.get("xintel") or self._es_ficha_xintel(html):
             return self._normalizar_xintel(crudo, fuente,
                                            self._ficha_xintel_embebida(html))

@@ -221,6 +221,11 @@ Historia: Git (`git log --since=2026-09-25`).
 - 16:0x paros FAMILIA `julia propiedades` (Tokko 0 resultados) y `dorsoli` (1/5 sin tipo: la fuente
   rotula un edificio de 8 unidades como «Lote, Terrenos»): diferidas firmadas, sin código.
 
+- 16:42 paro FAMILIA generico `lar propiedades` (SIN_INVENTARIO): sus fichas son
+  `/ficha?url=<ficha.amaira.com.ar/nue/ficha.php?ficha=RAL102>` (Amaira pasada por parámetro,
+  cargada por JS). Se reconocen como fichas, el id es el código Amaira y se lee la ficha del
+  proveedor como en el iframe (`battista`). En vivo: 0 → 111 fichas con precio, tipo y fotos.
+
 ## Lote pendiente para agrupar (diagnosticado 27-09 11:4x, sin tocar: cada commit frena la cola)
 NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DISCOVERY. Muestra de 9:
 - **Identidad equivocada con READY** (tocar `agency_web_discovery.py` = `shared/source_policy`,
