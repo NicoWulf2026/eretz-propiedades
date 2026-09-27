@@ -24,6 +24,7 @@ parezca que la inmobiliaria no publica.
 from __future__ import annotations
 
 import json
+import dataclasses
 import re
 import unicodedata
 import urllib.parse
@@ -35,8 +36,8 @@ from .texto import normalizar_campos, sin_bloques_no_textuales
 from .formularios import bajar_formulario
 from .base import (Bloqueado, Connector, ErrorPermanente, ErrorTransitorio,
                    Fuente, PropiedadNormalizada, a_numero, detectar_moneda,
-                   detectar_operacion, detectar_tipo, identidad_de_imagen,
-                   imagenes_de_fichas_vecinas, limpiar)
+                   detectar_operacion, detectar_tipo, ficha_sin_contenido,
+                   identidad_de_imagen, imagenes_de_fichas_vecinas, limpiar)
 
 # Familias de atributo que un rotulo puede fundir. Si una celda nombra dos, el
 # numero que la sigue no se puede asignar a ninguna.
@@ -2683,8 +2684,10 @@ class GenericoConnector(Connector):
             # `funesinmobiliaria` rotula «VENTA - Casa de 4 dormitorios -
             # Roldan.» y el meta sigue con la descripcion.
             descripcion = meta
+        descripcion_de_meta = False
         if not descripcion:
             descripcion = meta
+            descripcion_de_meta = bool(meta)
 
         precio = mapaprop.get("precio", datos.get("precio"))
         moneda = mapaprop.get("moneda") or datos.get("moneda")
@@ -2934,7 +2937,7 @@ class GenericoConnector(Connector):
                 "latitud": lat is not None, "longitud": lon is not None,
                 "imagenes": bool(mapaprop.get("imagenes")),
             }
-        return PropiedadNormalizada(
+        propiedad = PropiedadNormalizada(
             canonical_agency_id=fuente.canonical_agency_id,
             source_listing_id=str(crudo["source_listing_id"]),
             source_url=url,
@@ -2983,6 +2986,18 @@ class GenericoConnector(Connector):
                         "source_platform": "SITIO_PROPIO",
                         "pagina_listado": crudo.get("pagina")},
         )
+        # El eslogan del meta no rescata un cascaron. `d amato` sirve con 200
+        # la plantilla vacia de una ficha dada de baja -titulo «Propiedad |
+        # D'Amato Propiedades», sin precio ni fotos- y el meta del sitio («Mas
+        # de 35 años comprando, vendiendo…») era lo unico «publicado»: con eso
+        # `ficha_sin_contenido` la dejaba pasar y se guardaba un departamento
+        # adivinado del slug. Sin esa descripcion, el guardian decide como
+        # siempre; una ficha real con titulo propio no cambia.
+        if descripcion_de_meta:
+            sin_meta = dataclasses.replace(propiedad, descripcion=None)
+            if ficha_sin_contenido(sin_meta):
+                return sin_meta
+        return propiedad
 
     def _catalogo_php_ajax(self, html: str,
                            base: str) -> dict[str, Any] | None:

@@ -703,3 +703,27 @@ def test_propiedades_que_te_pueden_interesar_quedan_fuera():
             "<strong>pueden</strong> Interesar</h2><p>Galpón de 3 Amb.</p></section>")
     principal = cuerpo_principal(html)
     assert "Ambientes: 0" in principal and "3 Amb" not in principal
+
+
+def test_eslogan_del_meta_no_rescata_un_cascaron():
+    from connectors.base import Fuente, ficha_sin_contenido
+
+    class D:
+        def __init__(self, titulo):
+            self.titulo = titulo
+
+        def bajar(self, url):
+            return ('<html><head><title>' + self.titulo + '</title>'
+                    '<meta name="description" content="Mas de 35 anos comprando, vendiendo y '
+                    'alquilando propiedades en Villa Devoto."></head><body>'
+                    '<nav>Venta Alquiler Contacto</nav>' + ' ' * 500 + '</body></html>')
+
+    f = Fuente(canonical_agency_id="roomix:d amato propiedades", agency_name="D Amato",
+               official_url="https://d.test", inmobiliaria_id=1)
+    u = "https://d.test/propiedad/8493262/departamento-en-villa-del-parque"
+    p = GenericoConnector(D("Propiedad | D'Amato Propiedades")).normalize(
+        {"source_url": u, "source_listing_id": "8493262"}, f)
+    assert p is None or ficha_sin_contenido(p)
+    q = GenericoConnector(D("Departamento en Villa del Parque")).normalize(
+        {"source_url": u, "source_listing_id": "8493262"}, f)
+    assert q is None or q.descripcion

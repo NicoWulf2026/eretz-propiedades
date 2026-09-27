@@ -115,6 +115,13 @@ Historia: Git (`git log --since=2026-09-25`).
     sección «<strong>Propiedades</strong> que te pueden Interesar» (otras fichas con «3 Amb.») que el
     auditor leía; la ficha publica «Ambientes: 0». `cuerpo_principal` corta ahí (0 cambios de
     extracción en 40 fichas).
+- Gate 11:2x: 370 agencias, 15 pendientes → firmadas: `baron` 6 ambientes de emprendimientos
+  (CORRECCION: no se afirma una cantidad para unidades heterogéneas), `brunetti` 3 tipos «cochera»
+  que eran Cabaña/Edificio (CORRECCION; «cabaña» no está en el vocabulario canónico), `d amato`
+  8493262 (CAMBIO_EN_LA_FUENTE: la ficha hoy sirve la plantilla vacía). Y ese cascarón se guardaba
+  porque el eslogan del meta contaba como «descripción» → generico lo quita si sin él la ficha es
+  cascarón según `ficha_sin_contenido` (título = agencia). d amato puede quedar NEEDS_FIX por esa
+  ficha enlazada y vacía: es de la fuente, firmar si para la cola.
   - `constant` (wordpress, 25-09): con el código de hoy 24/24 con operación, tipo y coordenadas.
   - `brunetti` (NEEDS_FIX 11:0x por baños): la señal del auditor leía «Republica del Libano 28» como
     «bano 28» (sin límite de palabra en la segunda forma) — corregido también en dormitorios.
