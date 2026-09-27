@@ -2884,6 +2884,12 @@ class GenericoConnector(Connector):
             principal, r"city\s*/\s*town|ciudad|localidad")
         provincia_par = provincia_par or self._par_rotulado(
             principal, r"province\s*/\s*state|provincia")
+        # Y el rotulo con su valor en el MISMO elemento: `cip` publica
+        # <li class="prop-overview__item"> Localidad: Los Molles </li>
+        # <li …> Provincia: San Luis </li> y las 163 fichas quedaban sin
+        # provincia ni ciudad.
+        ciudad_par = ciudad_par or self._rotulo_en_linea(principal, r"localidad|ciudad")
+        provincia_par = provincia_par or self._rotulo_en_linea(principal, r"provincia")
         if (not direccion and crudo.get("wordpress_category_catalog") and titulo
                 and re.search(r"\b\d{2,5}\b", titulo)
                 and len(titulo) <= 120):
@@ -3624,6 +3630,19 @@ class GenericoConnector(Connector):
             rf"([^<>]{{2,150}}?)\s*(?:</a>\s*)?</\2>",
             html or "", re.I)
         return limpiar(unescape(m.group(3))) if m else None
+
+    @staticmethod
+    def _rotulo_en_linea(html: str, etiqueta: str) -> str | None:
+        """«<li>Provincia: San Luis</li>»: rotulo, dos puntos y valor solos en su elemento.
+
+        El elemento tiene que contener SOLO eso -sin marcado adentro del valor
+        y con tope de largo-: una oracion de la descripcion que empiece con
+        «Ciudad:» no es un par.
+        """
+        m = re.search(
+            rf"<(li|p|span|div|td|dd)\b[^>]*>\s*(?:{etiqueta})\s*:\s*([^<>:]{{2,60}}?)\s*</\1>",
+            html or "", re.I)
+        return limpiar(unescape(m.group(2))) if m else None
 
     @staticmethod
     def _titulo_de_la_ficha(html: str, datos: dict, fuente: Fuente) -> str | None:

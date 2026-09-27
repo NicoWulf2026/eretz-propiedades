@@ -727,3 +727,12 @@ def test_eslogan_del_meta_no_rescata_un_cascaron():
     q = GenericoConnector(D("Departamento en Villa del Parque")).normalize(
         {"source_url": u, "source_listing_id": "8493262"}, f)
     assert q is None or q.descripcion
+
+
+def test_rotulo_en_linea_de_ubicacion():
+    html = ('<li class="prop-overview__item"> Localidad: Los Molles </li>'
+            '<li class="prop-overview__item"> Provincia: San Luis </li>')
+    assert GenericoConnector._rotulo_en_linea(html, r"provincia") == "San Luis"
+    assert GenericoConnector._rotulo_en_linea(html, r"localidad|ciudad") == "Los Molles"
+    assert GenericoConnector._rotulo_en_linea(
+        "<p>Ciudad: <b>Rosario</b> centro</p>", r"localidad|ciudad") is None

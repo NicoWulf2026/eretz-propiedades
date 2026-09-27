@@ -167,6 +167,10 @@ Historia: Git (`git log --since=2026-09-25`).
 4. Regression Gate tras cada tanda (comando en `.claude/rules/scraper.md`).
 5. Beta del backend (`docs/ERETZ_UNIFICATION_PLAN.md` § «Backend beta confiable»).
 
+- 12:1x `cip` (wordpress por sitemap → generico): provincia 0 % en 163 fichas con «<li>Provincia:
+  San Luis</li>» (rótulo y valor en el mismo elemento) → `_rotulo_en_linea` como respaldo de
+  ciudad/provincia (la geografía compartida valida). En vivo: ciudad y provincia salen.
+
 ## Lote pendiente para agrupar (diagnosticado 27-09 11:4x, sin tocar: cada commit frena la cola)
 NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DISCOVERY. Muestra de 9:
 - **Identidad equivocada con READY** (tocar `agency_web_discovery.py` = `shared/source_policy`,
