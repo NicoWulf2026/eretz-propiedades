@@ -186,6 +186,11 @@ Historia: Git (`git log --since=2026-09-25`).
   seguidas idénticas. El paro FAMILIA quedó diferido por el diagnóstico anterior. Si vuelve: pedir el
   listado con un orden sin empates antes de tocar la paginación.
 
+- 14:58 paro FAMILIA generico `bardi` (Mapaprop): declara 105 y enumerábamos 90 (igual desde
+  el 24-09). Las páginas repiten fichas de la anterior (16 por página, ~10 nuevas) y el tope
+  ⌈105/16⌉+2 = 9 cortaba antes; llegan en la página 10. Ahora se pagina mientras haya novedades
+  (corte: total alcanzado o 2 páginas sin nuevas). En vivo 105/105. Diferida firmada.
+
 ## Lote pendiente para agrupar (diagnosticado 27-09 11:4x, sin tocar: cada commit frena la cola)
 NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DISCOVERY. Muestra de 9:
 - **Identidad equivocada con READY** (tocar `agency_web_discovery.py` = `shared/source_policy`,

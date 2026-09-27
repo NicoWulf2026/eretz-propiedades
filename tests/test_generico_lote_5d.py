@@ -753,3 +753,26 @@ def test_ficha_con_id_en_la_query():
     assert GenericoConnector._es_ficha_url("https://i.test/alquiler/item.asp?id=196")
     assert not GenericoConnector._es_ficha_url("https://i.test/venta/listado.asp?pagina=2")
     assert not GenericoConnector._es_ficha_url("https://i.test/contacto.asp?id=3")
+
+
+def test_mapaprop_sigue_paginando_mientras_haya_fichas_nuevas():
+    from connectors.base import Fuente
+
+    def pagina(ids):
+        return "".join(f'<a href="/propiedad/casa-en-venta-lanus-2021-{1000 + i}">x</a>' for i in ids)
+
+    # 4 por pagina, pero cada pagina repite 2 de la anterior: 10 fichas en 5 paginas.
+    paginas = {n: pagina(list(range(n * 2, n * 2 + 4))) for n in range(8)}
+
+    class D:
+        def bajar(self, url):
+            return paginas[int(url.rsplit("page=", 1)[1])]
+
+    c = GenericoConnector(D())
+    plan = {"variante": "MAPAPROP_HTML", "soportada": True, "total_declarado": 10, "per_page": 4,
+            "listing_url": "https://m.test/buscar/?view=list", "html_first": paginas[0],
+            "base": "https://m.test"}
+    f = Fuente(canonical_agency_id="roomix:m", agency_name="M", official_url="https://m.test",
+               inmobiliaria_id=1)
+    urls = [i["source_url"] for i in c.fetch_listing(f, plan)]
+    assert len(set(urls)) == 10

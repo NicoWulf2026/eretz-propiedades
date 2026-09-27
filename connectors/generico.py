@@ -2244,10 +2244,16 @@ class GenericoConnector(Connector):
         if plan["variante"] == "MAPAPROP_HTML":
             total = int(plan["total_declarado"])
             per_page = max(1, int(plan.get("per_page") or 1))
-            max_pages = min(1000, (total + per_page - 1) // per_page + 2)
+            # Las paginas pueden repetir fichas de la anterior: `bardi` sirve
+            # 16 por pagina pero desde la segunda solo ~10 son nuevas, y el
+            # tope ⌈105/16⌉+2 = 9 paginas cortaba en 90 de 105 (llegan en la
+            # pagina 10). Se sigue mientras aparezcan fichas nuevas; el tope
+            # queda solo como seguro contra un listado que no termina.
+            max_pages = min(1000, 3 * ((total + per_page - 1) // per_page) + 2)
             duplicates = 0
+            sin_novedades = 0
             for page in range(max_pages):
-                if len(vistas) >= total:
+                if len(vistas) >= total or sin_novedades >= 2:
                     break
                 if page == 0:
                     html = plan["html_first"]
@@ -2258,6 +2264,7 @@ class GenericoConnector(Connector):
                 rows = self._fichas_mapaprop_en(html, base)
                 if not rows:
                     break
+                antes = len(vistas)
                 for url in rows:
                     canonical = url.rstrip("/")
                     if canonical in vistas:
@@ -2268,6 +2275,7 @@ class GenericoConnector(Connector):
                            "source_url": url, "pagina": page + 1,
                            "por_forma": True, "mapaprop_catalog": True,
                            "catalogo_runtime_verificado": True}
+                sin_novedades = 0 if len(vistas) > antes else sin_novedades + 1
             self.duplicados_origen = duplicates
             return
         pendientes = [url for url in (plan.get("fichas_home") or [])
