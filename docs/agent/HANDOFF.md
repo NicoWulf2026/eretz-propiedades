@@ -191,6 +191,12 @@ Historia: Git (`git log --since=2026-09-25`).
   ⌈105/16⌉+2 = 9 cortaba antes; llegan en la página 10. Ahora se pagina mientras haya novedades
   (corte: total alcanzado o 2 páginas sin nuevas). En vivo 105/105. Diferida firmada.
 
+- 15:14 paro FAMILIA generico `ivone parodi` (Tokko `/p/<id>` leído por generico): 57 vs 58 con
+  fichas distintas, todas de la página 9000 (catálogos gemelos venta/alquiler). Sitio caído al
+  investigar (301 a www, www rechaza conexión). Diferida firmada. SOSPECHA a verificar:
+  `_catalogos_por_operacion` lee solo la primera página de cada gemelo y Tokko reordena entre
+  pedidos → un gemelo Tokko debería paginarse completo o no usarse para agregar fichas.
+
 ## Lote pendiente para agrupar (diagnosticado 27-09 11:4x, sin tocar: cada commit frena la cola)
 NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DISCOVERY. Muestra de 9:
 - **Identidad equivocada con READY** (tocar `agency_web_discovery.py` = `shared/source_policy`,
