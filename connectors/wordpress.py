@@ -650,6 +650,16 @@ class WordPressConnector(Connector):
                     por_pagina = max(1, por_pagina // 2)
                     self.pagina_achicada = por_pagina
                     continue
+                # El 400 de una pagina posterior a la primera ES el final:
+                # WordPress responde `rest_post_invalid_page_number`, y el
+                # descargador lo trae como transitorio (`http 400`), no como
+                # el `ErrorPermanente` que supone el `except` de arriba. Solo
+                # se notaba con un catalogo multiplo exacto de la pagina:
+                # `jm norte` publica 50, la pagina 2 no existe y la agencia
+                # quedaba ENUMERACION_INCOMPLETA en las dos corridas.
+                if (isinstance(error, ErrorTransitorio) and str(error) == "http 400"
+                        and (pagina > 1 or desde)):
+                    break
                 # Cortar por red caida no es haber llegado al final.
                 self.paginacion_interrumpida = True
                 break

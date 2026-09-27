@@ -63,3 +63,34 @@ def test_fallo_de_red_del_html_no_cae_al_rest_pobre():
              "rest": {"title": {"rendered": "Casa"}, "content": {"rendered": ""}, "meta": {}}}
     assert c.normalize(crudo, f) is None
     assert c.errores[-1]["etapa"] == "detalle"
+
+
+def test_rest_con_catalogo_multiplo_de_la_pagina_no_queda_interrumpido():
+    import json as _json
+    from connectors.base import ErrorTransitorio
+    from connectors.wordpress import POR_PAGINA, WordPressConnector
+
+    class D:
+        def bajar(self, url):
+            if "page=1&" in url:
+                return _json.dumps([{"id": i, "link": f"https://w.test/property/p{i}/"}
+                                    for i in range(1, POR_PAGINA + 1)])
+            raise ErrorTransitorio("http 400")
+
+    c = WordPressConnector(D())
+    items = list(c._rest({"base": "https://w.test", "rest_base": "properties"}))
+    assert len(items) == POR_PAGINA
+    assert not getattr(c, "paginacion_interrumpida", False)
+
+
+def test_rest_con_red_caida_en_la_primera_pagina_si_queda_interrumpido():
+    from connectors.base import ErrorTransitorio
+    from connectors.wordpress import WordPressConnector
+
+    class D:
+        def bajar(self, url):
+            raise ErrorTransitorio("http 400")
+
+    c = WordPressConnector(D())
+    assert list(c._rest({"base": "https://w.test", "rest_base": "properties"})) == []
+    assert c.paginacion_interrumpida

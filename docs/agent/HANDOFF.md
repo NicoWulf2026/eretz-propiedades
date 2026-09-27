@@ -197,6 +197,14 @@ Historia: Git (`git log --since=2026-09-25`).
   `_catalogos_por_operacion` lee solo la primera página de cada gemelo y Tokko reordena entre
   pedidos → un gemelo Tokko debería paginarse completo o no usarse para agregar fichas.
 
+- 15:46 paro FAMILIA wordpress `jm norte`: publica exactamente 50 (= POR_PAGINA); la página 2 da
+  HTTP 400 (`rest_post_invalid_page_number`), que el descargador trae como `ErrorTransitorio("http
+  400")` y `_rest` marcaba paginación interrumpida (el `except` que lo trataba como final esperaba
+  ErrorPermanente). Ahora un 400 después de la 1a página es el final. Afecta a todo catálogo REST
+  múltiplo exacto de 50. En vivo 50, sin interrupción. Diferida firmada.
+- 15:3x paro FAMILIA wordpress `jakim`: sin pérdida (techo 32 de una enumeración vieja con 16
+  válidas; hoy 20 reales). Diferida firmada.
+
 ## Lote pendiente para agrupar (diagnosticado 27-09 11:4x, sin tocar: cada commit frena la cola)
 NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DISCOVERY. Muestra de 9:
 - **Identidad equivocada con READY** (tocar `agency_web_discovery.py` = `shared/source_policy`,
