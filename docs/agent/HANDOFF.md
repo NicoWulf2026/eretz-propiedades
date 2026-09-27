@@ -244,6 +244,11 @@ Historia: Git (`git log --since=2026-09-25`).
   GVAMAX_API. En vivo: livia 0 → 48, `grupo azor` (backlog) 0 → 35, con tipo/precio/operación.
   Diferida firmada. `liotto` 19:21: identidad (revista barrial), firmada.
 
+- 20:39 paro FAMILIA generico `lo ponte`: «<h2><i class="fas …"></i> Descripción</h2>» — el ícono
+  vacío impedía leer la descripción rotulada (el meta supera el tope de 600). En vivo 20/20 con
+  descripción (antes 24 %). Diferida firmada. `gianini` (worker 1 desde 18:05): no trabado,
+  cientos de fichas por ?p=N con ~3 s por pedido.
+
 ## Lote pendiente para agrupar (diagnosticado 27-09 11:4x, sin tocar: cada commit frena la cola)
 NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DISCOVERY. Muestra de 9:
 - **Identidad equivocada con READY** (tocar `agency_web_discovery.py` = `shared/source_policy`,

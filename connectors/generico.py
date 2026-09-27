@@ -4630,11 +4630,13 @@ class GenericoConnector(Connector):
         bloque = r"(?:p|div|section|article|td)"
         # El rotulo puede venir envuelto en el enlace de un acordeon:
         # <h4><a href="#collapseTwo">Descripción</a></h4> (`alianza`).
+        # O precedido de un icono vacio: <h2><i class="fas fa-info-circle"></i>
+        # Descripción</h2> (`lo ponte`: 44 de 58 fichas sin descripcion).
         rotulo = r"(?:h[1-6]|div|span|strong|b|p|td)"
         # `.` cubre la vocal rota que sirven algunas fuentes legacy.
         acento = r"(?:[o\u00f3]|&oacute;|.)"
         m = re.search(
-            rf"<{rotulo}[^>]*>\s*(?:<a\b[^>]*>\s*)?Descripci{acento}n"
+            rf"<{rotulo}[^>]*>\s*(?:<a\b[^>]*>\s*|<i\b[^>]*>\s*</i>\s*)?Descripci{acento}n"
             rf"(?:\s+(?:de|del)\s+(?:la\s+|el\s+)?[\w\u00c0-\u017f]{{3,20}}"
             rf"|\s+(?:ampliada|completa|general))?"
             # El rotulo puede venir repetido -la misma maqueta lo pone en el
@@ -4658,7 +4660,7 @@ class GenericoConnector(Connector):
         # proximo encabezado. Eso es lo que se toma, acotado para no arrastrar
         # la pagina entera.
         etiqueta = re.search(
-            rf"<{rotulo}[^>]*>\s*(?:<a\b[^>]*>\s*)?Descripci{acento}n"
+            rf"<{rotulo}[^>]*>\s*(?:<a\b[^>]*>\s*|<i\b[^>]*>\s*</i>\s*)?Descripci{acento}n"
             rf"(?:\s+(?:de|del)\s+(?:la\s+|el\s+)?[\w\u00c0-\u017f]{{3,20}}"
             rf"|\s+(?:ampliada|completa|general))?"
             rf"\s*:?\s*(?:</a>\s*)?</{rotulo}>", html or "", re.I | re.S)

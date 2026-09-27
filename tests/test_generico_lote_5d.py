@@ -874,3 +874,9 @@ def test_catalogo_gvamax_por_post():
     items = list(c.fetch_listing(f, {"variante": "GVAMAX_API", "soportada": True, "base": "https://g.test",
                                      "fichas_gvamax": fichas}))
     assert [i["source_listing_id"] for i in items] == ["p112-i340", "p113-i340"]
+
+
+def test_descripcion_con_icono_en_el_rotulo():
+    html = ('<h2 class="text-2xl"> <i class="fas fa-info-circle"></i> Descripción </h2>'
+            '<div class="prose">-Cómodo departamento de 2 ambientes con balcón en Almagro</div>')
+    assert GenericoConnector._descripcion_rotulada(html).startswith("-Cómodo departamento")
