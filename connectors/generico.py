@@ -626,7 +626,13 @@ def cuerpo_principal(html: str) -> str:
         # tarjetas de otras fichas con «Ambientes 3 / Baños 1». Una ficha sin
         # esos rotulos se quedaba con los de la primera vecina, y la tabla de
         # la vecina ademas apagaba la lectura de su propia descripcion.
-        r"<h[1-6]\b[^>]*>\s*Propiedades\s+(?:relacionadas|similares)\s*</h[1-6]>",
+        # Con marcado adentro tambien: Terravirtual (`blangiforti`) titula
+        # <h2><strong>Propiedades</strong> que te <strong>pueden</strong>
+        # Interesar</h2>, y el «Galpon de 3 Amb.» de una vecina hacia que el
+        # auditor exigiera ambientes a una ficha que publica «Ambientes: 0».
+        r"<h[1-6]\b[^>]*>(?:\s|<[^>]+>)*Propiedades(?:\s|<[^>]+>)+"
+        r"(?:relacionadas|similares|que(?:\s|<[^>]+>)+te(?:\s|<[^>]+>)+"
+        r"(?:pueden|podr(?:i|\u00ed)an)(?:\s|<[^>]+>)+interesar)",
                     html or "", maxsplit=1, flags=re.I)[0]
 
 

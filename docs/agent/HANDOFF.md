@@ -111,6 +111,10 @@ Historia: Git (`git log --since=2026-09-25`).
     catálogos gemelos venta/alquiler se reconocen en plural (`/ventas` + `/alquileres`: +2 alquileres);
     y la descripción se lee bajo «Información de la Propiedad» (antes caía al eslogan del meta y se
     descartaba por compartida en 164/164). En vivo: 176 fichas, dos enumeraciones idénticas.
+    Recertificada en scratch: 176/176, idempotente, descripción 100 %. Quedaba `ambientes` por la
+    sección «<strong>Propiedades</strong> que te pueden Interesar» (otras fichas con «3 Amb.») que el
+    auditor leía; la ficha publica «Ambientes: 0». `cuerpo_principal` corta ahí (0 cambios de
+    extracción en 40 fichas).
   - `constant` (wordpress, 25-09): con el código de hoy 24/24 con operación, tipo y coordenadas.
   - `brunetti` (NEEDS_FIX 11:0x por baños): la señal del auditor leía «Republica del Libano 28» como
     «bano 28» (sin límite de palabra en la segunda forma) — corregido también en dormitorios.

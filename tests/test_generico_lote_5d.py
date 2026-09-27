@@ -695,3 +695,11 @@ def test_descripcion_bajo_informacion_de_la_propiedad():
     p = c.normalize({"source_url": "https://b.test/ficha/9fe58030677746847b403ffb3073bd8a",
                      "source_listing_id": "x"}, f)
     assert p is not None and p.descripcion.startswith("CASA 2 AMBIENTES en PH")
+
+
+def test_propiedades_que_te_pueden_interesar_quedan_fuera():
+    from connectors.generico import cuerpo_principal
+    html = ("<li>Ambientes: 0</li><section id='Items'><h2><strong>Propiedades</strong> que te "
+            "<strong>pueden</strong> Interesar</h2><p>Galpón de 3 Amb.</p></section>")
+    principal = cuerpo_principal(html)
+    assert "Ambientes: 0" in principal and "3 Amb" not in principal
