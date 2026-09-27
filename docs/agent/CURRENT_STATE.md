@@ -32,9 +32,14 @@ archivo: `git show 6ee927bb80:docs/agent/CURRENT_STATE.md`). `database_writes: 0
 Los cambios del 25-09 (source_policy, base, generico, wasi) invalidaron certificaciones: la
 rotación las recertifica sola.
 
+## Aviso operativo (27-09 10:3x)
+- Las tareas programadas `ERETZ_relanzador` y del vigilante **no existen** en Windows (último
+  registro 26-09 21:04). No se recrearon (configuración persistente: decide el usuario). Mientras
+  haya sesión, esta corre `relanzar_la_cola.py --lanzar` cada 10 min; sin sesión nadie relanza.
+
 ## Calidad
-- Regression Gate (26-09 08:1x): 335 agencias recertificadas, 0 pendientes.
-- Suite completa (26-09 08:0x): 3.375 passed.
+- Regression Gate (27-09 11:3x): 370 agencias recertificadas, 0 pendientes (15 firmadas: baron, brunetti, d amato).
+- Suite completa (27-09 11:2x): 3.390 passed.
 
 ## Snapshot de la API local
 - Servida: `api_snapshot_v2` del 08-09 (`D:\INMO CAPITAL\ERETZ_API_CONTRACT\`). Reemplazarla = deploy.
