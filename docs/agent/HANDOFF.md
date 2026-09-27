@@ -245,6 +245,7 @@ NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DI
   invalida TODAS las certificaciones → hacerlo en un lote propio y planificado):
   `o keefe` → `parquesindustriales.com.ar/detalle-inmobiliaria/7` (directorio);
   `integral s a` → `sibom.slyt.gba.gob.ar/...` (boletín oficial municipal).
+  `liotto` → nota de `devotomagazine.com.ar` (revista barrial; paró generico 19:21, firmada).
   `schulz` → `ar.tellows.net/num/…` (consulta de teléfonos; paró la familia generico 11:43,
   diferida firmada: el guardián de forma rechazó bien un tile de mapa). Regla general
   propuesta: `*.gob.ar`/`*.gov.ar` nunca es la web de una inmobiliaria; y el directorio al listado.
