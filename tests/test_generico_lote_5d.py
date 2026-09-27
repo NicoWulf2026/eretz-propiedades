@@ -745,3 +745,11 @@ def test_el_buscador_no_es_un_dato_de_la_ficha():
             '<li><strong>Ambientes:</strong> <span>1</span></li>')
     limpio = sin_filtros_catalogo(html)
     assert "Dormitorios" not in limpio and "Ambientes" in limpio
+
+
+def test_ficha_con_id_en_la_query():
+    ok = "https://innoacafayate.com/venta/item.asp?t=Propiedad-en-El-Bosque&id=192"
+    assert GenericoConnector._es_ficha_url(ok)
+    assert GenericoConnector._es_ficha_url("https://i.test/alquiler/item.asp?id=196")
+    assert not GenericoConnector._es_ficha_url("https://i.test/venta/listado.asp?pagina=2")
+    assert not GenericoConnector._es_ficha_url("https://i.test/contacto.asp?id=3")

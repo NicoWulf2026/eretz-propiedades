@@ -176,6 +176,11 @@ Historia: Git (`git log --since=2026-09-25`).
   <select>. RESIDUAL: ciudad 0 % — el JSON-LD pone `addressLocality: "Centro"` (zona) y «Mar del
   Plata» solo figura en título/meta; leerla de ahí es heurística nueva → backlog. Diferida firmada.
 
+- 13:1x paro COMPARTIDO `innoa` (ASP, Cafayate): 22 fichas reales sin precio descartadas por forma
+  (`/venta/item.asp?t=…&id=192`) → `RE_FICHA_CON_ID`; y un banner GIF rotativo (`/ac/b/*.gif`) como
+  foto la hacía no idempotente → GIF junto a JPG/PNG/WEBP se descarta (medido: solo innoa guardaba
+  GIFs). En vivo 35/35 fichas, 0 GIFs. Diferida firmada.
+
 ## Lote pendiente para agrupar (diagnosticado 27-09 11:4x, sin tocar: cada commit frena la cola)
 NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DISCOVERY. Muestra de 9:
 - **Identidad equivocada con READY** (tocar `agency_web_discovery.py` = `shared/source_policy`,

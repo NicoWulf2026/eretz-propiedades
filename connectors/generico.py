@@ -128,6 +128,17 @@ RE_FICHA = re.compile(
     # forma de una ficha servida por un CMS propio, no la de una seccion.
     r"|/(?:propiedad(?:es)?|inmueble[s]?|ficha[s]?)/\d+-[a-z0-9-]+\.(?:html?|php)$", re.I)
 
+# La ficha servida por un script con el id en la query:
+# /venta/item.asp?t=Propiedad-en-El-Bosque&id=192 (`innoa`, ASP). Sin esto, las
+# 22 fichas sin precio de la agencia -de 4 a 17 fotos, operacion y tipo en el
+# titulo- se descartaban por forma. Seccion de operacion o de propiedad + script
+# + `id` numerico: no es la forma de un listado ni de una pagina institucional.
+RE_GIF = re.compile(r"\.gif(?:[?#]|$)", re.I)
+
+RE_FICHA_CON_ID = re.compile(
+    r"/(?:venta|alquiler|propiedad(?:es)?|inmueble[s]?|ficha[s]?)/[a-z_-]*\.(?:asp|aspx|php)"
+    r"\?(?:[^#]*&)?id=\d+(?:&|#|$)", re.I)
+
 # Muchos frontends propios cuelgan la ficha de la RAIZ, sin seccion:
 # /8471-venta-casa-3-ambientes-en-adrogue. Ni el patron de Tokko ni el de arriba
 # la ven. Para que un id suelto en la raiz no arrastre cualquier pagina, se
@@ -1862,6 +1873,7 @@ class GenericoConnector(Connector):
             return False
         return not RE_NO_FICHA.search(ruta) and bool(
             RE_FICHA.search(u) or RE_FICHA_ANIDADA.search(ruta)
+            or RE_FICHA_CON_ID.search(u)
             or RE_FICHA_RAIZ.search(ruta)
             or RE_FICHA_OPERACION.search(ruta)
             or (propia is not None and propia.match(ruta)))
@@ -2951,6 +2963,12 @@ class GenericoConnector(Connector):
                 "latitud": lat is not None, "longitud": lon is not None,
                 "imagenes": bool(mapaprop.get("imagenes")),
             }
+        # Un GIF junto a fotos JPG/PNG/WEBP es un banner: `innoa` rota
+        # /ac/b/4.gif, /ac/b/728-innoa.gif… en cada carga y la agencia quedaba
+        # no idempotente. Medido 27-09 sobre todas las fichas certificadas: solo
+        # innoa guardaba GIFs, y ninguna ficha tenia SOLO GIFs.
+        if any(not RE_GIF.search(i) for i in imagenes):
+            imagenes = [i for i in imagenes if not RE_GIF.search(i)]
         propiedad = PropiedadNormalizada(
             canonical_agency_id=fuente.canonical_agency_id,
             source_listing_id=str(crudo["source_listing_id"]),
