@@ -239,6 +239,11 @@ Historia: Git (`git log --since=2026-09-25`).
   Ahora `properties` es catálogo, sale/rental van a RE_NO_FICHA y «Categoría | PH» da el tipo.
   En vivo: 4 → 18 fichas reales, estables. Diferida firmada. Afecta a toda la plataforma Kiteprop.
 
+- 19:59 paro FAMILIA generico `livia renovell` (GVAmax): catálogo por POST a
+  `Php/api.inmuebles.php` del MISMO sitio (filtros vacíos = todo) → `_catalogo_gvamax`, variante
+  GVAMAX_API. En vivo: livia 0 → 48, `grupo azor` (backlog) 0 → 35, con tipo/precio/operación.
+  Diferida firmada. `liotto` 19:21: identidad (revista barrial), firmada.
+
 ## Lote pendiente para agrupar (diagnosticado 27-09 11:4x, sin tocar: cada commit frena la cola)
 NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DISCOVERY. Muestra de 9:
 - **Identidad equivocada con READY** (tocar `agency_web_discovery.py` = `shared/source_policy`,
@@ -253,8 +258,7 @@ NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DI
   categorías estándar `venta`(13)/`alquiler`(1) + tipo (casas, departamentos…), sin taxonomía
   `operacion` → `_catalogo_posts_inmobiliarios` exige `operacion`. Extender a categorías
   top-level `venta`/`alquiler` con conteo y posts que las lleven (14 fichas).
-- `grupo azor`: plataforma GVAmax (`inmuebles.php?operacion=1|2`, catálogo por `js/api.funciones.js`
-  sin HTML de fichas) — investigar el endpoint del propio host antes de tocar.
+- `grupo azor`: RESUELTO 27-09 20:0x (GVAmax por POST, ver arriba).
 - `gestionato`, `hcg brokers`: SPA React (HTML de 0,5 KB) — sin JS no hay catálogo; buscar API propia.
 - `gustavo santos`, `battini`: 404 en la raíz (fuente caída). `bergo`: respuesta vacía.
 - `david rodriguez` (paró generico 17:50, diferida firmada): declara 161; catálogo solo vía POST

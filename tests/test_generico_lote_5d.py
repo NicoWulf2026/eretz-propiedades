@@ -851,3 +851,26 @@ def test_kiteprop_listados_y_catalogo():
     html = '<a href="/site/properties">Propiedades</a><a href="/site/about">Nosotros</a>'
     assert GenericoConnector._catalogos_enlazados(html, "https://l.kitepropcrm.com") == [
         "https://l.kitepropcrm.com/site/properties"]
+
+
+def test_catalogo_gvamax_por_post():
+    from connectors.base import Fuente
+
+    class D:
+        def bajar_formulario(self, url, formulario, limite_bytes):
+            assert url == "https://g.test/Php/api.inmuebles.php" and formulario["o"] == ""
+            return ('<a href="detalle.php?id=p112-i340">1</a><a href="./detalle.php?id=p113-i340">2</a>'
+                    '<a href="css/bootstrap.css">x</a>')
+
+        def bajar(self, url):
+            raise AssertionError(url)
+
+    c = GenericoConnector(D())
+    fichas = c._catalogo_gvamax('<a href="https://gvamax.com.ar/gvamax.asp">GVAmax</a>', "https://g.test")
+    assert fichas == ["https://g.test/detalle.php?id=p112-i340", "https://g.test/detalle.php?id=p113-i340"]
+    assert c._catalogo_gvamax("<p>sin plataforma</p>", "https://g.test") is None
+    f = Fuente(canonical_agency_id="roomix:g", agency_name="G", official_url="https://g.test",
+               inmobiliaria_id=1)
+    items = list(c.fetch_listing(f, {"variante": "GVAMAX_API", "soportada": True, "base": "https://g.test",
+                                     "fichas_gvamax": fichas}))
+    assert [i["source_listing_id"] for i in items] == ["p112-i340", "p113-i340"]

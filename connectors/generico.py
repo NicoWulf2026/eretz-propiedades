@@ -1111,6 +1111,32 @@ class GenericoConnector(Connector):
             found.setdefault(canonical, canonical)
         return list(found.values())
 
+    def _catalogo_gvamax(self, html: str, base: str) -> list[str] | None:
+        """Catalogo de la plataforma GVAmax, que el sitio hidrata por POST.
+
+        `grupo azor` y `livia renovell` enlazan gvamax.com.ar y su buscador
+        llama `API_GetInmuebles()`, que hace POST a `Php/api.inmuebles.php` del
+        MISMO sitio con los filtros del formulario (o, t, d, l, b). Con los
+        filtros vacios -lo que el sitio pide al cargar- devuelve todas las
+        fichas `detalle.php?id=p<n>-i<m>`. Sin esto las dos figuraban sin
+        inventario (37 y 48 fichas).
+        """
+        if "gvamax.com.ar" not in (html or "").lower():
+            return None
+        try:
+            cuerpo = bajar_formulario(
+                self.descargador, f"{base}/Php/api.inmuebles.php",
+                {"o": "", "t": "", "d": "", "l": "", "b": "", "gclid": ""})
+        except (ErrorTransitorio, ErrorPermanente, Bloqueado):
+            return None
+        fichas: list[str] = []
+        for crudo in re.findall(r"""href=["']\.?/?(detalle\.php\?id=p\d+-i\d+)["']""",
+                                cuerpo or "", re.I):
+            u = f"{base}/{crudo}"
+            if u not in fichas:
+                fichas.append(u)
+        return fichas or None
+
     def _catalogo_mapaprop(self, html_home: str,
                            base: str) -> dict[str, Any] | None:
         """Detecta MAPAPROP solo con marca, buscador y resultados coherentes."""
@@ -1664,6 +1690,12 @@ class GenericoConnector(Connector):
                          "soportada": True,
                          "fichas_wordpress": wordpress_catalog["posts"],
                          "total_declarado": wordpress_catalog["total"],
+                         "catalogo_runtime_verificado": True})
+            return plan
+        gvamax = self._catalogo_gvamax(html, base)
+        if gvamax:
+            plan.update({"variante": "GVAMAX_API", "soportada": True,
+                         "fichas_gvamax": gvamax, "total_declarado": None,
                          "catalogo_runtime_verificado": True})
             return plan
         mapaprop_catalog = self._catalogo_mapaprop(html, base)
@@ -2292,6 +2324,15 @@ class GenericoConnector(Connector):
                        "titulo_catalogo": row.get("title"),
                        "wordpress_category_catalog": True,
                        "catalogo_runtime_verificado": True}
+            return
+        if plan["variante"] == "GVAMAX_API":
+            for u in plan.get("fichas_gvamax") or []:
+                c = u.rstrip("/")
+                if c in vistas:
+                    continue
+                vistas.add(c)
+                yield {"source_listing_id": self._id_de(u), "source_url": u, "pagina": 1,
+                       "por_forma": False, "catalogo_runtime_verificado": True}
             return
         if plan["variante"] == "MAPAPROP_HTML":
             total = int(plan["total_declarado"])
