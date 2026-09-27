@@ -736,3 +736,12 @@ def test_rotulo_en_linea_de_ubicacion():
     assert GenericoConnector._rotulo_en_linea(html, r"localidad|ciudad") == "Los Molles"
     assert GenericoConnector._rotulo_en_linea(
         "<p>Ciudad: <b>Rosario</b> centro</p>", r"localidad|ciudad") is None
+
+
+def test_el_buscador_no_es_un_dato_de_la_ficha():
+    from connectors.generico import sin_filtros_catalogo
+    html = ('<select id="dormitorios" class="form-select"><option value="0">Dormitorios</option>'
+            '<option value="1">1</option><option value="2">2</option></select>'
+            '<li><strong>Ambientes:</strong> <span>1</span></li>')
+    limpio = sin_filtros_catalogo(html)
+    assert "Dormitorios" not in limpio and "Ambientes" in limpio

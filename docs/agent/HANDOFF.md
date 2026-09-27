@@ -171,6 +171,11 @@ Historia: Git (`git log --since=2026-09-25`).
   San Luis</li>» (rótulo y valor en el mismo elemento) → `_rotulo_en_linea` como respaldo de
   ciudad/provincia (la geografía compartida valida). En vivo: ciudad y provincia salen.
 
+- 12:4x paro FAMILIA generico `lazzaro` (Inmobiliatica, primera certificación): «dormitorios» salía
+  del buscador (<select id="dormitorios"><option>1</option>…) → `sin_filtros_catalogo` quita los
+  <select>. RESIDUAL: ciudad 0 % — el JSON-LD pone `addressLocality: "Centro"` (zona) y «Mar del
+  Plata» solo figura en título/meta; leerla de ahí es heurística nueva → backlog. Diferida firmada.
+
 ## Lote pendiente para agrupar (diagnosticado 27-09 11:4x, sin tocar: cada commit frena la cola)
 NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DISCOVERY. Muestra de 9:
 - **Identidad equivocada con READY** (tocar `agency_web_discovery.py` = `shared/source_policy`,

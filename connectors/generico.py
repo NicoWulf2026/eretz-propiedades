@@ -638,10 +638,18 @@ def cuerpo_principal(html: str) -> str:
 
 
 def sin_filtros_catalogo(html: str) -> str:
-    """Quita opciones del buscador embebidas junto a la ficha legacy."""
-    return re.sub(
+    """Quita opciones del buscador embebidas junto a la ficha legacy.
+
+    Y los desplegables: `lazzaro` (Inmobiliatica) repite en cada ficha el
+    buscador con <select id="dormitorios"><option>Dormitorios</option>
+    <option>1</option>…, que aplanado dice «Dormitorios 1 2 3» y el auditor
+    lo tomaba como un dato de la ficha. Un <select> es un control, nunca un
+    atributo publicado de la propiedad.
+    """
+    html = re.sub(
         r"<label[^>]+name=[\"']search_filter[^\"']*[\"'][^>]*>.*?</label>",
         " ", html or "", flags=re.I | re.S)
+    return re.sub(r"<select\b.*?</select>", " ", html, flags=re.I | re.S)
 
 
 def normalizar_texto_campos(texto: str) -> str:
