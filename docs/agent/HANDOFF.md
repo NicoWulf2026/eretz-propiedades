@@ -167,6 +167,22 @@ Historia: Git (`git log --since=2026-09-25`).
 4. Regression Gate tras cada tanda (comando en `.claude/rules/scraper.md`).
 5. Beta del backend (`docs/ERETZ_UNIFICATION_PLAN.md` § «Backend beta confiable»).
 
+## Lote pendiente para agrupar (diagnosticado 27-09 11:4x, sin tocar: cada commit frena la cola)
+NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DISCOVERY. Muestra de 9:
+- **Identidad equivocada con READY** (tocar `agency_web_discovery.py` = `shared/source_policy`,
+  invalida TODAS las certificaciones → hacerlo en un lote propio y planificado):
+  `o keefe` → `parquesindustriales.com.ar/detalle-inmobiliaria/7` (directorio);
+  `integral s a` → `sibom.slyt.gba.gob.ar/...` (boletín oficial municipal). Regla general
+  propuesta: `*.gob.ar`/`*.gov.ar` nunca es la web de una inmobiliaria; y el directorio al listado.
+- `marcelo zanni` (wordpress, Divi): CPT `propiedad` vacío; las propiedades son **posts** con
+  categorías estándar `venta`(13)/`alquiler`(1) + tipo (casas, departamentos…), sin taxonomía
+  `operacion` → `_catalogo_posts_inmobiliarios` exige `operacion`. Extender a categorías
+  top-level `venta`/`alquiler` con conteo y posts que las lleven (14 fichas).
+- `grupo azor`: plataforma GVAmax (`inmuebles.php?operacion=1|2`, catálogo por `js/api.funciones.js`
+  sin HTML de fichas) — investigar el endpoint del propio host antes de tocar.
+- `gestionato`, `hcg brokers`: SPA React (HTML de 0,5 KB) — sin JS no hay catálogo; buscar API propia.
+- `gustavo santos`, `battini`: 404 en la raíz (fuente caída). `bergo`: respuesta vacía.
+
 ## Decisiones de producto abiertas (no técnicas)
 - **robots.txt**: el pipeline no lo consulta. Medido 26-09 00:1x: 283 agencias certificadas o en
   NEEDS_FIX, 31.354 URLs de ficha, **0 prohibidas** para nuestro UA. Los dos casos que sí prohíben
