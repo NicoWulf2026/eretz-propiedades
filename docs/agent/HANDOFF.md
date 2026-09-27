@@ -203,6 +203,10 @@ NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DI
   sin HTML de fichas) — investigar el endpoint del propio host antes de tocar.
 - `gestionato`, `hcg brokers`: SPA React (HTML de 0,5 KB) — sin JS no hay catálogo; buscar API propia.
 - `gustavo santos`, `battini`: 404 en la raíz (fuente caída). `bergo`: respuesta vacía.
+- `irujo` (paró generico 14:09, diferida firmada): catálogo hidratado por un proxy PROPIO de Tokko en
+  el mismo host (`api_destacadas.php?page=&limit=&offset=` → `{meta, objects}`), como alta.com.ar.
+  Su respuesta expone la clave de la API de Tokko en `meta.next`: **no usarla** (regla armanino);
+  solo el proxy del sitio. Falta el endpoint del listado completo (no solo destacadas).
 
 ## Decisiones de producto abiertas (no técnicas)
 - **robots.txt**: el pipeline no lo consulta. Medido 26-09 00:1x: 283 agencias certificadas o en
