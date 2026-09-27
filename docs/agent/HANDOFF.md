@@ -112,6 +112,8 @@ Historia: Git (`git log --since=2026-09-25`).
     y la descripción se lee bajo «Información de la Propiedad» (antes caía al eslogan del meta y se
     descartaba por compartida en 164/164). En vivo: 176 fichas, dos enumeraciones idénticas.
   - `constant` (wordpress, 25-09): con el código de hoy 24/24 con operación, tipo y coordenadas.
+  - `brunetti` (NEEDS_FIX 11:0x por baños): la señal del auditor leía «Republica del Libano 28» como
+    «bano 28» (sin límite de palabra en la segunda forma) — corregido también en dormitorios.
 
 ## Corriendo
 - Cola con 2 workers + relanzador + vigilante. Mirarla solo si hay paradas.

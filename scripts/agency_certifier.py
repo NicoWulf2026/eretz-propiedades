@@ -104,8 +104,10 @@ SOURCE_SIGNALS = {
     # "+4 Ambientes" es una cota, no una cantidad: el extractor no la afirma
     # y la senal tampoco puede exigirla (`dragone`, local comercial).
     "ambientes": re.compile(r"(?:(?<!\+)\b[1-9]\d?\s*\b(?:ambientes?\b|amb\.)|\b(?:ambientes?\b|amb\.)\s*:?\s*[1-9]\d?\b)", re.I),
-    "dormitorios": re.compile(r"(?:\b[1-9]\d?\s*(?:dormitorios?|habitaciones?)|(?:dormitorios?|habitaciones?)\s*:?\s*[1-9]\d?)", re.I),
-    "banos": re.compile(r"(?:\b[1-9]\d?\s*(?:ba[nñ]os?|toilettes?)|(?:ba[nñ]os?|toilettes?)\s*:?\s*[1-9]\d?)", re.I),
+    # El rotulo empieza palabra: «Republica del Libano 28,36 mts» (`brunetti`,
+    # un terreno) contaba como «bano 28» y el triage leia baños sin extraer.
+    "dormitorios": re.compile(r"(?:\b[1-9]\d?\s*(?:dormitorios?|habitaciones?)|\b(?:dormitorios?|habitaciones?)\s*:?\s*[1-9]\d?)", re.I),
+    "banos": re.compile(r"(?:\b[1-9]\d?\s*(?:ba[nñ]os?|toilettes?)|\b(?:ba[nñ]os?|toilettes?)\s*:?\s*[1-9]\d?)", re.I),
     "superficie_total": re.compile(r"(?:superficie\s+total|sup\.?\s*total)[^\d]{0,18}[\d.,]+\s*m", re.I),
     "superficie_cubierta": re.compile(r"(?:superficie\s+cubierta|sup\.?\s*cubierta)[^\d]{0,18}[\d.,]+\s*m", re.I),
     # Con un NUMERO al lado. `inmobiliariacip.com.ar` publica el contenedor

@@ -57,3 +57,10 @@ def test_mas_cuatro_ambientes_es_una_cota_y_no_se_exige():
     assert not source_signals(html, "https://a.test/propiedad/606002")["ambientes"]
     html = "<html><body><main><p>Departamento 4 Ambientes</p></main></body></html>"
     assert source_signals(html, "https://a.test/propiedad/606003")["ambientes"]
+
+
+def test_senal_de_banos_no_toma_libano():
+    from scripts.agency_certifier import SOURCE_SIGNALS as P
+    assert not P["banos"].search("Sobre calle Republica del Libano 28,36 mts")
+    assert P["banos"].search("Baños: 2") and P["banos"].search("2 baños")
+    assert not P["dormitorios"].search("Sobre calle Rehabitaciones 3")
