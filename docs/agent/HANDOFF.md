@@ -93,6 +93,19 @@ Historia: Git (`git log --since=2026-09-25`).
     precio) caen en `ficha_sin_contenido` porque el título incluye «RAMIREZ inmobiliaria» (regla
     `agencia <= titulo`). Relajar ese guardián compartido requiere medir cascarones (alder, arrambide);
     queda en backlog, no se tocó.
+- 2026-09-27 10:xx, NEEDS_FIX no idempotentes (backlog 2), revisados sin frenar la cola:
+  - `fiorio` (wordpress): una ficha cuyo HTML falló por red caía en silencio al objeto REST pobre
+    (sin descripción ni atributos) en vez de volver None para que el runner la difiera → arreglado
+    en wordpress.py. Y las 106 fichas llevaban 6 íconos del tema (`bano.avif`, `ambientes.avif`…)
+    como fotos: `is_attribute_icon` (nombre = atributo) cuenta como asset SOLO junto con la
+    repetición en la mitad del catálogo (`descartar_imagenes_compartidas`); no se usa suelto porque
+    una foto real puede llamarse `bano.jpg` y la snapshot filtra con `is_known_page_asset` sin
+    repetición.
+  - `cocucci`: la fuente cambió expensas ($63.733 → $64.000) entre corridas — CAMBIO_EN_LA_FUENTE.
+  - `di maria`: 350 enumeradas en ambas; en cada corrida falló UNA ficha distinta (transitorio).
+  - `brikel`: ya CERTIFIED_COMPLETE (26-09 07:08).
+  - `blangiforti`: su última corrida (25-09 22:04) es anterior al arreglo Terravirtual
+    `d3f1a7960b` (23:49) — duplicados `/propiedades/ficha/<md5>` vs `//ficha/<md5>`.
 
 ## Corriendo
 - Cola con 2 workers + relanzador + vigilante. Mirarla solo si hay paradas.

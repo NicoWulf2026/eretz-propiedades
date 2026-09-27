@@ -117,6 +117,28 @@ def is_known_page_asset(value: Any) -> bool:
            (parsed.hostname or '').endswith('.pinterest.com')) and '/pin/create/button' in parsed.path))
 
 
+def is_attribute_icon(value: Any) -> bool:
+    """El icono de un atributo de la ficha, nombrado por el atributo.
+
+    `fiorio` (tema WordPress propio) sube a la mediateca `ubicacion.avif`,
+    `metros-cuadrados.avif`, `ambientes.avif`, `dormitorios2.avif` y
+    `bano.avif`, y los muestra junto a cada dato: las 106 fichas quedaban con
+    esos seis iconos como fotos. El nombre SOLO no alcanza -una foto real del
+    baño puede llamarse `bano.jpg`-, asi que esto se usa unicamente junto con
+    la repeticion en la mitad del catalogo (`descartar_imagenes_compartidas`),
+    nunca como filtro suelto.
+    """
+    parsed = urlparse(image_url_from_value(value).lower())
+    filename = unquote(parsed.path).rsplit('/', 1)[-1]
+    return bool(re.fullmatch(
+        r'(?:ubicaci[oó]n|direcci[oó]n|metros?[-_]?(?:cuadrados|cubiertos|totales)|m2|'
+        r'superficie(?:[-_]\w+)?|ambientes?|dormitorios?|habitaciones?|ba(?:n|ñ)os?|'
+        r'toilettes?|cocheras?|garages?|antig(?:u|ü)edad|expensas)'
+        r'(?:[-_]?\d{1,2})?\.(?:png|jpe?g|gif|webp|avif|svg)',
+        filename,
+    ))
+
+
 def normalize_property_images(values: Any, *, max_images: int = 60) -> Tuple[List[str], List[str]]:
     """Return publishable images first and discarded branding/surface assets second."""
 

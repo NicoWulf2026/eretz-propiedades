@@ -758,10 +758,18 @@ class WordPressConnector(Connector):
         if (not crudo.get("post_taxonomy_catalog")
                 and not (isinstance(meta_rest, dict) and meta_de_propiedad(meta_rest))):
             # Solo si el HTML da una ficha; si no, el objeto REST como antes.
+            errores_antes = len(self.errores)
             alternativa = self._normalizar_con_generico(
                 {k: v for k, v in crudo.items() if k != "rest"}, fuente)
             if alternativa is not None:
                 return alternativa
+            # Pero si el HTML NO SE PUDO BAJAR (timeout, 429), el REST pobre
+            # -sin descripcion ni atributos- no reemplaza a la ficha: `fiorio`
+            # quedaba no idempotente por una sola que en la corrida 2 salio asi.
+            # None con el error anotado es lo que el runner difiere y reintenta.
+            if (len(self.errores) > errores_antes
+                    and self.errores[-1].get("etapa") == "detalle"):
+                return None
         html = ""
         if item is None:
             try:

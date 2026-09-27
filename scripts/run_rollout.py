@@ -260,8 +260,9 @@ def descartar_imagenes_compartidas(objetos: list) -> int:
     for p in objetos:
         veces.update(set(p.imagenes or []))
     tope = max(MINIMO_PARA_JUZGAR // 2, len(objetos) * FRACCION_COMPARTIDA)
-    from scripts.image_quality import is_known_page_asset
-    compartidas = {u for u, n in veces.items() if n >= tope and is_known_page_asset(u)}
+    from scripts.image_quality import is_attribute_icon, is_known_page_asset
+    compartidas = {u for u, n in veces.items() if n >= tope
+                   and (is_known_page_asset(u) or is_attribute_icon(u))}
     descartadas = 0
     for p in objetos:
         inciertas = [u for u in (p.imagenes or []) if veces[u] >= tope and u not in compartidas]

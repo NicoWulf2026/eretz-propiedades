@@ -24,3 +24,42 @@ def test_meta_del_tema_no_es_meta_de_propiedad():
     assert not meta_de_propiedad({"inline_featured_image": False, "footnotes": ""})
     assert meta_de_propiedad({"fave_property_price": "100000"})
     assert meta_de_propiedad({"REAL_HOMES_property_price": "430000"})
+
+
+def test_icono_de_atributo_por_nombre():
+    from scripts.image_quality import is_attribute_icon
+    base = "https://f.test/wp-content/uploads/2025/09/"
+    for nombre in ("ubicacion.avif", "metros-cuadrados.avif", "metros-cubiertos.avif",
+                   "ambientes.avif", "dormitorios2.avif", "bano.avif"):
+        assert is_attribute_icon(base + nombre), nombre
+    assert not is_attribute_icon(base + "PERON-DEPTO.webp")
+    assert not is_attribute_icon(base + "bano-principal-reformado.jpg")
+
+
+def test_iconos_repetidos_se_descartan_y_fotos_propias_no():
+    from types import SimpleNamespace
+    from scripts.run_rollout import descartar_imagenes_compartidas
+    icono = "https://f.test/wp-content/uploads/2025/09/bano.avif"
+    objs = [SimpleNamespace(imagenes=[icono, f"https://f.test/wp-content/uploads/p{i}.webp"], extra={})
+            for i in range(10)]
+    assert descartar_imagenes_compartidas(objs) == 10
+    assert all(o.imagenes == [f"https://f.test/wp-content/uploads/p{i}.webp"]
+               for i, o in enumerate(objs))
+
+
+def test_fallo_de_red_del_html_no_cae_al_rest_pobre():
+    from connectors.base import ErrorTransitorio, Fuente
+    from connectors.wordpress import WordPressConnector
+
+    class Caido:
+        def bajar(self, url):
+            raise ErrorTransitorio("timeout")
+
+    c = WordPressConnector(Caido())
+    f = Fuente(canonical_agency_id="roomix:x", agency_name="X",
+               official_url="https://f.test", inmobiliaria_id=1)
+    crudo = {"source_url": "https://f.test/propiedad/casa-en-venta-centro/",
+             "source_listing_id": "1",
+             "rest": {"title": {"rendered": "Casa"}, "content": {"rendered": ""}, "meta": {}}}
+    assert c.normalize(crudo, f) is None
+    assert c.errores[-1]["etapa"] == "detalle"
