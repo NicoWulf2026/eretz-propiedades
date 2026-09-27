@@ -210,6 +210,10 @@ Historia: Git (`git log --since=2026-09-25`).
   detalles fallidos. Candidata por forma con la ruta del listado se descarta; el índice de
   emprendimientos va a RE_NO_FICHA. En vivo 28 fichas reales. Diferida firmada.
 
+- 16:03 paro FAMILIA generico `julia propiedades`: Tokko TFW (tuinmobiliaria) con **0 Resultados**
+  en todo el sitio; generico enumeró 2 categorías y el guardián las rechazó. Diferida firmada.
+  Mejora: Tokko TFW con total declarado 0 → NO_INVENTORY_CONFIRMED en vez de caer a generico.
+
 ## Lote pendiente para agrupar (diagnosticado 27-09 11:4x, sin tocar: cada commit frena la cola)
 NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DISCOVERY. Muestra de 9:
 - **Identidad equivocada con READY** (tocar `agency_web_discovery.py` = `shared/source_policy`,
