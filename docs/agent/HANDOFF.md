@@ -77,6 +77,22 @@ Historia: Git (`git log --since=2026-09-25`).
 - Paro 09:3x FAMILIA wordpress (`landart`): 429 del hosting wnpservers (igual que harfouche) — causa
   externa, diferida firmada sin cambio de código. Mejora posible: que un 429 en el descubrimiento
   deje la corrida como bloqueada y no como «inventario colapsado».
+- 2026-09-27 09:xx: la cola estaba parada desde el 26 12:4x con TRES familias detenidas (generico por
+  `ramirez`, wordpress por `piccardo`, tokko por `salerno`) — 762 de 774 excluidas.
+  - `salerno` (tokko): CAMBIO_EN_LA_FUENTE. /Propiedades declara hoy 54 (Venta 40, Alquiler 15) y se
+    enumeraron 54; el techo 109 es de preingestion vieja. 1 detalle/Bloqueado. Diferida firmada.
+  - `piccardo` (grvende.com.ar, REST sin meta → generico): «Propiedades relacionadas» es un `<h6>` sin
+    clase propia y sus tarjetas («Ambientes 3 / Baños 1» de OTRA ficha) entraban a la ficha; además
+    «<p>Tipo</p> <span>Departamento</span>» no se leía. `cuerpo_principal` corta en ese encabezado y el
+    tipo acepta el rótulo «Tipo» solo. En vivo: 19 fichas sin tipo → 0; ambientes/baños ajenos fuera.
+  - `ramirez` (generico): 10 fichas reales descartadas por forma — `/propiedad/263-chubut.html`,
+    `/propiedad/273-l-molinas-2192-.html` (id adelante, slug corto o terminado en guion) no calzaban
+    en RE_FICHA → alternativa `/propiedad/<id>-<slug>.(html|php)`. Y `/tipos/cabanas.html`,
+    `/tipos/islas.html` no se reconocían como categoría (entraban como fichas) → rubros por archivo
+    entero. Verificado en scratch: forma 12 → 0, 153 → 162 fichas, idempotente. RESIDUAL conocido: 8 fichas casi vacías (título + nota «Lote 27 X 71» + 1-4 fotos, sin
+    precio) caen en `ficha_sin_contenido` porque el título incluye «RAMIREZ inmobiliaria» (regla
+    `agencia <= titulo`). Relajar ese guardián compartido requiere medir cascarones (alder, arrambide);
+    queda en backlog, no se tocó.
 
 ## Corriendo
 - Cola con 2 workers + relanzador + vigilante. Mirarla solo si hay paradas.

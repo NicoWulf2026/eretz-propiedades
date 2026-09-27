@@ -120,7 +120,12 @@ RE_FICHA = re.compile(
     r"/(?:propiedad(?:es)?|inmueble[s]?|emprendimiento[s]?|ficha[s]?|"
     r"propert(?:y|ies)|listing[s]?|aviso[s]?|anuncio[s]?|ad|venta|alquiler)/"
     # Tambien con extension: /propiedad/275-corrientes-sn.html (`ramirez`).
-    r"(?:[^/?#]*?(?:\d{3,}|[a-z0-9]+(?:-[a-z0-9]+){2,}))(?:\.html?|\.php)?/?$", re.I)
+    r"(?:[^/?#]*?(?:\d{3,}|[a-z0-9]+(?:-[a-z0-9]+){2,}))(?:\.html?|\.php)?/?$"
+    # Y el id numerico ADELANTE con un slug corto o cortado: /propiedad/263-
+    # chubut.html, /propiedad/273-l-molinas-2192-.html (`ramirez`, 10 fichas
+    # reales con 2 a 17 fotos descartadas por forma). Id + extension es la
+    # forma de una ficha servida por un CMS propio, no la de una seccion.
+    r"|/(?:propiedad(?:es)?|inmueble[s]?|ficha[s]?)/\d+-[a-z0-9-]+\.(?:html?|php)$", re.I)
 
 # Muchos frontends propios cuelgan la ficha de la RAIZ, sin seccion:
 # /8471-venta-casa-3-ambientes-en-adrogue. Ni el patron de Tokko ni el de arriba
@@ -615,7 +620,13 @@ def cuerpo_principal(html: str) -> str:
         r"class=[\"'][^\"']*\bsimilar-properties\b|"
         r"class=[\"'][^\"']*\bInspiry_Featured_Properties_Widget\b|"
         r"<div[^>]+class=[\"'][^\"']*titulo_prod_int[^\"']*[\"'][^>]*>\s*"
-        r"Otras\s+Propiedades\s*</div>",
+        r"Otras\s+Propiedades\s*</div>|"
+        # El encabezado escrito, sin clase propia: `piccardo` (grvende.com.ar)
+        # pone <h6 class="heading">Propiedades relacionadas</h6> y debajo las
+        # tarjetas de otras fichas con «Ambientes 3 / Baños 1». Una ficha sin
+        # esos rotulos se quedaba con los de la primera vecina, y la tabla de
+        # la vecina ademas apagaba la lectura de su propia descripcion.
+        r"<h[1-6]\b[^>]*>\s*Propiedades\s+(?:relacionadas|similares)\s*</h[1-6]>",
                     html or "", maxsplit=1, flags=re.I)[0]
 
 
@@ -1280,7 +1291,15 @@ class GenericoConnector(Connector):
             # en cualquier parte de la ruta. `casasychalets/casasychalets.html`
             # es una categoria; `casasychalets/Aroca/Aroca.html` es una casa, y
             # mirar la ruta entera las confundia y perdia la propiedad.
-            if not patron.search(ruta.rsplit("/", 1)[-1]):
+            archivo = ruta.rsplit("/", 1)[-1]
+            # Rubros menos comunes solo como archivo ENTERO: `ramirez` enlaza
+            # /tipos/cabanas.html y /tipos/islas.html junto a casas y campos, y
+            # sin reconocerlas como categoria se enumeraban como fichas y
+            # fallaban (2 detalles fallidos por corrida). Como palabra suelta
+            # «islas» tambien es el nombre de una calle en una ficha.
+            if not (patron.search(archivo)
+                    or re.fullmatch(r"(?:caba(?:n|ñ|%c3%b1)as|islas)\.(?:html?|php)",
+                                    archivo, re.I)):
                 continue
             limpio = destino.split("#")[0]
             if limpio not in vistos:
@@ -2756,9 +2775,11 @@ class GenericoConnector(Connector):
                                # El par rotulado «Tipo Propiedad | Venta Oficina /
                                # Local» (`gonzalez theyler`) manda sobre el arranque
                                # del texto, que ahi es el menu («Casa Departamento…»).
+                               # Y el rotulo solo, «<p>Tipo</p> <span>Departamento
+                               # </span>» (`piccardo`, 19 fichas sin tipo).
                                or detectar_tipo(self._par_rotulado(
                                    principal_campos,
-                                   r"Tipo(?:\s+de)?\s+(?:propiedad|inmueble)") or "")
+                                   r"Tipo(?:(?:\s+de)?\s+(?:propiedad|inmueble))?") or "")
                                # En un emprendimiento el arranque del texto es
                                # el menu y las tipologias de sus unidades.
                                or (None if es_emprendimiento else (

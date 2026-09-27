@@ -615,3 +615,37 @@ def test_las_fichas_de_los_resultados_por_categoria_se_enumeran():
     urls = {x["source_url"] for x in c.fetch_listing(f, plan)}
     assert {f"{base}/detalle/{i}/casa-en-venta-centro/" for i in (1, 2, 3, 4, 5)} <= urls
     assert not any("/resultado/" in u for u in urls)
+
+
+def test_propiedades_relacionadas_sin_clase_quedan_fuera_de_la_ficha():
+    from connectors.generico import cuerpo_principal
+    html = ("<div class='main-features'><p>Tipo</p> <span>Quinta</span></div>"
+            "<p>Casa con 1 dormitorio.</p>"
+            "<h6 id='x' class='heading'>Propiedades relacionadas</h6>"
+            "<ul class='features'><li><p>Ambientes</p><p><span> 3 </span></p></li></ul>")
+    principal = cuerpo_principal(html)
+    assert "Quinta" in principal and "Ambientes" not in principal
+
+
+def test_tipo_con_rotulo_solo():
+    html = "<div class='single-feature'><p>Tipo</p> <span>Departamento</span></div>"
+    assert GenericoConnector._par_rotulado(
+        html, r"Tipo(?:(?:\s+de)?\s+(?:propiedad|inmueble))?") == "Departamento"
+
+
+def test_id_adelante_con_slug_corto_y_extension_es_ficha():
+    from connectors.generico import RE_FICHA
+    assert RE_FICHA.search("https://r.test/propiedad/263-chubut.html")
+    assert RE_FICHA.search("https://r.test/propiedad/273-l-molinas-2192-.html")
+    assert RE_FICHA.search("https://r.test/propiedad/58-french-y-berutti.html")
+    assert not RE_FICHA.search("https://r.test/tipos/cabanas.html")
+    assert not RE_FICHA.search("https://r.test/propiedad/chubut.html")
+
+
+def test_cabanas_e_islas_son_categorias_como_archivo_entero():
+    html = ('<a href="tipos/casas.html">Casas</a><a href="tipos/cabanas.html">Cabañas</a>'
+            '<a href="tipos/islas.html">Islas</a><a href="propiedad/12-islas-malvinas.html">x</a>')
+    rutas = GenericoConnector._rutas_de_categoria(html, "https://r.test")
+    assert "https://r.test/tipos/cabanas.html" in rutas
+    assert "https://r.test/tipos/islas.html" in rutas
+    assert "https://r.test/propiedad/12-islas-malvinas.html" not in rutas
