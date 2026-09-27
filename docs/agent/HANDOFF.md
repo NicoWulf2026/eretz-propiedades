@@ -205,6 +205,11 @@ Historia: Git (`git log --since=2026-09-25`).
 - 15:3x paro FAMILIA wordpress `jakim`: sin pérdida (techo 32 de una enumeración vieja con 16
   válidas; hoy 20 reales). Diferida firmada.
 
+- 15:53 paro COMPARTIDO `jorge martinez`: el propio listado (/propiedades.php, ?operacion=venta,
+  ?operacion=alquiler) y el índice /emprendimientos.php entraban como candidatas por forma → 4
+  detalles fallidos. Candidata por forma con la ruta del listado se descarta; el índice de
+  emprendimientos va a RE_NO_FICHA. En vivo 28 fichas reales. Diferida firmada.
+
 ## Lote pendiente para agrupar (diagnosticado 27-09 11:4x, sin tocar: cada commit frena la cola)
 NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DISCOVERY. Muestra de 9:
 - **Identidad equivocada con READY** (tocar `agency_web_discovery.py` = `shared/source_policy`,

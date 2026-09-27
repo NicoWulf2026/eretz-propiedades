@@ -776,3 +776,25 @@ def test_mapaprop_sigue_paginando_mientras_haya_fichas_nuevas():
                inmobiliaria_id=1)
     urls = [i["source_url"] for i in c.fetch_listing(f, plan)]
     assert len(set(urls)) == 10
+
+
+def test_indice_de_emprendimientos_no_es_ficha():
+    assert not GenericoConnector._es_ficha_url("https://j.test/emprendimientos.php")
+    assert not GenericoConnector._es_ficha_url("https://j.test/emprendimientos/")
+
+
+def test_el_propio_listado_no_se_enumera_como_ficha():
+    from connectors.base import Fuente
+
+    class C(GenericoConnector):
+        def _fetch_listing(self, fuente, plan):
+            for u, forma in (("https://j.test/propiedades.php", True),
+                             ("https://j.test/propiedades.php?operacion=venta", True),
+                             ("https://j.test/propiedad.php?id=12", False)):
+                yield {"source_url": u, "source_listing_id": u, "por_forma": forma}
+
+    f = Fuente(canonical_agency_id="roomix:j", agency_name="J", official_url="https://j.test",
+               inmobiliaria_id=1)
+    urls = [i["source_url"] for i in C(None).fetch_listing(
+        f, {"listing_url": "https://j.test/propiedades.php"})]
+    assert urls == ["https://j.test/propiedad.php?id=12"]

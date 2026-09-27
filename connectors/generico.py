@@ -231,6 +231,9 @@ RE_FICHA_RAIZ = re.compile(
 # Su «AI Labyrinth» siembra enlaces a articulos inventados para los bots
 # (`fernandez marull` 59 de 59, `crestale` 59 de 131, el 25-09).
 RE_NO_FICHA = re.compile(
+    # El indice de emprendimientos, sin slug: /emprendimientos.php (`jorge
+    # martinez`, `irujo`). Las fichas /emprendimientos/<slug> siguen entrando.
+    r"^/emprendimientos?(?:\.(?:php|html?|aspx?))?/?$|"
     # Tambien con la operacion delante: /propiedades/venta_mas-nuevas
     # (`fandino`, 10 ordenes del listado enumerados como fichas el 26-09).
     r"/propiedades/(?:(?:venta|alquiler)[_-])?(?:destacadas|mas-nuevas|mas-viejas|"
@@ -1996,8 +1999,19 @@ class GenericoConnector(Connector):
     def fetch_listing(self, fuente: Fuente, plan: dict[str, Any]) -> Iterator[dict]:
         mapa = plan.get("operacion_por_ficha") or {}
         vistas: set[str] = set()
+        listado = plan.get("listing_url")
+        ruta_listado = (urllib.parse.urlparse(listado).path.rstrip("/").lower()
+                        if listado else None)
         for item in self._fetch_listing(fuente, plan):
             c = item["source_url"].split("#")[0].rstrip("/")
+            # El propio listado, con o sin filtro (`jorge martinez`:
+            # /propiedades.php, ?operacion=venta, ?operacion=alquiler), llegaba
+            # como candidata por forma, el guardian la rechazaba y contaba como
+            # detalle fallido. Una candidata SIN forma de ficha cuya ruta es la
+            # del listado no es una ficha.
+            if (item.get("por_forma") and ruta_listado
+                    and urllib.parse.urlparse(c).path.rstrip("/").lower() == ruta_listado):
+                continue
             vistas.add(c)
             if c in mapa:
                 item.setdefault("operacion_catalogo", mapa[c])
