@@ -250,6 +250,9 @@ NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DI
   sin HTML de fichas) — investigar el endpoint del propio host antes de tocar.
 - `gestionato`, `hcg brokers`: SPA React (HTML de 0,5 KB) — sin JS no hay catálogo; buscar API propia.
 - `gustavo santos`, `battini`: 404 en la raíz (fuente caída). `bergo`: respuesta vacía.
+- `david rodriguez` (paró generico 17:50, diferida firmada): declara 161; catálogo solo vía POST
+  `searchProperties.php` con `property_type` y `city` obligatorios (navegación `javascript:goTo…`).
+  Camino nuevo: recorrer tipo × zona del propio formulario (ver `connectors/formularios.py`).
 - `irujo` (paró generico 14:09, diferida firmada): catálogo hidratado por un proxy PROPIO de Tokko en
   el mismo host (`api_destacadas.php?page=&limit=&offset=` → `{meta, objects}`), como alta.com.ar.
   Su respuesta expone la clave de la API de Tokko en `meta.next`: **no usarla** (regla armanino);
