@@ -233,6 +233,12 @@ Historia: Git (`git log --since=2026-09-25`).
   `PROVINCIAS_AR`; la geografía compartida valida). En vivo: ambientes 10/10, ciudad 11/12.
   0 cambios en la muestra de blangiforti. Diferida firmada.
 
+- 19:05 paro FAMILIA generico `linkasa` (Kiteprop, *.kitepropcrm.com): el catálogo es
+  /site/properties (paginado ?page=N) y no se reconocía («properties» no estaba en los catálogos
+  enlazados) → solo 4 destacadas + /site/properties/sale y /rental guardados COMO PROPIEDADES.
+  Ahora `properties` es catálogo, sale/rental van a RE_NO_FICHA y «Categoría | PH» da el tipo.
+  En vivo: 4 → 18 fichas reales, estables. Diferida firmada. Afecta a toda la plataforma Kiteprop.
+
 ## Lote pendiente para agrupar (diagnosticado 27-09 11:4x, sin tocar: cada commit frena la cola)
 NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DISCOVERY. Muestra de 9:
 - **Identidad equivocada con READY** (tocar `agency_web_discovery.py` = `shared/source_policy`,

@@ -265,6 +265,9 @@ RE_FICHA_RAIZ = re.compile(
 # Su «AI Labyrinth» siembra enlaces a articulos inventados para los bots
 # (`fernandez marull` 59 de 59, `crestale` 59 de 131, el 25-09).
 RE_NO_FICHA = re.compile(
+    # Los listados por operacion de Kiteprop: /site/properties/sale y
+    # /site/properties/rental (`linkasa`: se guardaban como dos propiedades).
+    r"/properties/(?:sale|rental|rent|temporary)/?$|"
     # El indice de emprendimientos, sin slug: /emprendimientos.php (`jorge
     # martinez`, `irujo`). Las fichas /emprendimientos/<slug> siguen entrando.
     r"^/emprendimientos?(?:\.(?:php|html?|aspx?))?/?$|"
@@ -2899,6 +2902,12 @@ class GenericoConnector(Connector):
                                or detectar_tipo(self._par_rotulado(
                                    principal_campos,
                                    r"Tipo(?:(?:\s+de)?\s+(?:propiedad|inmueble))?") or "")
+                               # Y «Categoría | PH» (Kiteprop, `linkasa`). Solo
+                               # cuenta si el valor ES un tipo: «Categoría |
+                               # Premium» no afirma nada.
+                               or detectar_tipo(self._par_rotulado(
+                                   principal_campos,
+                                   r"Categor(?:\u00ed|i|&iacute;)a") or "")
                                # En un emprendimiento el arranque del texto es
                                # el menu y las tipologias de sus unidades.
                                or (None if es_emprendimiento else (
@@ -4649,8 +4658,12 @@ class GenericoConnector(Connector):
         ajena, y se ignora la raiz, que ya se bajo.
         """
         vistos: list[str] = []
+        # `properties` tambien: Kiteprop (`linkasa`, *.kitepropcrm.com) publica
+        # el catalogo en /site/properties, paginado con ?page=N, y sin
+        # reconocerlo se probaba /propiedades -que no existe- y solo se veian
+        # las 4 destacadas de la portada de 19.
         patron = re.compile(
-            r"(?:listado|propiedades|inmuebles|emprendimientos|catalogo|"
+            r"(?:listado|propiedades|properties|inmuebles|emprendimientos|catalogo|"
             r"resultados|ventas|alquileres|buscar)", re.I)
         def sin_www(u: str) -> str:
             return re.sub(r"^(https?://)www\.", r"\1", u, flags=re.I)

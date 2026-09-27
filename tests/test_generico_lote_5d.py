@@ -836,3 +836,18 @@ def test_provincia_por_nombre():
     from connectors.generico import _es_provincia
     assert _es_provincia("Misiones") and _es_provincia("Córdoba") and _es_provincia("Provincia de Buenos Aires")
     assert not _es_provincia("Oberá") and not _es_provincia("Centro")
+
+
+def test_categoria_rotulada_como_tipo():
+    html = "<table><tr><td>Categoría</td><td>PH</td></tr></table>"
+    assert GenericoConnector._par_rotulado(html, r"Categor(?:\u00ed|i|&iacute;)a") == "PH"
+
+
+def test_kiteprop_listados_y_catalogo():
+    assert not GenericoConnector._es_ficha_url("https://l.kitepropcrm.com/site/properties/sale")
+    assert not GenericoConnector._es_ficha_url("https://l.kitepropcrm.com/site/properties/rental")
+    assert GenericoConnector._es_ficha_url(
+        "https://l.kitepropcrm.com/site/properties/415022/alberdi-2-dormitorios-con-patio")
+    html = '<a href="/site/properties">Propiedades</a><a href="/site/about">Nosotros</a>'
+    assert GenericoConnector._catalogos_enlazados(html, "https://l.kitepropcrm.com") == [
+        "https://l.kitepropcrm.com/site/properties"]
