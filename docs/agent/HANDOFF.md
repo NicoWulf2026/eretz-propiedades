@@ -104,11 +104,22 @@ Historia: Git (`git log --since=2026-09-25`).
   - `cocucci`: la fuente cambió expensas ($63.733 → $64.000) entre corridas — CAMBIO_EN_LA_FUENTE.
   - `di maria`: 350 enumeradas en ambas; en cada corrida falló UNA ficha distinta (transitorio).
   - `brikel`: ya CERTIFIED_COMPLETE (26-09 07:08).
-  - `blangiforti`: su última corrida (25-09 22:04) es anterior al arreglo Terravirtual
-    `d3f1a7960b` (23:49) — duplicados `/propiedades/ficha/<md5>` vs `//ficha/<md5>`.
+  - `blangiforti` (Terravirtual): con el código de hoy el contenido ya era idéntico entre corridas,
+    pero el inventario no (164 vs 151). El padrón trae `blangiforti.com.ar` sin www y el sitio enlaza
+    `https://www.…/ventas` (174 en una página): `_catalogos_enlazados` no lo aceptaba y se caía a
+    `/propiedades`, paginado en orden aleatorio. Ahora acepta la variante www del mismo host; los
+    catálogos gemelos venta/alquiler se reconocen en plural (`/ventas` + `/alquileres`: +2 alquileres);
+    y la descripción se lee bajo «Información de la Propiedad» (antes caía al eslogan del meta y se
+    descartaba por compartida en 164/164). En vivo: 176 fichas, dos enumeraciones idénticas.
+  - `constant` (wordpress, 25-09): con el código de hoy 24/24 con operación, tipo y coordenadas.
 
 ## Corriendo
 - Cola con 2 workers + relanzador + vigilante. Mirarla solo si hay paradas.
+- **2026-09-27 10:3x: las tareas programadas `ERETZ_relanzador` y del vigilante NO EXISTEN en
+  Windows** (`schtasks /query /tn ERETZ_relanzador` → no encontrada; último registro del
+  relanzador 26-09 21:04). No se recrearon (configuración persistente; no se sabe si se borraron a
+  propósito — decisión del usuario; hay XML de respaldo en el scratchpad de la sesión). Mientras
+  tanto la sesión corre `relanzar_la_cola.py --lanzar` cada 10 min. Sin sesión, nadie relanza.
 
 ## No rehacer
 - **`gaggiotti`**: SPA; el catálogo solo sale de `https://www.gaggiotti.com.ar/api/Property/Search`

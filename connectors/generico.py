@@ -1930,7 +1930,10 @@ class GenericoConnector(Connector):
         de la operacion; una ficha listada en ambos queda sin operacion. Las
         fichas de esos catalogos que la enumeracion no vio se agregan despues.
         """
-        token = re.compile(r"(?<![a-z])(venta|alquiler)(?![a-z])", re.I)
+        # Tambien en plural: `blangiforti` enlaza /ventas (174) y /alquileres
+        # (3, dos que /ventas no lista) y esas dos quedaban fuera.
+        token = re.compile(r"(?<![a-z])(ventas?|alquiler(?:es)?)(?![a-z])", re.I)
+        singular = {"ventas": "venta", "alquileres": "alquiler"}
         gemelos: dict[str, dict[str, str]] = {}
         for coincidencia in re.finditer(r'href=["\']([^"\']+)["\']', html or ""):
             destino = urllib.parse.urljoin(base + "/", unescape(coincidencia.group(1)))
@@ -1942,7 +1945,8 @@ class GenericoConnector(Connector):
             if len(hallados) != 1:
                 continue
             clave = token.sub("{op}", ruta).lower()
-            gemelos.setdefault(clave, {}).setdefault(hallados[0].lower(), destino.split("#")[0])
+            operacion = singular.get(hallados[0].lower(), hallados[0].lower())
+            gemelos.setdefault(clave, {}).setdefault(operacion, destino.split("#")[0])
         par = next((v for v in gemelos.values() if set(v) == {"venta", "alquiler"}), None)
         if not par:
             return {}, []
@@ -2651,6 +2655,22 @@ class GenericoConnector(Connector):
                                 titulo_caja.decompose()
                         visible = limpiar(re.sub(r"\s+", " ", caja.get_text(" ")))[:6000]
                     sopa.decompose()
+                descripcion = visible if visible and len(visible) >= 40 else None
+        if not descripcion:
+            # Terravirtual (`blangiforti`, 174 fichas): el encabezado es
+            # «<strong>Información</strong> <small>de la Propiedad</small>» y el
+            # texto va en el primer <p> que le sigue. Sin leerlo, la ficha caia
+            # al meta -el eslogan del sitio, igual en todas- y el runner lo
+            # descartaba por compartido: 164 de 164 sin descripcion.
+            encabezado = re.search(
+                r"<h[1-6]\b[^>]*>(?:\s|<[^>]+>)*Informaci(?:\u00f3|o|&oacute;)n"
+                r"(?:\s|<[^>]+>)*de\s+la\s+propiedad(?:\s|<[^>]+>)*</h[1-6]>",
+                principal, re.I)
+            if encabezado:
+                parrafo = re.search(r"<p\b[^>]*>(.*?)</p>",
+                                    principal[encabezado.end():encabezado.end() + 3000],
+                                    re.I | re.S)
+                visible = limpiar(_texto(parrafo.group(1))) if parrafo else None
                 descripcion = visible if visible and len(visible) >= 40 else None
         if descripcion and meta and self._es_su_comienzo(descripcion, meta):
             # El rotulo solo trajo el comienzo de lo que el meta dice entero:
@@ -4475,9 +4495,18 @@ class GenericoConnector(Connector):
         patron = re.compile(
             r"(?:listado|propiedades|inmuebles|emprendimientos|catalogo|"
             r"resultados|ventas|alquileres|buscar)", re.I)
+        def sin_www(u: str) -> str:
+            return re.sub(r"^(https?://)www\.", r"\1", u, flags=re.I)
+
         for coincidencia in re.finditer(r'href="([^"]+)"', html or ""):
             destino = urllib.parse.urljoin(base, unescape(coincidencia.group(1)))
-            if not destino.startswith(base):
+            # El padron puede traer el host sin `www.` y el sitio enlazar su
+            # catalogo con `www.`: `blangiforti` (padron blangiforti.com.ar)
+            # enlaza https://www.blangiforti.com.ar/ventas, que trae las 174
+            # fichas en una pagina, y sin reconocerlo se caia a /propiedades,
+            # paginado en orden aleatorio: 164 fichas en una corrida y 151 en
+            # la otra. Solo esa variante del MISMO host, no subdominios.
+            if not sin_www(destino).startswith(sin_www(base)):
                 continue
             ruta = urllib.parse.urlparse(destino).path.rstrip("/")
             if not ruta or not patron.search(ruta):

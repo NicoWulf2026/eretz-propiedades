@@ -649,3 +649,49 @@ def test_cabanas_e_islas_son_categorias_como_archivo_entero():
     assert "https://r.test/tipos/cabanas.html" in rutas
     assert "https://r.test/tipos/islas.html" in rutas
     assert "https://r.test/propiedad/12-islas-malvinas.html" not in rutas
+
+
+def test_catalogo_enlazado_con_www_cuando_el_padron_no_lo_trae():
+    html = ('<a href="https://www.b.test/ventas">Ventas</a>'
+            '<a href="https://otro.b.test/propiedades">x</a>'
+            '<a href="https://ajeno.test/propiedades">y</a>')
+    catalogos = GenericoConnector._catalogos_enlazados(html, "https://b.test")
+    assert catalogos == ["https://www.b.test/ventas"]
+
+
+def test_catalogos_gemelos_en_plural():
+    class D:
+        def bajar(self, url):
+            if url.endswith("/ventas"):
+                return '<a href="/ficha/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">1</a>' \
+                       '<a href="/ficha/cccccccccccccccccccccccccccccccc">3</a>'
+            return '<a href="/ficha/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb">2</a>' \
+                   '<a href="/ficha/cccccccccccccccccccccccccccccccc">3</a>'
+    c = GenericoConnector(D())
+    html = '<a href="/ventas">Ventas</a><a href="/alquileres">Alquileres</a>'
+    mapa, extra = c._catalogos_por_operacion(html, "https://b.test", None)
+    assert mapa == {"https://b.test/ficha/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": "venta",
+                    "https://b.test/ficha/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": "alquiler"}
+    assert len(extra) == 2
+
+
+def test_descripcion_bajo_informacion_de_la_propiedad():
+    from connectors.base import Fuente
+
+    class D:
+        def bajar(self, url):
+            return ('<html><head><title>[cod. 042] Casa de 2 Amb.</title>'
+                    '<meta name="description" content="BLANGIFORTI Propiedades, sinonimo de Transparencia."></head>'
+                    '<body><h1>[cod. 042] Casa de 2 Amb.</h1>'
+                    '<img src="/f/1.jpg"><img src="/f/2.jpg"><img src="/f/3.jpg">'
+                    '<h3 class="ficha_titulo"><strong>Informaci&oacute;n</strong> <small>de la Propiedad</small></h3>'
+                    '<hr/><h5><strong>en Venta</strong></h5>'
+                    '<p class="text-justify">CASA 2 AMBIENTES en PH (INDEPENDIENTE): cocina comedor, '
+                    '1 dormitorio, 1 bano, patio.</p><p>Precio: u$s 32.000</p></body></html>')
+
+    c = GenericoConnector(D())
+    f = Fuente(canonical_agency_id="roomix:b", agency_name="B", official_url="https://b.test",
+               inmobiliaria_id=1)
+    p = c.normalize({"source_url": "https://b.test/ficha/9fe58030677746847b403ffb3073bd8a",
+                     "source_listing_id": "x"}, f)
+    assert p is not None and p.descripcion.startswith("CASA 2 AMBIENTES en PH")
