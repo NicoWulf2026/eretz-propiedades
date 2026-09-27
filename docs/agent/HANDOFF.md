@@ -214,6 +214,13 @@ Historia: Git (`git log --since=2026-09-25`).
   en todo el sitio; generico enumeró 2 categorías y el guardián las rechazó. Diferida firmada.
   Mejora: Tokko TFW con total declarado 0 → NO_INVENTORY_CONFIRMED en vez de caer a generico.
 
+- 16:14 paro FAMILIA generico `julian zaparart` (Kiteprop por sitemap): declara 35 y enumeramos 35
+  (techo 45 de preingestión vieja: CAMBIO_EN_LA_FUENTE). La no-idempotencia era una URL con token
+  cifrado por pedido (`kiteprop.com/maps/view/eyJ…`) dentro de la descripción → `RE_URL_CON_TOKEN`
+  la quita (con su `<img>`). Diferida firmada.
+- 16:0x paros FAMILIA `julia propiedades` (Tokko 0 resultados) y `dorsoli` (1/5 sin tipo: la fuente
+  rotula un edificio de 8 unidades como «Lote, Terrenos»): diferidas firmadas, sin código.
+
 ## Lote pendiente para agrupar (diagnosticado 27-09 11:4x, sin tocar: cada commit frena la cola)
 NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DISCOVERY. Muestra de 9:
 - **Identidad equivocada con READY** (tocar `agency_web_discovery.py` = `shared/source_policy`,

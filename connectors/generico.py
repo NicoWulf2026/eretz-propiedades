@@ -133,6 +133,10 @@ RE_FICHA = re.compile(
 # 22 fichas sin precio de la agencia -de 4 a 17 fotos, operacion y tipo en el
 # titulo- se descartaban por forma. Seccion de operacion o de propiedad + script
 # + `id` numerico: no es la forma de un listado ni de una pagina institucional.
+RE_URL_CON_TOKEN = re.compile(
+    r"(?:<img\b[^<>]*?src=[\"']?\s*)?https?://\S*?eyJ[A-Za-z0-9_\-+/=%]{40,}[^\s\"'<>]*"
+    r"(?:[\"']?\s*/?>)?")
+
 RE_GIF = re.compile(r"\.gif(?:[?#]|$)", re.I)
 
 RE_FICHA_CON_ID = re.compile(
@@ -3001,8 +3005,13 @@ class GenericoConnector(Connector):
             # `bottega`, `diaz collins`: 173 fichas) es un contador que nuestra
             # propia visita incrementa: con el, la segunda corrida nunca es
             # igual a la primera. No describe a la propiedad.
-            descripcion=(re.sub(r"\s*\b\d[\d.,]*\s+visitas\s+al\s+momento\s*$", "",
-                                descripcion or "", flags=re.I)[:4000] or None),
+            # Y una url con un token cifrado por pedido: `julian zaparart`
+            # (Kiteprop) mete en la descripcion https://www.kiteprop.com/maps/
+            # view/eyJpdiI6…, distinto en cada carga. `eyJ` es un JSON en
+            # base64 (`{"iv":…`): firmado o cifrado para ESE pedido, no prosa.
+            descripcion=(RE_URL_CON_TOKEN.sub("", re.sub(
+                r"\s*\b\d[\d.,]*\s+visitas\s+al\s+momento\s*$", "",
+                descripcion or "", flags=re.I)).strip()[:4000] or None),
             precio=precio,
             moneda=moneda,
             operacion=campos["operacion"],

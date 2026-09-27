@@ -798,3 +798,18 @@ def test_el_propio_listado_no_se_enumera_como_ficha():
     urls = [i["source_url"] for i in C(None).fetch_listing(
         f, {"listing_url": "https://j.test/propiedades.php"})]
     assert urls == ["https://j.test/propiedad.php?id=12"]
+
+
+def test_url_con_token_cifrado_no_queda_en_la_descripcion():
+    from connectors.generico import RE_URL_CON_TOKEN
+    texto = ("Casa de 3 dormitorios. Ver mapa https://www.kiteprop.com/maps/view/"
+             "eyJpdiI6Ik90WE9OS1Naa0NORDExUDQ0ZVZsT2c9PSIsInZhbHVlIjoiUWxiSD fin")
+    limpio = RE_URL_CON_TOKEN.sub("", texto)
+    assert "kiteprop" not in limpio and "Casa de 3 dormitorios" in limpio and "fin" in limpio
+    assert RE_URL_CON_TOKEN.sub("", "Ver https://youtu.be/abc123") == "Ver https://youtu.be/abc123"
+
+
+def test_url_con_token_se_lleva_su_img():
+    from connectors.generico import RE_URL_CON_TOKEN
+    texto = 'Ubicacion en el mapa <img src="https://k.test/maps/view/eyJ' + "a" * 50 + '"> Fin'
+    assert RE_URL_CON_TOKEN.sub("", texto) == "Ubicacion en el mapa  Fin"
