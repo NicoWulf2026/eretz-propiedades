@@ -226,6 +226,13 @@ Historia: Git (`git log --since=2026-09-25`).
   cargada por JS). Se reconocen como fichas, el id es el código Amaira y se lee la ficha del
   proveedor como en el iframe (`battista`). En vivo: 0 → 111 fichas con precio, tipo y fotos.
 
+- 17:30 paro FAMILIA wordpress `daniel` (REST sin meta → generico; tema estate): ficha técnica
+  `<span label><icono/><strong>Ambientes</strong></span><span value>5</span>` — el cierre intermedio
+  impedía leer ambientes y dirección → los lectores de pares toleran UN cierre span/div. Y la
+  dirección «…, Oberá, Misiones» da ciudad/provincia si el último tramo es provincia (lista fija
+  `PROVINCIAS_AR`; la geografía compartida valida). En vivo: ambientes 10/10, ciudad 11/12.
+  0 cambios en la muestra de blangiforti. Diferida firmada.
+
 ## Lote pendiente para agrupar (diagnosticado 27-09 11:4x, sin tocar: cada commit frena la cola)
 NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DISCOVERY. Muestra de 9:
 - **Identidad equivocada con READY** (tocar `agency_web_discovery.py` = `shared/source_policy`,

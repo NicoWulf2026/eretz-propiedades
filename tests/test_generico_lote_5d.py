@@ -821,3 +821,18 @@ def test_ficha_amaira_pasada_por_parametro():
     assert GenericoConnector._es_ficha_url(u)
     assert GenericoConnector._id_de(u) == "RAL102"
     assert not GenericoConnector._es_ficha_url("https://l.test/ficha?url=https%3A%2F%2Fotro.test%2Fx")
+
+
+def test_rotulo_en_strong_dentro_de_su_celda():
+    html = ('<li><span class="property-facts__item-label"><span class="icon"><svg><path/></svg></span>'
+            ' <strong>Ambientes</strong> </span> <span class="property-facts__item-value">5</span></li>'
+            '<li><span class="property-facts__item-label"><strong>Dirección</strong></span>'
+            ' <span class="property-facts__item-value">Calle Lago Argentino, Oberá, Misiones</span></li>')
+    assert GenericoConnector._cuenta_de_ficha(html, "", r"ambientes?", None) == 5
+    assert GenericoConnector._par_rotulado(html, r"direcci[oó]n") == "Calle Lago Argentino, Oberá, Misiones"
+
+
+def test_provincia_por_nombre():
+    from connectors.generico import _es_provincia
+    assert _es_provincia("Misiones") and _es_provincia("Córdoba") and _es_provincia("Provincia de Buenos Aires")
+    assert not _es_provincia("Oberá") and not _es_provincia("Centro")

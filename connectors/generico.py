@@ -115,6 +115,22 @@ RE_FICHA_AMAIRA_EN_QUERY = re.compile(
     r"[?&]url=(https?(?::|%3A)(?://|%2F%2F)ficha\.amaira\.com\.ar[^&#]+)", re.I)
 
 
+PROVINCIAS_AR = {
+    "buenos aires", "catamarca", "chaco", "chubut", "cordoba", "corrientes",
+    "entre rios", "formosa", "jujuy", "la pampa", "la rioja", "mendoza",
+    "misiones", "neuquen", "rio negro", "salta", "san juan", "san luis",
+    "santa cruz", "santa fe", "santiago del estero", "tierra del fuego",
+    "tucuman", "caba", "capital federal", "ciudad autonoma de buenos aires",
+}
+
+
+def _es_provincia(texto: str) -> bool:
+    plano = "".join(c for c in unicodedata.normalize("NFKD", (texto or "").lower())
+                    if not unicodedata.combining(c))
+    plano = re.sub(r"^(?:provincia\s+de\s+|pcia\.?\s+(?:de\s+)?)", "", plano.strip())
+    return plano in PROVINCIAS_AR
+
+
 def ficha_amaira_en_query(url: str) -> str | None:
     """La url de la ficha Amaira que la pagina propia recibe por parametro."""
     m = RE_FICHA_AMAIRA_EN_QUERY.search(url or "")
@@ -2964,6 +2980,16 @@ class GenericoConnector(Connector):
         # provincia ni ciudad.
         ciudad_par = ciudad_par or self._rotulo_en_linea(principal, r"localidad|ciudad")
         provincia_par = provincia_par or self._rotulo_en_linea(principal, r"provincia")
+        # La direccion completa que termina en «…, Oberá, Misiones» (`daniel`,
+        # 12 fichas sin ciudad): si el ULTIMO tramo es una provincia, el
+        # anterior es la ciudad que la ficha escribe. La geografia compartida
+        # la valida despues; lo que no resuelve no se afirma.
+        if direccion and not (ciudad_par and provincia_par):
+            tramos = [x.strip(" .") for x in re.split(r",|\.\s", direccion) if x.strip(" .")]
+            if (len(tramos) >= 3 and _es_provincia(tramos[-1])
+                    and not re.search(r"\d", tramos[-2]) and len(tramos[-2]) <= 40):
+                ciudad_par = ciudad_par or tramos[-2]
+                provincia_par = provincia_par or tramos[-1]
         if (not direccion and crudo.get("wordpress_category_catalog") and titulo
                 and re.search(r"\b\d{2,5}\b", titulo)
                 and len(titulo) <= 120):
@@ -3711,7 +3737,9 @@ class GenericoConnector(Connector):
             rf"<(p|span|dt|th|td|div|label|strong|h[1-6])\b[^>]*>\s*(?:{etiqueta})\s*:?\s*"
             # El valor puede ser el enlace a su taxonomia: <span><a rel="tag">
             # Centro</a></span> (tema ERE de WordPress, `ingar`).
-            rf"</\1>\s*<(p|span|dd|td|div)\b[^>]*>\s*(?:<a\b[^>]*>\s*)?"
+            # Con el mismo cierre intermedio que tolera `_cuenta_de_ficha`
+            # (`daniel`: <strong>Dirección</strong></span><span …value>).
+            rf"</\1>\s*(?:</(?:span|div)>\s*)?<(p|span|dd|td|div)\b[^>]*>\s*(?:<a\b[^>]*>\s*)?"
             rf"([^<>]{{2,150}}?)\s*(?:</a>\s*)?</\2>",
             html or "", re.I)
         return limpiar(unescape(m.group(3))) if m else None
@@ -4478,8 +4506,12 @@ class GenericoConnector(Connector):
         # la siguiente- y que el TEXTO VISIBLE de la celda del valor sea
         # unicamente el numero, con el icono y los envoltorios afuera.
         sin_iconos = re.sub(r"<svg\b.*?</svg>", " ", marcado, flags=re.I | re.S)
+        # El rotulo puede ir en un <strong> dentro de su celda, que se cierra
+        # antes del valor: <span class="…label"><span icono/><strong>Ambientes
+        # </strong></span><span class="…value">5</span> (`daniel`, tema
+        # estate: 10 fichas sin ambientes). Se tolera ese UNICO cierre.
         for pareja in re.finditer(
-                rf"<{celda}[^>]*>\s*(?:{etiqueta})\s*</{celda}>\s*"
+                rf"<{celda}[^>]*>\s*(?:{etiqueta})\s*</{celda}>\s*(?:</(?:span|div)>\s*)?"
                 rf"<(div|span|dd|td|li|p)\b[^>]*>(.{{0,400}}?)</\1>",
                 sin_iconos, re.I | re.S):
             visible = re.sub(r"<[^>]+>", " ", pareja.group(2)).strip()
