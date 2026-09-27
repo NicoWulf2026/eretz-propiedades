@@ -38,8 +38,8 @@ rotación las recertifica sola.
   haya sesión, esta corre `relanzar_la_cola.py --lanzar` cada 10 min; sin sesión nadie relanza.
 
 ## Calidad
-- Regression Gate (27-09 11:3x): 370 agencias recertificadas, 0 pendientes (15 firmadas: baron, brunetti, d amato).
-- Suite completa (27-09 11:2x): 3.390 passed.
+- Regression Gate (27-09 17:0x): 405 agencias recertificadas, 0 pendientes (318 firmadas: cip 292 recuperadas por c82974644d, emprendimientos, reclasificación de barrio, 9 lectura pendiente).
+- Suite completa (27-09 16:2x): 3.401 passed.
 
 ## Snapshot de la API local
 - Servida: `api_snapshot_v2` del 08-09 (`D:\INMO CAPITAL\ERETZ_API_CONTRACT\`). Reemplazarla = deploy.
