@@ -181,6 +181,11 @@ Historia: Git (`git log --since=2026-09-25`).
   foto la hacía no idempotente → GIF junto a JPG/PNG/WEBP se descarta (medido: solo innoa guardaba
   GIFs). En vivo 35/35 fichas, 0 GIFs. Diferida firmada.
 
+- `di maria` (tokko, cert 12:33): 353 enumeradas en ambas corridas pero 6 fichas intercambiadas
+  (ids 7313114–7313268: empates en el orden `?o=2,2&p=`). NO reproducible 14:0x: dos enumeraciones
+  seguidas idénticas. El paro FAMILIA quedó diferido por el diagnóstico anterior. Si vuelve: pedir el
+  listado con un orden sin empates antes de tocar la paginación.
+
 ## Lote pendiente para agrupar (diagnosticado 27-09 11:4x, sin tocar: cada commit frena la cola)
 NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DISCOVERY. Muestra de 9:
 - **Identidad equivocada con READY** (tocar `agency_web_discovery.py` = `shared/source_policy`,
