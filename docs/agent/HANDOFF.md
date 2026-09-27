@@ -172,7 +172,9 @@ NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DI
 - **Identidad equivocada con READY** (tocar `agency_web_discovery.py` = `shared/source_policy`,
   invalida TODAS las certificaciones → hacerlo en un lote propio y planificado):
   `o keefe` → `parquesindustriales.com.ar/detalle-inmobiliaria/7` (directorio);
-  `integral s a` → `sibom.slyt.gba.gob.ar/...` (boletín oficial municipal). Regla general
+  `integral s a` → `sibom.slyt.gba.gob.ar/...` (boletín oficial municipal).
+  `schulz` → `ar.tellows.net/num/…` (consulta de teléfonos; paró la familia generico 11:43,
+  diferida firmada: el guardián de forma rechazó bien un tile de mapa). Regla general
   propuesta: `*.gob.ar`/`*.gov.ar` nunca es la web de una inmobiliaria; y el directorio al listado.
 - `marcelo zanni` (wordpress, Divi): CPT `propiedad` vacío; las propiedades son **posts** con
   categorías estándar `venta`(13)/`alquiler`(1) + tipo (casas, departamentos…), sin taxonomía
