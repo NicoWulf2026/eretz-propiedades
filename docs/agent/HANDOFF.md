@@ -143,6 +143,8 @@ Historia: Git (`git log --since=2026-09-25`).
   navegador ni /motor/). Acción externa: pedir habilitación a argencasas o dejarlas BLOCKED_EXTERNAL.
 - Guardia de título repetido en el runner: descartada con medición.
 - `armanino`: API de Tokko con clave embebida en su bundle → **no se usan claves ajenas**.
+- Plataforma **SOM** (`amud`, 27-09): catálogo solo por API externa `apmovil.som.com.ar` con token
+  embebido en `js/script.js` → misma regla, no se usa. Diferida firmada.
 - `estela d onofrio`: el certificador tiene respaldo a `generico`; el diagnóstico liviano no.
 - `building`: las 220 «fichas» imagen del 21-09 ya no se enumeran con el código de hoy (81 URLs, 3/3 ok).
 - `corporacion`, `cannone`: ya resueltos por el código de hoy; se recertifican solos.
