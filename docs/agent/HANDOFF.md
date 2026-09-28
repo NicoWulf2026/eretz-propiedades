@@ -156,7 +156,7 @@ Historia: Git (`git log --since=2026-09-25`).
 2. **NEEDS_FIX no idempotentes** (21): contador de visitas, título Xintel y similares RealHomes
    RESUELTOS; `dorsoli` ya estable con el código de hoy. Quedan por mirar: `blangiforti` (precio e
    imágenes entre corridas), `brikel`/`di maria`/`cocucci` (tokko, inventario o descripción).
-3. **Lote `generico` de radio chico** (agrupar): `cometto` (categorías `propiedades_ver2.php`);
+3. **Lote `generico` de radio chico** (agrupar; ver § «28-09 mediodía» para lo hecho y lo diagnosticado): `cometto` (categorías `propiedades_ver2.php`);
    `del parque` (`og:type=article`; solo 1 ficha pasaría: no se afloja la guarda);
    `bunader` (enumera listados); `fios`
    (`.show-more`, foto ajena); precio accesorio `caruso`; tipo de respaldo leído del menú
@@ -346,6 +346,36 @@ NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DI
 - `maure inmobiliaria` (paró generico 09:02 del 28-09, diferida firmada con radio AGENCIA): 6 de 21
   `/emprendimientos/` sin cuerpo legible; las otras 15, de la misma plantilla, se leyeron. El sitio
   respondía 503 (mantenimiento) durante todo el diagnóstico → no reproducible. Revisar esas 6 cuando vuelva.
+
+## 28-09 mediodía (lote `generico` + auditor, `021907caea`; desarrollado en el worktree `D:\INMO CAPITAL\eretz-dev`)
+Se desarrolla en un worktree aparte (rama local `dev/lote-2026-09-28`) para que editar archivos de la
+huella no frene a los workers; el lote se aplica y se commitea de una vez en la rama de trabajo.
+- `farias`: «U$D40.000» no era precio para la señal del auditor → la franja «Alquilado» exigía
+  «alquiler» a una venta. La señal acepta `U$`, `U$$`, `U$S`, `U$D` (como el extractor).
+- `matias sosa` (plantilla Coding & Company): cierra todo con espacio (`</h1 >`) → título del
+  `<title>`, descripción del meta y fotos de «Otras propiedades» al azar (36/42 no idempotentes).
+  `con_cierres_normales` + corte en `<hN>Otras propiedades</hN>`. «semicubiertos» ya no es cubierta.
+- `guillermo rodriguez`: galería solo como `background-image` en `style` (240 fichas descartadas
+  por forma) y título «Inmobiliaria | Guillermo Rodriguez» no reconocido como el del sitio → 9
+  categorías `propiedades.php?tipo=N` guardadas COMO propiedades. Y cada ficha llega con dos URLs
+  (`?id=N` y `?id=N&tipo=…&operacion=…`): `fetch_listing` descarta la larga solo si la corta también
+  se enumeró (radio: 0 URLs guardadas en los paquetes tienen esos parámetros).
+- Radio medido: A/B de `normalize` + señales sobre una ficha por agencia (189, HTML cacheado): solo
+  cambian esas dos agencias; señal de precio/moneda nueva en 7 agencias, todas con el precio ya
+  extraído (abril va por la API Xintel). `</tag >` en 3 de 234 sitios (feijo y agostinelli sin cambio).
+- NO entró: subir `Descargador.limite_bytes` (800 KB). Wix pesa 0,9–1,9 MB → `lucas liprandi` (71
+  fichas) y `dib kai` fallan con `OutboundResponseError`. Con 4 MB bajan, pero `generico` lee Wix mal
+  («SUP. TERRENO 60 HABITACIONES 2» → 60 dormitorios, 60 baños): hacerlo junto con un lector Wix.
+- Paro 11:23 FAMILIA tokko `mechi cogorno`: la ficha 8699134 del listado sirve la plantilla vacía
+  (de la fuente). Diferida firmada 11:46 radio AGENCIA.
+- Sin defecto nuestro: `maspero` (la fuente pasó de 67 a 68 entre corridas); `martinez negocios
+  inmobiliarios` y `martinez propiedades` → mismo dominio `inmueblesmartinez.com.ar` con HTTP 500
+  (Mod_Security). **Dos agencias con el mismo dominio: revisar identidad** (no se tocó).
+- Próximos (diagnosticados, sin arreglar): `cometto` — fichas `inmueble_ver.php?recordID=N`, las
+  categorías `propiedades_ver2.php?inmueble=N & tipoope=M` (con espacios) no se recorren como
+  catálogo; `farina` (wordpress, 979) — `property_city` con dos términos (`centro`, `rosario`) se
+  pega «Centro Rosario» (119 sin ciudad): elegir el término que resuelve como localidad; 133 tipos
+  «taxonomía no mapeada»; 12 sin operación son emprendimientos (estado, no operación: no inventar).
 
 ## Decisiones de producto abiertas (no técnicas)
 - **robots.txt**: el pipeline no lo consulta. Medido 26-09 00:1x: 283 agencias certificadas o en

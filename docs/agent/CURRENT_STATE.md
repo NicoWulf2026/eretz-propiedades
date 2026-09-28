@@ -3,7 +3,7 @@
 Estado VIGENTE, no bitácora. La historia está en Git (`git log`; la bitácora anterior de este
 archivo: `git show 6ee927bb80:docs/agent/CURRENT_STATE.md`). `database_writes: 0` en todo.
 
-**Actualizado:** 2026-09-26 08:15 · **Rama:** `handoff/codex-unificacion-2026-09-18` (push solo acá)
+**Actualizado:** 2026-09-28 12:4x · **Rama:** `handoff/codex-unificacion-2026-09-18` (push solo acá)
 **Fase:** certificación/recertificación continua + calidad de lo servido + preparación productiva.
 
 ## Cola de certificación
@@ -41,7 +41,8 @@ shared/coherencia (fotos WhatsApp-Image), shared/source_policy (organismos/guía
 
 ## Calidad
 - Regression Gate (28-09 09:5x): 461 agencias recertificadas, 0 pendientes (77 firmadas: echesortu 42 fotos WhatsApp-Image → DEFECTO_ARREGLADO en e9e6c7f709, 1 CORRECCION «BAÑO 3ER PISO»; ente 34 dormitorios/baños → DEFECTO_PENDIENTE, ver HANDOFF). Gate anterior 06:4x: 448, 280 firmadas.
-- Suite completa (28-09 10:4x): 3.421 passed.
+- Suite completa (28-09 12:3x, lote `021907caea`): 3.383 + 298 re-ejecutados, 0 fallas reales
+  (47 FileNotFoundError por un corte transitorio del disco D: a las 12:1x).
 
 ## Snapshot de la API local
 - Servida: `api_snapshot_v2` del 08-09 (`D:\INMO CAPITAL\ERETZ_API_CONTRACT\`). Reemplazarla = deploy.
