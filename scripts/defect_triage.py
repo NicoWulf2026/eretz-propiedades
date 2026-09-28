@@ -704,6 +704,32 @@ def clasificar(resultado: dict[str, Any]) -> dict[str, Any]:
                 f"{fallidas_2} fichas, {nuevas} sobran y la primera no pudo "
                 f"bajar {fallidas_1}. Fallaron fichas distintas en cada "
                 f"corrida: no se movio el catalogo, se cruzaron dos fallas")
+        # Lo mismo cuando lo que no se leyo quedo SIN PEDIR porque se acabo
+        # el presupuesto de tiempo, y el conector lo dejo contado.
+        #
+        # `gianini` (2026-09-27, 1033 fichas) y `lopez baena` (2026-09-28,
+        # 1373) pararon `generico` y `tokko` enteras por «inventario
+        # inestable»: las dos corridas enumeraron exactamente lo mismo y las
+        # dos agotaron los 5400 s, una despues de 822 fichas y la otra de 546.
+        # Lo que «falta» en la segunda es lo que ella nunca llego a pedir. El
+        # catalogo no se movio: se corto la lectura, y el propio runner lo
+        # anoto en `detalles_sin_pedir`.
+        #
+        # No se certifica nada: la agencia sigue en NEEDS_FIX. Cambia el
+        # radio: un sitio lento con un catalogo grande es de esta agencia.
+        sin_pedir_1 = int(uno.get("detalles_sin_pedir") or 0)
+        sin_pedir_2 = int(dos.get("detalles_sin_pedir") or 0)
+        if (misma_enumeracion
+                and (uno.get("presupuesto_agotado") or dos.get("presupuesto_agotado"))
+                and faltantes <= fallidas_2 + sin_pedir_2
+                and nuevas <= fallidas_1 + sin_pedir_1):
+            return _veredicto(
+                CONTINUE, resultado, "sitio_lento", RADIO_AGENCIA,
+                f"las dos corridas enumeraron {uno.get('enumeradas')} y se "
+                f"agoto el presupuesto de tiempo antes de leerlas todas "
+                f"({sin_pedir_1} y {sin_pedir_2} fichas sin pedir); las "
+                f"{faltantes} que faltan en la segunda son las que no llego a "
+                f"pedir, no un inventario que se mueve")
         movido = _catalogo_que_cambio_la_fuente(resultado, comparacion)
         if movido:
             return movido

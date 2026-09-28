@@ -719,3 +719,37 @@ def test_MUERDE_si_no_enumeramos_todo_lo_declarado_sigue_parando():
         run2={"estado": "OK", "enumeradas": 14, "total_declarado": 16,
               "detalles_fallidos": 0, "errores_por_etapa": {}}))
     assert t["decision"] == STOP
+
+
+def test_MUERDE_presupuesto_agotado_en_las_dos_corridas_no_para_la_familia():
+    """`gianini`, 2026-09-27: 1033 enumeradas dos veces, las dos corridas
+    agotaron los 5400 s (822 y 546 leidas). Lo que falta en la segunda es lo
+    que no llego a pedir."""
+    t = clasificar(resultado(
+        reasons=["run inventories differ", "second run is not idempotent"],
+        comparison={"identity_collisions": 0, "missing_in_run2": 300,
+                    "new_in_run2": 24, "run1_urls": 822, "run2_urls": 546},
+        run1={"estado": "PRESUPUESTO_AGOTADO", "enumeradas": 1033,
+              "presupuesto_agotado": True, "detalles_sin_pedir": 211,
+              "detalles_fallidos": 0, "errores_por_etapa": {}},
+        run2={"estado": "PRESUPUESTO_AGOTADO", "enumeradas": 1033,
+              "presupuesto_agotado": True, "detalles_sin_pedir": 487,
+              "detalles_fallidos": 0, "errores_por_etapa": {}}))
+    assert t["decision"] == CONTINUE
+    assert t["radio_estimado"] == RADIO_AGENCIA
+    assert t["componente_sospechoso"] == "sitio_lento"
+
+
+def test_presupuesto_agotado_no_tapa_faltantes_que_no_explica():
+    """Si faltan MAS de las que quedaron sin pedir, el presupuesto no lo
+    explica y sigue siendo inventario inestable."""
+    t = clasificar(resultado(
+        reasons=["run inventories differ"],
+        comparison={"identity_collisions": 0, "missing_in_run2": 300,
+                    "new_in_run2": 0, "run1_urls": 822, "run2_urls": 522},
+        run1={"estado": "OK", "enumeradas": 1033, "detalles_fallidos": 0,
+              "errores_por_etapa": {}},
+        run2={"estado": "PRESUPUESTO_AGOTADO", "enumeradas": 1033,
+              "presupuesto_agotado": True, "detalles_sin_pedir": 10,
+              "detalles_fallidos": 0, "errores_por_etapa": {}}))
+    assert t["componente_sospechoso"] != "sitio_lento"

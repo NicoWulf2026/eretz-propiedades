@@ -259,6 +259,10 @@ Historia: Git (`git log --since=2026-09-25`).
 - 00:17 paro FAMILIA tokko `lopez baena` (1377 declaradas): igual que gianini — ambas corridas
   enumeraron 1373; run1 leyó 1372 en 51 min, run2 recibió un Bloqueado, cedió ritmo y agotó el
   presupuesto en 878. Diferida firmada. Ya son dos catálogos >1000 que el presupuesto no alcanza.
+  28-09: mejora (1) HECHA — el triaje lee «misma enumeración + presupuesto agotado + lo que falta cabe en lo
+  no pedido» como `sitio_lento` radio AGENCIA (gianini re-clasifica así). `lopez baena` seguiría parando,
+  pero por otra causa real: `paginacion_interrumpida` en ambas corridas (tokko.py, error de red/bloqueo en
+  un barrido; 1373/1377). Ese paro conservador se mantiene. (2) sigue siendo decisión operativa.
 
 - 01:38 paro FAMILIA generico `los cerros` (Next.js, Bariloche; 663 imágenes compartidas): el sitio
   responde INTERMITENTEMENTE con 200 y `<h1>Propiedad no encontrada</h1>` (20 KB en vez de 200 KB) y
