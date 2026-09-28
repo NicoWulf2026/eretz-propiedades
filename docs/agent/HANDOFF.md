@@ -421,9 +421,14 @@ huella no frene a los workers; el lote se aplica y se commitea de una vez en la 
   (relleno, bien rechazado) y montos en la prosa: no es defecto del extractor.
 
 ## 28-09 tarde: automatización, identidad, exterior, Regression Gate
-- ERETZ AUTOMATION ON/OFF (`3cf30c9844`): ver `docs/agent/ERETZ_AUTOMATION.md`. Probado ON (tareas
-  corren solas, resultado 0, sin popups) y OFF (tareas deshabilitadas, relanzador y runner se niegan,
-  workers cierran su agencia; empezadas 14:04/14:07, siguen a las 15:0x).
+- ERETZ AUTOMATION ON/OFF (`3cf30c9844`): ver `docs/agent/ERETZ_AUTOMATION.md`. Probado en la PC:
+  ON → tareas corren solas cada 10/5 min con resultado 0, sin popups (ni msg/wscript/mshta).
+  OFF 14:19 → tareas Deshabilitado sin próxima ejecución; relanzador «OFF, nada que lanzar»; un
+  worker a mano «no se arranca»; el worker 1 cerró `migone` y salió por la bandera APAGADO
+  (15:3x), el 0 cerró `metro` y salió entre agencias; nada los relanzó.
+  ON 15:40 con `ERETZ_AUTOMATION_ON.cmd` (exit 0) → relanzó los que faltaban; dos pasadas casi
+  simultáneas lanzaron dos veces el worker 0 y el cerrojo del runner rechazó al segundo: máximo 2.
+  Queda **ON**.
 - Identidad compartida → `IDENTITY_REVIEW`; exterior → `PRODUCT_DECISION_PENDING` (`8a8d0b193f`).
 - Regression Gate 15h: 474 agencias, 34 pendientes, todas `berardi` (WPResidence): coordenada en
   `data-cur_lat/long` sin leer y «Similar Listings» dentro de la ficha (superficie 94 en todas)
