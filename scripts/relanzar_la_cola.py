@@ -541,6 +541,12 @@ def plan(salida: Path, anotar: bool = False) -> tuple[list[int], str, list[str]]
     demas avanzan. Un paro COMPARTIDO, uno sin conector o una bandera
     ilegible siguen deteniendo todo.
     """
+    # El interruptor general va primero y no tiene excepciones: con ERETZ
+    # AUTOMATION OFF no se lanza nada, haya paro o no (`interruptor_eretz`).
+    from interruptor_eretz import apagada
+    apagado = apagada(salida)
+    if apagado:
+        return [], apagado, []
     bloqueadas = {str(f["conector"]).strip().lower()
                   for f in familias_pendientes(salida)}
     paro = paro_vigente(salida)

@@ -1,3 +1,6 @@
 @echo off
-cd /d "D:\INMO CAPITAL\eretz-agency"
-python -u scripts\run_agency_certification_queue.py --ready --workers 2 --worker 1 --limit 0 >> "D:\INMO CAPITAL\ERETZ_AGENCY_CERTIFICATION_20260827\cola_w1.log" 2>&1
+REM OBSOLETO (2026-09-28). Lanzaba workers con el codigo viejo de eretz-agency,
+REM sin mirar paros ni el interruptor de apagado. Usar ERETZ_AUTOMATION_ON.cmd:
+REM el relanzador lanza los workers que falten (max 2) y respeta los paros.
+echo Obsoleto: usar ERETZ_AUTOMATION_ON.cmd / ERETZ_AUTOMATION_OFF.cmd (docs\agent\ERETZ_AUTOMATION.md)
+exit /b 1

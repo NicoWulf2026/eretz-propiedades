@@ -1004,7 +1004,17 @@ def main() -> int:
                              "puede repetir. Sirve para que un paro de radio "
                              "FAMILIA deje trabajando al resto de la cola en "
                              "vez de detenerla entera.")
+    parser.add_argument("--ignorar-apagado", action="store_true",
+                        help="correr aunque ERETZ AUTOMATION este en OFF "
+                             "(solo a mano y a sabiendas)")
     args = parser.parse_args()
+    # Con ERETZ AUTOMATION OFF no arranca: el apagado tiene que impedir los
+    # relanzamientos, vengan de una tarea, del relanzador o de un .bat viejo.
+    from scripts.interruptor_eretz import apagada
+    apagado = apagada(Path(args.output))
+    if apagado and not args.ignorar_apagado:
+        print(f"{apagado}: no se arranca. Encender con ERETZ_AUTOMATION_ON.cmd.")
+        return 0
     if not 1 <= args.workers <= WORKERS_MAXIMO:
         raise SystemExit(
             f"--workers tiene que estar entre 1 y {WORKERS_MAXIMO}: mas procesos "
