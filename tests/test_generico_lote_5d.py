@@ -921,3 +921,9 @@ def test_contenedor_de_descripcion_vacio_no_revienta():
                inmobiliaria_id=1)
     c.normalize({"source_url": "https://p.test/propiedad/casa-en-venta-centro-123/",
                  "source_listing_id": "123"}, f)
+
+
+def test_seccion_de_detalle_con_id_es_ficha():
+    assert GenericoConnector._es_ficha_url(
+        "https://www.vacispropiedades.com.ar/comprar_detalle_vacis/216/9_de_julio_306")
+    assert not GenericoConnector._es_ficha_url("https://www.vacispropiedades.com.ar/comprar_vacis")

@@ -167,6 +167,11 @@ RE_URL_CON_TOKEN = re.compile(
     r"(?:<img\b[^<>]*?src=[\"']?\s*)?https?://\S*?eyJ[A-Za-z0-9_\-+/=%]{40,}[^\s\"'<>]*"
     r"(?:[\"']?\s*/?>)?")
 
+# Una seccion de DETALLE con id numerico y slug: /comprar_detalle_vacis/216/
+# 9_de_julio_306 (`diego vacis`). La palabra «detalle» + id es la forma de una
+# ficha; el listado (/comprar_vacis) no la tiene.
+RE_FICHA_DETALLE = re.compile(r"/[a-z0-9_-]*detalle[a-z0-9_-]*/\d{1,8}/[^/?#]+/?$", re.I)
+
 RE_GIF = re.compile(r"\.gif(?:[?#]|$)", re.I)
 
 RE_FICHA_CON_ID = re.compile(
@@ -1959,6 +1964,7 @@ class GenericoConnector(Connector):
         return not RE_NO_FICHA.search(ruta) and bool(
             RE_FICHA.search(u) or RE_FICHA_ANIDADA.search(ruta)
             or RE_FICHA_CON_ID.search(u)
+            or RE_FICHA_DETALLE.search(ruta)
             or (ficha_amaira_en_query(u) is not None and "ficha=" in ficha_amaira_en_query(u))
             or RE_FICHA_RAIZ.search(ruta)
             or RE_FICHA_OPERACION.search(ruta)
@@ -4732,7 +4738,7 @@ class GenericoConnector(Connector):
         # las 4 destacadas de la portada de 19.
         patron = re.compile(
             r"(?:listado|propiedades|properties|inmuebles|emprendimientos|catalogo|"
-            r"resultados|ventas|alquileres|buscar)", re.I)
+            r"resultados|ventas|alquileres|buscar|comprar|alquilar)", re.I)
         def sin_www(u: str) -> str:
             return re.sub(r"^(https?://)www\.", r"\1", u, flags=re.I)
 

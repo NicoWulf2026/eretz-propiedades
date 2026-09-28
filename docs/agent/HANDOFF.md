@@ -277,6 +277,10 @@ Historia: Git (`git log --since=2026-09-25`).
   caja vacía. Guardado con `or ""`. El certificador se traga el traceback: para verlo, llamar
   `agency_certifier.run_once(...)` directo (scratch `run_once_ponce.py`). Diferida firmada.
 
+- 05:20 paro FAMILIA generico `diego vacis`: fichas `/comprar_detalle_vacis/<id>/<slug>` no se
+  reconocían (run1 SIN_INVENTARIO, run2 1 candidata rechazada) → `RE_FICHA_DETALLE`; `comprar|alquilar`
+  cuentan como catálogo. En vivo: 13 fichas estables. Diferida firmada. `constant` ya CERTIFIED_COMPLETE.
+
 ## Lote pendiente para agrupar (diagnosticado 27-09 11:4x, sin tocar: cada commit frena la cola)
 NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DISCOVERY. Muestra de 9:
 - **Identidad equivocada con READY** (tocar `agency_web_discovery.py` = `shared/source_policy`,
