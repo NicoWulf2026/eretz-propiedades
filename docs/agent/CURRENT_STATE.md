@@ -31,6 +31,8 @@ archivo: `git show 6ee927bb80:docs/agent/CURRENT_STATE.md`). `database_writes: 0
 
 Los cambios del 25-09 (source_policy, base, generico, wasi) invalidaron certificaciones: la
 rotación las recertifica sola.
+28-09: recertificación completa en curso desde 07:29 (shared/certifier); en el mismo ciclo entraron
+shared/coherencia (fotos WhatsApp-Image), shared/source_policy (organismos/guías/revistas) y `U$` como USD.
 
 ## Aviso operativo (27-09 10:3x)
 - Las tareas programadas `ERETZ_relanzador` y del vigilante **no existen** en Windows (último
@@ -39,7 +41,7 @@ rotación las recertifica sola.
 
 ## Calidad
 - Regression Gate (28-09 09:5x): 461 agencias recertificadas, 0 pendientes (77 firmadas: echesortu 42 fotos WhatsApp-Image → DEFECTO_ARREGLADO en e9e6c7f709, 1 CORRECCION «BAÑO 3ER PISO»; ente 34 dormitorios/baños → DEFECTO_PENDIENTE, ver HANDOFF). Gate anterior 06:4x: 448, 280 firmadas.
-- Suite completa (28-09 09:5x): 3.419 passed.
+- Suite completa (28-09 10:4x): 3.421 passed.
 
 ## Snapshot de la API local
 - Servida: `api_snapshot_v2` del 08-09 (`D:\INMO CAPITAL\ERETZ_API_CONTRACT\`). Reemplazarla = deploy.
