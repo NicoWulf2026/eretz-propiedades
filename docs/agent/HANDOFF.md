@@ -312,8 +312,11 @@ NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DI
   («Garages 2») y `_es_tabla_estructurada` corta la caída a la prosa, donde están «3 dormitorios …».
   Probado: leer la prosa cuando la tabla no tiene la celda del rótulo rompe
   `test_un_titulo_de_varias_unidades_no_dice_los_ambientes` (lee «Edificio en block de 3 ambientes» del
-  título). Revertido. Camino: leer la prosa del CUERPO sin el título, o solo dormitorios/baños. Firmado
-  en el Gate como lectura pendiente.
+  título). Revertido. 2º intento (prosa del cuerpo sin encabezados): en vivo ente 136/136 iguales a la
+  línea base + 2 nuevos, control 0 cambios, PERO rompe `test_la_prosa_no_prueba_un_atributo_que_la_ficha_tabula`:
+  decisión documentada — en una ficha tabulada la prosa describe OTRA cosa (monoambiente de alagna: «1 y 2
+  dormitorios» del edificio; terreno: la casa a demoler). Revertido. Es un conflicto de producto, no un
+  bug: ¿la prosa vale cuando la tabla no tiene la fila? Decidir antes de tocar. Firmado DEFECTO_PENDIENTE.
 - **`U$` / `U$$` se leen como ARS** (`base.detectar_moneda`: sin clave `u$`, gana `$`). Medido 28-09: 4 agencias
   certificadas (coldwell banker andes, fdc, leandro procopio, kerlin) + 2 fichas de marcelo zanni. Es
   `shared/base` → invalida TODAS las certificaciones: va en el lote planificado con `source_policy`.
@@ -337,6 +340,8 @@ NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DI
   el mismo host (`api_destacadas.php?page=&limit=&offset=` → `{meta, objects}`), como alta.com.ar.
   Su respuesta expone la clave de la API de Tokko en `meta.next`: **no usarla** (regla armanino);
   solo el proxy del sitio. Falta el endpoint del listado completo (no solo destacadas).
+- `estudio uno` (paró tokko 10:04 del 28-09, diferida firmada, radio AGENCIA): 304 declaradas, 296/295
+  enumeradas (Tokko reordena entre pedidos); 1 de borde. Mismo 296/304 que el 25-09 (BEST_AVAILABLE).
 - `maure inmobiliaria` (paró generico 09:02 del 28-09, diferida firmada con radio AGENCIA): 6 de 21
   `/emprendimientos/` sin cuerpo legible; las otras 15, de la misma plantilla, se leyeron. El sitio
   respondía 503 (mantenimiento) durante todo el diagnóstico → no reproducible. Revisar esas 6 cuando vuelva.
