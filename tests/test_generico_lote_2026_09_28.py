@@ -208,3 +208,19 @@ def test_MUERDE_similar_listings_de_wpresidence_no_es_la_ficha():
     from connectors.generico import RE_COORD
     m = RE_COORD.search(principal)
     assert m and (m.group(1), m.group(2)) == ("-34.581675", "-58.4988901")
+
+
+def test_MUERDE_la_operacion_pegada_al_precio_gana_al_menu():
+    """`lurati`: «Propiedades Venta Alquiler Tasacion Sobre nosotros Contacto Lote
+    Unico USD 22.000 - EN VENTA». El menu cae dentro de la ventana del precio;
+    la operacion pegada al precio es la del aviso."""
+    from connectors.generico import operacion_junto_al_precio as op
+    texto = ("BUSCAR Propiedades Venta Alquiler Tasacion Sobre nosotros Contacto "
+             "Lote Unico USD 22.000 - EN VENTA El Damasco 1057 - Alvear, Rosario")
+    assert op(texto, 22000) == "venta"
+    # Un fondo de comercio con alquiler al lado del precio: no se elige.
+    fondo = "Valor del fondo de comercio: U$S 8.000 Alquiler mensual: $760.000"
+    assert op(fondo + " En venta U$S 8.000", 8000) is None
+    # Las formas medidas siguen igual.
+    assert op("En venta U$S 440.000 casa", 440000) == "venta"
+    assert op("USD 30.000 En venta", 30000) == "venta"

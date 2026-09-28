@@ -666,12 +666,30 @@ def operacion_junto_al_precio(texto: str, precio: Any) -> str | None:
         return None
     vistas: set[str] = set()
     for m in patron.finditer(texto):
-        ventana = texto[max(0, m.start() - CERCA_DEL_PRECIO):
-                        m.end() + CERCA_DEL_PRECIO]
-        if RE_ALQUILER_CERCA.search(ventana):
+        inicio = max(0, m.start() - CERCA_DEL_PRECIO)
+        ventana = texto[inicio:m.end() + CERCA_DEL_PRECIO]
+        precio_en_ventana = (m.start() - inicio, m.end() - inicio)
+
+        def distancia(regex: "re.Pattern") -> int | None:
+            lejos = [min(abs(x.start() - precio_en_ventana[1]),
+                         abs(precio_en_ventana[0] - x.end()))
+                     for x in regex.finditer(ventana)]
+            return min(lejos) if lejos else None
+
+        alquiler, venta = distancia(RE_ALQUILER_CERCA), distancia(RE_VENTA_CERCA)
+        # Las dos en la ventana: gana la PEGADA al precio si la otra esta
+        # lejos. `lurati` publica «USD 22.000 - EN VENTA» con el menu «Venta
+        # Alquiler» 57 caracteres antes: el menu no es el aviso. Si las dos
+        # estan cerca, la pagina no dice cual es y no se elige.
+        if alquiler is not None and venta is not None:
+            if venta <= 15 and alquiler >= 40:
+                alquiler = None
+            elif alquiler <= 15 and venta >= 40:
+                venta = None
+        if alquiler is not None:
             vistas.add("alquiler_temporario"
                        if RE_TEMPORARIO_CERCA.search(ventana) else "alquiler")
-        if RE_VENTA_CERCA.search(ventana):
+        if venta is not None:
             vistas.add("venta")
     return vistas.pop() if len(vistas) == 1 else None
 
