@@ -468,6 +468,15 @@ def _id_de_ficha_en_la_query(url: str) -> bool:
                           partes.query, re.I))
 
 
+# Elementor + JetEngine: desde el encabezado «Descripcion», el primer campo
+# dinamico cuyo contenido es prosa (sin cruzar su `</div>`). Ver `esnal`.
+RE_DESCRIPCION_JETENGINE = re.compile(
+    r"<h[1-6][^>]*>\s*Descripci(?:[oó]|&oacute;)n\s*\.?\s*</h[1-6]>"
+    r".{0,10000}?"
+    r"class=\"jet-listing-dynamic-field__content\"[^>]*>"
+    r"((?:(?!</div>).){120,4000})</div>",
+    re.S | re.I)
+
 # `background-image: url(…)` dentro de un atributo `style` del elemento -no de
 # una hoja <style>, donde viven los banners del sitio-, con o sin comillas.
 RE_FONDO_CSS = re.compile(
@@ -2979,6 +2988,16 @@ class GenericoConnector(Connector):
                     sopa.decompose()
                 descripcion = visible if visible and len(visible) >= 40 else None
         if not descripcion:
+            # Elementor + JetEngine (`esnal`, 39 de 48 sin descripcion): el
+            # campo bajo «Descripcion» puede venir VACIO y el texto aparecer
+            # unos bloques mas abajo como otro campo dinamico. Se toma el primer
+            # campo JetEngine que es PROSA (>=120): los de atributos son cortos
+            # («Baños: 1», «Tipo de Propiedad: Departamento»).
+            jet = RE_DESCRIPCION_JETENGINE.search(principal)
+            if jet:
+                visible = limpiar(_texto(jet.group(1)))
+                descripcion = visible if visible and len(visible) >= 120 else None
+        if not descripcion:
             # Terravirtual (`blangiforti`, 174 fichas): el encabezado es
             # «<strong>Información</strong> <small>de la Propiedad</small>» y el
             # texto va en el primer <p> que le sigue. Sin leerlo, la ficha caia
@@ -3172,6 +3191,12 @@ class GenericoConnector(Connector):
                     and self._rotulo_compuesto(marcado_campos, etiqueta)
                     and nombre not in fuera):
                 fuera.append(nombre)
+            # «+5 Dormitorios» (`esnal`, un terreno con casa vieja) es una cota
+            # inferior, no un valor: no se afirma, y se dice que se rechazo.
+            elif (campos.get(nombre) is None
+                    and re.search(rf"\+\s*\d{{1,2}}\s*(?:{etiqueta})\b",
+                                  texto_campos or "", re.I)):
+                fuera.append(f"{nombre}:cota_inferior")
         lat, lon = campos["latitud"], campos["longitud"]
         precio, moneda = campos["precio"], campos["moneda"]
         descartados = ({"atributos_descartados": ",".join(fuera)} if fuera else {})
