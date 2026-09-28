@@ -70,7 +70,9 @@ from scripts.property_freshest import (CAMPOS_FUSIONABLES,  # noqa: E402
                                        fusionar, mas_frescas)
 from scripts.run_rollout import (FRACCION_COMPARTIDA,  # noqa: E402
                                  MINIMO_PARA_JUZGAR)
-from connectors.base import RE_TIPO_ACCESORIO, detectar_tipo  # noqa: E402
+from connectors.base import RE_TIPO_ACCESORIO, detectar_tipo, geografia  # noqa: E402
+from connectors.exterior import (POLITICA_PUBLICA, evidencia_de_exterior,  # noqa: E402
+                                 publicable)
 import re  # noqa: E402
 import unicodedata  # noqa: E402
 
@@ -284,6 +286,57 @@ def main() -> int:
     return 0
 
 
+def _publicable_en_argentina(cruda: dict[str, Any], fresca: dict[str, Any] | None) -> bool:
+    """False para lo publicado fuera de Argentina (marcado o con evidencia)."""
+    if not publicable((fresca or {}).get("extra")) or not publicable(cruda.get("extra")):
+        return False
+    try:
+        catalogo = geografia()
+        es_argentina = lambda texto: catalogo.resolver_localidad(texto).resuelta  # noqa: E731
+    except (OSError, ValueError):
+        es_argentina = lambda texto: True  # noqa: E731  sin catalogo no se afirma nada
+    extra = cruda.get("extra") if isinstance(cruda.get("extra"), dict) else {}
+    return not evidencia_de_exterior(
+        cruda.get("titulo"), cruda.get("ciudad"), cruda.get("barrio"),
+        extra.get("pais_publicado") or extra.get("pais"), es_argentina)
+
+
+CABA = "Ciudad Autónoma de Buenos Aires"
+
+
+def _geo_de_la_extraccion(g: dict[str, Any] | None, fresca: dict[str, Any] | None
+                          ) -> tuple[dict[str, Any] | None, str | None]:
+    """La cobertura geo (21-09) corregida por lo que decidio la extraccion fresca.
+
+    - Un conflicto registrado por la extraccion mas nueva manda sobre la
+      cobertura vieja TAMBIEN en cierres parciales, cuyo `extra` no se fusiona:
+      `blanco` servia 53 fichas «CABA» + provincia «Buenos Aires», sin
+      coordenadas, como provincia de Buenos Aires.
+    - CABA confirmada por contencion en el poligono oficial del IGN
+      (`extra.provincia_por_poligono`) levanta el conflicto de texto que la
+      cobertura habia registrado. Solo la provincia: la comuna no se deduce.
+    """
+    extra = (fresca or {}).get("extra") or {}
+    conflicto = extra.get("geo_conflicto")
+    if isinstance(conflicto, dict) and conflicto:
+        if (g or {}).get("estado_geografico") == "GEO_CONFLICT":
+            return g, None
+        return dict(g or {}, estado_geografico="GEO_CONFLICT", conflicto=conflicto), "conflicto_fresco"
+    poligono = extra.get("provincia_por_poligono")
+    if (isinstance(poligono, dict) and poligono.get("provincia") == CABA
+            and (g or {}).get("estado_geografico") == "GEO_CONFLICT"):
+        return dict(
+            g or {}, localidad_canonica=None, localidad_id=None,
+            departamento_canonico=None, municipio_canonico=None,
+            provincia_canonica=CABA,
+            procedencia_de_dimensiones={"provincia": "GEO_GEOMETRY"},
+            area_busqueda={"nivel": "PROVINCIA", "nombre": CABA, "id": None,
+                           "origen": "provincia"},
+            geometria={"provincia": CABA, "fuente": (poligono.get("geometria") or {}).get("fuente")},
+            estado_geografico=None, conflicto=None), "caba_por_poligono"
+    return g, None
+
+
 def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
     # Frecuencia por agencia para revisión; repetir no demuestra ser un logo.
     apariciones: dict[str, Counter] = defaultdict(Counter)
@@ -359,6 +412,8 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
     cocheras_incoherentes = 0
     textos_limpiados = 0
     ajenas_omitidas = 0
+    exterior_no_publicadas = 0
+    correcciones_geo: Counter = Counter()
     imagenes_compartidas = 0
     imagenes_repetidas_sin_evidencia = 0
     fichas_sin_foto_propia = 0
@@ -382,6 +437,13 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
         canonical = cruda.get("canonical_agency_id")
         if canonical in ajenas:
             ajenas_omitidas += 1
+            continue
+        # Politica publica ARGENTINA_ONLY (decidida el 28-09): lo del exterior
+        # se conserva en paquetes y canonico, y no se sirve. Decide la marca de
+        # la extraccion y, para filas que todavia no se recertificaron con
+        # ella, la misma evidencia conservadora de `connectors.exterior`.
+        if not _publicable_en_argentina(cruda, fresca):
+            exterior_no_publicadas += 1
             continue
         # Sin titulo, la descripcion se conserva: el contrato promete que
         # nunca faltan las dos, y una fila sin ningun texto no se entiende.
@@ -433,7 +495,9 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
             # Se queda sin fotos, no sin propiedad: lo que tenia no era suyo.
             fichas_sin_foto_propia += 1
         cruda = dict(cruda, imagenes=propias)
-        g = geo.get(hash_dedup)
+        g, correccion_geo = _geo_de_la_extraccion(geo.get(hash_dedup), fresca)
+        if correccion_geo:
+            correcciones_geo[correccion_geo] += 1
         # The stored gate may predate this merge. It cannot promise a price or
         # operation scope that the actual row no longer supports.
         actual_scopes, _ = alcances(cruda, g)
@@ -493,6 +557,10 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
         "contrato_api_version": CONTRATO_API_VERSION,
         "propiedades": filas,
         "omitidas_por_web_ajena": ajenas_omitidas,
+        "exterior_conservadas_no_publicadas": exterior_no_publicadas,
+        "politica_publica": POLITICA_PUBLICA,
+        "geo_conflictos_de_la_extraccion_fresca": correcciones_geo["conflicto_fresco"],
+        "caba_confirmada_por_poligono": correcciones_geo["caba_por_poligono"],
         "imagenes_compartidas_descartadas": imagenes_compartidas,
         "descripciones_del_sitio_descartadas": descripciones_del_sitio,
         "titulos_del_sitio_descartados": titulos_del_sitio,

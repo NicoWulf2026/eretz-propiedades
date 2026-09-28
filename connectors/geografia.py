@@ -64,6 +64,8 @@ NORMALIZADA_CANONICA = "CANONICAL_NORMALIZED"
 APOYADA_EN_COORDENADA = "COORDINATE_SUPPORTED"
 DESCONOCIDA = "UNKNOWN"
 PROVINCE_CONFLICT_REASON = "la provincia declarada contradice al catalogo"
+CABA_POR_POLIGONO_REASON = ("provincia declarada 'Buenos Aires' desempatada: la "
+                            "coordenada cae dentro del poligono oficial de CABA (IGN)")
 
 
 def geografia_publicable(geo: dict[str, Any] | None) -> dict[str, Any]:
@@ -417,6 +419,29 @@ class Geografia:
                     return destino.provincia
         return None
 
+    @staticmethod
+    def _caba_confirmada_por_poligono(entidad: Entidad, provincia: str,
+                                      lat: Any, lon: Any) -> bool:
+        """CABA nombrada + provincia «Buenos Aires»: solo la geometria desempata.
+
+        «Buenos Aires» a secas es el nombre de la provincia Y el de la ciudad,
+        y hay plantillas que lo ponen en el campo provincia de avisos portenos
+        (`cantale`, `agostinelli`, `blanco`: 99 fichas medidas el 28-09). Pero
+        tambien hay avisos del conurbano con «CABA» de plantilla, y el
+        conurbano rodea a la Ciudad: ni un radio ni un centroide separan
+        Avellaneda de Barracas.
+
+        Por eso la unica evidencia aceptada es la CONTENCION de la coordenada
+        en el poligono oficial de CABA (IGN), lejos del limite. Sin coordenada,
+        afuera, o sobre la frontera, el conflicto se mantiene (fail-closed).
+        Cualquier otra provincia declarada sigue contradiciendo.
+        """
+        if (normalizar(entidad.provincia) != "ciudad autonoma de buenos aires"
+                or normalizar(provincia) != "buenos aires"):
+            return False
+        from connectors.poligono_caba import DENTRO, contencion
+        return contencion(lat, lon) == DENTRO
+
     def resolver_localidad(self, texto: Any, *, provincia: str | None = None,
                            departamento: str | None = None,
                            lat: float | None = None,
@@ -439,6 +464,12 @@ class Geografia:
             entidad = resolucion.entidad
             if (entidad is not None and provincia
                     and normalizar(entidad.provincia) != normalizar(provincia)):
+                if self._caba_confirmada_por_poligono(entidad, provincia,
+                                                      lat, lon):
+                    return Resolucion(entidad, POR_COORDENADA,
+                                      APOYADA_EN_COORDENADA,
+                                      resolucion.candidatas,
+                                      CABA_POR_POLIGONO_REASON)
                 return Resolucion(None, CONTRADICHA, DESCONOCIDA,
                                   resolucion.candidatas,
                                   PROVINCE_CONFLICT_REASON)

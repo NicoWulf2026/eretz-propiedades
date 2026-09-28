@@ -872,15 +872,17 @@ class Connector:
     def _marcar_exterior(prop: "PropiedadNormalizada") -> bool:
         """Un inmueble publicado fuera de Argentina: se conserva y se marca.
 
-        Publicarlo o no es una decision de producto pendiente
-        (`PRODUCT_DECISION_PENDING`), asi que la propiedad sigue igual y lo que
-        la fuente publico queda en `extra`. Lo que no se hace es afirmarle
+        Se recolecta y se conserva; no se publica (politica `ARGENTINA_ONLY`,
+        decidida el 28-09: la snapshot lo deja afuera con
+        `exterior.publicable`). La propiedad sigue igual y lo que la fuente
+        publico queda en `extra`. Lo que no se hace es afirmarle
         geografia argentina: sin esto «CIUDAD DE MIAMI» terminaba de barrio en
         la provincia de Buenos Aires (la de la plantilla del sitio) y Punta del
         Este en Santa Fe, Catamarca o Cordoba (la del padron). Medido
         2026-09-28: 30 fichas de 12 agencias. Ver `connectors/exterior.py`.
         """
-        from connectors.exterior import PRODUCT_DECISION_PENDING, evidencia_de_exterior
+        from connectors.exterior import (POLITICA_PUBLICA, PRESERVED_NOT_PUBLISHED,
+                                         evidencia_de_exterior)
         try:
             catalogo = geografia()
             es_argentina = lambda texto: catalogo.resolver_localidad(texto).resuelta  # noqa: E731
@@ -893,7 +895,8 @@ class Connector:
             return False
         prop.extra["pais_publicado"] = evidencia["pais"]
         prop.extra["exterior_evidencia"] = evidencia["evidencia"]
-        prop.extra["publicacion_exterior"] = PRODUCT_DECISION_PENDING
+        prop.extra["publicacion_exterior"] = PRESERVED_NOT_PUBLISHED
+        prop.extra["politica_publica"] = POLITICA_PUBLICA
         for campo in ("ciudad", "barrio", "provincia"):
             valor = getattr(prop, campo)
             if valor:
@@ -987,7 +990,8 @@ class Connector:
         prop.extra["ciudad_campo_de_origen"] = ("barrio" if desde_barrio
                                                 else "ciudad")
 
-        from connectors.geografia import PROVINCE_CONFLICT_REASON
+        from connectors.geografia import (CABA_POR_POLIGONO_REASON,
+                                          PROVINCE_CONFLICT_REASON)
         if (resolucion.motivo == PROVINCE_CONFLICT_REASON
                 and prop.extra.get("provincia_origen") == "padron_inmobiliaria"):
             # La provincia que veta esta localidad no la publico la fuente: la
@@ -1100,6 +1104,19 @@ class Connector:
             if not prop.provincia:
                 # La provincia de una localidad resuelta es un hecho del
                 # catalogo, no una inferencia nuestra.
+                prop.provincia = entidad.provincia
+            elif resolucion.motivo == CABA_POR_POLIGONO_REASON:
+                from connectors import poligono_caba
+                # «Buenos Aires» desempatado por la geometria oficial: la
+                # provincia publicada se conserva como evidencia y se afirma
+                # la jurisdiccion que contiene a la coordenada.
+                prop.extra["provincia_publicada"] = prop.provincia
+                prop.extra["provincia_por_poligono"] = {
+                    "provincia": entidad.provincia,
+                    "geometria": {k: (poligono_caba.procedencia() or {}).get(k)
+                                  for k in ("fuente", "vertices",
+                                            "sha256_coordenadas")},
+                }
                 prop.provincia = entidad.provincia
             return
 

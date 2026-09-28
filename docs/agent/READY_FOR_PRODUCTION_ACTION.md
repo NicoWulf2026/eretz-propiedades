@@ -14,7 +14,7 @@ Actualizado: 2026-09-25.
 | 4 | Promoción staging → main (agencias) | dry-run del 14-09, a refrescar | autorización; exige 1 |
 | 5 | Corregir `url_normalizada` colapsada en producción | medido, sin tocar | autorización de write; exige 1 y 3 |
 | 6 | Encender bajas del ciclo de vida | diseñado, **apagado** | decisión de producto |
-| 7 | Servir la snapshot v4 en la API local | construida y verificada | decisión (el clasificador lo trata como deploy) |
+| 7 | Servir la snapshot v4 en la API local | **HECHO 28-09 16:58: v4g servida** (autorizada) | — (próximos reemplazos: autorización propia) |
 | 8 | Descubrimiento pago de webs (140 `IDENTITY_PENDING`) | no corrido | aprobar gasto (~USD 1,35) |
 | 9 | Merge a `main` / deploy | no corresponde todavía | después de 1–4 |
 
@@ -59,7 +59,22 @@ es una baja (alagna: 210 → 209 fichas en media hora y la «desaparecida»
 respondía 200). `mark_as_inactive` existe y no tiene consumidores.
 
 ### 7. Snapshot de la API local
-Hoy se sirve una `api_snapshot_v2` del 08-09. La candidata más reciente es la **v4g**
+**Desplegada la v4g el 28-09 16:58** (autorización del usuario del 28-09). Registro completo:
+`D:\INMO CAPITAL\ERETZ_API_CONTRACT\_despliegues\DEPLOY_2026-09-28T16-58-08.json`.
+- Antes: servida `api_snapshot_v2` del 08-09, sha256 `e12a8f36…4b1990`, 449.994.752 bytes,
+  57.665 propiedades, integrity ok; respaldo `_anteriores/v2_2026-09-08/` verificado por hash
+  idéntico; ningún proceso con la servida ni la candidata abiertas (apertura exclusiva).
+- Inventario: 0 ids sólo en la servida, 0 sólo en la candidata, 0 agencias con conteo distinto.
+- Cambio: copia a `.incoming` + fsync + hash + `os.replace` atómico (no se reconstruyó en destino).
+- Después: sha256 `57fa64c8…11bcca2` = candidata, integrity ok, 57.665 propiedades, 546
+  agencias; QA de API 14/14 igual (estado y total por caso) a la de la candidata; 478
+  GEO_CONFLICT y 0 en el mapa. Medianas en frío, con 2 workers: explorer 168 ms, combinada 414,
+  mapa chico 302, mapa combinado 1.254, detalle 13, lote de 100 60 (≈2× la QA en caliente de la
+  candidata; bajo el umbral de 2 s).
+- Rollback manual: copiar `_anteriores/v2_2026-09-08/*` sobre `ERETZ_API_CONTRACT/` (sha
+  esperado `e12a8f36…`). Mecanismo reutilizable: `scripts/desplegar_snapshot.py`.
+
+Historia previa: se servía una `api_snapshot_v2` del 08-09. La candidata era la **v4g**
 (`_scratch/unification/snapshot_v4g_2026-09-28/`, ver §«Snapshot»). La v4 base está en
 `_scratch/unification/snapshot_v4e_2026-09-25/` (ver §«Snapshot» abajo) con
 índices y orden declarados (explorer 307→83 ms, combinada 900→249, mapa sin

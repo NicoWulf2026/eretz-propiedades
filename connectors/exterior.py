@@ -2,9 +2,16 @@
 """Propiedades publicadas FUERA de Argentina: se conservan y se marcan.
 
 Agencias argentinas publican tambien alquileres en Miami, Punta del Este o la
-costa amalfitana (`blanco`, `masar`, `farina`). Si publicarlas o no en ERETZ es
-una decision de producto que todavia no se tomo, asi que aca no se borra ni se
-descarta nada: se deja la evidencia y la marca `PRODUCT_DECISION_PENDING`.
+costa amalfitana (`blanco`, `masar`, `farina`).
+
+Politica decidida por el usuario el 2026-09-28 (durable): RECOLECCION si,
+PRESERVACION si, PUBLICACION no. ERETZ publico es `ARGENTINA_ONLY`. Aca no se
+borra ni se descarta nada -scraping, paquetes y canonico las guardan enteras,
+con pais (codigo ISO en `pais_publicado`), lo publicado y la evidencia- y se
+marca `PRESERVED_NOT_PUBLISHED`. Es la capa de publicacion (la snapshot de la
+API) la que las deja afuera, con `publicable()`. Una expansion internacional
+futura cambia esa politica sin volver a recolectarlas. Los paquetes anteriores
+llevan la marca vieja `PRODUCT_DECISION_PENDING`, que se trata igual.
 
 Lo que si se corrige es no inventarles geografia argentina. «CIUDAD DE MIAMI»
 no resuelve como localidad y el pipeline la bajaba a `barrio`, con la provincia
@@ -28,7 +35,16 @@ import re
 import unicodedata
 from typing import Any
 
-PRODUCT_DECISION_PENDING = "PRODUCT_DECISION_PENDING"
+PRODUCT_DECISION_PENDING = "PRODUCT_DECISION_PENDING"  # marca anterior al 28-09
+PRESERVED_NOT_PUBLISHED = "PRESERVED_NOT_PUBLISHED"
+POLITICA_PUBLICA = "ARGENTINA_ONLY"
+
+
+def publicable(extra: Any) -> bool:
+    """¿La politica publica actual deja servir esta fila? Solo lo argentino."""
+    if not isinstance(extra, dict):
+        return True
+    return not extra.get("publicacion_exterior")
 
 PAISES = {
     "uruguay": "UY", "paraguay": "PY", "chile": "CL", "brasil": "BR", "brazil": "BR",

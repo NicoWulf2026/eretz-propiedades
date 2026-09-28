@@ -277,6 +277,8 @@ def archivos_de_la_huella() -> list[Path]:
         ROOT / "connectors" / "texto.py",
         ROOT / "connectors" / "coherencia.py",
         ROOT / "connectors" / "exterior.py",
+        ROOT / "connectors" / "poligono_caba.py",
+        ROOT / "connectors" / "geometria" / "caba_ign.geojson",
         ROOT / "connectors" / "formularios.py",
         ROOT / "connectors" / "generico.py",
         ROOT / "connectors" / "tokko.py",
@@ -368,6 +370,13 @@ def fingerprint_components(connector: str, strategy: str) -> dict[str, bytes]:
         # argentina (`base.completar_ubicacion`): cambia lo que se guarda.
         "shared/exterior": _semantic_file(
             ROOT / "connectors" / "exterior.py"),
+        # CABA + provincia «Buenos Aires» se desempata por contencion en el
+        # poligono oficial: el codigo y la GEOMETRIA deciden la provincia.
+        "shared/poligono_caba": _semantic_file(
+            ROOT / "connectors" / "poligono_caba.py"),
+        "shared/geometria_caba": hashlib.sha256(
+            (ROOT / "connectors" / "geometria" / "caba_ign.geojson").read_bytes()
+        ).hexdigest().encode(),
     }
     if connector != "generico":
         components[f"connector/{connector}"] = _semantic_file(

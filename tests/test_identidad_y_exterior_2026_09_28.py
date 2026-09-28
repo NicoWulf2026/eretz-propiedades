@@ -4,7 +4,8 @@
 - Dos agencias con la MISMA web oficial no se fusionan ni se atribuye el
   inventario: revision de identidad (terminal, no frena la cola).
 - Una propiedad publicada fuera de Argentina se conserva, se marca
-  PRODUCT_DECISION_PENDING y no se le inventa geografia argentina.
+  PRESERVED_NOT_PUBLISHED (politica ARGENTINA_ONLY, 28-09) y no se le
+  inventa geografia argentina.
 """
 from __future__ import annotations
 
@@ -16,7 +17,7 @@ sys.path.insert(0, str(RAIZ))
 sys.path.insert(0, str(RAIZ / "scripts"))
 
 from connectors import base as B  # noqa: E402
-from connectors.exterior import PRODUCT_DECISION_PENDING, evidencia_de_exterior  # noqa: E402
+from connectors.exterior import PRESERVED_NOT_PUBLISHED, evidencia_de_exterior  # noqa: E402
 
 
 def _registro(url: str) -> dict:
@@ -72,7 +73,8 @@ def test_MUERDE_miami_no_es_un_barrio_de_buenos_aires():
     fuente = B.Fuente("roomix:blanco propiedades", "Blanco", "https://b.test", 1,
                       extra={"province": "Buenos Aires"})
     B.Connector.completar_ubicacion(B.Connector.__new__(B.Connector), prop, fuente)
-    assert prop.extra["publicacion_exterior"] == PRODUCT_DECISION_PENDING
+    assert prop.extra["publicacion_exterior"] == PRESERVED_NOT_PUBLISHED
+    assert prop.extra["politica_publica"] == "ARGENTINA_ONLY"
     assert prop.extra["pais_publicado"] == "US"
     assert prop.ciudad is None and prop.barrio is None and prop.provincia is None
     assert prop.extra["ciudad_publicada"] == "CIUDAD DE MIAMI"

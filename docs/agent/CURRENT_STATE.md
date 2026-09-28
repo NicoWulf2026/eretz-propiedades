@@ -40,10 +40,20 @@ Recertificación completa en curso desde el 28-09 07:29; los lotes compartidos d
 - **Identidad**: dos agencias con la MISMA web oficial → `IDENTITY_PENDING` con motivo
   `IDENTITY_REVIEW` (hoy solo `martinez negocios inmobiliarios` / `martinez propiedades`,
   inmueblesmartinez.com.ar). No se fusionan ni se atribuye inventario sin evidencia.
-- **Exterior**: propiedades publicadas fuera de Argentina se conservan enteras con
-  `extra.publicacion_exterior = PRODUCT_DECISION_PENDING`, `pais_publicado`, evidencia y lo
-  publicado (`ciudad/barrio/provincia_publicada`); no se les afirma geografía argentina. La
-  política de publicación NO cambió (decide producto). 30 fichas de 12 agencias medidas.
+- **Exterior — DECIDIDO por el usuario (28-09, durable)**: recolección SÍ, preservación SÍ,
+  publicación NO; ERETZ público = `ARGENTINA_ONLY`. La extracción las conserva enteras con
+  `extra.publicacion_exterior = PRESERVED_NOT_PUBLISHED`, `politica_publica = ARGENTINA_ONLY`,
+  `pais_publicado` (ISO), evidencia y lo publicado (`ciudad/barrio/provincia_publicada`); nunca se
+  les afirma geografía argentina. La snapshot pública las excluye (`exterior.publicable` + la misma
+  evidencia para filas aún no recertificadas; resumen `exterior_conservadas_no_publicadas`). La
+  marca vieja `PRODUCT_DECISION_PENDING` se trata igual. 30 fichas de 12 agencias medidas.
+- **CABA + provincia «Buenos Aires» — DECIDIDO (28-09)**: solo desempata la contención
+  punto-en-polígono contra la geometría OFICIAL del IGN (`connectors/geometria/caba_ign.geojson`,
+  WFS `ign:provincia` in1=02, 1.024 vértices, Ley 27.275, reproducible con
+  `scripts/geo_poligono_caba.py`), a ≥100 m del límite. Sin coordenada, afuera o en la frontera:
+  sigue el conflicto (fail-closed). Nada de radios, centroides ni cajas. De las 99: 32 se
+  recuperan (cantale 30, agostinelli 2); 4 caen fuera (Paraná, La Matanza, Mendoza ×2) y siguen en
+  conflicto; 63 de `blanco` sin coordenadas siguen sin ciudad.
 
 ## Calidad
 - Regression Gate (28-09 09:5x): 461 agencias recertificadas, 0 pendientes (77 firmadas: echesortu 42 fotos WhatsApp-Image → DEFECTO_ARREGLADO en e9e6c7f709, 1 CORRECCION «BAÑO 3ER PISO»; ente 34 dormitorios/baños → DEFECTO_PENDIENTE, ver HANDOFF). Gate anterior 06:4x: 448, 280 firmadas.
@@ -51,9 +61,11 @@ Recertificación completa en curso desde el 28-09 07:29; los lotes compartidos d
 - Regression Gate (28-09 15h): 474 agencias, 0 pendientes (34 de berardi firmadas).
 
 ## Snapshot de la API local
-- Servida: `api_snapshot_v2` del 08-09 (`D:\INMO CAPITAL\ERETZ_API_CONTRACT\`). Reemplazarla = deploy.
-- Candidata más nueva: **v4g** `_scratch/unification/snapshot_v4g_2026-09-28/` (integrity ok;
-  +1.047 operación, +1.901 superficie total vs v4f; sin QA de API aún). Anterior: `_scratch/unification/snapshot_v4f_2026-09-26/` (v4e + frescura de la
+- **Servida: v4g** desde el 28-09 16:58 (deploy autorizado, controlado, sin rollback; registro en
+  `ERETZ_API_CONTRACT/_despliegues/`, respaldo de la v2 en `_anteriores/v2_2026-09-08/`). Detalle:
+  `READY_FOR_PRODUCTION_ACTION.md` §7. Todo reemplazo posterior sigue siendo deploy.
+- v4g: `_scratch/unification/snapshot_v4g_2026-09-28/` (integrity ok; +1.047 operación,
+  +1.901 superficie total vs v4f; QA 14/14). Anterior: `_scratch/unification/snapshot_v4f_2026-09-26/` (v4e + frescura de la
   tarde; reconstruir cuando la cola recertifique el lote de la noche). Anterior: `_scratch/unification/snapshot_v4e_2026-09-25/` — 57.665 propiedades,
   `integrity_check` ok, reglas de calidad del runner + frescura desde NEEDS_FIX por campos.
   Detalle y latencias en `READY_FOR_PRODUCTION_ACTION.md` §7.
