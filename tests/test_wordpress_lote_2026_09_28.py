@@ -47,3 +47,19 @@ def test_MUERDE_ficha_con_id_en_la_query_y_la_seccion_de_encabezado():
     assert _id_de_ficha_en_la_query("https://chambo.test/product.php?id=343")
     assert not _id_de_ficha_en_la_query("https://chambo.test/propiedades.php?id=2")
     assert not _id_de_ficha_en_la_query("https://gr.test/propiedades.php?tipo=25&operacion=0")
+
+
+def test_MUERDE_el_marcador_wpresidence_da_la_coordenada_y_no_la_oficina_demo():
+    """`berardi` (WPResidence): la coordenada esta en `data-cur_lat` /
+    `data-cur_long`; el unico par rotulado del script es la oficina de
+    demostracion del tema en Nueva York (Regression Gate 28-09, 16 fichas)."""
+    from connectors.wordpress import _coordenada_del_marcador
+    html = ('<script>var mapbase_vars = {"hq_latitude":"40.781711",'
+            '"hq_longitude":"-73.955927"};</script>'
+            '<div id="googleMap_shortcode" data-post_id="22443" data-cur_lat="-34.581675"'
+            ' data-cur_long="-58.4988901" data-title="PH 4 Amb"></div>')
+    assert _coordenada_del_marcador(html) == (-34.581675, -58.4988901)
+    assert _coordenada_del_marcador(
+        '<div data-cur_lat="40.78" data-cur_long="-73.95"></div>') is None
+    assert _coordenada_del_marcador(
+        '<div class="marker" data-lat="-32.3455" data-lng="-65.0302"></div>') == (-32.3455, -65.0302)

@@ -90,6 +90,11 @@ ETIQUETA_SUP_TOTAL = r"total|terreno|sup(?:erficie)?\.?\s*(?:del\s+)?lote"
 # Y de la cubierta. «13.00m² semicubiertos» no es la cubierta: sin la guarda,
 # `matias sosa` guardaba como cubierta el numero que seguia a «semicubiertos».
 ETIQUETA_SUP_CUBIERTA = r"(?<!semi)cubiert|construid"
+# Rotulos de superficie que pueden ir DESPUES de su numero («94m2 cub»): raiz
+# que se busca y una palabra de muestra para saber si es el propio rotulo.
+SUPERFICIES_VECINAS = (("cub", "cubierta"), ("semicub", "semicubierta"),
+                       ("constru", "construida"), ("descub", "descubierta"),
+                       ("tot", "total"), ("terreno", "terreno"), ("lote", "lote"))
 
 # Parametro de paginacion que el listado DECLARA en sus propios enlaces.
 PARAMS_DE_PAGINA = ("start", "pagina", "page", "offset", "pg", "p")
@@ -351,8 +356,10 @@ RE_IMG = re.compile(r'https?://[^\s"\'<>]+?\.(?:jpe?g|png|webp)', re.I)
 # El menos NO es opcional. Argentina esta entera en el hemisferio sur y
 # oeste, y con el signo opcional el patron de WordPress tomo pares como
 # "50.774, 50.7708" y ubico 752 propiedades fuera del pais.
+# `long` tambien: WPResidence escribe `data-cur_lat="-34.58" data-cur_long=
+# "-58.49"` (`berardi`, 16 fichas sin coordenada en el Regression Gate 28-09).
 RE_COORD = re.compile(r'"?(?:latitude|lat)"?\s*[:=]\s*"?(-[23456]\d\.\d{3,})"?'
-                      r'.{0,80}?"?(?:longitude|lng|lon)"?\s*[:=]\s*"?(-[567]\d\.\d{3,})"?',
+                      r'.{0,80}?"?(?:longitude|long|lng|lon)"?\s*[:=]\s*"?(-[567]\d\.\d{3,})"?',
                       re.S | re.I)
 
 # Los mapas de Leaflet no nombran los campos: `L.marker([-34.474951,
@@ -757,6 +764,9 @@ def cuerpo_principal(html: str) -> str:
         # tema wpcasa): el titulo de la ficha vecina -«Depto 4 Amb.»- hacia
         # que el auditor exigiera ambientes a un lote.
         r"class=[\"'][^\"']*\bpost-navigation\b|"
+        # «Similar Listings» de WPResidence (`berardi`): la tarjeta vecina «110m2
+        # totales, 94m2 cub» le daba superficie 94 a todas sus fichas.
+        r"(?:class|id)=[\"'][^\"']*\bproperty_similar_listings\b|"
         # El encabezado escrito, sin clase propia: `piccardo` (grvende.com.ar)
         # pone <h6 class="heading">Propiedades relacionadas</h6> y debajo las
         # tarjetas de otras fichas con «Ambientes 3 / Baños 1». Una ficha sin
@@ -4957,8 +4967,20 @@ class GenericoConnector(Connector):
         #
         # La guarda es sobre la DIMENSION y no sobre cualquier letra: asi no
         # se pierde "300 metros cuadrados", que es legitimo.
+        #
+        # Y el numero que sigue al rotulo no es suyo si despues de su unidad
+        # viene OTRO rotulo de superficie: «Son 110m2 totales, 94m2 cub» (`berardi`)
+        # es valor-antes-de-rotulo, y «totales, 94» daba 94 de total. Ese 94 es
+        # de «cub»; el total sale abajo, de «110m2 totales».
+        otros = "|".join(raiz for raiz, muestra in SUPERFICIES_VECINAS
+                         if not re.search(etiqueta, muestra, re.I))
         m = re.search(rf"(?:{etiqueta})[^\d]{{0,18}}([\d.,]{{2,9}})\s*m"
-                      rf"(?!\s*[x×]\s*\d)", texto, re.I) or \
+                      rf"(?!\s*[x×]\s*\d)"
+                      # «95 m2 total: 200» o «45 m² Cubierta 40 m²» no: si el
+                      # rotulo que sigue tiene SU numero, abre su propio par y
+                      # el primero sigue siendo de quien lo precede.
+                      rf"(?!\s*[²2]?\s*(?:{otros})[^\W\d_]*\b\.?(?!\s*:?\s*\d))",
+                      texto, re.I) or \
             re.search(rf"([\d.,]{{2,9}})\s*m[²2]\s*(?:{etiqueta})", texto, re.I)
         if not m:
             return None

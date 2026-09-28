@@ -183,3 +183,28 @@ def test_MUERDE_una_barra_suelta_no_tira_el_json_ld_entero():
     assert dato["description"] == r"Casa 3 dorm \ pileta \- parque"
     assert json_ld_tolerante('{"a": "linea\nuno"}') == {"a": "linea\nuno"}
     assert json_ld_tolerante("no es json") is None
+
+
+def test_MUERDE_el_numero_de_la_cubierta_no_es_el_total():
+    """`berardi`: «Son 110m2 totales, 94m2 cub». El 94 lleva su rotulo detras;
+    el total es 110. Y un rotulo con dos puntos abre su propio par."""
+    from connectors.generico import ETIQUETA_SUP_TOTAL as T, ETIQUETA_SUP_CUBIERTA as C
+    sup = GenericoConnector._sup
+    assert sup("Son 110m2 totales, 94m2 cub + patio", T) == 110
+    assert sup("Superficie cubierta: 95 m2 total: 200 m2", C) == 95
+    assert sup("Superficie cubierta: 95 m2 total: 200 m2", T) == 200
+    assert sup("Sup. total: 120 m2 Sup. cubierta: 80 m2", T) == 120
+    assert sup("Superficie total 500 m2 superficie cubierta 180 m2", C) == 180
+    assert sup("Terreno 127 m x 50 m", T) is None
+
+
+def test_MUERDE_similar_listings_de_wpresidence_no_es_la_ficha():
+    html = ('<h1>PH 3 amb</h1><div id="googleMap_shortcode" data-cur_lat="-34.581675"'
+            ' data-cur_long="-58.4988901"></div>'
+            '<div class="mylistings" id="property_similar_listings">'
+            '<h3>Similar Listings</h3><p>PH 4 Amb - 110m2 totales, 94m2 cub</p></div>')
+    principal = cuerpo_principal(html)
+    assert "googleMap_shortcode" in principal and "94m2" not in principal
+    from connectors.generico import RE_COORD
+    m = RE_COORD.search(principal)
+    assert m and (m.group(1), m.group(2)) == ("-34.581675", "-58.4988901")

@@ -103,9 +103,15 @@ RE_ROTULO_DE_UBICACION = (
 # San Luis" y el catalogo tiene `Merlo` en Buenos Aires y `Villa de Merlo`
 # en San Luis; con la coordenada, el resolver descarta la de Buenos Aires
 # en vez de afirmarla a 700 km.
+#
+# Y el tema WPResidence: <div id="googleMap_shortcode" data-cur_lat="-34.58"
+# data-cur_long="-58.49">. `berardi` (16 fichas) perdio asi la coordenada
+# (Regression Gate 28-09); el unico par rotulado que quedaba en su pagina era
+# `hq_latitude: 40.78, hq_longitude: -73.95`, la oficina de demostracion del
+# tema en Nueva York, que el rango argentino -abajo- deja afuera.
 RE_MARCADOR_ACF = re.compile(
-    r'data-lat=["\'](-?\d{1,2}\.\d{3,})["\'][^>]{0,80}?'
-    r'data-lng=["\'](-?\d{1,3}\.\d{3,})["\']', re.I)
+    r'data-(?:cur_)?lat=["\'](-?\d{1,2}\.\d{3,})["\'][^>]{0,80}?'
+    r'data-(?:cur_)?(?:lng|long)=["\'](-?\d{1,3}\.\d{3,})["\']', re.I)
 
 # Otros temas embeben el marcador como JSON dentro de un script, con las
 # claves escritas:
@@ -145,7 +151,10 @@ def _coordenada_del_marcador(html: str) -> tuple[float, float] | None:
     m = RE_MARCADOR_ACF.search(html or "")
     if not m:
         return None
-    return float(m.group(1)), float(m.group(2))
+    lat, lon = float(m.group(1)), float(m.group(2))
+    if not (-56 <= lat <= -21) or not (-74 <= lon <= -53):
+        return None
+    return lat, lon
 
 
 # La misma pareja rotulo/valor, pero en ELEMENTOS y no con dos puntos:
