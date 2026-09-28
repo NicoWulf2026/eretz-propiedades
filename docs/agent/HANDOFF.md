@@ -420,6 +420,19 @@ huella no frene a los workers; el lote se aplica y se commitea de una vez en la 
   alquiler temporario en Italia de `masar`). Sus 2 temporarios sin precio publican «U$S 3»
   (relleno, bien rechazado) y montos en la prosa: no es defecto del extractor.
 
+## 28-09 tarde: automatización, identidad, exterior, Regression Gate
+- ERETZ AUTOMATION ON/OFF (`3cf30c9844`): ver `docs/agent/ERETZ_AUTOMATION.md`. Probado ON (tareas
+  corren solas, resultado 0, sin popups) y OFF (tareas deshabilitadas, relanzador y runner se niegan,
+  workers cierran su agencia; empezadas 14:04/14:07, siguen a las 15:0x).
+- Identidad compartida → `IDENTITY_REVIEW`; exterior → `PRODUCT_DECISION_PENDING` (`8a8d0b193f`).
+- Regression Gate 15h: 474 agencias, 34 pendientes, todas `berardi` (WPResidence): coordenada en
+  `data-cur_lat/long` sin leer y «Similar Listings» dentro de la ficha (superficie 94 en todas)
+  → `ecc9bc1a33` (+ `_sup`: «110m2 totales, 94m2 cub» ya no da 94 de total). 34 firmadas en
+  REVISADAS (32 DEFECTO_ARREGLADO, 1 CORRECCION: el 8,66 era el frente del lote, 1 dormitorios
+  recuperado). Gate re-corrido: **0 pendientes**. Ojo: una primera firma de «dormitorios» como
+  CORRECCION fue un error mío sin verificar; se corrigió en el mismo registro tras bajar la ficha.
+- Snapshot candidata v4g en construcción: `_scratch/unification/snapshot_v4g_2026-09-28/`.
+
 ## Decisiones de producto abiertas (no técnicas)
 - **robots.txt**: el pipeline no lo consulta. Medido 26-09 00:1x: 283 agencias certificadas o en
   NEEDS_FIX, 31.354 URLs de ficha, **0 prohibidas** para nuestro UA. Los dos casos que sí prohíben
