@@ -1298,6 +1298,56 @@ class GenericoConnector(Connector):
                 fichas.append(u)
         return fichas or None
 
+    def _catalogo_por_tipo(self, html: str, portada: str,
+                           base: str) -> dict[str, Any] | None:
+        """Catalogo que la portada carga por TIPO con un POST propio.
+
+        Plantilla Oestesi/Argencasas (`david rodriguez`, 365 declaradas): la
+        portada no enlaza fichas; cada boton `onclick="buscar('Casa')"` carga
+        `buscar.php` con `{type, page}` por POST y el resultado trae las fichas
+        `propiedad-detalle.php?id=N` con su paginacion (`data-page`). Se exige
+        la forma entera -los botones y la llamada `.load(... {page, type})`- y
+        se leen solo los tipos que el propio sitio ofrece.
+        """
+        carga = re.search(
+            r"""\.load\(\s*["']([\w\-/]+\.php)["']\s*,\s*\{\s*["']page["']\s*:\s*page\s*,"""
+            r"""\s*["']type["']\s*:\s*event""", html or "")
+        tipos = list(dict.fromkeys(re.findall(
+            r"""onclick=["']buscar\(\s*'([^'"]{2,40})'\s*\)""", html or "")))
+        if not carga or not tipos:
+            return None
+        endpoint = urllib.parse.urljoin(portada, carga.group(1))
+        declarado = sum(int(n) for n in re.findall(
+            r"""onclick=["']buscar\('[^']+'\)[^>]*>(?:(?!onclick=).){0,400}?(\d{1,5})\s+Propiedades""",
+            html, re.S | re.I)) or None
+        fichas: list[str] = []
+        interrumpida = False
+        for tipo in tipos:
+            ultima, pagina = 1, 1
+            while pagina <= min(ultima, 100):
+                formulario = {"type": tipo} if pagina == 1 else {"page": pagina, "type": tipo}
+                try:
+                    cuerpo = bajar_formulario(self.descargador, endpoint, formulario)
+                except (ErrorTransitorio, ErrorPermanente, Bloqueado):
+                    interrumpida = True
+                    break
+                for crudo in re.findall(r"""href=["']([^"'#]+)["']""", cuerpo or ""):
+                    u = urllib.parse.urljoin(endpoint, unescape(crudo))
+                    # Detalle del propio sitio: `propiedad-detalle.php?id=116`.
+                    # `_es_ficha_url` no acepta un .php con id en la query, y
+                    # aca la pagina ya es el resultado de la busqueda del sitio.
+                    if (re.search(r"/[\w\-]*(?:propiedad|inmueble|ficha|detalle)[\w\-]*"
+                                  r"\.php\?(?:[^#]*&)?id=\d+", u, re.I)
+                            and self._mismo_sitio(u, base) and u not in fichas):
+                        fichas.append(u)
+                ultima = max([ultima] + [int(n) for n in re.findall(
+                    r"""data-page=["'](\d{1,3})["']""", cuerpo or "")])
+                pagina += 1
+        if not fichas:
+            return None
+        return {"fichas": fichas[:MAX_FICHAS], "declarado": declarado,
+                "interrumpida": interrumpida}
+
     def _catalogo_mapaprop(self, html_home: str,
                            base: str) -> dict[str, Any] | None:
         """Detecta MAPAPROP solo con marca, buscador y resultados coherentes."""
@@ -1906,6 +1956,14 @@ class GenericoConnector(Connector):
                          "total_declarado": wordpress_catalog["total"],
                          "catalogo_runtime_verificado": True})
             return plan
+        por_tipo = self._catalogo_por_tipo(html, fuente.official_url, base)
+        if por_tipo is not None:
+            plan.update({"variante": "BUSQUEDA_POR_TIPO", "soportada": True,
+                         "fichas": por_tipo["fichas"],
+                         "total_declarado": por_tipo["declarado"],
+                         "paginacion_interrumpida_en_discover": por_tipo["interrumpida"],
+                         "catalogo_runtime_verificado": True})
+            return plan
         gvamax = self._catalogo_gvamax(html, base)
         if gvamax:
             plan.update({"variante": "GVAMAX_API", "soportada": True,
@@ -2449,7 +2507,11 @@ class GenericoConnector(Connector):
                 if not filas or (isinstance(cuantas, int) and pagina >= cuantas):
                     return
             return
-        if plan["variante"] in ("SITEMAP", "CATEGORY_HTML_CATALOG"):
+        if plan["variante"] in ("SITEMAP", "CATEGORY_HTML_CATALOG", "BUSQUEDA_POR_TIPO"):
+            if plan.get("paginacion_interrumpida_en_discover"):
+                # Un POST de la busqueda por tipo que no respondio no es haber
+                # llegado al final del catalogo.
+                self.paginacion_interrumpida = True
             for i, u in enumerate(plan["fichas"], 1):
                 yield {"source_listing_id": self._id_de(u), "source_url": u,
                        "pagina": 1 + i // 100,
@@ -4235,7 +4297,10 @@ class GenericoConnector(Connector):
         # turistico en venta a metros del mar, Camet Norte». Solo si el h2
         # nombra una operacion o un tipo y no es un encabezado de seccion.
         if not re.search(r'property="og:title"|<h1\b', html, re.I):
-            for m in re.finditer(r"<h([2-4])[^>]*>(.{3,2000}?)</h\1>", html, re.S | re.I):
+            # El cierre puede ser de OTRO nivel: la plantilla Oestesi/Argencasas
+            # (`david rodriguez`) abre `<h2>` y cierra `</h1>`, y la ficha quedaba
+            # titulada con el <title> del sitio.
+            for m in re.finditer(r"<h([2-4])[^>]*>(.{3,2000}?)</h[1-6]>", html, re.S | re.I):
                 visible = limpiar(unescape(re.sub(r"<[^>]+>", " ", m.group(2)))) or ""
                 if (20 <= len(visible) <= 200
                         and not re.match(r"(?i)(?:propiedades|inmuebles|ultimas|[uú]ltimas|"

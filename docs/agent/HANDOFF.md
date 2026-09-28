@@ -485,6 +485,20 @@ huella no frene a los workers; el lote se aplica y se commitea de una vez en la 
   `RE_DESCRIPCION_JETENGINE` en `generico` (el camino HTML de wordpress es generico): +38 de 39,
   radio 0/197. Y «+5 Dormitorios» (terreno con casa vieja) = cota inferior → rechazo
   `dormitorios:cota_inferior` (`e331d59807`). Libera la familia al cambiar la huella.
+- Familias 28-09 20h: `wordpress` (esnal) tenía el paro con `strategy_fingerprint: null` → el
+  cambio de huella no lo libera: diferida firmada 20:03 (arreglo `e331d59807`) y se liberó.
+  `generico` (moyano, «not idempotent»): una ficha tomaba 1 o 2 baños de una tarjeta vecina al azar
+  bajo «Otras propiedades <em>parecidas.</em>» → corte ampliado (`0a483e14dd`, radio 2/197).
+- `diego martin`: estrategia `STRAPI_API` (`9e9cb65103`): 51/51 en vivo. Páginas de 10 (con 25 el
+  servidor de Render corta la segunda con `OutboundResponseError`).
+- `david rodriguez` (Oestesi/Argencasas, sin robots.txt): variante `BUSQUEDA_POR_TIPO` (POST
+  `buscar.php` {type, page}, tipos de los botones de la portada) → 365/365; y el título con
+  `<h2>…</h1>` (radio 0/201). Faltan dirección (h5 «Calle - Barrio»), descripción (prosa sin
+  rótulo) y baños: el auditor tampoco los ve como señal.
+- `no idempotentes` (28 agencias): la mayoría son certificaciones viejas ya cubiertas por arreglos
+  (`los cerros`: «Propiedad no encontrada» con 200, arreglado antes). `ivone parodi`: el orden
+  del listado cambia entre páginas (inventario 58 vs 55): de la fuente, no de campos.
+- BLOCKED_EXTERNAL (48): todas de política (portal, acceso rechazado, identidad): nada seguro.
 - Visto al pasar: `alonso propiedades` tiene como «web oficial» un listado de buscainmueble.com (un
   PORTAL), certificado el 16-09 (NEEDS_FIX, 1 fila que es una página de listado, no alimenta la
   snapshot). Cuando la cola lo recertifique, confirmar que la guarda de identidad lo rechaza.
