@@ -59,7 +59,8 @@ es una baja (alagna: 210 → 209 fichas en media hora y la «desaparecida»
 respondía 200). `mark_as_inactive` existe y no tiene consumidores.
 
 ### 7. Snapshot de la API local
-Hoy se sirve una `api_snapshot_v2` del 08-09. La v4 más reciente está en
+Hoy se sirve una `api_snapshot_v2` del 08-09. La candidata más reciente es la **v4g**
+(`_scratch/unification/snapshot_v4g_2026-09-28/`, ver §«Snapshot»). La v4 base está en
 `_scratch/unification/snapshot_v4e_2026-09-25/` (ver §«Snapshot» abajo) con
 índices y orden declarados (explorer 307→83 ms, combinada 900→249, mapa sin
 filtros ~550→90–165) y con las reglas de calidad del runner aplicadas.
@@ -77,6 +78,14 @@ Rama de trabajo: `handoff/codex-unificacion-2026-09-18`. Nada se mergea a
 `main` ni se despliega sin autorización.
 
 ## Snapshot
+**v4g** (28-09 15:35, `_scratch/unification/snapshot_v4g_2026-09-28/`, `integrity_check` ok,
+`database_writes: 0`; la servida del 08-09 verificada intacta antes y después): mismas 57.665
+propiedades. Contra la v4f: operación 49.475 → 50.522, precio 52.372 → 52.867, tipo 52.992 →
+53.406, dormitorios 34.519 → 34.914, superficie total 19.161 → 21.062, coordenadas 42.560 →
+42.714; frescura parcial 5.429 → 5.721. Toma las recertificaciones hechas hasta las 15:35 del
+28-09 (la recertificación de todo el lote del día sigue en curso). Sin QA de API todavía
+(`scripts/benchmark_unified_api.py`) — hacerlo antes de proponer el reemplazo.
+
 **v4f** (25-09 23:57, `_scratch/unification/snapshot_v4f_2026-09-26/`, integrity ok,
 `database_writes: 0`): mismas 57.665 propiedades que la v4e; frescura desde NEEDS_FIX por campos
 5.358 → 5.429 y 165 cocheras incoherentes resueltas por la regla de coherencia. Los arreglos de

@@ -47,11 +47,13 @@ Recertificación completa en curso desde el 28-09 07:29; los lotes compartidos d
 
 ## Calidad
 - Regression Gate (28-09 09:5x): 461 agencias recertificadas, 0 pendientes (77 firmadas: echesortu 42 fotos WhatsApp-Image → DEFECTO_ARREGLADO en e9e6c7f709, 1 CORRECCION «BAÑO 3ER PISO»; ente 34 dormitorios/baños → DEFECTO_PENDIENTE, ver HANDOFF). Gate anterior 06:4x: 448, 280 firmadas.
-- Suite completa (28-09 14:3x, `8a8d0b193f`): 3.445 passed (+ fix de huella de `exterior.py`).
+- Suite completa (28-09 15:3x, `c951da087e`): 3.460 passed.
+- Regression Gate (28-09 15h): 474 agencias, 0 pendientes (34 de berardi firmadas).
 
 ## Snapshot de la API local
 - Servida: `api_snapshot_v2` del 08-09 (`D:\INMO CAPITAL\ERETZ_API_CONTRACT\`). Reemplazarla = deploy.
-- Candidata más nueva: `_scratch/unification/snapshot_v4f_2026-09-26/` (v4e + frescura de la
+- Candidata más nueva: **v4g** `_scratch/unification/snapshot_v4g_2026-09-28/` (integrity ok;
+  +1.047 operación, +1.901 superficie total vs v4f; sin QA de API aún). Anterior: `_scratch/unification/snapshot_v4f_2026-09-26/` (v4e + frescura de la
   tarde; reconstruir cuando la cola recertifique el lote de la noche). Anterior: `_scratch/unification/snapshot_v4e_2026-09-25/` — 57.665 propiedades,
   `integrity_check` ok, reglas de calidad del runner + frescura desde NEEDS_FIX por campos.
   Detalle y latencias en `READY_FOR_PRODUCTION_ACTION.md` §7.

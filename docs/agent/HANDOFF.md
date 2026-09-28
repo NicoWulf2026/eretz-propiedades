@@ -431,7 +431,15 @@ huella no frene a los workers; el lote se aplica y se commitea de una vez en la 
   REVISADAS (32 DEFECTO_ARREGLADO, 1 CORRECCION: el 8,66 era el frente del lote, 1 dormitorios
   recuperado). Gate re-corrido: **0 pendientes**. Ojo: una primera firma de «dormitorios» como
   CORRECCION fue un error mío sin verificar; se corrigió en el mismo registro tras bajar la ficha.
-- Snapshot candidata v4g en construcción: `_scratch/unification/snapshot_v4g_2026-09-28/`.
+- Snapshot candidata **v4g** construida (15:35, integrity ok, servida intacta): ver
+  READY_FOR_PRODUCTION_ACTION §Snapshot. Falta el QA de API antes de proponer el reemplazo.
+- `lurati`: operación pegada al precio gana al menú en la ventana (`3973a3da5b`); `pozzobon`: el
+  eslogan del sitio en el <title> («Venta y alquiler») ya no cuenta como operación publicada
+  (`c951da087e`). Radio medido: 0 y 1 cambios en 193 agencias.
+- Había un bucle de relanzamiento HUÉRFANO de la sesión anterior (bash `while true; relanzar…;
+  sleep 600` desde las 11:09, sesión offline). Se cortó: ERETZ AUTOMATION es el único mecanismo.
+  Ojo: `TaskStop` de una tarea de fondo corta el bash pero NO siempre sus hijos (quedó vivo un
+  build de snapshot); verificar procesos después de detener tareas.
 
 ## Decisiones de producto abiertas (no técnicas)
 - **robots.txt**: el pipeline no lo consulta. Medido 26-09 00:1x: 283 agencias certificadas o en
