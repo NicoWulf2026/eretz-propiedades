@@ -937,3 +937,14 @@ def test_blurb_divi_rotulo_y_valor():
     texto = "Ambientes 7 Baños 3"
     assert GenericoConnector._cuenta_de_ficha(html, texto, r"ba[nñ]os?", None) == 3
     assert GenericoConnector._cuenta_de_ficha(html, texto, r"ambientes?", None) == 7
+
+
+def test_foto_whatsapp_image_es_foto_y_el_icono_no():
+    from connectors.coherencia import NO_ES_FOTO
+    assert not NO_ES_FOTO.search(
+        "https://x.com/wp-content/uploads/2026/09/WhatsApp-Image-2026-09-09-at-15.09.41-1024x768.jpeg")
+    assert not NO_ES_FOTO.search("https://x.com/fotos/whatsapp_imagen_1.jpg")
+    for icono in ("https://x.com/img/whatsapp.png", "https://x.com/icon-whatsapp.svg",
+                  "https://x.com/assets/btn-whatsapp-flotante.png", "https://x.com/whatsapp-logo.webp"):
+        assert NO_ES_FOTO.search(icono), icono
+

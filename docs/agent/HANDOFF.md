@@ -308,6 +308,12 @@ NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DI
   categoría estándar de primer nivel (Venta/Alquiler); se enumera por REST filtrando esas categorías y la
   ficha se lee con `generico` (el `content` REST es marcado Divi crudo). 14/14 con operación y tipo;
   blurb Divi `<h4><span>Baños</span></h4><div>3</div>` leído como par (antes «Ambientes 7 Baños 3» = 7 baños).
+- `ente` (Gate 28-09 ~09:4x, 23 fichas sin dormitorios/baños): el tema ERE tabula solo lo cargado
+  («Garages 2») y `_es_tabla_estructurada` corta la caída a la prosa, donde están «3 dormitorios …».
+  Probado: leer la prosa cuando la tabla no tiene la celda del rótulo rompe
+  `test_un_titulo_de_varias_unidades_no_dice_los_ambientes` (lee «Edificio en block de 3 ambientes» del
+  título). Revertido. Camino: leer la prosa del CUERPO sin el título, o solo dormitorios/baños. Firmado
+  en el Gate como lectura pendiente.
 - **`U$` / `U$$` se leen como ARS** (`base.detectar_moneda`: sin clave `u$`, gana `$`). Medido 28-09: 4 agencias
   certificadas (coldwell banker andes, fdc, leandro procopio, kerlin) + 2 fichas de marcelo zanni. Es
   `shared/base` → invalida TODAS las certificaciones: va en el lote planificado con `source_policy`.

@@ -32,8 +32,14 @@ LON_MIN, LON_MAX = -74.0, -53.0
 # propiedad: el logo de la inmobiliaria, el cartel de "sin imagen" que el
 # sitio pone cuando no hay fotos, y la miniatura de YouTube del video del
 # tour, que es el poster del video y no una foto.
+#
+# «whatsapp» es el icono de compartir, pero NO cuando sigue «Image»: es el
+# nombre que el telefono le pone a una foto (`WhatsApp-Image-2026-09-09-at-
+# 15.09.41.jpeg`). Medido 28-09 sobre la linea base: 416 fichas de 12 agencias
+# con fotos asi; `echesortu` las tenia TODAS asi y quedo sin fotos en 42 fichas.
 NO_ES_FOTO = re.compile(
-    r"(logo|placeholder|avatar|icon|sprite|banner|whatsapp|favicon"
+    r"(logo|placeholder|avatar|icon|sprite|banner|favicon"
+    r"|whatsapp(?![-_ .]?(?:image|imagen|foto|photo|video))"
     r"|no[-_]?imagen|sin[-_]?imagen|no[-_]?image|nofoto|img\.youtube\.com)", re.I)
 
 SUPERFICIES = ("superficie_total", "superficie_cubierta")
