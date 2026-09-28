@@ -277,6 +277,11 @@ NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DI
 - `grupo azor`: RESUELTO 27-09 20:0x (GVAmax por POST, ver arriba).
 - `gestionato`, `hcg brokers`: SPA React (HTML de 0,5 KB) — sin JS no hay catálogo; buscar API propia.
 - `gustavo santos`, `battini`: 404 en la raíz (fuente caída). `bergo`: respuesta vacía.
+- `loredo` (paró generico 00:50, diferida firmada): /propiedades 404 → se paginaba la PORTADA
+  (destacadas al azar) → no idempotente. Catálogo real: /busqueda/todo/venta/ (138) y /alquiler/ (23),
+  10 por página + «Cargar más» por POST (Pagina, Orden). La página carga reCAPTCHA Enterprise: verificar
+  en /js/busqueda si el POST lo exige (si sí, NO se evade). Mejora general: no paginar la portada por
+  convención cuando muestra destacadas al azar.
 - `diego martin` (paró generico 22:15, diferida firmada): Next.js cliente + API **Strapi propia sin
   clave** `https://diegogmartin.onrender.com/api/propiedades?populate=*&pagination[page]=N` →
   `{data:[{id, attributes:{Titulo, Direccion, descripcion, Tipo_de_operacion, tipo_de_inmueble,
