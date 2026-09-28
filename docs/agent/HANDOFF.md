@@ -397,6 +397,9 @@ huella no frene a los workers; el lote se aplica y se commitea de una vez en la 
   paginado con `pageNum_ConsultaTipo2`/`totalRows_ConsultaTipo2` (Dreamweaver). Hace falta (1) que
   `_catalogos_enlazados` considere `todos` (hoy toma las 4 primeras categorías) y (2) que la
   paginación declarada acepte `pageNum_\w+`. Solo cometto usa ese patrón en los paquetes.
+  Diferido 28-09 15h: con `todos.php` primero, el selector de listado igual elige la categoría
+  con más fichas en la página 1 (10 > 9); habría que cambiar ese criterio (compartido por >100
+  agencias LISTADO_HTML) para 40 fichas. No vale el radio sin un segundo caso.
 
 ## 28-09 tarde, `blanco propiedades` (1.203 fichas)
 - HECHO: JSON-LD con barras sueltas en la descripción (`Invalid \escape`) se descartaba ENTERO,
