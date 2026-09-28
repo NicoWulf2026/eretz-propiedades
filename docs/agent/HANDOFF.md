@@ -300,10 +300,13 @@ NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DI
   `schulz` → `ar.tellows.net/num/…` (consulta de teléfonos; paró la familia generico 11:43,
   diferida firmada: el guardián de forma rechazó bien un tile de mapa). Regla general
   propuesta: `*.gob.ar`/`*.gov.ar` nunca es la web de una inmobiliaria; y el directorio al listado.
-- `marcelo zanni` (wordpress, Divi): CPT `propiedad` vacío; las propiedades son **posts** con
-  categorías estándar `venta`(13)/`alquiler`(1) + tipo (casas, departamentos…), sin taxonomía
-  `operacion` → `_catalogo_posts_inmobiliarios` exige `operacion`. Extender a categorías
-  top-level `venta`/`alquiler` con conteo y posts que las lleven (14 fichas).
+- `marcelo zanni`: RESUELTO 28-09 09:3x. Variante `WORDPRESS_POST_CATEGORY`: la operación es una
+  categoría estándar de primer nivel (Venta/Alquiler); se enumera por REST filtrando esas categorías y la
+  ficha se lee con `generico` (el `content` REST es marcado Divi crudo). 14/14 con operación y tipo;
+  blurb Divi `<h4><span>Baños</span></h4><div>3</div>` leído como par (antes «Ambientes 7 Baños 3» = 7 baños).
+- **`U$` / `U$$` se leen como ARS** (`base.detectar_moneda`: sin clave `u$`, gana `$`). Medido 28-09: 4 agencias
+  certificadas (coldwell banker andes, fdc, leandro procopio, kerlin) + 2 fichas de marcelo zanni. Es
+  `shared/base` → invalida TODAS las certificaciones: va en el lote planificado con `source_policy`.
 - `grupo azor`: RESUELTO 27-09 20:0x (GVAmax por POST, ver arriba).
 - `gestionato`, `hcg brokers`: SPA React (HTML de 0,5 KB) — sin JS no hay catálogo; buscar API propia.
 - `gustavo santos`, `battini`: 404 en la raíz (fuente caída). `bergo`: respuesta vacía.

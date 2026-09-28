@@ -4590,9 +4590,12 @@ class GenericoConnector(Connector):
         # El rotulo puede ir en un <strong> dentro de su celda, que se cierra
         # antes del valor: <span class="…label"><span icono/><strong>Ambientes
         # </strong></span><span class="…value">5</span> (`daniel`, tema
-        # estate: 10 fichas sin ambientes). Se tolera ese UNICO cierre.
+        # estate: 10 fichas sin ambientes). Se tolera ese UNICO cierre, que
+        # puede ser el del encabezado: el blurb de Divi es <h4><span>Ambientes
+        # </span></h4><div class="et_pb_blurb_description">7</div> (`marcelo
+        # zanni`: el texto plano leia «Ambientes 7 Baños 3» como 7 baños).
         for pareja in re.finditer(
-                rf"<{celda}[^>]*>\s*(?:{etiqueta})\s*</{celda}>\s*(?:</(?:span|div)>\s*)?"
+                rf"<{celda}[^>]*>\s*(?:{etiqueta})\s*</{celda}>\s*(?:</(?:span|div|h[1-6])>\s*)?"
                 rf"<(div|span|dd|td|li|p)\b[^>]*>(.{{0,400}}?)</\1>",
                 sin_iconos, re.I | re.S):
             visible = re.sub(r"<[^>]+>", " ", pareja.group(2)).strip()

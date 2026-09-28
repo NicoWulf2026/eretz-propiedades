@@ -927,3 +927,13 @@ def test_seccion_de_detalle_con_id_es_ficha():
     assert GenericoConnector._es_ficha_url(
         "https://www.vacispropiedades.com.ar/comprar_detalle_vacis/216/9_de_julio_306")
     assert not GenericoConnector._es_ficha_url("https://www.vacispropiedades.com.ar/comprar_vacis")
+
+
+def test_blurb_divi_rotulo_y_valor():
+    html = ('<div class="et_pb_blurb_container"><h4 class="et_pb_module_header">'
+            '<span>Ambientes</span></h4>\n\t<div class="et_pb_blurb_description">7</div>'
+            '</div><div class="et_pb_blurb_container"><h4 class="et_pb_module_header">'
+            '<span>Baños</span></h4>\n\t<div class="et_pb_blurb_description">3</div></div>')
+    texto = "Ambientes 7 Baños 3"
+    assert GenericoConnector._cuenta_de_ficha(html, texto, r"ba[nñ]os?", None) == 3
+    assert GenericoConnector._cuenta_de_ficha(html, texto, r"ambientes?", None) == 7

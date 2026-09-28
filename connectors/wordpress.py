@@ -20,6 +20,7 @@ inmobiliaria no tiene propiedades cuando en realidad no la supimos leer.
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import re
 import urllib.parse
@@ -471,6 +472,26 @@ class WordPressConnector(Connector):
                         "post_taxonomy_catalog": True,
                     })
                     return plan
+            # Sin taxonomia `operacion`, la operacion puede ser una CATEGORIA
+            # estandar de primer nivel: `marcelo zanni` (Divi) publica sus 14
+            # propiedades como posts en `Venta`(13)/`Alquiler`(1) + `Casas`,
+            # `Departamentos`... y su post type `propiedad` esta vacio.
+            elif "category" in post_taxonomies:
+                post_catalog = self._catalogo_posts_por_categoria(base)
+                if post_catalog is not None:
+                    plan.update({
+                        "variante": "WORDPRESS_POST_CATEGORY",
+                        "soportada": True,
+                        "rest_base": post_meta.get("rest_base") or "posts",
+                        "post_type": "post",
+                        "taxonomy_terms": post_catalog["terms"],
+                        "total_declarado": post_catalog["total"],
+                        "rest_filter": "&categories=" + ",".join(
+                            post_catalog["operaciones"]),
+                        "rest_fields": "id,link,categories",
+                        "categorias_de_operacion": post_catalog["operaciones"],
+                    })
+                    return plan
 
         # --- 2. sitemap ----------------------------------------------------
         for ruta in ("/wp-sitemap.xml", "/sitemap_index.xml", "/sitemap.xml"):
@@ -591,11 +612,67 @@ class WordPressConnector(Connector):
             return None
         return {"terms": terms, "total": declared}
 
+    def _catalogo_posts_por_categoria(self,
+                                      base: str) -> dict[str, Any] | None:
+        """Posts inmobiliarios cuya operacion es una categoria estandar.
+
+        Un blog comun tambien tiene categorias, asi que se exige el contrato
+        entero: categorias de primer nivel que SON una operacion (venta,
+        alquiler) con al menos 3 posts entre todas, categorias de primer nivel
+        que son un tipo de inmueble, y que el post mas reciente de esas
+        operaciones lleve tambien un tipo. Solo se recorren los posts de las
+        categorias de operacion: el resto del blog no entra.
+        """
+        try:
+            rows = json.loads(self.descargador.bajar(
+                f"{base}/wp-json/wp/v2/categories?per_page=100"
+                "&_fields=id,name,slug,count,parent"))
+        except (ValueError, ErrorTransitorio, ErrorPermanente, Bloqueado):
+            return None
+        if not isinstance(rows, list):
+            return None
+        categorias = {
+            str(row["id"]): {"name": row.get("name"), "slug": row.get("slug"),
+                             "count": row.get("count"),
+                             "parent": str(row.get("parent") or 0)}
+            for row in rows if isinstance(row, dict) and row.get("id") is not None}
+
+        def texto(term: dict[str, Any]) -> str:
+            return f"{term.get('name') or ''} {term.get('slug') or ''}"
+
+        operaciones = {i: c for i, c in categorias.items()
+                       if detectar_operacion(texto(c))
+                       and not detectar_tipo(texto(c))
+                       and (c["parent"] == "0"
+                            or c["parent"] in categorias
+                            and categorias[c["parent"]]["parent"] == "0"
+                            and detectar_operacion(texto(categorias[c["parent"]])))}
+        tipos = {i for i, c in categorias.items()
+                 if c["parent"] == "0" and i not in operaciones
+                 and detectar_tipo(texto(c)) and int(c.get("count") or 0) > 0}
+        declarado = sum(int(c.get("count") or 0) for c in operaciones.values())
+        if not operaciones or not tipos or declarado < 3:
+            return None
+        ids = sorted(operaciones, key=int)
+        try:
+            primero = json.loads(self.descargador.bajar(
+                f"{base}/wp-json/wp/v2/posts?per_page=1&categories={','.join(ids)}"
+                "&_fields=id,link,categories"))
+        except (ValueError, ErrorTransitorio, ErrorPermanente, Bloqueado):
+            return None
+        if (not isinstance(primero, list) or not primero
+                or not {str(c) for c in primero[0].get("categories") or []} & tipos):
+            return None
+        return {"terms": {"categories": categorias,
+                          "operacion": {i: categorias[i] for i in ids}},
+                "total": declarado, "operaciones": ids}
+
     # ----------------------------------------------------------- fetch_listing
     def fetch_listing(self, fuente: Fuente, plan: dict[str, Any]) -> Iterator[dict]:
         if not plan.get("soportada"):
             return
-        if plan["variante"] in {"WORDPRESS_REST", "WORDPRESS_POST_TAXONOMY"}:
+        if plan["variante"] in {"WORDPRESS_REST", "WORDPRESS_POST_TAXONOMY",
+                                "WORDPRESS_POST_CATEGORY"}:
             yield from self._rest(plan)
         elif plan["variante"] == "WORDPRESS_SITEMAP":
             yield from self._sitemap(plan)
@@ -605,6 +682,8 @@ class WordPressConnector(Connector):
     def _rest(self, plan: dict[str, Any]) -> Iterator[dict]:
         base, ruta = plan["base"], plan["rest_base"]
         fields = plan.get("rest_fields") or REST_FIELDS
+        filtro = plan.get("rest_filter") or ""
+        operaciones = set(plan.get("categorias_de_operacion") or [])
         vistos: set[str] = set()
         # Cuantos avisos por pedido, y desde donde, una vez que hubo que
         # achicar. Ver el `except ErrorTransitorio` de abajo.
@@ -613,10 +692,10 @@ class WordPressConnector(Connector):
         while pagina <= MAX_PAGINAS * max(1, POR_PAGINA // por_pagina):
             if desde is None:
                 url = (f"{base}/wp-json/wp/v2/{ruta}?per_page={por_pagina}"
-                       f"&page={pagina}&_fields={fields}")
+                       f"&page={pagina}{filtro}&_fields={fields}")
             else:
                 url = (f"{base}/wp-json/wp/v2/{ruta}?per_page={por_pagina}"
-                       f"&offset={desde}&_fields={fields}")
+                       f"&offset={desde}{filtro}&_fields={fields}")
             try:
                 items = json.loads(self.descargador.bajar(url))
             except (ValueError, ErrorPermanente):
@@ -672,6 +751,27 @@ class WordPressConnector(Connector):
                     continue
                 vistos.add(lid)
                 nuevos += 1
+                if operaciones:
+                    # El `content` de la API es el marcado del constructor
+                    # (Divi: `[et_pb_section …]` sin procesar, con los iconos
+                    # de atributos como fotos): no sirve como descripcion. La
+                    # ficha se lee del HTML, y las categorias solo completan
+                    # operacion y tipo si la ficha no los dice.
+                    terminos = (plan.get("taxonomy_terms") or {}).get("categories") or {}
+                    nombres = [" ".join(str(v) for v in (
+                        (terminos.get(str(c)) or {}).get("name"),
+                        (terminos.get(str(c)) or {}).get("slug")) if v)
+                        for c in it.get("categories") or []]
+                    yield {"source_listing_id": lid,
+                           "source_url": it.get("link") or f"{base}/?p={lid}",
+                           "pagina": pagina,
+                           "operacion_de_categoria": detectar_operacion(" ".join(
+                               n for c, n in zip(it.get("categories") or [], nombres)
+                               if str(c) in operaciones)),
+                           "tipo_de_categoria": detectar_tipo(" ".join(
+                               n for c, n in zip(it.get("categories") or [], nombres)
+                               if str(c) not in operaciones))}
+                    continue
                 yield {"source_listing_id": lid,
                        "source_url": it.get("link") or f"{base}/?p={lid}",
                        "pagina": pagina, "rest": it,
@@ -763,7 +863,15 @@ class WordPressConnector(Connector):
         url = crudo["source_url"]
         item = crudo.get("rest")
         if item is None:
-            return self._normalizar_con_generico(crudo, fuente)
+            propiedad = self._normalizar_con_generico(crudo, fuente)
+            if propiedad is not None and (crudo.get("operacion_de_categoria")
+                                          or crudo.get("tipo_de_categoria")):
+                propiedad = dataclasses.replace(
+                    propiedad,
+                    operacion=propiedad.operacion or crudo.get("operacion_de_categoria"),
+                    tipo_propiedad=(propiedad.tipo_propiedad
+                                    or crudo.get("tipo_de_categoria")))
+            return propiedad
         meta_rest = item.get("property_meta") or item.get("meta") or {}
         if (not crudo.get("post_taxonomy_catalog")
                 and not (isinstance(meta_rest, dict) and meta_de_propiedad(meta_rest))):

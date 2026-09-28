@@ -4785,3 +4785,60 @@ def test_xintel_sigue_el_iframe_amaira_cuando_la_pagina_es_un_marco() -> None:
     assert "https://ficha.amaira.com.ar/nue/ficha.php?ficha=abc127&urlcompleta=x" in c.descargador.pedidos_urls
     sin_marco = "<html><body>nada</body></html>"
     assert c._ficha_xintel_embebida(sin_marco) == sin_marco
+
+
+def test_wordpress_posts_con_operacion_como_categoria():
+    """`marcelo zanni`: sin taxonomia `operacion`; Venta/Alquiler son categorias."""
+    types = json.dumps({
+        "post": {"rest_base": "posts", "taxonomies": ["category", "post_tag"]}})
+    categories = json.dumps([
+        {"id": 40, "name": "Alquiler", "slug": "alquiler", "count": 1, "parent": 0},
+        {"id": 49, "name": "Alquiler Temporario", "slug": "alquiler-temporario",
+         "count": 0, "parent": 40},
+        {"id": 4, "name": "Casas", "slug": "casas", "count": 8, "parent": 0},
+        {"id": 67, "name": "Centro", "slug": "centro", "count": 4, "parent": 41},
+        {"id": 5, "name": "Departamentos", "slug": "departamentos", "count": 4, "parent": 0},
+        {"id": 41, "name": "Venta", "slug": "venta", "count": 13, "parent": 0},
+    ])
+    items = [{
+        "id": 7329, "link": "https://wp.com.ar/departamento-venta-sarmiento-1242/",
+        "type": "post", "modified": "2026-08-27T17:24:54",
+        "title": {"rendered": "Departamento de 1 dormitorio en Rosario Centro"},
+        "content": {"rendered": '<p>Balcon. USD 60.000</p><img src="https://wp.com.ar/d.jpg">'},
+        "categories": [67, 5, 41],
+    }]
+    c = wp_conector({
+        "https://wp.com.ar/wp-json/wp/v2/types": types,
+        "https://wp.com.ar/wp-json/wp/v2/categories?": categories,
+        "https://wp.com.ar/wp-json/wp/v2/posts?": json.dumps(items),
+        "https://wp.com.ar/departamento-venta-sarmiento-1242/": (
+            "<html><head><title>Sarmiento 1242</title></head><body>"
+            "<h1>Sarmiento 1242</h1>" + "<p>Luminoso, con balcon al frente.</p>" * 40 +
+            "<p>USD 60.000</p><img src='/a.jpg'><img src='/b.jpg'><img src='/c.jpg'>"
+            "</body></html>"),
+    })
+    plan = c.discover(wp_fuente())
+    assert plan["variante"] == "WORDPRESS_POST_CATEGORY"
+    assert plan["total_declarado"] == 14
+    raw = list(c.fetch_listing(wp_fuente(), plan))
+    assert "&categories=40,41,49&" in c.descargador.pedidos_urls[-1]
+    assert "rest" not in raw[0]
+    prop = c.normalize(raw[0], wp_fuente())
+    # Ni el titulo ni la ficha dicen operacion o tipo: los completa la categoria.
+    assert (prop.operacion, prop.tipo_propiedad) == ("venta", "departamento")
+    assert (prop.precio, prop.moneda) == (60000.0, "USD")
+
+
+def test_wordpress_blog_con_categoria_venta_sin_tipos_no_es_inventario():
+    types = json.dumps({
+        "post": {"rest_base": "posts", "taxonomies": ["category", "post_tag"]}})
+    categories = json.dumps([
+        {"id": 3, "name": "Ventas", "slug": "ventas", "count": 9, "parent": 0},
+        {"id": 7, "name": "Mercado", "slug": "mercado", "count": 20, "parent": 0},
+    ])
+    c = wp_conector({
+        "https://wp.com.ar/wp-json/wp/v2/types": types,
+        "https://wp.com.ar/wp-json/wp/v2/categories?": categories,
+        "https://wp.com.ar/": '<a href="/noticias/mercado-inmobiliario">Nota</a>',
+    })
+    assert c.discover(wp_fuente())["soportada"] is False
