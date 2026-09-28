@@ -786,7 +786,12 @@ def cuerpo_principal(html: str) -> str:
         r"Otras\s+Propiedades\s*</div>|"
         # Y como encabezado: Coding & Company (`matias sosa`) titula
         # <h5>Otras propiedades</h5> sobre tarjetas de fichas vecinas.
-        r"<h[1-6]\b[^>]*>\s*Otras\s+propiedades\s*</h[1-6]>|"
+        # Y con coletilla y marcado: `moyano` titula «Otras propiedades
+        # <em>parecidas.</em>» y el «1 baño» / «2 baños» de la tarjeta vecina
+        # -al azar en cada carga- dejaba la agencia no idempotente.
+        r"<h[1-6]\b[^>]*>\s*Otras(?:\s|<[^>]+>)+propiedades"
+        r"(?:(?:\s|<[^>]+>)+(?:parecidas|similares|relacionadas))?"
+        r"(?:\s|<[^>]+>|[.:])*</h[1-6]>|"
         # La navegacion «← anterior | siguiente →» de WordPress (`mattioli`,
         # tema wpcasa): el titulo de la ficha vecina -«Depto 4 Amb.»- hacia
         # que el auditor exigiera ambientes a un lote.
@@ -804,7 +809,7 @@ def cuerpo_principal(html: str) -> str:
         # Interesar</h2>, y el «Galpon de 3 Amb.» de una vecina hacia que el
         # auditor exigiera ambientes a una ficha que publica «Ambientes: 0».
         r"<h[1-6]\b[^>]*>(?:\s|<[^>]+>)*Propiedades(?:\s|<[^>]+>)+"
-        r"(?:relacionadas|similares|que(?:\s|<[^>]+>)+te(?:\s|<[^>]+>)+"
+        r"(?:relacionadas|similares|parecidas|que(?:\s|<[^>]+>)+te(?:\s|<[^>]+>)+"
         r"(?:pueden|podr(?:i|\u00ed)an)(?:\s|<[^>]+>)+interesar)",
                     html or "", maxsplit=1, flags=re.I)[0]
 
