@@ -71,6 +71,16 @@ ETIQUETAS_DE_CONTEO = {
 RUTAS_TOKKO_PROXY = ("/api/tokko/properties", "/api/properties",
                      "/api/tokko/property")
 
+# Un frontend Next.js que hidrata su catalogo desde un Strapi PROPIO (`diego
+# martin`: diegogmartin.onrender.com/api/propiedades, sin clave). La url la
+# publica el JavaScript del propio sitio; se reconoce por la forma de Strapi.
+RE_API_STRAPI = re.compile(
+    r"[\"'`](https://[a-z0-9.\-]+/api/(propiedades|inmuebles|properties))\?", re.I)
+# Paginas chicas: con 25 por pagina el Strapi de `diego martin` (Render) corta
+# la respuesta de la segunda; con 10, las seis salen enteras.
+PAGINA_STRAPI = 10
+TOPE_PAGINAS_STRAPI = 80
+
 # Cuantas paginas de categoria se recorren. El menu de una inmobiliaria
 # tiene pocas; mas que esto es recorrer el sitio entero de un tercero.
 MAX_CATEGORIAS = 12
@@ -1693,6 +1703,50 @@ class GenericoConnector(Connector):
             return {"ruta": ruta, "total": total}
         return None
 
+    def _catalogo_strapi(self, html: str, base: str) -> dict[str, Any] | None:
+        """Un Strapi propio que el frontend del sitio consulta sin clave.
+
+        `diego martin` (Next.js) no trae ninguna propiedad en el HTML: el
+        catalogo sale de `https://<host>/api/propiedades?populate=*` y cada
+        ficha es `/propiedades/{id}`, armada en el navegador. Se exige todo:
+        la url de la API en el JavaScript PROPIO del sitio, que responda con la
+        forma de Strapi (`data[].id/attributes`, `meta.pagination.total`) y
+        que la ruta publica de la ficha exista (la pagina `[id]` del sitio).
+        """
+        chunks = sorted(set(re.findall(
+            r"src=[\"'](/_next/static/chunks/app/[^\"']+\.js)[\"']", html or "")))[:8]
+        api = coleccion = None
+        for chunk in chunks:
+            try:
+                js = self.descargador.bajar(base + chunk)
+            except (ErrorTransitorio, ErrorPermanente, Bloqueado):
+                continue
+            m = RE_API_STRAPI.search(js or "")
+            if m:
+                api, coleccion = m.group(1), m.group(2)
+                break
+        if not api:
+            return None
+        try:
+            dato = json.loads(self.descargador.bajar(
+                f"{api}?populate=*&pagination[page]=1&pagination[pageSize]=1"))
+            primero = dato["data"][0]
+            total = int(dato["meta"]["pagination"]["total"])
+            identificador = int(primero["id"])
+            if not isinstance(primero.get("attributes"), dict):
+                return None
+        except (ErrorTransitorio, ErrorPermanente, Bloqueado, ValueError,
+                KeyError, IndexError, TypeError):
+            return None
+        for ruta in dict.fromkeys((coleccion, "propiedad", "propiedades", "inmueble")):
+            try:
+                ficha = self.descargador.bajar(f"{base}/{ruta}/{identificador}")
+            except (ErrorTransitorio, ErrorPermanente, Bloqueado):
+                continue
+            if f"/app/{ruta}/%5Bid%5D/" in (ficha or ""):
+                return {"api": api, "ruta": ruta, "total": total}
+        return None
+
     def _plan_desde_la_raiz(self, fuente: Fuente, base: str, p: Any,
                             _desde_la_raiz: bool) -> dict[str, Any] | None:
         """El catalogo de la raiz, cuando la url declarada es una subpagina.
@@ -1828,6 +1882,15 @@ class GenericoConnector(Connector):
                          "xintel_key": xintel_key.group(1),
                          "total_declarado": None})
             return plan
+        if "/_next/static/" in html:
+            strapi = self._catalogo_strapi(html, base)
+            if strapi is not None:
+                plan.update({"variante": "STRAPI_API", "soportada": True,
+                             "strapi_api": strapi["api"],
+                             "strapi_ruta": strapi["ruta"],
+                             "total_declarado": strapi["total"],
+                             "catalogo_runtime_verificado": True})
+                return plan
         php_ajax_catalog = self._catalogo_php_ajax(html, base)
         if php_ajax_catalog is not None:
             plan.update({"variante": "PHP_AJAX_SEARCH", "soportada": True,
@@ -2357,6 +2420,35 @@ class GenericoConnector(Connector):
                 if declarado and len(vistos) >= int(declarado):
                     break
             return
+        if plan["variante"] == "STRAPI_API":
+            # Paginado de Strapi hasta `pageCount`; el corte por pagina vacia
+            # cubre un `pageCount` que mienta.
+            vistos: set[str] = set()
+            for pagina in range(1, TOPE_PAGINAS_STRAPI + 1):
+                try:
+                    dato = json.loads(self.descargador.bajar(
+                        f"{plan['strapi_api']}?populate=*&pagination[page]={pagina}"
+                        f"&pagination[pageSize]={PAGINA_STRAPI}"))
+                except (ErrorTransitorio, ErrorPermanente, Bloqueado):
+                    self.paginacion_interrumpida = True
+                    return
+                except (json.JSONDecodeError, TypeError):
+                    self.paginacion_interrumpida = True
+                    return
+                filas = (dato or {}).get("data") or []
+                for fila in filas:
+                    identificador = str((fila or {}).get("id") or "").strip()
+                    if not identificador or identificador in vistos:
+                        continue
+                    vistos.add(identificador)
+                    yield {"source_listing_id": identificador,
+                           "source_url": f"{plan['base']}/{plan['strapi_ruta']}/{identificador}",
+                           "pagina": pagina,
+                           "strapi_objeto": fila.get("attributes") or {}}
+                cuantas = (((dato or {}).get("meta") or {}).get("pagination") or {}).get("pageCount")
+                if not filas or (isinstance(cuantas, int) and pagina >= cuantas):
+                    return
+            return
         if plan["variante"] in ("SITEMAP", "CATEGORY_HTML_CATALOG"):
             for i, u in enumerate(plan["fichas"], 1):
                 yield {"source_listing_id": self._id_de(u), "source_url": u,
@@ -2808,6 +2900,10 @@ class GenericoConnector(Connector):
             # navegador: bajarla costaria una peticion por propiedad para leer
             # menos de lo que ya tenemos.
             return self._normalizar_tokko_proxy(crudo, fuente)
+        if crudo.get("strapi_objeto"):
+            # Igual que el proxy de Tokko: la ficha publica se arma en el
+            # navegador con este mismo objeto.
+            return self._normalizar_strapi(crudo, fuente)
         url = crudo["source_url"]
         try:
             html = self.descargador.bajar(url)
@@ -3720,6 +3816,87 @@ class GenericoConnector(Connector):
             extra={"tokko_proxy": True},
         )
         return propiedad
+
+    def _normalizar_strapi(self, crudo: dict,
+                           fuente: Fuente) -> PropiedadNormalizada | None:
+        """Arma la propiedad con el objeto Strapi que ya trajo el listado.
+
+        Las claves son las del modelo del sitio (`Titulo`, `Tipo_de_operacion`,
+        `valor_dolares`, `Ambientes: «c 3 ambientes»`...) y se buscan sin
+        distinguir mayusculas. Nada se inventa: «c 5 o más dormitorios» es una
+        cota y queda vacia; `Lote` («7.50 x 47») es una medida, no una
+        superficie; la coordenada es el centro del mapa embebido de la ficha
+        (el `!2d<lon>!3d<lat>` del iframe de Google Maps que publica el sitio).
+        """
+        objeto = crudo.get("strapi_objeto") or {}
+        if not objeto:
+            return None
+        claves = {str(k).lower(): k for k in objeto}
+
+        def valor(*nombres: str) -> Any:
+            for nombre in nombres:
+                clave = claves.get(nombre.lower())
+                if clave is not None and objeto.get(clave) not in (None, ""):
+                    return objeto.get(clave)
+            return None
+
+        def texto(*nombres: str) -> str | None:
+            v = valor(*nombres)
+            v = limpiar(str(v)) if v is not None else None
+            return v or None
+
+        def conteo(*nombres: str) -> int | None:
+            v = texto(*nombres)
+            if not v or re.search(r"\bo\s+m[aá]s\b|\+", v, re.I):
+                return None
+            m = re.search(r"\b(\d{1,2})\b", v)
+            return _entero(m.group(1)) if m else None
+
+        precio = moneda = None
+        dolares, pesos = valor("valor_dolares", "precio_dolares"), valor("valor_pesos", "precio_pesos")
+        if dolares not in (None, ""):
+            precio, moneda = a_numero(str(dolares)), "USD"
+        elif pesos not in (None, ""):
+            precio, moneda = a_numero(str(pesos)), "ARS"
+        if not precio:
+            precio = moneda = None
+
+        lat = lon = None
+        mapa = re.search(r"!2d(-?\d+\.\d+)!3d(-?\d+\.\d+)", str(valor("coordenadas", "mapa") or ""))
+        if mapa:
+            lon, lat = _coordenada(mapa.group(1)), _coordenada(mapa.group(2))
+
+        imagenes = []
+        for foto in ((valor("Imagen", "imagenes", "fotos") or {}).get("data") or []
+                     if isinstance(valor("Imagen", "imagenes", "fotos"), dict) else []):
+            url = ((foto or {}).get("attributes") or {}).get("url")
+            if isinstance(url, str) and url.startswith("http"):
+                imagenes.append(url)
+
+        return PropiedadNormalizada(
+            canonical_agency_id=fuente.canonical_agency_id,
+            source_listing_id=str(crudo["source_listing_id"]),
+            source_url=crudo["source_url"],
+            connector="generico",
+            inmobiliaria_id=fuente.inmobiliaria_id,
+            titulo=texto("Titulo", "title"),
+            descripcion=texto("descripcion", "description"),
+            operacion=detectar_operacion(texto("Tipo_de_operacion", "operacion") or ""),
+            tipo_propiedad=detectar_tipo(texto("tipo_de_inmueble", "tipo") or ""),
+            precio=precio,
+            moneda=moneda,
+            direccion=texto("Direccion", "direccion"),
+            ciudad=texto("Localidades", "localidad", "ciudad"),
+            latitud=lat,
+            longitud=lon,
+            ambientes=conteo("Ambientes"),
+            dormitorios=conteo("Dormitorios"),
+            banos=conteo("Banos", "baños"),
+            superficie_total=_decimal(valor("metros_totales2", "metros_totales", "superficie_total")),
+            superficie_cubierta=_decimal(valor("m2_cubiertos", "superficie_cubierta")),
+            imagenes=imagenes,
+            extra={"strapi": True, **({"coordenada_de": "mapa embebido de la ficha"} if mapa else {})},
+        )
 
     def _ficha_xintel_embebida(self, html: str) -> str:
         """La ficha con los parametros del detalle, siguiendo el iframe Amaira.
