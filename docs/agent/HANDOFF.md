@@ -317,9 +317,8 @@ NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DI
   decisión documentada — en una ficha tabulada la prosa describe OTRA cosa (monoambiente de alagna: «1 y 2
   dormitorios» del edificio; terreno: la casa a demoler). Revertido. Es un conflicto de producto, no un
   bug: ¿la prosa vale cuando la tabla no tiene la fila? Decidir antes de tocar. Firmado DEFECTO_PENDIENTE.
-- **`U$` / `U$$` se leen como ARS** (`base.detectar_moneda`: sin clave `u$`, gana `$`). Medido 28-09: 4 agencias
-  certificadas (coldwell banker andes, fdc, leandro procopio, kerlin) + 2 fichas de marcelo zanni. Es
-  `shared/base` → invalida TODAS las certificaciones: va en el lote planificado con `source_policy`.
+- `U$` / `U$$` leídos como ARS: RESUELTO 28-09 10:4x sin tocar `base` — `_moneda_del_signo` en generico y
+  `_moneda_con_posfijo` en wordpress (que tampoco leía `U$D`). En vivo: zanni, kerlin, cb andes, fdc → USD.
 - `grupo azor`: RESUELTO 27-09 20:0x (GVAmax por POST, ver arriba).
 - `gestionato`, `hcg brokers`: SPA React (HTML de 0,5 KB) — sin JS no hay catálogo; buscar API propia.
 - `gustavo santos`, `battini`: 404 en la raíz (fuente caída). `bergo`: respuesta vacía.

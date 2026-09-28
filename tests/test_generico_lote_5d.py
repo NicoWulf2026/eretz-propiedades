@@ -948,3 +948,13 @@ def test_foto_whatsapp_image_es_foto_y_el_icono_no():
                   "https://x.com/assets/btn-whatsapp-flotante.png", "https://x.com/whatsapp-logo.webp"):
         assert NO_ES_FOTO.search(icono), icono
 
+
+
+def test_u_signo_pesos_es_dolar():
+    from connectors.generico import _moneda_del_signo
+    assert _moneda_del_signo("U$") == "USD" and _moneda_del_signo("u$$") == "USD"
+    assert _moneda_del_signo("U$S") == "USD" and _moneda_del_signo("$") == "ARS"
+    html = ("<html><head><title>Depto en venta</title></head><body><main><h1>Depto en venta</h1>"
+            "<p>Venta. Precio U$ 45.000. 1 dormitorio.</p>" + VISOR + RELLENO + "</main></body></html>")
+    p = _normalizar(html)
+    assert (p.precio, p.moneda) == (45000.0, "USD")

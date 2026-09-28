@@ -174,6 +174,9 @@ RE_MONEDA_POSFIJA = re.compile(
 
 def _moneda_con_posfijo(match: "re.Match[str]", texto: str) -> str | None:
     """La moneda de un precio, mirando tambien lo que viene detras."""
+    # «U$ 45.000» / «U$$ 75.000»: dolares (`marcelo zanni`, Divi).
+    if re.fullmatch(r"u\$\$?", match.group(1).strip(), re.I):
+        return "USD"
     if match.group(1).strip() == "$":
         detras = texto[match.end():match.end() + 30]
         if RE_MONEDA_POSFIJA.search(detras):
@@ -920,7 +923,7 @@ class WordPressConnector(Connector):
             # mezcla con ``texto``. Houzez agrega marcas horarias y a veces
             # bloques diferentes entre requests; mezclarlos volvia no
             # idempotentes ambientes, dormitorios y descripcion.
-            if not imagenes or not re.search(r"(USD|U\$S|US\$|ARS)", texto, re.I):
+            if not imagenes or not re.search(r"(USD|U\$[SD]?|US\$|ARS)", texto, re.I):
                 try:
                     html = self.descargador.bajar(url)
                 except (ErrorTransitorio, ErrorPermanente, Bloqueado):
@@ -969,13 +972,14 @@ class WordPressConnector(Connector):
             # precio publicado y PropiedadNormalizada lo considera invalido.
             if precio is not None and precio <= 0:
                 precio = None
-        mp = re.search(r"(USD|U\$S|US\$|\$|ARS)\s*([\d][\d.,]{2,15})", texto, re.I)
+        mp = re.search(r"(USD|U\$[SD]|U\$\$?|US\$|\$|ARS)\s*([\d][\d.,]{2,15})",
+                       texto, re.I)
         if mp and precio is None:
             precio = a_numero(mp.group(2))
         if mp and moneda is None:
             moneda = _moneda_con_posfijo(mp, texto)
         if item is not None and html and (precio is None or moneda is None):
-            mp_html = re.search(r"(USD|U\$S|US\$|\$|ARS)\s*([\d][\d.,]{2,15})",
+            mp_html = re.search(r"(USD|U\$[SD]|U\$\$?|US\$|\$|ARS)\s*([\d][\d.,]{2,15})",
                                 _texto(html)[:6000], re.I)
             if mp_html and precio is None:
                 precio = a_numero(mp_html.group(2))

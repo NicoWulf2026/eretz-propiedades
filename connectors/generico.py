@@ -511,6 +511,18 @@ def _imagenes_galeria_wordpress(html: str, source_url: str) -> list[str]:
     return _sin_variantes_wordpress(images)
 
 
+def _moneda_del_signo(signo: str) -> str | None:
+    """La moneda de un signo de precio, con `U$`/`U$$` como dolares.
+
+    `detectar_moneda` busca claves por inclusion y en «U$» encuentra el `$`:
+    pesos. Se resuelve aca y no en `base` para no cambiar la regla de todos
+    los conectores de arrastre.
+    """
+    if re.fullmatch(r"u\$\$?", (signo or "").strip(), re.I):
+        return "USD"
+    return detectar_moneda(signo)
+
+
 def _texto(html: str) -> str:
     t = sin_bloques_no_textuales(html)
     t = unescape(t)
@@ -1244,10 +1256,10 @@ class GenericoConnector(Connector):
             # regla -las otras dos son RE_PRECIO_CON_MONEDA y la busqueda de
             # precio visible- y arreglar dos y dejar una es el patron que ya
             # costo caro hoy en otros tres lugares del repo.
-            r'(?:Valor\s*:\s*)?(USD|U\$[SD]|US\$|ARS|\$)\s*([\d][\d.,]{1,15})',
+            r'(?:Valor\s*:\s*)?(USD|U\$[SD]|U\$\$?|US\$|ARS|\$)\s*([\d][\d.,]{1,15})',
             html or "", re.I)
         if price:
-            result["moneda"] = detectar_moneda(price.group(1))
+            result["moneda"] = _moneda_del_signo(price.group(1))
             result["precio"] = a_numero(price.group(2))
 
         for field, label in (("superficie_total", "total"),
@@ -2868,7 +2880,10 @@ class GenericoConnector(Connector):
             # el precio se lee. Ver el comentario de RE_PRECIO_CON_MONEDA.
             # «$990,000 / DOLARES» (`ente`, tema Houzez): el signo es el
             # generico y la moneda viene DETRAS de la cifra.
-            m = re.search(r"(USD|U\$[SD]|US\$|\$|ARS)\s*([\d][\d.,]{2,15})"
+            # «U$ 45.000» y «U$$ 75.000» tambien son dolares (`marcelo zanni`,
+            # `kerlin`): sin la alternativa, el patron salteaba la U y leia
+            # «$ 45.000» como pesos. Un dolar publicado como peso.
+            m = re.search(r"(USD|U\$[SD]|U\$\$?|US\$|\$|ARS)\s*([\d][\d.,]{2,15})"
                           r"(\s*/?\s*(?:d[oó]lares|usd)\b)?",
                           texto, re.I)
             if m:
@@ -2876,7 +2891,7 @@ class GenericoConnector(Connector):
                 # La moneda de otra cifra (expensas, otra unidad) no puede
                 # completar un precio estructurado. Se exige concordancia.
                 if precio is None or visible == a_numero(precio):
-                    moneda = moneda or ("USD" if m.group(3) else detectar_moneda(m.group(1)))
+                    moneda = moneda or ("USD" if m.group(3) else _moneda_del_signo(m.group(1)))
                     if precio is None:
                         precio = visible
 
