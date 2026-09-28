@@ -274,6 +274,11 @@ NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DI
 - `grupo azor`: RESUELTO 27-09 20:0x (GVAmax por POST, ver arriba).
 - `gestionato`, `hcg brokers`: SPA React (HTML de 0,5 KB) — sin JS no hay catálogo; buscar API propia.
 - `gustavo santos`, `battini`: 404 en la raíz (fuente caída). `bergo`: respuesta vacía.
+- `diego martin` (paró generico 22:15, diferida firmada): Next.js cliente + API **Strapi propia sin
+  clave** `https://diegogmartin.onrender.com/api/propiedades?populate=*&pagination[page]=N` →
+  `{data:[{id, attributes:{Titulo, Direccion, descripcion, Tipo_de_operacion, tipo_de_inmueble,
+  valor_dolares, valor_pesos, Ambientes, Dormitorios, Banos, coordenadas(iframe)}}], meta}`.
+  Candidata a estrategia «Strapi propio» con mapeo por agencia.
 - `david rodriguez` (paró generico 17:50, diferida firmada): declara 161; catálogo solo vía POST
   `searchProperties.php` con `property_type` y `city` obligatorios (navegación `javascript:goTo…`).
   Camino nuevo: recorrer tipo × zona del propio formulario (ver `connectors/formularios.py`).
