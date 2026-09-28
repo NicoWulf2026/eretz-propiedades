@@ -127,12 +127,12 @@ Historia: Git (`git log --since=2026-09-25`).
     «bano 28» (sin límite de palabra en la segunda forma) — corregido también en dormitorios.
 
 ## Corriendo
-- Cola con 2 workers + relanzador + vigilante. Mirarla solo si hay paradas.
-- **2026-09-27 10:3x: las tareas programadas `ERETZ_relanzador` y del vigilante NO EXISTEN en
-  Windows** (`schtasks /query /tn ERETZ_relanzador` → no encontrada; último registro del
-  relanzador 26-09 21:04). No se recrearon (configuración persistente; no se sabe si se borraron a
-  propósito — decisión del usuario; hay XML de respaldo en el scratchpad de la sesión). Mientras
-  tanto la sesión corre `relanzar_la_cola.py --lanzar` cada 10 min. Sin sesión, nadie relanza.
+- Cola con 2 workers + relanzador + vigilante como tareas de Windows: ERETZ AUTOMATION
+  (`3cf30c9844`, 28-09). Encender/apagar con `ERETZ_AUTOMATION_ON.cmd` / `..._OFF.cmd`; estado con
+  `python scripts\eretz_automatizacion.py estado`; manual en `docs/agent/ERETZ_AUTOMATION.md`.
+  Una sesión NO necesita correr su propio bucle de relanzamiento. Mirar la cola solo si hay paros.
+- Pendientes de decisión registrados (no bloquean): identidad compartida → `IDENTITY_REVIEW`;
+  exterior → `PRODUCT_DECISION_PENDING` (`8a8d0b193f`, ver CURRENT_STATE § Decisiones).
 
 ## No rehacer
 - **`gaggiotti`**: SPA; el catálogo solo sale de `https://www.gaggiotti.com.ar/api/Property/Search`
