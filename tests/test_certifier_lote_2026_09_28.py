@@ -45,3 +45,17 @@ def test_una_medida_antes_del_rotulo_no_lo_invalida():
     texto = "Superficie total: 400 Superficie cubierta: 315 Dormitorios: 4 Baños: 3"
     assert SOURCE_SIGNALS["dormitorios"].search(texto)
     assert SOURCE_SIGNALS["banos"].search(texto)
+
+
+def test_MUERDE_el_eslogan_del_sitio_en_el_title_no_publica_la_operacion():
+    """`pozzobon`: «Tomas de la Torre 63 | Pozzobon Inmobiliaria - Venta y
+    alquiler. Casas, lotes…» en el <title> de cada ficha; la ficha no dice su
+    operacion en ningun otro lado."""
+    from agency_certifier import source_signals
+    cuerpo = "<p>" + "Terreno de 1.150 m2 frente al aeropuerto. " * 6 + "</p>"
+    html = ("<html><head><title>Tomas de la Torre 63 | Pozzobon Inmobiliaria - Venta y "
+            "alquiler. Casas, lotes</title></head><body><main><h1>Terreno</h1>"
+            + cuerpo + "</main></body></html>")
+    assert source_signals(html, "https://pozzobon.test/tomas-de-la-torre-63/")["operacion"] is False
+    con_una = html.replace("Venta y alquiler", "Casa en venta")
+    assert source_signals(con_una, "https://pozzobon.test/x/")["operacion"] is True

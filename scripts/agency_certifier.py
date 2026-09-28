@@ -261,8 +261,14 @@ def source_signals(body: str, url: str = "") -> dict[str, bool]:
     visto = SOURCE_SIGNALS["precio"].search(text)
     precio_visto = (a_numero(re.sub(r"^\D+", "", visto.group(0)))
                     if visto else None)
+    # El <title> con la misma regla que el extractor: si nombra las dos
+    # operaciones no dice cual es. `pozzobon` titula todas sus fichas «… |
+    # Pozzobon Inmobiliaria - Venta y alquiler. Casas, lotes…» (el eslogan del
+    # sitio) y `detectar_operacion`, que toma la primera, daba la operacion por
+    # publicada en 7 de 8 fichas que no la dicen en ningun lado.
     signals["operacion"] = bool(
-        detectar_operacion(f"{title} {url}")
+        detectar_operacion(url)
+        or GenericoConnector._operacion_en_la_ficha(title)
         or GenericoConnector._operacion_en_la_ficha(text, precio_visto)
         or GenericoConnector._operacion_de_la_etiqueta(main))
     # Para cantidades y moneda auditamos texto visible, no atributos meta ni
