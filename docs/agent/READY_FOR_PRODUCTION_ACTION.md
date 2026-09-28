@@ -83,8 +83,11 @@ Rama de trabajo: `handoff/codex-unificacion-2026-09-18`. Nada se mergea a
 propiedades. Contra la v4f: operación 49.475 → 50.522, precio 52.372 → 52.867, tipo 52.992 →
 53.406, dormitorios 34.519 → 34.914, superficie total 19.161 → 21.062, coordenadas 42.560 →
 42.714; frescura parcial 5.429 → 5.721. Toma las recertificaciones hechas hasta las 15:35 del
-28-09 (la recertificación de todo el lote del día sigue en curso). Sin QA de API todavía
-(`scripts/benchmark_unified_api.py`) — hacerlo antes de proponer el reemplazo.
+28-09 (la recertificación de todo el lote del día sigue en curso). QA de API (in-process,
+`scripts/benchmark_unified_api.py`, 15:4x): 14/14 con el estado esperado (400 ventana, 422 orden
+inválido, 200 vacío); mediana explorer 83 ms, combinada 267, mapa chico 154, mapa combinado 602,
+detalle 8, lote de 100 21; 478 GEO_CONFLICT y 0 en el mapa. Salida: `API_BENCHMARK.json` en la
+carpeta. Reemplazar la servida sigue siendo un deploy: decide el usuario.
 
 **v4f** (25-09 23:57, `_scratch/unification/snapshot_v4f_2026-09-26/`, integrity ok,
 `database_writes: 0`): mismas 57.665 propiedades que la v4e; frescura desde NEEDS_FIX por campos
