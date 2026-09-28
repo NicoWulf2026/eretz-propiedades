@@ -38,8 +38,8 @@ rotación las recertifica sola.
   haya sesión, esta corre `relanzar_la_cola.py --lanzar` cada 10 min; sin sesión nadie relanza.
 
 ## Calidad
-- Regression Gate (28-09 06:4x): 448 agencias recertificadas, 0 pendientes (280 firmadas: 278 CORRECCION — bottai desplegable del buscador, Template3 berrueta/candel raul/franco con datos de tarjetas relacionadas — y 2 lectura pendiente).
-- Suite completa (28-09 05:3x): 3.412 passed.
+- Regression Gate (28-09 09:5x): 461 agencias recertificadas, 0 pendientes (77 firmadas: echesortu 42 fotos WhatsApp-Image → DEFECTO_ARREGLADO en e9e6c7f709, 1 CORRECCION «BAÑO 3ER PISO»; ente 34 dormitorios/baños → DEFECTO_PENDIENTE, ver HANDOFF). Gate anterior 06:4x: 448, 280 firmadas.
+- Suite completa (28-09 09:5x): 3.419 passed.
 
 ## Snapshot de la API local
 - Servida: `api_snapshot_v2` del 08-09 (`D:\INMO CAPITAL\ERETZ_API_CONTRACT\`). Reemplazarla = deploy.
