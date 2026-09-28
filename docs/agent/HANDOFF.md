@@ -286,6 +286,10 @@ Historia: Git (`git log --since=2026-09-25`).
   «cochera», cantidades y fotos de tarjetas relacionadas; alexis meza una miniatura 150x150 común.
   278 CORRECCION + 2 lectura pendiente. Resultado: 0 pendientes.
 
+- 07:27 paro FAMILIA wordpress `echesortu` (ciudad 0 → 89 % con los arreglos de ayer): señales falsas
+  del auditor — `"addressLocality":""` vacío contaba como ciudad provista, y «BAÑO 3ER PISO» como
+  «baño 3». La señal exige valor y número completo. Diferida firmada.
+
 ## Lote pendiente para agrupar (diagnosticado 27-09 11:4x, sin tocar: cada commit frena la cola)
 NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DISCOVERY. Muestra de 9:
 - **Identidad equivocada con READY** (tocar `agency_web_discovery.py` = `shared/source_policy`,

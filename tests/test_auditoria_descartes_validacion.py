@@ -64,3 +64,11 @@ def test_senal_de_banos_no_toma_libano():
     assert not P["banos"].search("Sobre calle Republica del Libano 28,36 mts")
     assert P["banos"].search("Baños: 2") and P["banos"].search("2 baños")
     assert not P["dormitorios"].search("Sobre calle Rehabitaciones 3")
+
+
+def test_senales_sin_valor_o_con_ordinal_no_cuentan():
+    from scripts.agency_certifier import SOURCE_SIGNALS as P
+    assert not P["ciudad"].search('"address":{"addressLocality":"","addressRegion":""}')
+    assert P["ciudad"].search('"address":{"addressLocality":"ROSARIO"}')
+    assert not P["banos"].search("1 DORMITORIO, BAÑO 3ER PISO POR ESCALERAS")
+    assert P["banos"].search("Baños: 2") and P["banos"].search("2 baños")
