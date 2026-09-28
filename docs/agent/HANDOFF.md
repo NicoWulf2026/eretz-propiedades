@@ -480,6 +480,11 @@ huella no frene a los workers; el lote se aplica y se commitea de una vez en la 
   (1 ambientes «2 ambientes comodín» de una casa de 5 dormitorios pasa a vacío: corrección).
   Radio (1 ficha por agencia): 2 de 197, ambos verificados.
 - Gate 18h: 482 agencias, 0 pendientes (`esnal` tipo cochera → vacío firmado CORRECCION).
+- `esnal` (paro FAMILIA wordpress 17:22, «descripcion, dormitorios»): Elementor + JetEngine deja
+  vacío el campo bajo «Descripcion» y publica el texto como otro campo dinámico más abajo →
+  `RE_DESCRIPCION_JETENGINE` en `generico` (el camino HTML de wordpress es generico): +38 de 39,
+  radio 0/197. Y «+5 Dormitorios» (terreno con casa vieja) = cota inferior → rechazo
+  `dormitorios:cota_inferior` (`e331d59807`). Libera la familia al cambiar la huella.
 - Visto al pasar: `alonso propiedades` tiene como «web oficial» un listado de buscainmueble.com (un
   PORTAL), certificado el 16-09 (NEEDS_FIX, 1 fila que es una página de listado, no alimenta la
   snapshot). Cuando la cola lo recertifique, confirmar que la guarda de identidad lo rechaza.

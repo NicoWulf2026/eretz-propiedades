@@ -74,6 +74,21 @@ respondía 200). `mark_as_inactive` existe y no tiene consumidores.
 - Rollback manual: copiar `_anteriores/v2_2026-09-08/*` sobre `ERETZ_API_CONTRACT/` (sha
   esperado `e12a8f36…`). Mecanismo reutilizable: `scripts/desplegar_snapshot.py`.
 
+**Candidata v4i — LISTA, pendiente de autorización** (28-09 18:02,
+`_scratch/unification/snapshot_v4i_2026-09-28/`): integrity ok, 57.634 propiedades, QA de API
+14/14 con el mismo estado que la v4g, 0 GEO_CONFLICT en el mapa (510 en total). Diferencia con la
+servida v4g, TODA explicada:
+- −31 del exterior (política ARGENTINA_ONLY; hoy se sirven con geografía argentina inventada:
+  Miami como «Buenos Aires / Pilar»);
+- 55 `blanco` «CABA» + provincia «Buenos Aires» sin coordenadas: dejan de afirmar Buenos Aires
+  (GEO_CONFLICT, fail-closed);
+- 19 `cantale` pasan a CABA confirmada por el polígono del IGN;
+- 4 «departamento de la provincia declarada» recuperan su provincia (Junín/San Luis, General Paz).
+Comando (el intento automático fue denegado por el control de permisos: es un deploy):
+`python scripts\desplegar_snapshot.py --candidata _scratch\unification\snapshot_v4i_2026-09-28
+--etiqueta-respaldo v4g_2026-09-28 --exclusiones-declaradas exterior_conservadas_no_publicadas`
+(respalda la v4g, reemplaza atómicamente, QA y rollback automático).
+
 Historia previa: se servía una `api_snapshot_v2` del 08-09. La candidata era la **v4g**
 (`_scratch/unification/snapshot_v4g_2026-09-28/`, ver §«Snapshot»). La v4 base está en
 `_scratch/unification/snapshot_v4e_2026-09-25/` (ver §«Snapshot» abajo) con

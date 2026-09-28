@@ -64,6 +64,9 @@ Recertificación completa en curso desde el 28-09 07:29; los lotes compartidos d
 - **Servida: v4g** desde el 28-09 16:58 (deploy autorizado, controlado, sin rollback; registro en
   `ERETZ_API_CONTRACT/_despliegues/`, respaldo de la v2 en `_anteriores/v2_2026-09-08/`). Detalle:
   `READY_FOR_PRODUCTION_ACTION.md` §7. Todo reemplazo posterior sigue siendo deploy.
+- **Candidata v4i lista** (exterior excluido, CABA por polígono, departamentos): QA 14/14. Su
+  despliegue fue denegado por el control de permisos (deploy): espera autorización explícita.
+  Comando en `READY_FOR_PRODUCTION_ACTION.md` §7.
 - v4g: `_scratch/unification/snapshot_v4g_2026-09-28/` (integrity ok; +1.047 operación,
   +1.901 superficie total vs v4f; QA 14/14). Anterior: `_scratch/unification/snapshot_v4f_2026-09-26/` (v4e + frescura de la
   tarde; reconstruir cuando la cola recertifique el lote de la noche). Anterior: `_scratch/unification/snapshot_v4e_2026-09-25/` — 57.665 propiedades,
