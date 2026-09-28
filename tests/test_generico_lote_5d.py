@@ -898,3 +898,8 @@ def test_propiedad_no_encontrada_en_el_h1_es_baja():
     assert c.normalize({"source_url": "https://c.test/propiedades/10340947",
                         "source_listing_id": "10340947"}, f) is None
     assert c.errores[-1]["etapa"] == "detalle_permanente"
+
+
+def test_categorias_en_plural_en_la_raiz_no_son_fichas():
+    for ruta in ("/ventas-casas", "/alquileres-departamentos-2-dormitorios", "/ventas-terreno"):
+        assert not GenericoConnector._es_ficha_url("https://u.test" + ruta), ruta

@@ -265,6 +265,12 @@ RE_FICHA_RAIZ = re.compile(
 # Su «AI Labyrinth» siembra enlaces a articulos inventados para los bots
 # (`fernandez marull` 59 de 59, `crestale` 59 de 131, el 25-09).
 RE_NO_FICHA = re.compile(
+    # Categorias en la raiz con la operacion en PLURAL: /ventas-casas,
+    # /alquileres-departamentos-2-dormitorios (`arquitectura inmobiliaria`,
+    # tienda DonWeb SitioSimple): se guardaban 17 categorias como propiedades
+    # con el precio de su primer producto. Las fichas usan el singular
+    # (/venta-dr-riva-1000) o el tipo (/casa-3-dormitorios-…).
+    r"^/(?:alquileres|ventas)(?:-[a-z0-9-]+)?/?$|"
     # Los listados por operacion de Kiteprop: /site/properties/sale y
     # /site/properties/rental (`linkasa`: se guardaban como dos propiedades).
     r"/properties/(?:sale|rental|rent|temporary)/?$|"
@@ -1866,10 +1872,17 @@ class GenericoConnector(Connector):
                 if grilla:
                     plan["fichas_home"] = grilla
             resultados: list[str] = []
-            for crudo in re.findall(r'href=["\']([^"\']+)["\']', html_portada or ""):
+            # Y las categorias en la raiz con la operacion en plural
+            # (/ventas-casas, /alquileres-departamentos-2-dormitorios): la
+            # tienda DonWeb de `arquitectura inmobiliaria` muestra 8 fichas en
+            # /propiedades y 30 repartidas en sus categorias, enlazadas desde
+            # el listado y no desde la portada.
+            for crudo in re.findall(r'href=["\']([^"\']+)["\']',
+                                    (html_portada or "") + (html or "")):
                 destino = urllib.parse.urljoin(base + "/", unescape(crudo)).split("#")[0]
                 if (self._mismo_sitio(destino, base)
-                        and re.match(r"^/resultados?/", urllib.parse.urlparse(destino).path, re.I)
+                        and re.match(r"^/(?:resultados?/|(?:alquileres|ventas)(?:-[a-z0-9-]+)?/?$)",
+                                     urllib.parse.urlparse(destino).path, re.I)
                         and destino not in resultados):
                     resultados.append(destino)
             fichas_resultados: list[str] = []

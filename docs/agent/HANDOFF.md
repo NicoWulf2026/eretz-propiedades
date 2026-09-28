@@ -266,6 +266,12 @@ Historia: Git (`git log --since=2026-09-25`).
   253/333 sin fotos, no idempotente). Ahora el h1 «no encontrada» es baja (detalle_permanente) y el
   runner la reintenta. Diferida firmada. Fuente inestable: puede quedar NEEDS_FIX por desaparecidas.
 
+- 02:19 paro COMPARTIDO `arquitectura inmobiliaria` (urbanorosario.com.ar, tienda DonWeb SitioSimple):
+  las 26 enumeradas eran CATEGORÍAS de raíz (/ventas-casas, /alquileres-departamentos-2-dormitorios)
+  y 17 se guardaban COMO PROPIEDADES con el precio de su primer producto; ninguna ficha real. Ahora
+  esas categorías en plural son no-ficha y se recorren como catálogos (junto a /resultado/…). En vivo:
+  30 fichas reales, estables. Diferida firmada. OJO gate: esa agencia perdía 17 filas falsas.
+
 ## Lote pendiente para agrupar (diagnosticado 27-09 11:4x, sin tocar: cada commit frena la cola)
 NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DISCOVERY. Muestra de 9:
 - **Identidad equivocada con READY** (tocar `agency_web_discovery.py` = `shared/source_policy`,
