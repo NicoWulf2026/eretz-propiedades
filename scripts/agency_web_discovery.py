@@ -88,6 +88,8 @@ MEDIOS = {
     "ambito.com", "cronista.com", "lavoz.com.ar", "losandes.com.ar",
     "rionegro.com.ar", "lacapital.com.ar", "eldia.com", "lagaceta.com.ar",
     "perfil.com", "iprofesional.com", "revistaareatres.com.ar", "arquitecturaydiseno.es",
+    # 28-09: revista barrial como web oficial de `liotto` (READY).
+    "devotomagazine.com.ar",
 }
 REDES = {
     "facebook.com", "instagram.com", "linkedin.com", "twitter.com", "x.com",
@@ -110,6 +112,9 @@ AGREGADORES = {
     # 25-09 noche: directorio de la Camara Inmobiliaria Argentina y guia de
     # empresas de Cordoba, como web oficial de `bertomeu` y `cerro`.
     "cia.org.ar", "empresasdecordoba.com",
+    # 28-09: directorio de parques industriales (`o keefe`) y consulta de
+    # telefonos (`schulz`: ar.tellows.net/num/...), las dos con identidad READY.
+    "parquesindustriales.com.ar", "tellows.net",
 }
 NO_OFICIALES = PORTALES | MEDIOS | EMPLEO | REDES | AGREGADORES
 
@@ -170,6 +175,11 @@ PORTALES_POR_NOMBRE = {
 def es_portal(url: str) -> bool:
     dom = dominio(url)
     if any(dom == p or dom.endswith("." + p) for p in NO_OFICIALES):
+        return True
+    # Un organismo publico nunca es la web de una inmobiliaria: `integral s a`
+    # tenia como oficial el boletin municipal (sibom.slyt.gba.gob.ar) y
+    # `abdala` el portal de turismo de Mar del Plata.
+    if re.search(r"\.(?:gob|gov)(?:\.ar)?$", dom):
         return True
     return nombre_registrable(dom) in PORTALES_POR_NOMBRE
 

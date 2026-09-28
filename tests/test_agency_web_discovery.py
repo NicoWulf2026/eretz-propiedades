@@ -199,3 +199,17 @@ def test_el_puente_nunca_escribe_en_main():
 def test_la_fuente_la_fija_el_servidor():
     assert "\"fuente\") \n" not in BRIDGE
     assert "'${SOURCE_NAME}'" in BRIDGE
+
+
+def test_organismos_guias_y_revistas_no_son_web_oficial():
+    """28-09: cuatro identidades READY apuntaban a esto (o keefe, integral s a,
+    schulz, liotto)."""
+    from scripts.agency_web_discovery import es_portal
+    for url in ("https://sibom.slyt.gba.gob.ar/bulletin/1", "https://turismomardelplata.gob.ar/",
+                "https://www.argentina.gob.ar/x", "https://algo.gov.ar",
+                "https://ar.tellows.net/num/2234567890", "https://parquesindustriales.com.ar/detalle-inmobiliaria/7",
+                "https://devotomagazine.com.ar/nota"):
+        assert es_portal(url), url
+    for url in ("https://gobbi-propiedades.com.ar", "https://www.inmobiliariagobernador.com.ar",
+                "https://marcelozanni.com.ar"):
+        assert not es_portal(url), url

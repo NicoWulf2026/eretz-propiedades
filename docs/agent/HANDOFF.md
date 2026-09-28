@@ -296,8 +296,10 @@ Historia: Git (`git log --since=2026-09-25`).
 
 ## Lote pendiente para agrupar (diagnosticado 27-09 11:4x, sin tocar: cada commit frena la cola)
 NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DISCOVERY. Muestra de 9:
-- **Identidad equivocada con READY** (tocar `agency_web_discovery.py` = `shared/source_policy`,
-  invalida TODAS las certificaciones → hacerlo en un lote propio y planificado):
+- **Identidad equivocada con READY**: HECHO 28-09 10:5x (la cola ya recertificaba todo desde 07:29).
+  `es_portal` rechaza `*.gob.ar`/`*.gov.ar`, `tellows.net`, `parquesindustriales.com.ar`,
+  `devotomagazine.com.ar` → esas 4 pasan a BLOCKED_EXTERNAL. Medido: no toca ninguna otra agencia.
+  Historial:
   `o keefe` → `parquesindustriales.com.ar/detalle-inmobiliaria/7` (directorio);
   `integral s a` → `sibom.slyt.gba.gob.ar/...` (boletín oficial municipal).
   `liotto` → nota de `devotomagazine.com.ar` (revista barrial; paró generico 19:21, firmada).
