@@ -87,6 +87,9 @@ MAX_BARRIDOS_TOKKO_PROXY = 4
 # guardaban el lote de una tarjeta vecina); «Lote» a secas no: «Lote 12
 # Manzana 3» es un numero de lote.
 ETIQUETA_SUP_TOTAL = r"total|terreno|sup(?:erficie)?\.?\s*(?:del\s+)?lote"
+# Y de la cubierta. «13.00m² semicubiertos» no es la cubierta: sin la guarda,
+# `matias sosa` guardaba como cubierta el numero que seguia a «semicubiertos».
+ETIQUETA_SUP_CUBIERTA = r"(?<!semi)cubiert|construid"
 
 # Parametro de paginacion que el listado DECLARA en sus propios enlaces.
 PARAMS_DE_PAGINA = ("start", "pagina", "page", "offset", "pg", "p")
@@ -425,6 +428,33 @@ RE_IMG_ATRIBUTO = re.compile(
 # El enlace del visor de fotos (lightbox): `<a href="fotos/x.jpeg">`.
 RE_ENLACE_A_FOTO = re.compile(
     r"<a[^>]{0,400}?\shref=(?:\"([^\"]{4,400})\"|'([^']{4,400})')", re.I)
+# Parametros con los que un listado enlaza una ficha que ya tiene su id: dicen
+# desde que categoria se llego, no cual es la ficha.
+PARAMS_DE_CONTEXTO = frozenset({
+    "tipo", "operacion", "operacionabuscar", "tipoope", "inmueble",
+    "pagina", "page", "pagenum", "orden", "order"})
+
+
+def _url_y_parametros(url: str) -> tuple[str, tuple]:
+    p = urllib.parse.urlsplit(url.split("#")[0])
+    return (f"{p.netloc.lower()}{p.path.rstrip('/')}",
+            tuple(sorted(urllib.parse.parse_qsl(p.query, keep_blank_values=True))))
+
+
+def _sin_contexto_del_listado(url: str) -> tuple[str, tuple] | None:
+    """La misma ficha sin los parametros de contexto, o None si no tiene."""
+    ruta, params = _url_y_parametros(url)
+    propios = tuple(kv for kv in params if kv[0].lower() not in PARAMS_DE_CONTEXTO)
+    if not propios or len(propios) == len(params):
+        return None
+    return ruta, propios
+
+
+# `background-image: url(…)` dentro de un atributo `style` del elemento -no de
+# una hoja <style>, donde viven los banners del sitio-, con o sin comillas.
+RE_FONDO_CSS = re.compile(
+    r"\sstyle\s*=\s*(?:\"[^\"]{0,300}?|'[^']{0,300}?)background(?:-image)?\s*:\s*"
+    r"url\(\s*(&quot;|')?([^\"'()\s&]{4,400}?)(?:&quot;|')?\s*\)", re.I)
 
 # Un descriptor de `srcset`: el ancho o la densidad que va DESPUES de la url.
 RE_DESCRIPTOR = re.compile(r"^\d+(?:\.\d+)?[wx]$", re.I)
@@ -547,6 +577,19 @@ def sin_marcado_comentado(html: str) -> str:
         return bloque if "<script" in bloque.lower() else " "
 
     return re.sub(r"<!--.*?-->", decidir, html or "", flags=re.S)
+
+
+def con_cierres_normales(html: str) -> str:
+    """`</h1 >` es `</h1>`: HTML admite espacio antes del `>` de cierre.
+
+    La plantilla de Coding & Company (`matias sosa`) cierra TODO asi -`</h1 >`,
+    `</h6 >`, `</span >`- y cada regla escrita contra `</h1>` quedaba ciega:
+    el titulo salia del `<title>` del sitio, la descripcion del meta («A custom
+    site made by Coding & Company») y el corte en «Otras propiedades» no
+    cortaba, asi que 14 fotos de tarjetas vecinas -elegidas al azar en cada
+    carga- entraban a la galeria y la agencia no era idempotente.
+    """
+    return re.sub(r"</([a-zA-Z][a-zA-Z0-9]*)\s+>", r"</\1>", html or "")
 
 
 RE_VENTA_CERCA = re.compile(r"\b(en\s+venta|se\s+vende|vendo|venta)\b", re.I)
@@ -678,7 +721,7 @@ def cuerpo_principal(html: str) -> str:
     documento entero produjo dormitorios>ambientes que el guardián debió
     descartar; el dato nunca debió entrar al parser.
     """
-    html = sin_marcado_comentado(html)
+    html = con_cierres_normales(sin_marcado_comentado(html))
     # RealHomes (`fernando villalba`): sus similares van en
     # `rh_property__similar_properties`, elegidas al azar en cada carga; sus
     # «Habitaciones» daban 4 dormitorios a una parcela de 1,3 ha.
@@ -696,6 +739,9 @@ def cuerpo_principal(html: str) -> str:
         r"class=[\"'][^\"']*\bInspiry_Featured_Properties_Widget\b|"
         r"<div[^>]+class=[\"'][^\"']*titulo_prod_int[^\"']*[\"'][^>]*>\s*"
         r"Otras\s+Propiedades\s*</div>|"
+        # Y como encabezado: Coding & Company (`matias sosa`) titula
+        # <h5>Otras propiedades</h5> sobre tarjetas de fichas vecinas.
+        r"<h[1-6]\b[^>]*>\s*Otras\s+propiedades\s*</h[1-6]>|"
         # El encabezado escrito, sin clase propia: `piccardo` (grvende.com.ar)
         # pone <h6 class="heading">Propiedades relacionadas</h6> y debajo las
         # tarjetas de otras fichas con «Ambientes 3 / Baños 1». Una ficha sin
@@ -2098,6 +2144,29 @@ class GenericoConnector(Connector):
                       if u.split("#")[0].rstrip("/") in mapa]
 
     def fetch_listing(self, fuente: Fuente, plan: dict[str, Any]) -> Iterator[dict]:
+        """Las candidatas, sin la misma ficha repetida con el contexto del listado.
+
+        `guillermo rodriguez` enlaza cada ficha dos veces: `detalles.php?id=1449`
+        y `detalles.php?id=1449&tipo=25&operacion=0` (desde la categoria). La
+        identidad se guarda por URL, asi que las dos entrarian como propiedades
+        distintas. Se descarta la larga SOLO si la corta tambien se enumero: un
+        sitio que publica unicamente la forma larga conserva su identidad.
+        """
+        # Por enumeracion: las variantes que lo cuentan lo reasignan adentro.
+        self.duplicados_origen = 0
+        items = list(self._candidatas(fuente, plan))
+        enumeradas = {_url_y_parametros(i["source_url"]) for i in items}
+        repetidas = 0
+        for item in items:
+            corta = _sin_contexto_del_listado(item["source_url"])
+            if corta is not None and corta in enumeradas:
+                repetidas += 1
+                continue
+            yield item
+        if repetidas:
+            self.duplicados_origen = getattr(self, "duplicados_origen", 0) + repetidas
+
+    def _candidatas(self, fuente: Fuente, plan: dict[str, Any]) -> Iterator[dict]:
         mapa = plan.get("operacion_por_ficha") or {}
         vistas: set[str] = set()
         listado = plan.get("listing_url")
@@ -2680,6 +2749,7 @@ class GenericoConnector(Connector):
                 self.anotar_error(fuente, "detalle_permanente",
                                   ErrorPermanente("ficha inexistente"))
             return None
+        html = con_cierres_normales(html)
         # Y dicha en el ENCABEZADO de una pagina completa: `los cerros` (Next.js)
         # responde a veces con 200 y <h1>Propiedad no encontrada</h1> dentro de
         # la plantilla del sitio, y se guardaba una «propiedad» con ese titulo,
@@ -3015,7 +3085,7 @@ class GenericoConnector(Connector):
                                  or self._sup(texto_campos, ETIQUETA_SUP_TOTAL)),
             "superficie_cubierta": (mapaprop.get("superficie_cubierta")
                                     or datos.get("sup_cubierta")
-                                    or self._sup(texto_campos, r"cubiert|construid")),
+                                    or self._sup(texto_campos, ETIQUETA_SUP_CUBIERTA)),
         }
         # La aritmetica de inmuebles vive en un modulo aparte: la comparten el
         # connector y la correccion de lo ya extraido, y asi no pueden divergir.
@@ -3792,8 +3862,15 @@ class GenericoConnector(Connector):
         del texto suelto.
         """
         salida, vistas = [], set()
-        for m in RE_ENLACE_A_FOTO.finditer(html or ""):
-            u = _url_del_atributo(m.group(1) or m.group(2) or "")
+        # Y el fondo CSS, que el parrafo de arriba nombraba y nadie leia:
+        # `guillermo rodriguez` publica su galeria solo como
+        # <div class="item" style="background-image: url(resource2.php/…jpg)">
+        # y sus 240 fichas se descartaban por forma con el logo y un sello
+        # como unicas «fotos».
+        crudos = [m.group(1) or m.group(2) for m in RE_ENLACE_A_FOTO.finditer(html or "")]
+        crudos += [m.group(2) for m in RE_FONDO_CSS.finditer(html or "")]
+        for crudo in crudos:
+            u = _url_del_atributo(crudo or "")
             if not u:
                 continue
             u = identidad_de_imagen(urllib.parse.urljoin(url, unescape(u.strip())))
@@ -3923,8 +4000,17 @@ class GenericoConnector(Connector):
             texto = "".join(c for c in texto if not unicodedata.combining(c))
             return re.sub(r"\s+", " ", texto).strip().lower()
         nombre = plano(fuente.agency_name)
-        primero = plano(re.split(r"\s*[|–—-]\s*", titulo or "")[0])
-        return bool(nombre) and primero == nombre
+        tramos = [plano(t) for t in re.split(r"\s*[|–—-]\s*", titulo or "") if t.strip()]
+        if not nombre or not tramos:
+            return False
+        if tramos[0] == nombre:
+            return True
+        # El nombre repartido entre tramos: «Inmobiliaria | Guillermo
+        # Rodriguez» es el sitio de «Guillermo Rodriguez Inmobiliaria», y sus
+        # categorias (`propiedades.php?tipo=25`, 31 fichas enlazadas) se
+        # guardaban como propiedades con el precio de la primera tarjeta.
+        # Mismas palabras, ni una mas: un titulo que agrega algo es una ficha.
+        return set(" ".join(tramos).split()) == set(nombre.split())
 
     def _a_revision(self, url: str, fuente: Fuente) -> None:
         """Una pagina que no es ficha: se cuenta como detalle a revisar.

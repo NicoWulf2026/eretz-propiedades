@@ -1189,3 +1189,20 @@ def test_MUERDE_un_estado_consumado_con_precio_no_prueba_la_operacion() -> None:
     assert source_signals(base.format(estado="ALQUILADA"))["operacion"] is False
     sin_precio = base.replace("<p>US$ 400.000</p>", "")
     assert source_signals(sin_precio.format(estado="ALQUILADA"))["operacion"] is True
+
+
+def test_MUERDE_U_D_es_un_precio_y_el_estado_consumado_no_dice_la_operacion() -> None:
+    """`farias` (2026-09-28): «U$D40.000» con la franja «Alquilado». El
+    extractor lee el precio y no infiere la operacion; la senal no veia el
+    precio -`U$D` no calzaba en ninguna forma- y exigia «alquiler»."""
+    html = ('<html><body><main><div class="sale"><div>Alquilado</div></div>'
+            '<h1>LA PAZ 77 BIS</h1><p class="sale">U$D40.000</p><p>' +
+            'Ingreso por living comedor. ' * 10 + '</p></main></body></html>')
+    senales = source_signals(html)
+    assert senales["precio"] is True
+    assert senales["moneda"] is True
+    assert senales["operacion"] is False
+    for signo in ("U$", "U$$", "U$S", "USD"):
+        otra = html.replace("U$D40.000", f"{signo} 40.000")
+        assert source_signals(otra)["precio"] is True, signo
+        assert source_signals(otra)["moneda"] is True, signo

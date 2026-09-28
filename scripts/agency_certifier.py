@@ -26,7 +26,7 @@ from connectors.base import (ESQUEMA_CHECKPOINT, HUELLA_VERSION, Checkpoint,
                              Descargador, Fuente, LimitadorDeRitmo, a_numero,
                              detectar_operacion, detectar_tipo)
 from connectors.century21 import Century21Connector
-from connectors.generico import (ETIQUETA_SUP_TOTAL, ETIQUETAS_DE_CONTEO, GenericoConnector,
+from connectors.generico import (ETIQUETA_SUP_CUBIERTA, ETIQUETA_SUP_TOTAL,ETIQUETAS_DE_CONTEO, GenericoConnector,
                                  _texto, cuerpo_principal,
                                  normalizar_texto_campos,
                                  sin_filtros_catalogo)
@@ -83,10 +83,12 @@ FIELDS = (
 SOURCE_SIGNALS = {
     "titulo": re.compile(r"<(?:h1|title)\b", re.I),
     "descripcion": re.compile(r"(?:descripci[oó]n|property-description|prop-desc)", re.I),
-    "precio": re.compile(r"(?:USD|U\$S|US\$|ARS|\$)\s*[\d.,]{3,}", re.I),
+    # `U$`, `U$$`, `U$S` y `U$D` son dolares, como los lee el extractor
+    # (`_moneda_del_signo`). Sin `U$D`, «U$D40.000» de `farias` no era precio.
+    "precio": re.compile(r"(?:USD|U\$\$?[SD]?|US\$|ARS|\$)\s*[\d.,]{3,}", re.I),
     # Una moneda aislada en metadata, menues o copy institucional no prueba
     # que la publicacion informe un precio. Exigimos monto adyacente.
-    "moneda": re.compile(r"(?:USD|U\$S|US\$|ARS)\s*[\d.,]{3,}", re.I),
+    "moneda": re.compile(r"(?:USD|U\$\$?[SD]?|US\$|ARS)\s*[\d.,]{3,}", re.I),
     "operacion": re.compile(
         r"(?:<title[^>]*>\s*(?:venta|alquiler)\b|"
         r"\b(?:en venta|en alquiler|se vende|se alquila|alquiler inicial)\b)", re.I),
@@ -277,7 +279,7 @@ def source_signals(body: str, url: str = "") -> dict[str, bool]:
     signals["superficie_total"] = bool(
         GenericoConnector._sup(text, ETIQUETA_SUP_TOTAL))
     signals["superficie_cubierta"] = bool(
-        GenericoConnector._sup(text, r"cubiert|construid"))
+        GenericoConnector._sup(text, ETIQUETA_SUP_CUBIERTA))
     return signals
 
 
