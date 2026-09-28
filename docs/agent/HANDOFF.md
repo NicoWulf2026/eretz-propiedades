@@ -398,6 +398,25 @@ huella no frene a los workers; el lote se aplica y se commitea de una vez en la 
   `_catalogos_enlazados` considere `todos` (hoy toma las 4 primeras categorías) y (2) que la
   paginación declarada acepte `pageNum_\w+`. Solo cometto usa ese patrón en los paquetes.
 
+## 28-09 tarde, `blanco propiedades` (1.203 fichas)
+- HECHO: JSON-LD con barras sueltas en la descripción (`Invalid \escape`) se descartaba ENTERO,
+  ciudad incluida → `json_ld_tolerante` (reintenta con esas barras como literales); el filtro de
+  bloques institucionales del auditor usa el mismo parser. Radio: 0 bloques así en 121 JSON-LD
+  cacheados de 192 agencias; en blanco, las 4 fichas «ciudad no extraída».
+- NO HECHO (decisión de diseño): 99 fichas de 10 agencias con localidad CABA + provincia
+  declarada «Buenos Aires» quedan sin ciudad (`blanco` 63 sin coordenadas, `cantale` 31 con
+  coordenadas en CABA, `agostinelli` 2). `test_alias_does_not_bypass_conflicting_province` fija
+  eso como contradicción (fail-closed). Aflojarlo con la coordenada no sirve con el umbral de
+  100 km (el conurbano rodea a CABA: una ficha de Quilmes con «CABA» de plantilla pasaría).
+  Opción correcta: desempatar por CONTENCIÓN en el polígono de la Ciudad (GeoRef `/ubicacion`,
+  ya cacheado para la snapshot en `scripts/geo_reverse_cache.py`), no por distancia.
+- Sin arreglar, medido: «NORDELTA, TIGRE» 77, «VILLANUEVA, TIGRE» 55, «MANZANARES, PILAR»
+  (barrio, partido); «CARDALES» (alias de «Los Cardales»); «ING. MASCHWITZ», «GENERAL PACHECO»,
+  «BENAVIDEZ» no existen en el catálogo canónico (el INDEC agrupa GBA por partido) — curaduría de
+  alias, no código. 13 fichas en «CIUDAD DE MIAMI» (exterior: decisión de producto, como el
+  alquiler temporario en Italia de `masar`). Sus 2 temporarios sin precio publican «U$S 3»
+  (relleno, bien rechazado) y montos en la prosa: no es defecto del extractor.
+
 ## Decisiones de producto abiertas (no técnicas)
 - **robots.txt**: el pipeline no lo consulta. Medido 26-09 00:1x: 283 agencias certificadas o en
   NEEDS_FIX, 31.354 URLs de ficha, **0 prohibidas** para nuestro UA. Los dos casos que sí prohíben
