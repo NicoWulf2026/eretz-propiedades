@@ -26,8 +26,9 @@ from connectors.base import (ESQUEMA_CHECKPOINT, HUELLA_VERSION, Checkpoint,
                              Descargador, Fuente, LimitadorDeRitmo, a_numero,
                              detectar_operacion, detectar_tipo)
 from connectors.century21 import Century21Connector
-from connectors.generico import (ETIQUETA_SUP_CUBIERTA, ETIQUETA_SUP_TOTAL,ETIQUETAS_DE_CONTEO, GenericoConnector,
-                                 _texto, cuerpo_principal,
+from connectors.generico import (ETIQUETA_SUP_CUBIERTA, ETIQUETA_SUP_TOTAL,
+                                 ETIQUETAS_DE_CONTEO, GenericoConnector,
+                                 _texto, cuerpo_principal, json_ld_tolerante,
                                  normalizar_texto_campos,
                                  sin_filtros_catalogo)
 from connectors.tokko import (RE_COORD as TOKKO_RE_COORD, TokkoConnector,
@@ -205,10 +206,10 @@ def sin_ficha_de_la_agencia(body: str) -> str:
     institucional, y borrarlo seria silenciar evidencia.
     """
     def decidir(match: "re.Match[str]") -> str:
-        crudo = match.group(1).strip()
-        try:
-            dato = json.loads(crudo)
-        except (ValueError, TypeError):
+        # El mismo parser que el extractor: si el extractor entiende el bloque,
+        # el auditor tambien (barras sueltas de `blanco propiedades`).
+        dato = json_ld_tolerante(match.group(1))
+        if dato is None:
             return match.group(0)
         tipos = _tipos_del_bloque(dato)
         if tipos and all(t in TIPOS_INSTITUCIONALES for t in tipos):

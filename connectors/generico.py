@@ -832,6 +832,31 @@ def _coordenada(valor: Any) -> float | None:
     return n if n != 0 else None
 
 
+# Una barra invertida que no abre un escape JSON valido.
+RE_ESCAPE_INVALIDO = re.compile(r'\\(?!["\\/bfnrtu])')
+
+
+def json_ld_tolerante(bloque: str) -> Any:
+    """El JSON-LD de la ficha, o None si no es JSON.
+
+    Algunos proveedores emiten saltos de linea literales dentro de los strings
+    (invalidos bajo strict=True, pero el resto del objeto es inequivoco). Y
+    `blanco propiedades` escribe barras sueltas en la descripcion -«\\ »,
+    «\\-»-: `Invalid \\escape` descartaba el bloque ENTERO, con la
+    `addressLocality` adentro. Se reintenta con esas barras como literales,
+    que es lo que el autor escribio; nada mas cambia.
+    """
+    texto = (bloque or "").strip()
+    try:
+        return json.loads(texto, strict=False)
+    except ValueError:
+        pass
+    try:
+        return json.loads(RE_ESCAPE_INVALIDO.sub(r"\\\\", texto), strict=False)
+    except ValueError:
+        return None
+
+
 def _aplanar_ld(dato: Any) -> Iterator[dict]:
     """schema.org se anida de formas distintas segun quien lo genere."""
     if isinstance(dato, list):
@@ -4348,12 +4373,8 @@ class GenericoConnector(Connector):
         out: dict[str, Any] = {}
         candidatos: list[tuple[int, str, dict]] = []
         for bloque in RE_LD.findall(html):
-            try:
-                # Algunos proveedores emiten saltos de linea literales dentro
-                # de strings JSON-LD. Son invalidos bajo strict=True pero el
-                # resto del objeto sigue siendo JSON inequívoco y publico.
-                dato = json.loads(bloque.strip(), strict=False)
-            except ValueError:
+            dato = json_ld_tolerante(bloque)
+            if dato is None:
                 continue
             for nodo in _aplanar_ld(dato):
                 tipos = nodo.get("@type") or []

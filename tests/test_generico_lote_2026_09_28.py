@@ -163,3 +163,23 @@ def test_MUERDE_la_navegacion_entre_entradas_no_es_la_ficha():
             '<div class="next"><a href="/listing/1222/">Depto 4 Amb. &rarr;</a></div></div>')
     principal = cuerpo_principal(html)
     assert "Lote de 10 x 30" in principal and "4 Amb" not in principal
+
+
+def test_MUERDE_una_barra_suelta_no_tira_el_json_ld_entero():
+    r"""`blanco propiedades`: la descripcion del JSON-LD trae «\ » y el bloque
+    entero se descartaba, con `addressLocality: ESCOBAR` adentro."""
+    import json as _json
+
+    from connectors.generico import json_ld_tolerante
+    bloque = (r'{"@type": "House", "description": "Casa 3 dorm \ pileta \- parque",'
+              r' "address": {"addressLocality": "ESCOBAR"}}')
+    try:
+        _json.loads(bloque, strict=False)
+        raise AssertionError("el caso tiene que ser JSON invalido")
+    except ValueError:
+        pass
+    dato = json_ld_tolerante(bloque)
+    assert dato["address"]["addressLocality"] == "ESCOBAR"
+    assert dato["description"] == r"Casa 3 dorm \ pileta \- parque"
+    assert json_ld_tolerante('{"a": "linea\nuno"}') == {"a": "linea\nuno"}
+    assert json_ld_tolerante("no es json") is None
