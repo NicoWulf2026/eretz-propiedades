@@ -880,3 +880,21 @@ def test_descripcion_con_icono_en_el_rotulo():
     html = ('<h2 class="text-2xl"> <i class="fas fa-info-circle"></i> Descripción </h2>'
             '<div class="prose">-Cómodo departamento de 2 ambientes con balcón en Almagro</div>')
     assert GenericoConnector._descripcion_rotulada(html).startswith("-Cómodo departamento")
+
+
+def test_propiedad_no_encontrada_en_el_h1_es_baja():
+    from connectors.base import Fuente
+
+    class D:
+        def bajar(self, url):
+            return ("<html><head><meta property='og:image' content='/og-image.jpg'></head><body>"
+                    "<nav>Ventas Alquileres Contacto</nav>" + "x" * 500 +
+                    "<main><h1>Propiedad no encontrada</h1><a href='/propiedades'>Volver</a></main>"
+                    "</body></html>")
+
+    c = GenericoConnector(D())
+    f = Fuente(canonical_agency_id="roomix:c", agency_name="C", official_url="https://c.test",
+               inmobiliaria_id=1)
+    assert c.normalize({"source_url": "https://c.test/propiedades/10340947",
+                        "source_listing_id": "10340947"}, f) is None
+    assert c.errores[-1]["etapa"] == "detalle_permanente"

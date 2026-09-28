@@ -2649,6 +2649,16 @@ class GenericoConnector(Connector):
                 self.anotar_error(fuente, "detalle_permanente",
                                   ErrorPermanente("ficha inexistente"))
             return None
+        # Y dicha en el ENCABEZADO de una pagina completa: `los cerros` (Next.js)
+        # responde a veces con 200 y <h1>Propiedad no encontrada</h1> dentro de
+        # la plantilla del sitio, y se guardaba una «propiedad» con ese titulo,
+        # sin datos y con la og-image como foto (253 de 333 en una corrida).
+        # Como el 404, el runner la reintenta una vez y la recupera si vuelve.
+        primer_h1 = re.search(r"<h1\b[^>]*>(.*?)</h1>", html, re.I | re.S)
+        if primer_h1 and RE_FICHA_INEXISTENTE.fullmatch(_texto(primer_h1.group(1)).strip()):
+            self.anotar_error(fuente, "detalle_permanente",
+                              ErrorPermanente("ficha inexistente"))
+            return None
         # Una ficha Xintel que entro por el camino HTML tambien se lee de la
         # API. Sin JavaScript, la plantilla muestra el titulo «en», la
         # descripcion vacia (`<p class="txtobs"></p>`) y dos fotos:

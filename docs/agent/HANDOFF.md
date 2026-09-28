@@ -260,6 +260,12 @@ Historia: Git (`git log --since=2026-09-25`).
   enumeraron 1373; run1 leyó 1372 en 51 min, run2 recibió un Bloqueado, cedió ritmo y agotó el
   presupuesto en 878. Diferida firmada. Ya son dos catálogos >1000 que el presupuesto no alcanza.
 
+- 01:38 paro FAMILIA generico `los cerros` (Next.js, Bariloche; 663 imágenes compartidas): el sitio
+  responde INTERMITENTEMENTE con 200 y `<h1>Propiedad no encontrada</h1>` (20 KB en vez de 200 KB) y
+  se guardaba como propiedad sin datos con og-image + píxel de Facebook como fotos (descartadas →
+  253/333 sin fotos, no idempotente). Ahora el h1 «no encontrada» es baja (detalle_permanente) y el
+  runner la reintenta. Diferida firmada. Fuente inestable: puede quedar NEEDS_FIX por desaparecidas.
+
 ## Lote pendiente para agrupar (diagnosticado 27-09 11:4x, sin tocar: cada commit frena la cola)
 NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DISCOVERY. Muestra de 9:
 - **Identidad equivocada con READY** (tocar `agency_web_discovery.py` = `shared/source_policy`,
