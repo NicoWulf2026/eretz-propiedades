@@ -324,6 +324,9 @@ NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DI
   el mismo host (`api_destacadas.php?page=&limit=&offset=` → `{meta, objects}`), como alta.com.ar.
   Su respuesta expone la clave de la API de Tokko en `meta.next`: **no usarla** (regla armanino);
   solo el proxy del sitio. Falta el endpoint del listado completo (no solo destacadas).
+- `maure inmobiliaria` (paró generico 09:02 del 28-09, diferida firmada con radio AGENCIA): 6 de 21
+  `/emprendimientos/` sin cuerpo legible; las otras 15, de la misma plantilla, se leyeron. El sitio
+  respondía 503 (mantenimiento) durante todo el diagnóstico → no reproducible. Revisar esas 6 cuando vuelva.
 
 ## Decisiones de producto abiertas (no técnicas)
 - **robots.txt**: el pipeline no lo consulta. Medido 26-09 00:1x: 283 agencias certificadas o en
