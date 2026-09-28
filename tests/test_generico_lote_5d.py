@@ -903,3 +903,21 @@ def test_propiedad_no_encontrada_en_el_h1_es_baja():
 def test_categorias_en_plural_en_la_raiz_no_son_fichas():
     for ruta in ("/ventas-casas", "/alquileres-departamentos-2-dormitorios", "/ventas-terreno"):
         assert not GenericoConnector._es_ficha_url("https://u.test" + ruta), ruta
+
+
+def test_contenedor_de_descripcion_vacio_no_revienta():
+    from connectors.base import Fuente
+
+    class D:
+        def bajar(self, url):
+            return ("<html><head><title>Casa en venta en Centro</title></head><body>"
+                    "<h1>Casa en venta en Centro</h1>" + "<p>x</p>" * 80 +
+                    "<div class='property-description'><h3>Descripción</h3></div>"
+                    "<p>USD 100.000 Venta</p><img src='/a.jpg'><img src='/b.jpg'><img src='/c.jpg'>"
+                    "</body></html>")
+
+    c = GenericoConnector(D())
+    f = Fuente(canonical_agency_id="roomix:p", agency_name="P", official_url="https://p.test",
+               inmobiliaria_id=1)
+    c.normalize({"source_url": "https://p.test/propiedad/casa-en-venta-centro-123/",
+                 "source_listing_id": "123"}, f)

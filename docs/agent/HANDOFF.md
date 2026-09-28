@@ -272,6 +272,11 @@ Historia: Git (`git log --since=2026-09-25`).
   esas categorías en plural son no-ficha y se recorren como catálogos (junto a /resultado/…). En vivo:
   30 fichas reales, estables. Diferida firmada. OJO gate: esa agencia perdía 17 filas falsas.
 
+- 04:35 paro COMPARTIDO `manuel ponce` (wordpress→generico): TypeError no controlado — el respaldo de
+  descripción `property-description` hacía `limpiar(...)[:6000]` y `limpiar` devuelve None con la
+  caja vacía. Guardado con `or ""`. El certificador se traga el traceback: para verlo, llamar
+  `agency_certifier.run_once(...)` directo (scratch `run_once_ponce.py`). Diferida firmada.
+
 ## Lote pendiente para agrupar (diagnosticado 27-09 11:4x, sin tocar: cada commit frena la cola)
 NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DISCOVERY. Muestra de 9:
 - **Identidad equivocada con READY** (tocar `agency_web_discovery.py` = `shared/source_policy`,

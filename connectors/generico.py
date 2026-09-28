@@ -2817,7 +2817,9 @@ class GenericoConnector(Connector):
                         for titulo_caja in caja.find_all(re.compile(r"^h[1-6]$")):
                             if re.fullmatch(r"descripci[oó]n", titulo_caja.get_text(strip=True), re.I):
                                 titulo_caja.decompose()
-                        visible = limpiar(re.sub(r"\s+", " ", caja.get_text(" ")))[:6000]
+                        # Una caja vacia da None y cortarlo reventaba la ficha
+                        # entera (`manuel ponce`: TypeError en el certificador).
+                        visible = (limpiar(re.sub(r"\s+", " ", caja.get_text(" "))) or "")[:6000]
                     sopa.decompose()
                 descripcion = visible if visible and len(visible) >= 40 else None
         if not descripcion:
