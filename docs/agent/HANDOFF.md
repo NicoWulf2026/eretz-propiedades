@@ -377,6 +377,27 @@ huella no frene a los workers; el lote se aplica y se commitea de una vez en la 
   pega «Centro Rosario» (119 sin ciudad): elegir el término que resuelve como localidad; 133 tipos
   «taxonomía no mapeada»; 12 sin operación son emprendimientos (estado, no operación: no inventar).
 
+## 28-09 tarde (`1b6cf264f7`; NEEDS_FIX recertificados hoy con el código vigente)
+- Auditor, señales de conteo: la forma rótulo→número no vale si el rótulo sigue a un CONTEO (1–2
+  cifras o «un/una/dos/tres/cuatro»): `medina` «+4 Ambientes 12 baños» leía ambientes=12 (los baños);
+  `masar` «un baño 3 patios». Una medida delante sí vale (`building` «cubierta: 315 Dormitorios: 4»).
+- `generico`: corte en `post-navigation` de WordPress (`mattioli`: «Depto 4 Amb.» de la vecina);
+  ficha con id en la query (`product.php?id=343`) no es categoría aunque el `<h1>` sea la sección
+  (`chambouleyron`, 7 de 16 a revisión; radio medido: solo esas 7).
+- `wordpress`: de varios términos de `property_city`, el único que resuelve como localidad (`farina`
+  [centro, rosario] → Rosario; 119 sin ciudad). En vivo: ciudad 40/40.
+- A/B sobre 191 agencias (HTML cacheado): 0 diferencias de extracción ni de señales.
+- Sin código: `criscenti` no idempotente = su corrida 1 fue a las 12:10, durante el corte del disco
+  D:, y la geografía no se cargó (`geografia()` falla → se saltea EN SILENCIO). Fragilidad anotada:
+  un catálogo que no carga debería frenar la corrida, no producir fichas sin ciudad.
+  `berardi` 22167: la fuente publica `<h1></h1>` y título vacío. `masar` 735043: alquiler temporario
+  EN ITALIA (coordenadas fuera del país, no se toman) — ¿entran propiedades del exterior? (producto).
+  `mendez`: URLError (sitio caído).
+- `cometto` (plan exacto, no hecho; 1 agencia, 40 fichas): el catálogo completo es `todos.php`,
+  paginado con `pageNum_ConsultaTipo2`/`totalRows_ConsultaTipo2` (Dreamweaver). Hace falta (1) que
+  `_catalogos_enlazados` considere `todos` (hoy toma las 4 primeras categorías) y (2) que la
+  paginación declarada acepte `pageNum_\w+`. Solo cometto usa ese patrón en los paquetes.
+
 ## Decisiones de producto abiertas (no técnicas)
 - **robots.txt**: el pipeline no lo consulta. Medido 26-09 00:1x: 283 agencias certificadas o en
   NEEDS_FIX, 31.354 URLs de ficha, **0 prohibidas** para nuestro UA. Los dos casos que sí prohíben
