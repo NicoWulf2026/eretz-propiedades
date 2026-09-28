@@ -281,6 +281,11 @@ Historia: Git (`git log --since=2026-09-25`).
   reconocían (run1 SIN_INVENTARIO, run2 1 candidata rechazada) → `RE_FICHA_DETALLE`; `comprar|alquilar`
   cuentan como catálogo. En vivo: 13 fichas estables. Diferida firmada. `constant` ya CERTIFIED_COMPLETE.
 
+- Gate 06:4x (448 agencias): 280 pérdidas, todas explicadas por arreglos de hoy — bottai 108 dormitorios
+  eran opciones del <select> del buscador; berrueta/candel raul/franco (Template3) tenían precio, tipo
+  «cochera», cantidades y fotos de tarjetas relacionadas; alexis meza una miniatura 150x150 común.
+  278 CORRECCION + 2 lectura pendiente. Resultado: 0 pendientes.
+
 ## Lote pendiente para agrupar (diagnosticado 27-09 11:4x, sin tocar: cada commit frena la cola)
 NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DISCOVERY. Muestra de 9:
 - **Identidad equivocada con READY** (tocar `agency_web_discovery.py` = `shared/source_policy`,
