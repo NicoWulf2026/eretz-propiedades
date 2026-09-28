@@ -249,6 +249,12 @@ Historia: Git (`git log --since=2026-09-25`).
   descripción (antes 24 %). Diferida firmada. `gianini` (worker 1 desde 18:05): no trabado,
   cientos de fichas por ?p=N con ~3 s por pedido.
 
+- 21:06 paro FAMILIA generico `gianini` (inventario_inestable): FALSO. Ambas corridas enumeraron
+  las mismas 1033 fichas y ambas agotaron el presupuesto (5400 s; 822 vs 546 detalles leídos, sitio
+  a ~3-6 s/pedido). Diferida firmada. Mejoras: (1) el triaje no debería leer PRESUPUESTO_AGOTADO en
+  ambas corridas como inestabilidad; (2) catálogos de ~1000 fichas necesitan presupuesto mayor o
+  certificación por muestra — decisión operativa.
+
 ## Lote pendiente para agrupar (diagnosticado 27-09 11:4x, sin tocar: cada commit frena la cola)
 NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DISCOVERY. Muestra de 9:
 - **Identidad equivocada con READY** (tocar `agency_web_discovery.py` = `shared/source_policy`,
