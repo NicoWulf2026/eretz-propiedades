@@ -256,6 +256,9 @@ Historia: Git (`git log --since=2026-09-25`).
   a ~3-6 s/pedido). Diferida firmada. Mejoras: (1) el triaje no debería leer PRESUPUESTO_AGOTADO en
   ambas corridas como inestabilidad; (2) catálogos de ~1000 fichas necesitan presupuesto mayor o
   certificación por muestra — decisión operativa.
+- 00:17 paro FAMILIA tokko `lopez baena` (1377 declaradas): igual que gianini — ambas corridas
+  enumeraron 1373; run1 leyó 1372 en 51 min, run2 recibió un Bloqueado, cedió ritmo y agotó el
+  presupuesto en 878. Diferida firmada. Ya son dos catálogos >1000 que el presupuesto no alcanza.
 
 ## Lote pendiente para agrupar (diagnosticado 27-09 11:4x, sin tocar: cada commit frena la cola)
 NEEDS_FIX «no terminó con estado OK» (37): mayoría SIN_INVENTARIO / ERROR_DISCOVERY. Muestra de 9:
