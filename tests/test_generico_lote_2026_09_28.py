@@ -152,3 +152,14 @@ def test_parametros_que_identifican_no_son_contexto():
     c = _con_candidatas(["https://a.test/ficha.php?id=8323&op=V",
                          "https://a.test/ficha.php?id=8323&op=A"])
     assert len(list(c.fetch_listing(_fuente_gr(), {}))) == 2
+
+
+def test_MUERDE_la_navegacion_entre_entradas_no_es_la_ficha():
+    """`mattioli` (wpcasa): «← …DEPTO DOS AMBIENTES | OPORTUNIDAD!!! Depto 4
+    Amb. →» son los titulos de las fichas vecinas, debajo de un lote."""
+    html = ("<h1>VENTA DE LOTE</h1><p>Lote de 10 x 30.</p>"
+            '<div class="post-navigation clearfix"><div class="previous">'
+            '<a href="/listing/1292/">&larr; DEPTO DOS AMBIENTES</a></div>'
+            '<div class="next"><a href="/listing/1222/">Depto 4 Amb. &rarr;</a></div></div>')
+    principal = cuerpo_principal(html)
+    assert "Lote de 10 x 30" in principal and "4 Amb" not in principal

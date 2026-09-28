@@ -381,6 +381,35 @@ def _nombre_taxonomia(crudo: dict[str, Any], item: dict[str, Any],
     return " ".join(sorted(nombres)) or None
 
 
+def _localidad_entre_terminos(crudo: dict[str, Any], item: dict[str, Any],
+                              taxonomia: str, provincia: str | None) -> str | None:
+    """De varios terminos de ciudad, el UNICO que es una localidad.
+
+    `farina` (Houzez) etiqueta cada ficha con `property_city` = [centro,
+    rosario]: el barrio y la ciudad en la misma taxonomia. Juntos daban
+    «Centro Rosario», que no resuelve, y 119 de 979 fichas quedaban sin ciudad.
+    Se toma un termino solo si es el unico que el catalogo reconoce como
+    localidad; si ninguno o mas de uno resuelven, no se elige.
+    """
+    mapa = (crudo.get("taxonomy_terms") or {}).get(taxonomia) or {}
+    nombres = []
+    for term_id in item.get(taxonomia) or []:
+        termino = mapa.get(str(term_id)) or {}
+        nombre = termino.get("name") or termino.get("slug")
+        if nombre:
+            nombres.append(unescape(str(nombre)))
+    if len(nombres) < 2:
+        return None
+    try:
+        from .geografia import geografia
+        catalogo = geografia()
+    except (OSError, ValueError):
+        return None
+    localidades = [n for n in nombres
+                   if catalogo.resolver_localidad(n, provincia=provincia).resuelta]
+    return localidades[0] if len(localidades) == 1 else None
+
+
 def _texto_taxonomia(crudo: dict[str, Any], item: dict[str, Any],
                      taxonomia: str) -> str:
     """Nombre + slug para clasificar sin depender del encoding del nombre.
@@ -1036,6 +1065,9 @@ class WordPressConnector(Connector):
                   else _nombre_taxonomia(crudo, item, "property_city")
                   if item is not None else None)
         provincia = _nombre_taxonomia(crudo, item, "property_state") if item is not None else None
+        if item is not None and not is_post_catalog:
+            ciudad = (_localidad_entre_terminos(crudo, item, "property_city", provincia)
+                      or ciudad)
         # Cuando la taxonomia no trae nada, la ficha suele traerlo igual.
         ciudad = ciudad or _detalle_houzez(html, "city")
         direccion = direccion or _detalle_houzez(html, "address")

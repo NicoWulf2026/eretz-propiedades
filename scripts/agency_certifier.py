@@ -78,6 +78,12 @@ FIELDS = (
     "ambientes", "dormitorios", "banos", "superficie_total",
     "superficie_cubierta", "latitud", "longitud", "imagenes",
 )
+# Delante de un rotulo de conteo: si hay un CONTEO (1 o 2 cifras, o en letras),
+# la ficha escribe valor antes de rotulo y el numero que SIGUE es del rotulo
+# vecino. Una medida no: «Superficie cubierta: 315 Dormitorios: 4» (`building`)
+# es rotulo->valor.
+VALOR_NO_ANTES = (r"(?<!\b\d\s)(?<!\b\d\d\s)(?<!\b\d)(?<!\b\d\d)(?<!\bun\s)(?<!\buna\s)"
+                  r"(?<!\bdos\s)(?<!\btres\s)(?<!\bcuatro\s)")
 # Son senales conservadoras de que la ficha FUENTE declara un campo. Los
 # numeros sueltos no cuentan: asi no confundimos una fecha con ambientes.
 SOURCE_SIGNALS = {
@@ -107,12 +113,21 @@ SOURCE_SIGNALS = {
     "provincia": re.compile(r"\bprovincia\s*:?", re.I),
     # "+4 Ambientes" es una cota, no una cantidad: el extractor no la afirma
     # y la senal tampoco puede exigirla (`dragone`, local comercial).
-    "ambientes": re.compile(r"(?:(?<!\+)\b[1-9]\d?\s*\b(?:ambientes?\b|amb\.)|\b(?:ambientes?\b|amb\.)\s*:?\s*[1-9]\d?\b)", re.I),
+    #
+    # La forma rotulo->numero no vale si el rotulo viene DESPUES de un numero:
+    # esa ficha escribe valor antes de rotulo. `medina` publica «+4 Ambientes
+    # 12 baños 12 Dormitorios» y «Ambientes 12» -el 12 de los baños- se leia
+    # como ambientes provistos. Y con el numero en letras: `masar` «3
+    # dormitorios un baño 3 patios» daba «baño 3» con los patios.
+    "ambientes": re.compile(r"(?:(?<!\+)\b[1-9]\d?\s*\b(?:ambientes?\b|amb\.)|" + VALOR_NO_ANTES
+                            + r"\b(?:ambientes?\b|amb\.)\s*:?\s*[1-9]\d?\b)", re.I),
     # El rotulo empieza palabra: «Republica del Libano 28,36 mts» (`brunetti`,
     # un terreno) contaba como «bano 28» y el triage leia baños sin extraer.
     # Y el numero termina ahi: «BAÑO 3ER PISO» (`echesortu`) no es «baño 3».
-    "dormitorios": re.compile(r"(?:\b[1-9]\d?\s*(?:dormitorios?|habitaciones?)|\b(?:dormitorios?|habitaciones?)\s*:?\s*[1-9]\d?\b)", re.I),
-    "banos": re.compile(r"(?:\b[1-9]\d?\s*(?:ba[nñ]os?|toilettes?)|\b(?:ba[nñ]os?|toilettes?)\s*:?\s*[1-9]\d?\b)", re.I),
+    "dormitorios": re.compile(r"(?:\b[1-9]\d?\s*(?:dormitorios?|habitaciones?)|" + VALOR_NO_ANTES
+                              + r"\b(?:dormitorios?|habitaciones?)\s*:?\s*[1-9]\d?\b)", re.I),
+    "banos": re.compile(r"(?:\b[1-9]\d?\s*(?:ba[nñ]os?|toilettes?)|" + VALOR_NO_ANTES
+                        + r"\b(?:ba[nñ]os?|toilettes?)\s*:?\s*[1-9]\d?\b)", re.I),
     "superficie_total": re.compile(r"(?:superficie\s+total|sup\.?\s*total)[^\d]{0,18}[\d.,]+\s*m", re.I),
     "superficie_cubierta": re.compile(r"(?:superficie\s+cubierta|sup\.?\s*cubierta)[^\d]{0,18}[\d.,]+\s*m", re.I),
     # Con un NUMERO al lado. `inmobiliariacip.com.ar` publica el contenedor

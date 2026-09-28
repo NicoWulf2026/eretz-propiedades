@@ -450,6 +450,17 @@ def _sin_contexto_del_listado(url: str) -> tuple[str, tuple] | None:
     return ruta, propios
 
 
+def _id_de_ficha_en_la_query(url: str) -> bool:
+    """`product.php?id=343`: un id numerico en la query de un archivo que no se
+    llama como un listado."""
+    partes = urllib.parse.urlsplit(url)
+    archivo = partes.path.rsplit("/", 1)[-1].lower()
+    if re.search(r"propiedad|inmueble|listado|categor|busca|resultado|index|todos", archivo):
+        return False
+    return bool(re.search(r"(?:^|&)(?:id|codigo|cod|ficha|recordid)=\d+(?:&|$)",
+                          partes.query, re.I))
+
+
 # `background-image: url(…)` dentro de un atributo `style` del elemento -no de
 # una hoja <style>, donde viven los banners del sitio-, con o sin comillas.
 RE_FONDO_CSS = re.compile(
@@ -742,6 +753,10 @@ def cuerpo_principal(html: str) -> str:
         # Y como encabezado: Coding & Company (`matias sosa`) titula
         # <h5>Otras propiedades</h5> sobre tarjetas de fichas vecinas.
         r"<h[1-6]\b[^>]*>\s*Otras\s+propiedades\s*</h[1-6]>|"
+        # La navegacion «← anterior | siguiente →» de WordPress (`mattioli`,
+        # tema wpcasa): el titulo de la ficha vecina -«Depto 4 Amb.»- hacia
+        # que el auditor exigiera ambientes a un lote.
+        r"class=[\"'][^\"']*\bpost-navigation\b|"
         # El encabezado escrito, sin clase propia: `piccardo` (grvende.com.ar)
         # pone <h6 class="heading">Propiedades relacionadas</h6> y debajo las
         # tarjetas de otras fichas con «Ambientes 3 / Baños 1». Una ficha sin
@@ -4062,6 +4077,13 @@ class GenericoConnector(Connector):
         # paraba la familia. Las categorias medidas (/Casa-en-venta,
         # /venta-casas-posadas/, /inmuebles/salones-para-venta) no tienen id.
         if url and re.search(r"\d{4,}", urllib.parse.urlparse(url).path):
+            return False
+        # O en la query, como `?id=343`: `chambouleyron` pone de <h1> la seccion
+        # -«DEPARTAMENTOS», «CASAS»- sobre cada ficha `product.php?id=N` con 5
+        # vecinas debajo, y 7 de 16 fichas reales iban a revision. Una pagina
+        # de listado con nombre de listado (`propiedades.php?id=2`) sigue siendo
+        # categoria.
+        if url and _id_de_ficha_en_la_query(url):
             return False
         # Tambien la categoria titulada con el tipo SOLO, en singular:
         # `fios.com.ar/Casa-en-venta` tiene de encabezado «Casa» y 23 fichas
