@@ -64,6 +64,7 @@ NORMALIZADA_CANONICA = "CANONICAL_NORMALIZED"
 APOYADA_EN_COORDENADA = "COORDINATE_SUPPORTED"
 DESCONOCIDA = "UNKNOWN"
 PROVINCE_CONFLICT_REASON = "la provincia declarada contradice al catalogo"
+DEPARTAMENTO_REASON = "nombra un departamento de la provincia declarada, no una localidad"
 CABA_POR_POLIGONO_REASON = ("provincia declarada 'Buenos Aires' desempatada: la "
                             "coordenada cae dentro del poligono oficial de CABA (IGN)")
 
@@ -419,6 +420,12 @@ class Geografia:
                     return destino.provincia
         return None
 
+    def _es_departamento_de(self, clave: str, provincia: str) -> bool:
+        objetivo = normalizar(provincia)
+        return any(normalizar(e.provincia) == objetivo
+                   and normalizar(e.departamento or "") == clave
+                   for e in self.entidades)
+
     @staticmethod
     def _caba_confirmada_por_poligono(entidad: Entidad, provincia: str,
                                       lat: Any, lon: Any) -> bool:
@@ -529,6 +536,14 @@ class Geografia:
         filtradas = self._filtrar_por_contexto(
             candidatas, provincia=provincia, departamento=departamento)
         if not filtradas:
+            if provincia and self._es_departamento_de(clave, provincia):
+                # «San Jeronimo, Santa Fe» (`metro`, lotes en Monje) o «Colon,
+                # Cordoba» (`jm norte`, 38): nombran un DEPARTAMENTO de la
+                # provincia declarada, y la unica localidad homonima esta en
+                # otra provincia. No hay contradiccion: la provincia es cierta y
+                # la localidad no se afirma. 51 de 288 conflictos medidos el 28-09.
+                return Resolucion(None, AMBIGUA, DESCONOCIDA, total,
+                                  DEPARTAMENTO_REASON)
             return Resolucion(None, AMBIGUA, DESCONOCIDA, total,
                               PROVINCE_CONFLICT_REASON)
         if len(filtradas) == 1:

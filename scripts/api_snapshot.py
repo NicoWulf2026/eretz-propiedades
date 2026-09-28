@@ -73,6 +73,9 @@ from scripts.run_rollout import (FRACCION_COMPARTIDA,  # noqa: E402
 from connectors.base import RE_TIPO_ACCESORIO, detectar_tipo, geografia  # noqa: E402
 from connectors.exterior import (POLITICA_PUBLICA, evidencia_de_exterior,  # noqa: E402
                                  publicable)
+from connectors import poligono_caba  # noqa: E402
+from connectors.geografia import (CABA_POR_POLIGONO_REASON,  # noqa: E402
+                                  PROVINCE_CONFLICT_REASON)
 import re  # noqa: E402
 import unicodedata  # noqa: E402
 
@@ -304,6 +307,23 @@ def _publicable_en_argentina(cruda: dict[str, Any], fresca: dict[str, Any] | Non
 CABA = "Ciudad Autónoma de Buenos Aires"
 
 
+def _conflicto_vigente(conflicto: dict[str, Any]) -> str:
+    """El motivo que da HOY el resolvedor para lo que la ficha publico.
+
+    Sin catalogo se respeta el conflicto registrado (fail-closed).
+    """
+    publicado = conflicto.get("publicado") or {}
+    try:
+        resolucion = geografia().resolver_localidad(
+            publicado.get("localidad"), provincia=publicado.get("provincia"),
+            lat=publicado.get("latitud"), lon=publicado.get("longitud"))
+    except (OSError, ValueError):
+        return PROVINCE_CONFLICT_REASON
+    if not publicado.get("localidad"):
+        return PROVINCE_CONFLICT_REASON
+    return resolucion.motivo
+
+
 def _geo_de_la_extraccion(g: dict[str, Any] | None, fresca: dict[str, Any] | None
                           ) -> tuple[dict[str, Any] | None, str | None]:
     """La cobertura geo (21-09) corregida por lo que decidio la extraccion fresca.
@@ -315,16 +335,29 @@ def _geo_de_la_extraccion(g: dict[str, Any] | None, fresca: dict[str, Any] | Non
     - CABA confirmada por contencion en el poligono oficial del IGN
       (`extra.provincia_por_poligono`) levanta el conflicto de texto que la
       cobertura habia registrado. Solo la provincia: la comuna no se deduce.
+    - Un conflicto registrado por un paquete VIEJO se re-evalua con el
+      resolvedor vigente: si hoy ya no es contradiccion (un departamento de la
+      provincia declarada, «San Jeronimo, Santa Fe»; o CABA dentro del
+      poligono) no se impone. Devuelve `conflicto_obsoleto` o
+      `caba_por_poligono`, y quien llama saca ese conflicto de la fila.
     """
     extra = (fresca or {}).get("extra") or {}
     conflicto = extra.get("geo_conflicto")
-    if isinstance(conflicto, dict) and conflicto:
-        if (g or {}).get("estado_geografico") == "GEO_CONFLICT":
-            return g, None
-        return dict(g or {}, estado_geografico="GEO_CONFLICT", conflicto=conflicto), "conflicto_fresco"
     poligono = extra.get("provincia_por_poligono")
-    if (isinstance(poligono, dict) and poligono.get("provincia") == CABA
-            and (g or {}).get("estado_geografico") == "GEO_CONFLICT"):
+    if isinstance(conflicto, dict) and conflicto:
+        vigente = _conflicto_vigente(conflicto)
+        if vigente == CABA_POR_POLIGONO_REASON:
+            poligono = {"provincia": CABA, "geometria": poligono_caba.procedencia() or {}}
+        elif vigente != PROVINCE_CONFLICT_REASON:
+            return g, "conflicto_obsoleto"
+        elif (g or {}).get("estado_geografico") == "GEO_CONFLICT":
+            return g, None
+        else:
+            return dict(g or {}, estado_geografico="GEO_CONFLICT", conflicto=conflicto), "conflicto_fresco"
+    if isinstance(poligono, dict) and poligono.get("provincia") == CABA:
+        if ((g or {}).get("provincia_canonica") == CABA
+                and (g or {}).get("estado_geografico") != "GEO_CONFLICT"):
+            return g, ("conflicto_obsoleto" if conflicto else None)
         return dict(
             g or {}, localidad_canonica=None, localidad_id=None,
             departamento_canonico=None, municipio_canonico=None,
@@ -498,6 +531,12 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
         g, correccion_geo = _geo_de_la_extraccion(geo.get(hash_dedup), fresca)
         if correccion_geo:
             correcciones_geo[correccion_geo] += 1
+        if (correccion_geo in ("conflicto_obsoleto", "caba_por_poligono")
+                and isinstance(cruda.get("extra"), dict)
+                and "geo_conflicto" in cruda["extra"]):
+            # `fila_de_api` vuelve a imponer el conflicto que lleve la fila.
+            cruda = dict(cruda, extra={k: v for k, v in cruda["extra"].items()
+                                       if k != "geo_conflicto"})
         # The stored gate may predate this merge. It cannot promise a price or
         # operation scope that the actual row no longer supports.
         actual_scopes, _ = alcances(cruda, g)
@@ -561,6 +600,7 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
         "politica_publica": POLITICA_PUBLICA,
         "geo_conflictos_de_la_extraccion_fresca": correcciones_geo["conflicto_fresco"],
         "caba_confirmada_por_poligono": correcciones_geo["caba_por_poligono"],
+        "geo_conflictos_viejos_que_ya_no_lo_son": correcciones_geo["conflicto_obsoleto"],
         "imagenes_compartidas_descartadas": imagenes_compartidas,
         "descripciones_del_sitio_descartadas": descripciones_del_sitio,
         "titulos_del_sitio_descartados": titulos_del_sitio,

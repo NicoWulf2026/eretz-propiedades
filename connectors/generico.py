@@ -3138,9 +3138,11 @@ class GenericoConnector(Connector):
                                or (None if es_emprendimiento else (
                                    detectar_tipo(texto_campos[:300])
                                    or self._tipo_en_la_ficha(principal)))),
-            "dormitorios": None if es_emprendimiento else self._cuenta_de_ficha(
-                principal, texto_campos, ETIQUETAS_DE_CONTEO["dormitorios"],
-                datos.get("dorm")),
+            "dormitorios": None if es_emprendimiento else (
+                self._cuenta_de_ficha(principal, texto_campos,
+                                      ETIQUETAS_DE_CONTEO["dormitorios"],
+                                      datos.get("dorm"))
+                or self._dormitorios_del_titulo(titulo)),
             "banos": None if es_emprendimiento else self._cuenta_de_ficha(
                 principal, texto_campos, ETIQUETAS_DE_CONTEO["banos"], datos.get("banos")),
             "ambientes": None if es_emprendimiento else (
@@ -4631,6 +4633,25 @@ class GenericoConnector(Connector):
         return int(hallazgos[0])
 
     @staticmethod
+    def _dormitorios_del_titulo(titulo: str | None) -> int | None:
+        """Los dormitorios que la ficha solo dice en su titulo.
+
+        «VENTA DEPARTAMENTO 3 DORMITORIOS CON COCHERA» (`metro`, `imperia`):
+        la ficha no los rotula en otro lado. Mismas guardas que
+        `_ambientes_del_titulo`: una sola unidad y un solo numero, sin rangos
+        («2 y 3 dormitorios» es un emprendimiento, no esta ficha).
+        """
+        if not titulo:
+            return None
+        hallazgos = re.findall(
+            r"(?<![\d+])\b([1-9])\s*(?:dormitorios?\b|dorm\b)", titulo, re.I)
+        if len(hallazgos) != 1 or re.search(
+                r"\+|\d\s*(?:y|a|o|-|/|,)\s*\d\s*dorm|\b(?:casas|deptos|"
+                r"departamentos|unidades|locales|en\s+block)\b", titulo, re.I):
+            return None
+        return int(hallazgos[0])
+
+    @staticmethod
     def _es_tabla_de_atributos(texto: str) -> bool:
         """Si la ficha lista los atributos como ``Rotulo N`` y no como prosa.
 
@@ -4962,10 +4983,18 @@ class GenericoConnector(Connector):
         """Si la etiqueta vive en una celda junto a OTRO atributo conocido."""
         celda = r"(?:span|div|dd|dt|td|th|li|p|b|strong|h[1-6]|figure)"
         for bloque in re.finditer(
-                rf"<{celda}[^>]*>([^<>]{{1,60}})</{celda}>", marcado or "",
+                rf"<({celda})[^>]*>([^<>]{{1,60}})</{celda}>", marcado or "",
                 re.I):
-            contenido = bloque.group(1)
+            contenido = bloque.group(2)
             if not re.search(etiqueta, contenido, re.I):
+                continue
+            # «3 DORMITORIOS CON COCHERA» en un TITULO dice un valor, no es un
+            # rotulo que funde dos atributos: 83 fichas (`imperia`, `metro`,
+            # `brunetti`...) perdian los dormitorios del <h1> como descartados.
+            # Solo encabezados: en otras celdas la guarda sigue (`bottai` tiene
+            # un buscador «1 dormitorio 2 dormitorios…» en la pagina).
+            if (re.fullmatch(r"h[1-6]", bloque.group(1), re.I)
+                    and re.search(rf"\d\s*(?:{etiqueta})", contenido, re.I)):
                 continue
             otros = {m.group(0).lower() for m in re.finditer(
                 ETIQUETAS_ATRIBUTO_COMPUESTO, contenido, re.I)}

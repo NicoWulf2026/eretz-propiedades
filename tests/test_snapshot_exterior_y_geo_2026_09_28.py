@@ -8,9 +8,37 @@
 """
 from __future__ import annotations
 
+import pytest
+
 from connectors.exterior import (PRESERVED_NOT_PUBLISHED, PRODUCT_DECISION_PENDING,
                                  publicable)
+from connectors.geografia import (AMBIGUA, DEPARTAMENTO_REASON, DIRECTORIO_POR_DEFECTO,
+                                  geografia)
 from scripts.api_snapshot import CABA, _geo_de_la_extraccion, _publicable_en_argentina
+
+pytestmark = pytest.mark.skipif(
+    not (DIRECTORIO_POR_DEFECTO / "localidades_censales.json").exists(),
+    reason="falta el snapshot de GeoRef; se baja con scripts/geo_snapshot.py")
+
+
+@pytest.mark.parametrize("localidad,provincia", [("San Jerónimo", "Santa Fe"),
+                                                 ("Colón", "Córdoba"),
+                                                 ("Junín", "San Luis")])
+def test_un_departamento_de_la_provincia_declarada_no_la_contradice(localidad, provincia) -> None:
+    r = geografia().resolver_localidad(localidad, provincia=provincia)
+    assert r.entidad is None
+    assert r.certeza == AMBIGUA and r.motivo == DEPARTAMENTO_REASON
+
+
+def test_el_pipeline_conserva_la_provincia_ante_un_departamento() -> None:
+    from connectors.base import Connector, PropiedadNormalizada
+    prop = PropiedadNormalizada(canonical_agency_id="roomix:x", source_listing_id="1",
+                                source_url="https://x.test/p/1", connector="generico",
+                                ciudad="San Jerónimo", provincia="Santa Fe")
+    Connector._resolver_geografia(prop)
+    assert prop.provincia == "Santa Fe"
+    assert prop.ciudad is None
+    assert "geo_conflicto" not in prop.extra
 
 
 def test_publicable_solo_sin_marca_de_exterior() -> None:
@@ -70,6 +98,35 @@ def test_caba_por_poligono_levanta_el_conflicto_solo_a_nivel_provincia() -> None
     assert g["barrio_fuente"] == "Palermo"
 
 
-def test_el_poligono_no_toca_una_cobertura_sin_conflicto() -> None:
+def test_el_poligono_no_toca_una_cobertura_que_ya_dice_caba() -> None:
+    cobertura = {"provincia_canonica": CABA, "estado_geografico": None,
+                 "municipio_canonico": "Comuna 14"}
     fresca = {"extra": {"provincia_por_poligono": {"provincia": CABA}}}
-    assert _geo_de_la_extraccion(COBERTURA_BA, fresca) == (COBERTURA_BA, None)
+    assert _geo_de_la_extraccion(cobertura, fresca) == (cobertura, None)
+
+
+def test_un_conflicto_viejo_que_nombra_un_departamento_no_se_impone() -> None:
+    """`metro`: «San Jeronimo, Santa Fe» son lotes en Monje, departamento San Jeronimo."""
+    cobertura = {"provincia_canonica": "Santa Fe", "estado_geografico": None}
+    conflicto = {"publicado": {"provincia": "Santa Fe", "localidad": "San Jerónimo",
+                               "latitud": None, "longitud": None}}
+    g, motivo = _geo_de_la_extraccion(cobertura, {"extra": {"geo_conflicto": conflicto}})
+    assert motivo == "conflicto_obsoleto"
+    assert g == cobertura
+
+
+def test_un_conflicto_viejo_de_caba_dentro_del_poligono_afirma_caba() -> None:
+    """Paquete certificado antes del poligono: se re-evalua sin esperar la cola."""
+    vieja = {"estado_geografico": "GEO_CONFLICT", "provincia_canonica": None}
+    conflicto = {"publicado": {"provincia": "Buenos Aires", "localidad": "CABA",
+                               "latitud": -34.6037, "longitud": -58.3816}}
+    g, motivo = _geo_de_la_extraccion(vieja, {"extra": {"geo_conflicto": conflicto}})
+    assert motivo == "caba_por_poligono"
+    assert g["provincia_canonica"] == CABA and g["estado_geografico"] is None
+
+
+def test_un_conflicto_viejo_de_caba_en_quilmes_sigue() -> None:
+    conflicto = {"publicado": {"provincia": "Buenos Aires", "localidad": "CABA",
+                               "latitud": -34.7206, "longitud": -58.2546}}
+    g, motivo = _geo_de_la_extraccion(COBERTURA_BA, {"extra": {"geo_conflicto": conflicto}})
+    assert motivo == "conflicto_fresco" and g["estado_geografico"] == "GEO_CONFLICT"

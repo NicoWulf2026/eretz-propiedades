@@ -446,6 +446,44 @@ huella no frene a los workers; el lote se aplica y se commitea de una vez en la 
   Ojo: `TaskStop` de una tarea de fondo corta el bash pero NO siempre sus hijos (quedó vivo un
   build de snapshot); verificar procesos después de detener tareas.
 
+## 28-09 noche: decisiones del usuario ejecutadas (v4g, exterior, CABA)
+- **v4g desplegada** 16:58 (autorizada): respaldo v2 verificado por hash, `os.replace` atómico,
+  QA 14/14 igual a la candidata, 0 GEO_CONFLICT en mapa, sin rollback. Registro en
+  `ERETZ_API_CONTRACT/_despliegues/`. Mecanismo: `scripts/desplegar_snapshot.py`. Ojo:
+  `psutil.open_files()` se cuelga en Windows (el primer intento quedó colgado ANTES de tocar nada);
+  el chequeo de «nadie la tiene abierta» es apertura exclusiva con `CreateFileW`.
+- **Exterior** = `ARGENTINA_ONLY` (decisión durable): se conserva (`PRESERVED_NOT_PUBLISHED`), la
+  snapshot lo excluye (`e124dbfa29`).
+- **CABA por polígono IGN** (`e124dbfa29`): 32 de 99 recuperables. En la snapshot, la geografía
+  sale de la cobertura del 21-09 (`GEO_COVERAGE_AUDIT.jsonl`), no de la extracción: de las 36
+  con coordenadas, 19 están servidas (en GEO_CONFLICT) y 13 no están en la preingestión (no se
+  sirven hasta reconstruir el canónico). Además 53 de `blanco` (CABA + «Buenos Aires», sin
+  coordenadas) se servían como provincia de Buenos Aires porque el cierre parcial no fusiona
+  `extra`: ahora el conflicto fresco manda (fail-closed).
+- Snapshot candidata **v4h** (17:36): 57.634 = v4g − 31 del exterior (todas verificadas: Miami,
+  Punta del Este, Montevideo, Encarnación, Asunción, Copacabana, Camboriú; se servían con geografía
+  argentina inventada, p. ej. Miami como «Buenos Aires / Pilar»). Geo cambiada en 62: 55 `blanco`
+  → GEO_CONFLICT (correcto) y 7 `metro` → GEO_CONFLICT (INCORRECTO: ver abajo). Reemplazada por v4i.
+- **Departamento ≠ contradicción**: 51 de 288 conflictos nombran un DEPARTAMENTO de la provincia
+  declarada («Colón, Córdoba» jm norte 38; «San Jerónimo, Santa Fe» metro 7; «Junín, San Luis»
+  3…) y la única localidad homónima está en otra provincia. Ahora `AMBIGUOUS` con
+  `DEPARTAMENTO_REASON`: se conserva la provincia, no se afirma localidad.
+- La snapshot **re-evalúa** cada `geo_conflicto` de paquete con el resolvedor vigente: si ya no es
+  contradicción (departamento) no se impone; si el polígono confirma CABA, afirma CABA sin esperar
+  la recertificación.
+- **Dormitorios en el título** (`generico`): la guarda de rótulo compuesto leía el `<h1>` «VENTA
+  DEPARTAMENTO 3 DORMITORIOS CON COCHERA» como un rótulo que funde dos atributos y los descartaba
+  (216 fichas con dormitorios descartados, 119 con «N dormitorios» en el título). Excepción solo
+  para encabezados h1–h6 con número antes del rótulo (en otras celdas sigue: `bottai` tiene un
+  buscador «1 dormitorio 2 dormitorios…») + `_dormitorios_del_titulo` con las guardas de
+  ambientes. A/B sobre el HTML cacheado de las 216: +104 dormitorios en 16 agencias, 0 perdidos
+  (1 ambientes «2 ambientes comodín» de una casa de 5 dormitorios pasa a vacío: corrección).
+  Radio (1 ficha por agencia): 2 de 197, ambos verificados.
+- Gate 18h: 482 agencias, 0 pendientes (`esnal` tipo cochera → vacío firmado CORRECCION).
+- Visto al pasar: `alonso propiedades` tiene como «web oficial» un listado de buscainmueble.com (un
+  PORTAL), certificado el 16-09 (NEEDS_FIX, 1 fila que es una página de listado, no alimenta la
+  snapshot). Cuando la cola lo recertifique, confirmar que la guarda de identidad lo rechaza.
+
 ## Decisiones de producto abiertas (no técnicas)
 - **robots.txt**: el pipeline no lo consulta. Medido 26-09 00:1x: 283 agencias certificadas o en
   NEEDS_FIX, 31.354 URLs de ficha, **0 prohibidas** para nuestro UA. Los dos casos que sí prohíben
