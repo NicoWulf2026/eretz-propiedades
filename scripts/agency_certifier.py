@@ -651,6 +651,39 @@ def selected_source(record: dict[str, dict[str, Any]]) -> tuple[str | None, str]
     return url, origin
 
 
+def _clave_de_web(url: str | None) -> str | None:
+    """La web como identidad: host sin www, ruta y query; sin esquema ni barra final."""
+    if not url:
+        return None
+    partes = urllib.parse.urlsplit(url.strip())
+    host = (partes.hostname or "").lower().removeprefix("www.")
+    if not host:
+        return None
+    ruta = partes.path.rstrip("/").lower()
+    return f"{host}{ruta}" + (f"?{partes.query}" if partes.query else "")
+
+
+_WEBS_COMPARTIDAS: dict[int, dict[str, list[str]]] = {}
+
+
+def webs_compartidas(catalog: dict[str, dict[str, Any]]) -> dict[str, list[str]]:
+    """Web oficial -> agencias que la declaran, solo si son dos o mas."""
+    clave_del_catalogo = id(catalog)
+    if clave_del_catalogo not in _WEBS_COMPARTIDAS:
+        por_web: dict[str, list[str]] = {}
+        for canonical_id, record in catalog.items():
+            try:
+                clave = _clave_de_web(selected_source(record)[0])
+            except (AttributeError, TypeError):
+                continue
+            if clave:
+                por_web.setdefault(clave, []).append(canonical_id)
+        _WEBS_COMPARTIDAS.clear()
+        _WEBS_COMPARTIDAS[clave_del_catalogo] = {
+            web: sorted(ids) for web, ids in por_web.items() if len(ids) > 1}
+    return _WEBS_COMPARTIDAS[clave_del_catalogo]
+
+
 def resolve_identity(record: dict[str, dict[str, Any]], canonical_id: str) -> dict[str, Any]:
     resolution, live = record["resolution"], record["live"]
     source, platform, directory = record["source"], record["platform"], record["directory"]
@@ -1099,6 +1132,18 @@ def certify(canonical_id: str, catalog: dict[str, dict[str, Any]], output: Path,
         return result
 
     identity = resolve_identity(record, canonical_id)
+    # La misma web oficial en dos agencias distintas no prueba cual de las dos
+    # es: `martinez negocios inmobiliarios` y `martinez propiedades` declaran
+    # las dos https://www.inmueblesmartinez.com.ar/ (2026-09-28). Sin evidencia
+    # no se fusionan ni se le atribuye el inventario a ninguna: quedan en
+    # revision de identidad, que es terminal para la cola y no la frena.
+    compartida = webs_compartidas(catalog).get(_clave_de_web(identity.get("official_url")))
+    if identity["identity_status"] == "READY" and compartida:
+        otras = [c for c in compartida if c != canonical_id]
+        identity = {**identity, "identity_status": "IDENTITY_PENDING",
+                    "identity_reasons": [
+                        "IDENTITY_REVIEW: official website shared with "
+                        f"{len(otras)} other agency(ies): {', '.join(otras)[:200]}"]}
     base_result = {**identity, "certifier_version": CERTIFIER_VERSION,
                    "checked_at": started}
     if identity["identity_status"] != "READY":

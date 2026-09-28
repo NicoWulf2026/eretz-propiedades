@@ -276,6 +276,7 @@ def archivos_de_la_huella() -> list[Path]:
         ROOT / "scripts" / "geo_reference.py",
         ROOT / "connectors" / "texto.py",
         ROOT / "connectors" / "coherencia.py",
+        ROOT / "connectors" / "exterior.py",
         ROOT / "connectors" / "formularios.py",
         ROOT / "connectors" / "generico.py",
         ROOT / "connectors" / "tokko.py",
@@ -363,6 +364,10 @@ def fingerprint_components(connector: str, strategy: str) -> dict[str, bytes]:
         # sola certificacion. Tercera vez que aparece codigo semantico afuera.
         "shared/coherencia": _semantic_file(
             ROOT / "connectors" / "coherencia.py"),
+        # Decide que propiedades se marcan del exterior y quedan sin geografia
+        # argentina (`base.completar_ubicacion`): cambia lo que se guarda.
+        "shared/exterior": _semantic_file(
+            ROOT / "connectors" / "exterior.py"),
     }
     if connector != "generico":
         components[f"connector/{connector}"] = _semantic_file(

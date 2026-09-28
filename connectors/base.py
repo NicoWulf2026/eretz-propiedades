@@ -852,6 +852,8 @@ class Connector:
         se pisa con una inferencia- y queda marcada como inferida, porque la
         provincia de la inmobiliaria no es necesariamente la del inmueble.
         """
+        if Connector._marcar_exterior(prop):
+            return
         Connector._canonizar_la_provincia_publicada(prop)
         padron = fuente.extra or {}
         provincia = padron.get("province")
@@ -865,6 +867,40 @@ class Connector:
             # donde salio una propiedad sin contaminar los campos de ubicacion.
             prop.extra["zona_padron"] = zona
         self._resolver_geografia(prop)
+
+    @staticmethod
+    def _marcar_exterior(prop: "PropiedadNormalizada") -> bool:
+        """Un inmueble publicado fuera de Argentina: se conserva y se marca.
+
+        Publicarlo o no es una decision de producto pendiente
+        (`PRODUCT_DECISION_PENDING`), asi que la propiedad sigue igual y lo que
+        la fuente publico queda en `extra`. Lo que no se hace es afirmarle
+        geografia argentina: sin esto «CIUDAD DE MIAMI» terminaba de barrio en
+        la provincia de Buenos Aires (la de la plantilla del sitio) y Punta del
+        Este en Santa Fe, Catamarca o Cordoba (la del padron). Medido
+        2026-09-28: 30 fichas de 12 agencias. Ver `connectors/exterior.py`.
+        """
+        from connectors.exterior import PRODUCT_DECISION_PENDING, evidencia_de_exterior
+        try:
+            catalogo = geografia()
+            es_argentina = lambda texto: catalogo.resolver_localidad(texto).resuelta  # noqa: E731
+        except (OSError, ValueError):
+            es_argentina = lambda texto: True  # noqa: E731  sin catalogo no se afirma nada
+        evidencia = evidencia_de_exterior(
+            prop.titulo, prop.ciudad, prop.barrio,
+            prop.extra.get("pais_publicado") or prop.extra.get("pais"), es_argentina)
+        if not evidencia:
+            return False
+        prop.extra["pais_publicado"] = evidencia["pais"]
+        prop.extra["exterior_evidencia"] = evidencia["evidencia"]
+        prop.extra["publicacion_exterior"] = PRODUCT_DECISION_PENDING
+        for campo in ("ciudad", "barrio", "provincia"):
+            valor = getattr(prop, campo)
+            if valor:
+                prop.extra[f"{campo}_publicada"] = valor
+                setattr(prop, campo, None)
+                Connector._marcar_descartado(prop, campo)
+        return True
 
     @staticmethod
     def _marcar_descartado(prop: "PropiedadNormalizada", campo: str) -> None:
