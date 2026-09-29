@@ -594,6 +594,32 @@ Cada ítem: qué, por qué, comando exacto, commit de referencia. LOCAL lo tacha
       automático P2 (comandos en `docs/CLOUD_BOOTSTRAP.md` §6).
 - [ ] Medir radio del lote 4 sobre los paquetes cuando CLOUD lo deje preparado.
 
+### De CLOUD, sesión 29-09 noche (rama `claude/sweet-curie-doa2mn`, derivada de `ce57824`)
+Nada de esto toca la huella: integrarlo NO reinicia la recertificación.
+- [ ] **Integrar** (fast-forward si la rama de handoff no se movió; si se movió, merge):
+      `git fetch origin claude/sweet-curie-doa2mn && git merge --ff-only origin/claude/sweet-curie-doa2mn`
+      (si falla el ff: `git merge origin/claude/sweet-curie-doa2mn`, sin rebase ni force).
+- [ ] **Dependencia nueva** `httpx2` (dev; la exige `starlette.testclient` 1.x — sin ella 8 tests de
+      la API v2 no corrían en un entorno limpio): `python -m pip install --require-hashes -r requirements.lock`.
+- [ ] **Suite en modo estricto** (en LOCAL faltar GeoRef es un problema, no un salto):
+      `set ERETZ_REQUIRE_LOCAL_DATA=1` y `python -m pytest -q -p no:cacheprovider`.
+      Evidencia a devolver: el total y 0 failed (el último total LOCAL fue 3.701; esta rama suma
+      `test_snapshot_sintetica.py`, `test_activar_snapshot_beta.py` y 2 en `test_canary_credencial.py`). En CLOUD da
+      3558 passed, 170 skipped (los 170 = GeoRef y estado operativo ausentes, a propósito).
+- [ ] **QA de navegador sintética en Windows** (no toca datos):
+      `python scripts/qa_navegador_sintetica.py --salida _scratch/qa_sintetica`
+      → devolver `_scratch/qa_sintetica/QA_NAVEGADOR_SINTETICA.json` (en CLOUD: 73 → 66 ok, 0 fallos, 7 salteados por flag).
+- [ ] **P21, tamaño del volumen** (REQUIRES_LOCAL_OPERATIONAL_STATE): tamaño en bytes de la snapshot
+      servida `ERETZ_API_CONTRACT\ERETZ_API_SNAPSHOT.sqlite3` → dimensiona el volumen (3×). Runbook:
+      `deploy/api-beta/RUNBOOK.md`. La cuenta/pago de hosting es `EXTERNAL_ACCOUNT_REQUIRED`.
+- [ ] **P18, evidencia de solo lectura** (con la credencial de solo lectura, NO escribe): ¿es
+      `eretz_preview_ro` miembro de `eretz_direct_property_writer` en producción? Consulta en
+      `docs/agent/RUNBOOK_ROL_ESCRITOR.md` paso 1. Si lo es, la credencial del Preview puede escribir
+      hoy: priorizar la aplicación de `migrations/eretz_property_writer_role.sql` (acción productiva,
+      requiere autorización + backup/restore).
+- [ ] **Snapshot sintética ≠ servida**: `desplegar_snapshot.py` ahora aborta si la candidata se
+      declara sintética (`snapshot_meta.sintetica = 1`). Nada que hacer; es una compuerta más.
+
 ## Decisiones de producto abiertas (no técnicas)
 - **robots.txt**: el pipeline no lo consulta. Medido 26-09 00:1x: 283 agencias certificadas o en
   NEEDS_FIX, 31.354 URLs de ficha, **0 prohibidas** para nuestro UA. Los dos casos que sí prohíben

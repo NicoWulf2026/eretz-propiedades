@@ -33,6 +33,21 @@ python -m pytest -q -p no:cacheprovider tests/test_snapshot_certificadas_2026_09
 PYTHON_DOTENV_DISABLED=1 python -m pytest -q -p no:cacheprovider
 ```
 Al checkpoint: 3.701 passed en la máquina original.
+En CLOUD/CI (sin estado local): 3.558 passed, 170 skipped, 0 failed (29-09, Linux, Python 3.14.4).
+Los salteados dicen el motivo (GeoRef o estado operativo ausente). En LOCAL, correr con
+`ERETZ_REQUIRE_LOCAL_DATA=1`: ahí la ausencia es un fallo, no un salto.
+Python 3.14: usar una versión final (3.14.0rc2 rompe pydantic al colectar); con `uv`:
+`uv python install 3.14.4`.
+
+### QA sin estado local
+```bash
+python scripts/snapshot_sintetica.py --salida _scratch/sintetica/ERETZ_API_SNAPSHOT.sqlite3
+python scripts/benchmark_unified_api.py _scratch/sintetica/ERETZ_API_SNAPSHOT.sqlite3 --output /tmp/B.json   # 14/14
+# navegador de punta a punta (API + next dev + Playwright); Chromium ya instalado opcional:
+ERETZ_E2E_CHROMIUM=/ruta/chrome python scripts/qa_navegador_sintetica.py --salida _scratch/qa_sintetica
+# rol escritor P18 en PostgreSQL/WASM (PGlite en _scratch):
+cd _scratch/unification/postgres-check && npm install @electric-sql/pglite && cd - && node scripts/verify_writer_role.mjs
+```
 
 ## 4. Datos (NO están en el repo — el repo es público)
 **Arquitectura híbrida:** en CLOUD no hay estado operativo y no hace falta: todo lo que sigue en

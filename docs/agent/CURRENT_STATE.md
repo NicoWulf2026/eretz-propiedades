@@ -97,6 +97,26 @@ sin aplicar porque reinician la recertificación entera: aglomerados GeoRef (+11
 sin señal (4 agencias, 348 prop.), buscador Houzez / unidades / «Provincia: Argentina» (`o feely`, 600).
 `o feely` tiene diferida firmada (29-09 10:05, radio AGENCIA): la familia wordpress queda liberada.
 
+## CLOUD 2026-09-29 noche — rama `claude/sweet-curie-doa2mn` (derivada de `ce57824`)
+Nada toca la huella. Integración y verificación en LOCAL: `HANDOFF.md` § PARA LOCAL.
+- **P9 hecho**: título derivado «{tipo} en {operación} · {localidad}» en la web (`728ef67`);
+  `hasValidTitle` intacto. Mobile sin tocar.
+- **Suite reproducible fuera de la PC** (`bfa37a7`): en Linux/3.14.4 desde clone limpio
+  3.558 passed, 170 skipped, 0 failed (antes 58 fallos). Marcador `georef` +
+  `ERETZ_REQUIRE_LOCAL_DATA=1` para exigir los datos en LOCAL. `httpx2` al lock.
+- **Snapshot sintética de QA** (`scripts/snapshot_sintetica.py`, 86 fichas; el commit
+  `ab64c32` dice 58, fue un error de conteo): mismo esquema/documento que la real, rotulada;
+  QA de API 14/14; `desplegar_snapshot.py` y `/readyz` la rechazan.
+- **QA de navegador reproducible** (`scripts/qa_navegador_sintetica.py`): e2e completa sobre
+  `f7d4b1c` limpio: 73 → 66 ok, 0 fallos, 7 salteados (asistente de publicación con flag apagado).
+- **API beta P21 preparada** (`deploy/api-beta/`): imagen docker verificada, `/healthz`,
+  `/readyz`, activación/rollback atómico de snapshot en volumen. `EXTERNAL_ACCOUNT_REQUIRED`.
+- **Rol escritor P18 preparado** (`b74184b`): cargador LOGIN NOINHERIT + escritor; revoca la
+  membresía de `eretz_preview_ro` (la credencial de solo lectura del Preview podía escribir
+  vía canario). PGlite 14/14. Sin crear.
+- Red del entorno CLOUD: sin salida a webs de agencias ni a IGN/GeoRef (política del entorno);
+  sí PyPI, npm y Docker Hub. Lo que necesita red de fuentes queda para LOCAL.
+
 ## Snapshot de la API local
 - **Servida: v4j** desde el 28-09 22:58 (exterior excluido, CABA por polígono, departamentos,
   precios simbólicos; deploy autorizado y verificado, respaldo de la v4g en
