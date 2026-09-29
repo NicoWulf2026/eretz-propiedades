@@ -1,0 +1,9 @@
+# Contexto de build de deploy/api-beta/Dockerfile: la imagen copia solo api/,
+# scripts/rutas_de_datos.py y deploy/api-beta/. Nada de datos ni secretos.
+*
+!api/
+!scripts/rutas_de_datos.py
+!deploy/api-beta/
+api/__pycache__
+**/__pycache__
+**/*.pyc

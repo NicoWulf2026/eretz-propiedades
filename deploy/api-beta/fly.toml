@@ -1,0 +1,42 @@
+# API v2 de ERETZ, beta cerrada (P21). PREPARADO, NO DESPLEGADO:
+# EXTERNAL_ACCOUNT_REQUIRED (cuenta y medio de pago de Fly.io los crea el usuario).
+# Pasos, costos a verificar y rollback: deploy/api-beta/RUNBOOK.md.
+#
+# `app` y `primary_region` son valores a confirmar al crear la app:
+#   fly platform regions      (elegir la mas cercana a Argentina que este disponible)
+app = "eretz-api-beta"
+primary_region = "eze"
+
+[env]
+  PORT = "8080"
+  ERETZ_BETA_DATA = "/data"
+  ERETZ_API_SNAPSHOT = "/data/ERETZ_API_SNAPSHOT.sqlite3"
+  # Origen del frontend de la beta (Preview de Vercel). Sin esto la API acepta
+  # cualquier origen: completarlo antes del primer deploy (P22/P23).
+  ERETZ_CORS_ORIGINS = "https://COMPLETAR-preview.vercel.app"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Beta cerrada: una maquina que se apaga sin trafico y arranca con el primer
+  # pedido (mas barato; el primer pedido tarda mas).
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/readyz"
+
+# La snapshot vive aca y sobrevive a los deploys. Tamanio: medir la snapshot
+# servida en LOCAL y dejar lugar para 3 versiones (activa, anterior, nueva).
+[mounts]
+  source = "eretz_snapshot"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
