@@ -268,6 +268,11 @@ def main() -> int:
     ap.add_argument('--retirar-ausentes', action='store_true',
                     help='no servir filas que ya no estan en el inventario COMPLETO vigente '
                          'de su agencia')
+    # Politica P1 (29-09): se retira solo con muerte demostrada en la propia URL.
+    # El archivo lo produce `scripts/verificar_retiros.py`; aca se retira lo que
+    # dice REMOVED y ademas sigue ausente del inventario completo al construir.
+    ap.add_argument('--retiros-verificados', type=Path, default=None,
+                    help='JSONL de verificar_retiros.py: se retiran solo las REMOVED')
     ap.add_argument('--ledger', type=Path, default=None,
                     help='ledger de certificacion (por defecto, junto a --paquetes)')
     ap.add_argument("--cache-geometrica",
@@ -424,7 +429,8 @@ def _geo_de_la_extraccion(g: dict[str, Any] | None, fresca: dict[str, Any] | Non
 def _decision_certificadas(origen, args, ajenas):
     """Que sumar, que refrescar por alias y que retirar; None sin banderas."""
     if not (getattr(args, 'sumar_certificadas', False)
-            or getattr(args, 'retirar_ausentes', False)):
+            or getattr(args, 'retirar_ausentes', False)
+            or getattr(args, 'retiros_verificados', None)):
         return None
     ledger = args.ledger or Path(args.paquetes).parent / "AGENCY_CERTIFICATION_RESULTS.jsonl"
     return decidir(paquetes_vigentes(Path(args.paquetes), Path(ledger)),
@@ -462,6 +468,15 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
     nuevas = decision.nuevas if sumar else []
     retirar = (decision.retirables
                if decision is not None and getattr(args, 'retirar_ausentes', False) else set())
+    retiros_evidencia: dict[str, dict] = {}
+    if decision is not None and getattr(args, 'retiros_verificados', None):
+        for linea in Path(args.retiros_verificados).read_text(encoding='utf-8').splitlines():
+            if not linea.strip():
+                continue
+            fila = json.loads(linea)
+            if fila.get('veredicto') == 'REMOVED' and fila.get('hash_dedup') in decision.retirables:
+                retiros_evidencia[fila['hash_dedup']] = fila
+        retirar = set(retirar) | set(retiros_evidencia)
     alias_refrescados = 0
     if sumar:
         # El aviso con URL nueva refresca a la fila que ya se sirve, si esa
@@ -556,6 +571,10 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
     filas_con_frescura_parcial = 0
     sumadas = 0
     geo_de_la_fila_fresca: Counter = Counter()
+    # Por que cada id entra o no (politica P2: altas y bajas explicadas por id).
+    cambios: dict[str, str] = {h: ("RETIRO_MUERTE_VERIFICADA" if h in retiros_evidencia
+                                   else "RETIRO_AUSENTE_DE_INVENTARIO_COMPLETO")
+                               for h in retirar}
     anterior: tuple[str | None, int | None] = (None, None)
     # En orden de `hash_dedup`, que es el `id` de la API. La busqueda rankeada
     # elige su ventana de candidatos «por id» -una muestra estable y diversa:
@@ -572,6 +591,7 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
         canonical = cruda.get("canonical_agency_id")
         if canonical in ajenas:
             ajenas_omitidas += 1
+            cambios[hash_dedup] = "WEB_AJENA"
             continue
         # Politica publica ARGENTINA_ONLY (decidida el 28-09): lo del exterior
         # se conserva en paquetes y canonico, y no se sirve. Decide la marca de
@@ -579,6 +599,7 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
         # ella, la misma evidencia conservadora de `connectors.exterior`.
         if not _publicable_en_argentina(cruda, fresca):
             exterior_no_publicadas += 1
+            cambios[hash_dedup] = "EXTERIOR_ARGENTINA_ONLY"
             continue
         # Sin titulo, la descripcion se conserva: el contrato promete que
         # nunca faltan las dos, y una fila sin ningun texto no se entiende.
@@ -649,6 +670,7 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
             cobertura = cobertura_de_fila(cruda, cruda.get("connector"), hash_dedup,
                                           localidades, geometria)
             sumadas += 1
+            cambios[hash_dedup] = "SUMADA_CERTIFICADA"
         elif fresca is not None:
             cobertura, recalculo = _cobertura_de_la_fila_servida(
                 cobertura, base, cruda, hash_dedup, localidades, geometria)
@@ -715,6 +737,14 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
         filas += 1
     api.executemany("insert or replace into snapshot_meta values (?, ?)",
                     [("orden_de_filas", "id"), ("busqueda_rowid", "propiedades")])
+    with (destino.parent / "CAMBIOS_DE_INVENTARIO.jsonl").open("w", encoding="utf-8") as fh:
+        for h in sorted(cambios):
+            fh.write(json.dumps({"id": h, "motivo": cambios[h]}, ensure_ascii=False) + "\n")
+    if retiros_evidencia:
+        # Procedencia de cada retiro (P1): que, cuando y con que evidencia.
+        with (destino.parent / "RETIROS_APLICADOS.jsonl").open("w", encoding="utf-8") as fh:
+            for h in sorted(retiros_evidencia):
+                fh.write(json.dumps(retiros_evidencia[h], ensure_ascii=False) + "\n")
     api.commit()
 
     resumen = {
@@ -745,6 +775,7 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
             "nuevas_elegibles": len(decision.nuevas) if sumar else 0,
             "avisos_con_url_nueva_refrescados": alias_refrescados,
             "retiradas_ausentes_de_inventario_completo": len(retirar),
+            "retiradas_con_muerte_verificada": len(retiros_evidencia),
             "retirables_detectadas": len(decision.retirables),
             "motivos": dict(decision.motivos.most_common()),
         },

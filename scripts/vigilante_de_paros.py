@@ -91,7 +91,8 @@ def workers_vivos() -> list[dict]:
     viene a evitar.
     """
     fuera = []
-    for i in (0, 1):
+    # Hasta 3 puestos (politica P5): el regimen vigente puede ser 2 o 3.
+    for i in (0, 1, 2):
         ruta = CERT / CERROJO.format(i)
         if not ruta.exists():
             continue
@@ -528,7 +529,7 @@ def main() -> int:
             print("\nESTADO: CERO_WORKERS_SIN_BANDERA")
             print("   Nadie esta certificando y no hay un paro que lo explique.")
             print("   Puede ser un arranque pendiente o una caida sin rastro:")
-            print("   mirar w0.err y w1.err antes de relanzar.")
+            print("   mirar w0.err, w1.err y w2.err antes de relanzar.")
         cerrar(estado, previo, ahora, args)
         print("\ndatabase_writes: 0")
         return 0
