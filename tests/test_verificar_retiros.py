@@ -65,3 +65,18 @@ def test_todo_tokko_es_un_solo_sitio_para_la_cortesia():
     assert grupo_de("https://www.lipovich.com.ar/p/8585467-Departamento-en-Alquiler") == "backend:tokko"
     assert grupo_de("https://www.kaizenpropiedades.com/p/6577090-Terreno") == "backend:tokko"
     assert grupo_de("https://farinainmobiliaria.com.ar/property/100775-2/") == "farinainmobiliaria.com.ar"
+
+
+def test_redirigir_al_catalogo_sin_rastro_del_aviso_es_soft404():
+    url = "https://candelraul.com.ar/propiedad/536440"
+    catalogo = "<html><head><title>Propiedades - Candel</title></head><body>Listado</body></html>"
+    veredicto, _ = clasificar(url, [(302, url), (200, "https://candelraul.com.ar/propiedades")],
+                              catalogo, "Casa en Lomas", "536440", "Candel Raul Propiedades - Inmobiliarias")
+    assert veredicto == REMOVED
+
+
+def test_MUERDE_redirigir_a_otra_ficha_no_es_raiz_de_catalogo():
+    from scripts.verificar_retiros import es_raiz_de_catalogo
+    assert not es_raiz_de_catalogo("https://a.com/propiedad/1", "https://a.com/propiedad/2")
+    assert not es_raiz_de_catalogo("https://a.com/p/1", "https://otro.com/")
+    assert es_raiz_de_catalogo("https://a.com/p/1-x", "https://a.com/")

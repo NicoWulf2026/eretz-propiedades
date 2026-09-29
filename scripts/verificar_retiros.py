@@ -99,6 +99,16 @@ def ids_del_aviso(url: str, aviso: str | None) -> set[str]:
     return ids
 
 
+def es_raiz_de_catalogo(original: str, final: str) -> bool:
+    """El destino es la portada o la raiz del catalogo del MISMO sitio: sin id, a lo sumo un nivel."""
+    a, b = urllib.parse.urlparse(original), urllib.parse.urlparse(final)
+    if a.netloc.lower().removeprefix("www.") != b.netloc.lower().removeprefix("www."):
+        return False
+    segmentos = [s for s in b.path.split("/") if s]
+    return (len(segmentos) <= 1 and not re.search(r"\d", b.path)
+            and not ids_del_aviso(final, None))
+
+
 def es_la_ficha(original: str, final: str) -> bool:
     """El destino sigue siendo la misma ficha (mismo host y el mismo id o la misma ruta)."""
     a, b = urllib.parse.urlparse(original), urllib.parse.urlparse(final)
@@ -143,6 +153,10 @@ def clasificar(url: str, saltos: list[tuple[int, str]], cuerpo: str,
     if (redirigio and not es_la_ficha(url, final) and titulo_portada
             and _plano(titulo) == _plano(titulo_portada)):
         return REMOVED, f"soft-404: redirige a la portada ({final}) sin rastro del aviso"
+    if redirigio and not es_la_ficha(url, final) and es_raiz_de_catalogo(url, final):
+        # La URL de la ficha ya no sirve la ficha: sirve el catalogo del sitio
+        # (`candelraul` /propiedad/536440 -> /propiedades), sin rastro del aviso.
+        return REMOVED, f"soft-404: redirige al catalogo ({final}) sin rastro del aviso"
     return AMBIGUA, f"responde {'redirigida' if redirigio else '200'} sin mencionar el aviso"
 
 
@@ -223,21 +237,24 @@ def verificar(candidatas: list[dict[str, Any]], hilos: int = 6) -> list[dict[str
     def un_host(host: str, filas: list[dict[str, Any]]) -> None:
         sesion = requests.Session()
         with sitio.candado(host):
-            portada = None
+            portadas: dict[str, str] = {}
             for fila in filas:
                 url = fila["source_url"]
                 try:
                     if not robots_permite(sitio, url, sesion):
                         veredicto, evidencia = ROBOTS_BLOCKED, "robots.txt no lo permite"
                     else:
-                        if portada is None:
+                        # La portada es la de ESTE host: el grupo de cortesia
+                        # (todo Tokko) no es un sitio para compararlas.
+                        p = urllib.parse.urlparse(url)
+                        if p.netloc not in portadas:
                             sitio.esperar(host)
-                            p = urllib.parse.urlparse(url)
                             try:
                                 _, cuerpo_portada = pedir(f"{p.scheme}://{p.netloc}/", sesion)
-                                portada = _titulo_html(cuerpo_portada)
+                                portadas[p.netloc] = _titulo_html(cuerpo_portada)
                             except Exception:
-                                portada = ""
+                                portadas[p.netloc] = ""
+                        portada = portadas[p.netloc]
                         sitio.esperar(host)
                         saltos, cuerpo = pedir(url, sesion)
                         veredicto, evidencia = clasificar(url, saltos, cuerpo, fila.get("titulo"),
@@ -279,8 +296,8 @@ def main() -> int:
     ap.add_argument("--salida", type=Path, required=True, help="JSONL con el veredicto de cada candidata")
     ap.add_argument("--hilos", type=int, default=6)
     ap.add_argument("--reintentar", type=Path, default=None,
-                    help="resultado anterior: se vuelven a pedir solo las NO_VERIFICABLE "
-                         "(429, 5xx, timeouts) y se conserva el resto")
+                    help="resultado anterior: se vuelven a pedir las NO_VERIFICABLE (429, 5xx, "
+                         "timeouts) y las AMBIGUA, y se conserva el resto")
     args = ap.parse_args()
     previas: dict[str, dict] = {}
     if args.reintentar:
@@ -290,7 +307,7 @@ def main() -> int:
                 previas[fila["hash_dedup"]] = fila
         candidatas = [{k: f.get(k) for k in ("hash_dedup", "canonical_agency_id", "source_url",
                                               "source_listing_id", "titulo")}
-                      for f in previas.values() if f["veredicto"] == NO_VERIFICABLE]
+                      for f in previas.values() if f["veredicto"] in (NO_VERIFICABLE, AMBIGUA)]
     else:
         candidatas = candidatas_de_la_snapshot(Path(args.db), args.paquetes,
                                                args.paquetes.parent / "AGENCY_CERTIFICATION_RESULTS.jsonl",
