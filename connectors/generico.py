@@ -38,7 +38,8 @@ from .formularios import bajar_formulario
 from .base import (Bloqueado, Connector, ErrorPermanente, ErrorTransitorio,
                    Fuente, PropiedadNormalizada, a_numero, detectar_moneda,
                    detectar_operacion, detectar_tipo, ficha_sin_contenido,
-                   identidad_de_imagen, imagenes_de_fichas_vecinas, limpiar)
+                   geografia, identidad_de_imagen, imagenes_de_fichas_vecinas,
+                   limpiar)
 
 # Familias de atributo que un rotulo puede fundir. Si una celda nombra dos, el
 # numero que la sigue no se puede asignar a ninguna.
@@ -489,6 +490,38 @@ def _id_de_ficha_en_la_query(url: str) -> bool:
         return False
     return bool(re.search(r"(?:^|&)(?:id|codigo|cod|ficha|recordid)=\d+(?:&|$)",
                           partes.query, re.I))
+
+
+RE_UBICACION_EN_TITULO = re.compile(
+    r"\ben\s+(?:venta|alquiler(?:\s+temporario|\s+por\s+temporada|\s+para\s+estudiantes)?)"
+    r"\s+en\s+([^,|:]{2,40}),\s*([^,|:\-–]{3,40}?)\s*(?:[-–|]|$)", re.I)
+
+
+def _ubicacion_del_titulo(titulo: Any) -> tuple[str | None, str | None]:
+    """`(barrio, ciudad)` de «… en Venta en Barrio, Ciudad - Precio», o `(None, None)`.
+
+    El sufijo de la agencia («… :: Inmobiliaria Ballarre», «… | Lazzaro») no es
+    parte de la ubicacion. Un «barrio» con numeros es una direccion, no se toma.
+    """
+    texto = re.sub(r"\s*(?:::|\|).*$", "", str(titulo or ""))
+    m = RE_UBICACION_EN_TITULO.search(texto)
+    if not m:
+        return None, None
+    barrio, ciudad = m.group(1).strip(), m.group(2).strip()
+    # Solo una ciudad que el catalogo resuelve como LOCALIDAD: «entre San
+    # Lorenzo y Avellaneda» (`insabella`) o «Punilla» (un departamento,
+    # `castro y compania`) no se toman, ni tampoco su barrio.
+    if re.search(r"\d", ciudad) or re.match(r"(?i)entre\b", ciudad):
+        return None, None
+    try:
+        if not geografia().resolver_localidad(ciudad).resuelta:
+            return None, None
+    except (OSError, ValueError):
+        return None, None
+    # «Las Malvinas - Las Malvinas»: el ultimo tramo es el barrio.
+    barrio = barrio.split(" - ")[-1].strip()
+    return (None if re.search(r"\d", barrio) or barrio.casefold() == ciudad.casefold()
+            else barrio), ciudad
 
 
 # Credencial PUBLICA de cliente de Xintel (politica del usuario, 2026-09-28).
@@ -3426,6 +3459,11 @@ class GenericoConnector(Connector):
                                or detectar_tipo(self._par_rotulado(
                                    principal_campos,
                                    r"Categor(?:\u00ed|i|&iacute;)a") or "")
+                               # Houzez: <li><strong>Tipo de propiedad:</strong>
+                               # Departamento</li> (`nexo`).
+                               or detectar_tipo(self._rotulo_en_linea(
+                                   principal_campos,
+                                   r"Tipo(?:\s+de)?\s+(?:propiedad|inmueble)") or "")
                                # En un emprendimiento el arranque del texto es
                                # el menu y las tipologias de sus unidades.
                                or (None if es_emprendimiento else (
@@ -3525,6 +3563,13 @@ class GenericoConnector(Connector):
                     and not re.search(r"\d", tramos[-2]) and len(tramos[-2]) <= 40):
                 ciudad_par = ciudad_par or tramos[-2]
                 provincia_par = provincia_par or tramos[-1]
+        # Ultimo recurso: el titulo convencional «Departamento en Venta en
+        # Centro, Mar del Plata - U$S 179.000» (Inmobiliatica: `lazzaro` 118,
+        # `ballarre` 258 con «… :: Inmobiliaria Ballarre», `castro y compania`,
+        # `insabella`...: 930 fichas sin ciudad el 28-09). Es la ubicacion que la
+        # propia ficha escribe; la geografia compartida la valida despues y lo
+        # que no resuelve no se afirma. Solo si ningun otro camino dio ciudad.
+        ubicacion_titulo = _ubicacion_del_titulo(titulo)
         if (not direccion and crudo.get("wordpress_category_catalog") and titulo
                 and re.search(r"\b\d{2,5}\b", titulo)
                 and len(titulo) <= 120):
@@ -3606,8 +3651,11 @@ class GenericoConnector(Connector):
             operacion=campos["operacion"],
             tipo_propiedad=campos["tipo_propiedad"],
             direccion=direccion,
-            barrio=mapaprop.get("barrio") or datos.get("barrio") or barrio_par,
-            ciudad=mapaprop.get("ciudad") or datos.get("ciudad") or ciudad_par,
+            barrio=(mapaprop.get("barrio") or datos.get("barrio") or barrio_par
+                    or (None if (mapaprop.get("ciudad") or datos.get("ciudad") or ciudad_par)
+                        else ubicacion_titulo[0])),
+            ciudad=(mapaprop.get("ciudad") or datos.get("ciudad") or ciudad_par
+                    or ubicacion_titulo[1]),
             provincia=(mapaprop.get("provincia") or datos.get("provincia")
                        or provincia_par),
             latitud=lat,
@@ -4385,10 +4433,14 @@ class GenericoConnector(Connector):
         y con tope de largo-: una oracion de la descripcion que empiece con
         «Ciudad:» no es un par.
         """
+        # Tambien con el rotulo en negrita, como lo escribe Houzez:
+        # <li class="prop_type"><strong>Tipo de propiedad:</strong> Departamento</li>
+        # (`nexo`: 33 de 40 fichas sin tipo).
         m = re.search(
-            rf"<(li|p|span|div|td|dd)\b[^>]*>\s*(?:{etiqueta})\s*:\s*([^<>:]{{2,60}}?)\s*</\1>",
+            rf"<(li|p|span|div|td|dd)\b[^>]*>\s*(?:<(strong|b)\b[^>]*>\s*)?(?:{etiqueta})\s*:\s*"
+            rf"(?:</(?:strong|b)>\s*)?([^<>:]{{2,60}}?)\s*</\1>",
             html or "", re.I)
-        return limpiar(unescape(m.group(2))) if m else None
+        return limpiar(unescape(m.group(3))) if m else None
 
     @staticmethod
     def _titulo_de_la_ficha(html: str, datos: dict, fuente: Fuente) -> str | None:
@@ -5389,8 +5441,12 @@ class GenericoConnector(Connector):
             if (re.fullmatch(r"h[1-6]", bloque.group(1), re.I)
                     and re.search(rf"\d\s*(?:{etiqueta})", contenido, re.I)):
                 continue
-            otros = {m.group(0).lower() for m in re.finditer(
-                ETIQUETAS_ATRIBUTO_COMPUESTO, contenido, re.I)}
+            rotulos = list(re.finditer(ETIQUETAS_ATRIBUTO_COMPUESTO, contenido, re.I))
+            otros = {m.group(0).lower() for m in rotulos}
+            # «4 dormitorios • 3 baños • 242» (`nexo`) es una LISTA de valores:
+            # cada rotulo trae su numero delante. No funde dos atributos.
+            if all(re.search(r"\d\s*[•·,|\-]?\s*$", contenido[:m.start()]) for m in rotulos):
+                continue
             if len(otros) > 1:
                 return True
         return False
