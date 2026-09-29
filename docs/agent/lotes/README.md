@@ -7,7 +7,7 @@ acumulan y se aplican juntos, en un momento elegido, no uno por uno.
 
 Nada de esto está aplicado en el worktree que corre la cola.
 
-## `LOTE_COMPARTIDO_PENDIENTE_2026-09-29.patch`
+## `LOTE_COMPARTIDO_PENDIENTE_2026-09-29.patch` — APLICADO el 29-09 (`a6746a9338`, política P3)
 
 Preparado y verificado en `D:\INMO CAPITAL\eretz-dev` (suite completa con el
 lote aplicado: **3.635 verdes**, 29-09). Aplicar desde la raíz del repo:
@@ -29,3 +29,16 @@ wordpress se libera sola por cambio de huella.
 
 Después de aplicar: suite completa, commit, y la cola recertifica sola por
 cambio de huella (ERETZ AUTOMATION ON).
+
+## Lote 2 — acumulando (política P4: se aplica al llegar a ≥300 propiedades, 24 h con un arreglo
+de valor, una familia bloqueada, o si esperar desperdicia más recertificación)
+
+| arreglo | archivo (huella) | radio medido | estado |
+|---|---|---|---|
+| «finca» y «chacra» como tipo (→ terreno), después de los tipos existentes | `connectors/base.py` | 67 fincas + 60 chacras sin tipo; 12 fincas como «oficina» (menú) | a implementar |
+| Una baja entre corridas (404 en la 1, fuera del listado en la 2) no es ficha fallida | `scripts/agency_certifier.py` | `emir elhelou` (1 de 26) | a implementar |
+| Conteos en palabras («cuatro dormitorios», «un baño») | `connectors/generico.py` | pozzobon, fenix (DEFECTO_PENDIENTE en el gate) | a medir |
+| Superficie «50 M² 50 M²» sin rótulo (fenix) | `connectors/generico.py` | 1 ficha | a medir |
+| Wix: `limite_bytes` y lector de registros CMS | `connectors/base.py` | 2 agencias (liprandi 71) | postergado |
+| robots.txt en el descargador (P11) | `connectors/base.py` | 0 fichas prohibidas medidas; cumplimiento | a implementar |
+| Cortesía por backend compartido (Tokko: cientos de dominios, un límite) | runner / descargador | 1.241 respuestas 429 con 6 hilos por dominio (verificador) | a medir con la prueba de 3 workers |

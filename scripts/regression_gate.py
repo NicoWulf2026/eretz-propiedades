@@ -64,6 +64,9 @@ def _index(rows: list[dict]) -> tuple[dict, list[dict]]:
     return indexed, issues
 
 
+RE_PIE_LEGAL = re.compile(r"^\s*(?:©|\(c\)|copyright\b)|todos los derechos reservados", re.I)
+
+
 def _loss_reason(field: str, old: dict, fresh: dict) -> str:
     # Row-scoped evidence is required. Aggregated field_coverage is deliberately
     # never read. An extraction detector's absence is not source-change proof.
@@ -86,6 +89,11 @@ def _loss_reason(field: str, old: dict, fresh: dict) -> str:
     if (field == 'descripcion' and isinstance(extra, dict)
             and extra.get('descripcion_descartada')):
         return 'EXPLAINED_VALIDATION'
+    # Y cuando lo viejo ERA el pie legal del sitio («© 2026 Coldwell Banker.
+    # Todos los derechos reservados…»): la misma regla que la snapshot usa para
+    # el texto del sitio. 137 de `coldwell banker de la vera cruz` el 29-09.
+    if field == 'descripcion' and RE_PIE_LEGAL.search(str(old.get(field) or '')[:200]):
+        return 'EXPLAINED_VALIDATION'
     # Validation discards are also recorded on the row: `atributos_descartados`
     # lists the fields it emptied ("dormitorios>ambientes" is an impossible
     # pair, "dormitorios_en_un_terreno" a count a lot cannot have), and a
@@ -101,6 +109,13 @@ def _loss_reason(field: str, old: dict, fresh: dict) -> str:
             return 'EXPLAINED_VALIDATION'
         if (field == 'provincia' and extra.get('provincia_supuesta_descartada')
                 and extra['provincia_supuesta_descartada'] == old.get(field)):
+            return 'EXPLAINED_VALIDATION'
+        # Politica ARGENTINA_ONLY (28-09): a una ficha del exterior no se le
+        # afirma geografia argentina. Perder provincia/ciudad/barrio en una fila
+        # marcada `PRESERVED_NOT_PUBLISHED` es la politica, no una perdida: el
+        # 29-09 eran 88 de `enlaze` (Montevideo), firmadas una por una.
+        if (field in ('provincia', 'ciudad', 'barrio')
+                and extra.get('publicacion_exterior') == 'PRESERVED_NOT_PUBLISHED'):
             return 'EXPLAINED_VALIDATION'
     # A move only exists if the value is present in the FRESH neighboring field.
     neighbors = {'barrio': ('ciudad', 'provincia'), 'ciudad': ('barrio', 'provincia'),
