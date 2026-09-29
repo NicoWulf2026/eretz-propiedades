@@ -159,6 +159,12 @@ def main() -> int:
                                "resumen": datos_cand}
     if sha_servida == sha_cand:
         return abortar("la candidata ya es la servida")
+    # La snapshot de QA (`snapshot_sintetica.py`) tiene el mismo esquema que la
+    # real y pasaria el integrity_check: se reconoce por lo que declara.
+    sys.path.insert(0, str(REPO / "scripts"))
+    from snapshot_sintetica import es_sintetica
+    if es_sintetica(cand):
+        return abortar("la candidata es la snapshot SINTETICA de QA: nunca se sirve")
     if m_serv["integrity"] != "ok" or m_cand["integrity"] != "ok":
         return abortar("integrity_check")
     if not respaldo_dir.exists():

@@ -81,6 +81,62 @@ from api.v2 import router as router_v2  # noqa: E402
 app.include_router(router_v2)
 
 
+@app.get("/healthz")
+def healthz():
+    """Liveness: el proceso responde. No toca la snapshot (un disco lento no
+    tiene que hacer que el orquestador reinicie un proceso sano)."""
+    return {"status": "ok"}
+
+
+@app.get("/readyz")
+def readyz():
+    """Readiness: hay una snapshot servible. 503 si no.
+
+    Servible = existe, se abre en solo lectura, tiene filas y trae el indice de
+    texto. Una snapshot que se declara SINTETICA (`scripts/snapshot_sintetica.py`,
+    solo QA) no esta lista salvo `ERETZ_ALLOW_SYNTHETIC_SNAPSHOT=1`: una beta que
+    arranca con datos de prueba tiene que fallar el chequeo, no servirlos.
+    """
+    import sqlite3
+
+    from fastapi.responses import JSONResponse
+
+    from api import v2
+
+    ruta = v2.SNAPSHOT
+    estado: dict = {"snapshot": ruta.name, "database_writes": 0}
+    if not ruta.exists():
+        return JSONResponse({**estado, "status": "unavailable", "motivo": "snapshot ausente"}, 503)
+    try:
+        con = sqlite3.connect(f"file:{ruta.as_posix()}?mode=ro", uri=True)
+        try:
+            propiedades = con.execute("select count(*) from propiedades").fetchone()[0]
+            busqueda = bool(con.execute(
+                "select 1 from sqlite_master where name = 'busqueda'").fetchone())
+            try:
+                meta = dict(con.execute("select clave, valor from snapshot_meta").fetchall())
+            except sqlite3.Error:
+                meta = {}
+        finally:
+            con.close()
+    except sqlite3.Error as exc:
+        return JSONResponse({**estado, "status": "unavailable",
+                             "motivo": f"snapshot ilegible: {type(exc).__name__}"}, 503)
+    sintetica = meta.get("sintetica") == "1"
+    estado.update(propiedades=propiedades, busqueda=busqueda, sintetica=sintetica,
+                  bytes=ruta.stat().st_size)
+    motivo = None
+    if propiedades <= 0:
+        motivo = "snapshot vacia"
+    elif not busqueda:
+        motivo = "snapshot sin indice de texto"
+    elif sintetica and os.environ.get("ERETZ_ALLOW_SYNTHETIC_SNAPSHOT") != "1":
+        motivo = "snapshot SINTETICA de QA"
+    if motivo:
+        return JSONResponse({**estado, "status": "unavailable", "motivo": motivo}, 503)
+    return {**estado, "status": "ok"}
+
+
 @app.get("/")
 def root():
     return {"status": "ok", "proyecto": "ERETZ Propiedades API",
