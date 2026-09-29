@@ -64,14 +64,24 @@ Recertificación completa en curso desde el 28-09 07:29; los lotes compartidos d
   -pozzobon «un baño» en palabras-).
 - Suite completa (28-09 21h, `64790ba41e`): 3.541 passed.
 
+## Lote compartido pendiente (huella)
+`docs/agent/lotes/`: cambios a la huella COMPARTIDA preparados y verificados en `eretz-dev` (3.635 verdes),
+sin aplicar porque reinician la recertificación entera: aglomerados GeoRef (+112 localidades), descartes
+sin señal (4 agencias, 348 prop.), buscador Houzez / unidades / «Provincia: Argentina» (`o feely`, 600).
+`o feely` tiene diferida firmada (29-09 10:05, radio AGENCIA): la familia wordpress queda liberada.
+
 ## Snapshot de la API local
 - **Servida: v4j** desde el 28-09 22:58 (exterior excluido, CABA por polígono, departamentos,
   precios simbólicos; deploy autorizado y verificado, respaldo de la v4g en
   `_anteriores/v4g_2026-09-28/`). Antes: v4g desde el 28-09 16:58 (deploy autorizado, controlado, sin rollback; registro en
   `ERETZ_API_CONTRACT/_despliegues/`, respaldo de la v2 en `_anteriores/v2_2026-09-08/`). Detalle:
   `READY_FOR_PRODUCTION_ACTION.md` §7. Todo reemplazo posterior sigue siendo deploy.
-- **Candidata v4k lista** (29-09, READY_FOR_ACTION): v4j − 121 fichas del exterior que la caja de
-  coordenadas dejaba pasar (Uruguay/Paraguay, Miami). QA 14/14. Pendiente de autorización.
+- **Candidatas v4l-a / v4l-b listas** (29-09, READY_FOR_ACTION; superan a la v4k): suman lo que
+  los inventarios certificados vigentes saben y la preingestión del 03-09 no (+9.330, +50 agencias),
+  refrescan 5.935 avisos con URL nueva y recalculan la geografía sobre la fila fresca (localidades
+  9.494 → 18.507). La b además retira 2.637 que ya no están en el inventario COMPLETO de su agencia
+  (muestra: 25/30 muertas). QA 14/14. Recomendada: v4l-b. Comandos en `READY_FOR_PRODUCTION_ACTION.md` §7.
+- (histórico) Candidata v4k: v4j − 121 fichas del exterior; incluida en la v4l.
 - (histórico) Candidata v4j (21:37; v4i + 42 precios simbólicos descartados): QA 14/14. La v4i era
   despliegue fue denegado por el control de permisos (deploy): espera autorización explícita.
   Comando en `READY_FOR_PRODUCTION_ACTION.md` §7.

@@ -4,7 +4,7 @@ Lista única de lo que **no** se ejecuta sin el usuario: escrituras, migraciones
 permisos, deploy, DNS, restore, merge a `main`, o gasto de dinero. Todo lo
 demás se hace solo. `database_writes: 0` en todo lo preparado.
 
-Actualizado: 2026-09-25.
+Actualizado: 2026-09-29.
 
 | # | acción | estado | qué la destraba |
 |---|---|---|---|
@@ -14,7 +14,7 @@ Actualizado: 2026-09-25.
 | 4 | Promoción staging → main (agencias) | dry-run del 14-09, a refrescar | autorización; exige 1 |
 | 5 | Corregir `url_normalizada` colapsada en producción | medido, sin tocar | autorización de write; exige 1 y 3 |
 | 6 | Encender bajas del ciclo de vida | diseñado, **apagado** | decisión de producto |
-| 7 | Servir la snapshot v4 en la API local | **HECHO: v4j servida 28-09 22:58** (autorizada; antes v4g 16:58) | — (próximos reemplazos: autorización propia) |
+| 7 | Servir la snapshot v4 en la API local | **HECHO: v4j servida 28-09 22:58**; candidatas **v4l-a / v4l-b** listas (29-09) | — (próximos reemplazos: autorización propia) |
 | 8 | Descubrimiento pago de webs (140 `IDENTITY_PENDING`) | no corrido | aprobar gasto (~USD 1,35) |
 | 9 | Merge a `main` / deploy | no corresponde todavía | después de 1–4 |
 
@@ -74,7 +74,43 @@ respondía 200). `mark_as_inactive` existe y no tiene consumidores.
 - Rollback manual: copiar `_anteriores/v2_2026-09-08/*` sobre `ERETZ_API_CONTRACT/` (sha
   esperado `e12a8f36…`). Mecanismo reutilizable: `scripts/desplegar_snapshot.py`.
 
-**Candidata v4k — LISTA, pendiente de autorización (READY_FOR_ACTION)** (29-09,
+**Candidatas v4l-a y v4l-b — LISTAS, pendientes de autorización (READY_FOR_ACTION)** (29-09).
+Reemplazan a la v4k (la incluyen: las 121 del exterior + 2 emprendimientos de Uruguay que la
+extracción nueva marcó). Novedad: la snapshot ya no sirve solo la preingestión del 03-09.
+- **Suma** lo que los inventarios certificados vigentes (ledger, NEXT-001) saben y el 03-09 no:
+  **+9.330 propiedades, +50 agencias** (52 certificadas no tenían ninguna servida). Regla
+  conservadora (`scripts/snapshot_certificadas.py`): no se suma si hay CUALQUIER señal de que ya
+  está (hash, URL, `source_listing_id`, número de la URL, mismo título+precio+superficie+dorm).
+  Duplicados probables que involucran nuevas: 4, revisados a mano (años en la URL, ids
+  consecutivos de fichas distintas, y `cavacini` que publica la misma casa con dos ids).
+- **Refresca** 5.935 avisos cuya URL cambió (Tokko rehace el slug con el título) sobre la fila ya
+  servida, sin cambiar su id.
+- **Geografía de la fila servida**: se recalcula sobre la lectura fresca (14.951 filas);
+  localidades **9.494 → 18.507** (v4l-a). Una localidad demostrada no se pierde por un vacío (115).
+- 0 fuera del país por polígono, 0 precios simbólicos, integrity ok, QA de API 14/14 con el
+  mismo estado que la v4k, 0 GEO_CONFLICT en el mapa (628 en total: +107 de `analia requena`,
+  cuya ficha publica provincia «CABA» con Santa Clara del Mar; fail-closed como las demás).
+
+| | v4l-a (solo suma) | v4l-b (suma y retira) |
+|---|---|---|
+| carpeta | `_scratch/unification/snapshot_v4l_a_2026-09-29/` | `_scratch/unification/snapshot_v4l_b_2026-09-29/` |
+| propiedades | 66.841 | 64.202 |
+| retira | 123 del exterior | 123 del exterior + **2.637 que ya no están en el inventario COMPLETO vigente de su agencia** |
+| agencias | 596 | 595 |
+
+Las 2.637 de la v4l-b: muestra de 30 en vivo, **25 dan 404 o redirigen sin la ficha** y 5 siguen
+visibles. Retirarlas saca ~2.200 enlaces muertos del buscador a cambio de ~450 vivas que el
+inventario completo de su agencia ya no lista. Recomendación: **v4l-b**.
+
+Comandos (uno de los dos):
+`python scripts\desplegar_snapshot.py --candidata _scratch\unification\snapshot_v4l_b_2026-09-29
+--etiqueta-respaldo v4j_2026-09-28 --faltantes-esperados 2760 --nuevos-esperados 9328`
+`python scripts\desplegar_snapshot.py --candidata _scratch\unification\snapshot_v4l_a_2026-09-29
+--etiqueta-respaldo v4j_2026-09-28 --faltantes-esperados 123 --nuevos-esperados 9330`
+(`--nuevos-esperados` es nuevo: el script abortaba ante cualquier id nuevo; ahora exige el
+número exacto auditado.)
+
+**Candidata v4k — SUPERADA por la v4l (no desplegar)** (29-09,
 `_scratch/unification/snapshot_v4k_2026-09-28/`): la v4j servida menos 121 fichas del exterior que
 la v4j todavía publicaba, TODAS verificadas: 116 con coordenada fuera del polígono oficial del país
 (IGN `ign:pais`; 115 Uruguay -`enlaze` 88 «Centro (Montevideo)», Punta del Este de `lopez baena`,
