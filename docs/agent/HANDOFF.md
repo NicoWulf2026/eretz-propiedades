@@ -584,6 +584,16 @@ huella no frene a los workers; el lote se aplica y se commitea de una vez en la 
   --retiros-verificados …`) → QA → `desplegar_snapshot.py --automatico`; registrar las afirmables de
   la fase 2 de P6; reprobar 3 workers.
 
+## PARA LOCAL (tareas que necesitan el estado operativo de la PC)
+Canal de la arquitectura híbrida: CLOUD deja acá lo que solo LOCAL puede hacer (medir sobre
+paquetes, construir/desplegar la snapshot, recertificar, cerrar paros, aplicar un lote de huella).
+Cada ítem: qué, por qué, comando exacto, commit de referencia. LOCAL lo tacha al hacerlo.
+- [ ] Reprobar 3 workers con todo Tokko en el worker 0 (P5): `python scripts/regimen_de_workers.py`
+      y, si corresponde, fijar `ERETZ_WORKERS.json` con `workers: 3, prueba: en_curso` y línea base.
+- [ ] Tras cada tanda de certificación: Regression Gate a 0 y snapshot nueva con despliegue
+      automático P2 (comandos en `docs/CLOUD_BOOTSTRAP.md` §6).
+- [ ] Medir radio del lote 4 sobre los paquetes cuando CLOUD lo deje preparado.
+
 ## Decisiones de producto abiertas (no técnicas)
 - **robots.txt**: el pipeline no lo consulta. Medido 26-09 00:1x: 283 agencias certificadas o en
   NEEDS_FIX, 31.354 URLs de ficha, **0 prohibidas** para nuestro UA. Los dos casos que sí prohíben

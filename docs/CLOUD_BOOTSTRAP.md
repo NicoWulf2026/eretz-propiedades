@@ -35,6 +35,10 @@ PYTHON_DOTENV_DISABLED=1 python -m pytest -q -p no:cacheprovider
 Al checkpoint: 3.701 passed en la máquina original.
 
 ## 4. Datos (NO están en el repo — el repo es público)
+**Arquitectura híbrida:** en CLOUD no hay estado operativo y no hace falta: todo lo que sigue en
+esta sección es para la PC LOCAL (o una máquina a la que algún día se mueva el estado). En cloud,
+la suite corre offline y los tests que necesitan datos se saltean solos.
+
 **Raíz configurable:** `export ERETZ_DATA_ROOT=/ruta/restaurada` (Windows: `set ERETZ_DATA_ROOT=...`).
 Todo el núcleo (API, geografía, cola, certificador, snapshot, despliegue, gate) la usa
 (`scripts/rutas_de_datos.py`); las rutas absolutas del manifiesto de datos se reubican solas.

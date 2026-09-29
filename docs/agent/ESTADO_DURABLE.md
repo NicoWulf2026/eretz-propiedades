@@ -2,8 +2,9 @@
 
 **El repositorio es PÚBLICO.** Estos datos (inventario scrapeado de inmobiliarias, ledger de
 certificación, base de preingestión) no se suben al repo ni a un release público: publicarlos no
-está autorizado. Están empaquetados y verificados en la máquina original, listos para que el
-usuario los suba a almacenamiento PRIVADO. Hasta entonces: `EXTERNAL_STORAGE_REQUIRED`.
+está autorizado. **Por decisión del usuario (29-09) quedan LOCALES** en su PC: arquitectura
+híbrida, `OPERATIONAL_CLOUD_READY = NO` y no bloquea la continuidad (ver
+`docs/CLOUD_CONTINUATION_HANDOFF.md`). Están empaquetados y verificados por si algún día se mueven.
 
 ## El paquete
 - Carpeta: `D:\INMO CAPITAL\ERETZ_STATE_CHECKPOINT_2026-09-29\`
@@ -17,10 +18,10 @@ usuario los suba a almacenamiento PRIVADO. Hasta entonces: `EXTERNAL_STORAGE_REQ
   en el tiempo; lo certificado después se recupera recertificando.
 
 ## Almacenamiento remoto
-- Estado al 29-09 18:30: **pendiente de upload humano** a almacenamiento PRIVADO (no hay ninguno
-  autenticado en la máquina: sin Google Drive, OneDrive sin cuenta, sin rclone). Destino recomendado:
-  Google Drive privado, carpeta `ERETZ Propiedades/cloud-checkpoints/2026-09-29/`, sin enlace.
-- Subir: `ERETZ_STATE_2026-09-29.tar.gz`, `MANIFEST.json`
+- **Decisión 29-09: no se sube.** El estado vive en la PC local. Si algún día se decide moverlo,
+  destino recomendado: almacenamiento PRIVADO (Google Drive, carpeta
+  `ERETZ Propiedades/cloud-checkpoints/<fecha>/`, sin enlace), con estos archivos:
+  `ERETZ_STATE_2026-09-29.tar.gz`, `MANIFEST.json`
   (SHA-256 `417c5cb80af20996a3687f6d3a8cff91c827459ece3d88b72a5080a16ae6e367`) y
   `ERETZ_DATA_MANIFEST.json` (SHA-256 `2964c73137184354cd405ab4145c02b90fc43a6376756bfde016942a638390a7`).
 - Cuando esté arriba: registrar acá proveedor, carpeta lógica y fecha (nunca URLs con credenciales).

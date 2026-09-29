@@ -13,6 +13,24 @@ el más nuevo a la fecha del checkpoint.
 - worktree local original: `D:\INMO CAPITAL\eretz-unified` (Windows). `eretz-dev` es una copia
   de trabajo para preparar lotes sin tocar la cola; no es fuente de verdad.
 
+## ARQUITECTURA HÍBRIDA LOCAL + CLOUD (decisión del usuario, 29-09)
+- **CODE_CLOUD_READY = YES** — código, tests, docs, parches, políticas y tooling están en GitHub
+  y se validaron desde un clone limpio (3.701 verdes) y con restore portable (0 accesos a `D:\`).
+- **OPERATIONAL_CLOUD_READY = NO, por decisión** — el estado operativo privado se queda en la PC
+  local y NO se sube (no bloquea la continuidad: no volver a pedirlo).
+- **LOCAL** (PC de Nicolás, `D:\INMO CAPITAL\`): ledger de certificación, paquetes, snapshots
+  (servida y candidatas), workers, scheduler (tareas de Windows), diferidas, Regression Gate,
+  webs verificadas, identidad, preingestión, GeoRef y cualquier dato privado. Ahí corren la cola,
+  la construcción y el despliegue automático (P2) de la snapshot.
+- **CLOUD** (Claude Code Cloud, desde GitHub): código, tests, documentación, backend, API,
+  frontend web, tooling, runbooks, migraciones preparadas (sin aplicar), y todo lo que no
+  necesite el estado local. Lo que sí lo necesite (medir sobre paquetes, construir snapshots,
+  recertificar, cerrar paros) se deja preparado con instrucciones exactas para la sesión LOCAL.
+- Coordinación: una sola rama (`handoff/codex-unificacion-2026-09-18`). La sesión LOCAL hace
+  `git pull` antes de trabajar; cloud y local commitean y pushean chico y seguido; nadie fuerza.
+  Un cambio a un archivo de la huella hecho en cloud reinicia la recertificación cuando la PC
+  local lo baja: agruparlos según P4.
+
 ## MISSION
 ERETZ Propiedades: buscador de inmuebles de Argentina que lee **solo las webs oficiales** de las
 inmobiliarias (nunca portales), certifica cada inventario (dos corridas, idempotencia,
@@ -140,10 +158,8 @@ producción.
 
 ## OPEN WORK
 **P0**
-1. Preservar el estado operativo fuera del repo en almacenamiento PRIVADO (ver EXTERNAL
-   BLOCKERS: el archivo ya está empaquetado y verificado localmente).
-2. Mantener la cola sana (paros → diagnóstico → diferida firmada o arreglo; nunca esperar).
-3. Reprobar 3 workers con el reparto Tokko→worker 0 (P5) y dejar el régimen más eficiente.
+1. (LOCAL) Mantener la cola sana (paros → diagnóstico → diferida firmada o arreglo; nunca esperar).
+2. (LOCAL) Reprobar 3 workers con el reparto Tokko→worker 0 (P5) y dejar el régimen más eficiente.
 **P1**
 4. Seguir el Regression Gate a 0 tras cada tanda; reconstruir y auto-desplegar la snapshot (P2)
    cuando las certificaciones nuevas lo justifiquen.
@@ -162,11 +178,9 @@ producción.
 
 ## EXTERNAL BLOCKERS
 Portabilidad del estado: resuelta en código (`ERETZ_DATA_ROOT`, `8c062b59de`, `0ddbd12af4`) y
-probada (restore en otra raíz, 0 accesos a `D:\`). Falta SOLO el upload humano del paquete a
-almacenamiento privado (ver `docs/agent/ESTADO_DURABLE.md`).
+probada (restore en otra raíz, 0 accesos a `D:\`). El estado operativo queda LOCAL por decisión
+(arquitectura híbrida): no es un bloqueo.
 BLOCKED EXTERNAL:
-- **Almacenamiento privado para el estado operativo** (el repo es público): el usuario tiene que
-  elegir dónde subir `ERETZ_STATE_2026-09-29.tar.gz` (ver `docs/agent/ESTADO_DURABLE.md`).
 - Credencial PostgreSQL válida (P17) → backup/restore. Tooling: autorizado instalar clientes
   PostgreSQL oficiales (aún no instalados).
 - Cuenta/pago de hosting para la API beta (P21).
@@ -185,8 +199,8 @@ Ver **`docs/CLOUD_BOOTSTRAP.md`** (comandos exactos desde clone limpio).
 
 ## NEXT ACTION
 1. `git rev-parse HEAD` == HEAD del tag `cloud-checkpoint-2026-09-29` (o posterior en la rama).
-2. Si el estado operativo privado está disponible: restaurarlo (ESTADO_DURABLE.md) y verificar
-   los SHA-256 del `MANIFEST.json`. Si no: trabajar en OPEN WORK que no lo necesita (P18 runbook,
-   P21 contenedor, P9 frontend, lote 4 con tests) y dejar la cola para la máquina que lo tiene.
-3. En la máquina con estado: `python scripts/eretz_automatizacion.py estado`; si hay paros,
+2. CLOUD: empezar por las tareas marcadas CLOUD en `docs/NEXT_CLOUD_AGENT_PROMPT.md`
+   (P9 título derivado, P18 runbook del rol escritor, P21 contenedor de la API beta, lote 4 con
+   tests, dirección sin rótulo de generico). No esperar el estado local.
+3. LOCAL (la PC de Nicolás): `python scripts/eretz_automatizacion.py estado`; si hay paros,
    diagnosticar; después reprobar 3 workers (P5).

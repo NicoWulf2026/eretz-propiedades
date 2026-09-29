@@ -1,37 +1,72 @@
-# Prompt para la próxima sesión (copiar y pegar)
+# Prompt para Claude Code Cloud (copiar y pegar entero)
 
 ```
-ERETZ PROPIEDADES — CONTINUACIÓN DESDE EL CHECKPOINT CLOUD DEL 2026-09-29
+ERETZ PROPIEDADES — CONTINUACIÓN EN CLAUDE CODE CLOUD (arquitectura híbrida LOCAL + CLOUD)
 
-Repo: https://github.com/NicoWulf2026/eretz-propiedades.git (PÚBLICO: nunca subir datos, ledger,
-snapshots ni secretos).
-Rama: handoff/codex-unificacion-2026-09-18. Tag del checkpoint: cloud-checkpoint-2026-09-29.
+REPO: https://github.com/NicoWulf2026/eretz-propiedades.git  (PÚBLICO)
+RAMA: handoff/codex-unificacion-2026-09-18   (nunca main; nunca force push)
+TAG DE REFERENCIA: cloud-checkpoint-2026-09-29 (la rama puede estar más adelante: seguí la rama)
 
-1. Cloná, hacé checkout de la rama y verificá con `git rev-parse HEAD` que estás en el tag
-   cloud-checkpoint-2026-09-29 o en un commit posterior de la misma rama.
-2. Leé, en este orden y ANTES de tocar nada:
-   docs/CLOUD_CONTINUATION_HANDOFF.md, docs/agent/POLITICAS_PERMANENTES.md, CLAUDE.md,
-   docs/agent/CURRENT_STATE.md, docs/agent/HANDOFF.md, docs/agent/READY_FOR_PRODUCTION_ACTION.md,
-   docs/agent/lotes/README.md, docs/agent/ESTADO_DURABLE.md, docs/CLOUD_BOOTSTRAP.md.
-3. No repitas auditorías ya hechas: están documentadas. Empezá por NEXT ACTION del handoff.
-4. Las políticas P1–P24 son decisiones del usuario, permanentes: un caso cubierto se resuelve con
-   ellas sin preguntar. Decisiones técnicas reversibles: las tomás vos.
-5. Autonomía: trabajar → validar → reportar la fase → CONTINUAR. Reportar no es detenerse.
-   Solo preguntá ante una decisión nueva, irreversible o de alto impacto que ninguna política
-   cubra y que no tenga salida conservadora; y aun así seguí con otra tarea segura.
-6. Bloqueo externo (credencial, cuenta, pago, dominio, abogado, acción productiva): marcalo
-   (BLOCKED_EXTERNAL_* / EXTERNAL_*_REQUIRED) y seguí con otra cosa.
-7. Seguridad productiva: cero writes a Supabase, migraciones, RLS, restore, deploy público, DNS o
-   merge a main que dispare producción, salvo lo que P2/P19/P24 permiten con sus condiciones.
-8. Cola: hasta 3 workers adaptativos (P5), régimen actual 2; todo Tokko en un solo worker; no
-   paralelizar pedidos a Tokko; respetar robots.txt y 403/429.
-9. Cobertura nacional y beta son tracks separados: ninguno bloquea al otro.
-10. Estado operativo: descargar ERETZ_STATE_2026-09-29.tar.gz del almacenamiento privado del usuario,
-    verificar SHA-256, extraer en una carpeta, `export ERETZ_DATA_ROOT=<carpeta>` y correr
-    `python scripts/cloud/prueba_restore.py` (0 problemas, 0 accesos a D:\). Si no está disponible, trabajá en lo
-    que no lo necesita (código, tests, runbooks, frontend) y documentalo; no reconstruyas la cola
-    desde cero.
-11. Commits con mensaje claro y la línea Co-Authored-By indicada por el entorno; push solo a la
-    rama de trabajo; sin force push.
-Trabajá hasta agotar las tareas seguras, empezando por NEXT ACTION.
+ARQUITECTURA HÍBRIDA (decisión del usuario, no la discutas ni pidas el estado local):
+- CODE_CLOUD_READY = YES. OPERATIONAL_CLOUD_READY = NO por decisión.
+- LOCAL (PC de Nicolás) conserva ledger de certificación, paquetes, snapshots, workers,
+  scheduler y datos privados. Ahí corren la cola y el despliegue de la snapshot local.
+- VOS (cloud) trabajás desde GitHub en código, tests, docs, backend, API, frontend web,
+  tooling y runbooks. Lo que necesite el estado local lo dejás preparado con instrucciones exactas
+  para la sesión LOCAL (sección "PARA LOCAL" en docs/agent/HANDOFF.md) y seguís con otra cosa.
+- Nunca subas al repo datos scrapeados, ledgers, snapshots, dumps ni secretos: el repo es público.
+
+ARRANQUE (hacelo en este orden):
+1. git clone …; git checkout handoff/codex-unificacion-2026-09-18; git rev-parse HEAD.
+2. Leé: docs/CLOUD_CONTINUATION_HANDOFF.md, docs/agent/POLITICAS_PERMANENTES.md (P1–P24,
+   vinculantes), CLAUDE.md, .claude/rules/*.md, docs/agent/CURRENT_STATE.md,
+   docs/agent/HANDOFF.md, docs/agent/lotes/README.md, docs/CLOUD_BOOTSTRAP.md.
+3. Entorno: Python 3.14; python -m pip install --require-hashes -r requirements.lock;
+   PYTHON_DOTENV_DISABLED=1 python -m pytest -q  (debe dar todo verde; los tests que necesitan
+   datos locales se saltean solos). No repitas auditorías ya documentadas.
+
+TAREAS CLOUD RECOMENDADAS (ninguna necesita el estado local; elegí por valor y seguí):
+A. P9 — título derivado en el frontend web: cuando el título falta, «{tipo} en {operación} ·
+   {localidad}» solo con campos reales; si no alcanza, «Propiedad sin título». Mobile congelado.
+   Archivo de partida: frontend/src/lib/api-v2/property-boundary.ts. Con tests.
+B. generico — dirección sin rótulo junto al icono `fa-map-marker` («Laprida 1835, B7602FKK Mar
+   del Plata, Provincia de Buenos Aires, Argentina, …», agencia `adriana martelliti`, 42 de 44
+   fichas sin provincia): leerla como dirección y pasar la cadena por
+   `Geografia.resolver_compuesta`. Fixture HTML + test que muerda. Es huella de la familia
+   generico: agrupalo con otros arreglos de generico (P4).
+C. Lote 4 (docs/agent/lotes/README.md): conteos en palabras («cuatro dormitorios», «un baño»),
+   superficie sin rótulo («50 M² 50 M²», fenix), Strapi propio en subdominio `api.` con catálogo
+   > 800 KB (paladino). Cada uno con fixture y test; dejá el parche + README con radio y
+   beneficio estimado para que LOCAL lo aplique según P4.
+D. P18 — rol escritor de mínimo privilegio: SQL exacto, rollback, test sobre PostgreSQL/WASM
+   desechable (scripts/verify_writer_equivalence.mjs / verify_local_postgres.mjs), runbook.
+   NO crearlo en producción.
+E. P21 — API v2 remota para beta: Dockerfile + config de Fly.io o Railway (FastAPI + SQLite en
+   volumen persistente, ≤ USD 10/mes), healthcheck, rollback por snapshot, runbook. Marcar
+   EXTERNAL_ACCOUNT_REQUIRED (la cuenta/pago la hace el usuario). No desplegar.
+F. P10 — provincia contradictoria: descargar el polígono oficial de provincias del IGN (dato
+   público), contención punto-en-polígono con tests; la regla conserva lo publicado como
+   evidencia. Radio a medir en LOCAL: dejá el comando.
+G. P7 — guardrail local de gasto de búsqueda paga (≤ USD 10/mes, registro por corrida, corte
+   duro) en scripts/search_provider.py / run_web_discovery.py, con tests.
+H. Browser QA reproducible: una snapshot SINTÉTICA mínima (fixture generada, sin datos reales) +
+   API local + frontend + Playwright, para que la QA de navegador no dependa del estado local.
+
+REGLAS (resumen; manda POLITICAS_PERMANENTES.md):
+- Autonomía: trabajar → validar → reportar la fase → CONTINUAR. Reportar no es detenerse.
+  Decisión técnica reversible: la tomás vos. Caso cubierto por una política: aplicala sin preguntar.
+- Bloqueo externo (credencial, cuenta, pago, dominio, abogado, acción productiva): marcalo
+  (BLOCKED_EXTERNAL_* / EXTERNAL_*_REQUIRED) y seguí con otra tarea.
+- Producción: cero writes a Supabase, migraciones, RLS, restore, deploy público, DNS, retirar
+  noindex o merge a main (salvo lo que P19/P24 permiten con sus condiciones). La snapshot LOCAL y
+  la cola son de la PC local.
+- Huella: cambiar connectors/base.py, geografia.py, agency_certifier.py o run_rollout.py
+  reinicia la recertificación en LOCAL: agrupá según P4 y decilo en el commit.
+- Scraping desde cloud: solo para verificar un caso puntual, respetando robots.txt, 403/429 y
+  cortesía; nunca paralelizar pedidos a Tokko.
+- Commits chicos con mensaje claro terminados en la línea Co-Authored-By del entorno; push solo a
+  la rama de trabajo; `git pull --rebase` antes de pushear (LOCAL también commitea).
+- Tests: específicos primero; suite completa antes de cerrar un cambio compartido.
+- Documentá lo hecho en docs/agent/HANDOFF.md y lo que necesite LOCAL en "PARA LOCAL".
+- Seguí hasta agotar las tareas cloud seguras; empezá por A o B.
 ```
