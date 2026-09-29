@@ -65,7 +65,9 @@ Recertificación completa en curso desde el 28-09 07:29; los lotes compartidos d
 - Suite completa (28-09 21h, `64790ba41e`): 3.541 passed.
 
 ## Snapshot de la API local
-- **Servida: v4g** desde el 28-09 16:58 (deploy autorizado, controlado, sin rollback; registro en
+- **Servida: v4j** desde el 28-09 22:58 (exterior excluido, CABA por polígono, departamentos,
+  precios simbólicos; deploy autorizado y verificado, respaldo de la v4g en
+  `_anteriores/v4g_2026-09-28/`). Antes: v4g desde el 28-09 16:58 (deploy autorizado, controlado, sin rollback; registro en
   `ERETZ_API_CONTRACT/_despliegues/`, respaldo de la v2 en `_anteriores/v2_2026-09-08/`). Detalle:
   `READY_FOR_PRODUCTION_ACTION.md` §7. Todo reemplazo posterior sigue siendo deploy.
 - **Candidata v4j lista** (21:37; v4i + 42 precios simbólicos descartados): QA 14/14. La v4i era

@@ -14,7 +14,7 @@ Actualizado: 2026-09-25.
 | 4 | Promoción staging → main (agencias) | dry-run del 14-09, a refrescar | autorización; exige 1 |
 | 5 | Corregir `url_normalizada` colapsada en producción | medido, sin tocar | autorización de write; exige 1 y 3 |
 | 6 | Encender bajas del ciclo de vida | diseñado, **apagado** | decisión de producto |
-| 7 | Servir la snapshot v4 en la API local | **HECHO 28-09 16:58: v4g servida** (autorizada) | — (próximos reemplazos: autorización propia) |
+| 7 | Servir la snapshot v4 en la API local | **HECHO: v4j servida 28-09 22:58** (autorizada; antes v4g 16:58) | — (próximos reemplazos: autorización propia) |
 | 8 | Descubrimiento pago de webs (140 `IDENTITY_PENDING`) | no corrido | aprobar gasto (~USD 1,35) |
 | 9 | Merge a `main` / deploy | no corresponde todavía | después de 1–4 |
 
@@ -74,7 +74,20 @@ respondía 200). `mark_as_inactive` existe y no tiene consumidores.
 - Rollback manual: copiar `_anteriores/v2_2026-09-08/*` sobre `ERETZ_API_CONTRACT/` (sha
   esperado `e12a8f36…`). Mecanismo reutilizable: `scripts/desplegar_snapshot.py`.
 
-**Candidata v4j — LISTA, pendiente de autorización** (28-09 21:37,
+**v4j DESPLEGADA el 28-09 22:58** (autorización del usuario del 28-09). Registro:
+`ERETZ_API_CONTRACT/_despliegues/DEPLOY_2026-09-28T22-58-11.json`. Respaldo de la v4g (sha
+`57fa64c8…`) en `_anteriores/v4g_2026-09-28/`, verificado por hash; inventario: 31 ids menos
+(exactamente los 31 del exterior declarados por la candidata), 0 nuevos. Después: sha = candidata
+(`d188fa06…`), integrity ok, 57.634 propiedades, QA 14/14 igual a la de la candidata, 510
+GEO_CONFLICT y 0 en el mapa, 0 conflictos con coordenadas servidas, 0 precios simbólicos, 19 de
+`cantale` en CABA, 55 de `blanco` sin afirmar «Buenos Aires». Medianas: explorer 88 ms, combinada
+257, mapa chico 138, mapa combinado 548, detalle 9. Sin rollback.
+**Hallazgo post-deploy**: siguen servidas ~116 fichas con coordenadas en Uruguay (115) y Paraguay
+(1) y 6 de Miami sin coordenadas: la caja de coordenadas (-74..-53) cubre Uruguay. Arreglado en el
+código (contención en el polígono oficial del país, IGN `ign:pais`); entra en la próxima candidata.
+Rollback manual: copiar `_anteriores/v4g_2026-09-28/*` sobre `ERETZ_API_CONTRACT/`.
+
+Candidata v4j (28-09 21:37,
 `_scratch/unification/snapshot_v4j_2026-09-28/`): todo lo de la v4i (abajo) + 42 precios simbólicos
 descartados (US$1, ventas por USD 460) + lo recertificado hasta las 21:37. integrity ok, 57.634
 propiedades, QA 14/14 con el mismo estado que la v4g, 0 GEO_CONFLICT en el mapa (510 en total);
