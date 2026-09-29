@@ -81,12 +81,16 @@ import sys
 import time
 from pathlib import Path
 from typing import Any
+try:  # raiz del estado operativo configurable (ERETZ_DATA_ROOT)
+    from scripts.rutas_de_datos import dato  # noqa: E402
+except ImportError:  # corrido como `python scripts/x.py`
+    from rutas_de_datos import dato  # noqa: E402
 
 RAIZ = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RAIZ))
 sys.path.insert(0, str(RAIZ / "scripts"))
 
-SALIDA = Path(r"D:\INMO CAPITAL\ERETZ_AGENCY_CERTIFICATION_20260827")
+SALIDA = Path(str(dato('ERETZ_AGENCY_CERTIFICATION_20260827')))
 BITACORA = SALIDA / "ERETZ_RELANZAMIENTOS.jsonl"
 # Tope duro de la politica P5. El regimen vigente sale de `workers_objetivo`.
 WORKERS_MAXIMO = 3

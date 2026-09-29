@@ -52,8 +52,12 @@ for _ruta in (str(_AQUI.parent), str(_AQUI)):
 # con quince tests en verde. Un import perezoso dentro de un `if` es codigo que
 # solo corre cuando ya es tarde.
 from alerta_de_cola import avisar  # noqa: E402
+try:  # raiz del estado operativo configurable (ERETZ_DATA_ROOT)
+    from scripts.rutas_de_datos import dato  # noqa: E402
+except ImportError:  # corrido como `python scripts/x.py`
+    from rutas_de_datos import dato  # noqa: E402
 
-CERT = Path(r"D:\INMO CAPITAL\ERETZ_AGENCY_CERTIFICATION_20260827")
+CERT = Path(str(dato('ERETZ_AGENCY_CERTIFICATION_20260827')))
 BANDERA = CERT / "AGENCY_CERTIFICATION_STOP.json"
 DIFERIDOS = CERT / "AGENCY_DEFECTS_DIFERIDOS.jsonl"
 CERROJO = "AGENCY_CERTIFICATION_RUNNER.w{}.lock"

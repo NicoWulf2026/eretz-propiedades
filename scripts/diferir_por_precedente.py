@@ -61,12 +61,16 @@ import sys
 import time
 from pathlib import Path
 from typing import Any
+try:  # raiz del estado operativo configurable (ERETZ_DATA_ROOT)
+    from scripts.rutas_de_datos import dato  # noqa: E402
+except ImportError:  # corrido como `python scripts/x.py`
+    from rutas_de_datos import dato  # noqa: E402
 
 RAIZ = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RAIZ))
 sys.path.insert(0, str(RAIZ / "scripts"))
 
-CERT = Path(r"D:\INMO CAPITAL\ERETZ_AGENCY_CERTIFICATION_20260827")
+CERT = Path(str(dato('ERETZ_AGENCY_CERTIFICATION_20260827')))
 DIFERIDAS = CERT / "AGENCY_DEFECTS_DIFERIDOS.jsonl"
 COLA_DE_DEFECTOS = CERT / "AGENCY_DEFECT_QUEUE.jsonl"
 

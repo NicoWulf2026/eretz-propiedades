@@ -28,8 +28,12 @@ if str(RAIZ) not in sys.path:
     sys.path.insert(0, str(RAIZ))
 
 from scripts.regression_gate import compare  # noqa: E402
+try:  # raiz del estado operativo configurable (ERETZ_DATA_ROOT)
+    from scripts.rutas_de_datos import dato  # noqa: E402
+except ImportError:  # corrido como `python scripts/x.py`
+    from rutas_de_datos import dato  # noqa: E402
 
-CERT = Path(r"D:\INMO CAPITAL\ERETZ_AGENCY_CERTIFICATION_20260827")
+CERT = Path(str(dato('ERETZ_AGENCY_CERTIFICATION_20260827')))
 
 
 def leer_jsonl(ruta: Path) -> Iterable[dict[str, Any]]:

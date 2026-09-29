@@ -36,9 +36,13 @@ import sys
 from ctypes import wintypes
 from datetime import datetime
 from pathlib import Path
+try:  # raiz del estado operativo configurable (ERETZ_DATA_ROOT)
+    from scripts.rutas_de_datos import dato  # noqa: E402
+except ImportError:  # corrido como `python scripts/x.py`
+    from rutas_de_datos import dato  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[1]
-SERVIDA_DIR = Path(r"D:\INMO CAPITAL\ERETZ_API_CONTRACT")
+SERVIDA_DIR = Path(str(dato('ERETZ_API_CONTRACT')))
 NOMBRE = "ERETZ_API_SNAPSHOT.sqlite3"
 RESUMEN = "ERETZ_API_SNAPSHOT_SUMMARY.json"
 LATENCIA_MAXIMA_MS = 2000
@@ -107,7 +111,7 @@ def main() -> int:
                     help="politica P2: las altas/bajas esperadas salen de CAMBIOS_DE_INVENTARIO.jsonl "
                          "y deben pasar TODAS las compuertas de compuertas_de_despliegue.py")
     ap.add_argument("--cert", type=Path,
-                    default=Path(r"D:\INMO CAPITAL\ERETZ_AGENCY_CERTIFICATION_20260827"))
+                    default=Path(str(dato('ERETZ_AGENCY_CERTIFICATION_20260827'))))
     args = ap.parse_args()
 
     servida_dir = args.servida_dir

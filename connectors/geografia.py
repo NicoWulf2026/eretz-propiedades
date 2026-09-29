@@ -44,8 +44,12 @@ from pathlib import Path
 from typing import Any
 
 from scripts.geo_reference import verified_rows
+try:  # raiz del estado operativo configurable (ERETZ_DATA_ROOT)
+    from scripts.rutas_de_datos import dato  # noqa: E402
+except ImportError:  # corrido como `python scripts/x.py`
+    from rutas_de_datos import dato  # noqa: E402
 
-DIRECTORIO_POR_DEFECTO = Path(r"D:\INMO CAPITAL\ERETZ_GEO")
+DIRECTORIO_POR_DEFECTO = Path(str(dato('ERETZ_GEO')))
 FUENTE = "georef:localidades_censales"
 
 # Certeza de la resolucion.

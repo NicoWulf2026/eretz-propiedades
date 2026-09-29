@@ -28,13 +28,17 @@ from __future__ import annotations
 import json
 from functools import lru_cache
 from pathlib import Path
+try:  # raiz del estado operativo configurable (ERETZ_DATA_ROOT)
+    from scripts.rutas_de_datos import dato  # noqa: E402
+except ImportError:  # corrido como `python scripts/x.py`
+    from rutas_de_datos import dato  # noqa: E402
 
-MANIFIESTO = Path(r"D:\INMO CAPITAL\ERETZ_DATA_MANIFEST.json")
+MANIFIESTO = Path(str(dato('ERETZ_DATA_MANIFEST.json')))
 
 # Si el manifiesto no esta, se usa esto. No es la base vieja a proposito: ante
 # la ausencia del manifiesto conviene fallar apuntando a lo vigente y no
 # revivir en silencio una snapshot vencida.
-RESPALDO = Path(r"D:\INMO CAPITAL\ERETZ_PREINGESTION_REBUILD_20260903\PREINGESTION_REBUILD.sqlite3")
+RESPALDO = Path(str(dato('ERETZ_PREINGESTION_REBUILD_20260903', 'PREINGESTION_REBUILD.sqlite3')))
 
 
 @lru_cache(maxsize=1)

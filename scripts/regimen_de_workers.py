@@ -26,8 +26,12 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
+try:  # raiz del estado operativo configurable (ERETZ_DATA_ROOT)
+    from scripts.rutas_de_datos import dato  # noqa: E402
+except ImportError:  # corrido como `python scripts/x.py`
+    from rutas_de_datos import dato  # noqa: E402
 
-SALIDA = Path(r"D:\INMO CAPITAL\ERETZ_AGENCY_CERTIFICATION_20260827")
+SALIDA = Path(str(dato('ERETZ_AGENCY_CERTIFICATION_20260827')))
 REGIMEN = "ERETZ_WORKERS.json"
 BITACORA = "ERETZ_WORKERS_REGIMEN.jsonl"
 MAXIMO = 3

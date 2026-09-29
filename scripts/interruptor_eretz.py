@@ -13,8 +13,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+try:  # raiz del estado operativo configurable (ERETZ_DATA_ROOT)
+    from scripts.rutas_de_datos import dato  # noqa: E402
+except ImportError:  # corrido como `python scripts/x.py`
+    from rutas_de_datos import dato  # noqa: E402
 
-SALIDA = Path(r"D:\INMO CAPITAL\ERETZ_AGENCY_CERTIFICATION_20260827")
+SALIDA = Path(str(dato('ERETZ_AGENCY_CERTIFICATION_20260827')))
 ARCHIVO = "ERETZ_AUTOMATION_OFF.json"
 BANDERA_DE_PARO = "AGENCY_CERTIFICATION_STOP.json"
 # Radio de la bandera de paro que escribe el apagado: los workers la leen como

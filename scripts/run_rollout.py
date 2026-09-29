@@ -44,6 +44,10 @@ from connectors.century21 import Century21Connector  # noqa: E402
 from connectors.generico import GenericoConnector  # noqa: E402
 from connectors.wasi import WasiConnector  # noqa: E402
 from scripts.run_tokko_canary import id_sustituto  # noqa: E402
+try:  # raiz del estado operativo configurable (ERETZ_DATA_ROOT)
+    from scripts.rutas_de_datos import dato  # noqa: E402
+except ImportError:  # corrido como `python scripts/x.py`
+    from rutas_de_datos import dato  # noqa: E402
 
 CONNECTORS = {"tokko": TokkoConnector, "wordpress": WordPressConnector,
               "century21": Century21Connector, "generico": GenericoConnector,
@@ -787,7 +791,7 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data-dir", default=r"D:\INMO CAPITAL\ERETZ_AGENCY_DATA")
+    ap.add_argument("--data-dir", default=str(dato('ERETZ_AGENCY_DATA')))
     ap.add_argument("--salida", required=True)
     ap.add_argument("--connector", default="tokko")
     ap.add_argument("--plataforma", default="TOKKO")

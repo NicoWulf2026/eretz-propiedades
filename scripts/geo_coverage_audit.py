@@ -62,6 +62,10 @@ from scripts.preingestion_manifest import (base_canonica,  # noqa: E402
 from connectors.base import Connector, PropiedadNormalizada  # noqa: E402
 from connectors.texto import plegar  # noqa: E402
 from connectors.geografia import geografia  # noqa: E402
+try:  # raiz del estado operativo configurable (ERETZ_DATA_ROOT)
+    from scripts.rutas_de_datos import dato  # noqa: E402
+except ImportError:  # corrido como `python scripts/x.py`
+    from rutas_de_datos import dato  # noqa: E402
 
 COBERTURA_VERSION = "geo_coverage_audit_v5"
 
@@ -355,11 +359,11 @@ def cobertura_de_fila(fila: dict[str, Any], connector: str | None, hash_dedup: s
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", default=str(base_canonica()))
-    ap.add_argument("--geo", default=r"D:\INMO CAPITAL\ERETZ_GEO")
+    ap.add_argument("--geo", default=str(dato('ERETZ_GEO')))
     ap.add_argument("--cache-geometrica",
-                    default=r"D:\INMO CAPITAL\ERETZ_GEO\GEO_REVERSE_CACHE.jsonl",
+                    default=str(dato('ERETZ_GEO', 'GEO_REVERSE_CACHE.jsonl')),
                     help="geometria oficial ya resuelta, indexada por coordenada")
-    ap.add_argument("--salida", default=r"D:\INMO CAPITAL\ERETZ_GEO")
+    ap.add_argument("--salida", default=str(dato('ERETZ_GEO')))
     args = ap.parse_args()
     exigir_base_vigente(args.db)
 

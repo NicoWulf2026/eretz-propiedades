@@ -35,10 +35,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import agency_web_discovery as wd  # noqa: E402
 from promover_webs_verificadas import es_argentina  # noqa: E402
 from verificar_candidatas_web import bajar  # noqa: E402
+try:  # raiz del estado operativo configurable (ERETZ_DATA_ROOT)
+    from scripts.rutas_de_datos import dato  # noqa: E402
+except ImportError:  # corrido como `python scripts/x.py`
+    from rutas_de_datos import dato  # noqa: E402
 
-DATOS = Path(r"D:\INMO CAPITAL\ERETZ_AGENCY_DATA")
-V2 = Path(r"D:\INMO CAPITAL\ERETZ_SUPABASE_RECONCILIATION_V2_20260827")
-PLATAFORMAS = Path(r"D:\INMO CAPITAL\agency_platform_directory.jsonl")
+DATOS = Path(str(dato('ERETZ_AGENCY_DATA')))
+V2 = Path(str(dato('ERETZ_SUPABASE_RECONCILIATION_V2_20260827')))
+PLATAFORMAS = Path(str(dato('agency_platform_directory.jsonl')))
 DESTINO = DATOS / "AGENCY_OFFICIAL_WEB_VERIFIED.jsonl"
 REGISTRO = DATOS / "AGENCY_DIRECTORY_WEB_VERIFICATION.jsonl"
 ESTABLECIDAS = (wd.VERIFIED, wd.HIGH_CONFIDENCE)

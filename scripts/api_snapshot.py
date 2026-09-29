@@ -144,6 +144,10 @@ def _sin_mojibake(valor: Any) -> Any:
 
 from scripts.preingestion_manifest import (base_canonica,  # noqa: E402
                                            exigir_base_vigente)
+try:  # raiz del estado operativo configurable (ERETZ_DATA_ROOT)
+    from scripts.rutas_de_datos import dato  # noqa: E402
+except ImportError:  # corrido como `python scripts/x.py`
+    from rutas_de_datos import dato  # noqa: E402
 
 SNAPSHOT_VERSION = "api_snapshot_v4"
 
@@ -253,12 +257,12 @@ def main() -> int:
     ap.add_argument("--gate",
                     default=str(base_canonica().parent / "PROPERTY_QUALITY_GATE.jsonl"))
     ap.add_argument("--cobertura",
-                    default=r"D:\INMO CAPITAL\ERETZ_GEO\GEO_COVERAGE_AUDIT.jsonl")
+                    default=str(dato('ERETZ_GEO', 'GEO_COVERAGE_AUDIT.jsonl')))
     ap.add_argument("--directorio",
-                    default=str(Path("D:/INMO CAPITAL/agency_platform_directory.jsonl")))
+                    default=str(Path(str(dato('agency_platform_directory.jsonl')))))
     ap.add_argument('--paquetes', type=Path,
-                    default=Path(r'D:\INMO CAPITAL\ERETZ_AGENCY_CERTIFICATION_20260827\agencies'))
-    ap.add_argument("--salida", default=r"D:\INMO CAPITAL\ERETZ_API_CONTRACT")
+                    default=Path(str(dato('ERETZ_AGENCY_CERTIFICATION_20260827', 'agencies'))))
+    ap.add_argument("--salida", default=str(dato('ERETZ_API_CONTRACT')))
     ap.add_argument('--replace-derived', action='store_true',
                     help='replace an existing derived snapshot atomically after successful construction')
     # Las dos decisiones de `snapshot_certificadas`, cada una explicita: sin
@@ -277,7 +281,7 @@ def main() -> int:
     ap.add_argument('--ledger', type=Path, default=None,
                     help='ledger de certificacion (por defecto, junto a --paquetes)')
     ap.add_argument("--cache-geometrica",
-                    default=r"D:\INMO CAPITAL\ERETZ_GEO\GEO_REVERSE_CACHE.jsonl")
+                    default=str(dato('ERETZ_GEO', 'GEO_REVERSE_CACHE.jsonl')))
     args = ap.parse_args()
     salida = Path(args.salida)
     destino = salida / 'ERETZ_API_SNAPSHOT.sqlite3'
@@ -489,7 +493,7 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
                 alias_refrescados += 1
     localidades = catalogo_de_localidades(geografia())
     geometria = cargar_cache(Path(getattr(args, 'cache_geometrica', None)
-                                  or r"D:\INMO CAPITAL\ERETZ_GEO\GEO_REVERSE_CACHE.jsonl"))
+                                  or str(dato('ERETZ_GEO', 'GEO_REVERSE_CACHE.jsonl'))))
 
     # Frecuencia por agencia para revisión; repetir no demuestra ser un logo.
     apariciones: dict[str, Counter] = defaultdict(Counter)

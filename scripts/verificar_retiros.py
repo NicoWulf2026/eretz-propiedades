@@ -39,6 +39,10 @@ from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
+try:  # raiz del estado operativo configurable (ERETZ_DATA_ROOT)
+    from scripts.rutas_de_datos import dato  # noqa: E402
+except ImportError:  # corrido como `python scripts/x.py`
+    from rutas_de_datos import dato  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -291,8 +295,8 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", default=str(base_canonica()))
     ap.add_argument("--paquetes", type=Path,
-                    default=Path(r"D:\INMO CAPITAL\ERETZ_AGENCY_CERTIFICATION_20260827\agencies"))
-    ap.add_argument("--directorio", type=Path, default=Path("D:/INMO CAPITAL/agency_platform_directory.jsonl"))
+                    default=Path(str(dato('ERETZ_AGENCY_CERTIFICATION_20260827', 'agencies'))))
+    ap.add_argument("--directorio", type=Path, default=Path(str(dato('agency_platform_directory.jsonl'))))
     ap.add_argument("--salida", type=Path, required=True, help="JSONL con el veredicto de cada candidata")
     ap.add_argument("--hilos", type=int, default=6)
     ap.add_argument("--reintentar", type=Path, default=None,

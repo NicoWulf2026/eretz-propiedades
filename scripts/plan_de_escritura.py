@@ -38,6 +38,10 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.write_eligibility import NO_SON_WEB_PROPIA  # noqa: E402
+try:  # raiz del estado operativo configurable (ERETZ_DATA_ROOT)
+    from scripts.rutas_de_datos import dato  # noqa: E402
+except ImportError:  # corrido como `python scripts/x.py`
+    from rutas_de_datos import dato  # noqa: E402
 
 PLAN_VERSION = "plan_de_escritura_v2"
 
@@ -237,13 +241,13 @@ def construir(certificacion: Path, geo: Path, preingestion: Path,
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--certificacion",
-                    default=r"D:\INMO CAPITAL\ERETZ_AGENCY_CERTIFICATION_20260827")
-    ap.add_argument("--geo", default=r"D:\INMO CAPITAL\ERETZ_GEO")
+                    default=str(dato('ERETZ_AGENCY_CERTIFICATION_20260827')))
+    ap.add_argument("--geo", default=str(dato('ERETZ_GEO')))
     ap.add_argument("--preingestion",
-                    default=r"D:\INMO CAPITAL\ERETZ_PREINGESTION_REBUILD_20260903")
+                    default=str(dato('ERETZ_PREINGESTION_REBUILD_20260903')))
     ap.add_argument("--directorio",
-                    default=r"D:\INMO CAPITAL\agency_platform_directory.jsonl")
-    ap.add_argument("--salida", default=r"D:\INMO CAPITAL\ERETZ_OPERACION")
+                    default=str(dato('agency_platform_directory.jsonl')))
+    ap.add_argument("--salida", default=str(dato('ERETZ_OPERACION')))
     args = ap.parse_args()
 
     plan = construir(Path(args.certificacion), Path(args.geo),

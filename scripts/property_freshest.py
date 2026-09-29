@@ -32,6 +32,10 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+try:  # raiz del estado operativo configurable (ERETZ_DATA_ROOT)
+    from scripts.rutas_de_datos import dato  # noqa: E402
+except ImportError:  # corrido como `python scripts/x.py`
+    from rutas_de_datos import dato  # noqa: E402
 
 FRESCURA_VERSION = "property_freshest_v5"
 
@@ -261,7 +265,7 @@ def fusionar(vieja: dict[str, Any], fresca: dict[str, Any] | None,
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--paquetes",
-                    default=r"D:\INMO CAPITAL\ERETZ_AGENCY_CERTIFICATION_20260827\agencies")
+                    default=str(dato('ERETZ_AGENCY_CERTIFICATION_20260827', 'agencies')))
     ap.add_argument("--db", default=None,
                     help="preingestion, para medir cuanto mejora el refresco")
     args = ap.parse_args()

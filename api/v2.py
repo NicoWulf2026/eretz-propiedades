@@ -36,6 +36,10 @@ from api.ranking import RANKING_VERSION, ordenar
 from api.slugs import sin_acento as _plano
 from api.models_v2 import AgencyResponse, BatchResponse, MapResponse, SearchResponse
 from api.property_visibility import public_document
+try:  # raiz del estado operativo configurable (ERETZ_DATA_ROOT)
+    from scripts.rutas_de_datos import dato  # noqa: E402
+except ImportError:  # corrido como `python scripts/x.py`
+    from rutas_de_datos import dato  # noqa: E402
 
 CONTRATO = "eretz_api_property_v1"
 SORTS = {"relevance", "price_asc", "price_desc"}
@@ -104,7 +108,7 @@ def _para_rankear(fila) -> dict[str, Any]:
 
 SNAPSHOT = Path(
     os.environ.get(
-        "ERETZ_API_SNAPSHOT", r"D:\INMO CAPITAL\ERETZ_API_CONTRACT\ERETZ_API_SNAPSHOT.sqlite3"
+        "ERETZ_API_SNAPSHOT", str(dato('ERETZ_API_CONTRACT', 'ERETZ_API_SNAPSHOT.sqlite3'))
     )
 )
 
