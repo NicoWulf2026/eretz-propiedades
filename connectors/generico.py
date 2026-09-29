@@ -475,6 +475,41 @@ def _url_y_parametros(url: str) -> tuple[str, tuple]:
             tuple(sorted(urllib.parse.parse_qsl(p.query, keep_blank_values=True))))
 
 
+# La URL de una CATEGORIA, en las dos formas inequivocas medidas: el segmento
+# «{tipos}_{operacion}_{localidad}» / «{operacion}_destacadas» (la convencion de
+# Inmobiliatica: `calzetta` /propiedades/lotes_venta_lomas-de-zamora, `civeira`
+# /propiedades/venta_destacadas) y la ruta exacta «/{operacion}/{tipos}» (`pagano`
+# /venta/casas). Se enumeraban como fichas: 9 guardadas en 4 agencias, todas
+# tituladas «Propiedades» o con el nombre de la agencia y el menu como
+# descripcion, y 3 de `pagano` contadas como fichas fallidas. Sin cifras en la
+# ruta ni query: una ficha lleva su id. Radio sobre 55.861 fichas guardadas:
+# 9 aciertos, 0 falsos positivos.
+_TIPOS_PLURALES = (r"casas|departamentos|deptos|duplex|oficinas|locales|terrenos|lotes|"
+                   r"galpones|cocheras|campos|quintas|chacras|fincas|salones|depositos|"
+                   r"propiedades|inmuebles|emprendimientos|casaquintas|chalets|ph")
+_OPERACIONES = (r"venta|ventas|alquiler|alquileres|alquiler-temporal|"
+                r"alquiler-temporario|temporario")
+RE_URL_DE_CATEGORIA = re.compile(
+    rf"^/(?:.*/)?(?:(?:{_TIPOS_PLURALES})_(?:{_OPERACIONES})(?:_[a-z0-9\-]+)?|"
+    rf"(?:{_OPERACIONES})_destacadas|(?:{_OPERACIONES})/(?:{_TIPOS_PLURALES}))/?$", re.I)
+
+
+# Y los archivos de taxonomia de WordPress: `peirano` guardo 16 «Archivos de la
+# categoria 3 amb. con dep.» / «Archivo de la etiqueta: …» como propiedades. Las
+# bases del nucleo (`/category/`, `/tag/`, `/author/`) son siempre archivos, con o
+# sin cifras. Radio sobre 55.861 fichas guardadas: esas 16, ninguna otra.
+RE_ARCHIVO_WORDPRESS = re.compile(r"/(?:category|tag|author)/", re.I)
+
+
+def es_url_de_categoria(url: str) -> bool:
+    partes = urllib.parse.urlparse(url or "")
+    ruta = urllib.parse.unquote(partes.path).lower()
+    if RE_ARCHIVO_WORDPRESS.search(ruta):
+        return True
+    return (not partes.query and not re.search(r"\d", ruta)
+            and bool(RE_URL_DE_CATEGORIA.search(ruta)))
+
+
 def _clave_sin_slug(url: str) -> tuple | None:
     """Identidad de una ficha cuya query trae UN id numerico y UN texto-slug.
 
@@ -2604,7 +2639,11 @@ class GenericoConnector(Connector):
                 previa = elegida_por_ficha.get(clave)
                 elegida_por_ficha[clave] = min(previa, item["source_url"]) if previa else item["source_url"]
         repetidas = 0
+        self.categorias_descartadas = 0
         for item in items:
+            if es_url_de_categoria(item["source_url"]):
+                self.categorias_descartadas += 1
+                continue
             corta = _sin_contexto_del_listado(item["source_url"])
             if corta is not None and corta in enumeradas:
                 repetidas += 1
