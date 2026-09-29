@@ -74,7 +74,15 @@ respondía 200). `mark_as_inactive` existe y no tiene consumidores.
 - Rollback manual: copiar `_anteriores/v2_2026-09-08/*` sobre `ERETZ_API_CONTRACT/` (sha
   esperado `e12a8f36…`). Mecanismo reutilizable: `scripts/desplegar_snapshot.py`.
 
-**Candidata v4i — LISTA, pendiente de autorización** (28-09 18:02,
+**Candidata v4j — LISTA, pendiente de autorización** (28-09 21:37,
+`_scratch/unification/snapshot_v4j_2026-09-28/`): todo lo de la v4i (abajo) + 42 precios simbólicos
+descartados (US$1, ventas por USD 460) + lo recertificado hasta las 21:37. integrity ok, 57.634
+propiedades, QA 14/14 con el mismo estado que la v4g, 0 GEO_CONFLICT en el mapa (510 en total);
+medianas explorer 89 ms, combinada 246, mapa combinado 554, detalle 8. Comando:
+`python scripts\desplegar_snapshot.py --candidata _scratch\unification\snapshot_v4j_2026-09-28
+--etiqueta-respaldo v4g_2026-09-28 --exclusiones-declaradas exterior_conservadas_no_publicadas`
+
+Candidata anterior v4i (28-09 18:02,
 `_scratch/unification/snapshot_v4i_2026-09-28/`): integrity ok, 57.634 propiedades, QA de API
 14/14 con el mismo estado que la v4g, 0 GEO_CONFLICT en el mapa (510 en total). Diferencia con la
 servida v4g, TODA explicada:

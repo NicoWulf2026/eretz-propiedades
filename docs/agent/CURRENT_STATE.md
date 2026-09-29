@@ -68,7 +68,7 @@ Recertificación completa en curso desde el 28-09 07:29; los lotes compartidos d
 - **Servida: v4g** desde el 28-09 16:58 (deploy autorizado, controlado, sin rollback; registro en
   `ERETZ_API_CONTRACT/_despliegues/`, respaldo de la v2 en `_anteriores/v2_2026-09-08/`). Detalle:
   `READY_FOR_PRODUCTION_ACTION.md` §7. Todo reemplazo posterior sigue siendo deploy.
-- **Candidata v4i lista** (exterior excluido, CABA por polígono, departamentos): QA 14/14. Su
+- **Candidata v4j lista** (21:37; v4i + 42 precios simbólicos descartados): QA 14/14. La v4i era
   despliegue fue denegado por el control de permisos (deploy): espera autorización explícita.
   Comando en `READY_FOR_PRODUCTION_ACTION.md` §7.
 - v4g: `_scratch/unification/snapshot_v4g_2026-09-28/` (integrity ok; +1.047 operación,
