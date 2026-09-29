@@ -60,6 +60,20 @@ def test_una_qa_que_falla_vuelve_atras_verificado(tmp_path, monkeypatch):
     assert json.loads(registro.read_text(encoding="utf-8"))["resultado"] == "ROLLBACK"
 
 
+def test_faltantes_esperados_auditados_reemplazan_a_lo_declarado(tmp_path, monkeypatch):
+    """v4j -> v4k: la candidata declara 152 exclusiones y a la servida le faltan 121."""
+    _snapshot(tmp_path / "servida", ["a", "b", "c"])
+    _snapshot(tmp_path / "cand", ["a"], exterior_conservadas_no_publicadas=5)
+    rc = _correr(monkeypatch, "--candidata", str(tmp_path / "cand"), "--etiqueta-respaldo", "v1",
+                 "--servida-dir", str(tmp_path / "servida"),
+                 "--exclusiones-declaradas", "exterior_conservadas_no_publicadas",
+                 "--faltantes-esperados", "3")
+    assert rc == 1  # 2 faltan, se esperaban 3: aborta sin tocar
+    rc = _correr(monkeypatch, "--candidata", str(tmp_path / "cand"), "--etiqueta-respaldo", "v1",
+                 "--servida-dir", str(tmp_path / "servida"), "--faltantes-esperados", "2")
+    assert rc == 2  # pasa el inventario; la QA minima falla y vuelve atras
+
+
 @pytest.mark.skipif(os.name != "nt", reason="la apertura exclusiva es de Windows")
 def test_detecta_un_archivo_abierto_por_otro(tmp_path):
     _snapshot(tmp_path / "s", ["a"])

@@ -94,6 +94,10 @@ def main() -> int:
     ap.add_argument("--etiqueta-respaldo", required=True, help="nombre de la carpeta en _anteriores")
     ap.add_argument("--exclusiones-declaradas", default=None,
                     help="clave del SUMMARY de la candidata con las filas excluidas por politica")
+    ap.add_argument("--faltantes-esperados", type=int, default=None,
+                    help="ids de la servida que la candidata ya no trae, medidos y auditados "
+                         "de antemano (reemplaza a --exclusiones-declaradas cuando la servida "
+                         "ya excluia una parte: v4j -> v4k faltan 121 de 152 declaradas)")
     ap.add_argument("--servida-dir", type=Path, default=SERVIDA_DIR)
     args = ap.parse_args()
 
@@ -159,6 +163,8 @@ def main() -> int:
     ids_s, ids_c = ids(servida), ids(cand)
     faltan, sobran = ids_s - ids_c, ids_c - ids_s
     declaradas = datos_cand.get(args.exclusiones_declaradas, 0) if args.exclusiones_declaradas else 0
+    if args.faltantes_esperados is not None:
+        declaradas = args.faltantes_esperados
     reg["inventario"] = {"ids_solo_en_servida": len(faltan), "ids_solo_en_candidata": len(sobran),
                          "exclusiones_declaradas": declaradas,
                          "muestra_solo_en_servida": sorted(faltan)[:50]}

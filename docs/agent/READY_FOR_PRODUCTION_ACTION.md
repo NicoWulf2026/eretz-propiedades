@@ -74,6 +74,18 @@ respondía 200). `mark_as_inactive` existe y no tiene consumidores.
 - Rollback manual: copiar `_anteriores/v2_2026-09-08/*` sobre `ERETZ_API_CONTRACT/` (sha
   esperado `e12a8f36…`). Mecanismo reutilizable: `scripts/desplegar_snapshot.py`.
 
+**Candidata v4k — LISTA, pendiente de autorización (READY_FOR_ACTION)** (29-09,
+`_scratch/unification/snapshot_v4k_2026-09-28/`): la v4j servida menos 121 fichas del exterior que
+la v4j todavía publicaba, TODAS verificadas: 116 con coordenada fuera del polígono oficial del país
+(IGN `ign:pais`; 115 Uruguay -`enlaze` 88 «Centro (Montevideo)», Punta del Este de `lopez baena`,
+`vanzini`, `farina`, `forja`, `vidal`, `o feely`...- y 1 Paraguay) y 5 de Miami sin coordenada
+(Brickell, Bal Harbour, Miami-dade). integrity ok, 57.513 propiedades, 152 exterior excluidas, 0
+precios simbólicos, QA 14/14 con el mismo estado que la v4j, 0 GEO_CONFLICT en el mapa (510);
+medianas explorer 85 ms, combinada 253, mapa combinado 567, detalle 8. Comando:
+`python scripts\desplegar_snapshot.py --candidata _scratch\unification\snapshot_v4k_2026-09-28
+--etiqueta-respaldo v4j_2026-09-28 --faltantes-esperados 121`
+(los 121 auditados arriba; la candidata declara 152 porque la v4j ya excluía 31).
+
 **v4j DESPLEGADA el 28-09 22:58** (autorización del usuario del 28-09). Registro:
 `ERETZ_API_CONTRACT/_despliegues/DEPLOY_2026-09-28T22-58-11.json`. Respaldo de la v4g (sha
 `57fa64c8…`) en `_anteriores/v4g_2026-09-28/`, verificado por hash; inventario: 31 ids menos
