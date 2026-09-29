@@ -370,8 +370,11 @@ RE_IMG = re.compile(r'https?://[^\s"\'<>]+?\.(?:jpe?g|png|webp)', re.I)
 # "50.774, 50.7708" y ubico 752 propiedades fuera del pais.
 # `long` tambien: WPResidence escribe `data-cur_lat="-34.58" data-cur_long=
 # "-58.49"` (`berardi`, 16 fichas sin coordenada en el Regression Gate 28-09).
+# `lang` tambien: el tema inspiry-real-places escribe `{"lat":"-32.94",
+# "lang":"-60.64"}` (`gonzalez theyler`, 41 de 44 fichas sin coordenada). El
+# valor tiene que ser una coordenada: un `"lang":"es"` no coincide.
 RE_COORD = re.compile(r'"?(?:latitude|lat)"?\s*[:=]\s*"?(-[23456]\d\.\d{3,})"?'
-                      r'.{0,80}?"?(?:longitude|long|lng|lon)"?\s*[:=]\s*"?(-[567]\d\.\d{3,})"?',
+                      r'.{0,80}?"?(?:longitude|long|lang|lng|lon)"?\s*[:=]\s*"?(-[567]\d\.\d{3,})"?',
                       re.S | re.I)
 
 # Y en castellano, SOLO en las dos formas verificadas: el atributo del mapa de
