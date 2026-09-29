@@ -571,6 +571,19 @@ huella no frene a los workers; el lote se aplica y se commitea de una vez en la 
 - Zamorano: 2 páginas de listado (`alquiler-temporario-de-propiedades.asp?start=N`) entran como
   ítems por otro camino que `_es_ficha_url` (que las rechaza). Menor; pendiente.
 
+## 29-09 tarde: políticas P1–P24 en ejecución
+- Todo lo que el usuario decidió está en `docs/agent/POLITICAS_PERMANENTES.md`: aplicar sin preguntar.
+- Trampas nuevas:
+  - Tokko: cientos de dominios, UN backend con límite compartido. Nunca paralelizar pedidos a Tokko
+    (ni workers ni verificadores); el reparto de la cola ya lo garantiza.
+  - Un filtro que descarta ítems enumerados tiene que CONTARLOS como contabilizados, o la
+    certificación ve una enumeración incompleta y para la familia (`8bcd5c834f`, 1832).
+  - Editar regex con comillas desde heredocs rompe el escape: usar un script en el scratchpad con
+    `r"""..."""` (se rompió `RE_COORD` unos segundos, `7f8696a66f`).
+- Siguiente: terminar la verificación de retiros → v4l-c (`api_snapshot.py --sumar-certificadas
+  --retiros-verificados …`) → QA → `desplegar_snapshot.py --automatico`; registrar las afirmables de
+  la fase 2 de P6; reprobar 3 workers.
+
 ## Decisiones de producto abiertas (no técnicas)
 - **robots.txt**: el pipeline no lo consulta. Medido 26-09 00:1x: 283 agencias certificadas o en
   NEEDS_FIX, 31.354 URLs de ficha, **0 prohibidas** para nuestro UA. Los dos casos que sí prohíben

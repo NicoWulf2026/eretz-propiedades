@@ -64,6 +64,19 @@ Recertificación completa en curso desde el 28-09 07:29; los lotes compartidos d
   -pozzobon «un baño» en palabras-).
 - Suite completa (28-09 21h, `64790ba41e`): 3.541 passed.
 
+## 29-09 tarde — ejecución de las políticas (`docs/agent/POLITICAS_PERMANENTES.md`)
+- Lotes compartidos 1 y 2 APLICADOS (`a6746a9338`, `566d5a2644`): P6 certifica por identidad canónica
+  verificada sin `main` (275 agencias; la fase 2 verifica ~1.000 webs del directorio más, ~79 %
+  afirmables). El `eretz_id` del directorio de plataformas es de STAGING y no se usa.
+- Workers (P5): la prueba de 3 subió los bloqueos del backend compartido de Tokko (prey, aparicio):
+  régimen devuelto a 2 y todo Tokko al worker 0 (`99a9d41771`). Reprobar 3 con ese reparto.
+- Retiros (P1): `scripts/verificar_retiros.py` en curso; la snapshot retira solo REMOVED
+  (`--retiros-verificados`). Despliegue automático (P2): `desplegar_snapshot.py --automatico`.
+- Regression Gate: 564 agencias, 0 pendientes. Páginas de categoría / archivos de WordPress fuera
+  de la extracción y de la snapshot (46 servidas en la v4j).
+- Pendiente de fuente puntual: `paladino` (Strapi propio en `api.` subdominio, catálogo entero en una
+  respuesta > 800 KB), `lucas liprandi` / `dib kai` (Wix).
+
 ## Lote compartido pendiente (huella)
 `docs/agent/lotes/`: cambios a la huella COMPARTIDA preparados y verificados en `eretz-dev` (3.635 verdes),
 sin aplicar porque reinician la recertificación entera: aglomerados GeoRef (+112 localidades), descartes
