@@ -326,6 +326,37 @@ def _publicable_en_argentina(cruda: dict[str, Any], fresca: dict[str, Any] | Non
 
 CABA = "Ciudad Autónoma de Buenos Aires"
 
+# Los campos de los que sale la cobertura geografica de una fila.
+CAMPOS_GEO = ("ciudad", "barrio", "provincia", "latitud", "longitud")
+
+
+def _cobertura_de_la_fila_servida(cobertura: dict[str, Any] | None, base: dict[str, Any],
+                                  cruda: dict[str, Any], hash_dedup: str | None,
+                                  localidades: dict[str, Any], geometria: dict[str, Any]
+                                  ) -> tuple[dict[str, Any] | None, str | None]:
+    """La cobertura de la fila que se SIRVE, no la de la preingestion del 03-09.
+
+    `GEO_COVERAGE_AUDIT` se armo sobre la fila vieja. Cuando la lectura fresca
+    trae otra ciudad, barrio, provincia o coordenada, esa cobertura describe
+    una fila que ya no es la servida: medido el 29-09, 12.108 filas fusionadas
+    cambiaban de geografia y 3.816 ganaban una localidad demostrada que la
+    snapshot no mostraba nunca.
+
+    Una localidad ya demostrada no se pierde por un vacio: `bottega` servia
+    «Rosario» y su lectura fresca dejo solo el barrio («Parque Field»), 69
+    filas. Sin evidencia contraria -otra localidad o un conflicto- se conserva
+    la que habia.
+    """
+    if all(cruda.get(k) == base.get(k) for k in CAMPOS_GEO):
+        return cobertura, None
+    recalculada = cobertura_de_fila(cruda, cruda.get("connector"), hash_dedup,
+                                    localidades, geometria)
+    if ((cobertura or {}).get("localidad_canonica")
+            and not recalculada.get("localidad_canonica")
+            and recalculada.get("estado_geografico") != "GEO_CONFLICT"):
+        return cobertura, "localidad_conservada"
+    return recalculada, "recalculada"
+
 
 def _conflicto_vigente(conflicto: dict[str, Any]) -> str:
     """El motivo que da HOY el resolvedor para lo que la ficha publico.
@@ -440,10 +471,9 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
             if hash_viejo not in frescas:
                 frescas[hash_viejo] = fila
                 alias_refrescados += 1
-    localidades = geometria = None
-    if nuevas:
-        localidades = catalogo_de_localidades(geografia())
-        geometria = cargar_cache(Path(getattr(args, 'cache_geometrica', '') or ''))
+    localidades = catalogo_de_localidades(geografia())
+    geometria = cargar_cache(Path(getattr(args, 'cache_geometrica', None)
+                                  or r"D:\INMO CAPITAL\ERETZ_GEO\GEO_REVERSE_CACHE.jsonl"))
 
     # Frecuencia por agencia para revisión; repetir no demuestra ser un logo.
     apariciones: dict[str, Counter] = defaultdict(Counter)
@@ -525,6 +555,7 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
     fichas_sin_foto_propia = 0
     filas_con_frescura_parcial = 0
     sumadas = 0
+    geo_de_la_fila_fresca: Counter = Counter()
     anterior: tuple[str | None, int | None] = (None, None)
     # En orden de `hash_dedup`, que es el `id` de la API. La busqueda rankeada
     # elige su ventana de candidatos «por id» -una muestra estable y diversa:
@@ -618,6 +649,11 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
             cobertura = cobertura_de_fila(cruda, cruda.get("connector"), hash_dedup,
                                           localidades, geometria)
             sumadas += 1
+        elif fresca is not None:
+            cobertura, recalculo = _cobertura_de_la_fila_servida(
+                cobertura, base, cruda, hash_dedup, localidades, geometria)
+            if recalculo:
+                geo_de_la_fila_fresca[recalculo] += 1
         g, correccion_geo = _geo_de_la_extraccion(cobertura, fresca)
         if correccion_geo:
             correcciones_geo[correccion_geo] += 1
@@ -699,6 +735,8 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
         "precios_simbolicos_descartados": precios_simbolicos,
         "textos_con_entidades_limpiados": textos_limpiados,
         "filas_con_frescura_parcial": filas_con_frescura_parcial,
+        "geo_recalculada_sobre_la_fila_fresca": geo_de_la_fila_fresca["recalculada"],
+        "geo_localidad_conservada_ante_un_vacio": geo_de_la_fila_fresca["localidad_conservada"],
         "imagenes_repetidas_sin_evidencia_de_descarte": imagenes_repetidas_sin_evidencia,
         "fichas_que_quedaron_sin_foto_propia": fichas_sin_foto_propia,
         "fichas_para_ser_compartida": FICHAS_PARA_SER_COMPARTIDA,
