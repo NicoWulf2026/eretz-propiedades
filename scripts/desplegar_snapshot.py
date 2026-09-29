@@ -103,6 +103,11 @@ def main() -> int:
                          "defecto 0: una candidata que agrega sin declararlo aborta "
                          "(v4l: +9.330 de inventarios certificados vigentes)")
     ap.add_argument("--servida-dir", type=Path, default=SERVIDA_DIR)
+    ap.add_argument("--automatico", action="store_true",
+                    help="politica P2: las altas/bajas esperadas salen de CAMBIOS_DE_INVENTARIO.jsonl "
+                         "y deben pasar TODAS las compuertas de compuertas_de_despliegue.py")
+    ap.add_argument("--cert", type=Path,
+                    default=Path(r"D:\INMO CAPITAL\ERETZ_AGENCY_CERTIFICATION_20260827"))
     args = ap.parse_args()
 
     servida_dir = args.servida_dir
@@ -166,6 +171,15 @@ def main() -> int:
 
     ids_s, ids_c = ids(servida), ids(cand)
     faltan, sobran = ids_s - ids_c, ids_c - ids_s
+    if args.automatico:
+        sys.path.insert(0, str(REPO / "scripts"))
+        from compuertas_de_despliegue import evaluar as compuertas
+        fallas = compuertas(servida, args.candidata, args.cert, faltan, sobran)
+        reg["compuertas_p2"] = fallas
+        if fallas:
+            return abortar("compuertas P2: " + "; ".join(fallas))
+        paso("compuertas P2 superadas", faltan=len(faltan), sobran=len(sobran))
+        args.faltantes_esperados, args.nuevos_esperados = len(faltan), len(sobran)
     declaradas = datos_cand.get(args.exclusiones_declaradas, 0) if args.exclusiones_declaradas else 0
     if args.faltantes_esperados is not None:
         declaradas = args.faltantes_esperados

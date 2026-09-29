@@ -82,6 +82,7 @@ from scripts.geo_coverage_audit import (cargar_cache,  # noqa: E402
                                         cobertura_de_fila)
 from scripts.snapshot_certificadas import (conocidas_de, decidir,  # noqa: E402
                                            paquetes_vigentes)
+from connectors.generico import es_url_de_categoria  # noqa: E402
 import heapq  # noqa: E402
 import re  # noqa: E402
 import unicodedata  # noqa: E402
@@ -570,6 +571,7 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
     fichas_sin_foto_propia = 0
     filas_con_frescura_parcial = 0
     sumadas = 0
+    no_son_fichas = 0
     geo_de_la_fila_fresca: Counter = Counter()
     # Por que cada id entra o no (politica P2: altas y bajas explicadas por id).
     cambios: dict[str, str] = {h: ("RETIRO_MUERTE_VERIFICADA" if h in retiros_evidencia
@@ -592,6 +594,14 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
         if canonical in ajenas:
             ajenas_omitidas += 1
             cambios[hash_dedup] = "WEB_AJENA"
+            continue
+        # Una pagina de categoria o un archivo de WordPress no es una propiedad:
+        # 46 servidas en la v4j («Candel Raul Propiedades» en
+        # /propiedades/locales_venta_lomas-de-zamora). Mismo criterio que el
+        # extractor (`es_url_de_categoria`), para filas todavia no recertificadas.
+        if es_url_de_categoria(cruda.get("source_url") or ""):
+            no_son_fichas += 1
+            cambios[hash_dedup] = "NO_ES_FICHA_CATEGORIA"
             continue
         # Politica publica ARGENTINA_ONLY (decidida el 28-09): lo del exterior
         # se conserva en paquetes y canonico, y no se sirve. Decide la marca de
@@ -753,6 +763,7 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
         "propiedades": filas,
         "omitidas_por_web_ajena": ajenas_omitidas,
         "exterior_conservadas_no_publicadas": exterior_no_publicadas,
+        "paginas_de_categoria_omitidas": no_son_fichas,
         "politica_publica": POLITICA_PUBLICA,
         "geo_conflictos_de_la_extraccion_fresca": correcciones_geo["conflicto_fresco"],
         "caba_confirmada_por_poligono": correcciones_geo["caba_por_poligono"],
