@@ -215,6 +215,7 @@ class Geografia:
         self.por_nombre: dict[str, list[Entidad]] = {}
         self.provincias: dict[str, str] = {}
         self.alias: dict[str, list[Entidad]] = {}
+        self.alias_de_aglomerado: dict[str, Entidad] = {}
         self._cargar()
 
     # ------------------------------------------------------------- carga
@@ -284,6 +285,43 @@ class Geografia:
         for forma in ("caba", "ciudad autonoma de buenos aires",
                       "capital federal", "ciudad de buenos aires"):
             self.alias[forma] = [caba]
+        self._cargar_alias_de_aglomerados()
+
+    def _cargar_alias_de_aglomerados(self) -> None:
+        """Cada parte de una localidad censal compuesta nombra a esa localidad.
+
+        GeoRef cataloga algunos aglomerados con el nombre de todas sus partes:
+        «Necochea - Quequen», «Mar del Tuyu - Mar de Aje - San Bernardo». Nadie
+        publica eso como ciudad; publica «Necochea», y quedaba NOT_FOUND (91
+        fichas medidas el 29-09).
+
+        Solo si el nombre de la parte NO es ya una localidad en ningun lado y
+        es parte de UN solo aglomerado: «Bella Vista» (de «Iglesia - Bella
+        Vista», San Juan) tiene sus propias localidades y no se toca. Las
+        comunas de CABA no entran: CABA se resuelve a la provincia.
+
+        Y solo dentro de su provincia: «Parque Norte» es parte de un aglomerado
+        de Cordoba y tambien un barrio en otras provincias; con otra provincia
+        declarada sigue sin resolverse, no pasa a ser una contradiccion.
+        El separador puede venir como «?»: asi trae el snapshot de GeoRef la
+        raya de «Necochea - Quequen».
+        """
+        partes: dict[str, list[Entidad]] = {}
+        for entidad in self.entidades:
+            if not re.search(r"\s[-\u2013\u2014?]\s", entidad.official_name):
+                continue
+            if normalizar(entidad.provincia) == "ciudad autonoma de buenos aires":
+                continue
+            for parte in re.split(r"\s[-\u2013\u2014?]\s", entidad.official_name):
+                clave = normalizar(parte)
+                if len(clave) < 4 or clave.startswith("comuna"):
+                    continue
+                partes.setdefault(clave, []).append(entidad)
+        for clave, entidades in partes.items():
+            if (len(entidades) == 1 and clave not in self.por_nombre
+                    and clave not in self.alias
+                    and clave not in self.provincia_entidad):
+                self.alias_de_aglomerado[clave] = entidades[0]
 
     # ---------------------------------------------------------- resolucion
     def _filtrar_por_contexto(self, candidatas: list[Entidad], *,
@@ -605,6 +643,13 @@ class Geografia:
                     f"capital de {entidad.provincia}"))
 
         candidatas = list(self.por_nombre.get(clave, ()))
+        aglomerado = self.alias_de_aglomerado.get(clave)
+        if (not candidatas and aglomerado is not None
+                and (not provincia
+                     or normalizar(provincia) == normalizar(aglomerado.provincia))):
+            return controlar(Resolucion(
+                aglomerado, POR_ALIAS, NORMALIZADA_CANONICA, 1,
+                f"parte del aglomerado {aglomerado.official_name}"))
         if not candidatas:
             # GeoRef no cataloga barrios: lo mas probable es que sea uno.
             return Resolucion(None, NO_ENCONTRADA, DESCONOCIDA, 0,

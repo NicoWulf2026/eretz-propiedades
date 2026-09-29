@@ -946,6 +946,15 @@ def sin_filtros_catalogo(html: str) -> str:
     html = re.sub(
         r"<label[^>]+name=[\"']search_filter[^\"']*[\"'][^>]*>.*?</label>",
         " ", html or "", flags=re.I | re.S)
+    # Y las casillas: el buscador de Houzez (`o feely`) repite en cada ficha
+    # «Tipo de operacion» con <label><input type="checkbox" value="alquiler">
+    # Alquiler</label>, y la senal daba la operacion por publicada en 74
+    # emprendimientos que no la dicen. Una casilla es un control, no un dato.
+    html = re.sub(
+        r"<label\b[^>]*>(?:(?!</?label\b).){0,400}?"
+        r"<input\b[^>]*\btype=[\"']?(?:checkbox|radio)\b[^>]*>"
+        r"(?:(?!</?label\b).){0,400}?</label>",
+        " ", html, flags=re.I | re.S)
     return re.sub(r"<select\b.*?</select>", " ", html, flags=re.I | re.S)
 
 
@@ -3271,7 +3280,7 @@ class GenericoConnector(Connector):
         es_emprendimiento = bool(re.search(
             r"/emprendimientos?/", urllib.parse.urlparse(url).path.lower()))
         principal_campos = (re.split(
-            r">\s*UNIDADES\s*<", principal, maxsplit=1, flags=re.I)[0]
+            r">\s*UNIDADES(?:\s+disponibles)?\s*<|id=[\"']property-sub-listings-wrap[\"']", principal, maxsplit=1, flags=re.I)[0]
             if es_emprendimiento else principal)
         texto_campos = normalizar_texto_campos(
             _texto(sin_filtros_catalogo(principal_campos)))

@@ -225,7 +225,7 @@ def source_signals(body: str, url: str = "") -> dict[str, bool]:
     is_development = bool(re.search(
         r"/emprendimientos?/", urllib.parse.urlparse(url).path.lower()))
     if is_development:
-        main = re.split(r">\s*UNIDADES\s*<", main, maxsplit=1, flags=re.I)[0]
+        main = re.split(r">\s*UNIDADES(?:\s+disponibles)?\s*<|id=[\"']property-sub-listings-wrap[\"']", main, maxsplit=1, flags=re.I)[0]
     # Portales legacy insertan el formulario de busqueda dentro del mismo
     # documento que la ficha. Sus opciones ("1 dormitorio", "10 dormitorios")
     # no son atributos de la propiedad y se eliminan por su contrato HTML
@@ -809,7 +809,12 @@ def field_audit(properties: list[dict[str, Any]], pages: dict[str, dict[str, Any
                         # del sitio o un texto repetido en media agencia, y lo
                         # anota: es la validacion, no un campo sin leer.
                         (field == "descripcion" and bool((prop.get("extra") or {})
-                                                        .get("descripcion_descartada"))))
+                                                        .get("descripcion_descartada"))) or
+                        # «Provincia: Argentina» (`o feely`): se leyo y no es una
+                        # provincia. El extractor lo anota; es la validacion
+                        # rechazando un valor de la fuente, no un campo sin leer.
+                        (field == "provincia" and bool((prop.get("extra") or {})
+                                                       .get("provincia_declarada_sin_resolver"))))
             if rejected:
                 validation_rejected += 1
             elif signal:
@@ -956,6 +961,27 @@ def conector_por_la_portada(connector_name: str, source: Fuente,
     return "tokko" if RE_TOKKO_TFW.search(html or "") else connector_name
 
 
+def descartes_sin_senal(run: dict[str, Any]) -> int:
+    """Paginas enlazadas que el guardian de forma descarto, sin ninguna senal de ficha.
+
+    El runner las cuenta como detalle fallido (el connector devuelve None). Un
+    enlace a `area_cliente.php` en el listado de `bottai` dejaba en NEEDS_FIX
+    a 315 propiedades leidas enteras y de forma idempotente: 1 de 316.
+
+    Se descuentan solo si nada las hace sospechosas: ningun descarte trajo
+    precio o schema (`descartes_con_senal`), la corrida leyo propiedades, y
+    son pocas -hasta 2, o el 2 % de lo enumerado-. Un sitio al que se le
+    descarta todo, o una porcion grande, sigue sin certificar: ahi el
+    guardian puede estar equivocado, y eso se revisa.
+    """
+    descartadas = int(run.get("descartadas_por_forma") or 0)
+    if (not descartadas or int(run.get("descartes_con_senal") or 0)
+            or int(run.get("detalles_obtenidos") or 0) <= 0
+            or descartadas > max(2, 0.02 * int(run.get("enumeradas") or 0))):
+        return 0
+    return descartadas
+
+
 def run_once(connector_name: str, source: Fuente, checkpoint: Checkpoint,
              interval: float, max_listings: int, budget: float,
              baseline: int | None = None) -> tuple[dict[str, Any], AuditDownloader]:
@@ -1079,11 +1105,13 @@ def certification_status(run1: dict[str, Any], run2: dict[str, Any],
     fallidos_de_lectura = max(
         0, int(run1.get("detalles_fallidos") or 0)
         - min(int(run1.get("detalles_desaparecidos") or 0),
-              int(run2.get("detalles_desaparecidos") or 0)))
+              int(run2.get("detalles_desaparecidos") or 0))
+        - descartes_sin_senal(run1))
     fallidos_de_lectura += max(
         0, int(run2.get("detalles_fallidos") or 0)
         - min(int(run1.get("detalles_desaparecidos") or 0),
-              int(run2.get("detalles_desaparecidos") or 0)))
+              int(run2.get("detalles_desaparecidos") or 0))
+        - descartes_sin_senal(run2))
     if fallidos_de_lectura:
         reasons.append("one or more listing details failed")
     if not comparison["same_url_set"]:
