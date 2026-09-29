@@ -35,6 +35,12 @@ PYTHON_DOTENV_DISABLED=1 python -m pytest -q -p no:cacheprovider
 Al checkpoint: 3.701 passed en la máquina original.
 
 ## 4. Datos (NO están en el repo — el repo es público)
+**Raíz configurable:** `export ERETZ_DATA_ROOT=/ruta/restaurada` (Windows: `set ERETZ_DATA_ROOT=...`).
+Todo el núcleo (API, geografía, cola, certificador, snapshot, despliegue, gate) la usa
+(`scripts/rutas_de_datos.py`); las rutas absolutas del manifiesto de datos se reubican solas.
+Restaurar y verificar: `docs/agent/ESTADO_DURABLE.md` y `python scripts/cloud/prueba_restore.py`
+(desde la raíz del repo, con la variable fijada): debe dar 0 archivos con problema y 0 accesos
+a la raíz original.
 Todo el estado operativo vive bajo `D:\INMO CAPITAL\` en la máquina original y los scripts tienen
 esas rutas por defecto (todas se pueden pasar por argumento). Ver `docs/agent/ESTADO_DURABLE.md`
 para qué es cada cosa, su SHA-256 y cómo restaurarla desde `ERETZ_STATE_2026-09-29.tar.gz`

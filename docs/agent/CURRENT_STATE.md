@@ -85,6 +85,8 @@ Recertificación completa en curso desde el 28-09 07:29; los lotes compartidos d
 - Cola: régimen 2 workers (Tokko al worker 0); 1.819 agencias en la cola `--ready`; ledger 766
   (338 COMPLETE, 40 BEST_AVAILABLE, 204 NEEDS_FIX, 132 IDENTITY_PENDING, 51 BLOCKED_EXTERNAL, 1 NO_INVENTORY).
 - Suite 3.701 verdes; Regression Gate 578 agencias, 0 pendientes.
+- Estado operativo portable (`ERETZ_DATA_ROOT`), restore probado en otra raíz con 0 accesos a `D:\`;
+  paquete pendiente de upload humano a almacenamiento privado.
 - Continuidad: `docs/CLOUD_CONTINUATION_HANDOFF.md`, `docs/CLOUD_BOOTSTRAP.md`,
   `docs/NEXT_CLOUD_AGENT_PROMPT.md`, `docs/agent/ESTADO_DURABLE.md`.
 

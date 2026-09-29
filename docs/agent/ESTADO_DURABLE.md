@@ -16,7 +16,27 @@ usuario los suba a almacenamiento PRIVADO. Hasta entonces: `EXTERNAL_STORAGE_REQ
 - Tomado a las 2026-09-29T17:12:35 con la cola corriendo: el ledger es append-only, así que es un corte válido
   en el tiempo; lo certificado después se recupera recertificando.
 
+## Almacenamiento remoto
+- Estado al 29-09 18:30: **pendiente de upload humano** a almacenamiento PRIVADO (no hay ninguno
+  autenticado en la máquina: sin Google Drive, OneDrive sin cuenta, sin rclone). Destino recomendado:
+  Google Drive privado, carpeta `ERETZ Propiedades/cloud-checkpoints/2026-09-29/`, sin enlace.
+- Subir: `ERETZ_STATE_2026-09-29.tar.gz`, `MANIFEST.json`
+  (SHA-256 `417c5cb80af20996a3687f6d3a8cff91c827459ece3d88b72a5080a16ae6e367`) y
+  `ERETZ_DATA_MANIFEST.json` (SHA-256 `2964c73137184354cd405ab4145c02b90fc43a6376756bfde016942a638390a7`).
+- Cuando esté arriba: registrar acá proveedor, carpeta lógica y fecha (nunca URLs con credenciales).
+
+## Prueba de restore portable (29-09, APROBADA)
+Desde un clone limpio en `0ddbd12af4`, con el paquete extraído en OTRA raíz y
+`ERETZ_DATA_ROOT` apuntando ahí, `scripts/cloud/prueba_restore.py` (con audit hook que registra
+todo acceso a `D:\INMO CAPITAL`):
+6.533/6.533 archivos con SHA-256 correcto; catálogo 6.597, cola ready 1.819; ledger idéntico
+(338 COMPLETE, 204 NEEDS_FIX, 132 IDENTITY_PENDING, 51 BLOCKED_EXTERNAL, 40 BEST_AVAILABLE,
+1 NO_INVENTORY); 766 paquetes; 296 diferidas; base canónica reubicada por el manifiesto;
+GeoRef 4.023 localidades; decisión de snapshot 9.943 nuevas / 2.675 retirables; Regression Gate
+0 pendientes; relanzador sobre la raíz nueva. **Accesos a la raíz original: 0.**
+
 ## Restaurar
+La raíz puede ser cualquier carpeta: `ERETZ_DATA_ROOT=<carpeta>` (sin la variable, `D:\INMO CAPITAL`).
 ```bash
 # en la maquina nueva, crear la raiz que los scripts esperan (o pasar rutas por argumento)
 mkdir -p "/d/INMO CAPITAL" && cd "/d/INMO CAPITAL"

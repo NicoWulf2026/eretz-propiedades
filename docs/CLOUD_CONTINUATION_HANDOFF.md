@@ -161,6 +161,9 @@ producción.
     `checked_at` contra `git log` antes de re-diagnosticar); 47 retiros AMBIGUA; cobertura nacional.
 
 ## EXTERNAL BLOCKERS
+Portabilidad del estado: resuelta en código (`ERETZ_DATA_ROOT`, `8c062b59de`, `0ddbd12af4`) y
+probada (restore en otra raíz, 0 accesos a `D:\`). Falta SOLO el upload humano del paquete a
+almacenamiento privado (ver `docs/agent/ESTADO_DURABLE.md`).
 BLOCKED EXTERNAL:
 - **Almacenamiento privado para el estado operativo** (el repo es público): el usuario tiene que
   elegir dónde subir `ERETZ_STATE_2026-09-29.tar.gz` (ver `docs/agent/ESTADO_DURABLE.md`).

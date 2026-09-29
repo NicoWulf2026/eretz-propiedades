@@ -26,7 +26,9 @@ Rama: handoff/codex-unificacion-2026-09-18. Tag del checkpoint: cloud-checkpoint
 8. Cola: hasta 3 workers adaptativos (P5), régimen actual 2; todo Tokko en un solo worker; no
    paralelizar pedidos a Tokko; respetar robots.txt y 403/429.
 9. Cobertura nacional y beta son tracks separados: ninguno bloquea al otro.
-10. Si el estado operativo (ERETZ_STATE_2026-09-29.tar.gz) no está en esta máquina, trabajá en lo
+10. Estado operativo: descargar ERETZ_STATE_2026-09-29.tar.gz del almacenamiento privado del usuario,
+    verificar SHA-256, extraer en una carpeta, `export ERETZ_DATA_ROOT=<carpeta>` y correr
+    `python scripts/cloud/prueba_restore.py` (0 problemas, 0 accesos a D:\). Si no está disponible, trabajá en lo
     que no lo necesita (código, tests, runbooks, frontend) y documentalo; no reconstruyas la cola
     desde cero.
 11. Commits con mensaje claro y la línea Co-Authored-By indicada por el entorno; push solo a la
