@@ -546,6 +546,31 @@ huella no frene a los workers; el lote se aplica y se commitea de una vez en la 
 - Visto: `ballarre` enumera la misma ficha dos veces (`codigo=5889` con dos `id` de texto) y
   páginas de listado → no idempotente; sin arreglar (dedupe por `codigo` es riesgoso en general).
 
+## 29-09 mañana: la snapshot sirve lo certificado, geo de la fila fresca, lote compartido
+- Brecha medida: la snapshot solo servía la preingestión del 03-09. `scripts/snapshot_certificadas.py`
+  decide nuevas / alias por URL nueva / retirables con el cierre VIGENTE del ledger; `api_snapshot.py`
+  lo usa con `--sumar-certificadas` y `--retirar-ausentes` (sin banderas sale igual que antes).
+  OJO identidad: 5.877 «faltantes» eran el MISMO aviso Tokko con slug nuevo; comparar por URL sola
+  habría duplicado miles. Regla: ante cualquier señal de que ya está, no se suma.
+- `api_snapshot`: la cobertura geo se recalcula sobre la fila fusionada (`cobertura_de_fila`, extraída
+  de `geo_coverage_audit` con salida idéntica byte a byte). Causa medida de «sin ciudad»: 31.080 filas
+  del 03-09 sin ningún texto de ubicación; la ciudad fresca nunca llegaba a la localidad servida.
+- Candidatas v4l-a / v4l-b: ver `READY_FOR_PRODUCTION_ACTION.md` §7. `desplegar_snapshot.py`
+  ahora pide `--nuevos-esperados` exacto.
+- `generico`: memoria de descargas solo durante `discover` (138 → 91 pedidos, mismos planes);
+  `<path id="bottom">` de un SVG ya no corta la ficha (`cometto`: 0 → lee precio, fotos).
+- NEXT-001 y ventana semántica: cerradas en sus documentos.
+- Lote compartido en `docs/agent/lotes/` (no aplicado). Aplicarlo es una decisión de cuándo reiniciar
+  la recertificación; mientras tanto `o feely` tiene diferida firmada y wordpress se liberó 10:12.
+- Wix (`lucas liprandi` 71, `dib kai`): el registro CMS no viene en `wix-warmup-data`, solo los
+  componentes renderizados sin nombre de campo; además pide subir `limite_bytes` en `base.py`
+  (compartido). No vale hoy; si se hace, junto con el próximo lote.
+- NEEDS_FIX «source fields not extracted» (46 agencias, 6.668 prop. solo por eso): varios son
+  cierres anteriores a arreglos del 28-09 (`farina` 06:24 < arreglo 15:34); la recertificación en
+  curso los resuelve sola. No re-diagnosticar sin mirar `checked_at` contra `git log`.
+- Zamorano: 2 páginas de listado (`alquiler-temporario-de-propiedades.asp?start=N`) entran como
+  ítems por otro camino que `_es_ficha_url` (que las rechaza). Menor; pendiente.
+
 ## Decisiones de producto abiertas (no técnicas)
 - **robots.txt**: el pipeline no lo consulta. Medido 26-09 00:1x: 283 agencias certificadas o en
   NEEDS_FIX, 31.354 URLs de ficha, **0 prohibidas** para nuestro UA. Los dos casos que sí prohíben
