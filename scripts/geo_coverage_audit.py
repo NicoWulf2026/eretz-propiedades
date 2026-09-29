@@ -126,6 +126,232 @@ def clave_de(lat: Any, lon: Any) -> str | None:
         return None
 
 
+def cobertura_de_fila(fila: dict[str, Any], connector: str | None, hash_dedup: str | None,
+                      localidades: dict[str, Any], geometria: dict[str, dict[str, Any]],
+                      fuente_tiene: Counter | None = None, demostrable: Counter | None = None,
+                      area: Counter | None = None, motivos_sin_localidad: Counter | None = None,
+                      conflictos: Counter | None = None) -> dict[str, Any]:
+    """La cobertura geografica de UNA fila, con la regla de este modulo.
+
+    Separada de `main` para que una fila que no esta en la preingestion -una
+    propiedad nueva de un inventario certificado- reciba exactamente la misma
+    decision y no una copia que envejezca aparte. Los contadores son opcionales:
+    `main` los pasa para su resumen.
+    """
+    fuente_tiene = Counter() if fuente_tiene is None else fuente_tiene
+    demostrable = Counter() if demostrable is None else demostrable
+    area = Counter() if area is None else area
+    motivos_sin_localidad = Counter() if motivos_sin_localidad is None else motivos_sin_localidad
+    conflictos = Counter() if conflictos is None else conflictos
+
+    tiene_coord = _presente(fila.get("latitud")) and _presente(fila.get("longitud"))
+    for campo, hay in (("provincia", _presente(fila.get("provincia"))),
+                       ("ciudad_texto", _presente(fila.get("ciudad"))),
+                       ("barrio", _presente(fila.get("barrio"))),
+                       ("direccion", _presente(fila.get("direccion"))),
+                       ("coordenadas", tiene_coord)):
+        if hay:
+            fuente_tiene[campo] += 1
+
+    # El mismo resolver del pipeline, no una copia: un backfill que
+    # decide distinto que la ingesta produce dos verdades del mismo
+    # dato.
+    prop = PropiedadNormalizada(
+        canonical_agency_id=str(fila.get("canonical_agency_id") or ""),
+        source_listing_id=str(fila.get("source_listing_id") or ""),
+        source_url=str(fila.get("source_url") or ""),
+        connector=connector or "",
+        ciudad=fila.get("ciudad"), barrio=fila.get("barrio"),
+        provincia=fila.get("provincia"),
+        latitud=fila.get("latitud"), longitud=fila.get("longitud"))
+    if fila.get("ciudad") or fila.get("barrio"):
+        Connector._resolver_geografia(prop)
+
+    match = prop.extra.get("ciudad_match")
+    localidad_id = prop.extra.get("localidad_id")
+
+    # Corroboracion: exactamente la misma regla que decide que
+    # propuestas son aptas para escritura. Una localidad que no se
+    # puede escribir tampoco se puede contar como cobertura.
+    veredicto = clasificar({
+        "publicado": {"provincia": fila.get("provincia")},
+        "evidencia": {"match": match,
+                      "campo_de_origen":
+                          prop.extra.get("ciudad_campo_de_origen")}})
+    corroborada = prop.ciudad and veredicto == APTA
+
+    localidad = localidades.get(str(localidad_id or ""))
+    departamento_id = getattr(localidad, "departamento_id", None) if corroborada else None
+    departamento_nombre = getattr(localidad, "departamento", None) if corroborada else None
+    municipio_id = getattr(localidad, "municipio_id", None) if corroborada else None
+    municipio_nombre = getattr(localidad, "municipio", None) if corroborada else None
+    provincia_final = (fila.get("provincia")
+                       or getattr(localidad, "provincia", None))
+
+    # La geometria oficial, si este punto ya fue resuelto.
+    punto = geometria.get(clave_de(fila.get("latitud"),
+                                   fila.get("longitud")) or "")
+    prov_geo = (punto or {}).get("provincia")
+    muni_geo = (punto or {}).get("municipio")
+    depto_geo = (punto or {}).get("departamento")
+
+    # GEO_CONFLICT: la coordenada dice una provincia y la FUENTE otra.
+    # No se elige entre dos evidencias que se contradicen, y el
+    # municipio geometrico tampoco se usa: si la coordenada esta mal,
+    # su municipio tambien, y mandaria a una persona a buscar en la
+    # provincia equivocada.
+    #
+    # Pero una provincia que dedujimos nosotros del padron de la
+    # inmobiliaria NO es evidencia de la fuente, y tratarla como tal
+    # convertia una inferencia equivocada en un conflicto. Medido:
+    # **3.439 de los 3.859 conflictos -el 89,1 %- eran contra una
+    # provincia inferida**, no contra una publicada. Una inmobiliaria
+    # de Cordoba que vende en Neuquen no es una contradiccion: es una
+    # inmobiliaria que vende en Neuquen, y nuestra suposicion estaba
+    # mal.
+    #
+    # El costo de confundirlas era el maximo posible: la fila salia
+    # publicada SIN NADA -sin provincia, sin departamento, sin
+    # municipio, sin localidad y con `area_busqueda: SIN_AREA`-,
+    # incluida la geografia que la coordenada SI demuestra. 3.888
+    # propiedades, el 6,7 % del catalogo, invisibles para cualquier
+    # busqueda por area.
+    #
+    # Ahora: si la provincia la dedujimos, gana la geometria y no hay
+    # conflicto. Si la publico la ficha, el conflicto se mantiene tal
+    # cual, que es para lo que la regla existe.
+    provincia_inferida_corregida = False
+    origen_publicado = ((fila.get('extra') or {}).get('provincia_origen')
+                        or prop.extra.get('provincia_origen'))
+    provincia_es_inferida = origen_publicado == "padron_inmobiliaria"
+    conflicto_estructurado = (prop.extra.get('geo_conflicto')
+                             or (fila.get('extra') or {}).get('geo_conflicto'))
+    discrepa = bool(
+        prov_geo and fila.get("provincia")
+        and _plegado(prov_geo) != _plegado(fila.get("provincia")))
+    if discrepa and provincia_es_inferida:
+        # La inferencia estaba mal y la geometria lo demuestra. Se
+        # corrige y se deja el rastro de lo que habiamos supuesto.
+        conflictos["inferencia_corregida_por_la_geometria"] += 1
+        discrepa = False
+        provincia_inferida_corregida = True
+        provincia_final = prov_geo
+    conflicto = bool(conflicto_estructurado or discrepa)
+    if conflicto:
+        conflictos['provincia_vs_localidad' if conflicto_estructurado
+                   else "provincia_geometrica_vs_publicada"] += 1
+        corroborada = False
+        provincia_final = None
+        departamento_nombre = departamento_id = None
+        municipio_nombre = municipio_id = None
+
+    if corroborada:
+        demostrable["localidad"] += 1
+    else:
+        motivos_sin_localidad[
+            GEO_CONFLICT if conflicto else
+            (veredicto if prop.ciudad else (match or "SIN_TEXTO_DE_UBICACION"))] += 1
+    for dimension, valor_demostrado in (
+        ("departamento", departamento_id), ("municipio", municipio_id),
+        ("provincia", provincia_final), ("barrio_texto", fila.get("barrio")),
+    ):
+        if _presente(valor_demostrado):
+            demostrable[dimension] += 1
+
+    # --- lo que la geometria oficial DEMUESTRA -------------------
+    # Hasta aca municipio y departamento se publicaban solo cuando
+    # venian del camino de la localidad, o sea del NOMBRE que la
+    # fuente escribio; la geometria servia nada mas que para el area
+    # de busqueda. Medido: 36.718 propiedades tienen su municipio
+    # demostrado por la geometria oficial y la columna `municipio` del
+    # snapshot esta vacia en las 57.665 filas. Cero, no pocas.
+    #
+    # La regla que lo causaba es correcta PARA LA LOCALIDAD y ahi se
+    # conserva: el sondeo de 36.552 puntos da
+    # `localidad_determinable_por_coordenada: 0`, porque `/ubicacion`
+    # no expone capa de localidad. Resolverla por coordenada obligaria
+    # al centroide mas cercano, que si es inventar geografia.
+    #
+    # Para municipio y departamento no: `/ubicacion` responde por
+    # CONTENCION en el poligono oficial. Que un punto caiga dentro del
+    # partido de Avellaneda no es una inferencia, es una medicion. La
+    # regla se escribio contra el centroide y termino tapando tambien
+    # la contencion.
+    #
+    # Se publica con procedencia propia para que nada quede promovido
+    # en silencio: quien lea la fila distingue el municipio que salio
+    # de un nombre del que salio de un poligono.
+    procedencia: dict[str, str] = {}
+    if provincia_inferida_corregida:
+        # Se dice de donde salio: la dedujimos mal y la geometria la
+        # corrigio. Sin esto seria una provincia mas, indistinguible
+        # de la que publico la fuente.
+        procedencia["provincia"] = POR_GEOMETRIA
+    if _presente(municipio_nombre):
+        procedencia["municipio"] = POR_NOMBRE
+    elif muni_geo and not conflicto:
+        municipio_nombre = muni_geo
+        procedencia["municipio"] = POR_GEOMETRIA
+    if _presente(departamento_nombre):
+        procedencia["departamento"] = POR_NOMBRE
+    elif depto_geo and not conflicto:
+        departamento_nombre = depto_geo
+        procedencia["departamento"] = POR_GEOMETRIA
+    # `localidad_canonica` NO se toca: es la unica dimension que la
+    # coordenada no puede demostrar.
+
+    # El area de busqueda baja de nivel, nunca miente sobre cual es.
+    if corroborada:
+        nivel, valor = NIVEL_LOCALIDAD, prop.ciudad
+    elif _presente(municipio_nombre):
+        nivel, valor = NIVEL_MUNICIPIO, municipio_nombre
+    elif muni_geo and not conflicto:
+        nivel, valor = NIVEL_MUNICIPIO, muni_geo
+    elif _presente(departamento_nombre):
+        nivel, valor = NIVEL_DEPARTAMENTO, departamento_nombre
+    elif depto_geo and not conflicto:
+        nivel, valor = NIVEL_DEPARTAMENTO, depto_geo
+    elif _presente(provincia_final):
+        nivel, valor = NIVEL_PROVINCIA, provincia_final
+    else:
+        nivel, valor = SIN_AREA, None
+    area[nivel] += 1
+
+    return {
+        "hash_dedup": hash_dedup,
+        "cobertura_version": COBERTURA_VERSION,
+        "fuente": {"provincia": fila.get("provincia"),
+                   "ciudad_texto": fila.get("ciudad"),
+                   "barrio": fila.get("barrio"),
+                   "coordenadas": tiene_coord},
+        "localidad_canonica": prop.ciudad if corroborada else None,
+        "localidad_id": localidad_id if corroborada else None,
+        "departamento_canonico": departamento_nombre or None,
+        "municipio_canonico": municipio_nombre or None,
+        "procedencia_de_dimensiones": procedencia or None,
+        "provincia_canonica": provincia_final,
+        "barrio_fuente": fila.get("barrio"),
+        "match": match,
+        "veredicto_de_corroboracion": veredicto,
+        # La MISMA forma que emite `Connector._area_de_busqueda`.
+        # Dos nombres para el mismo campo obligan al frontend a
+        # manejar los dos, y tarde o temprano maneja uno solo.
+        "area_busqueda": {"nivel": nivel, "nombre": valor,
+                          "id": localidad_id if corroborada else None,
+                          "origen": ("localidad" if corroborada
+                                     else nivel.lower())},
+        "geometria": {"provincia": prov_geo, "departamento": depto_geo,
+                      "municipio": muni_geo} if punto else None,
+        "estado_geografico": GEO_CONFLICT if conflicto else None,
+        "conflicto": (conflicto_estructurado or {"publicado": fila.get("provincia"),
+                       "geometrico": prov_geo,
+                       "razon": "la provincia publicada y la geometria "
+                                "oficial no coinciden"}
+                      if conflicto else None),
+        "writes": False,
+    }
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", default=str(base_canonica()))
@@ -161,212 +387,10 @@ def main() -> int:
             fila = json.loads(crudo)
             total += 1
 
-            tiene_coord = _presente(fila.get("latitud")) and _presente(fila.get("longitud"))
-            for campo, hay in (("provincia", _presente(fila.get("provincia"))),
-                               ("ciudad_texto", _presente(fila.get("ciudad"))),
-                               ("barrio", _presente(fila.get("barrio"))),
-                               ("direccion", _presente(fila.get("direccion"))),
-                               ("coordenadas", tiene_coord)):
-                if hay:
-                    fuente_tiene[campo] += 1
-
-            # El mismo resolver del pipeline, no una copia: un backfill que
-            # decide distinto que la ingesta produce dos verdades del mismo
-            # dato.
-            prop = PropiedadNormalizada(
-                canonical_agency_id=str(fila.get("canonical_agency_id") or ""),
-                source_listing_id=str(fila.get("source_listing_id") or ""),
-                source_url=str(fila.get("source_url") or ""),
-                connector=connector or "",
-                ciudad=fila.get("ciudad"), barrio=fila.get("barrio"),
-                provincia=fila.get("provincia"),
-                latitud=fila.get("latitud"), longitud=fila.get("longitud"))
-            if fila.get("ciudad") or fila.get("barrio"):
-                Connector._resolver_geografia(prop)
-
-            match = prop.extra.get("ciudad_match")
-            localidad_id = prop.extra.get("localidad_id")
-
-            # Corroboracion: exactamente la misma regla que decide que
-            # propuestas son aptas para escritura. Una localidad que no se
-            # puede escribir tampoco se puede contar como cobertura.
-            veredicto = clasificar({
-                "publicado": {"provincia": fila.get("provincia")},
-                "evidencia": {"match": match,
-                              "campo_de_origen":
-                                  prop.extra.get("ciudad_campo_de_origen")}})
-            corroborada = prop.ciudad and veredicto == APTA
-
-            localidad = localidades.get(str(localidad_id or ""))
-            departamento_id = getattr(localidad, "departamento_id", None) if corroborada else None
-            departamento_nombre = getattr(localidad, "departamento", None) if corroborada else None
-            municipio_id = getattr(localidad, "municipio_id", None) if corroborada else None
-            municipio_nombre = getattr(localidad, "municipio", None) if corroborada else None
-            provincia_final = (fila.get("provincia")
-                               or getattr(localidad, "provincia", None))
-
-            # La geometria oficial, si este punto ya fue resuelto.
-            punto = geometria.get(clave_de(fila.get("latitud"),
-                                           fila.get("longitud")) or "")
-            prov_geo = (punto or {}).get("provincia")
-            muni_geo = (punto or {}).get("municipio")
-            depto_geo = (punto or {}).get("departamento")
-
-            # GEO_CONFLICT: la coordenada dice una provincia y la FUENTE otra.
-            # No se elige entre dos evidencias que se contradicen, y el
-            # municipio geometrico tampoco se usa: si la coordenada esta mal,
-            # su municipio tambien, y mandaria a una persona a buscar en la
-            # provincia equivocada.
-            #
-            # Pero una provincia que dedujimos nosotros del padron de la
-            # inmobiliaria NO es evidencia de la fuente, y tratarla como tal
-            # convertia una inferencia equivocada en un conflicto. Medido:
-            # **3.439 de los 3.859 conflictos -el 89,1 %- eran contra una
-            # provincia inferida**, no contra una publicada. Una inmobiliaria
-            # de Cordoba que vende en Neuquen no es una contradiccion: es una
-            # inmobiliaria que vende en Neuquen, y nuestra suposicion estaba
-            # mal.
-            #
-            # El costo de confundirlas era el maximo posible: la fila salia
-            # publicada SIN NADA -sin provincia, sin departamento, sin
-            # municipio, sin localidad y con `area_busqueda: SIN_AREA`-,
-            # incluida la geografia que la coordenada SI demuestra. 3.888
-            # propiedades, el 6,7 % del catalogo, invisibles para cualquier
-            # busqueda por area.
-            #
-            # Ahora: si la provincia la dedujimos, gana la geometria y no hay
-            # conflicto. Si la publico la ficha, el conflicto se mantiene tal
-            # cual, que es para lo que la regla existe.
-            provincia_inferida_corregida = False
-            origen_publicado = ((fila.get('extra') or {}).get('provincia_origen')
-                                or prop.extra.get('provincia_origen'))
-            provincia_es_inferida = origen_publicado == "padron_inmobiliaria"
-            conflicto_estructurado = (prop.extra.get('geo_conflicto')
-                                     or (fila.get('extra') or {}).get('geo_conflicto'))
-            discrepa = bool(
-                prov_geo and fila.get("provincia")
-                and _plegado(prov_geo) != _plegado(fila.get("provincia")))
-            if discrepa and provincia_es_inferida:
-                # La inferencia estaba mal y la geometria lo demuestra. Se
-                # corrige y se deja el rastro de lo que habiamos supuesto.
-                conflictos["inferencia_corregida_por_la_geometria"] += 1
-                discrepa = False
-                provincia_inferida_corregida = True
-                provincia_final = prov_geo
-            conflicto = bool(conflicto_estructurado or discrepa)
-            if conflicto:
-                conflictos['provincia_vs_localidad' if conflicto_estructurado
-                           else "provincia_geometrica_vs_publicada"] += 1
-                corroborada = False
-                provincia_final = None
-                departamento_nombre = departamento_id = None
-                municipio_nombre = municipio_id = None
-
-            if corroborada:
-                demostrable["localidad"] += 1
-            else:
-                motivos_sin_localidad[
-                    GEO_CONFLICT if conflicto else
-                    (veredicto if prop.ciudad else (match or "SIN_TEXTO_DE_UBICACION"))] += 1
-            for dimension, valor_demostrado in (
-                ("departamento", departamento_id), ("municipio", municipio_id),
-                ("provincia", provincia_final), ("barrio_texto", fila.get("barrio")),
-            ):
-                if _presente(valor_demostrado):
-                    demostrable[dimension] += 1
-
-            # --- lo que la geometria oficial DEMUESTRA -------------------
-            # Hasta aca municipio y departamento se publicaban solo cuando
-            # venian del camino de la localidad, o sea del NOMBRE que la
-            # fuente escribio; la geometria servia nada mas que para el area
-            # de busqueda. Medido: 36.718 propiedades tienen su municipio
-            # demostrado por la geometria oficial y la columna `municipio` del
-            # snapshot esta vacia en las 57.665 filas. Cero, no pocas.
-            #
-            # La regla que lo causaba es correcta PARA LA LOCALIDAD y ahi se
-            # conserva: el sondeo de 36.552 puntos da
-            # `localidad_determinable_por_coordenada: 0`, porque `/ubicacion`
-            # no expone capa de localidad. Resolverla por coordenada obligaria
-            # al centroide mas cercano, que si es inventar geografia.
-            #
-            # Para municipio y departamento no: `/ubicacion` responde por
-            # CONTENCION en el poligono oficial. Que un punto caiga dentro del
-            # partido de Avellaneda no es una inferencia, es una medicion. La
-            # regla se escribio contra el centroide y termino tapando tambien
-            # la contencion.
-            #
-            # Se publica con procedencia propia para que nada quede promovido
-            # en silencio: quien lea la fila distingue el municipio que salio
-            # de un nombre del que salio de un poligono.
-            procedencia: dict[str, str] = {}
-            if provincia_inferida_corregida:
-                # Se dice de donde salio: la dedujimos mal y la geometria la
-                # corrigio. Sin esto seria una provincia mas, indistinguible
-                # de la que publico la fuente.
-                procedencia["provincia"] = POR_GEOMETRIA
-            if _presente(municipio_nombre):
-                procedencia["municipio"] = POR_NOMBRE
-            elif muni_geo and not conflicto:
-                municipio_nombre = muni_geo
-                procedencia["municipio"] = POR_GEOMETRIA
-            if _presente(departamento_nombre):
-                procedencia["departamento"] = POR_NOMBRE
-            elif depto_geo and not conflicto:
-                departamento_nombre = depto_geo
-                procedencia["departamento"] = POR_GEOMETRIA
-            # `localidad_canonica` NO se toca: es la unica dimension que la
-            # coordenada no puede demostrar.
-
-            # El area de busqueda baja de nivel, nunca miente sobre cual es.
-            if corroborada:
-                nivel, valor = NIVEL_LOCALIDAD, prop.ciudad
-            elif _presente(municipio_nombre):
-                nivel, valor = NIVEL_MUNICIPIO, municipio_nombre
-            elif muni_geo and not conflicto:
-                nivel, valor = NIVEL_MUNICIPIO, muni_geo
-            elif _presente(departamento_nombre):
-                nivel, valor = NIVEL_DEPARTAMENTO, departamento_nombre
-            elif depto_geo and not conflicto:
-                nivel, valor = NIVEL_DEPARTAMENTO, depto_geo
-            elif _presente(provincia_final):
-                nivel, valor = NIVEL_PROVINCIA, provincia_final
-            else:
-                nivel, valor = SIN_AREA, None
-            area[nivel] += 1
-
-            archivo.write(json.dumps({
-                "hash_dedup": hash_dedup,
-                "cobertura_version": COBERTURA_VERSION,
-                "fuente": {"provincia": fila.get("provincia"),
-                           "ciudad_texto": fila.get("ciudad"),
-                           "barrio": fila.get("barrio"),
-                           "coordenadas": tiene_coord},
-                "localidad_canonica": prop.ciudad if corroborada else None,
-                "localidad_id": localidad_id if corroborada else None,
-                "departamento_canonico": departamento_nombre or None,
-                "municipio_canonico": municipio_nombre or None,
-                "procedencia_de_dimensiones": procedencia or None,
-                "provincia_canonica": provincia_final,
-                "barrio_fuente": fila.get("barrio"),
-                "match": match,
-                "veredicto_de_corroboracion": veredicto,
-                # La MISMA forma que emite `Connector._area_de_busqueda`.
-                # Dos nombres para el mismo campo obligan al frontend a
-                # manejar los dos, y tarde o temprano maneja uno solo.
-                "area_busqueda": {"nivel": nivel, "nombre": valor,
-                                  "id": localidad_id if corroborada else None,
-                                  "origen": ("localidad" if corroborada
-                                             else nivel.lower())},
-                "geometria": {"provincia": prov_geo, "departamento": depto_geo,
-                              "municipio": muni_geo} if punto else None,
-                "estado_geografico": GEO_CONFLICT if conflicto else None,
-                "conflicto": (conflicto_estructurado or {"publicado": fila.get("provincia"),
-                               "geometrico": prov_geo,
-                               "razon": "la provincia publicada y la geometria "
-                                        "oficial no coinciden"}
-                              if conflicto else None),
-                "writes": False,
-            }, ensure_ascii=False) + "\n")
+            archivo.write(json.dumps(cobertura_de_fila(
+                fila, connector, hash_dedup, localidades, geometria,
+                fuente_tiene, demostrable, area, motivos_sin_localidad,
+                conflictos), ensure_ascii=False) + "\n")
 
     con_area = total - area[SIN_AREA]
     resumen = {

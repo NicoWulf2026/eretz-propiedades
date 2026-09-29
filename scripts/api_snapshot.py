@@ -77,6 +77,12 @@ from connectors import poligono_caba  # noqa: E402
 from connectors.coherencia import _es_simbolico  # noqa: E402
 from connectors.geografia import (CABA_POR_POLIGONO_REASON,  # noqa: E402
                                   PROVINCE_CONFLICT_REASON)
+from scripts.geo_coverage_audit import (cargar_cache,  # noqa: E402
+                                        catalogo_de_localidades,
+                                        cobertura_de_fila)
+from scripts.snapshot_certificadas import (conocidas_de, decidir,  # noqa: E402
+                                           paquetes_vigentes)
+import heapq  # noqa: E402
 import re  # noqa: E402
 import unicodedata  # noqa: E402
 
@@ -254,6 +260,18 @@ def main() -> int:
     ap.add_argument("--salida", default=r"D:\INMO CAPITAL\ERETZ_API_CONTRACT")
     ap.add_argument('--replace-derived', action='store_true',
                     help='replace an existing derived snapshot atomically after successful construction')
+    # Las dos decisiones de `snapshot_certificadas`, cada una explicita: sin
+    # estas banderas la snapshot sale exactamente como antes.
+    ap.add_argument('--sumar-certificadas', action='store_true',
+                    help='sumar las propiedades de inventarios certificados vigentes que la '
+                         'preingestion no tiene, y refrescar los avisos que cambiaron de URL')
+    ap.add_argument('--retirar-ausentes', action='store_true',
+                    help='no servir filas que ya no estan en el inventario COMPLETO vigente '
+                         'de su agencia')
+    ap.add_argument('--ledger', type=Path, default=None,
+                    help='ledger de certificacion (por defecto, junto a --paquetes)')
+    ap.add_argument("--cache-geometrica",
+                    default=r"D:\INMO CAPITAL\ERETZ_GEO\GEO_REVERSE_CACHE.jsonl")
     args = ap.parse_args()
     salida = Path(args.salida)
     destino = salida / 'ERETZ_API_SNAPSHOT.sqlite3'
@@ -372,7 +390,61 @@ def _geo_de_la_extraccion(g: dict[str, Any] | None, fresca: dict[str, Any] | Non
     return g, None
 
 
+def _decision_certificadas(origen, args, ajenas):
+    """Que sumar, que refrescar por alias y que retirar; None sin banderas."""
+    if not (getattr(args, 'sumar_certificadas', False)
+            or getattr(args, 'retirar_ausentes', False)):
+        return None
+    ledger = args.ledger or Path(args.paquetes).parent / "AGENCY_CERTIFICATION_RESULTS.jsonl"
+    return decidir(paquetes_vigentes(Path(args.paquetes), Path(ledger)),
+                   conocidas_de(origen), ajenas)
+
+
+def _filas_en_orden(origen, frescas, nuevas, retirar):
+    """(fila base, fresca, es_nueva) en orden de `hash_dedup`, sin las retiradas.
+
+    Las filas nuevas no tienen version vieja: son su propia lectura fresca, y
+    asi `_geo_de_la_extraccion` ve el conflicto o el poligono que registro su
+    extraccion.
+    """
+    def de_la_preingestion():
+        for (crudo,) in origen.execute(
+                "select row_json from rows where status = 'CANDIDATE' "
+                "order by hash_dedup"):
+            fila = json.loads(crudo)
+            if fila.get("hash_dedup") in retirar:
+                continue
+            yield fila.get("hash_dedup") or "", fila, frescas.get(fila.get("hash_dedup")), False
+
+    def de_los_paquetes():
+        for fila in sorted(nuevas, key=lambda f: f["hash_dedup"]):
+            yield fila["hash_dedup"], fila, fila, True
+
+    for _clave, fila, fresca, es_nueva in heapq.merge(
+            de_la_preingestion(), de_los_paquetes(), key=lambda x: x[0]):
+        yield fila, fresca, es_nueva
+
+
 def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
+    decision = _decision_certificadas(origen, args, ajenas)
+    sumar = decision is not None and getattr(args, 'sumar_certificadas', False)
+    nuevas = decision.nuevas if sumar else []
+    retirar = (decision.retirables
+               if decision is not None and getattr(args, 'retirar_ausentes', False) else set())
+    alias_refrescados = 0
+    if sumar:
+        # El aviso con URL nueva refresca a la fila que ya se sirve, si esa
+        # fila no tiene ya su propia lectura fresca.
+        frescas = dict(frescas)
+        for hash_viejo, fila in decision.alias.items():
+            if hash_viejo not in frescas:
+                frescas[hash_viejo] = fila
+                alias_refrescados += 1
+    localidades = geometria = None
+    if nuevas:
+        localidades = catalogo_de_localidades(geografia())
+        geometria = cargar_cache(Path(getattr(args, 'cache_geometrica', '') or ''))
+
     # Frecuencia por agencia para revisión; repetir no demuestra ser un logo.
     apariciones: dict[str, Counter] = defaultdict(Counter)
     # El texto del sitio, con la MISMA regla del runner
@@ -382,15 +454,13 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
     descripciones: dict[str, Counter] = defaultdict(Counter)
     titulos: dict[str, Counter] = defaultdict(Counter)
     fichas_de: Counter = Counter()
-    for crudo, canonical in origen.execute(
-            "select row_json, canonical_id from rows where status = 'CANDIDATE'"):
+    for fila, fresca, es_nueva in _filas_en_orden(origen, frescas, nuevas, retirar):
+        canonical = fila.get("canonical_agency_id")
         if canonical in ajenas:
             continue
-        fila = json.loads(crudo)
         for url in set(fila.get("imagenes") or []):
             apariciones[canonical][url] += 1
-        fusionada = fusionar(fila, frescas.get(fila.get("hash_dedup")),
-                             CAMPOS_FUSIONABLES)
+        fusionada = fila if es_nueva else fusionar(fila, fresca, CAMPOS_FUSIONABLES)
         texto = fusionada.get("descripcion")
         fichas_de[canonical] += 1
         # Sin el minimo de 40 caracteres del runner: la preingestion trae
@@ -454,6 +524,7 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
     imagenes_repetidas_sin_evidencia = 0
     fichas_sin_foto_propia = 0
     filas_con_frescura_parcial = 0
+    sumadas = 0
     anterior: tuple[str | None, int | None] = (None, None)
     # En orden de `hash_dedup`, que es el `id` de la API. La busqueda rankeada
     # elige su ventana de candidatos «por id» -una muestra estable y diversa:
@@ -462,13 +533,10 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
     # de los 330 de la consulta. Insertando en orden de id, el `rowid` del
     # indice de texto YA es ese orden y la API lo usa gratis: 9 ms, la misma
     # muestra. Ver `orden_de_filas` en `snapshot_meta`.
-    for (crudo,) in origen.execute(
-            "select row_json from rows where status = 'CANDIDATE' "
-            "order by hash_dedup"):
-        fresca = frescas.get(json.loads(crudo).get("hash_dedup"))
+    for base, fresca, es_nueva in _filas_en_orden(origen, frescas, nuevas, retirar):
         if fresca is not None and "_campos_confiables" in fresca:
             filas_con_frescura_parcial += 1
-        cruda = fusionar(json.loads(crudo), fresca, CAMPOS_FUSIONABLES)
+        cruda = base if es_nueva else fusionar(base, fresca, CAMPOS_FUSIONABLES)
         hash_dedup = cruda.get("hash_dedup")
         canonical = cruda.get("canonical_agency_id")
         if canonical in ajenas:
@@ -543,7 +611,14 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
             # Se queda sin fotos, no sin propiedad: lo que tenia no era suyo.
             fichas_sin_foto_propia += 1
         cruda = dict(cruda, imagenes=propias)
-        g, correccion_geo = _geo_de_la_extraccion(geo.get(hash_dedup), fresca)
+        cobertura = geo.get(hash_dedup)
+        if es_nueva:
+            # La misma regla de `geo_coverage_audit`, para la fila que su
+            # artefacto (armado sobre la preingestion) no podia tener.
+            cobertura = cobertura_de_fila(cruda, cruda.get("connector"), hash_dedup,
+                                          localidades, geometria)
+            sumadas += 1
+        g, correccion_geo = _geo_de_la_extraccion(cobertura, fresca)
         if correccion_geo:
             correcciones_geo[correccion_geo] += 1
         if (correccion_geo in ("conflicto_obsoleto", "caba_por_poligono")
@@ -627,6 +702,14 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
         "imagenes_repetidas_sin_evidencia_de_descarte": imagenes_repetidas_sin_evidencia,
         "fichas_que_quedaron_sin_foto_propia": fichas_sin_foto_propia,
         "fichas_para_ser_compartida": FICHAS_PARA_SER_COMPARTIDA,
+        "certificadas": None if decision is None else {
+            "sumadas_servidas": sumadas,
+            "nuevas_elegibles": len(decision.nuevas) if sumar else 0,
+            "avisos_con_url_nueva_refrescados": alias_refrescados,
+            "retiradas_ausentes_de_inventario_completo": len(retirar),
+            "retirables_detectadas": len(decision.retirables),
+            "motivos": dict(decision.motivos.most_common()),
+        },
         "generada_en": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "origen": str(Path(args.db)),
         "artefacto": destino.name,
