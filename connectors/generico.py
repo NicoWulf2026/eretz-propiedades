@@ -373,8 +373,11 @@ RE_IMG = re.compile(r'https?://[^\s"\'<>]+?\.(?:jpe?g|png|webp)', re.I)
 # `lang` tambien: el tema inspiry-real-places escribe `{"lat":"-32.94",
 # "lang":"-60.64"}` (`gonzalez theyler`, 41 de 44 fichas sin coordenada). El
 # valor tiene que ser una coordenada: un `"lang":"es"` no coincide.
-RE_COORD = re.compile(r'"?(?:latitude|lat)"?\s*[:=]\s*"?(-[23456]\d\.\d{3,})"?'
-                      r'.{0,80}?"?(?:longitude|long|lang|lng|lon)"?\s*[:=]\s*"?(-[567]\d\.\d{3,})"?',
+# Comillas simples tambien: el plugin Estatik publica
+# `data-latitude='-38.8411258' data-longitude='-68.1291336'` (`portanko`, 35 de
+# 42 fichas sin coordenada, 29-09).
+RE_COORD = re.compile(r"""["']?(?:latitude|lat)["']?\s*[:=]\s*["']?(-[23456]\d\.\d{3,})["']?"""
+                      r""".{0,80}?["']?(?:longitude|long|lang|lng|lon)["']?\s*[:=]\s*["']?(-[567]\d\.\d{3,})["']?""",
                       re.S | re.I)
 
 # Y en castellano, SOLO en las dos formas verificadas: el atributo del mapa de

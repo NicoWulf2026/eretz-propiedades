@@ -31,3 +31,10 @@ def test_la_variable_gana_al_fallback_de_rosario() -> None:
 def test_la_latitud_de_la_ciudad_no_es_la_de_la_propiedad() -> None:
     html = 'ciudad:{_id:e,nombre:"Arroyo Leyes",latitud:-31.585,longitud:-60.55000000000001,zoom:13}'
     assert RE_COORD_ES.search(html) is None
+
+
+def test_coordenada_con_comillas_simples_del_plugin_estatik():
+    """`portanko`: data-latitude='-38.84' data-longitude='-68.12' (35 de 42 sin coordenada)."""
+    from connectors.generico import RE_COORD
+    html = "<div class='es-property-map' data-latitude='-38.8411258' data-longitude='-68.1291336'></div>"
+    assert RE_COORD.search(html).groups() == ("-38.8411258", "-68.1291336")
