@@ -114,6 +114,15 @@ Nada toca la huella. Integración y verificación en LOCAL: `HANDOFF.md` § PARA
 - **Rol escritor P18 preparado** (`b74184b`): cargador LOGIN NOINHERIT + escritor; revoca la
   membresía de `eretz_preview_ro` (la credencial de solo lectura del Preview podía escribir
   vía canario). PGlite 14/14. Sin crear.
+- **P7 activo** (`21ebbe0`): cobro dentro de cada proveedor pago antes de cada pedido; costo por
+  consulta declarado (`ERETZ_SEARCH_COSTO_USD_<PROVEEDOR>`) o no se busca; libro
+  `ERETZ_SEARCH_SPEND.jsonl`; tope duro USD 10/mes.
+- **Lote 4 (conteos en letras)** y **P10 (provincia por polígono)**: PARCHES en `docs/agent/lotes/`,
+  sin aplicar (tocan la huella; P4). P10 necesita `provincias_ign.json` generado en LOCAL.
+  La parte geométrica de P10 ya está en la rama (`connectors/poligono_provincia.py`, sin uso en la huella).
+- **Cola**: no arranca sin GeoRef cargado (`b52a1cb`, caso `criscenti`).
+- **Frontend**: undici con parche de seguridad (`1030149`); `npm audit --audit-level=high` = 0 y build ok.
+- Pendientes con fixture de LOCAL: martelliti (dirección junto al ícono), fenix, paladino, Wix.
 - Red del entorno CLOUD: sin salida a webs de agencias ni a IGN/GeoRef (política del entorno);
   sí PyPI, npm y Docker Hub. Lo que necesita red de fuentes queda para LOCAL.
 
