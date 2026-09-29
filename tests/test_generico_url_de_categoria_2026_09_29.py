@@ -39,3 +39,16 @@ def test_fichas_no_son_categoria(url):
 ])
 def test_archivos_de_taxonomia_de_wordpress(url):
     assert es_url_de_categoria(url)
+
+
+def test_MUERDE_una_categoria_descartada_cuenta_como_registro_contabilizado():
+    """`1832 negocios inmobiliarios`: 67 declaradas, 3 categorias -> no es enumeracion incompleta."""
+    from connectors.generico import GenericoConnector
+    g = GenericoConnector(None)
+    g._candidatas = lambda fuente, plan: iter([
+        {"source_url": "https://x.com.ar/propiedades/cocheras_venta_lomas-de-zamora", "source_listing_id": "a"},
+        {"source_url": "https://x.com.ar/propiedad/casa-en-venta-123", "source_listing_id": "123"},
+    ])
+    items = list(g.fetch_listing(None, {}))
+    assert [i["source_listing_id"] for i in items] == ["123"]
+    assert g.categorias_descartadas == 1 and g.duplicados_origen == 1

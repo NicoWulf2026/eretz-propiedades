@@ -2656,8 +2656,13 @@ class GenericoConnector(Connector):
                 repetidas += 1
                 continue
             yield item
-        if repetidas:
-            self.duplicados_origen = getattr(self, "duplicados_origen", 0) + repetidas
+        # Una categoria descartada ES un registro declarado (el sitemap la lista) y
+        # ya esta contabilizada: sin sumarla, `1832 negocios inmobiliarios`
+        # (67 declaradas, 3 categorias) figuraba con la enumeracion incompleta y
+        # paraba la familia generico (29-09).
+        if repetidas or self.categorias_descartadas:
+            self.duplicados_origen = (getattr(self, "duplicados_origen", 0) + repetidas
+                                      + self.categorias_descartadas)
 
     def _candidatas(self, fuente: Fuente, plan: dict[str, Any]) -> Iterator[dict]:
         mapa = plan.get("operacion_por_ficha") or {}
