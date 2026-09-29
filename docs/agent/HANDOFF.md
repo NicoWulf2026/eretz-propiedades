@@ -499,6 +499,23 @@ huella no frene a los workers; el lote se aplica y se commitea de una vez en la 
   (`los cerros`: «Propiedad no encontrada» con 200, arreglado antes). `ivone parodi`: el orden
   del listado cambia entre páginas (inventario 58 vs 55): de la fuente, no de campos.
 - BLOCKED_EXTERNAL (48): todas de política (portal, acceso rechazado, identidad): nada seguro.
+- **Precio simbólico** (`64790ba41e` + snapshot `ff994c8c82`): USD/ARS <= 100 en cualquier operación y
+  venta < USD 1.000 no se afirman (`precio_simbolico`). Corpus 28-09: 13 + 26 + 1 fichas; v4i servía 42.
+  Un alquiler en USD de unos cientos por mes es real y se conserva. Salió del gate de `pozzobon`
+  («USD100» con lotes a 95.000 en la descripción).
+- Gate 21h: 497 agencias, 77 firmadas (alagna: emprendimientos «casa» y precios/superficies de
+  tarjetas similares → CORRECCION; christian arce: la ficha ya no publica superficies →
+  CAMBIO_EN_LA_FUENTE; pozzobon «un baño» en palabras → DEFECTO_PENDIENTE, no se lee prosa numérica).
+- VARIANTE_NO_SOPORTADA / ERROR_DISCOVERY revisadas (28-09 21h):
+  - Argencasas **motor** (`eduardo fernández`, `coviella`, `de ruyck`, `gustavo santos`, `battini`):
+    `cdn.argencasas.com/motor/...` → robots de argencasas prohíbe `/motor/`: no se leen (política).
+    Distinto de la plantilla Oestesi (`david rodriguez`), que sí se lee.
+  - Xintel con clave en el JS propio (`aloise`: `config.js` `empresa`/`apiKey`; `labastida`): la API
+    responde, pero es una clave de API de terceros en el bundle → regla «no se usan claves ajenas»
+    (armanino). **Decisión de producto pendiente**: la variante XINTEL_API vigente ya usa `apiK` cuando
+    está en el HTML; o se acepta Xintel en ambos casos o en ninguno.
+  - `ellena` (gexion/Next.js, sin API visible), SPAs React (`gestionato`, `hcg`, `lopez bb`): sin camino.
+  - `forja`, `lar`: ya se leen con el código actual (certificaciones viejas; la cola las retoma).
 - Visto al pasar: `alonso propiedades` tiene como «web oficial» un listado de buscainmueble.com (un
   PORTAL), certificado el 16-09 (NEEDS_FIX, 1 fila que es una página de listado, no alimenta la
   snapshot). Cuando la cola lo recertifique, confirmar que la guarda de identidad lo rechaza.
