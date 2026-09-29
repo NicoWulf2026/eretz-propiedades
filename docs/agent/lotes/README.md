@@ -30,15 +30,16 @@ wordpress se libera sola por cambio de huella.
 Después de aplicar: suite completa, commit, y la cola recertifica sola por
 cambio de huella (ERETZ AUTOMATION ON).
 
-## Lote 2 — acumulando (política P4: se aplica al llegar a ≥300 propiedades, 24 h con un arreglo
-de valor, una familia bloqueada, o si esperar desperdicia más recertificación)
+## Lote 2 — APLICADO el 29-09 (`566d5a2644`): identidad canónica P6, finca/chacra, baja entre corridas
 
-| arreglo | archivo (huella) | radio medido | estado |
-|---|---|---|---|
-| «finca» y «chacra» como tipo (→ terreno), después de los tipos existentes | `connectors/base.py` | 67 fincas + 60 chacras sin tipo; 12 fincas como «oficina» (menú) | a implementar |
-| Una baja entre corridas (404 en la 1, fuera del listado en la 2) no es ficha fallida | `scripts/agency_certifier.py` | `emir elhelou` (1 de 26) | a implementar |
-| Conteos en palabras («cuatro dormitorios», «un baño») | `connectors/generico.py` | pozzobon, fenix (DEFECTO_PENDIENTE en el gate) | a medir |
-| Superficie «50 M² 50 M²» sin rótulo (fenix) | `connectors/generico.py` | 1 ficha | a medir |
-| Wix: `limite_bytes` y lector de registros CMS | `connectors/base.py` | 2 agencias (liprandi 71) | postergado |
-| robots.txt en el descargador (P11) | `connectors/base.py` | 0 fichas prohibidas medidas; cumplimiento | a implementar |
-| Cortesía por backend compartido (Tokko: cientos de dominios, un límite) | runner / descargador | 1.241 respuestas 429 con 6 hilos por dominio (verificador) | a medir con la prueba de 3 workers |
+## `LOTE_COMPARTIDO_3_2026-09-29.patch` — PREPARADO (verificado en eretz-dev: 3.697 verdes)
+
+    git apply docs/agent/lotes/LOTE_COMPARTIDO_3_2026-09-29.patch
+
+| cambio | archivo | efecto |
+|---|---|---|
+| robots.txt se respeta (P11): lo prohibido levanta `RobotsBloqueado` (subclase de `Bloqueado`, `ROBOTS_BLOCKED`); se lee una vez por host; 401/403 = todo prohibido; ilegible = no afirma | `connectors/base.py` | radio a medir sobre la cola (listados, fichas y APIs) antes de aplicar |
+| Una página de categoría con doble evidencia (rechazada como contenedora por el extractor Y sin id en la URL) no es ficha fallida | `scripts/run_rollout.py` | `alias` (15 de 71) y `pagano` (3) dejan de parar la cola |
+| La suite no sale a leer robots.txt salvo en sus tests | `tests/conftest.py` | — |
+
+Pendientes para el lote 4: conteos en palabras, superficie sin rótulo (fenix), Wix, Strapi en `api.` subdominio (paladino).
