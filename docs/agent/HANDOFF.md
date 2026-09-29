@@ -520,6 +520,32 @@ huella no frene a los workers; el lote se aplica y se commitea de una vez en la 
   PORTAL), certificado el 16-09 (NEEDS_FIX, 1 fila que es una página de listado, no alimenta la
   snapshot). Cuando la cola lo recertifique, confirmar que la guarda de identidad lo rechaza.
 
+## 28/29-09 noche: v4j servida, exterior por país, Xintel público, geo por cadena
+- **v4j desplegada** 22:58 (autorizada): QA 14/14, sin rollback. Post-deploy se vio que seguían
+  servidas 116 fichas con coordenadas en Uruguay/Paraguay y 5 de Miami: la caja de coordenadas
+  (-74..-53) cubre Uruguay. → `connectors/pais.py` (`4a1709277d`): contención en el polígono oficial
+  del país (IGN `ign:pais` simplificado, islas del Delta conservadas, margen 5 km; 0 falsos
+  positivos en el agua medidos). **v4k** construida y auditada (v4j − 121, todas del exterior): LISTA,
+  pendiente de autorización; comando en READY_FOR_PRODUCTION_ACTION §7 (`--faltantes-esperados 121`).
+- **Xintel público** (política del usuario 28-09, `582ae5c8fa`): credencial de cliente publicada por
+  el sitio oficial (HTML o JS propio, mismo dominio, contexto Xintel, nada rotulado secreto/token);
+  procedencia `PUBLIC_CLIENT_CREDENTIAL` sin el valor. `aloise` 43/43 (config.js), `labastida` 65/66.
+  El detalle repite la llamada del frontend (`fichas.propiedades` con su inm/apiK), sin `global`.
+- **Coordenadas en castellano** (`37c58ae220`): `data-latitud`/`const latitud` (ballarre 247,
+  zamorano 143, bottai corregido: tomaba el fallback «Rosario»). Una `latitud:` suelta puede ser la
+  de la ciudad (mercado-unico) y no se acepta.
+- **Ubicación en cadena** (`63aa3cb5a3`): «Olivos, Vicente López, G.B.A. Zona Norte», «Rosario, Santa
+  Fe», «NORDELTA, TIGRE», «Belgrano, CABA»: 628 de 824 resuelven por partes, con guardas (provincia
+  de la cadena vs declarada, partido = departamento oficial, sin contexto solo la última y única).
+- **Ciudad del título** + **rótulo en negrita** (`cba8acc144`): «… en Venta en Centro, Mar del Plata
+  - …» (930 sin ciudad; solo si el catálogo la resuelve como localidad); Houzez/Kiteprop
+  `<li><strong>Tipo de propiedad:</strong> Departamento</li>` (`nexo`, paró wordpress); una lista de
+  valores «4 dormitorios • 3 baños» no es rótulo compuesto.
+- Paros wordpress `nexo` (21:07) y `harfouche` (22:33): liberados por cambio de huella.
+- Gate 29-09 00h: 501 agencias, 0 pendientes. Suite: 3.602 passed.
+- Visto: `ballarre` enumera la misma ficha dos veces (`codigo=5889` con dos `id` de texto) y
+  páginas de listado → no idempotente; sin arreglar (dedupe por `codigo` es riesgoso en general).
+
 ## Decisiones de producto abiertas (no técnicas)
 - **robots.txt**: el pipeline no lo consulta. Medido 26-09 00:1x: 283 agencias certificadas o en
   NEEDS_FIX, 31.354 URLs de ficha, **0 prohibidas** para nuestro UA. Los dos casos que sí prohíben
