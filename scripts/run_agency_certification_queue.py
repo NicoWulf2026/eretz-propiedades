@@ -254,11 +254,38 @@ def particion(cola: list[str], catalogo: dict[str, dict[str, Any]],
         return cola
     mias = []
     for canonical_id in cola:
-        anfitrion = host_de(catalogo.get(canonical_id) or {}, canonical_id)
-        digest = hashlib.sha256(anfitrion.encode("utf-8")).hexdigest()
-        if int(digest, 16) % workers == worker:
+        if worker_de(catalogo.get(canonical_id) or {}, canonical_id, workers) == worker:
             mias.append(canonical_id)
     return mias
+
+
+# Tokko sirve cientos de dominios desde UN backend que limita por backend: con 3
+# workers el 29-09, `prey` (14 y 2 bloqueos, 2da corrida colapsada a 20 de 180) y
+# `aparicio` (7 y 1, no idempotente) pararon la familia. Repartir por host no ve
+# ese backend: dos workers en dos dominios Tokko le piden al mismo servidor. Por
+# eso todo Tokko va al worker 0, y el resto se reparte por host. El worker 0 se
+# completa con una fraccion FIJA del resto -no calculada sobre la cola, para que
+# el reparto no cambie cuando la cola cambia-: con 2 workers y 35 % de Tokko,
+# 0,25 lo deja parejo; con 3, Tokko solo ya es un tercio.
+FRACCION_EXTRA_DEL_WORKER_TOKKO = {2: 0.25, 3: 0.0}
+
+
+def worker_de(entrada: dict[str, Any], canonical_id: str, workers: int) -> int:
+    """El worker de una agencia: Tokko al 0; el resto por host, determinista."""
+    anfitrion = host_de(entrada, canonical_id)
+    digest = int(hashlib.sha256(anfitrion.encode("utf-8")).hexdigest(), 16)
+    if workers <= 1:
+        return 0
+    try:
+        conector = str(choose_connector(entrada)).strip().lower() if entrada else ""
+    except (KeyError, TypeError, AttributeError):
+        conector = ""
+    if conector == "tokko":
+        return 0
+    extra = FRACCION_EXTRA_DEL_WORKER_TOKKO.get(workers, 0.0)
+    if (digest % 1000) < extra * 1000:
+        return 0
+    return 1 + (digest // 1000) % (workers - 1)
 
 
 def host_de(entrada: dict[str, Any], canonical_id: str) -> str:

@@ -208,3 +208,19 @@ def test_un_fallo_al_escribir_el_latido_no_tumba_la_corrida(tmp_path, monkeypatc
     with cola.Latido(tmp_path / "x.lock", "roomix:alfa"):
         _t.sleep(0.2)
     assert len(llamadas) > 1
+
+
+def test_MUERDE_todo_tokko_va_a_un_solo_worker():
+    """El backend de Tokko limita por backend: dos workers en dos dominios Tokko le
+    piden al mismo servidor (prey y aparicio, 29-09, con 3 workers)."""
+    from scripts.run_agency_certification_queue import worker_de
+
+    def entrada(host, plataforma):
+        return {"platform": {"domain": f"https://{host}", "connector": plataforma, "web_kind": "OFFICIAL_WEB"},
+                "source": {}, "resolution": {}, "live": {}, "directory": {}, "verificada": {}}
+
+    for n in (2, 3):
+        tokko = {worker_de(entrada(f"agencia{i}.com.ar", "tokko"), f"roomix:t{i}", n) for i in range(40)}
+        assert tokko == {0}, n
+        resto = {worker_de(entrada(f"otra{i}.com.ar", "generico"), f"roomix:g{i}", n) for i in range(200)}
+        assert resto <= set(range(n)) and len(resto) == n - (1 if n == 3 else 0)
