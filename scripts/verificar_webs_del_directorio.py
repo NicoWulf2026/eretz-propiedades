@@ -42,6 +42,10 @@ PLATAFORMAS = Path(r"D:\INMO CAPITAL\agency_platform_directory.jsonl")
 DESTINO = DATOS / "AGENCY_OFFICIAL_WEB_VERIFIED.jsonl"
 REGISTRO = DATOS / "AGENCY_DIRECTORY_WEB_VERIFICATION.jsonl"
 ESTABLECIDAS = (wd.VERIFIED, wd.HIGH_CONFIDENCE)
+# Tokko sirve cientos de dominios desde un backend con limite compartido: entre
+# agencias Tokko se espera mas, para no sumar un tercer pedido concurrente al del
+# worker de certificacion (ver `run_agency_certification_queue.worker_de`).
+PAUSA_TOKKO = 4.0
 
 
 def host_de(url: str | None) -> str:
@@ -121,7 +125,8 @@ def main() -> int:
                 estado = "PORTAL"
             else:
                 candidata = bajar(url)
-                time.sleep(args.pausa)
+                es_tokko = str(rec["platform"].get("platform") or rec["platform"].get("connector") or "").lower() == "tokko"
+                time.sleep(PAUSA_TOKKO if es_tokko else args.pausa)
                 if candidata.http is None:
                     estado = "NO_RESPONDE"
                 else:

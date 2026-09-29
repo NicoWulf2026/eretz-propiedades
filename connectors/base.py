@@ -378,6 +378,15 @@ class Bloqueado(RuntimeError):
     """403 o 429: el sitio nos esta pidiendo que paremos."""
 
 
+class RobotsBloqueado(Bloqueado):
+    """robots.txt no permite pedir esa URL a nuestro agente (politica P11, ROBOTS_BLOCKED).
+
+    Hereda de `Bloqueado` a proposito: es el sitio diciendo que no, y todo el
+    que ya sabe tratar un 403 -no insistir, no contar la ficha como leida- lo
+    trata bien sin cambios. No es una conclusion legal: es la politica operativa.
+    """
+
+
 class LimitadorDeRitmo:
     """Un pedido cada `intervalo` segundos por host, compartido entre hilos.
 
@@ -511,9 +520,42 @@ class Descargador:
         host = urllib.parse.urlparse(self.url_segura(url)).netloc.lower()
         return host in self._hosts_leidos
 
+    def permite_robots(self, url: str) -> bool:
+        """Lo que dice el robots.txt del host para nuestro agente (P11).
+
+        Se lee una vez por host y por proceso. 401/403 sobre robots.txt es
+        «todo prohibido» (el estandar); cualquier otra falla -404, 5xx, red- no
+        afirma nada y se permite: no poder leerlo no es leer una prohibicion.
+        """
+        import urllib.robotparser
+        partes = urllib.parse.urlparse(url)
+        base = f"{partes.scheme}://{partes.netloc.lower()}"
+        cache = self.__dict__.setdefault("_robots", {})
+        if base not in cache:
+            rp = urllib.robotparser.RobotFileParser()
+            try:
+                req = urllib.request.Request(base + "/robots.txt",
+                                             headers={"User-Agent": self.UA})
+                with secure_urlopen(req, timeout=15, context=contexto_tls()) as r:
+                    rp.parse(read_bounded_response(r, 200_000)
+                             .decode("utf-8", "ignore").splitlines())
+            except urllib.error.HTTPError as e:
+                if e.code in (401, 403):
+                    rp.disallow_all = True
+                else:
+                    rp.allow_all = True
+            except Exception:
+                rp.allow_all = True
+            cache[base] = rp
+        # El nombre de producto, no el UA entero: `RobotFileParser` compara solo
+        # el primer token («Mozilla») y nunca veria una regla para nosotros.
+        return cache[base].can_fetch("ERETZ-PropertyBot", url)
+
     def bajar(self, url: str) -> str:
         url = self.url_segura(url)
         host = urllib.parse.urlparse(url).netloc.lower()
+        if not self.permite_robots(url):
+            raise RobotsBloqueado("ROBOTS_BLOCKED")
         demora = 2.0
         ultimo: Exception | None = None
         for intento in range(1, self.reintentos + 1):

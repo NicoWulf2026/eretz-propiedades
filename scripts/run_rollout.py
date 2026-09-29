@@ -356,6 +356,26 @@ def procesar(con, fuente: Fuente, max_fichas: int, observacion: bool,
     return r
 
 
+def es_contenedora_demostrada(con, aviso: dict) -> bool:
+    """El `None` de una PAGINA DE CATEGORIA con doble evidencia, no una lectura fallida.
+
+    El extractor ya la reconocio como contenedora (encabezado de categoria y una
+    grilla de 5 fichas o mas: `PAGINA_CONTENEDORA_REQUIERE_REVISION`) Y su URL no
+    lleva id, que es lo que lleva una ficha. Con las dos, no es inventario perdido:
+    `alias propiedades` tenia 15 (propiedad-en-alquiler.html...) y `pagano` 3
+    (/venta/casas), y cada una paraba la cola como ficha fallida. Con una sola de
+    las dos se sigue contando como fallo: el detector podria equivocarse.
+    """
+    url = str(aviso.get("source_url") or "")
+    ultimos = (getattr(con, "descartes", None) or [])[-1:]
+    if not ultimos or ultimos[0].get("source_url") != url:
+        return False
+    if ultimos[0].get("motivo") != "PAGINA_CONTENEDORA_REQUIERE_REVISION":
+        return False
+    partes = urllib.parse.urlparse(url)
+    return not any(ch.isdigit() for ch in partes.path + partes.query)
+
+
 def ceder_ritmo_del_host(con, fuente: Fuente, a: dict) -> float | None:
     """Baja la velocidad para ESE host y devuelve el intervalo nuevo.
 
@@ -492,6 +512,7 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
     r["detalles_pedidos"] = len(seleccion)
     objetos = []
     fallidos = 0
+    contenedoras = 0
     reintentos_diferidos: list[dict] = []
     recuperados_diferidos = 0
     desaparecidas = 0
@@ -565,6 +586,9 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
                     r["intervalo_cedido"] = ceder_ritmo_del_host(con, fuente, a)
                 reintentos_diferidos.append(a)
                 continue
+            if es_contenedora_demostrada(con, a):
+                contenedoras += 1
+                continue
             fallidos += 1
             continue
         if ficha_sin_contenido(p):
@@ -630,6 +654,9 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
 
     r["detalles_obtenidos"] = len(props)
     r["detalles_fallidos"] = fallidos
+    # Paginas de categoria con doble evidencia (ver `es_contenedora_demostrada`):
+    # no son fichas y no son lecturas fallidas; quedan contadas aparte.
+    r["contenedoras_descartadas"] = contenedoras
     # De los fallidos, cuantos fueron 404/410. Un enlace que la fuente publica
     # y ya no existe no es inventario que perdimos leyendo mal.
     r["detalles_desaparecidos"] = desaparecidas
