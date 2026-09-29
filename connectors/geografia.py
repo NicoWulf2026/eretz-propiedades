@@ -420,6 +420,89 @@ class Geografia:
                     return destino.provincia
         return None
 
+    def resolver_compuesta(self, texto: Any, *, provincia: str | None = None,
+                           lat: float | None = None, lon: float | None = None
+                           ) -> tuple[Resolucion, str | None] | None:
+        """«Parte, Parte, Partido, Region»: la localidad que la cadena nombra.
+
+        Fuentes que publican la ubicacion como una cadena jerarquica que entera
+        no resuelve (medido el 28-09, ~590 fichas sin ciudad): «Rosario, Santa
+        Fe» (`ferrari` 152), «Olivos, Vicente López, G.B.A. Zona Norte»
+        (`d'aria`), «Morón, Bs.As. G.B.A. Oeste», «Belgrano, CABA», «NORDELTA,
+        TIGRE». Devuelve `(resolucion, barrio)` o None si no se puede afirmar:
+
+          - la provincia sale de la propia cadena («Santa Fe», «Bs.As. G.B.A.
+            Oeste», «G.B.A. Zona Norte») y no puede contradecir la declarada;
+          - se acepta la primera parte que resuelve en ese contexto, y si otra
+            parte nombra un partido, tiene que ser el departamento oficial de
+            esa localidad;
+          - sin provincia en la cadena, solo la ULTIMA parte y solo si es unica
+            en el pais (el catalogo del INDEC agrupa el GBA por partido:
+            «NORDELTA, TIGRE» es la localidad canonica Tigre);
+          - «CABA» pasa por `resolver_localidad` (y por el poligono si hace falta).
+        El barrio es la parte inmediatamente anterior a la resuelta.
+        """
+        partes = [p.strip() for p in str(texto or "").split(",") if p.strip()]
+        if len(partes) < 2:
+            return None
+        # «Belgrano, CABA»: la ciudad es CABA y lo anterior es barrio. No se
+        # busca «Belgrano» como localidad de ninguna provincia.
+        for i, parte in enumerate(partes):
+            if normalizar(parte) in self.alias:
+                r = self.resolver_localidad(parte, provincia=provincia, lat=lat, lon=lon)
+                return (r, partes[i - 1] if i > 0 else None) if r.resuelta else None
+        contexto, resto = None, []
+        for parte in partes:
+            n = normalizar(parte)
+            if re.fullmatch(r"(?:g ?b ?a|gran buenos aires)(?: zona (?:norte|sur|oeste))?"
+                            r"|zona (?:norte|sur|oeste)", n):
+                contexto = contexto or "Buenos Aires"
+                continue
+            prov, _zona = self.provincia_declarada(parte)
+            if prov and normalizar(prov) != "ciudad autonoma de buenos aires":
+                if contexto and normalizar(contexto) != normalizar(prov):
+                    return None
+                contexto = prov
+                resto.append(parte)  # puede ser tambien la capital homonima
+                continue
+            resto.append(parte)
+        declarada = provincia if provincia and normalizar(provincia) in self.provincia_entidad else None
+        if contexto and declarada and normalizar(contexto) != normalizar(declarada) \
+                and normalizar(declarada) != "ciudad autonoma de buenos aires":
+            return None
+        contexto = contexto or declarada
+        nombrados = {normalizar(p) for p in resto
+                     if contexto and self._es_departamento_de(normalizar(p), contexto)}
+        for i, parte in enumerate(resto):
+            n = normalizar(parte)
+            if contexto and normalizar(contexto) == n and i < len(resto) - 1:
+                continue  # la provincia como parte: solo si no queda otra
+            if contexto:
+                r = self.resolver_localidad(parte, provincia=contexto, lat=lat, lon=lon)
+            elif i == len(resto) - 1:
+                r = self.resolver_localidad(parte, lat=lat, lon=lon)
+                if r.certeza != EXACTA:
+                    return None
+            else:
+                continue
+            if not r.resuelta:
+                continue
+            departamento = normalizar(r.entidad.departamento or "")
+            if nombrados and departamento not in nombrados and n not in nombrados:
+                return None
+            barrio = resto[i - 1] if i > 0 else None
+            if barrio and normalizar(barrio) in (n, normalizar(contexto or ""),
+                                                 normalizar(r.entidad.official_name)):
+                barrio = None  # «Córdoba, Córdoba»: no es un barrio
+            # Una direccion o una frase no es un barrio: «Bolla al 1400»,
+            # «calle Estrada e/ 143 y 145», «Vias a Libertador».
+            if barrio and (re.search(r"\d", barrio) or len(barrio) > 40 or re.match(
+                    r"(?:vias?|calle|av|avenida|ruta|entre|esquina)\b", normalizar(barrio))
+                    or re.search(r"\s(?:al?|e/)\s", barrio, re.I)):
+                barrio = None
+            return r, barrio
+        return None
+
     def _es_departamento_de(self, clave: str, provincia: str) -> bool:
         objetivo = normalizar(provincia)
         return any(normalizar(e.provincia) == objetivo

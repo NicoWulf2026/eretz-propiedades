@@ -1041,6 +1041,20 @@ class Connector:
                 prop.extra["ciudad_match"] = resolucion.certeza
                 prop.extra["ciudad_provenance"] = resolucion.provenance
                 prop.extra["ciudad_campo_de_origen"] = "barrio"
+        barrio_de_cadena = None
+        if not resolucion.resuelta and "," in publicada:
+            # «Rosario, Santa Fe», «Olivos, Vicente López, G.B.A. Zona Norte»,
+            # «NORDELTA, TIGRE», «Belgrano, CABA»: la cadena entera no resuelve,
+            # una de sus partes si (~630 fichas sin ciudad, 28-09). Ver
+            # `Geografia.resolver_compuesta` para las guardas.
+            compuesta = catalogo.resolver_compuesta(
+                publicada, provincia=prop.provincia,
+                lat=prop.latitud, lon=prop.longitud)
+            if compuesta is not None:
+                resolucion, barrio_de_cadena = compuesta
+                prop.extra["ciudad_de_cadena_compuesta"] = publicada
+                prop.extra["ciudad_match"] = resolucion.certeza
+                prop.extra["ciudad_provenance"] = resolucion.provenance
         if not desde_barrio and resolucion.motivo == PROVINCE_CONFLICT_REASON:
             # An explicit locality and province cannot both be true. Do not
             # simply reject the locality and keep advertising the province.
@@ -1102,8 +1116,15 @@ class Connector:
                 # una decision de validacion. Sin decirlo, la certificacion lee
                 # "Cordoba Capital" promovida a ciudad como si hubieramos
                 # perdido el barrio de esa ficha.
-                prop.barrio = None
-                Connector._marcar_descartado(prop, "barrio")
+                if barrio_de_cadena:
+                    # «Olivos, Vicente López, G.B.A. Zona Norte»: la parte
+                    # anterior a la localidad es el barrio que la cadena nombra.
+                    prop.barrio = barrio_de_cadena
+                else:
+                    prop.barrio = None
+                    Connector._marcar_descartado(prop, "barrio")
+            elif barrio_de_cadena and not prop.barrio:
+                prop.barrio = barrio_de_cadena
             if not prop.provincia:
                 # La provincia de una localidad resuelta es un hecho del
                 # catalogo, no una inferencia nuestra.
