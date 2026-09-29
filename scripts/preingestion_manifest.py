@@ -55,7 +55,7 @@ def _rebasar(ruta: str) -> Path:
     """Una ruta del manifiesto, sobre la raiz de datos vigente (`ERETZ_DATA_ROOT`).
 
     El manifiesto se escribio en la maquina original con rutas absolutas bajo
-    `D:\INMO CAPITAL`. Restaurado en otra raiz, esas rutas apuntarian a la maquina
+    `D:\\INMO CAPITAL`. Restaurado en otra raiz, esas rutas apuntarian a la maquina
     vieja: la parte bajo la raiz original se reubica en la actual. Una ruta fuera de
     esa raiz se respeta tal cual.
     """

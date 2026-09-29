@@ -2,10 +2,19 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+
+import pytest
 
 from scripts import preingestion_manifest as manifiesto
 from scripts.agency_rollout_preflight import base_de_datos_vigente
+
+# El manifiesto real es estado operativo del nodo LOCAL. En CLOUD se saltean
+# los tests que lo leen; ERETZ_REQUIRE_LOCAL_DATA=1 los exige.
+requiere_manifiesto_real = pytest.mark.skipif(
+    os.environ.get("ERETZ_REQUIRE_LOCAL_DATA") != "1" and not manifiesto.MANIFIESTO.exists(),
+    reason="el manifiesto de datos es estado LOCAL (ERETZ_DATA_ROOT)")
 
 
 def _manifiesto(tmp_path, vigente: str, historica: str) -> Path:
@@ -73,6 +82,7 @@ def test_sin_manifiesto_se_cae_hacia_la_vigente_y_no_hacia_la_vieja(tmp_path,
     assert "20260903" in str(manifiesto.RESPALDO)
 
 
+@requiere_manifiesto_real
 def test_el_manifiesto_real_declara_la_base_del_3_de_septiembre():
     """Contra el archivo de verdad, no contra un fixture."""
     manifiesto._manifiesto.cache_clear()
@@ -86,6 +96,7 @@ def test_el_manifiesto_real_declara_la_base_del_3_de_septiembre():
     assert any("20260827" in str(h) for h in historicas)
 
 
+@requiere_manifiesto_real
 def test_una_base_declarada_historica_no_se_puede_abrir():
     """La Fase 2 pidió que el runtime falle si intenta usar una snapshot
     HISTORICAL. `geo_dryrun.py` —el script que produjo las 29.048 propuestas de

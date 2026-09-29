@@ -58,6 +58,7 @@ def _correr(tmp_path, filas, monkeypatch, values=None, fresh=None, gate=None):
     return resumen, docs
 
 
+@pytest.mark.georef
 def test_snapshot_recalculates_scopes_after_current_offer_merge(tmp_path, monkeypatch):
     summary, docs = _correr(tmp_path, [('roomix:alfa', [])], monkeypatch,
                            values={'precio': 99000, 'moneda': 'USD', 'operacion': 'venta'},
@@ -124,6 +125,7 @@ def test_snapshot_failure_closes_both_connections_and_removes_owned_build(tmp_pa
     assert source.read_bytes() == original
 
 
+@pytest.mark.georef
 def test_failed_snapshot_build_preserves_the_served_artifact(tmp_path, monkeypatch):
     from scripts import api_snapshot
     db = _base(tmp_path, [('agency', [])])
@@ -143,6 +145,7 @@ def test_failed_snapshot_build_preserves_the_served_artifact(tmp_path, monkeypat
     assert not list(tmp_path.glob('ERETZ_API_SNAPSHOT.sqlite3.building.*'))
 
 
+@pytest.mark.georef
 def test_un_avatar_repetido_no_es_la_foto_de_nadie(tmp_path, monkeypatch):
     """`user-4.png` está en 58 de 360 fichas de una agencia: el connector sólo
     descarta las que aparecen en la MITAD del catálogo y eso deja pasar mucho."""
@@ -157,6 +160,7 @@ def test_un_avatar_repetido_no_es_la_foto_de_nadie(tmp_path, monkeypatch):
         assert len(doc["imagenes"]) == 1
 
 
+@pytest.mark.georef
 def test_una_foto_que_se_repite_poco_se_conserva(tmp_path, monkeypatch):
     """Un emprendimiento con unidades que comparten un render es legítimo: el
     umbral no puede castigarlo."""
@@ -170,6 +174,7 @@ def test_una_foto_que_se_repite_poco_se_conserva(tmp_path, monkeypatch):
         assert doc["imagenes"] == [compartida]
 
 
+@pytest.mark.georef
 def test_el_umbral_es_por_agencia(tmp_path, monkeypatch):
     """La misma URL en agencias distintas no dice nada: son sitios distintos y
     el conteo de una no puede castigar a la otra."""
@@ -181,6 +186,7 @@ def test_el_umbral_es_por_agencia(tmp_path, monkeypatch):
     assert resumen["imagenes_compartidas_descartadas"] == 0
 
 
+@pytest.mark.georef
 def test_many_units_can_share_a_real_building_render(tmp_path, monkeypatch):
     render = 'https://agency.test/building/render.jpg'
     rows = [('roomix:alfa', [render]) for _ in range(12)]
@@ -190,6 +196,7 @@ def test_many_units_can_share_a_real_building_render(tmp_path, monkeypatch):
     assert all(doc['imagenes'] == [render] for doc in docs.values())
 
 
+@pytest.mark.georef
 def test_quedarse_sin_fotos_no_borra_la_propiedad(tmp_path, monkeypatch):
     """Se queda sin fotos, no sin propiedad: lo que tenía no era suyo."""
     compartida = "https://a.com/footer.png"

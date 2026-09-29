@@ -9,6 +9,8 @@
 """
 from __future__ import annotations
 
+
+import pytest
 import sys
 from pathlib import Path
 
@@ -64,6 +66,7 @@ def test_evidencia_de_exterior_conservadora():
     assert evidencia_de_exterior(pais="AR", ciudad="Rosario") is None
 
 
+@pytest.mark.georef
 def test_MUERDE_miami_no_es_un_barrio_de_buenos_aires():
     prop = B.PropiedadNormalizada(
         canonical_agency_id="roomix:blanco propiedades", source_listing_id="12617",
@@ -83,6 +86,7 @@ def test_MUERDE_miami_no_es_un_barrio_de_buenos_aires():
     assert "ciudad" in prop.extra["atributos_descartados"]
 
 
+@pytest.mark.georef
 def test_una_propiedad_argentina_no_cambia():
     prop = B.PropiedadNormalizada(
         canonical_agency_id="roomix:x", source_listing_id="1", source_url="https://x.test/1",

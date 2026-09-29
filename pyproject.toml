@@ -26,6 +26,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+  # starlette.testclient (tests de la API) lo exige desde starlette 1.x.
+  "httpx2==2.13.1",
   "mypy==2.3.0",
   "pip-audit==2.10.1",
   "pytest==9.0.3",

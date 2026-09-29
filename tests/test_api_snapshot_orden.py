@@ -54,6 +54,7 @@ def _construir(tmp_path, monkeypatch, hashes):
     return sqlite3.connect(salida / "ERETZ_API_SNAPSHOT.sqlite3")
 
 
+@pytest.mark.georef
 def test_el_builder_inserta_en_orden_de_id_y_alinea_los_rowid(tmp_path, monkeypatch):
     con = _construir(tmp_path, monkeypatch, ["hc", "ha", "hd", "hb"])
     propiedades = con.execute("select rowid, id from propiedades order by rowid").fetchall()
@@ -64,6 +65,7 @@ def test_el_builder_inserta_en_orden_de_id_y_alinea_los_rowid(tmp_path, monkeypa
     assert meta == {"orden_de_filas": "id", "busqueda_rowid": "propiedades"}
 
 
+@pytest.mark.georef
 def test_un_id_repetido_deja_una_sola_fila_de_texto_y_sigue_alineado(tmp_path, monkeypatch):
     con = _construir(tmp_path, monkeypatch, ["hb", "ha", "hb", "hc"])
     propiedades = con.execute("select rowid, id from propiedades order by rowid").fetchall()

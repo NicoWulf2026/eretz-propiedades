@@ -11,6 +11,8 @@ provincia y su departamento es literalmente lo que se publicó como ciudad.
 """
 from __future__ import annotations
 
+
+import pytest
 from connectors.base import Connector, PropiedadNormalizada
 
 
@@ -21,6 +23,7 @@ def _propiedad(**cambios):
     return PropiedadNormalizada(**base)
 
 
+@pytest.mark.georef
 def test_MUERDE_la_localidad_del_departamento_publicado_como_ciudad():
     p = _propiedad(ciudad="Capital", barrio="Posadas", provincia="Misiones")
     Connector._resolver_geografia(p)
@@ -29,18 +32,21 @@ def test_MUERDE_la_localidad_del_departamento_publicado_como_ciudad():
     assert p.barrio is None
 
 
+@pytest.mark.georef
 def test_si_el_departamento_no_coincide_no_se_promueve_el_barrio():
     p = _propiedad(ciudad="Centro", barrio="Posadas", provincia="Misiones")
     Connector._resolver_geografia(p)
     assert p.ciudad is None
 
 
+@pytest.mark.georef
 def test_sin_barrio_capital_sola_sigue_sin_afirmarse():
     p = _propiedad(ciudad="Capital", provincia="Misiones")
     Connector._resolver_geografia(p)
     assert p.ciudad is None
 
 
+@pytest.mark.georef
 def test_una_capital_que_resuelve_no_cambia():
     p = _propiedad(ciudad="Cordoba Capital", barrio="Nueva Cordoba", provincia="Cordoba")
     Connector._resolver_geografia(p)

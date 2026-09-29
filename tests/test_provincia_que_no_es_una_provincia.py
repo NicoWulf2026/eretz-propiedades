@@ -21,6 +21,8 @@ de Jujuy escrita en el casillero equivocado, y no sabemos cual quiso decir.
 """
 from __future__ import annotations
 
+
+import pytest
 import sys
 from pathlib import Path
 
@@ -39,6 +41,7 @@ def canonizar(publicada):
     return prop
 
 
+@pytest.mark.georef
 def test_MUERDE_las_etiquetas_de_zona_se_resuelven_a_su_provincia():
     """Las cuatro formas reales, con sus 567 propiedades."""
     for publicada, zona in (("Bs.As. Costa Atlántica", "costa atlantica"),
@@ -52,6 +55,7 @@ def test_MUERDE_las_etiquetas_de_zona_se_resuelven_a_su_provincia():
         assert prop.extra["provincia_publicada"] == publicada
 
 
+@pytest.mark.georef
 def test_MUERDE_lo_que_no_nombra_una_provincia_se_vacia_y_se_conserva():
     """`San Salvador`, `Palpala`, `Ciudad Perico`: ciudades de Jujuy.
 
@@ -65,6 +69,7 @@ def test_MUERDE_lo_que_no_nombra_una_provincia_se_vacia_y_se_conserva():
         assert "zona_declarada" not in prop.extra
 
 
+@pytest.mark.georef
 def test_MUERDE_una_provincia_bien_escrita_no_se_toca():
     """La mayoria del padron. Si esto se rompiera, el arreglo costaria mas de
     lo que corrige."""
@@ -75,6 +80,7 @@ def test_MUERDE_una_provincia_bien_escrita_no_se_toca():
         assert "zona_declarada" not in prop.extra
 
 
+@pytest.mark.georef
 def test_los_alias_de_caba_quedan_en_su_nombre_oficial():
     """`Capital Federal` y `CABA` son el lugar correcto sin canonizar."""
     for publicada in ("Capital Federal", "CABA"):
@@ -84,6 +90,7 @@ def test_los_alias_de_caba_quedan_en_su_nombre_oficial():
         assert "zona_declarada" not in prop.extra
 
 
+@pytest.mark.georef
 def test_tierra_del_fuego_corta_se_resuelve_al_nombre_largo():
     """El catalogo la llama `Tierra del Fuego, Antártida e Islas del
     Atlántico Sur`, y 27 contradicciones del sondeo eran solo eso."""
@@ -98,6 +105,7 @@ def test_un_campo_vacio_no_hace_nada():
         assert prop.extra == {}
 
 
+@pytest.mark.georef
 def test_MUERDE_la_comparacion_es_por_palabras_enteras():
     """`\\b` mal puesto ya mordio cinco veces en este proyecto.
 
@@ -110,6 +118,7 @@ def test_MUERDE_la_comparacion_es_por_palabras_enteras():
     assert geografia().provincia_declarada("Cordoba")[0] == "Córdoba"
 
 
+@pytest.mark.georef
 def test_gana_el_nombre_mas_largo_que_coincida():
     """`Tierra del Fuego` tiene que ganarle a cualquier prefijo mas corto."""
     provincia, zona = geografia().provincia_declarada("Tierra del Fuego Sur")

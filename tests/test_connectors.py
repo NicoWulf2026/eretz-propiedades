@@ -1037,6 +1037,7 @@ def test_tokko_reconoce_la_foto_de_su_propiedad():
     assert not c.foto_es_de(p, "https://static.tokkobroker.com/pictures/999_a.jpg")
 
 
+@pytest.mark.georef
 def test_la_ubicacion_del_padron_solo_rellena_lo_vacio():
     """Una ubicacion explicita de la ficha no se pisa con una inferencia."""
     c = conector()
@@ -1058,6 +1059,7 @@ def test_la_ubicacion_del_padron_solo_rellena_lo_vacio():
     assert "provincia_origen" not in p.extra
 
 
+@pytest.mark.georef
 def test_una_ciudad_que_su_provincia_contradice_no_se_afirma():
     """Funes es de Santa Fe. Si el aviso dice Cordoba, una de las dos esta mal
     y no hay forma de saber cual: no se afirma ninguna. El valor publicado

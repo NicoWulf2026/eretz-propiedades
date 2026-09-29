@@ -6,6 +6,8 @@ la descarta. La snapshot no espera a la recertificacion.
 """
 from __future__ import annotations
 
+
+import pytest
 import json
 import sqlite3
 import sys
@@ -54,6 +56,7 @@ def _correr(tmp_path, monkeypatch, filas, frescas=None):
     return resumen, docs
 
 
+@pytest.mark.georef
 def test_MUERDE_el_texto_del_sitio_repetido_no_llega_a_la_snapshot(tmp_path, monkeypatch):
     filas = [("roomix:silvina", f"Casa {i}", ESLOGAN) for i in range(9)]
     filas += [("roomix:silvina", "Depto propio", "Departamento de dos ambientes al frente, luminoso.")]
@@ -63,18 +66,21 @@ def test_MUERDE_el_texto_del_sitio_repetido_no_llega_a_la_snapshot(tmp_path, mon
     assert resumen["descripciones_del_sitio_descartadas"] == 9
 
 
+@pytest.mark.georef
 def test_sin_titulo_la_descripcion_se_conserva_para_no_dejar_la_fila_sin_texto(tmp_path, monkeypatch):
     filas = [("roomix:silvina", None, ESLOGAN) for _ in range(8)]
     _, docs = _correr(tmp_path, monkeypatch, filas)
     assert all(d == ESLOGAN for _, d, _ in docs.values())
 
 
+@pytest.mark.georef
 def test_pocas_fichas_no_alcanzan_para_juzgar(tmp_path, monkeypatch):
     filas = [("roomix:chica", f"Casa {i}", ESLOGAN) for i in range(5)]
     _, docs = _correr(tmp_path, monkeypatch, filas)
     assert all(d == ESLOGAN for _, d, _ in docs.values())
 
 
+@pytest.mark.georef
 def test_MUERDE_una_cochera_que_es_lo_que_trae_la_propiedad_no_es_su_tipo(tmp_path, monkeypatch):
     filas = [("roomix:a", "Dúplex de 6 amb. con cochera y patio", "Texto propio uno largo suficiente", "cochera"),
              ("roomix:a", "4 AMBIENTES CON COCHERA Y TERRAZA", "Texto propio dos largo suficiente", "cochera"),
@@ -84,6 +90,7 @@ def test_MUERDE_una_cochera_que_es_lo_que_trae_la_propiedad_no_es_su_tipo(tmp_pa
     assert resumen["tipos_cochera_por_accesorio_corregidos"] == 2
 
 
+@pytest.mark.georef
 def test_MUERDE_las_entidades_html_no_llegan_al_texto_servido(tmp_path, monkeypatch):
     filas = [("roomix:cip", "Venta de lote en Carpinter&iacute;a &#8211; Inmobiliaria CIP",
               "&lt;p&gt;Departamento de 2 Amb.&amp;nbsp; en PH&lt;/p&gt;\nCon patio y cochera."),
@@ -95,6 +102,7 @@ def test_MUERDE_las_entidades_html_no_llegan_al_texto_servido(tmp_path, monkeypa
     assert resumen["textos_con_entidades_limpiados"] == 2
 
 
+@pytest.mark.georef
 def test_MUERDE_la_snapshot_toma_los_campos_extraidos_de_un_cierre_parcial(tmp_path, monkeypatch):
     """`blanco`: NEEDS_FIX por precio, moneda y ciudad; sus titulos reales si."""
     frescas = {"h000": {"hash_dedup": "h000", "titulo": "Casa en Pilar",
@@ -106,6 +114,7 @@ def test_MUERDE_la_snapshot_toma_los_campos_extraidos_de_un_cierre_parcial(tmp_p
     assert resumen["filas_con_frescura_parcial"] == 1
 
 
+@pytest.mark.georef
 def test_MUERDE_el_nombre_de_la_agencia_repetido_como_titulo_no_se_sirve(tmp_path, monkeypatch):
     """La v4 del 25-09 servia 1.980 titulos que son el nombre de la agencia
     (`patagonica` 320, `meta` «Meta Inmobiliaria | Propiedades en Tucuman»)."""
@@ -118,6 +127,7 @@ def test_MUERDE_el_nombre_de_la_agencia_repetido_como_titulo_no_se_sirve(tmp_pat
     assert resumen["titulos_del_sitio_descartados"] == 9
 
 
+@pytest.mark.georef
 def test_un_titulo_propio_con_el_nombre_de_la_agencia_se_conserva(tmp_path, monkeypatch):
     filas = [("roomix:blanco propiedades", f"Blanco Propiedades - Casa {i} en Pilar",
               f"Texto propio {i} de la ficha.") for i in range(9)]
@@ -125,6 +135,7 @@ def test_un_titulo_propio_con_el_nombre_de_la_agencia_se_conserva(tmp_path, monk
     assert all(t.startswith("Blanco Propiedades - Casa") for t, _, _ in docs.values())
 
 
+@pytest.mark.georef
 def test_un_titulo_repetido_que_no_es_la_agencia_se_conserva(tmp_path, monkeypatch):
     """`pozzobon`: «casa» en 7 de 8 fichas es un titulo pobre, no del sitio."""
     filas = [("roomix:pozzobon", "Casa", f"Texto propio {i} de la ficha.") for i in range(9)]
@@ -132,12 +143,14 @@ def test_un_titulo_repetido_que_no_es_la_agencia_se_conserva(tmp_path, monkeypat
     assert all(t == "Casa" for t, _, _ in docs.values())
 
 
+@pytest.mark.georef
 def test_sin_descripcion_el_titulo_del_sitio_se_conserva(tmp_path, monkeypatch):
     filas = [("roomix:meta inmobiliaria", "Meta Inmobiliaria", None) for _ in range(9)]
     _, docs = _correr(tmp_path, monkeypatch, filas)
     assert all(t == "Meta Inmobiliaria" for t, _, _ in docs.values())
 
 
+@pytest.mark.georef
 def test_MUERDE_un_eslogan_corto_repetido_tampoco_describe_a_la_ficha(tmp_path, monkeypatch):
     """`metro`: «Inversión segura, Negocio rentable» (35 caracteres) en 407 de
     407 fichas; `fdc` «Encontrá tu propiedad» en 201 de 201."""
@@ -148,6 +161,7 @@ def test_MUERDE_un_eslogan_corto_repetido_tampoco_describe_a_la_ficha(tmp_path, 
     assert docs["h009"][1] == "Luminoso."
 
 
+@pytest.mark.georef
 def test_MUERDE_un_titulo_que_es_solo_el_nombre_no_necesita_repetirse(tmp_path, monkeypatch):
     """`blanco` tras la frescura parcial: 88 de 1.215 siguen diciendo solo
     «Blanco Propiedades», lejos de la mitad del catalogo."""
@@ -169,6 +183,7 @@ def test_MUERDE_el_mojibake_por_tramos_se_repara_al_servir():
     assert _sin_mojibake(None) is None
 
 
+@pytest.mark.georef
 def test_MUERDE_una_cochera_con_dormitorios_es_incoherente_y_se_resuelve_por_el_titulo(tmp_path, monkeypatch):
     """169 de 957 cocheras servidas en la v4e tenian dormitorios o 2+ ambientes.
     Titulo que dice cochera -> los conteos sobran; titulo que describe ambientes o
@@ -191,6 +206,7 @@ def test_MUERDE_una_cochera_con_dormitorios_es_incoherente_y_se_resuelve_por_el_
     assert resumen["cocheras_incoherentes_resueltas"] == 3
 
 
+@pytest.mark.georef
 def test_un_precio_simbolico_no_llega_a_la_snapshot(tmp_path, monkeypatch):
     filas = [("roomix:a", "Casa", "Casa amplia", "casa",
               {"precio": 1.0, "moneda": "USD", "operacion": "venta"}),

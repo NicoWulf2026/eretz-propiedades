@@ -35,7 +35,7 @@ def test_la_variable_mueve_todo_el_estado(monkeypatch, tmp_path):
 
 
 def test_MUERDE_el_nucleo_no_vuelve_a_escribir_la_ruta_de_la_maquina():
-    """Una ruta completa a D:\INMO CAPITAL en un literal del nucleo no se restaura en otra maquina."""
+    r"""Una ruta completa a D:\INMO CAPITAL en un literal del nucleo no se restaura en otra maquina."""
     prefijo = re.compile(r"^[Dd]:[\/]+INMO CAPITAL")
     culpables = []
     for rel in NUCLEO:
@@ -52,9 +52,9 @@ def test_MUERDE_el_nucleo_no_vuelve_a_escribir_la_ruta_de_la_maquina():
 
 
 def test_MUERDE_las_rutas_absolutas_del_manifiesto_se_reubican_en_la_raiz_nueva(monkeypatch, tmp_path):
-    """ERETZ_DATA_MANIFEST.json guarda rutas bajo D:\INMO CAPITAL: restaurado en otra raiz, se reubican."""
+    r"""ERETZ_DATA_MANIFEST.json guarda rutas bajo D:\INMO CAPITAL: restaurado en otra raiz, se reubican."""
     from scripts.preingestion_manifest import _rebasar
     monkeypatch.setenv("ERETZ_DATA_ROOT", str(tmp_path))
-    ruta = "D:\INMO CAPITAL\ERETZ_PREINGESTION_REBUILD_20260903\PREINGESTION_REBUILD.sqlite3"
+    ruta = r"D:\INMO CAPITAL\ERETZ_PREINGESTION_REBUILD_20260903\PREINGESTION_REBUILD.sqlite3"
     assert _rebasar(ruta) == tmp_path / "ERETZ_PREINGESTION_REBUILD_20260903" / "PREINGESTION_REBUILD.sqlite3"
     assert _rebasar("C:/otro/lugar.sqlite3") == Path("C:/otro/lugar.sqlite3")

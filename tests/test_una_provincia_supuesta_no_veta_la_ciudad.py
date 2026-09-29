@@ -26,6 +26,8 @@ Corregido: GEO_CONFLICT paso de 3.888 a 462, y la geografia publicable subio
 """
 from __future__ import annotations
 
+
+import pytest
 import sys
 from pathlib import Path
 
@@ -47,6 +49,7 @@ def propiedad(ciudad: str, provincia: str | None, inferida: bool,
     return prop
 
 
+@pytest.mark.georef
 def test_MUERDE_una_ciudad_publicada_sobrevive_a_una_provincia_supuesta():
     """El caso real: agencia de Cordoba, propiedad en Neuquen.
 
@@ -73,6 +76,7 @@ def test_MUERDE_las_coordenadas_no_se_tiran_por_una_suposicion():
     assert prop.longitud == -68.0591
 
 
+@pytest.mark.georef
 def test_MUERDE_una_provincia_PUBLICADA_si_sigue_generando_conflicto():
     """La regla existe para esto y no se afloja.
 

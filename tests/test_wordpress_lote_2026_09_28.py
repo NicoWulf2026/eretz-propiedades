@@ -6,6 +6,8 @@ Rosario», que no resuelve como localidad, y 119 fichas quedaban sin ciudad.
 """
 from __future__ import annotations
 
+
+import pytest
 import sys
 from pathlib import Path
 
@@ -21,6 +23,7 @@ def _crudo(*nombres: str) -> tuple[dict, dict]:
             {"property_city": [int(k) for k in terminos]})
 
 
+@pytest.mark.georef
 def test_MUERDE_de_barrio_y_ciudad_se_toma_la_ciudad():
     crudo, item = _crudo("Centro", "Rosario")
     assert _localidad_entre_terminos(crudo, item, "property_city", "Santa Fe") == "Rosario"

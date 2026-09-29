@@ -6,12 +6,15 @@ MIGRATIONS = ROOT / "supabase" / "migrations"
 
 
 def test_timestamped_migrations_are_unique_and_ordered():
-    names = [path.name for path in MIGRATIONS.glob("*.sql")]
+    # `glob` no promete orden: NTFS lo devuelve alfabetico y ext4 no. El orden
+    # de aplicacion es el del nombre; lo que se vigila es que el prefijo lo fije
+    # sin empates.
+    names = sorted(path.name for path in MIGRATIONS.glob("*.sql"))
     timestamps = [name.split("_", 1)[0] for name in names]
     assert names
     assert all(timestamp.isdigit() and len(timestamp) == 14 for timestamp in timestamps)
     assert len(timestamps) == len(set(timestamps))
-    assert names == sorted(names)
+    assert timestamps == sorted(timestamps)
 
 
 def test_active_state_migration_is_non_destructive_and_self_validating():

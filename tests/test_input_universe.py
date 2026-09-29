@@ -13,14 +13,23 @@ diferencia entre "se me traspapelo un rollout" y "el pipeline avisa".
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.input_universe import (ENTRADAS, OBLIGATORIAS,  # noqa: E402
                                     como_comando, contar,
                                     corridas_por_entrada, faltantes, rutas)
+
+# Los rollouts viven en el estado operativo del nodo LOCAL, no en el repo. En
+# CLOUD se saltean con el motivo a la vista; ERETZ_REQUIRE_LOCAL_DATA=1 los exige.
+requiere_estado_local = pytest.mark.skipif(
+    os.environ.get("ERETZ_REQUIRE_LOCAL_DATA") != "1" and not any(r.exists() for r in rutas()),
+    reason="los rollouts de entrada son estado LOCAL (ERETZ_DATA_ROOT)")
 
 # El universo analizado que produjo el write gate. Si cambia a proposito -un
 # rollout nuevo- se actualiza aca junto con la lista, y el cambio queda a la
@@ -57,10 +66,12 @@ def test_no_hay_entradas_repetidas():
     assert len(caminos) == len(set(caminos))
 
 
+@requiere_estado_local
 def test_todas_las_entradas_existen_en_disco():
     assert faltantes() == []
 
 
+@requiere_estado_local
 def test_la_suma_de_las_entradas_es_el_universo_analizado():
     """La igualdad que el write gate tiene que reproducir. Si se rompe, o falta
     una entrada o sobra: en los dos casos hay que mirar antes de seguir."""
@@ -83,6 +94,7 @@ def test_el_universo_no_volvio_a_ningun_conteo_viejo():
         "el universo volvio al conteo previo a la segunda ronda")
 
 
+@requiere_estado_local
 def test_las_dos_recuperadas_aportan_propiedades_reales():
     """No alcanza con que figuren en la lista: tienen que traer filas."""
     c = contar()
@@ -95,6 +107,7 @@ def test_las_dos_recuperadas_aportan_propiedades_reales():
     assert c["RECUPERACION_tokko"] == 5986
 
 
+@requiere_estado_local
 def test_cada_entrada_declara_sus_corridas():
     runs = corridas_por_entrada()
     assert set(runs) == {d for d, _, _ in ENTRADAS}

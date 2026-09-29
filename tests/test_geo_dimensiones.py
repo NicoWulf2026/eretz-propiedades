@@ -1,6 +1,8 @@
 """El modelo geográfico multidimensional: ningún nivel rellena a otro."""
 from __future__ import annotations
 
+
+import pytest
 from connectors.base import (AREA_DEPARTAMENTO, AREA_LOCALIDAD, AREA_MUNICIPIO,
                              AREA_PROVINCIA, AREA_SIN, GEO_CANONICAL,
                              GEO_SOURCE_TEXT, GEO_UNKNOWN, Connector,
@@ -16,6 +18,7 @@ def _propiedad(**cambios):
 
 # ------------------------------------------------------------ dimensiones
 
+@pytest.mark.georef
 def test_una_localidad_demostrada_llena_su_dimension_y_el_departamento():
     """Los ids de GeoRef son jerárquicos —`06` provincia, `06280`
     departamento, `06280040` localidad—, así que el departamento no se deduce:
@@ -30,6 +33,7 @@ def test_una_localidad_demostrada_llena_su_dimension_y_el_departamento():
     assert p.geo["provincia"]["nombre"] == "Buenos Aires"
 
 
+@pytest.mark.georef
 def test_cada_dimension_dice_por_que_no_se_pudo_demostrar():
     """`rechazo` es la mitad que suele faltar. Sin ella, "no se pudo demostrar"
     y "nunca se intentó" se ven iguales, y confundir esas dos ausencias es como
@@ -59,6 +63,7 @@ def test_el_municipio_no_se_cuenta_como_localidad():
     assert geo["localidad"]["nombre"] is None
 
 
+@pytest.mark.georef
 def test_el_barrio_se_conserva_aunque_no_se_pueda_canonizar():
     """GeoRef no cataloga barrios. Una persona que busca en Villa del Parque
     reconoce el nombre, y esconderlo pierde información real sin ganar nada."""
@@ -97,6 +102,7 @@ def test_una_dimension_sin_procedencia_no_sirve_de_area():
     assert Connector._area_de_busqueda(geo)["nivel"] == AREA_SIN
 
 
+@pytest.mark.georef
 def test_el_area_declara_siempre_su_nivel():
     """Sin nivel, un municipio en la caja de búsqueda se lee como una ciudad.
     El nivel es el diseño entero."""
@@ -111,6 +117,7 @@ def test_el_area_declara_siempre_su_nivel():
 
 # ------------------------------------------------------------- la huella
 
+@pytest.mark.georef
 def test_la_geografia_derivada_no_entra_en_la_huella_de_contenido():
     """Sus insumos —ciudad, barrio, provincia, lat, lon— ya están hasheados,
     así que agregarla no aporta información sobre si la FUENTE cambió. Si
