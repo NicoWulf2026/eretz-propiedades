@@ -12,7 +12,7 @@ ON
     nombre- dos tareas del usuario, con `pythonw.exe` (sin consola, sin
     ventanas) y `IgnoreNew` (una pasada a la vez):
       ERETZ_relanzador       cada 10 min + al iniciar sesion: relanza los
-                             workers que falten, max 2, respetando paros
+                             workers que falten, max 3 (segun ERETZ_WORKERS.json), respetando paros
       ERETZ_vigilante_paros  cada 5 min + al iniciar sesion: escribe
                              ERETZ_QUEUE_WATCH_STATUS.json. `--sin-alerta`: sin
                              toast, sin msg.exe, sin pitidos. Sin popups.
@@ -51,7 +51,7 @@ from interruptor_eretz import (BANDERA_DE_PARO, RADIO_APAGADO, SALIDA,  # noqa: 
 
 PYTHONW = Path(sys.executable).with_name("pythonw.exe")
 BITACORA = "ERETZ_AUTOMATION.log"
-WORKERS_MAXIMO = 2
+WORKERS_MAXIMO = 3  # politica P5 (29-09); el regimen vigente lo fija ERETZ_WORKERS.json
 
 # nombre -> (script, argumentos, minutos entre pasadas, log)
 TAREAS: dict[str, tuple[str, list[str], int, str]] = {

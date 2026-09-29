@@ -175,7 +175,8 @@ def paro_ya_diagnosticado(postergadas: list[dict[str, str]] | None,
 BANDERA_DE_PARO = "AGENCY_CERTIFICATION_STOP.json"
 # Tope duro. Mas de dos procesos contra sitios de inmobiliarias chicas deja de
 # ser paralelismo y pasa a ser una molestia para ellas.
-WORKERS_MAXIMO = 2
+# Politica P5 del usuario (29-09): hasta 3, adaptativo (`regimen_de_workers.py`).
+WORKERS_MAXIMO = 3
 # El latido se refresca CADA MINUTO desde un hilo aparte, mientras la
 # inmobiliaria se certifica.
 #

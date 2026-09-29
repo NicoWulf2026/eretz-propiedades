@@ -756,3 +756,69 @@ def test_un_worker_nuevo_ignora_un_pedido_de_relanzar_anterior_a_el():
     assert es_pedido_viejo_para_mi(pedido, "2026-09-24T11:20:00") is False
     paro = {"radio": "FAMILIA", "cuando": "2026-09-24T11:25:00"}
     assert es_pedido_viejo_para_mi(paro, "2026-09-24T11:34:18") is False
+
+
+# --- Regimen de workers (politica P5, 29-09) --------------------------------
+
+def _regimen(salida: Path, workers) -> None:
+    (salida / "ERETZ_WORKERS.json").write_text(json.dumps({"workers": workers}), encoding="utf-8")
+
+
+def _bitacora(salida: Path, pids: dict, workers=None) -> None:
+    fila = {"cuando": ahora(-60), "lanzados": {str(k): v for k, v in pids.items()}}
+    if workers is not None:
+        fila["workers"] = workers
+    with (salida / "ERETZ_RELANZAMIENTOS.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(fila) + "\n")
+
+
+def test_el_regimen_de_tres_lanza_tres(tmp_path):
+    _regimen(tmp_path, 3)
+    assert decidir(tmp_path)[0] == [0, 1, 2]
+
+
+def test_MUERDE_nunca_mas_de_tres_aunque_el_archivo_pida_mas(tmp_path):
+    _regimen(tmp_path, 7)
+    assert decidir(tmp_path)[0] == [0, 1, 2]
+    _regimen(tmp_path, "roto")
+    assert decidir(tmp_path)[0] == [0, 1]
+
+
+def test_MUERDE_no_se_mezclan_regimenes_se_pide_parar_a_los_vivos(tmp_path, monkeypatch):
+    """Dos workers lanzados para 2 y uno nuevo para 3 reparten los hosts con
+    totales distintos: dos podrian pedirle al mismo sitio a la vez."""
+    import relanzar_la_cola as modulo
+    _bitacora(tmp_path, {0: 111, 1: 222})          # lanzados antes, sin dato: 2
+    _regimen(tmp_path, 3)
+    monkeypatch.setattr(modulo, "workers_vivos", lambda s: {0: 111, 1: 222})
+    faltan, motivo, _ = modulo.plan(tmp_path, anotar=True)
+    assert faltan == [] and "cambio de regimen" in motivo
+    bandera = json.loads((tmp_path / "AGENCY_CERTIFICATION_STOP.json").read_text(encoding="utf-8"))
+    assert bandera["radio"] == "OPERACION" and bandera["componente"] == "cambio_de_regimen"
+    # Cuando ya no queda ninguno vivo, se lanzan los tres juntos.
+    monkeypatch.setattr(modulo, "workers_vivos", lambda s: {})
+    assert modulo.plan(tmp_path)[0] == [0, 1, 2]
+
+
+def test_volver_a_dos_detiene_al_tercero(tmp_path, monkeypatch):
+    import relanzar_la_cola as modulo
+    _bitacora(tmp_path, {0: 1, 1: 2, 2: 3}, workers=3)
+    _regimen(tmp_path, 2)
+    monkeypatch.setattr(modulo, "workers_vivos", lambda s: {0: 1, 1: 2, 2: 3})
+    faltan, motivo, _ = modulo.plan(tmp_path)
+    assert faltan == [] and "cambio de regimen a 2" in motivo
+
+
+def test_el_total_llega_al_comando_del_worker(tmp_path, monkeypatch):
+    import relanzar_la_cola as modulo
+    capturado = {}
+
+    class FalsoProceso:
+        pid = 4242
+
+    monkeypatch.setattr(modulo.subprocess, "Popen",
+                        lambda comando, **k: capturado.setdefault("c", comando) and FalsoProceso())
+    modulo.lanzar(2, tmp_path, [], 3)
+    comando = capturado["c"]
+    assert comando[comando.index("--workers") + 1] == "3"
+    assert comando[comando.index("--worker") + 1] == "2"

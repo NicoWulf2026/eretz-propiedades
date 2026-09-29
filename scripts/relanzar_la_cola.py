@@ -56,9 +56,16 @@ porque el runner borra la bandera al arrancar-, y las demas avanzan. Un paro
 COMPARTIDO, uno sin conector anotado o una bandera ilegible siguen deteniendo
 todo.
 
-**Nunca mas de 2 workers.** Se comprueba tres veces, y ninguna sobra: aca antes
-de lanzar, el `MultipleInstancesPolicy: IgnoreNew` de la tarea, y el cerrojo
-por worker del propio runner, que verifica PID vivo y latido.
+**Nunca mas de 3 workers** (politica P5 del usuario, 29-09; antes 2). Se
+comprueba tres veces, y ninguna sobra: aca antes de lanzar, el
+`MultipleInstancesPolicy: IgnoreNew` de la tarea, y el cerrojo por worker del
+propio runner, que verifica PID vivo y latido.
+
+Cuantos corren lo dice `ERETZ_WORKERS.json` (lo escribe
+`scripts/regimen_de_workers.py` al medir; sin archivo, 2). El reparto es por
+host y depende del TOTAL de workers: uno lanzado para 2 y otro para 3 podrian
+pedirle al mismo sitio a la vez. Por eso un cambio de regimen no se mezcla:
+se pide a los vivos que paren al terminar su agencia y se relanzan todos juntos.
 
 Uso:
     python scripts/relanzar_la_cola.py            # dice que haria
@@ -81,7 +88,57 @@ sys.path.insert(0, str(RAIZ / "scripts"))
 
 SALIDA = Path(r"D:\INMO CAPITAL\ERETZ_AGENCY_CERTIFICATION_20260827")
 BITACORA = SALIDA / "ERETZ_RELANZAMIENTOS.jsonl"
-WORKERS = 2
+# Tope duro de la politica P5. El regimen vigente sale de `workers_objetivo`.
+WORKERS_MAXIMO = 3
+WORKERS_POR_DEFECTO = 2
+REGIMEN = "ERETZ_WORKERS.json"
+
+
+def workers_objetivo(salida: Path) -> int:
+    """Cuantos workers pide el regimen vigente, acotado a 1..WORKERS_MAXIMO.
+
+    Ilegible o ausente vale 2: ante la duda, el regimen que ya se sabe estable.
+    """
+    try:
+        dato = json.loads((salida / REGIMEN).read_text(encoding="utf-8"))
+        pedidos = int(dato.get("workers"))
+    except (OSError, ValueError, TypeError, AttributeError):
+        return WORKERS_POR_DEFECTO
+    return max(1, min(WORKERS_MAXIMO, pedidos))
+
+
+def workers_de_la_bitacora(salida: Path) -> dict[int, int]:
+    """Con cuantos workers en total se lanzo cada pid (los viejos, sin dato: 2)."""
+    ruta = salida / "ERETZ_RELANZAMIENTOS.jsonl"
+    por_pid: dict[int, int] = {}
+    if not ruta.exists():
+        return por_pid
+    for linea in ruta.open(encoding="utf-8", errors="replace"):
+        linea = linea.strip()
+        if not linea:
+            continue
+        try:
+            fila = json.loads(linea)
+        except ValueError:
+            continue
+        total = fila.get("workers") or 2
+        for pid in (fila.get("lanzados") or {}).values():
+            try:
+                por_pid[int(pid)] = int(total)
+            except (TypeError, ValueError):
+                continue
+    return por_pid
+
+
+def regimen_mezclado(salida: Path, vivos: dict[int, int], objetivo: int) -> bool:
+    """Algun worker vivo corre con otro total, o en un puesto que sobra."""
+    lanzados = workers_de_la_bitacora(salida)
+    for worker, pid in vivos.items():
+        if worker >= objetivo:
+            return True
+        if pid in lanzados and lanzados[pid] != objetivo:
+            return True
+    return False
 
 
 def _fecha(texto: str | None) -> float | None:
@@ -169,7 +226,7 @@ def limpiar_cerrojos_huerfanos(salida: Path, aplicar: bool) -> list[int]:
     """
     import psutil
     limpiados: list[int] = []
-    for worker in range(WORKERS):
+    for worker in range(WORKERS_MAXIMO):
         ruta = cerrojo_de(salida, worker)
         if not ruta.exists():
             continue
@@ -195,7 +252,7 @@ def workers_vivos(salida: Path) -> dict[int, int]:
     """
     import psutil
     vivos: dict[int, int] = {}
-    for worker in range(WORKERS):
+    for worker in range(WORKERS_MAXIMO):
         ruta = cerrojo_de(salida, worker)
         if not ruta.exists():
             continue
@@ -601,7 +658,15 @@ def plan(salida: Path, anotar: bool = False) -> tuple[list[int], str, list[str]]
         motivo_extra += f"; sin los conectores {', '.join(excluir)}"
     limpiar_cerrojos_huerfanos(salida, aplicar=True)
     vivos = workers_vivos(salida)
-    faltan = [w for w in range(WORKERS) if w not in vivos]
+    objetivo = workers_objetivo(salida)
+    if vivos and regimen_mezclado(salida, vivos, objetivo):
+        # No se lanza ninguno hasta que paren todos: repartir por host con dos
+        # totales distintos a la vez puede poner dos workers sobre un sitio.
+        if anotar:
+            pedir_relanzamiento(salida, set(), motivo=f"cambio de regimen a {objetivo} workers")
+        return [], (f"cambio de regimen a {objetivo} workers: se pidio a los vivos "
+                    f"{vivos} que paren al terminar su agencia{motivo_extra}"), excluir
+    faltan = [w for w in range(objetivo) if w not in vivos]
     if operacion is not None and anotar and vivos and not faltan:
         if pedido_cumplido(salida, operacion, vivos):
             (salida / "AGENCY_CERTIFICATION_STOP.json").unlink(missing_ok=True)
@@ -614,8 +679,8 @@ def plan(salida: Path, anotar: bool = False) -> tuple[list[int], str, list[str]]
             motivo_extra += (f"; se liberaron {', '.join(sorted(liberadas))} y "
                              f"los workers corren sin ellas: paran en la "
                              f"proxima agencia para tomarlas")
-        return [], f"los {WORKERS} workers ya estan vivos: {vivos}{motivo_extra}", excluir
-    return faltan, (f"faltan {len(faltan)} de {WORKERS}"
+        return [], f"los {objetivo} workers ya estan vivos: {vivos}{motivo_extra}", excluir
+    return faltan, (f"faltan {len(faltan)} de {objetivo}"
                     + (f"; vivos: {vivos}" if vivos else "")
                     + motivo_extra), excluir
 
@@ -705,7 +770,7 @@ def pedido_cumplido(salida: Path, pedido: dict[str, Any],
     return True
 
 
-def pedir_relanzamiento(salida: Path, liberadas: set[str]) -> bool:
+def pedir_relanzamiento(salida: Path, liberadas: set[str], motivo: str | None = None) -> bool:
     """Pide a los workers que paren en la proxima agencia. Nunca pisa un paro.
 
     Si ya hay una bandera -un defecto de verdad, u otro pedido nuestro- no se
@@ -716,10 +781,11 @@ def pedir_relanzamiento(salida: Path, liberadas: set[str]) -> bool:
         return False
     ruta.write_text(json.dumps({
         "canonical_agency_id": "(relanzamiento)",
-        "componente": "familias_liberadas",
+        "componente": "cambio_de_regimen" if motivo else "familias_liberadas",
         "radio": RADIO_OPERACION,
         "liberadas": sorted(liberadas),
-        "evidencia": (f"se liberaron {', '.join(sorted(liberadas))}: los "
+        "evidencia": (motivo or
+                      f"se liberaron {', '.join(sorted(liberadas))}: los "
                       f"workers en curso las excluyen y hay que relanzarlos"),
         "cuando": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "database_writes": 0}, ensure_ascii=False), encoding="utf-8")
@@ -732,12 +798,13 @@ def decidir(salida: Path) -> tuple[list[int], str]:
     return faltan, motivo
 
 
-def lanzar(worker: int, salida: Path, excluir: list[str] | None = None) -> int:
+def lanzar(worker: int, salida: Path, excluir: list[str] | None = None,
+           workers: int = WORKERS_POR_DEFECTO) -> int:
     """Un worker desprendido, con su log propio."""
     log = salida / f"cola_w{worker}.log"
     comando = [sys.executable, "-u",
                str(RAIZ / "scripts" / "run_agency_certification_queue.py"),
-               "--ready", "--workers", str(WORKERS), "--worker", str(worker),
+               "--ready", "--workers", str(workers), "--worker", str(worker),
                "--limit", "0"]
     for conector in (excluir or []):
         comando += ["--excluir-conector", conector]
@@ -795,6 +862,16 @@ def main() -> int:
     inicio = time.time()
     print(f"{time.strftime('%Y-%m-%dT%H:%M:%S')}  arranca pid {os.getpid()}",
           flush=True)
+    # El regimen de workers (P5) se mide antes de planear: si cambia, `plan`
+    # ya ve el nuevo total. Un fallo al medir deja el regimen como esta.
+    try:
+        from regimen_de_workers import evaluar
+        cambio = evaluar(salida, aplicar=args.lanzar)
+        if cambio:
+            print(f"{time.strftime('%Y-%m-%dT%H:%M:%S')}  regimen: "
+                  f"{cambio.get('workers')} workers ({cambio.get('motivo')})")
+    except Exception as error:  # noqa: BLE001 - medir nunca frena la cola
+        print(f"regimen de workers sin evaluar: {type(error).__name__}: {error}")
     faltan, motivo, excluir = plan(salida, anotar=args.lanzar)
     print(f"{time.strftime('%Y-%m-%dT%H:%M:%S')}  {motivo}  "
           f"[plan en {time.time() - inicio:.1f} s]")
@@ -812,13 +889,14 @@ def main() -> int:
     lanzados = {}
     for worker in faltan:
         try:
-            lanzados[worker] = lanzar(worker, salida, excluir)
+            lanzados[worker] = lanzar(worker, salida, excluir, workers_objetivo(salida))
         except OSError as error:
             print(f"  worker {worker}: NO se pudo lanzar ({error})")
     with BITACORA.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps({
             "cuando": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "motivo": motivo, "lanzados": lanzados,
+            "workers": workers_objetivo(salida),
             "conectores_excluidos": excluir,
             "database_writes": 0}, ensure_ascii=False) + "\n")
     for worker, pid in lanzados.items():

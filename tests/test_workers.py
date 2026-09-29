@@ -140,10 +140,11 @@ def test_una_bandera_ilegible_igual_detiene(tmp_path):
     assert hay_que_parar(tmp_path) is not None
 
 
-def test_no_se_permiten_mas_de_dos_workers():
-    """Más de dos procesos contra sitios de inmobiliarias chicas deja de ser
-    paralelismo y pasa a ser una molestia para ellas."""
-    assert WORKERS_MAXIMO == 2
+def test_no_se_permiten_mas_de_tres_workers():
+    """Politica P5 (29-09): hasta 3, repartidos por host. Mas procesos contra
+    sitios de inmobiliarias chicas deja de ser paralelismo y pasa a ser una
+    molestia para ellas; subir el tope exige una politica nueva."""
+    assert WORKERS_MAXIMO == 3
 
 
 def test_el_latido_late_mientras_se_trabaja(tmp_path, monkeypatch):
