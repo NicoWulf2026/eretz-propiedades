@@ -1304,6 +1304,12 @@ _TIPOS = {
     # final: "OFICINA EN SEMIPISO" es una oficina. "Piso" solo no entra: es
     # tambien el nivel ("1er piso").
     "semipiso": "departamento", "semi piso": "departamento",
+    # Al final, despues de todo tipo edificado: «Finca con casa» es una casa;
+    # «Finca con Viñedo» o «Chacra en venta» son tierra, como «campo». Sin esto
+    # 67 fincas y 60 chacras quedaban sin tipo y 12 fincas tomaban «oficina» del
+    # menu (`coldwell banker andes`, 29-09). «Estancia» NO: es el nombre de muchos
+    # barrios cerrados («Casa en Estancia El Terron»).
+    "finca": "terreno", "chacra": "terreno",
 }
 
 

@@ -103,3 +103,14 @@ def test_solo_cuenta_el_cierre_vigente_del_ledger(tmp_path):
 def test_numeros_de_url_ignora_el_host_y_los_numeros_cortos():
     assert numeros_de_url("https://www.9010inmobiliaria.com.ar/p-17_x?id=123456") == {"123456"}
     assert isinstance(Conocidas().numeros, dict)
+
+
+def test_la_cohorte_canonica_entra_a_la_snapshot_local_con_su_hash_canonico():
+    from connectors.base import calcular_hash_dedup
+    url = "https://a.com/p/8880001-casa"
+    buena = _fila(calcular_hash_dedup(AG, url), url, "8880001", inmobiliaria_id=None)
+    mala = _fila("hash-de-otro-espacio", "https://a.com/p/8880002-casa", "8880002",
+                 inmobiliaria_id=None)
+    d = decidir([(_cert(), [buena, mala])], _pre([]))
+    assert [f["hash_dedup"] for f in d.nuevas] == [buena["hash_dedup"]]
+    assert d.motivos["agencia_sin_id_eretz"] == 1

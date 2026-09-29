@@ -690,10 +690,37 @@ def webs_compartidas(catalog: dict[str, dict[str, Any]]) -> dict[str, list[str]]
     return _WEBS_COMPARTIDAS[clave_del_catalogo]
 
 
+def identidad_canonica_verificada(verificada: dict[str, Any], official: str | None) -> bool:
+    """La web oficial ABIERTA y comprobada alcanza para certificar sin `main` (P6).
+
+    Politica del usuario (29-09): CERTIFICAR != PROMOVER A MAIN != PUBLICAR EN
+    PRODUCCION. Una agencia que todavia no esta en `main` se certifica por su
+    identidad canonica si su web oficial se verifico con todo esto a la vez:
+    afirmable, resolver de confianza alta, un solo reclamante del host, verificada
+    argentina, inventario permitido, sin retiro como fuente, y es la MISMA web que
+    se va a leer. Cualquier duda deja la agencia en IDENTITY_PENDING.
+    """
+    if not official or not verificada:
+        return False
+    return (verificada.get("estado") == "AFIRMABLE"
+            and verificada.get("estado_del_resolver") == "OFFICIAL_WEB_HIGH_CONFIDENCE"
+            and verificada.get("entidades_que_reclaman_el_host") == 1
+            and verificada.get("verificacion") == "VERIFICADA_ARGENTINA"
+            and verificada.get("inventory_allowed") is not False
+            and not verificada.get("url_retirada_como_fuente")
+            and _clave_de_web(verificada.get("official_url")).split("/")[0]
+            == _clave_de_web(official).split("/")[0])
+
+
 def resolve_identity(record: dict[str, dict[str, Any]], canonical_id: str) -> dict[str, Any]:
     resolution, live = record["resolution"], record["live"]
     source, platform, directory = record["source"], record["platform"], record["directory"]
     eretz_id = resolution.get("eretz_id") or live.get("eretz_id") or platform.get("eretz_id")
+    # El `eretz_id` del directorio de plataformas de una agencia que no esta en
+    # `main` es un id de STAGING (`STAGING_NAMESPACE_NOT_A_MAIN_FK`): no se usa
+    # como clave de nada. Sin FK de `main`, la identidad es la canonica.
+    if resolution.get("resolution_status") == "NOT_FOUND_IN_ERETZ":
+        eretz_id = None
     # La web leida va ANTES del directorio: evidencia que alguien abrio le gana
     # a un puntaje calculado sobre la cadena de la url sin visitarla.
     official, source_origin = selected_source(record)
@@ -701,12 +728,18 @@ def resolve_identity(record: dict[str, dict[str, Any]], canonical_id: str) -> di
             or platform.get("agency_name") or directory.get("agency_name") or canonical_id)
     status = "READY"
     reasons: list[str] = []
-    if resolution.get("resolution_status") != "RESOLVED" or not eretz_id:
-        status = "IDENTITY_PENDING"
-        reasons.append("canonical agency lacks a resolved ERETZ foreign key")
-    if live.get("validation_status") != "VALIDATED":
-        status = "IDENTITY_PENDING"
-        reasons.append("live identity was not validated")
+    base_de_identidad = "ERETZ_FK"
+    canonica = (resolution.get("resolution_status") == "NOT_FOUND_IN_ERETZ"
+                and identidad_canonica_verificada(record.get("verificada") or {}, official))
+    if canonica:
+        base_de_identidad = "CANONICAL_VERIFIED_WEB"
+    else:
+        if resolution.get("resolution_status") != "RESOLVED" or not eretz_id:
+            status = "IDENTITY_PENDING"
+            reasons.append("canonical agency lacks a resolved ERETZ foreign key")
+        if live.get("validation_status") != "VALIDATED":
+            status = "IDENTITY_PENDING"
+            reasons.append("live identity was not validated")
     if not official:
         status = "IDENTITY_PENDING"
         reasons.append("official website unavailable")
@@ -721,6 +754,7 @@ def resolve_identity(record: dict[str, dict[str, Any]], canonical_id: str) -> di
             "agency_name": name, "official_url": official,
             "identity_status": status, "identity_reasons": reasons,
             "identity_evidence": {"resolution_status": resolution.get("resolution_status"),
+                                  "identity_basis": base_de_identidad,
                                   "live_validation": live.get("validation_status"),
                                   "web_kind": ("OFFICIAL_WEB" if source_origin == "verified_recovery"
                                                else platform.get("web_kind")),
@@ -1102,10 +1136,19 @@ def certification_status(run1: dict[str, Any], run2: dict[str, Any],
     #
     # Solo se descuentan las que desaparecieron en LAS DOS corridas: una baja
     # que aparece en una sola no es una baja, es un sitio inestable.
+    # Y la baja ENTRE corridas: 404 en la primera y ya fuera del listado en la
+    # segunda, que ademas leyo todo (`emir elhelou`: 26 -> 25, 1 fallo). La
+    # fuente la dio de baja mientras se certificaba; no es una lectura fallida.
+    baja_entre_corridas = (
+        int(run1.get("detalles_desaparecidos") or 0)
+        if (int(run2.get("detalles_fallidos") or 0) == 0
+            and int(run2.get("enumeradas") or 0)
+            == int(run1.get("enumeradas") or 0) - int(run1.get("detalles_desaparecidos") or 0))
+        else 0)
     fallidos_de_lectura = max(
         0, int(run1.get("detalles_fallidos") or 0)
-        - min(int(run1.get("detalles_desaparecidos") or 0),
-              int(run2.get("detalles_desaparecidos") or 0))
+        - max(min(int(run1.get("detalles_desaparecidos") or 0),
+                  int(run2.get("detalles_desaparecidos") or 0)), baja_entre_corridas)
         - descartes_sin_senal(run1))
     fallidos_de_lectura += max(
         0, int(run2.get("detalles_fallidos") or 0)
@@ -1192,7 +1235,8 @@ def certify(canonical_id: str, catalog: dict[str, dict[str, Any]], output: Path,
     source = Fuente(canonical_agency_id=canonical_id,
                     agency_name=str(identity["agency_name"]),
                     official_url=str(identity["official_url"]),
-                    inmobiliaria_id=int(identity["eretz_id"]),
+                    inmobiliaria_id=(int(identity["eretz_id"]) if identity.get("eretz_id")
+                                     else None),
                     detected_platform=(None if recovered_source else record["source"].get("detected_platform")),
                     extra={"city": record["directory"].get("city"),
                            "province": record["directory"].get("province"),

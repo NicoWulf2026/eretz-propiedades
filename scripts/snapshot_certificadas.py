@@ -48,6 +48,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from connectors.base import calcular_hash_dedup  # noqa: E402
 from connectors.texto import plegar  # noqa: E402
 from scripts.ledger_de_certificacion import vigentes_por_agencia  # noqa: E402
 from scripts.preingestion_rebuild import (EXTERNAL_PORTAL_HOSTS,  # noqa: E402
@@ -187,7 +188,11 @@ def decidir(vigentes: list[tuple[dict[str, Any], list[dict[str, Any]]]],
             if f is not None and (agencia,) + f in conocidas.firmas:
                 d.motivos["misma_firma"] += 1
                 continue
-            if fila.get("inmobiliaria_id") is None:
+            # Sin FK de `main` (cohorte canonica, P6: certificar != promover): se
+            # sirve en la snapshot LOCAL solo si su identidad es la canonica de
+            # verdad -el hash sale del id canonico y la URL-. No se escribe a main.
+            if (fila.get("inmobiliaria_id") is None
+                    and hash_dedup != calcular_hash_dedup(agencia, fila.get("source_url"))):
                 d.motivos["agencia_sin_id_eretz"] += 1
                 continue
             if host(str(fila.get("source_url") or "")) in EXTERNAL_PORTAL_HOSTS:
