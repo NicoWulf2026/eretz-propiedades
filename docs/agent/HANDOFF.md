@@ -621,6 +621,12 @@ Nada de esto toca la huella: integrarlo NO reinicia la recertificación.
       del proveedor según su tarifa vigente (`ERETZ_SEARCH_COSTO_USD_BRAVE`, `_SERPER`, `_TAVILY`,
       `_EXA`, `_JINA`; `0` si es nivel gratuito). Sin declarar, el proveedor no consulta. El libro
       queda en `ERETZ_SEARCH_SPEND.jsonl` bajo `ERETZ_DATA_ROOT`; tope duro USD 10/mes.
+- [ ] **Lote 4 (P4), radio**: `docs/agent/lotes/README.md` § LOTE 4 — A/B sobre el HTML cacheado de
+      las fichas generico con conteos vacíos, con y sin `LOTE_COMPARTIDO_4_2026-09-29.patch`.
+      Devolver: campos nuevos por agencia y una muestra revisada. Decidir aplicar según P4.
+- [ ] **Fixtures para el resto del lote 4**: una ficha real reducida de `fenix` (superficie sin
+      rótulo), `paladino` (respuesta Strapi, recortada) y una Wix, en `tests/fixtures/`. Con eso CLOUD
+      prepara los arreglos.
 - [ ] **Snapshot sintética ≠ servida**: `desplegar_snapshot.py` ahora aborta si la candidata se
       declara sintética (`snapshot_meta.sintetica = 1`). Nada que hacer; es una compuerta más.
 

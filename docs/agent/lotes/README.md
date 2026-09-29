@@ -43,3 +43,27 @@ cambio de huella (ERETZ AUTOMATION ON).
 | La suite no sale a leer robots.txt salvo en sus tests | `tests/conftest.py` | — |
 
 Pendientes para el lote 4: conteos en palabras, superficie sin rótulo (fenix), Wix, Strapi en `api.` subdominio (paladino).
+
+## `LOTE_COMPARTIDO_4_2026-09-29.patch` — PREPARADO en CLOUD (29-09 noche), sin aplicar
+
+    git apply docs/agent/lotes/LOTE_COMPARTIDO_4_2026-09-29.patch
+
+| cambio | archivo | efecto |
+|---|---|---|
+| Conteos escritos con letras en la PROSA («cuatro dormitorios», «un baño»): una única mención por rótulo, con concordancia, sin cotas ni rangos; solo si no hay cifras y la ficha no es tabla de atributos | `connectors/generico.py` (familia generico, y el camino HTML de wordpress) | `pozzobon`, `ente`. Solo agrega datos: el auditor no exige conteos en letras, así que no puede crear NEEDS_FIX. **Radio: REQUIRES_LOCAL** (abajo) |
+
+Tests (en el parche): `tests/test_generico_conteos_en_letras_lote4.py` (16; 6 fallan sin el cambio).
+Suite en CLOUD con el parche aplicado: 3.588 passed, 170 skipped (los tests con GeoRef no corren
+en CLOUD: correr la suite completa en LOCAL con `ERETZ_REQUIRE_LOCAL_DATA=1`).
+
+Radio a medir en LOCAL antes de decidir (P4): A/B de extracción sobre el HTML cacheado de las
+fichas `generico` con `dormitorios`/`banos`/`ambientes` vacíos, con y sin el parche; contar
+campos nuevos por agencia y revisar a mano una muestra (buscar falsos: «un dormitorio en suite»
+en una casa de varios). Si el beneficio medido es < 300 propiedades y no hay familia bloqueada,
+esperar a juntarlo con otro arreglo (P4). No medido en CLOUD: no hay paquetes.
+
+Sin preparar (necesitan el HTML real, que CLOUD no puede bajar por la política de red del
+entorno): superficie sin rótulo «50 M² 50 M²» (`fenix`), Strapi propio en `api.` con catálogo
+> 800 KB (`paladino`, pide subir `limite_bytes` en `base.py`), Wix (`lucas liprandi`, `dib kai`).
+Para prepararlos en CLOUD: dejar en `tests/fixtures/` una ficha real reducida de cada caso
+(sin datos personales) y anotarlo acá.
