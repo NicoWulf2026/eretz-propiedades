@@ -3,7 +3,7 @@ import "server-only";
 import postgres, { type Sql } from "postgres";
 import { cleanText, mapSupabasePropertyToProperty, normalizeCurrency, normalizePropertyType } from "@/lib/property-mapper";
 import { assessLocationConfidence, hasValidArgentinaCoordinates, type GeoPointStats } from "@/lib/geo-confidence";
-import { propertyLocation } from "@/lib/property-presenter";
+import { derivedTitle, propertyLocation } from "@/lib/property-presenter";
 import { clusterMapMarkers } from "@/lib/map-points";
 import { getPreviewQualityGate } from "@/lib/preview-quality-gate";
 import { parsePropertyFilters } from "@/lib/property-query";
@@ -882,7 +882,13 @@ function clusterMapProperties(valid: ClassifiedMapCandidate[], zoom: number): Ma
     price: Number(property.precio) > 0 ? Number(property.precio) : null,
     currency: normalizeCurrency(property.moneda),
     propertyType: normalizePropertyType(property.tipo_propiedad),
-    title: cleanText(property.titulo) || "Propiedad sin título",
+    title: cleanText(property.titulo) || derivedTitle({
+      propertyType: normalizePropertyType(property.tipo_propiedad),
+      // El SELECT del mapa no trae `operacion`: no se afirma.
+      operation: "consultar",
+      city: cleanText(property.ciudad),
+      neighborhood: cleanText(property.barrio),
+    }),
     location: propertyLocation({
       neighborhood: cleanText(property.barrio) || null,
       city: cleanText(property.ciudad) || null,

@@ -19,10 +19,10 @@ const propiedadDe = (o: Partial<SupabaseProperty> = {}) => mapSupabasePropertyTo
 
 describe("deshace los reemplazos de presentación", () => {
   it("una publicación sin título se adapta como sin título", () => {
-    // El mapper escribe "Propiedad sin título". Leer `property.title` haría que
-    // NINGUNA publicación apareciera nunca sin título.
+    // El mapper escribe un título derivado (P9) o "Propiedad sin título". Leer
+    // `property.title` haría que NINGUNA publicación apareciera nunca sin título.
     const p = propiedadDe({ titulo: null });
-    expect(p.title).toBe("Propiedad sin título");
+    expect(p.title).toBe("Casa en venta · Córdoba");
     expect(tituloReal(p)).toBeNull();
     expect(aPublicacionAnalizable(p, fila({ titulo: null })).title).toBeNull();
   });

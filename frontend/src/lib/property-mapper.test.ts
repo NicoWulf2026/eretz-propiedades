@@ -45,13 +45,22 @@ describe("property mapper", () => {
       longitud: -64,
       url: "javascript:alert(1)",
     });
-    expect(property.title).toBe("Propiedad sin título");
+    expect(property.title).toBe("Casa en venta · Córdoba");
+    expect(property.quality.hasValidTitle).toBe(false);
     expect(property.description).toBeNull();
     expect(property.price).toBeNull();
     expect(property.currency).toBeNull();
     expect(property.images).toEqual([]);
     expect(property.sourceUrl).toBeNull();
     expect(property.latitude).toBeNull();
+  });
+
+  it("keeps the honest placeholder when nothing real can compose a title", () => {
+    const property = mapSupabasePropertyToProperty({
+      ...completeRow, titulo: "", tipo_propiedad: null, operacion: null, ciudad: null, barrio: null,
+    });
+    expect(property.title).toBe("Propiedad sin título");
+    expect(property.quality.hasValidTitle).toBe(false);
   });
 
   it("supports all public currencies and operations", () => {

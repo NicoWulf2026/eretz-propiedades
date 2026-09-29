@@ -5,6 +5,7 @@ import type { CatalogSearchQuery } from "@/domain/catalog-search";
 import { assessLocationConfidence, hasValidArgentinaCoordinates } from "@/lib/geo-confidence";
 import { cleanText, normalizeCurrency, normalizeOperation, normalizePropertyType } from "@/lib/property-mapper";
 import { clusterMapMarkers } from "@/lib/map-points";
+import { derivedTitle } from "@/lib/property-presenter";
 import type { MapSearchResponse, MapViewport, Property, PropertyFilters, PropertySearchResult, PropertySummary } from "@/types/property";
 import { getApiV2Agency, getApiV2Map, getApiV2Property, searchApiV2Properties } from "./client";
 import type { ApiV2ErrorKind } from "./errors";
@@ -84,17 +85,19 @@ export function catalogPropertyToSummary(property: CatalogProperty): PropertySum
   const province = cleanText(property.geography.province.name) || null;
   const neighborhood = cleanText(property.geography.neighborhood.name) || null;
   const images = [...property.images];
+  const propertyType = normalizePropertyType(property.rawPropertyType);
+  const operation = normalizeOperation(property.rawOperation);
   return {
     id: property.id,
     agencyId: property.agencyId,
     publisher: null,
-    title: cleanText(property.title) || "Propiedad sin título",
+    title: cleanText(property.title) || derivedTitle({ propertyType, operation, city: locality, neighborhood }),
     description: cleanText(property.description) || null,
     price: property.price.amount,
     currency: normalizeCurrency(property.price.rawCurrency),
-    propertyType: normalizePropertyType(property.rawPropertyType),
+    propertyType,
     rawPropertyType: property.rawPropertyType,
-    operation: normalizeOperation(property.rawOperation),
+    operation,
     rooms: property.rooms,
     bedrooms: property.bedrooms,
     bathrooms: property.bathrooms,
@@ -214,7 +217,7 @@ export async function searchApiV2MapForExplorer(filters: PropertyFilters, viewpo
   const markers = response.data.points.map((point) => ({
     kind: "property" as const, id: point.id, latitude: point.latitude, longitude: point.longitude,
     price: point.price, currency: normalizeCurrency(point.currency), propertyType: normalizePropertyType(point.propertyType),
-    title: cleanText(point.title) || "Propiedad sin título", location: "Ubicación aproximada", locationConfidence: "approximate" as const,
+    title: cleanText(point.title) || derivedTitle({ propertyType: normalizePropertyType(point.propertyType), operation: normalizeOperation(point.operation) }), location: "Ubicación aproximada", locationConfidence: "approximate" as const,
   }));
   return {
     result: { points: clusterMapMarkers(markers, viewport.zoom), visibleCount: response.data.viewportMatches, scannedCount: response.data.returnedPoints, truncated: response.data.truncated },

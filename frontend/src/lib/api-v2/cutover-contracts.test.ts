@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { API_V2_CONTRACT } from "./dto";
 import { parseApiV2Agency, parseApiV2Batch, parseApiV2Map, parseApiV2Property } from "./schemas";
-import { catalogPropertyToSummary, propertyFiltersToCatalogQuery, unsupportedExplorerFilters, validateApiV2ExplorerParams } from "./property-boundary";
+import { catalogPropertyToProperty, catalogPropertyToSummary, propertyFiltersToCatalogQuery, unsupportedExplorerFilters, validateApiV2ExplorerParams } from "./property-boundary";
 import { adaptApiV2Property } from "./adapters";
 import { apiV2FixtureMatrix } from "@/test/api-v2-fixtures";
 import { parsePropertyFilters } from "@/lib/property-query";
@@ -34,6 +34,20 @@ describe("final API v2 cutover contracts", () => {
     const catalog = adaptApiV2Property(apiV2FixtureMatrix.municipalityWithoutLocality);
     const summary = catalogPropertyToSummary({ ...catalog, price: { amount: 0, currency: null, rawCurrency: null }, bedrooms: 0 });
     expect(summary).toMatchObject({ price: 0, currency: null, bedrooms: 0, city: null, municipality: "La Calera" });
+  });
+
+  it("derives the title from real fields only when the source published none (P9)", () => {
+    const catalog = adaptApiV2Property(apiV2FixtureMatrix.complete);
+    const untitled = catalogPropertyToProperty({ ...catalog, title: "  " });
+    expect(untitled.quality.hasValidTitle).toBe(false);
+    expect(untitled.title).toMatch(/ · /);
+    expect(untitled.title).not.toBe("Propiedad sin título");
+    const empty = catalogPropertyToSummary({
+      ...catalog, title: null, rawPropertyType: null, rawOperation: null,
+      geography: { ...catalog.geography, locality: { ...catalog.geography.locality, name: null }, neighborhood: { ...catalog.geography.neighborhood, name: null } },
+    });
+    expect(empty.title).toBe("Propiedad sin título");
+    expect(catalogPropertyToSummary(catalog).title).toBe(catalog.title?.replace(/\s+/g, " ").trim());
   });
 
   it("converts the supported combined filters and refuses unsupported combinations", () => {

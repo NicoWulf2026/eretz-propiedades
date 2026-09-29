@@ -11,7 +11,8 @@ import "server-only";
 // toma decisiones de PRESENTACIÓN que borran información que la evaluación
 // necesita. Tres casos concretos, encontrados al escribir esto:
 //
-//   1. Sin título, el mapper escribe `"Propiedad sin título"`. Leer
+//   1. Sin título, el mapper escribe un título derivado (P9: «Casa en venta ·
+//      Rosario») o `"Propiedad sin título"`. Leer
 //      `property.title` haría creer que hay título, y **ninguna publicación
 //      aparecería jamás sin él**. La verdad está en `quality.hasValidTitle`.
 //

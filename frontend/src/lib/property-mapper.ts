@@ -9,6 +9,7 @@ import type {
   SupabaseProperty,
 } from "@/types/property";
 import { safeExternalUrl } from "@/lib/safe-url";
+import { derivedTitle } from "@/lib/property-presenter";
 import { assessLocationConfidence, hasValidArgentinaCoordinates, type GeoPointStats } from "@/lib/geo-confidence";
 
 // Preserva el estado real de scraping. No inventa disponibilidad: cualquier estado
@@ -155,7 +156,9 @@ export function mapSupabasePropertyToProperty(item: SupabaseProperty, pointStats
           }
         : null,
     sourceUrl: safeExternalUrl(item.url),
-    title: quality.hasValidTitle ? cleanText(item.titulo) : "Propiedad sin título",
+    title: quality.hasValidTitle
+      ? cleanText(item.titulo)
+      : derivedTitle({ propertyType, operation: normalizeOperation(item.operacion), city: cleanText(item.ciudad), neighborhood: cleanText(item.barrio) }),
     description: quality.hasDescription ? cleanText(item.descripcion) : null,
     price: nonNegativeNumber(item.precio),
     currency: normalizeCurrency(item.moneda),

@@ -31,6 +31,34 @@ export const typeLabels: Record<PropertyType, string> = {
   otro: "Propiedad",
 };
 
+export const UNTITLED_PROPERTY = "Propiedad sin título";
+
+const operationPhrases: Partial<Record<PropertyOperation, string>> = {
+  venta: "en venta",
+  alquiler: "en alquiler",
+  temporario: "en alquiler temporario",
+  venta_y_alquiler: "en venta y alquiler",
+};
+
+// Política P9: sin título publicado se compone «{tipo} en {operación} · {localidad}»
+// sólo con datos reales, o la combinación parcial disponible. «otro» y «consultar»
+// son también lo que se escribe cuando NO hay dato, así que no se afirman.
+// Sin nada real: «Propiedad sin título». La verdad sobre el título publicado sigue
+// en `quality.hasValidTitle`; esto es sólo presentación.
+export function derivedTitle(property: {
+  propertyType: PropertyType;
+  operation: PropertyOperation;
+  city?: string | null;
+  neighborhood?: string | null;
+}) {
+  const type = property.propertyType === "otro" ? null : typeLabels[property.propertyType];
+  const operation = operationPhrases[property.operation] ?? null;
+  const place = property.city?.trim() || property.neighborhood?.trim() || null;
+  if (!type && !operation && !place) return UNTITLED_PROPERTY;
+  const head = [type ?? "Propiedad", operation].filter(Boolean).join(" ");
+  return place ? `${head} · ${place}` : head;
+}
+
 const money = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 });
 
 export function propertyPrice(property: Pick<Property, "price" | "currency">) {
