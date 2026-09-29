@@ -9,6 +9,9 @@ usuario los suba a almacenamiento PRIVADO. Hasta entonces: `EXTERNAL_STORAGE_REQ
 - Carpeta: `D:\INMO CAPITAL\ERETZ_STATE_CHECKPOINT_2026-09-29\`
 - `ERETZ_STATE_2026-09-29.tar.gz` — 510,244,182 bytes, SHA-256 `a63b35e966c83ed9eb86318244edd08b9a3b3d133d13191c3321bf956f88675c`
 - `MANIFEST.json` — SHA-256 de cada uno de los 6,533 archivos (3.34 GB sin comprimir)
+- `ERETZ_CLOUD_CHECKPOINT_2026-09-29.bundle` — git bundle de la rama y el tag del checkpoint
+  (6.492.768 bytes, SHA-256 `e0bea10032412502ffac45ef7ff7b64499fd5cf93bff2a39975114332bd27b92`,
+  `git bundle verify` OK). Es respaldo: la fuente normal es GitHub (tag `cloud-checkpoint-2026-09-29`).
 - `ERETZ_DATA_MANIFEST.json` — qué base de preingestión es la vigente (lo lee `scripts/preingestion_manifest.py`)
 - Tomado a las 2026-09-29T17:12:35 con la cola corriendo: el ledger es append-only, así que es un corte válido
   en el tiempo; lo certificado después se recupera recertificando.
