@@ -313,6 +313,15 @@ def main() -> int:
     gasto = getattr(interno, "gasto_usd", None)
     if gasto:
         print(f"  gasto informado por el proveedor: USD {gasto:.4f}", flush=True)
+    # P7: cada corrida queda en el libro de gasto con proveedor, costo,
+    # agencias buscadas y resultados utiles.
+    corrida = sp.registrar_corrida(
+        interno.nombre, agencias_buscadas=procesadas,
+        resultados_utiles=sum(1 for r in resultados.values() if r.get("status") in RESUELTO),
+        detalle={"consultas_rechazadas": rechazadas, "cache_hits": buscador.hits})
+    print(f"  gasto P7: USD {corrida['costo_usd']:.4f} esta corrida, "
+          f"USD {corrida['gastado_en_el_mes_usd']:.4f} en {corrida['mes']} "
+          f"(tope USD {corrida['tope_mensual_usd']:.2f})", flush=True)
     toks = getattr(interno, "tokens_consumidos", None)
     if toks:
         print(f"  tokens consumidos: {toks:,}", flush=True)

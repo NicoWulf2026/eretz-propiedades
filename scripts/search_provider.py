@@ -21,6 +21,7 @@ busco y no hay", y usarlo por falta de credencial seria mentir en el artefacto.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import time
@@ -28,6 +29,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 PENDING = "SEARCH_API_PENDING"
@@ -56,6 +58,165 @@ class ConsultaInvalida(RuntimeError):
 
 class ProveedorAgotado(RuntimeError):
     """Sin creditos o limitado. Aca si corresponde cerrar el lote."""
+
+
+# ---------------------------------------------------------------------------
+# P7: presupuesto de busqueda paga. USD 10 por mes, corte duro, registro.
+# ---------------------------------------------------------------------------
+# Un limite que depende de que alguien mire el contador no es un limite: el
+# cobro esta DENTRO de cada proveedor, antes de cada pedido HTTP, asi que ningun
+# script que instancie uno directamente puede saltearlo.
+#
+# - El costo por consulta se DECLARA (`ERETZ_SEARCH_COSTO_USD_<PROVEEDOR>`, en
+#   dolares; 0 para un nivel gratuito). Sin declaracion no se consulta: el
+#   precio no se adivina.
+# - Cada pedido se anota en el libro ANTES de salir (reintentos incluidos): se
+#   prefiere contar de mas a contar de menos.
+# - El mes es el calendario de Argentina (UTC-3, sin horario de verano).
+# - `ERETZ_SEARCH_TOPE_MENSUAL_USD` solo puede BAJAR el tope; subirlo pide una
+#   politica nueva.
+TOPE_MENSUAL_USD = 10.0
+ENV_TOPE = "ERETZ_SEARCH_TOPE_MENSUAL_USD"
+ENV_LIBRO = "ERETZ_SEARCH_SPEND_LEDGER"
+PREFIJO_COSTO = "ERETZ_SEARCH_COSTO_USD_"
+_ARGENTINA = timezone(timedelta(hours=-3))
+_GASTO_DEL_PROCESO: dict[str, float] = {}
+_CONSULTAS_DEL_PROCESO: dict[str, int] = {}
+
+
+class PresupuestoAgotado(ProveedorAgotado):
+    """La proxima consulta pasaria el tope mensual (P7). Se corta el lote."""
+
+
+class CostoNoDeclarado(ProveedorAgotado):
+    """No se declaro cuanto cuesta una consulta de este proveedor (P7)."""
+
+
+def tope_mensual() -> float:
+    crudo = (os.environ.get(ENV_TOPE) or "").strip()
+    try:
+        pedido = float(crudo) if crudo else TOPE_MENSUAL_USD
+    except ValueError:
+        pedido = TOPE_MENSUAL_USD
+    return max(0.0, min(TOPE_MENSUAL_USD, pedido))
+
+
+def costo_declarado(proveedor: str) -> float:
+    variable = PREFIJO_COSTO + proveedor.upper()
+    crudo = (os.environ.get(variable) or "").strip()
+    try:
+        costo = float(crudo)
+    except ValueError:
+        raise CostoNoDeclarado(
+            f"{variable} no esta declarado: sin costo por consulta no se busca (P7)") from None
+    if costo < 0:
+        raise CostoNoDeclarado(f"{variable} es negativo")
+    return costo
+
+
+def libro_de_gasto() -> Path:
+    ruta = (os.environ.get(ENV_LIBRO) or "").strip()
+    if ruta:
+        return Path(ruta)
+    try:
+        from scripts.rutas_de_datos import dato
+    except ImportError:
+        from rutas_de_datos import dato
+    return Path(str(dato("ERETZ_SEARCH_SPEND.jsonl")))
+
+
+def mes_actual() -> str:
+    return datetime.now(_ARGENTINA).strftime("%Y-%m")
+
+
+def gastado_en_el_mes(mes: str | None = None, ruta: Path | None = None) -> float:
+    mes = mes or mes_actual()
+    ruta = ruta or libro_de_gasto()
+    if not ruta.exists():
+        return 0.0
+    total = 0.0
+    for linea in ruta.read_text(encoding="utf-8").splitlines():
+        if not linea.strip():
+            continue
+        reg = json.loads(linea)
+        if reg.get("tipo") == "consulta" and reg.get("mes") == mes:
+            total += float(reg.get("costo_usd") or 0)
+    return total
+
+
+class _Cerrojo:
+    """Exclusion entre procesos para leer-sumar-anotar sin carreras."""
+
+    def __init__(self, ruta: Path, espera: float = 10.0):
+        self.ruta = ruta.with_name(ruta.name + ".lock")
+        self.espera = espera
+
+    def __enter__(self):
+        self.ruta.parent.mkdir(parents=True, exist_ok=True)
+        limite = time.time() + self.espera
+        while True:
+            try:
+                os.close(os.open(self.ruta, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+                return self
+            except FileExistsError:
+                if time.time() > limite:
+                    # Fail-closed: sin poder sumar con certeza, no se gasta.
+                    raise PresupuestoAgotado(
+                        f"libro de gasto bloqueado ({self.ruta.name}); si ningun proceso "
+                        "lo usa, borrar el cerrojo a mano") from None
+                time.sleep(0.05)
+
+    def __exit__(self, *exc):
+        try:
+            self.ruta.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def cobrar(proveedor: str, consulta: str) -> float:
+    """Reserva el costo de UN pedido. Levanta antes de gastar si no alcanza."""
+    costo = costo_declarado(proveedor)
+    ruta = libro_de_gasto()
+    with _Cerrojo(ruta):
+        mes = mes_actual()
+        gastado = gastado_en_el_mes(mes, ruta)
+        tope = tope_mensual()
+        if gastado + costo > tope + 1e-9:
+            raise PresupuestoAgotado(
+                f"tope mensual de USD {tope:.2f} (P7): gastado USD {gastado:.4f} en {mes}, "
+                f"la consulta cuesta USD {costo:.4f}")
+        registro = {
+            "tipo": "consulta", "cuando": datetime.now(_ARGENTINA).isoformat(timespec="seconds"),
+            "mes": mes, "proveedor": proveedor, "costo_usd": costo,
+            # Sin el texto: el libro dice cuanto y cuando, no que se busco.
+            "consulta_sha256_12": hashlib.sha256(consulta.encode("utf-8")).hexdigest()[:12],
+        }
+        with ruta.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(registro, ensure_ascii=False) + "\n")
+    _GASTO_DEL_PROCESO[proveedor] = _GASTO_DEL_PROCESO.get(proveedor, 0.0) + costo
+    _CONSULTAS_DEL_PROCESO[proveedor] = _CONSULTAS_DEL_PROCESO.get(proveedor, 0) + 1
+    return costo
+
+
+def registrar_corrida(proveedor: str, *, agencias_buscadas: int, resultados_utiles: int,
+                      detalle: dict | None = None) -> dict:
+    """Lo que P7 pide de cada corrida: proveedor, costo, agencias buscadas y
+    resultados utiles. El costo es lo cobrado por ESTE proceso a ese proveedor."""
+    ruta = libro_de_gasto()
+    registro = {
+        "tipo": "corrida", "cuando": datetime.now(_ARGENTINA).isoformat(timespec="seconds"),
+        "mes": mes_actual(), "proveedor": proveedor,
+        "consultas_pagadas": _CONSULTAS_DEL_PROCESO.get(proveedor, 0),
+        "costo_usd": round(_GASTO_DEL_PROCESO.get(proveedor, 0.0), 6),
+        "agencias_buscadas": agencias_buscadas, "resultados_utiles": resultados_utiles,
+        "tope_mensual_usd": tope_mensual(),
+        **({"detalle": detalle} if detalle else {}),
+    }
+    with _Cerrojo(ruta):
+        registro["gastado_en_el_mes_usd"] = round(gastado_en_el_mes(registro["mes"], ruta), 6)
+        with ruta.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(registro, ensure_ascii=False) + "\n")
+    return registro
 
 
 @dataclass
@@ -139,6 +300,7 @@ class Brave(Proveedor):
 
         demora = 2.0
         for intento in range(1, self.reintentos + 1):
+            cobrar(self.nombre, consulta)   # P7: antes de cada pedido
             try:
                 with urllib.request.urlopen(req, timeout=20) as r:
                     self._ultimo = time.time()
@@ -229,6 +391,7 @@ class Tavily(Proveedor):
         demora = 2.0
         datos = None
         for intento in range(1, self.reintentos + 1):
+            cobrar(self.nombre, consulta)   # P7: antes de cada pedido
             try:
                 with urllib.request.urlopen(req, timeout=30) as r:
                     self._ultimo = time.time()
@@ -316,6 +479,7 @@ class Serper(Proveedor):
         demora = 2.0
         datos = None
         for intento in range(1, self.reintentos + 1):
+            cobrar(self.nombre, consulta)   # P7: antes de cada pedido
             try:
                 with urllib.request.urlopen(req, timeout=30) as r:
                     self._ultimo = time.time()

@@ -617,6 +617,10 @@ Nada de esto toca la huella: integrarlo NO reinicia la recertificación.
       `docs/agent/RUNBOOK_ROL_ESCRITOR.md` paso 1. Si lo es, la credencial del Preview puede escribir
       hoy: priorizar la aplicación de `migrations/eretz_property_writer_role.sql` (acción productiva,
       requiere autorización + backup/restore).
+- [ ] **P7 activo en el código**: antes de cualquier búsqueda paga, declarar el costo por consulta
+      del proveedor según su tarifa vigente (`ERETZ_SEARCH_COSTO_USD_BRAVE`, `_SERPER`, `_TAVILY`,
+      `_EXA`, `_JINA`; `0` si es nivel gratuito). Sin declarar, el proveedor no consulta. El libro
+      queda en `ERETZ_SEARCH_SPEND.jsonl` bajo `ERETZ_DATA_ROOT`; tope duro USD 10/mes.
 - [ ] **Snapshot sintética ≠ servida**: `desplegar_snapshot.py` ahora aborta si la candidata se
       declara sintética (`snapshot_meta.sintetica = 1`). Nada que hacer; es una compuerta más.
 

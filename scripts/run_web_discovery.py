@@ -150,6 +150,9 @@ def main() -> int:
     consultas_totales = 0
     sin_api = 0
     con_una = 0
+    buscadas = 0       # P7: entidades que llegaron al buscador pago
+    utiles = 0         # P7: resueltas gracias al buscador
+    detenido = None    # sin creditos o sin presupuesto: se corta la corrida
 
     with salida.open("a", encoding="utf-8") as fh:
         for i, e in enumerate(pendientes, 1):
@@ -189,9 +192,15 @@ def main() -> int:
                                  v.contras, 0.0,
                                  "requiere busqueda programatica; falta API key")
             else:
+                buscadas += 1
                 for q in sp.consultas_para(e):
                     try:
                         res = buscador.buscar(q, pais="AR", idioma="es", cantidad=10)
+                    except sp.ProveedorAgotado as exc:
+                        # Sin presupuesto (P7) o sin creditos: la entidad NO se
+                        # da por buscada; queda pendiente para otra corrida.
+                        detenido = sp.redactar(str(exc))
+                        break
                     except Exception as exc:
                         v = wd.Veredicto(wd.SEARCH_ERROR, None, v.official_office_page,
                                          v.senales, v.contras, 0.0, sp.redactar(str(exc)))
@@ -212,6 +221,10 @@ def main() -> int:
                     # Con evidencia suficiente se corta: las consultas cuestan.
                     if v.estado in resuelto:
                         break
+                if detenido:
+                    break
+                if consultas and v.estado in resuelto:
+                    utiles += 1
                 if len(consultas) == 1 and v.estado in resuelto:
                     con_una += 1
 
@@ -239,6 +252,14 @@ def main() -> int:
     print(f"  consultas emitidas:    {consultas_totales:,}", flush=True)
     print(f"  cache hits / misses:   {buscador.hits} / {buscador.misses}", flush=True)
     print(f"  artefacto -> {salida}", flush=True)
+    if detenido:
+        print(f"  CORTADA: {detenido}", flush=True)
+    corrida = sp.registrar_corrida(buscador.nombre, agencias_buscadas=buscadas,
+                                   resultados_utiles=utiles,
+                                   detalle={"cache_hits": buscador.hits, "detenida": detenido})
+    print(f"  gasto P7: USD {corrida['costo_usd']:.4f} esta corrida, "
+          f"USD {corrida['gastado_en_el_mes_usd']:.4f} en {corrida['mes']} "
+          f"(tope USD {corrida['tope_mensual_usd']:.2f})", flush=True)
     return 0
 
 

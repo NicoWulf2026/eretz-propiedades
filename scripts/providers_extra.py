@@ -88,6 +88,7 @@ class Exa(Proveedor):
         demora = 2.0
         datos = None
         for intento in range(1, self.reintentos + 1):
+            sp.cobrar(self.nombre, consulta)   # P7: antes de cada pedido
             try:
                 with urllib.request.urlopen(req, timeout=30) as r:
                     self._ultimo = time.time()
@@ -190,6 +191,7 @@ class Jina(Proveedor):
         datos = None
         cabeceras = {}
         for intento in range(1, self.reintentos + 1):
+            sp.cobrar(self.nombre, consulta)   # P7: antes de cada pedido
             try:
                 with urllib.request.urlopen(req, timeout=60) as r:
                     self._ultimo = time.time()

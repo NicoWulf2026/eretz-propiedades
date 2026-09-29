@@ -64,6 +64,11 @@ CERTIFICAR ≠ PROMOVER A MAIN ≠ PUBLICAR EN PRODUCCIÓN.
 ### P7 — Descubrimiento pago de webs
 Máximo **USD 10 por mes**. Cada corrida registra proveedor, costo, agencias buscadas y
 resultados útiles. Guardrail local que corta la fase paga al llegar al límite.
+- Implementación: `scripts/search_provider.py` (`cobrar`, `registrar_corrida`), dentro de
+  cada proveedor pago antes de cada pedido HTTP. Costo por consulta DECLARADO en
+  `ERETZ_SEARCH_COSTO_USD_<PROVEEDOR>` (sin declarar no se busca); libro
+  `ERETZ_SEARCH_SPEND.jsonl` (o `ERETZ_SEARCH_SPEND_LEDGER`); mes calendario de Argentina;
+  `ERETZ_SEARCH_TOPE_MENSUAL_USD` solo puede bajar el tope.
 
 ## B. Producto y calidad
 
