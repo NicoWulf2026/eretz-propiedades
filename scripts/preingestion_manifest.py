@@ -51,16 +51,33 @@ def _manifiesto() -> dict:
         return {}
 
 
+def _rebasar(ruta: str) -> Path:
+    """Una ruta del manifiesto, sobre la raiz de datos vigente (`ERETZ_DATA_ROOT`).
+
+    El manifiesto se escribio en la maquina original con rutas absolutas bajo
+    `D:\INMO CAPITAL`. Restaurado en otra raiz, esas rutas apuntarian a la maquina
+    vieja: la parte bajo la raiz original se reubica en la actual. Una ruta fuera de
+    esa raiz se respeta tal cual.
+    """
+    from scripts.rutas_de_datos import RAIZ_POR_DEFECTO, raiz_de_datos
+    texto = str(ruta).replace("/", "\\")
+    prefijo = RAIZ_POR_DEFECTO.rstrip("\\") + "\\"
+    if texto.lower().startswith(prefijo.lower()):
+        partes = [x for x in texto[len(prefijo):].split("\\") if x]
+        return raiz_de_datos().joinpath(*partes)
+    return Path(ruta)
+
+
 def base_canonica() -> Path:
     """La base de preingestion vigente, segun el manifiesto."""
     dato = ((_manifiesto().get("preingestion") or {}).get("canonica") or {})
     ruta = dato.get("ruta")
-    return Path(ruta) if ruta else RESPALDO
+    return _rebasar(ruta) if ruta else RESPALDO
 
 
 def historicas() -> list[Path]:
     dato = (_manifiesto().get("preingestion") or {}).get("historicas") or []
-    return [Path(x["ruta"]) for x in dato if x.get("ruta")]
+    return [_rebasar(x["ruta"]) for x in dato if x.get("ruta")]
 
 
 def es_historica(ruta: str | Path) -> bool:
