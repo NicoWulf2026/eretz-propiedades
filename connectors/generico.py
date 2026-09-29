@@ -885,8 +885,13 @@ def cuerpo_principal(html: str) -> str:
     # RealHomes (`fernando villalba`): sus similares van en
     # `rh_property__similar_properties`, elegidas al azar en cada carga; sus
     # «Habitaciones» daban 4 dormitorios a una parcela de 1,3 ha.
+    # `id="bottom"` corta solo en un elemento de la pagina, no en una figura
+    # de un SVG: el icono de menu de `cometto` es <path id="bottom"> en la
+    # cabecera, y la ficha entera -precio, superficie, fotos- quedaba afuera
+    # (15 de 15 descartadas por forma, 0 propiedades).
     return re.split(
-        r"id=[\"'](?:relacionadas|bottom)[\"']|<footer\b|"
+        r"<(?!(?:path|g|line|rect|circle|ellipse|polygon|polyline|use|symbol|svg)\b)"
+        r"[a-z][a-z0-9]*\b[^>]*\bid=[\"'](?:relacionadas|bottom)[\"']|<footer\b|"
         r"class=[\"'][^\"']*rh_property__similar_properties|"
         # Y la plantilla de `berrueta` (Template3): el tooltip «Cochera» de una
         # tarjeta relacionada era el unico tipo que veia la ficha, y 24
