@@ -634,6 +634,10 @@ Nada de esto toca la huella: integrarlo NO reinicia la recertificación.
 - [ ] **B (martelliti, dirección junto al ícono de mapa)**: CLOUD no puede bajar la ficha. Dejar en
       `tests/fixtures/` una ficha reducida de `adriana martelliti` (el bloque del ícono `fa-map-marker`
       con su dirección) para prepararlo; la regla actual excluye íconos a propósito (`_direccion_de`).
+- [ ] **Cola sin GeoRef no arranca** (`run_agency_certification_queue.py`, fuera de la huella): si
+      `ERETZ_GEO` no carga, el worker sale con código 3 y «sin catalogo geografico» en su log, en vez de
+      certificar fichas sin ciudad (caso `criscenti`). El relanzador lo reintenta solo. Verificar tras
+      integrar que los workers arrancan normal (`python scripts/eretz_automatizacion.py estado`).
 - [ ] **Snapshot sintética ≠ servida**: `desplegar_snapshot.py` ahora aborta si la candidata se
       declara sintética (`snapshot_meta.sintetica = 1`). Nada que hacer; es una compuerta más.
 

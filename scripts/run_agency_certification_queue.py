@@ -1000,6 +1000,24 @@ def senales_en_la_portada(url: str | None) -> list[str]:
     return senales_de_catalogo(html)
 
 
+def catalogo_geografico_cargado() -> str | None:
+    """Carga GeoRef ANTES de certificar. Devuelve el motivo si no se puede.
+
+    `connectors.base` lo carga recien con la primera ficha, y si falla la
+    geografia se saltea EN SILENCIO (a proposito: una ficha no se rompe por
+    eso). En una corrida de certificacion eso no es inocuo: `criscenti` (28-09)
+    corrio durante un corte del disco D:, sus fichas salieron sin ciudad y la
+    agencia quedo no idempotente. Cargado aca queda en cache para todo el
+    proceso: un corte posterior tampoco lo afecta.
+    """
+    from connectors.base import geografia
+    try:
+        geografia()
+    except (OSError, ValueError) as exc:
+        return f"{type(exc).__name__}: {exc}"
+    return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     mode = parser.add_mutually_exclusive_group(required=True)
@@ -1053,6 +1071,13 @@ def main() -> int:
             f"contra sitios de inmobiliarias chicas dejan de ser paralelismo.")
     if not 0 <= args.worker < args.workers:
         raise SystemExit(f"--worker tiene que estar entre 0 y {args.workers - 1}")
+    # Sin catalogo geografico no se certifica: saldrian fichas sin ciudad que
+    # parecen un defecto de la fuente. No arrancar deja la cola para cuando
+    # vuelva (el relanzador reintenta).
+    falta = catalogo_geografico_cargado()
+    if falta:
+        print(f"sin catalogo geografico ({falta}): no se arranca.", flush=True)
+        return 3
     # Transporte, no extraccion: el 8 % de los hosts del padron tiene AAAA
     # que se cuelga desde esta maquina -18 de 400 dieron timeout de mas de 6 s
     # y 14 tardaron entre 1 y 3 s solo en el handshake-. Medido sobre
