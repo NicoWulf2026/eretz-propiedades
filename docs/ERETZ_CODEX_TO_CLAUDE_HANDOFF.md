@@ -267,7 +267,7 @@ autorizado. No abrir privilegios públicos. No subagentes salvo autorización ex
 
 ## Problemas abiertos (no convertir hipótesis en hallazgos)
 
-1. **NEXT-001: ledger de certificación**; detalle abajo.
+1. ~~**NEXT-001: ledger de certificación**~~ **CERRADO** (9b31b53f5e); ver abajo.
 2. Writer equivalence: REST aún usado; UPDATE geográfico requiere acoplar ciudad/
    provincia/país/coords, enrichment extras y NULL de oferta actual con razón validada.
    No broaden allowlist ni retirar REST antes de equivalencia real.
@@ -302,7 +302,19 @@ autorizado. No abrir privilegios públicos. No subagentes salvo autorización ex
 
 ## NEXT-001 — punto exacto interrumpido
 
-**PENDIENTE. No hay patch ni commit de solución del ledger.** La investigación
+> **CERRADO — 2026-09-29 (cierre formal del documento; el código es del commit
+> `9b31b53f5e`).** `scripts/ledger_de_certificacion.py` elige el resultado
+> vigente por `checked_at` (no por orden de append), falla ante líneas ilegibles
+> en vez de saltearlas, y EXCLUYE y reporta una agencia con dos resultados
+> distintos en el mismo instante. Los 35 grupos repetidos resultaron ser
+> reescrituras del backfill (difieren solo en metadatos de huella/métricas).
+> Lectores migrados a `vigentes_por_agencia`: `run_agency_certification_queue`,
+> `backfill_strategy_fingerprints`, `diferir_por_precedente`,
+> `fuentes_compartidas` y, desde el 29-09, `snapshot_certificadas`.
+> Tests: `tests/test_ledger_de_certificacion.py` (16, verdes). Lo que sigue abajo
+> es el estado histórico del 18-09 y queda como registro.
+
+**(Histórico) PENDIENTE. No hay patch ni commit de solución del ledger.** La investigación
 activa seguía siendo si corrupción/igual fecha puede reutilizar un cierre viejo.
 
 Confirmado por implementación:
@@ -384,7 +396,7 @@ continuar demás pendientes, no empezar de cero la auditoría.
 2. Establecer workdir `D:\INMO CAPITAL\eretz-unified`; verificar branch/HEAD/status
    con safe.directory. Esperar HEAD de handoff posterior a 7dd838fa63, no retroceder.
 3. No tocar originales ni sus cambios ajenos; preservar `_scratch` y toda historia.
-4. Continuar **NEXT-001**, no repetir auditoría GitHub/local completa. Ledger aún abierto.
+4. ~~Continuar **NEXT-001**~~ (cerrado en 9b31b53f5e); no repetir auditoría GitHub/local completa.
 5. No production writes, no RPC/migrations alojadas, no deploy, no DNS, no publicar.
    No push/merge salvo autorización explícita. No secretos/.env/credentials en logs/Git.
 6. Tests sólo después de cambios funcionales y con runtime congelado; no suite nueva
