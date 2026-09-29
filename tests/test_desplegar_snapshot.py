@@ -74,6 +74,18 @@ def test_faltantes_esperados_auditados_reemplazan_a_lo_declarado(tmp_path, monke
     assert rc == 2  # pasa el inventario; la QA minima falla y vuelve atras
 
 
+def test_nuevos_esperados_tienen_que_ser_exactos(tmp_path, monkeypatch):
+    """v4l: la candidata agrega fichas certificadas; se declara cuantas, ni una mas."""
+    _snapshot(tmp_path / "servida", ["a", "b"])
+    _snapshot(tmp_path / "cand", ["a", "b", "c", "d"])
+    base = ["--candidata", str(tmp_path / "cand"), "--etiqueta-respaldo", "v1",
+            "--servida-dir", str(tmp_path / "servida")]
+    antes = D.sha(tmp_path / "servida" / D.NOMBRE)
+    assert _correr(monkeypatch, *base, "--nuevos-esperados", "1") == 1
+    assert D.sha(tmp_path / "servida" / D.NOMBRE) == antes
+    assert _correr(monkeypatch, *base, "--nuevos-esperados", "2") == 2  # la QA minima vuelve atras
+
+
 @pytest.mark.skipif(os.name != "nt", reason="la apertura exclusiva es de Windows")
 def test_detecta_un_archivo_abierto_por_otro(tmp_path):
     _snapshot(tmp_path / "s", ["a"])

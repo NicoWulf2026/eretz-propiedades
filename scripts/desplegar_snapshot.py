@@ -98,6 +98,10 @@ def main() -> int:
                     help="ids de la servida que la candidata ya no trae, medidos y auditados "
                          "de antemano (reemplaza a --exclusiones-declaradas cuando la servida "
                          "ya excluia una parte: v4j -> v4k faltan 121 de 152 declaradas)")
+    ap.add_argument("--nuevos-esperados", type=int, default=0,
+                    help="ids que la candidata agrega, medidos y auditados de antemano; por "
+                         "defecto 0: una candidata que agrega sin declararlo aborta "
+                         "(v4l: +9.330 de inventarios certificados vigentes)")
     ap.add_argument("--servida-dir", type=Path, default=SERVIDA_DIR)
     args = ap.parse_args()
 
@@ -167,10 +171,11 @@ def main() -> int:
         declaradas = args.faltantes_esperados
     reg["inventario"] = {"ids_solo_en_servida": len(faltan), "ids_solo_en_candidata": len(sobran),
                          "exclusiones_declaradas": declaradas,
+                         "nuevos_esperados": args.nuevos_esperados,
                          "muestra_solo_en_servida": sorted(faltan)[:50]}
     paso("inventario", solo_servida=len(faltan), solo_candidata=len(sobran), declaradas=declaradas)
-    if sobran:
-        return abortar(f"{len(sobran)} ids nuevos no esperados")
+    if len(sobran) != args.nuevos_esperados:
+        return abortar(f"{len(sobran)} ids nuevos y se esperaban {args.nuevos_esperados}")
     if len(faltan) != declaradas:
         return abortar(f"faltan {len(faltan)} ids y la candidata declara {declaradas} exclusiones")
 
