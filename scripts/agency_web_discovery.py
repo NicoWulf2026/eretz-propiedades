@@ -169,6 +169,9 @@ PORTALES_POR_NOMBRE = {
     "mercado-unico",
     # Portal de la Asociacion de Martilleros de Lanus (`chenlo`: /agents.php).
     "propuestasinmobiliarias",
+    # Portal multi-agencia de San Nicolas (`kerlin`, identidad READY con
+    # /inmobiliarias.php: decenas de inmobiliarias, 96 fichas ajenas enumeradas).
+    "muchaspropiedades",
 }
 
 
