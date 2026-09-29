@@ -74,6 +74,7 @@ from connectors.base import RE_TIPO_ACCESORIO, detectar_tipo, geografia  # noqa:
 from connectors.exterior import (POLITICA_PUBLICA, evidencia_de_exterior,  # noqa: E402
                                  publicable)
 from connectors import poligono_caba  # noqa: E402
+from connectors.coherencia import _es_simbolico  # noqa: E402
 from connectors.geografia import (CABA_POR_POLIGONO_REASON,  # noqa: E402
                                   PROVINCE_CONFLICT_REASON)
 import re  # noqa: E402
@@ -446,6 +447,7 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
     textos_limpiados = 0
     ajenas_omitidas = 0
     exterior_no_publicadas = 0
+    precios_simbolicos = 0
     correcciones_geo: Counter = Counter()
     imagenes_compartidas = 0
     imagenes_repetidas_sin_evidencia = 0
@@ -514,6 +516,18 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
             else:
                 cruda = dict(cruda, tipo_propiedad=None)
             cocheras_incoherentes += 1
+        # La misma regla de `coherencia.revisar` para las filas que la cola
+        # todavia no recertifico: 42 en la v4i servian «US$1» o ventas por USD
+        # 460 (`next`, `oyharzabal`, `domus`, `must`...).
+        precio_actual = cruda.get("precio")
+        try:
+            precio_actual = float(precio_actual) if precio_actual is not None else None
+        except (TypeError, ValueError):
+            precio_actual = None
+        if (precio_actual is not None and precio_actual > 0
+                and _es_simbolico(precio_actual, cruda.get("moneda"), cruda.get("operacion"))):
+            cruda = dict(cruda, precio=None, moneda=None)
+            precios_simbolicos += 1
         for campo in ("titulo", "descripcion"):
             limpio = _sin_mojibake(_texto_servible(cruda.get(campo)))
             if limpio != cruda.get(campo):
@@ -606,6 +620,7 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
         "titulos_del_sitio_descartados": titulos_del_sitio,
         "tipos_cochera_por_accesorio_corregidos": tipos_cochera_corregidos,
         "cocheras_incoherentes_resueltas": cocheras_incoherentes,
+        "precios_simbolicos_descartados": precios_simbolicos,
         "textos_con_entidades_limpiados": textos_limpiados,
         "filas_con_frescura_parcial": filas_con_frescura_parcial,
         "imagenes_repetidas_sin_evidencia_de_descarte": imagenes_repetidas_sin_evidencia,

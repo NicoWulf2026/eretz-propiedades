@@ -3,7 +3,7 @@
 Estado VIGENTE, no bitácora. La historia está en Git (`git log`; la bitácora anterior de este
 archivo: `git show 6ee927bb80:docs/agent/CURRENT_STATE.md`). `database_writes: 0` en todo.
 
-**Actualizado:** 2026-09-28 14:4x · **Rama:** `handoff/codex-unificacion-2026-09-18` (push solo acá)
+**Actualizado:** 2026-09-28 21:1x · **Rama:** `handoff/codex-unificacion-2026-09-18` (push solo acá)
 **Fase:** certificación/recertificación continua + calidad de lo servido + preparación productiva.
 
 ## Automatización (ERETZ AUTOMATION)
@@ -23,12 +23,12 @@ Ver estado: `python scripts\eretz_automatizacion.py estado`.
   cambio de huella. Libro: `ERETZ_FAMILIAS_DETENIDAS.jsonl`. Radio `APAGADO` = lo puso el OFF.
 - Orden: conocidas por `checked_at` ascendente, intercaladas 1:1 con nuevas.
 
-## Resultados (paquetes en `ERETZ_AGENCY_CERTIFICATION_20260827/agencies`, 28-09 14:4x)
+## Resultados (paquetes en `ERETZ_AGENCY_CERTIFICATION_20260827/agencies`, 28-09 21:17)
 | estado | agencias |
 |---|---|
-| CERTIFIED_COMPLETE | 260 |
-| CERTIFIED_BEST_AVAILABLE | 35 |
-| NEEDS_FIX | 183 |
+| CERTIFIED_COMPLETE | 287 |
+| CERTIFIED_BEST_AVAILABLE | 37 |
+| NEEDS_FIX | 178 |
 | BLOCKED_EXTERNAL | 48 |
 | IDENTITY_PENDING | 140 |
 | NO_INVENTORY_CONFIRMED | 1 |
@@ -59,6 +59,10 @@ Recertificación completa en curso desde el 28-09 07:29; los lotes compartidos d
 - Regression Gate (28-09 09:5x): 461 agencias recertificadas, 0 pendientes (77 firmadas: echesortu 42 fotos WhatsApp-Image → DEFECTO_ARREGLADO en e9e6c7f709, 1 CORRECCION «BAÑO 3ER PISO»; ente 34 dormitorios/baños → DEFECTO_PENDIENTE, ver HANDOFF). Gate anterior 06:4x: 448, 280 firmadas.
 - Suite completa (28-09 15:3x, `c951da087e`): 3.460 passed.
 - Regression Gate (28-09 15h): 474 agencias, 0 pendientes (34 de berardi firmadas).
+- Regression Gate (28-09 21h): 497 agencias, 0 pendientes (77 firmadas: 66 CORRECCION -alagna
+  emprendimientos y tarjetas similares-, 10 CAMBIO_EN_LA_FUENTE -christian arce-, 1 DEFECTO_PENDIENTE
+  -pozzobon «un baño» en palabras-).
+- Suite completa (28-09 21h, `64790ba41e`): 3.541 passed.
 
 ## Snapshot de la API local
 - **Servida: v4g** desde el 28-09 16:58 (deploy autorizado, controlado, sin rollback; registro en

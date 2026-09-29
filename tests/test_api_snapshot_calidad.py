@@ -189,3 +189,17 @@ def test_MUERDE_una_cochera_con_dormitorios_es_incoherente_y_se_resuelve_por_el_
     assert fil["h002"][0] is None and fil["h002"][1].get("ambientes") == 2
     assert fil["h003"][0] == "cochera"
     assert resumen["cocheras_incoherentes_resueltas"] == 3
+
+
+def test_un_precio_simbolico_no_llega_a_la_snapshot(tmp_path, monkeypatch):
+    filas = [("roomix:a", "Casa", "Casa amplia", "casa",
+              {"precio": 1.0, "moneda": "USD", "operacion": "venta"}),
+             ("roomix:a", "Lote", "Lote amplio", "terreno",
+              {"precio": 460.0, "moneda": "USD", "operacion": "venta"}),
+             ("roomix:a", "Depto", "Depto amplio", "departamento",
+              {"precio": 850.0, "moneda": "USD", "operacion": "alquiler"})]
+    resumen, _ = _correr(tmp_path, monkeypatch, filas)
+    con = sqlite3.connect(tmp_path / "out" / "ERETZ_API_SNAPSHOT.sqlite3")
+    precios = dict(con.execute("select id, precio from propiedades"))
+    assert precios == {"h000": None, "h001": None, "h002": 850.0}
+    assert resumen["precios_simbolicos_descartados"] == 2
