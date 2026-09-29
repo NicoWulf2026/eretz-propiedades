@@ -46,20 +46,25 @@ from scripts.preingestion_rebuild import norm  # noqa: E402
 
 ROL = "eretz_direct_property_writer"
 
-# El unico usuario con el que se entra. El rol de escritura se asume DESPUES,
-# con SET LOCAL, y solo durante la transaccion.
-USUARIO_ESPERADO = "eretz_preview_ro"
+# El unico usuario con el que se entra: el cargador dedicado de P18
+# (migrations/eretz_property_writer_role.sql), LOGIN NOINHERIT y sin privilegios
+# propios. El rol de escritura se asume DESPUES, con SET LOCAL, y solo durante
+# la transaccion. Antes se entraba como `eretz_preview_ro`, la credencial de
+# SOLO LECTURA del Preview: para asumir el escritor tenia que ser su miembro, y
+# entonces esa credencial podia escribir.
+USUARIO_ESPERADO = "eretz_property_loader"
 
 # En orden de preferencia. El pooler primero porque el endpoint directo de
 # Supabase es IPv6 por diseno y desde una red sin IPv6 utilizable no resuelve.
-VARIABLES_RO = ("ERETZ_PREVIEW_RO_POOLER_URL", "ERETZ_PREVIEW_RO_URL",
-                "SUPABASE_PREVIEW_RO_URL")
+VARIABLES_CARGADOR = ("ERETZ_PROPERTY_LOADER_POOLER_URL", "ERETZ_PROPERTY_LOADER_URL")
 
 # Usuarios con los que NO se entra, aunque la variable exista y funcione.
 # Entrar como superusuario para "probar rapido" saltea exactamente la
 # restriccion que el rol minimo existe para imponer, y una vez que funciona
 # nadie vuelve a cablearlo bien.
-PROHIBIDOS = ("postgres", "service_role", "neondb_owner", "supabase_admin")
+# Y la credencial de solo lectura del Preview: nunca escribe (P18).
+PROHIBIDOS = ("postgres", "service_role", "neondb_owner", "supabase_admin",
+              "eretz_preview_ro")
 
 
 def usuario_de(url):
@@ -69,26 +74,26 @@ def usuario_de(url):
         return ''
 
 
-def usuario_ro_autorizado(quien):
+def usuario_cargador_autorizado(quien):
     # Supavisor may suffix the login with the project reference. The live
-    # current_user/session_user check below still requires the actual RO role.
+    # current_user/session_user check below still requires the actual loader role.
     return quien.split('.', 1)[0] == USUARIO_ESPERADO
 
 
 def elegir_credencial():
-    """La credencial de solo lectura, o nada. Nunca el superusuario.
+    """La credencial del cargador (P18), o nada. Nunca el superusuario ni la del Preview.
 
     Devuelve (url, explicacion). No imprime la url: lleva la contrasena.
     """
-    for v in VARIABLES_RO:
+    for v in VARIABLES_CARGADOR:
         u = os.environ.get(v)
         if u:
             quien = usuario_de(u)
             if quien in PROHIBIDOS:
                 return "", ("%s existe pero entra como %r, que esta prohibido"
                             % (v, quien))
-            if not usuario_ro_autorizado(quien):
-                return '', '%s tiene un usuario no autorizado; se requiere el rol RO' % v
+            if not usuario_cargador_autorizado(quien):
+                return '', '%s tiene un usuario no autorizado; se requiere %s' % (v, USUARIO_ESPERADO)
             return u, "%s (usuario %s)" % (v, quien or "?")
     # Lo que haya quedado configurado de antes solo sirve si NO es superusuario.
     for v in ("SUPABASE_POOLER_DATABASE_URL", "SUPABASE_DATABASE_URL"):
@@ -99,8 +104,8 @@ def elegir_credencial():
         if quien in PROHIBIDOS:
             return "", ("%s entra como %r: no se usa para saltear la "
                         "restriccion de privilegio minimo" % (v, quien))
-        if not usuario_ro_autorizado(quien):
-            return '', '%s tiene un usuario no autorizado; se requiere el rol RO' % v
+        if not usuario_cargador_autorizado(quien):
+            return '', '%s tiene un usuario no autorizado; se requiere %s' % (v, USUARIO_ESPERADO)
         return u, "%s (usuario %s)" % (v, quien or "?")
     return "", "ninguna variable de credencial configurada"
 TABLA = "internal_scraping.propiedades_raw"
@@ -192,7 +197,7 @@ def main() -> int:
         print("  [1] DB_CREDENTIAL_PENDING: no hay credencial de escritura "
               "utilizable.")
         print("      Se necesita %s apuntando al usuario %s."
-              % (VARIABLES_RO[1], USUARIO_ESPERADO))
+              % (VARIABLES_CARGADOR[1], USUARIO_ESPERADO))
         print("      El canary queda listo: en cuanto exista, corre sin cambios.")
         return 2
     try:
@@ -215,7 +220,7 @@ def main() -> int:
                 cur.execute("select current_user, session_user, current_database()")
                 usuario, sesion, base = cur.fetchone()
                 if usuario != USUARIO_ESPERADO or sesion != USUARIO_ESPERADO:
-                    raise Fallo('La sesión no pertenece al usuario RO esperado; no se asume rol ni se inserta')
+                    raise Fallo('La sesión no pertenece al cargador esperado; no se asume rol ni se inserta')
                 print(f"\n  [1] conectado  current_user={usuario} "
                       f"session_user={sesion} db={base}")
 

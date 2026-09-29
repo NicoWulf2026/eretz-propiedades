@@ -9,7 +9,7 @@ Actualizado: 2026-09-29.
 | # | acción | estado | qué la destraba |
 |---|---|---|---|
 | 1 | Credencial Postgres directa → `pg_dump` con conteos y **restore probado** | `BLOCKED_EXTERNAL_CREDENTIAL` | una credencial válida (la actual falla) |
-| 2 | Credencial de mínimo privilegio `eretz_direct_property_writer` | `BLOCKED_EXTERNAL_CREDENTIAL` | crearla en Supabase |
+| 2 | Rol escritor de mínimo privilegio (P18): `eretz_property_loader` LOGIN NOINHERIT + `eretz_direct_property_writer` | **SQL + rollback + test (PGlite 14/14) + runbook LISTOS** (29-09, CLOUD); sin crear | autorización + backup/restore (1); runbook `docs/agent/RUNBOOK_ROL_ESCRITOR.md` |
 | 3 | Aplicar migraciones locales (aditivas) | preparadas, sin aplicar | revisión + autorización; exige 1 |
 | 4 | Promoción staging → main (agencias) | dry-run del 14-09, a refrescar | autorización; exige 1 |
 | 5 | Corregir `url_normalizada` colapsada en producción | medido, sin tocar | autorización de write; exige 1 y 3 |
@@ -17,6 +17,7 @@ Actualizado: 2026-09-29.
 | 7 | Servir la snapshot v4 en la API local | **HECHO: v4l-c servida 29-09 16:52** por despliegue automático P2 (v4l-a/b/v4k superadas) | — (próximos reemplazos: autorización propia) |
 | 8 | Descubrimiento pago de webs (140 `IDENTITY_PENDING`) | no corrido | aprobar gasto (~USD 1,35) |
 | 9 | Merge a `main` / deploy | no corresponde todavía | después de 1–4 |
+| 10 | API v2 beta remota (P21) | **contenedor + runbook LISTOS** (29-09, CLOUD; docker verificado con snapshot sintética); sin desplegar | `EXTERNAL_ACCOUNT_REQUIRED` (cuenta/pago de hosting) + medir tamaño de la snapshot en LOCAL; `deploy/api-beta/RUNBOOK.md` |
 
 ## Detalle
 

@@ -40,10 +40,10 @@ NUESTRO = "TRABAJO_PENDIENTE"
 # Claves de busqueda. Sin ninguna, la cola de descubrimiento no avanza.
 CLAVES_BUSQUEDA = ("BRAVE_SEARCH_API_KEY", "SERPAPI_KEY", "GOOGLE_CSE_KEY")
 
-# Credenciales de escritura aceptables. El superusuario NO cuenta: entrar con el
-# saltea la restriccion que el rol minimo existe para imponer.
-CLAVES_ESCRITURA = ("ERETZ_PREVIEW_RO_POOLER_URL", "ERETZ_PREVIEW_RO_URL",
-                    "SUPABASE_PREVIEW_RO_URL")
+# Credenciales de escritura aceptables: las del cargador dedicado de P18, las
+# mismas que `property_write_canary.VARIABLES_CARGADOR` (un test las compara).
+# El superusuario NO cuenta, ni la credencial de solo lectura del Preview.
+CLAVES_ESCRITURA = ("ERETZ_PROPERTY_LOADER_POOLER_URL", "ERETZ_PROPERTY_LOADER_URL")
 
 
 def leer(ruta: Path):

@@ -12,8 +12,10 @@ Estaba cableado para tomar la URL que hubiera configurada, y la que habia era la
 del superusuario. Fallaba por contrasena vencida, no por diseno: el dia que
 alguien la renovara habria escrito como postgres sin que nadie lo notara.
 
-Estos tests fijan la unica regla que importa aca: si el usuario no es el de solo
-lectura, no se entra, y se dice por que.
+Estos tests fijan la unica regla que importa aca: si el usuario no es el cargador
+dedicado (P18: LOGIN NOINHERIT, sin privilegios propios), no se entra, y se dice
+por que. La credencial de solo lectura del Preview tampoco: si pudiera asumir el
+escritor, cualquiera con la credencial del Preview podria escribir.
 """
 from __future__ import annotations
 
@@ -23,28 +25,29 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.property_write_canary import (PROHIBIDOS,  # noqa: E402
-                                           USUARIO_ESPERADO, VARIABLES_RO,
+                                           USUARIO_ESPERADO, VARIABLES_CARGADOR,
                                            elegir_credencial, usuario_de)
 
-RO = "postgresql://eretz_preview_ro:x@host:5432/db"
+RO = "postgresql://eretz_property_loader:x@host:5432/db"
+PREVIEW_RO = "postgresql://eretz_preview_ro:x@host:5432/db"
 SUPER = "postgresql://postgres:x@host:5432/db"
 
 
 def limpiar(monkeypatch):
-    for v in VARIABLES_RO + ("SUPABASE_POOLER_DATABASE_URL",
+    for v in VARIABLES_CARGADOR + ("SUPABASE_POOLER_DATABASE_URL",
                              "SUPABASE_DATABASE_URL"):
         monkeypatch.delenv(v, raising=False)
 
 
 def test_el_usuario_se_lee_de_la_url():
-    assert usuario_de(RO) == "eretz_preview_ro"
+    assert usuario_de(RO) == "eretz_property_loader"
     assert usuario_de(SUPER) == "postgres"
     assert usuario_de("") == ""
 
 
 def test_se_prefiere_la_credencial_de_solo_lectura(monkeypatch):
     limpiar(monkeypatch)
-    monkeypatch.setenv("ERETZ_PREVIEW_RO_URL", RO)
+    monkeypatch.setenv("ERETZ_PROPERTY_LOADER_URL", RO)
     monkeypatch.setenv("SUPABASE_DATABASE_URL", SUPER)
     url, via = elegir_credencial()
     assert url == RO
@@ -55,9 +58,9 @@ def test_el_pooler_gana_cuando_existe(monkeypatch):
     """El endpoint directo de Supabase es IPv6 por diseno; desde una red sin
     IPv6 utilizable no resuelve y el canary parece roto sin estarlo."""
     limpiar(monkeypatch)
-    pooler = "postgresql://eretz_preview_ro:x@pooler:6543/db"
-    monkeypatch.setenv("ERETZ_PREVIEW_RO_POOLER_URL", pooler)
-    monkeypatch.setenv("ERETZ_PREVIEW_RO_URL", RO)
+    pooler = "postgresql://eretz_property_loader:x@pooler:6543/db"
+    monkeypatch.setenv("ERETZ_PROPERTY_LOADER_POOLER_URL", pooler)
+    monkeypatch.setenv("ERETZ_PROPERTY_LOADER_URL", RO)
     assert elegir_credencial()[0] == pooler
 
 
@@ -81,7 +84,7 @@ def test_una_variable_ro_apuntando_a_un_privilegiado_tampoco_pasa(monkeypatch):
     """El nombre de la variable no es evidencia de nada: lo que decide es el
     usuario que viaja en la URL."""
     limpiar(monkeypatch)
-    monkeypatch.setenv("ERETZ_PREVIEW_RO_URL", SUPER)
+    monkeypatch.setenv("ERETZ_PROPERTY_LOADER_URL", SUPER)
     url, via = elegir_credencial()
     assert url == ""
     assert "prohibido" in via
@@ -96,14 +99,14 @@ def test_sin_nada_configurado_lo_dice(monkeypatch):
 
 def test_an_unlisted_admin_or_writer_is_not_mistaken_for_read_only(monkeypatch):
     limpiar(monkeypatch)
-    monkeypatch.setenv('ERETZ_PREVIEW_RO_URL', 'postgresql://unlisted_admin:x@host/db')
+    monkeypatch.setenv('ERETZ_PROPERTY_LOADER_URL', 'postgresql://unlisted_admin:x@host/db')
     assert elegir_credencial()[0] == ''
 
 
 def test_pooler_project_suffix_does_not_break_valid_ro_login(monkeypatch):
     limpiar(monkeypatch)
-    url = 'postgresql://eretz_preview_ro.project:x@host/db'
-    monkeypatch.setenv('ERETZ_PREVIEW_RO_POOLER_URL', url)
+    url = 'postgresql://eretz_property_loader.project:x@host/db'
+    monkeypatch.setenv('ERETZ_PROPERTY_LOADER_POOLER_URL', url)
     assert elegir_credencial()[0] == url
 
 
@@ -129,8 +132,8 @@ def test_wrong_live_session_refuses_before_set_role_or_insert(monkeypatch):
 
 def test_la_explicacion_no_puede_llevar_la_contrasena(monkeypatch):
     limpiar(monkeypatch)
-    monkeypatch.setenv("ERETZ_PREVIEW_RO_URL",
-                       "postgresql://eretz_preview_ro:SECRETO123@h:5432/db")
+    monkeypatch.setenv("ERETZ_PROPERTY_LOADER_URL",
+                       "postgresql://eretz_property_loader:SECRETO123@h:5432/db")
     _, via = elegir_credencial()
     assert "SECRETO123" not in via
 
@@ -143,3 +146,20 @@ def test_el_camino_de_escritura_sigue_siendo_el_minimo():
     assert "internal_scraping.propiedades_raw" in src
     # y sigue haciendo ROLLBACK salvo que se pida lo contrario
     assert "--escribir" in src
+
+
+def test_la_credencial_de_solo_lectura_del_preview_no_escribe(monkeypatch):
+    """Antes era LA credencial del canario; ahora esta prohibida (P18)."""
+    limpiar(monkeypatch)
+    monkeypatch.setenv("ERETZ_PROPERTY_LOADER_URL", PREVIEW_RO)
+    url, via = elegir_credencial()
+    assert url == ""
+    assert "eretz_preview_ro" in via
+    limpiar(monkeypatch)
+    monkeypatch.setenv("SUPABASE_POOLER_DATABASE_URL", PREVIEW_RO)
+    assert elegir_credencial()[0] == ""
+
+
+def test_el_contador_de_bloqueos_busca_las_mismas_credenciales():
+    from scripts.quantify_blockers import CLAVES_ESCRITURA
+    assert CLAVES_ESCRITURA == VARIABLES_CARGADOR
