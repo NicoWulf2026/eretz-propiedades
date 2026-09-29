@@ -14,7 +14,7 @@ Actualizado: 2026-09-29.
 | 4 | Promoción staging → main (agencias) | dry-run del 14-09, a refrescar | autorización; exige 1 |
 | 5 | Corregir `url_normalizada` colapsada en producción | medido, sin tocar | autorización de write; exige 1 y 3 |
 | 6 | Encender bajas del ciclo de vida | diseñado, **apagado** | decisión de producto |
-| 7 | Servir la snapshot v4 en la API local | **HECHO: v4j servida 28-09 22:58**; candidatas **v4l-a / v4l-b** listas (29-09) | — (próximos reemplazos: autorización propia) |
+| 7 | Servir la snapshot v4 en la API local | **HECHO: v4l-c servida 29-09 16:52** por despliegue automático P2 (v4l-a/b/v4k superadas) | — (próximos reemplazos: autorización propia) |
 | 8 | Descubrimiento pago de webs (140 `IDENTITY_PENDING`) | no corrido | aprobar gasto (~USD 1,35) |
 | 9 | Merge a `main` / deploy | no corresponde todavía | después de 1–4 |
 

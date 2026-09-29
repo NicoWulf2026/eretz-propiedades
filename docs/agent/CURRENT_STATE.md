@@ -77,7 +77,17 @@ Recertificación completa en curso desde el 28-09 07:29; los lotes compartidos d
 - Pendiente de fuente puntual: `paladino` (Strapi propio en `api.` subdominio, catálogo entero en una
   respuesta > 800 KB), `lucas liprandi` / `dib kai` (Wix).
 
-## Lote compartido pendiente (huella)
+## CHECKPOINT CLOUD 2026-09-29 17:15 — estado real
+- **Snapshot servida: v4l-c** desde 16:52 (despliegue automático P2; registro
+  `ERETZ_API_CONTRACT/_despliegues/DEPLOY_2026-09-29T16-52-05.json`; respaldo de la v4j en
+  `_anteriores/v4j_2026-09-28/`): 65.028 propiedades, 603 agencias, localidades 18.428, QA 14/14.
+- Lotes compartidos 1, 2 y 3 aplicados (último `c4092f1238`); huella compartida `8bf7f9274ed4`.
+- Cola: régimen 2 workers (Tokko al worker 0); 1.819 agencias en la cola `--ready`; ledger 766
+  (338 COMPLETE, 40 BEST_AVAILABLE, 204 NEEDS_FIX, 132 IDENTITY_PENDING, 51 BLOCKED_EXTERNAL, 1 NO_INVENTORY).
+- Suite 3.701 verdes; Regression Gate 578 agencias, 0 pendientes.
+- Continuidad: `docs/CLOUD_CONTINUATION_HANDOFF.md`, `docs/CLOUD_BOOTSTRAP.md`,
+  `docs/NEXT_CLOUD_AGENT_PROMPT.md`, `docs/agent/ESTADO_DURABLE.md`.
+
 `docs/agent/lotes/`: cambios a la huella COMPARTIDA preparados y verificados en `eretz-dev` (3.635 verdes),
 sin aplicar porque reinician la recertificación entera: aglomerados GeoRef (+112 localidades), descartes
 sin señal (4 agencias, 348 prop.), buscador Houzez / unidades / «Provincia: Argentina» (`o feely`, 600).
