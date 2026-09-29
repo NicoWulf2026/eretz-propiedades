@@ -1,0 +1,172 @@
+diff --git a/connectors/geografia.py b/connectors/geografia.py
+index 0a4c08c4aa..d2dde0302a 100644
+--- a/connectors/geografia.py
++++ b/connectors/geografia.py
+@@ -215,6 +215,7 @@ class Geografia:
+         self.por_nombre: dict[str, list[Entidad]] = {}
+         self.provincias: dict[str, str] = {}
+         self.alias: dict[str, list[Entidad]] = {}
++        self.alias_de_aglomerado: dict[str, Entidad] = {}
+         self._cargar()
+ 
+     # ------------------------------------------------------------- carga
+@@ -284,6 +285,43 @@ class Geografia:
+         for forma in ("caba", "ciudad autonoma de buenos aires",
+                       "capital federal", "ciudad de buenos aires"):
+             self.alias[forma] = [caba]
++        self._cargar_alias_de_aglomerados()
++
++    def _cargar_alias_de_aglomerados(self) -> None:
++        """Cada parte de una localidad censal compuesta nombra a esa localidad.
++
++        GeoRef cataloga algunos aglomerados con el nombre de todas sus partes:
++        «Necochea - Quequen», «Mar del Tuyu - Mar de Aje - San Bernardo». Nadie
++        publica eso como ciudad; publica «Necochea», y quedaba NOT_FOUND (91
++        fichas medidas el 29-09).
++
++        Solo si el nombre de la parte NO es ya una localidad en ningun lado y
++        es parte de UN solo aglomerado: «Bella Vista» (de «Iglesia - Bella
++        Vista», San Juan) tiene sus propias localidades y no se toca. Las
++        comunas de CABA no entran: CABA se resuelve a la provincia.
++
++        Y solo dentro de su provincia: «Parque Norte» es parte de un aglomerado
++        de Cordoba y tambien un barrio en otras provincias; con otra provincia
++        declarada sigue sin resolverse, no pasa a ser una contradiccion.
++        El separador puede venir como «?»: asi trae el snapshot de GeoRef la
++        raya de «Necochea - Quequen».
++        """
++        partes: dict[str, list[Entidad]] = {}
++        for entidad in self.entidades:
++            if not re.search(r"\s[-\u2013\u2014?]\s", entidad.official_name):
++                continue
++            if normalizar(entidad.provincia) == "ciudad autonoma de buenos aires":
++                continue
++            for parte in re.split(r"\s[-\u2013\u2014?]\s", entidad.official_name):
++                clave = normalizar(parte)
++                if len(clave) < 4 or clave.startswith("comuna"):
++                    continue
++                partes.setdefault(clave, []).append(entidad)
++        for clave, entidades in partes.items():
++            if (len(entidades) == 1 and clave not in self.por_nombre
++                    and clave not in self.alias
++                    and clave not in self.provincia_entidad):
++                self.alias_de_aglomerado[clave] = entidades[0]
+ 
+     # ---------------------------------------------------------- resolucion
+     def _filtrar_por_contexto(self, candidatas: list[Entidad], *,
+@@ -605,6 +643,13 @@ class Geografia:
+                     f"capital de {entidad.provincia}"))
+ 
+         candidatas = list(self.por_nombre.get(clave, ()))
++        aglomerado = self.alias_de_aglomerado.get(clave)
++        if (not candidatas and aglomerado is not None
++                and (not provincia
++                     or normalizar(provincia) == normalizar(aglomerado.provincia))):
++            return controlar(Resolucion(
++                aglomerado, POR_ALIAS, NORMALIZADA_CANONICA, 1,
++                f"parte del aglomerado {aglomerado.official_name}"))
+         if not candidatas:
+             # GeoRef no cataloga barrios: lo mas probable es que sea uno.
+             return Resolucion(None, NO_ENCONTRADA, DESCONOCIDA, 0,
+diff --git a/scripts/agency_certifier.py b/scripts/agency_certifier.py
+index e421dee6d8..fea5a79931 100644
+--- a/scripts/agency_certifier.py
++++ b/scripts/agency_certifier.py
+@@ -956,6 +956,27 @@ def conector_por_la_portada(connector_name: str, source: Fuente,
+     return "tokko" if RE_TOKKO_TFW.search(html or "") else connector_name
+ 
+ 
++def descartes_sin_senal(run: dict[str, Any]) -> int:
++    """Paginas enlazadas que el guardian de forma descarto, sin ninguna senal de ficha.
++
++    El runner las cuenta como detalle fallido (el connector devuelve None). Un
++    enlace a `area_cliente.php` en el listado de `bottai` dejaba en NEEDS_FIX
++    a 315 propiedades leidas enteras y de forma idempotente: 1 de 316.
++
++    Se descuentan solo si nada las hace sospechosas: ningun descarte trajo
++    precio o schema (`descartes_con_senal`), la corrida leyo propiedades, y
++    son pocas -hasta 2, o el 2 % de lo enumerado-. Un sitio al que se le
++    descarta todo, o una porcion grande, sigue sin certificar: ahi el
++    guardian puede estar equivocado, y eso se revisa.
++    """
++    descartadas = int(run.get("descartadas_por_forma") or 0)
++    if (not descartadas or int(run.get("descartes_con_senal") or 0)
++            or int(run.get("detalles_obtenidos") or 0) <= 0
++            or descartadas > max(2, 0.02 * int(run.get("enumeradas") or 0))):
++        return 0
++    return descartadas
++
++
+ def run_once(connector_name: str, source: Fuente, checkpoint: Checkpoint,
+              interval: float, max_listings: int, budget: float,
+              baseline: int | None = None) -> tuple[dict[str, Any], AuditDownloader]:
+@@ -1079,11 +1100,13 @@ def certification_status(run1: dict[str, Any], run2: dict[str, Any],
+     fallidos_de_lectura = max(
+         0, int(run1.get("detalles_fallidos") or 0)
+         - min(int(run1.get("detalles_desaparecidos") or 0),
+-              int(run2.get("detalles_desaparecidos") or 0)))
++              int(run2.get("detalles_desaparecidos") or 0))
++        - descartes_sin_senal(run1))
+     fallidos_de_lectura += max(
+         0, int(run2.get("detalles_fallidos") or 0)
+         - min(int(run1.get("detalles_desaparecidos") or 0),
+-              int(run2.get("detalles_desaparecidos") or 0)))
++              int(run2.get("detalles_desaparecidos") or 0))
++        - descartes_sin_senal(run2))
+     if fallidos_de_lectura:
+         reasons.append("one or more listing details failed")
+     if not comparison["same_url_set"]:
+diff --git a/tests/test_lote_compartido_2026_09_29.py b/tests/test_lote_compartido_2026_09_29.py
+new file mode 100644
+index 0000000000..c1c3c9b0cf
+--- /dev/null
++++ b/tests/test_lote_compartido_2026_09_29.py
+@@ -0,0 +1,48 @@
++"""Lote compartido preparado el 29-09: aglomerados de GeoRef y descartes sin senal."""
++from __future__ import annotations
++
++import pytest
++
++from connectors.geografia import geografia
++from scripts.agency_certifier import descartes_sin_senal
++
++
++@pytest.fixture(scope="module")
++def geo():
++    try:
++        return geografia()
++    except (OSError, ValueError):
++        pytest.skip("sin catalogo GeoRef local")
++
++
++def test_la_parte_de_un_aglomerado_resuelve_en_su_provincia(geo):
++    r = geo.resolver_localidad("Necochea", provincia="Buenos Aires")
++    assert r.entidad is not None and "Quequ" in r.entidad.official_name
++
++
++def test_en_otra_provincia_no_resuelve_ni_contradice(geo):
++    r = geo.resolver_localidad("Necochea", provincia="Santa Fe")
++    assert r.entidad is None
++    assert "contradice" not in r.motivo
++
++
++def test_un_nombre_que_ya_es_localidad_no_se_vuelve_alias(geo):
++    assert "bella vista" not in geo.alias_de_aglomerado
++
++
++def _run(**campos):
++    return dict({"descartadas_por_forma": 1, "descartes_con_senal": 0,
++                 "detalles_obtenidos": 315, "enumeradas": 316}, **campos)
++
++
++def test_un_descarte_sin_senal_en_un_catalogo_leido_no_es_un_fallo():
++    assert descartes_sin_senal(_run()) == 1
++
++
++@pytest.mark.parametrize("campos", [
++    {"descartes_con_senal": 1},                       # traia precio o schema
++    {"detalles_obtenidos": 0},                        # se descarto todo
++    {"descartadas_por_forma": 34, "enumeradas": 101},  # una porcion grande
++])
++def test_lo_sospechoso_sigue_contando(campos):
++    assert descartes_sin_senal(_run(**campos)) == 0

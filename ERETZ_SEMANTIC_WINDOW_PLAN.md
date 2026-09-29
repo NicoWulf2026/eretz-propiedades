@@ -1,5 +1,21 @@
 # Plan de la ventana semántica: los dos primeros arreglos, listos y sin aplicar
 
+> **CERRADO — 2026-09-29.** Este plan se ejecutó y la ventana se cerró el 24-09
+> (`74aa0fb6cd`). Estado verificado hoy:
+>
+> - Los tres arreglos de código están aplicados y sus tests ya no son `xfail`
+>   (no queda ningún `xfail` en `tests/`): `test_jsonld_precio_sin_moneda.py`
+>   (blanco), `test_operacion_desde_title.py` (fenix 2.A) y
+>   `test_pagina_de_categoria.py` (fenix 2.B). Suite: 3.618 verdes.
+> - Bottai ya no depende de `patron_ficha`: se enumera por `LISTADO_HTML`
+>   (316 fichas, 315 leídas). Sigue `NEEDS_FIX` solo por **una** ficha fallida
+>   (`one or more listing details failed`), no por forma de ficha.
+> - Blanco y fenix siguen `NEEDS_FIX` por causas distintas de este plan
+>   (fichas fallidas; fenix además `second run is not idempotent`). Se tratan
+>   como NEEDS_FIX comunes en la cola, no reabren esta ventana.
+>
+> Lo que sigue abajo es el plan del 15-09 y queda como registro.
+
 **2026-09-15. `database_writes: 0`. Nada aplicado al runtime. Ninguna huella
 tocada. La ventana se abre por decisión aparte.**
 
