@@ -23,6 +23,7 @@ parezca que la inmobiliaria no publica.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import dataclasses
 import re
@@ -476,6 +477,44 @@ def _id_de_ficha_en_la_query(url: str) -> bool:
         return False
     return bool(re.search(r"(?:^|&)(?:id|codigo|cod|ficha|recordid)=\d+(?:&|$)",
                           partes.query, re.I))
+
+
+# Credencial PUBLICA de cliente de Xintel (politica del usuario, 2026-09-28).
+# Solo en contexto Xintel (su host en el mismo documento) y con la forma que
+# usa el frontend: el par `inm` + `apiK` de la llamada, o el bloque de
+# configuracion `xintel: { empresa, apiKey }`. Una clave rotulada como secreta,
+# privada o token no es configuracion publica de cliente y no se usa.
+RE_HOST_XINTEL = re.compile(r"xintelapi\.com\.ar|xintel\.com\.ar/api", re.I)
+RE_XINTEL_INM = re.compile(r"""["']?\b(?:inm|empresa|codemp)["']?\s*:\s*["']([A-Za-z0-9]{2,8})["']""")
+RE_XINTEL_CLAVE = re.compile(r"""["']?\b(apiK|apiKey)["']?\s*:\s*["']([A-Za-z0-9]{15,40})["']""")
+RE_XINTEL_BLOQUE = re.compile(r"""\bxintel\s*:\s*\{(.{0,2000}?)\}""", re.S | re.I)
+RE_ROTULO_SECRETO = re.compile(r"secret|privad|private|token|bearer|password|contrase", re.I)
+
+
+def credencial_xintel_en(texto: str) -> tuple[str, str] | None:
+    """`(inm, apiK)` si el documento publica la credencial de cliente de Xintel."""
+    if not texto or not RE_HOST_XINTEL.search(texto):
+        return None
+    ventanas = [m.group(1) for m in RE_XINTEL_BLOQUE.finditer(texto)]
+    # La llamada del frontend: `url: 'https://xintel.com.ar/api/', data: {inm, apiK}`.
+    for host in RE_HOST_XINTEL.finditer(texto):
+        ventanas.append(texto[max(0, host.start() - 600): host.end() + 600])
+    for ventana in ventanas:
+        inm, clave = RE_XINTEL_INM.search(ventana), RE_XINTEL_CLAVE.search(ventana)
+        if not (inm and clave):
+            continue
+        alrededor = ventana[max(0, clave.start() - 60): clave.end() + 20]
+        if RE_ROTULO_SECRETO.search(alrededor):
+            return None
+        return inm.group(1), clave.group(2)
+    return None
+
+
+def _procedencia_credencial(fuente: Fuente, url: str, clave: str) -> dict[str, str]:
+    """Rastro de la credencial SIN su valor: tipo, proveedor, donde y de quien."""
+    return {"tipo": "PUBLIC_CLIENT_CREDENTIAL", "provider": "Xintel", "source_url": url,
+            "agency": fuente.canonical_agency_id,
+            "clave_sha256_12": hashlib.sha256(clave.encode("utf-8")).hexdigest()[:12]}
 
 
 # Elementor + JetEngine: desde el encabezado «Descripcion», el primer campo
@@ -1753,6 +1792,45 @@ class GenericoConnector(Connector):
             return {"ruta": ruta, "total": total}
         return None
 
+    def _credencial_xintel_publica(self, html: str, portada: str,
+                                   base: str) -> dict[str, Any] | None:
+        """Credencial de CLIENTE de Xintel que el sitio oficial publica al navegador.
+
+        Politica decidida por el usuario el 2026-09-28: se usa read-only
+        cuando la publica explicitamente el sitio oficial, es parte de lo que
+        recibe el navegador y es la que el frontend usa para consultar su
+        propio catalogo. HTML y JavaScript propio se tratan igual.
+
+        Se revisa, en este orden y solo en el MISMO sitio: la portada, sus
+        scripts propios y la pagina del catalogo que enlaza. Un script de otro
+        dominio no cuenta (no es configuracion del sitio), y tampoco una clave
+        rotulada como secreta o token. Nunca se usa una clave para otra
+        inmobiliaria: la credencial queda en el plan de ESTA fuente.
+        """
+        fuentes: list[tuple[str, str]] = [(portada, html)]
+        for src in re.findall(r"""<script[^>]+src=["']([^"']+\.js[^"']*)["']""", html or "", re.I)[:12]:
+            u = urllib.parse.urljoin(portada, unescape(src))
+            if self._mismo_sitio(u, base):
+                fuentes.append((u, None))
+        for href in re.findall(r"""href=["']([^"'#?]*propiedades[^"'#?]*)["']""", html or "", re.I)[:2]:
+            u = urllib.parse.urljoin(portada, unescape(href))
+            if self._mismo_sitio(u, base) and u.rstrip("/") != portada.rstrip("/"):
+                fuentes.append((u, None))
+        vistas: set[str] = set()
+        for url, texto in fuentes:
+            if url in vistas:
+                continue
+            vistas.add(url)
+            if texto is None:
+                try:
+                    texto = self.descargador.bajar(url)
+                except (ErrorTransitorio, ErrorPermanente, Bloqueado):
+                    continue
+            par = credencial_xintel_en(texto)
+            if par:
+                return {"inm": par[0], "clave": par[1], "source_url": url}
+        return None
+
     def _catalogo_strapi(self, html: str, base: str) -> dict[str, Any] | None:
         """Un Strapi propio que el frontend del sitio consulta sin clave.
 
@@ -1930,8 +2008,25 @@ class GenericoConnector(Connector):
             plan.update({"variante": "XINTEL_API", "soportada": True,
                          "xintel_inm": xintel_inm.group(1),
                          "xintel_key": xintel_key.group(1),
+                         "xintel_credencial": _procedencia_credencial(
+                             fuente, fuente.official_url, xintel_key.group(1)),
                          "total_declarado": None})
             return plan
+        # La misma credencial PUBLICA de cliente, cuando el frontend la movio de
+        # la portada a su JavaScript propio (`aloise`: config.js) o a la pagina
+        # del catalogo (`labastida`: /propiedades). Politica del 28-09: se usa
+        # read-only, solo si la sirve el sitio oficial al navegador y en
+        # contexto Xintel. Ver `_credencial_xintel_publica`.
+        if "xintel" in html.lower():
+            publica = self._credencial_xintel_publica(html, fuente.official_url, base)
+            if publica is not None:
+                plan.update({"variante": "XINTEL_API", "soportada": True,
+                             "xintel_inm": publica["inm"],
+                             "xintel_key": publica["clave"],
+                             "xintel_credencial": _procedencia_credencial(
+                                 fuente, publica["source_url"], publica["clave"]),
+                             "total_declarado": None})
+                return plan
         if "/_next/static/" in html:
             strapi = self._catalogo_strapi(html, base)
             if strapi is not None:
@@ -2560,6 +2655,9 @@ class GenericoConnector(Connector):
             self.duplicados_origen = duplicados
             return
         if plan["variante"] == "XINTEL_API":
+            # La credencial publica de cliente de ESTA fuente, para el detalle
+            # cuando la ficha no publica sus parametros (ver `_normalizar_xintel`).
+            self._xintel_cliente = (plan["xintel_inm"], plan["xintel_key"])
             totals: list[int] = []
             duplicates = 0
             for operation_index, operation in enumerate(("v", "a")):
@@ -4004,16 +4102,26 @@ class GenericoConnector(Connector):
         # corrida y 1 de la otra. Las 10 agencias Xintel publican siempre los
         # parametros; si faltan, o la API no devuelve la ficha, es un fallo del
         # detalle y se cuenta como tal.
-        if not all(detail_params.values()):
+        cliente = getattr(self, "_xintel_cliente", None)
+        if all(detail_params.values()):
+            query = urllib.parse.urlencode({
+                "json": "fichas.propiedades",
+                "suc": detail_params["suc"],
+                "global": detail_params["global"],
+                "apiK": detail_params["apiK"],
+                "id": detail_params["id"],
+                "compartida": "false",
+            })
+        elif cliente and str(row.get("in_num") or "").strip():
+            # La ficha la arma el JavaScript propio del sitio (`aloise`) y no
+            # publica esos parametros: se hace la MISMA llamada que su frontend
+            # (`fichas.propiedades` con su `inm`, su `apiK` y el numero de ficha).
+            # Nunca con `global` ni con credenciales de otro sitio.
+            query = urllib.parse.urlencode({
+                "json": "fichas.propiedades", "inm": cliente[0], "apiK": cliente[1],
+                "id": str(row.get("in_num")).strip()})
+        else:
             raise ErrorTransitorio("la ficha Xintel no trae los parametros del detalle")
-        query = urllib.parse.urlencode({
-            "json": "fichas.propiedades",
-            "suc": detail_params["suc"],
-            "global": detail_params["global"],
-            "apiK": detail_params["apiK"],
-            "id": detail_params["id"],
-            "compartida": "false",
-        })
         body = self.descargador.bajar("https://xintelapi.com.ar/?" + query)
         try:
             result = (json.loads(body).get("resultado") or {})
