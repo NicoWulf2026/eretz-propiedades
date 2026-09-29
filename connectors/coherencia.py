@@ -78,6 +78,26 @@ def _es_relleno(precio: float, moneda: Any) -> bool:
     return precio >= tope
 
 
+# El otro extremo: un precio SIMBOLICO. «US$1» (`benedetti`, `domus`, `baron`:
+# 13 fichas en venta y alquiler) o «USD100» (`pozzobon`, con lotes a 95.000 en
+# la descripcion) es lo que carga el backoffice cuando no quiere publicar el
+# valor. Y una VENTA por menos de mil dolares no existe: las 26 del corpus
+# del 28-09 (`blanco`: casas «a 460», «a 559») son miles mal escritos o mal
+# leidos. Un alquiler en dolares de unos cientos por mes si puede ser real, asi
+# que ahi solo cuenta el umbral simbolico.
+SIMBOLICO = 100
+VENTA_MINIMA_USD = 1_000
+
+
+def _es_simbolico(precio: float, moneda: Any, operacion: Any) -> bool:
+    moneda = str(moneda or "").upper()
+    if moneda not in ("USD", "ARS"):
+        return False
+    if precio <= SIMBOLICO:
+        return True
+    return moneda == "USD" and str(operacion or "") == "venta" and precio < VENTA_MINIMA_USD
+
+
 RE_COCHERA = re.compile(r"\b(?:cocheras?|garages?|estacionamientos?)\b")
 # Cualquier mencion de ambientes o dormitorios -en cifras o en letras:
 # «TRES AMBIENTE CON COCHERA»-, «con cochera», o un tipo edificado.
@@ -178,6 +198,11 @@ def revisar(p: dict) -> list[str]:
     if precio is not None and _es_relleno(precio, p.get("moneda")):
         p["precio"] = p["moneda"] = None
         fuera.append("precio_de_relleno")
+    precio = _num(p.get("precio"))
+    if precio is not None and precio > 0 and _es_simbolico(precio, p.get("moneda"),
+                                                            p.get("operacion")):
+        p["precio"] = p["moneda"] = None
+        fuera.append("precio_simbolico")
     precio = _num(p.get("precio"))
     if precio is not None and precio <= 0:
         p["precio"] = p["moneda"] = None
