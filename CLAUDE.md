@@ -4,6 +4,8 @@ Repo operativo: `D:\INMO CAPITAL\eretz-unified`, rama `handoff/codex-unificacion
 `D:\INMO CAPITAL\Inmo-Capital-main` es LEGACY / solo referencia: no se usa como cwd ni se modifica.
 Estado vigente: `docs/agent/CURRENT_STATE.md`. Cómo seguir: `docs/agent/HANDOFF.md`.
 Acciones productivas pendientes: `docs/agent/READY_FOR_PRODUCTION_ACTION.md`. Índice de docs: `docs/INDEX.md`.
+**Políticas permanentes del usuario (29-09, P1–P24): `docs/agent/POLITICAS_PERMANENTES.md`.** Un caso
+cubierto por una política se resuelve con ella, sin preguntar.
 
 ## Autonomía
 - Trabajo local y reversible: hacerlo sin pedir permiso (código, tests, scraping, certificación,
@@ -13,9 +15,11 @@ Acciones productivas pendientes: `docs/agent/READY_FOR_PRODUCTION_ACTION.md`. Í
   límite real de contexto (antes: commit, push, CURRENT_STATE y HANDOFF con la tarea exacta).
 
 ## Barreras (nunca automáticas → anotar en READY_FOR_PRODUCTION_ACTION y seguir con otra cosa)
-- INSERT/UPDATE/DELETE, migraciones, RLS/grants, restore o deploy en producción; DNS; merge a `main`.
-- Reemplazar la snapshot servida `D:\INMO CAPITAL\ERETZ_API_CONTRACT\ERETZ_API_SNAPSHOT.sqlite3`
-  cuenta como deploy: construir y probar en otra ruta.
+- INSERT/UPDATE/DELETE, migraciones, RLS/grants, restore o deploy en producción; DNS. Excepciones
+  acotadas en POLITICAS_PERMANENTES: P19 (clases estructurales tras backup+restore probados) y P24
+  (merge a `main` solo si no dispara nada productivo).
+- La snapshot servida `D:\INMO CAPITAL\ERETZ_API_CONTRACT\ERETZ_API_SNAPSHOT.sqlite3` se reemplaza
+  solo con `scripts/desplegar_snapshot.py` y solo si pasan TODOS los chequeos de P2; si no, no.
 - Git: sin force push, sin `reset --hard`, sin `clean` destructivo, sin reescribir historia.
 - Credencial faltante → `BLOCKED_EXTERNAL_CREDENTIAL` y seguir. Nunca imprimir ni commitear secretos.
 
@@ -24,7 +28,8 @@ Acciones productivas pendientes: `docs/agent/READY_FOR_PRODUCTION_ACTION.md`. Í
 - Fail-closed: nunca un COMPLETE falso. Identidad ambigua → no atribuir. Fuente inaccesible → no
   asumir cero inventario.
 - Portales (Zonaprop, Argenprop, etc.) nunca son fuente de inventario.
-- Máximo 2 workers de certificación. La cola corre sola (relanzador `ERETZ_relanzador`).
+- Máximo 3 workers de certificación, adaptativo (P5). La cola corre sola (relanzador `ERETZ_relanzador`).
+- robots.txt se respeta (P11). Retiros solo con muerte demostrada o 3 ausencias (P1).
 - Mobile congelado.
 
 ## Cómo trabajar
