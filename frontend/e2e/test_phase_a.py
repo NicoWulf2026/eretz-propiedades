@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from urllib.parse import urljoin
+from urllib.parse import quote, urljoin
 
 import pytest
 from playwright.sync_api import Browser, Page, expect, sync_playwright
@@ -64,7 +64,8 @@ def load_vercel_qa_cookies() -> list[dict[str, object]]:
 @pytest.fixture()
 def browser() -> Browser:
     with sync_playwright() as playwright:
-        instance = playwright.chromium.launch(headless=True)
+        instance = playwright.chromium.launch(
+            headless=True, executable_path=os.environ.get("ERETZ_E2E_CHROMIUM") or None)
         yield instance
         instance.close()
 
@@ -234,11 +235,15 @@ def test_map_v2_confidence_price_fallback_and_cluster_keyboard(page: Page) -> No
 
 def test_map_v2_results_without_coordinates_have_an_explicit_alternative(page: Page) -> None:
     page.set_viewport_size({"width": 1180, "height": 800})
-    page.goto(app_url("/propiedades?q=SE%20ALQUILA%20AMPLIA%20CASA%20EN%20BARRIO%20EL%20BOSQUE"), wait_until="domcontentloaded")
-    card = page.locator('[data-property-id="e96eb348961f7a920a2fbe8cecee05b1"]')
+    # Una ficha sin coordenadas de la snapshot servida; la QA sobre la snapshot
+    # sintetica pasa la suya (`snapshot_sintetica.CASOS["sin_coordenadas"]`).
+    sin_coordenadas = os.environ.get("ERETZ_E2E_SIN_COORDENADAS_ID", "e96eb348961f7a920a2fbe8cecee05b1")
+    consulta = quote(os.environ.get("ERETZ_E2E_SIN_COORDENADAS_Q", "SE ALQUILA AMPLIA CASA EN BARRIO EL BOSQUE"))
+    page.goto(app_url(f"/propiedades?q={consulta}"), wait_until="domcontentloaded")
+    card = page.locator(f'[data-property-id="{sin_coordenadas}"]')
     expect(card).to_be_visible(timeout=60_000)
     activate_interactive_map(page)
-    expect(page.locator('[data-property-marker-id="e96eb348961f7a920a2fbe8cecee05b1"]')).to_have_count(0)
+    expect(page.locator(f'[data-property-marker-id="{sin_coordenadas}"]')).to_have_count(0)
     expect(card).to_be_visible()
     expect(page.get_by_role("region", name="Resultados de propiedades")).to_be_visible()
 

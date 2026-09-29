@@ -43,7 +43,8 @@ def axe_violations(page: Page) -> list[dict]:
 @pytest.fixture()
 def browser() -> Browser:
     with sync_playwright() as playwright:
-        instance = playwright.chromium.launch(headless=True)
+        instance = playwright.chromium.launch(
+            headless=True, executable_path=os.environ.get("ERETZ_E2E_CHROMIUM") or None)
         yield instance
         instance.close()
 

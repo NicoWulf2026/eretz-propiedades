@@ -15,7 +15,8 @@ BASE_URL = os.environ.get("ERETZ_E2E_BASE_URL", "http://127.0.0.1:3100").rstrip(
 @pytest.fixture()
 def browser() -> Browser:
     with sync_playwright() as playwright:
-        instance = playwright.chromium.launch(headless=True)
+        instance = playwright.chromium.launch(
+            headless=True, executable_path=os.environ.get("ERETZ_E2E_CHROMIUM") or None)
         yield instance
         instance.close()
 
@@ -101,8 +102,11 @@ def test_mouse_keyboard_close_requery_and_typed_url(page: Page) -> None:
 
     search.fill("ros")
     expect(page.get_by_role("option").filter(has_text="Localidad").first).to_be_visible()
-    search.press("ArrowDown")
-    search.press("ArrowDown")
+    # Teclado hasta la primera «Localidad», donde sea que el orden por cantidad
+    # la ponga (en la base servida es la segunda; en la sintetica, la primera).
+    textos = page.get_by_role("option").all_inner_texts()
+    for _ in range(next(i for i, t in enumerate(textos) if "Localidad" in t) + 1):
+        search.press("ArrowDown")
     search.press("Enter")
     expect(page.locator('input[name="__suggestion_level"]')).to_have_value("LOCALIDAD")
 

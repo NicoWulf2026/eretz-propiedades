@@ -20,13 +20,14 @@ niveles (Cordoba provincia, municipio y localidad), una ciudad que NO es provinc
 (Rosario), municipio sin localidad (La Calera), barrio de CABA, conflicto
 geografico, ficha sin titulo (P9), sin precio, precio sin moneda, sin
 coordenadas, alquiler temporario, y suficientes filas para paginar.
-Los ids `sint9xxx` son los casos borde; los tests los nombran.
+Los casos borde tienen nombre en `CASOS`; los tests los buscan por ahi.
 
     python scripts/snapshot_sintetica.py --salida _scratch/sintetica/ERETZ_API_SNAPSHOT.sqlite3
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sqlite3
 import sys
@@ -66,8 +67,23 @@ LUGARES: dict[str, tuple[str, str | None, str | None, str | None, str | None, fl
     "salta": ("Salta", "Capital", "Salta", "Salta", None, -24.7821, -65.4232),
 }
 
-TIPOS = ("departamento", "casa", "ph", "terreno", "local", "oficina", "cochera")
-OPERACIONES = ("venta", "alquiler", "alquiler_temporario")
+# Departamento y venta pesan doble, como en el catalogo real: la e2e pide paginas
+# completas (24) de `tipo=departamento` y de `operacion=venta`.
+TIPOS = ("departamento", "casa", "departamento", "ph", "terreno", "departamento", "local",
+         "departamento", "oficina", "cochera")
+OPERACIONES = ("venta", "alquiler", "venta", "alquiler_temporario")
+
+
+def id_sintetico(n: int) -> str:
+    """32 hex, como los ids reales (el frontend y la e2e validan esa forma)."""
+    return hashlib.sha256(f"eretz-sintetica:{n}".encode()).hexdigest()[:32]
+
+
+# Los casos borde por nombre: los tests y la QA de navegador los buscan asi.
+CASOS = {nombre: id_sintetico(n) for nombre, n in (
+    ("sin_titulo", 9001), ("sin_titulo_ni_datos", 9002), ("sin_precio", 9003),
+    ("sin_moneda", 9004), ("sin_coordenadas", 9005), ("conflicto", 9006),
+    ("solo_provincia", 9007), ("combinado", 9010), ("municipio", 9011))}
 AGENCIAS = ("alfa", "beta", "gamma", "delta")
 
 
@@ -102,16 +118,16 @@ def filas() -> list[tuple[dict[str, Any], dict[str, Any]]]:
     salida: list[tuple[dict[str, Any], dict[str, Any]]] = []
     n = 0
     for clave in LUGARES:
-        for i in range(6 if clave in ("cordoba", "rosario", "palermo") else 4):
+        for _ in range(10 if clave in ("cordoba", "rosario", "palermo") else 6):
             n += 1
-            tipo = TIPOS[(n + i) % len(TIPOS)]
+            tipo = TIPOS[(n * 7) % len(TIPOS)]  # 7 coprimo con 10: todos los tipos
             operacion = OPERACIONES[n % len(OPERACIONES)]
             moneda = "USD" if operacion == "venta" else "ARS"
             precio = (60_000 + 7_500 * n) if moneda == "USD" else (250_000 + 15_000 * n)
             _, _, _, localidad, barrio, lat, lon = LUGARES[clave]
             lugar = localidad or LUGARES[clave][2] or LUGARES[clave][0]
             fila = {
-                "hash_dedup": f"sint{n:04d}",
+                "hash_dedup": id_sintetico(n),
                 "source_url": f"https://{AGENCIAS[n % len(AGENCIAS)]}.{DOMINIO}/propiedad/{n}",
                 "canonical_agency_id": PREFIJO_AGENCIA + AGENCIAS[n % len(AGENCIAS)],
                 "titulo": f"{tipo.capitalize()} de prueba en {lugar}",
@@ -136,7 +152,7 @@ def filas() -> list[tuple[dict[str, Any], dict[str, Any]]]:
     def caso(n: int, clave: str, **cambios: Any) -> None:
         fila, geo = dict(salida[0][0]), _geo(clave, nivel_forzado=cambios.pop("_nivel", None))
         _, _, _, _, _, lat, lon = LUGARES[clave]
-        fila.update({"hash_dedup": f"sint{n:04d}", "source_url": f"https://alfa.{DOMINIO}/caso/{n}",
+        fila.update({"hash_dedup": id_sintetico(n), "source_url": f"https://alfa.{DOMINIO}/caso/{n}",
                      "canonical_agency_id": PREFIJO_AGENCIA + "alfa", "latitud": lat, "longitud": lon})
         estado = cambios.pop("_estado", None)
         fila.update(cambios)
@@ -145,16 +161,24 @@ def filas() -> list[tuple[dict[str, Any], dict[str, Any]]]:
         salida.append((fila, geo))
 
     # Casos borde, con ids fijos para que los tests los nombren.
-    caso(9001, "rosario", titulo=None, tipo_propiedad="casa", operacion="venta")      # P9
+    caso(9001, "rosario", titulo=None, tipo_propiedad="casa", operacion="venta",      # P9
+         descripcion="Ficha SINTETICA sin titulo publicado: tipo, operacion y localidad reales.")
     caso(9002, "cordoba", titulo=None, tipo_propiedad=None, operacion=None,
          descripcion="Ficha SINTETICA sin titulo, tipo ni operacion.")               # P9 sin datos
     caso(9003, "mar_del_plata", precio=None, moneda=None)                             # sin precio
     caso(9004, "san_isidro", precio=180000.0, moneda=None)                            # sin moneda
-    caso(9005, "palermo", latitud=None, longitud=None)                                # sin coordenadas
+    caso(9005, "palermo", latitud=None, longitud=None,                                # sin coordenadas
+         titulo="Casa amplia en alquiler sin mapa", tipo_propiedad="casa", operacion="alquiler")
     caso(9006, "salta", _estado="GEO_CONFLICT")                                       # conflicto
     caso(9007, "cordoba", _nivel="PROVINCIA")                                         # solo provincia
     caso(9008, "san_luis", _nivel="PROVINCIA")
     caso(9011, "cordoba", _nivel="MUNICIPIO")                                         # municipio
+    # Lo que la e2e de descubrimiento (frontend/e2e/test_api_v2_discovery.py)
+    # afirma de la geografia real: Rosario es municipio y localidad pero NO
+    # provincia; «San…» existe en los tres niveles; «Buenos Aires» es provincia.
+    caso(9012, "rosario", _nivel="MUNICIPIO")
+    caso(9013, "san_isidro", _nivel="MUNICIPIO")
+    caso(9014, "san_isidro", _nivel="PROVINCIA")
     caso(9009, "mar_del_plata", operacion="alquiler_temporario", moneda="ARS", precio=90000.0)
     caso(9010, "cordoba", titulo="Casa de prueba con jardín en Córdoba", tipo_propiedad="casa",
          operacion="venta", moneda="USD", precio=145000.0, dormitorios=3, ambientes=5)  # combinado

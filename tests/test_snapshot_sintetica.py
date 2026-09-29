@@ -86,28 +86,43 @@ def test_pasa_los_catorce_casos_de_la_qa_de_api(snapshot, tmp_path, monkeypatch)
 
 
 def test_trae_los_casos_borde_que_la_beta_necesita_ver(cliente):
-    def doc(i):
-        r = cliente.get(f"/v2/propiedades/sint{i:04d}")
-        assert r.status_code == 200, i
+    def doc(caso):
+        r = cliente.get(f"/v2/propiedades/{S.CASOS[caso]}")
+        assert r.status_code == 200, caso
         return r.json()
 
-    assert doc(9001)["titulo"] is None and doc(9001)["tipo_propiedad"] == "casa"   # P9
-    assert doc(9002)["titulo"] is None and doc(9002)["operacion"] is None
-    assert doc(9003)["precio"] is None
-    assert doc(9004)["precio"] is not None and doc(9004)["moneda"] is None
-    assert doc(9005)["latitud"] is None
-    conflicto = doc(9006)
+    assert doc("sin_titulo")["titulo"] is None and doc("sin_titulo")["tipo_propiedad"] == "casa"  # P9
+    assert doc("sin_titulo_ni_datos")["titulo"] is None
+    assert doc("sin_titulo_ni_datos")["operacion"] is None
+    assert doc("sin_precio")["precio"] is None
+    assert doc("sin_moneda")["precio"] is not None and doc("sin_moneda")["moneda"] is None
+    assert doc("sin_coordenadas")["latitud"] is None
+    conflicto = doc("conflicto")
     assert conflicto["geo"]["estado"] == "GEO_CONFLICT" and conflicto["latitud"] is None
-    assert doc(9007)["geo"]["area_busqueda"]["nivel"] == "PROVINCIA"
+    assert doc("solo_provincia")["geo"]["area_busqueda"]["nivel"] == "PROVINCIA"
+    assert doc("municipio")["geo"]["area_busqueda"]["nivel"] == "MUNICIPIO"
 
 
-def test_cordoba_en_tres_niveles_y_rosario_sin_provincia(cliente):
+def test_ids_con_la_forma_de_los_reales_y_paginas_completas(cliente, snapshot):
+    import re
+    assert all(re.fullmatch(r"[0-9a-f]{32}", i) for i, _ in _filas(snapshot))
+    for filtro in ({"operacion": "venta"}, {"tipo": "departamento"}):
+        assert cliente.get("/v2/buscar", params={**filtro, "limit": 24}).json()["total"] >= 24
+
+
+def test_la_geografia_que_afirma_la_e2e_de_descubrimiento(cliente):
     # Sin acento, como escribe casi todo el mundo: lo mismo que pide el frontend.
     areas = cliente.get("/v2/sugerencias", params={"q": "cor", "limit": 20}).json()["data"]
     niveles = {a["nivel"] for a in areas if a["tipo"] == "area" and a["nombre"] == "Córdoba"}
     assert {"LOCALIDAD", "MUNICIPIO", "PROVINCIA"} <= niveles
     rosario = cliente.get("/v2/sugerencias", params={"q": "ros", "limit": 20}).json()["data"]
-    assert {a["nivel"] for a in rosario if a["tipo"] == "area" and a["nombre"] == "Rosario"} == {"LOCALIDAD"}
+    assert {a["nivel"] for a in rosario if a["tipo"] == "area" and a["nombre"] == "Rosario"} == {
+        "LOCALIDAD", "MUNICIPIO"}
+    san = cliente.get("/v2/sugerencias", params={"q": "san", "limit": 20}).json()["data"]
+    assert {"LOCALIDAD", "MUNICIPIO", "PROVINCIA"} <= {
+        a["nivel"] for a in san if a["tipo"] == "area" and a["nombre"].startswith("San")}
+    bue = cliente.get("/v2/sugerencias", params={"q": "bue", "limit": 20}).json()["data"]
+    assert any(a["nivel"] == "PROVINCIA" and a["nombre"] == "Buenos Aires" for a in bue)
 
 
 def test_readyz_rechaza_la_sintetica_salvo_permiso(cliente, monkeypatch):
