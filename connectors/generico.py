@@ -373,6 +373,18 @@ RE_COORD = re.compile(r'"?(?:latitude|lat)"?\s*[:=]\s*"?(-[23456]\d\.\d{3,})"?'
                       r'.{0,80}?"?(?:longitude|long|lng|lon)"?\s*[:=]\s*"?(-[567]\d\.\d{3,})"?',
                       re.S | re.I)
 
+# Y en castellano, SOLO en las dos formas verificadas: el atributo del mapa de
+# la ficha `<div id="propertyMap" data-latitud="-38.26" data-longitud="-57.85">`
+# (`ballarre` 247 y `zamorano` 143 fichas sin coordenada, 28-09) y la variable
+# `const latitud = -31.65; const longitud = -60.71;` (`bottai`, que ademas
+# tiene `[-32.9468, -60.6393]` «Rosario como fallback» y de ahi salia la
+# coordenada). Una clave `latitud:` suelta en un objeto puede ser la de la
+# CIUDAD (`mercado-unico`: `ciudad:{nombre:"Arroyo Leyes",latitud:-31.585}`).
+RE_COORD_ES = re.compile(
+    r"""(?:data-latitud\s*=\s*["']|\b(?:const|let|var)\s+latitud\s*=\s*)(-[23456]\d\.\d{3,})"""
+    r""".{0,80}?(?:data-longitud\s*=\s*["']|\b(?:const|let|var)\s+longitud\s*=\s*)(-[567]\d\.\d{3,})""",
+    re.S | re.I)
+
 # Los mapas de Leaflet no nombran los campos: `L.marker([-34.474951,
 # -58.521113])`. `RE_COORD` exige la clave adelante, asi que
 # `andradeinmobiliaria.com.ar` publicaba la coordenada de sus dos propiedades
@@ -3378,7 +3390,8 @@ class GenericoConnector(Connector):
 
         lat, lon = datos.get("lat"), datos.get("lon")
         if lat is None:
-            m = RE_COORD.search(html) or RE_COORD_ARREGLO.search(html)
+            m = (RE_COORD_ES.search(html) or RE_COORD.search(html)
+                 or RE_COORD_ARREGLO.search(html))
             if m:
                 lat, lon = float(m.group(1)), float(m.group(2))
 
