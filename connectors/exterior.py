@@ -60,7 +60,13 @@ DESTINOS = {
     "madrid": "ES", "barcelona": "ES", "asuncion": "PY", "florianopolis": "BR",
     "buzios": "BR", "rio de janeiro": "BR", "sao paulo": "BR", "camboriu": "BR",
     "balneario camboriu": "BR",
+    # Barrios de Miami publicados como barrio o en el titulo (`mansion`
+    # «Brickell», `cocucci` «Miami-dade», `tizado` «Bal Harbour»).
+    "brickell": "US", "bal harbour": "US", "miami dade": "US",
 }
+# Regiones que solo cuentan JUNTO a un destino de su pais: «Florida» sola es
+# un barrio de Vicente Lopez, pero «Miramar, Miami, Florida» no lo es.
+REGIONES = {"florida": "US"}
 LUGARES = {**PAISES, **DESTINOS}
 ARGENTINA = {"ar", "arg", "argentina", "republica argentina"}
 
@@ -89,18 +95,24 @@ def _destino_y_pais(titulo: Any) -> str | None:
     """Codigo de pais si el titulo nombra un destino Y su pais, que coinciden."""
     texto = f" {plano(titulo)} "
     destinos = {c for k, c in DESTINOS.items() if f" {k} " in texto}
-    paises = {c for k, c in PAISES.items() if f" {k} " in texto}
+    paises = {c for k, c in {**PAISES, **REGIONES}.items() if f" {k} " in texto}
     comunes = destinos & paises
     return comunes.pop() if len(comunes) == 1 else None
 
 
 def evidencia_de_exterior(titulo: Any = None, ciudad: Any = None, barrio: Any = None,
                           pais: Any = None,
-                          es_localidad_argentina=lambda _texto: False) -> dict | None:
+                          es_localidad_argentina=lambda _texto: False,
+                          lat: Any = None, lon: Any = None) -> dict | None:
     """Evidencia de que la ficha publica un inmueble fuera de Argentina, o None.
 
     `es_localidad_argentina` lo decide el catalogo geografico: un valor que
     resuelve como localidad argentina nunca es evidencia de exterior.
+
+    La coordenada cuenta si cae FUERA del poligono oficial del pais (IGN), lejos
+    del borde (`connectors.pais`): medido el 28-09 sobre la v4j servida, 116
+    fichas, 115 en Uruguay y 1 en Paraguay, ninguna en el agua. La caja de
+    coordenadas vieja cubria Uruguay entero.
     """
     if pais and plano(pais) not in ARGENTINA:
         codigo = PAISES.get(plano(pais)) or str(pais).strip().upper()[:3]
@@ -112,4 +124,12 @@ def evidencia_de_exterior(titulo: Any = None, ciudad: Any = None, barrio: Any = 
     codigo = _destino_y_pais(titulo)
     if codigo:
         return {"pais": codigo, "evidencia": f"titulo: {str(titulo)[:80]}"}
+    from connectors.pais import FUERA, contencion
+    if contencion(lat, lon) == FUERA:
+        # El pais no se deduce de la coordenada (no hay geometria de los
+        # vecinos): se toma del texto si lo nombra, y si no queda sin afirmar.
+        texto = f" {plano(titulo)} {plano(ciudad)} {plano(barrio)} "
+        nombrados = {c for k, c in LUGARES.items() if f" {k} " in texto}
+        return {"pais": nombrados.pop() if len(nombrados) == 1 else None,
+                "evidencia": f"coordenada {lat},{lon} fuera del territorio argentino (IGN ign:pais)"}
     return None

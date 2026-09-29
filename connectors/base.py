@@ -892,7 +892,8 @@ class Connector:
             es_argentina = lambda texto: True  # noqa: E731  sin catalogo no se afirma nada
         evidencia = evidencia_de_exterior(
             prop.titulo, prop.ciudad, prop.barrio,
-            prop.extra.get("pais_publicado") or prop.extra.get("pais"), es_argentina)
+            prop.extra.get("pais_publicado") or prop.extra.get("pais"), es_argentina,
+            lat=prop.latitud, lon=prop.longitud)
         if not evidencia:
             return False
         prop.extra["pais_publicado"] = evidencia["pais"]

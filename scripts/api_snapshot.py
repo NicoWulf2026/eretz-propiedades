@@ -302,7 +302,8 @@ def _publicable_en_argentina(cruda: dict[str, Any], fresca: dict[str, Any] | Non
     extra = cruda.get("extra") if isinstance(cruda.get("extra"), dict) else {}
     return not evidencia_de_exterior(
         cruda.get("titulo"), cruda.get("ciudad"), cruda.get("barrio"),
-        extra.get("pais_publicado") or extra.get("pais"), es_argentina)
+        extra.get("pais_publicado") or extra.get("pais"), es_argentina,
+        lat=cruda.get("latitud"), lon=cruda.get("longitud"))
 
 
 CABA = "Ciudad Autónoma de Buenos Aires"
