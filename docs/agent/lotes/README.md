@@ -67,3 +67,25 @@ entorno): superficie sin rótulo «50 M² 50 M²» (`fenix`), Strapi propio en `
 > 800 KB (`paladino`, pide subir `limite_bytes` en `base.py`), Wix (`lucas liprandi`, `dib kai`).
 Para prepararlos en CLOUD: dejar en `tests/fixtures/` una ficha real reducida de cada caso
 (sin datos personales) y anotarlo acá.
+
+## `LOTE_P10_PROVINCIA_POR_POLIGONO_2026-09-29.patch` — P10, PREPARADO en CLOUD (29-09 noche), sin aplicar
+
+Requisito previo (LOCAL, tiene red al IGN): `python scripts/geo_poligonos_provincias.py` →
+`connectors/geometria/provincias_ign.json` (commitearlo: es dato público del IGN, Ley 27.275,
+como `argentina_ign.json`). Sin ese archivo el parche aplica pero P10 no actúa (fail-closed).
+
+    git apply docs/agent/lotes/LOTE_P10_PROVINCIA_POR_POLIGONO_2026-09-29.patch
+
+| cambio | archivo | efecto |
+|---|---|---|
+| Nuevo motivo P10: localidad ÚNICA en el país + coordenada DENTRO del polígono oficial de su provincia (≥ 2 km del límite) + a ≤ 100 km de la localidad → se afirman localidad y provincia | `connectors/geografia.py` (compartido) | casos como `analia requena` («Santa Clara del Mar» + «CABA» de plantilla). Nombre ambiguo, sin coordenada, afuera, en la frontera o sin geometría: sigue el conflicto |
+| La provincia publicada queda como evidencia: `extra.provincia_publicada` + `extra.provincia_por_poligono` {política P10, localidad e id, coordenada, procedencia de la geometría} | `connectors/base.py` (compartido) | «la fuente dijo X, ERETZ normalizó Y, por Z» |
+| Conflictos VIEJOS que hoy son P10 → dimensiones de la localidad, provincia por geometría, `provincia_publicada_en_conflicto`; resumen `provincia_normalizada_por_poligono_p10` | `scripts/api_snapshot.py` (fuera de la huella) | la snapshot se beneficia sin re-extraer |
+| `poligono_provincia.py` y la geometría entran en la huella (ausente = estado propio) | `scripts/agency_fingerprints.py` | aplicar reinicia la recertificación entera (compartido) |
+
+Tests (en el parche): `tests/test_p10_provincia_contradictoria.py` (9) con GeoRef y geometría
+SINTÉTICOS: corren en CLOUD. Suite en CLOUD con el parche: 3.589 passed, 170 skipped.
+Radio: REQUIRES_LOCAL — con la geometría generada y el parche aplicado en `eretz-dev`, construir
+una snapshot candidata y leer `provincia_normalizada_por_poligono_p10` del resumen; revisar a mano
+una muestra. Decidir según P4 (es compartido: juntarlo con el lote 4 si conviene).
+

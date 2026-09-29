@@ -627,6 +627,13 @@ Nada de esto toca la huella: integrarlo NO reinicia la recertificación.
 - [ ] **Fixtures para el resto del lote 4**: una ficha real reducida de `fenix` (superficie sin
       rótulo), `paladino` (respuesta Strapi, recortada) y una Wix, en `tests/fixtures/`. Con eso CLOUD
       prepara los arreglos.
+- [ ] **P10 (provincia contradictoria)**: 1) `python scripts/geo_poligonos_provincias.py` y commitear
+      `connectors/geometria/provincias_ign.json` (no cambia la huella hasta aplicar el parche);
+      2) medir radio con `docs/agent/lotes/LOTE_P10_PROVINCIA_POR_POLIGONO_2026-09-29.patch` en eretz-dev
+      (README del lote); 3) decidir aplicación según P4.
+- [ ] **B (martelliti, dirección junto al ícono de mapa)**: CLOUD no puede bajar la ficha. Dejar en
+      `tests/fixtures/` una ficha reducida de `adriana martelliti` (el bloque del ícono `fa-map-marker`
+      con su dirección) para prepararlo; la regla actual excluye íconos a propósito (`_direccion_de`).
 - [ ] **Snapshot sintética ≠ servida**: `desplegar_snapshot.py` ahora aborta si la candidata se
       declara sintética (`snapshot_meta.sintetica = 1`). Nada que hacer; es una compuerta más.
 

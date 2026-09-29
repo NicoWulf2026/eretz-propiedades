@@ -1,0 +1,413 @@
+diff --git a/connectors/base.py b/connectors/base.py
+index 3611d3b..93baa2e 100644
+--- a/connectors/base.py
++++ b/connectors/base.py
+@@ -1036,7 +1036,8 @@ class Connector:
+                                                 else "ciudad")
+ 
+         from connectors.geografia import (CABA_POR_POLIGONO_REASON,
+-                                          PROVINCE_CONFLICT_REASON)
++                                          PROVINCE_CONFLICT_REASON,
++                                          PROVINCIA_POR_POLIGONO_REASON)
+         if (resolucion.motivo == PROVINCE_CONFLICT_REASON
+                 and prop.extra.get("provincia_origen") == "padron_inmobiliaria"):
+             # La provincia que veta esta localidad no la publico la fuente: la
+@@ -1184,6 +1185,23 @@ class Connector:
+                                             "sha256_coordenadas")},
+                 }
+                 prop.provincia = entidad.provincia
++            elif resolucion.motivo == PROVINCIA_POR_POLIGONO_REASON:
++                from connectors import poligono_provincia
++                # P10: «la fuente dijo X, ERETZ normalizo Y, por evidencia Z».
++                # La provincia publicada NO se pierde: queda como evidencia.
++                prop.extra["provincia_publicada"] = prop.provincia
++                prop.extra["provincia_por_poligono"] = {
++                    "provincia": entidad.provincia,
++                    "politica": "P10",
++                    "evidencia": {
++                        "localidad": entidad.official_name,
++                        "localidad_id": entidad.official_id,
++                        "latitud": prop.latitud, "longitud": prop.longitud,
++                    },
++                    "geometria": {k: (poligono_provincia.procedencia() or {}).get(k)
++                                  for k in ("fuente", "vertices", "sha256_origen")},
++                }
++                prop.provincia = entidad.provincia
+             return
+ 
+         # Negarse a afirmar NO es lo mismo que fallar al extraer, y la
+diff --git a/connectors/geografia.py b/connectors/geografia.py
+index 89ae1d9..03d96fe 100644
+--- a/connectors/geografia.py
++++ b/connectors/geografia.py
+@@ -69,6 +69,9 @@ APOYADA_EN_COORDENADA = "COORDINATE_SUPPORTED"
+ DESCONOCIDA = "UNKNOWN"
+ PROVINCE_CONFLICT_REASON = "la provincia declarada contradice al catalogo"
+ DEPARTAMENTO_REASON = "nombra un departamento de la provincia declarada, no una localidad"
++PROVINCIA_POR_POLIGONO_REASON = (
++    "provincia publicada contradictoria (P10): la localidad es unica en el pais y "
++    "la coordenada cae en el poligono oficial (IGN) de su provincia")
+ CABA_POR_POLIGONO_REASON = ("provincia declarada 'Buenos Aires' desempatada: la "
+                             "coordenada cae dentro del poligono oficial de CABA (IGN)")
+ 
+@@ -574,6 +577,35 @@ class Geografia:
+         from connectors.poligono_caba import DENTRO, contencion
+         return contencion(lat, lon) == DENTRO
+ 
++    @staticmethod
++    def _provincia_confirmada_por_poligono(entidad: Entidad | None, lat: Any,
++                                           lon: Any) -> bool:
++        """P10: la coordenada prueba la provincia de una localidad UNICA.
++
++        La fuente declara una provincia y nombra una localidad que solo existe
++        en OTRA (`analia requena`: «Santa Clara del Mar» con provincia «Ciudad
++        Autonoma de Buenos Aires» de plantilla, coordenadas correctas). Se
++        acepta la localidad -y su provincia- solo si:
++          - quien llama ya establecio que es la unica con ese nombre en el pais
++            (nunca se infiere una provincia de un nombre ambiguo);
++          - la coordenada cae DENTRO del poligono oficial de la provincia de la
++            localidad, lejos del limite (`poligono_provincia`, IGN);
++          - y la coordenada esta cerca de la localidad (`CONTRADICE_A_KM`).
++        Sin coordenada, sin geometria o en la frontera: sigue el conflicto.
++        """
++        if entidad is None or entidad.lat is None or entidad.lon is None:
++            return False
++        try:
++            lat, lon = float(lat), float(lon)
++        except (TypeError, ValueError):
++            return False
++        if not _en_argentina(lat, lon):
++            return False
++        from connectors.poligono_provincia import DENTRO, contencion
++        if contencion(entidad.provincia_id or entidad.provincia, lat, lon) != DENTRO:
++            return False
++        return _distancia(lat, lon, entidad.lat, entidad.lon) <= CONTRADICE_A_KM
++
+     def resolver_localidad(self, texto: Any, *, provincia: str | None = None,
+                            departamento: str | None = None,
+                            lat: float | None = None,
+@@ -602,6 +634,11 @@ class Geografia:
+                                       APOYADA_EN_COORDENADA,
+                                       resolucion.candidatas,
+                                       CABA_POR_POLIGONO_REASON)
++                if (resolucion.candidatas == 1
++                        and self._provincia_confirmada_por_poligono(entidad, lat, lon)):
++                    return Resolucion(entidad, POR_COORDENADA,
++                                      APOYADA_EN_COORDENADA, 1,
++                                      PROVINCIA_POR_POLIGONO_REASON)
+                 return Resolucion(None, CONTRADICHA, DESCONOCIDA,
+                                   resolucion.candidatas,
+                                   PROVINCE_CONFLICT_REASON)
+@@ -676,6 +713,13 @@ class Geografia:
+                 # la localidad no se afirma. 51 de 288 conflictos medidos el 28-09.
+                 return Resolucion(None, AMBIGUA, DESCONOCIDA, total,
+                                   DEPARTAMENTO_REASON)
++            # P10: la provincia declarada no tiene esa localidad, pero es UNICA
++            # en el pais y la coordenada cae en el poligono de su provincia.
++            if total == 1 and self._provincia_confirmada_por_poligono(
++                    candidatas[0], lat, lon):
++                return Resolucion(candidatas[0], POR_COORDENADA,
++                                  APOYADA_EN_COORDENADA, 1,
++                                  PROVINCIA_POR_POLIGONO_REASON)
+             return Resolucion(None, AMBIGUA, DESCONOCIDA, total,
+                               PROVINCE_CONFLICT_REASON)
+         if len(filtradas) == 1:
+diff --git a/scripts/agency_fingerprints.py b/scripts/agency_fingerprints.py
+index 965e3ac..28978a6 100644
+--- a/scripts/agency_fingerprints.py
++++ b/scripts/agency_fingerprints.py
+@@ -281,6 +281,7 @@ def archivos_de_la_huella() -> list[Path]:
+         ROOT / "connectors" / "geometria" / "caba_ign.geojson",
+         ROOT / "connectors" / "pais.py",
+         ROOT / "connectors" / "geometria" / "argentina_ign.json",
++        ROOT / "connectors" / "poligono_provincia.py",
+         ROOT / "connectors" / "formularios.py",
+         ROOT / "connectors" / "generico.py",
+         ROOT / "connectors" / "tokko.py",
+@@ -384,6 +385,17 @@ def fingerprint_components(connector: str, strategy: str) -> dict[str, bytes]:
+         "shared/geometria_pais": hashlib.sha256(
+             (ROOT / "connectors" / "geometria" / "argentina_ign.json").read_bytes()
+         ).hexdigest().encode(),
++        # P10: la provincia contradictoria se normaliza por contencion en el
++        # poligono oficial de la provincia de la localidad.
++        "shared/poligono_provincia": _semantic_file(
++            ROOT / "connectors" / "poligono_provincia.py"),
++        # Sin el archivo el modulo no afirma nada (P10 apagado): es un estado
++        # propio de la huella, no un error.
++        "shared/geometria_provincias": hashlib.sha256(
++            (ROOT / "connectors" / "geometria" / "provincias_ign.json").read_bytes()
++            if (ROOT / "connectors" / "geometria" / "provincias_ign.json").exists()
++            else b"AUSENTE"
++        ).hexdigest().encode(),
+     }
+     if connector != "generico":
+         components[f"connector/{connector}"] = _semantic_file(
+diff --git a/scripts/api_snapshot.py b/scripts/api_snapshot.py
+index c10a723..e9a35f0 100644
+--- a/scripts/api_snapshot.py
++++ b/scripts/api_snapshot.py
+@@ -75,7 +75,8 @@ from connectors.exterior import (POLITICA_PUBLICA, evidencia_de_exterior,  # noq
+                                  publicable)
+ from connectors import poligono_caba  # noqa: E402
+ from connectors.coherencia import _es_simbolico  # noqa: E402
+-from connectors.geografia import (CABA_POR_POLIGONO_REASON,  # noqa: E402
++from connectors.geografia import (PROVINCIA_POR_POLIGONO_REASON,  # noqa: E402
++                                  CABA_POR_POLIGONO_REASON,  # noqa: E402
+                                   PROVINCE_CONFLICT_REASON)
+ from scripts.geo_coverage_audit import (cargar_cache,  # noqa: E402
+                                         catalogo_de_localidades,
+@@ -368,21 +369,51 @@ def _cobertura_de_la_fila_servida(cobertura: dict[str, Any] | None, base: dict[s
+     return recalculada, "recalculada"
+ 
+ 
++def _resolucion_vigente(conflicto: dict[str, Any]):
++    """Lo que da HOY el resolvedor para lo que la ficha publico, o None."""
++    publicado = conflicto.get("publicado") or {}
++    if not publicado.get("localidad"):
++        return None
++    try:
++        return geografia().resolver_localidad(
++            publicado.get("localidad"), provincia=publicado.get("provincia"),
++            lat=publicado.get("latitud"), lon=publicado.get("longitud"))
++    except (OSError, ValueError):
++        return None
++
++
+ def _conflicto_vigente(conflicto: dict[str, Any]) -> str:
+     """El motivo que da HOY el resolvedor para lo que la ficha publico.
+ 
+     Sin catalogo se respeta el conflicto registrado (fail-closed).
+     """
++    resolucion = _resolucion_vigente(conflicto)
++    return resolucion.motivo if resolucion is not None else PROVINCE_CONFLICT_REASON
++
++
++def _geo_p10(g: dict[str, Any] | None, conflicto: dict[str, Any]) -> dict[str, Any] | None:
++    """Las dimensiones de la localidad que P10 confirmo, con la evidencia a la vista.
++
++    La localidad, el departamento y el municipio salen del catalogo de la
++    localidad NOMBRADA por la fuente; la provincia, de la geometria (P10). La
++    provincia publicada queda en `provincia_publicada_en_conflicto`.
++    """
++    resolucion = _resolucion_vigente(conflicto)
++    if resolucion is None or resolucion.motivo != PROVINCIA_POR_POLIGONO_REASON:
++        return None
++    e = resolucion.entidad
+     publicado = conflicto.get("publicado") or {}
+-    try:
+-        resolucion = geografia().resolver_localidad(
+-            publicado.get("localidad"), provincia=publicado.get("provincia"),
+-            lat=publicado.get("latitud"), lon=publicado.get("longitud"))
+-    except (OSError, ValueError):
+-        return PROVINCE_CONFLICT_REASON
+-    if not publicado.get("localidad"):
+-        return PROVINCE_CONFLICT_REASON
+-    return resolucion.motivo
++    return dict(
++        g or {}, localidad_canonica=e.official_name, localidad_id=e.official_id,
++        departamento_canonico=e.departamento, municipio_canonico=e.municipio,
++        provincia_canonica=e.provincia,
++        procedencia_de_dimensiones={"provincia": "GEO_GEOMETRY",
++                                    "departamento": "SOURCE_LOCALITY",
++                                    "municipio": "SOURCE_LOCALITY"},
++        area_busqueda={"nivel": "LOCALIDAD", "nombre": e.official_name,
++                       "id": e.official_id, "origen": "localidad"},
++        provincia_publicada_en_conflicto=publicado.get("provincia"),
++        estado_geografico=None, conflicto=None)
+ 
+ 
+ def _geo_de_la_extraccion(g: dict[str, Any] | None, fresca: dict[str, Any] | None
+@@ -409,6 +440,11 @@ def _geo_de_la_extraccion(g: dict[str, Any] | None, fresca: dict[str, Any] | Non
+         vigente = _conflicto_vigente(conflicto)
+         if vigente == CABA_POR_POLIGONO_REASON:
+             poligono = {"provincia": CABA, "geometria": poligono_caba.procedencia() or {}}
++        elif vigente == PROVINCIA_POR_POLIGONO_REASON:
++            confirmada = _geo_p10(g, conflicto)
++            if confirmada is not None:
++                return confirmada, "provincia_por_poligono"
++            return dict(g or {}, estado_geografico="GEO_CONFLICT", conflicto=conflicto), "conflicto_fresco"
+         elif vigente != PROVINCE_CONFLICT_REASON:
+             return g, "conflicto_obsoleto"
+         elif (g or {}).get("estado_geografico") == "GEO_CONFLICT":
+@@ -693,7 +729,8 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
+         g, correccion_geo = _geo_de_la_extraccion(cobertura, fresca)
+         if correccion_geo:
+             correcciones_geo[correccion_geo] += 1
+-        if (correccion_geo in ("conflicto_obsoleto", "caba_por_poligono")
++        if (correccion_geo in ("conflicto_obsoleto", "caba_por_poligono",
++                               "provincia_por_poligono")
+                 and isinstance(cruda.get("extra"), dict)
+                 and "geo_conflicto" in cruda["extra"]):
+             # `fila_de_api` vuelve a imponer el conflicto que lleve la fila.
+@@ -770,7 +807,8 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
+         "paginas_de_categoria_omitidas": no_son_fichas,
+         "politica_publica": POLITICA_PUBLICA,
+         "geo_conflictos_de_la_extraccion_fresca": correcciones_geo["conflicto_fresco"],
+-        "caba_confirmada_por_poligono": correcciones_geo["caba_por_poligono"],
++        "caba_confirmada_por_poligono": correcciones_geo["caba_por_poligono"],
++        "provincia_normalizada_por_poligono_p10": correcciones_geo["provincia_por_poligono"],
+         "geo_conflictos_viejos_que_ya_no_lo_son": correcciones_geo["conflicto_obsoleto"],
+         "imagenes_compartidas_descartadas": imagenes_compartidas,
+         "descripciones_del_sitio_descartadas": descripciones_del_sitio,
+diff --git a/tests/test_p10_provincia_contradictoria.py b/tests/test_p10_provincia_contradictoria.py
+new file mode 100644
+index 0000000..0d948d3
+--- /dev/null
++++ b/tests/test_p10_provincia_contradictoria.py
+@@ -0,0 +1,156 @@
++"""P10: provincia publicada contradictoria, normalizada por localidad unica + poligono oficial.
++
++Corre SIN el GeoRef privado: arma un catalogo GeoRef minimo SINTETICO (con su
++manifiesto verificado, igual que el real) y una geometria SINTETICA de
++provincias. Prueba la regla, no los datos: el radio real lo mide LOCAL.
++
++El caso que la motiva: `analia requena` publica «Santa Clara del Mar» con
++provincia «Ciudad Autonoma de Buenos Aires» (valor de plantilla) y coordenadas
++correctas; 107 de 152 fichas quedaban sin geografia.
++"""
++from __future__ import annotations
++
++import hashlib
++import json
++
++import pytest
++
++from connectors import poligono_provincia as P
++from connectors.geografia import (PROVINCE_CONFLICT_REASON,
++                                  PROVINCIA_POR_POLIGONO_REASON, Geografia)
++
++SANTA_CLARA = (-37.8326665, -57.4969484)
++
++
++def _manifiesto(directorio, recursos):
++    registro = {}
++    for recurso, filas in recursos.items():
++        archivo = recurso.replace("-", "_") + ".json"
++        crudo = json.dumps(filas, ensure_ascii=False).encode("utf-8")
++        (directorio / archivo).write_bytes(crudo)
++        registro[recurso] = {"archivo": archivo, "total_declarado": len(filas),
++                             "filas_traidas": len(filas), "completo": True,
++                             "sha256": hashlib.sha256(crudo).hexdigest()}
++    (directorio / "MANIFEST.json").write_text(json.dumps(
++        {"schema_version": 2, "sha256_scope": "file_bytes_utf8_lf", "recursos": registro}),
++        encoding="utf-8")
++
++
++def _loc(id_, nombre, prov_id, prov, depto, lat, lon):
++    return {"id": id_, "nombre": nombre, "provincia": {"id": prov_id, "nombre": prov},
++            "departamento": {"id": id_[:5], "nombre": depto}, "municipio": None,
++            "centroide": {"lat": lat, "lon": lon}}
++
++
++@pytest.fixture()
++def geo(tmp_path, monkeypatch):
++    d = tmp_path / "georef"
++    d.mkdir()
++    _manifiesto(d, {
++        "provincias": [
++            {"id": "02", "nombre": "Ciudad Autónoma de Buenos Aires", "centroide": {"lat": -34.61, "lon": -58.44}},
++            {"id": "06", "nombre": "Buenos Aires", "centroide": {"lat": -36.68, "lon": -60.56}},
++            {"id": "30", "nombre": "Entre Ríos", "centroide": {"lat": -32.06, "lon": -59.2}},
++            {"id": "54", "nombre": "Misiones", "centroide": {"lat": -26.88, "lon": -54.65}},
++        ],
++        "localidades-censales": [
++            _loc("06357080", "Santa Clara del Mar", "06", "Buenos Aires", "Mar Chiquita", *SANTA_CLARA),
++            # «Colón» existe en dos provincias: nunca se infiere la provincia de un nombre ambiguo.
++            _loc("06175010", "Colón", "06", "Buenos Aires", "Colón", -33.8953, -61.1045),
++            _loc("30008010", "Colón", "30", "Entre Ríos", "Colón", -32.2233, -58.1428),
++            _loc("54028010", "Posadas", "54", "Misiones", "Capital", -27.3671, -55.8961),
++        ],
++    })
++    # Geometria SINTETICA: cajas que contienen a cada localidad, no el IGN.
++    caja = lambda x0, y0, x1, y1: [[[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]]]  # noqa: E731
++    ruta = tmp_path / "provincias_ign.json"
++    ruta.write_text(json.dumps({"procedencia": {"fuente": "SINTETICA", "vertices": 20, "sha256_origen": "x"},
++                                "provincias": {
++                                    "02": {"nombre": "Ciudad Autónoma de Buenos Aires", "poligonos": [caja(-58.55, -34.72, -58.33, -34.52)]},
++                                    "06": {"nombre": "Buenos Aires", "poligonos": [caja(-63.0, -41.0, -56.6, -33.2)]},
++                                    "30": {"nombre": "Entre Ríos", "poligonos": [caja(-60.8, -34.0, -57.8, -30.1)]},
++                                    "54": {"nombre": "Misiones", "poligonos": [caja(-56.1, -28.2, -53.6, -25.5)]},
++                                }}), encoding="utf-8")
++    monkeypatch.setattr(P, "GEOMETRIA", ruta)
++    P._cargar.cache_clear()
++    yield Geografia(d)
++    P._cargar.cache_clear()
++
++
++def test_localidad_unica_y_coordenada_en_su_provincia_prevalecen(geo):
++    r = geo.resolver_localidad("Santa Clara del Mar", provincia="Ciudad Autónoma de Buenos Aires",
++                               lat=SANTA_CLARA[0], lon=SANTA_CLARA[1])
++    assert r.resuelta and r.entidad.provincia == "Buenos Aires"
++    assert r.motivo == PROVINCIA_POR_POLIGONO_REASON
++
++
++def test_sin_coordenada_sigue_el_conflicto(geo):
++    r = geo.resolver_localidad("Santa Clara del Mar", provincia="Misiones")
++    assert not r.resuelta and r.motivo == PROVINCE_CONFLICT_REASON
++
++
++def test_coordenada_en_otra_provincia_sigue_el_conflicto(geo):
++    r = geo.resolver_localidad("Santa Clara del Mar", provincia="Misiones", lat=-27.37, lon=-55.9)
++    assert not r.resuelta and r.motivo == PROVINCE_CONFLICT_REASON
++
++
++def test_coordenada_en_la_provincia_pero_lejos_de_la_localidad_sigue_el_conflicto(geo):
++    # Dentro de la caja «Buenos Aires» pero a >100 km de Santa Clara del Mar.
++    r = geo.resolver_localidad("Santa Clara del Mar", provincia="Misiones", lat=-34.0, lon=-61.0)
++    assert not r.resuelta and r.motivo == PROVINCE_CONFLICT_REASON
++
++
++def test_coordenada_sobre_el_limite_no_afirma(geo):
++    # A ~1 km del borde este de la caja de Buenos Aires (-56.6): FRONTERA.
++    r = geo.resolver_localidad("Santa Clara del Mar", provincia="Misiones",
++                               lat=-37.83, lon=-56.6 - 1.0 / (111.32 * 0.79))
++    assert not r.resuelta
++
++
++def test_un_nombre_ambiguo_nunca_decide_la_provincia(geo):
++    r = geo.resolver_localidad("Colón", provincia="Misiones", lat=-32.2233, lon=-58.1428)
++    assert not r.resuelta and r.motivo == PROVINCE_CONFLICT_REASON
++
++
++def test_sin_geometria_p10_no_actua(geo, monkeypatch, tmp_path):
++    monkeypatch.setattr(P, "GEOMETRIA", tmp_path / "no_existe.json")
++    P._cargar.cache_clear()
++    r = geo.resolver_localidad("Santa Clara del Mar", provincia="Ciudad Autónoma de Buenos Aires",
++                               lat=SANTA_CLARA[0], lon=SANTA_CLARA[1])
++    assert not r.resuelta and r.motivo == PROVINCE_CONFLICT_REASON
++
++
++def test_la_extraccion_conserva_la_provincia_publicada_como_evidencia(geo, monkeypatch):
++    from connectors import base
++    from connectors.base import Connector, PropiedadNormalizada
++    monkeypatch.setattr(base, "geografia", lambda *a, **k: geo)
++    p = PropiedadNormalizada(canonical_agency_id="roomix:alfa", source_listing_id="1",
++                             source_url="https://alfa.com.ar/p/1", connector="generico",
++                             ciudad="Santa Clara del Mar",
++                             provincia="Ciudad Autónoma de Buenos Aires",
++                             latitud=SANTA_CLARA[0], longitud=SANTA_CLARA[1])
++    Connector._resolver_geografia(p)
++    assert p.ciudad == "Santa Clara del Mar" and p.provincia == "Buenos Aires"
++    assert p.latitud == SANTA_CLARA[0]
++    assert "geo_conflicto" not in p.extra
++    assert p.extra["provincia_publicada"] == "Ciudad Autónoma de Buenos Aires"
++    evidencia = p.extra["provincia_por_poligono"]
++    assert evidencia["politica"] == "P10" and evidencia["provincia"] == "Buenos Aires"
++    assert evidencia["evidencia"]["localidad_id"] == "06357080"
++    assert evidencia["geometria"]["fuente"] == "SINTETICA"
++
++
++def test_la_snapshot_levanta_un_conflicto_viejo_que_hoy_es_p10(geo, monkeypatch):
++    from scripts import api_snapshot as S
++    monkeypatch.setattr(S, "geografia", lambda *a, **k: geo)
++    conflicto = {"publicado": {"provincia": "Ciudad Autónoma de Buenos Aires",
++                               "localidad": "Santa Clara del Mar",
++                               "latitud": SANTA_CLARA[0], "longitud": SANTA_CLARA[1]}}
++    g, motivo = S._geo_de_la_extraccion({"estado_geografico": "GEO_CONFLICT"},
++                                        {"extra": {"geo_conflicto": conflicto}})
++    assert motivo == "provincia_por_poligono"
++    assert g["estado_geografico"] is None and g["provincia_canonica"] == "Buenos Aires"
++    assert g["localidad_canonica"] == "Santa Clara del Mar"
++    assert g["area_busqueda"]["nivel"] == "LOCALIDAD"
++    assert g["provincia_publicada_en_conflicto"] == "Ciudad Autónoma de Buenos Aires"
++    assert g["procedencia_de_dimensiones"]["provincia"] == "GEO_GEOMETRY"
