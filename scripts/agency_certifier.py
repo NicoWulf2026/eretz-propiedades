@@ -703,7 +703,10 @@ def identidad_canonica_verificada(verificada: dict[str, Any], official: str | No
     if not official or not verificada:
         return False
     return (verificada.get("estado") == "AFIRMABLE"
-            and verificada.get("estado_del_resolver") == "OFFICIAL_WEB_HIGH_CONFIDENCE"
+            # VERIFIED es la evidencia mas fuerte (identidad por algo mas que el
+            # nombre); HIGH_CONFIDENCE, la minima aceptada. Sin estado: no.
+            and verificada.get("estado_del_resolver") in ("OFFICIAL_WEB_VERIFIED",
+                                                          "OFFICIAL_WEB_HIGH_CONFIDENCE")
             and verificada.get("entidades_que_reclaman_el_host") == 1
             and verificada.get("verificacion") == "VERIFICADA_ARGENTINA"
             and verificada.get("inventory_allowed") is not False

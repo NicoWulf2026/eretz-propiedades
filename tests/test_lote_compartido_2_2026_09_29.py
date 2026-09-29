@@ -72,3 +72,10 @@ def test_MUERDE_si_la_segunda_corrida_sigue_enumerandola_es_un_fallo():
     _, razones = _estado({"enumeradas": 26, "detalles_fallidos": 1, "detalles_desaparecidos": 1},
                          {"enumeradas": 26})
     assert "one or more listing details failed" in razones
+
+
+def test_la_web_verificada_por_evidencia_independiente_tambien_alcanza_y_sin_estado_no():
+    fuerte = dict(VERIFICADA, estado_del_resolver="OFFICIAL_WEB_VERIFIED")
+    assert resolve_identity(_registro(fuerte), "roomix:x")["identity_status"] == "READY"
+    sin_estado = {k: v for k, v in VERIFICADA.items() if k != "estado_del_resolver"}
+    assert resolve_identity(_registro(sin_estado), "roomix:x")["identity_status"] == "IDENTITY_PENDING"
