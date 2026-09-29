@@ -475,6 +475,24 @@ def _url_y_parametros(url: str) -> tuple[str, tuple]:
             tuple(sorted(urllib.parse.parse_qsl(p.query, keep_blank_values=True))))
 
 
+def _clave_sin_slug(url: str) -> tuple | None:
+    """Identidad de una ficha cuya query trae UN id numerico y UN texto-slug.
+
+    `(host, ruta, id numerico, resto de la query)` si la query tiene exactamente
+    un parametro numerico y exactamente un parametro de texto con guiones; None
+    en cualquier otro caso (la regla no toca nada que no tenga esa forma).
+    """
+    partes = urllib.parse.urlparse(url)
+    query = urllib.parse.parse_qsl(partes.query, keep_blank_values=True)
+    numericos = [(k, v) for k, v in query if v.isdigit()]
+    slugs = [(k, v) for k, v in query
+             if not v.isdigit() and "-" in v and re.fullmatch(r"(?=.*[A-Za-z])[\w\-%.]+", v)]
+    if len(numericos) != 1 or len(slugs) != 1:
+        return None
+    resto = tuple(sorted((k, v) for k, v in query if (k, v) not in slugs))
+    return (partes.netloc.lower().removeprefix("www."), partes.path.lower(), resto)
+
+
 def _sin_contexto_del_listado(url: str) -> tuple[str, tuple] | None:
     """La misma ficha sin los parametros de contexto, o None si no tiene."""
     ruta, params = _url_y_parametros(url)
@@ -2502,10 +2520,25 @@ class GenericoConnector(Connector):
         self.duplicados_origen = 0
         items = list(self._candidatas(fuente, plan))
         enumeradas = {_url_y_parametros(i["source_url"]) for i in items}
+        # La misma ficha con otro texto descriptivo en la query (`ballarre` 97,
+        # `zamorano` 53): `ver-propiedad-venta.asp?id=Venta-de-Casa-3-ambientes-
+        # en-Miramar&codigo=5889` y `?id=Venta-de-Casa-en-Miramar&codigo=5889`
+        # son la misma casa -el servidor ignora `id`, hasta `id=cualquier-cosa`
+        # la devuelve-. Se queda la URL menor, para que dos corridas elijan igual.
+        elegida_por_ficha: dict[tuple, str] = {}
+        for item in items:
+            clave = _clave_sin_slug(item["source_url"])
+            if clave is not None:
+                previa = elegida_por_ficha.get(clave)
+                elegida_por_ficha[clave] = min(previa, item["source_url"]) if previa else item["source_url"]
         repetidas = 0
         for item in items:
             corta = _sin_contexto_del_listado(item["source_url"])
             if corta is not None and corta in enumeradas:
+                repetidas += 1
+                continue
+            clave = _clave_sin_slug(item["source_url"])
+            if clave is not None and elegida_por_ficha[clave] != item["source_url"]:
                 repetidas += 1
                 continue
             yield item
