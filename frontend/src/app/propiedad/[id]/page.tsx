@@ -31,7 +31,7 @@ function getPublicProperty(id: string) {
 function PropertyUnavailable({ id }: { id: string }) {
   return (
     <SiteShell>
-      <main className="container grid min-h-[60vh] place-items-center py-16 text-center">
+      <div className="container grid min-h-[60vh] place-items-center py-16 text-center">
         <div>
           <p className="eyebrow">Servicio temporalmente no disponible</p>
           <h1 className="mt-3 text-4xl font-black text-[color:var(--ink)]">No pudimos cargar esta propiedad</h1>
@@ -41,7 +41,7 @@ function PropertyUnavailable({ id }: { id: string }) {
             <Link className="secondary-button" href="/propiedades">Explorar propiedades</Link>
           </div>
         </div>
-      </main>
+      </div>
     </SiteShell>
   );
 }
@@ -126,7 +126,7 @@ export default async function PropertyPage({ params, searchParams }: { params: P
     <SiteShell>
       <RecentViewTracker id={property.id} title={title} price={propertyPrice(property)} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />
-      <main className="detail-page container">
+      <div className="detail-page container">
         <nav aria-label="Volver al contexto de búsqueda" className="detail-return">
           <Link href={returnTo} scroll={false}>← Volver a resultados</Link>
           {returnContext ? <span>{returnContext}</span> : null}
@@ -245,7 +245,7 @@ export default async function PropertyPage({ params, searchParams }: { params: P
             </div>
           </section>
         ) : null}
-      </main>
+      </div>
     </SiteShell>
   );
 }

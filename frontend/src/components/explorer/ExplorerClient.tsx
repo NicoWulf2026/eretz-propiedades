@@ -271,7 +271,7 @@ function removeViewport() {
 
       {result?.invalidCursor ? <div className="container py-4"><div className="alert alert-warning" role="alert"><strong>Este enlace de paginación venció o no es válido.</strong><span> Podés volver al inicio de estos resultados sin perder tus filtros.</span><a href={`${basePath}?${resetCursor}`}>Volver a la primera página</a></div></div> : null}
 
-      <main className={`explorer-workspace mode-${mode}${filtersOpen ? " filters-open" : ""}`}>
+      <div className={`explorer-workspace mode-${mode}${filtersOpen ? " filters-open" : ""}`}>
         <section className="explorer-map-pane" aria-label="Explorar en el mapa">
           <PropertyMap
             properties={result?.properties ?? []}
@@ -326,7 +326,7 @@ function removeViewport() {
           {result?.searchWindowExhausted ? <p className="map-truncated" role="status">Alcanzaste la ventana accesible de esta búsqueda ordenada por relevancia. El total puede incluir más propiedades.</p> : null}
           {result ? <Pagination filters={currentFilters} hasNext={result.hasNext} hasPrevious={result.hasPrevious} nextCursor={result.nextCursor} previousCursor={result.previousCursor} basePath={basePath} /> : null}
         </section>
-      </main>
+      </div>
     </div>
   );
 }
