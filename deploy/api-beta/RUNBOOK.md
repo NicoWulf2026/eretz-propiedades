@@ -28,6 +28,8 @@ La imagen es la misma para cualquier proveedor que corra un contenedor con volum
   `/readyz` 200 y `/v2/buscar` responde; segunda activación + `rollback` → vuelve a la
   anterior, verificada por el enlace. Ensayo hecho con la snapshot SINTÉTICA
   (`--permitir-sintetica` + `ERETZ_ALLOW_SYNTHETIC_SNAPSHOT=1`, solo para ensayar).
+- Apagado: `docker stop` → uvicorn (PID 1) recibe SIGTERM y termina limpio en ~0,5 s, código 0.
+- Log por pedido y encabezados verificados dentro del contenedor (30-09).
 - Tests: `tests/test_activar_snapshot_beta.py`, `tests/test_snapshot_sintetica.py`.
 
 ## Costos: a verificar al crear la cuenta (no verificados desde CLOUD)
@@ -65,6 +67,8 @@ Volumen = 3 × ese tamaño (activa + anterior + la que se sube) redondeado hacia
    apuntar a una copia local de la misma snapshot para la línea base de latencia.
 7. Conectar el Preview (P16 #7): `ERETZ_API_V2_BASE_URL=https://<app>.fly.dev` en las
    variables de Preview de Vercel (P22), y la QA de navegador sobre el SHA exacto (P16 #8).
+   Comprobación: `curl https://<preview>/api/health` → 200 con `api.ready: true`,
+   `api.sintetica: false` y `commit` = el SHA que se va a probar.
 
 ## Publicar una snapshot nueva (desde LOCAL)
 

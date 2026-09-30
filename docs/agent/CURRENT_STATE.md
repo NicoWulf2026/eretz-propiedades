@@ -122,6 +122,11 @@ Nada toca la huella. Integración y verificación en LOCAL: `HANDOFF.md` § PARA
   La parte geométrica de P10 ya está en la rama (`connectors/poligono_provincia.py`, sin uso en la huella).
 - **Cola**: no arranca sin GeoRef cargado (`b52a1cb`, caso `criscenti`).
 - **Frontend**: undici con parche de seguridad (`1030149`); `npm audit --audit-level=high` = 0 y build ok.
+- **CLOUD 30-09** (red del entorno sigue cerrada: agencias, IGN, GeoRef y WebFetch bloqueados):
+  contrato real API→frontend (22 respuestas, `fcf4cee`); log JSON por pedido + x-request-id +
+  noindex en la API (`e8986ff`); topes de largo en textos (`692be33`); workflow manual de QA de
+  navegador (`ed525a6`); `/api/health` del frontend (`5e3a651`). martelliti: la línea junto al
+  ícono sería la dirección de la OFICINA → verificar antes de arreglar B (HANDOFF).
 - Pendientes con fixture de LOCAL: martelliti (dirección junto al ícono), fenix, paladino, Wix.
 - Red del entorno CLOUD: sin salida a webs de agencias ni a IGN/GeoRef (política del entorno);
   sí PyPI, npm y Docker Hub. Lo que necesita red de fuentes queda para LOCAL.
