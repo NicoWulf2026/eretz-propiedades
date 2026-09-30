@@ -646,7 +646,41 @@ Nada de esto toca la huella: integrarlo NO reinicia la recertificación.
 - [ ] **Snapshot sintética ≠ servida**: `desplegar_snapshot.py` ahora aborta si la candidata se
       declara sintética (`snapshot_meta.sintetica = 1`). Nada que hacer; es una compuerta más.
 
+## EVIDENCE READY FOR CLOUD (puente LOCAL → CLOUD; lo completa la sesión LOCAL)
+
+CLOUD no tiene salida a IGN, GeoRef ni webs de agencias (ni vía WebFetch). LOCAL baja la
+evidencia, la reduce, la commitea en la rama `local/cloud-evidence-bridge` (derivada de
+`claude/sweet-curie-doa2mn`) y completa cada ítem. Herramientas (en la rama, con tests):
+- `scripts/cloud_bridge/capturar_fixture.py`: baja con el `Descargador` del proyecto
+  (robots.txt, UA, ritmo; 403/429 no se evaden) o reduce un HTML ya cacheado
+  (`--desde-archivo`). Saca scripts/estilos/iframes/comentarios/atributos de tracking, tapa
+  emails y teléfonos, conserva JSON-LD (`--con-json-ld`) y scripts de datos por id
+  (`--script-id wix-warmup-data`), recorta al contexto DOM de un texto (`--selector-texto`),
+  recorta listas JSON (`--json --max-items 3`). Escribe `<fixture>.meta.json` con url, fecha,
+  sha256 del original y bytes. Destino: `tests/fixtures/cloud_bridge/<caso>/`.
+- `scripts/cloud_bridge/p18_chequeo_lectura.py`: imprime SOLO `YES`/`NO`/`UNABLE_TO_VERIFY`;
+  sesión READ ONLY, un SELECT sobre catálogos, nunca muestra la url ni el mensaje de error.
+
+| ítem | qué hacer en LOCAL | qué dejar | estado |
+|---|---|---|---|
+| IGN | `python scripts/geo_poligonos_provincias.py` | `connectors/geometria/provincias_ign.json` (dato público IGN, Ley 27.275, como `argentina_ign.json`) + tamaño y sha256 en esta tabla | PENDIENTE |
+| MARTELLITI | ≥3 fichas (idealmente las 44 del caché): `capturar_fixture.py --desde-archivo <html> --url-original <url> --selector-texto "Laprida 1835" --salida tests/fixtures/cloud_bridge/martelliti/ficha_N.html`; y contar en las 44 si la línea junto al `fa-map-marker` es idéntica | fixtures + conclusión `PROPERTY_LOCATION` / `OFFICE_LOCATION` / `AMBIGUOUS` con el conteo | PENDIENTE |
+| FENIX | una ficha con «50 M² 50 M²»: `--selector-texto "M²"` | fixture + qué es cada valor según la propia página (no interpretar) | PENDIENTE |
+| PALADINO | la página que hace la llamada (`--con-json-ld`) y la respuesta de su API (`--json --max-items 3`); anotar endpoint, paginación, total, detalle, si pide token (sin guardar el valor) | 2 fixtures + nota | PENDIENTE |
+| WIX | lucas liprandi y dib kai: una ficha y un listado con `--script-id wix-warmup-data` (y otros scripts de datos que aparezcan); si pesan más de ~500 KB reducidos, recortar a los registros necesarios | fixtures + nota del esquema observado | PENDIENTE |
+| P18 READ-ONLY | `python scripts/cloud_bridge/p18_chequeo_lectura.py` (variable `ERETZ_PREVIEW_RO_URL`) | solo la palabra YES/NO/UNABLE_TO_VERIFY | PENDIENTE |
+| LOCAL FULL SUITE | `set ERETZ_REQUIRE_LOCAL_DATA=1` + `python -m pytest -q -p no:cacheprovider` sobre la rama | PASS/FAIL/SKIP con causas | PENDIENTE |
+| BROWSER QA | `python scripts/qa_navegador_sintetica.py --salida _scratch/qa_sintetica` | el resultado del `QA_NAVEGADOR_SINTETICA.json` | PENDIENTE |
+| LOTE 4 RADIO | `docs/agent/lotes/README.md` § lote 4 (A/B sobre el HTML cacheado, en `eretz-dev`) | agencias, propiedades, ejemplos, falsos positivos | PENDIENTE |
+| P10 RADIO | README § P10 (con `provincias_ign.json`, parche aplicado en `eretz-dev`, snapshot candidata) | agencias, propiedades, conflictos resueltos, siguen ambiguos, falsos positivos | PENDIENTE |
+
+Qué hace CLOUD con cada ítem cuando esté: IGN → validar códigos/CABA/islas/fronteras y casos
+reales conocidos, dejar P10 listo para canario; MARTELLITI → si es oficina, test que asegure que
+NO se extrae; si es ubicación real, parser + tests; FENIX/PALADINO/WIX → parser + tests contra
+las fixtures, como parche si toca la huella.
+
 ## Decisiones de producto abiertas (no técnicas)
+
 - **robots.txt**: el pipeline no lo consulta. Medido 26-09 00:1x: 283 agencias certificadas o en
   NEEDS_FIX, 31.354 URLs de ficha, **0 prohibidas** para nuestro UA. Los dos casos que sí prohíben
   (argencasas `/motor/`, gaggiotti `/api/`) se dejaron sin leer a mano. Falta decidir si se agrega
