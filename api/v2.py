@@ -348,11 +348,11 @@ def listar(
     moneda: Optional[str] = Query(None, description="USD | ARS"),
     precio_min: Optional[float] = Query(None, ge=0),
     precio_max: Optional[float] = Query(None, ge=0),
-    area: Optional[str] = Query(None, description="nombre del area de busqueda"),
+    area: Optional[str] = Query(None, max_length=120, description="nombre del area de busqueda"),
     nivel: Optional[str] = Query(None, description="LOCALIDAD | MUNICIPIO | ..."),
-    localidad: Optional[str] = Query(None),
-    barrio: Optional[str] = Query(None),
-    agencia: Optional[str] = Query(None),
+    localidad: Optional[str] = Query(None, max_length=120),
+    barrio: Optional[str] = Query(None, max_length=120),
+    agencia: Optional[str] = Query(None, max_length=200),
     ambientes: Optional[int] = Query(None, ge=0),
     dormitorios: Optional[int] = Query(None, ge=0),
     limit: int = Query(24, ge=1, le=100),
@@ -580,7 +580,7 @@ def propiedades_batch(payload: BatchRequest = Body(...)) -> dict[str, Any]:
 
 @router.get("/areas")
 def areas(
-    q: Optional[str] = Query(None, description="texto parcial"),
+    q: Optional[str] = Query(None, max_length=120, description="texto parcial"),
     limit: int = Query(20, ge=1, le=100),
 ) -> dict[str, Any]:
     """Las areas de busqueda disponibles, CADA UNA CON SU NIVEL.
@@ -616,7 +616,7 @@ def areas(
 
 
 @router.get("/barrios")
-def barrios(q: Optional[str] = Query(None), limit: int = Query(50, ge=1, le=200)) -> dict[str, Any]:
+def barrios(q: Optional[str] = Query(None, max_length=120), limit: int = Query(50, ge=1, le=200)) -> dict[str, Any]:
     """Barrios tal como los publica la fuente.
 
     No estan canonizados y se dice: GeoRef no cataloga barrios, y el texto de
@@ -690,7 +690,7 @@ def filtros() -> dict[str, Any]:
 
 @router.get("/sugerencias")
 def sugerencias(
-    q: str = Query(..., min_length=2), limit: int = Query(8, ge=1, le=20)
+    q: str = Query(..., min_length=2, max_length=120), limit: int = Query(8, ge=1, le=20)
 ) -> dict[str, Any]:
     """Autocompletado sobre areas y barrios, con el nivel a la vista."""
     con = conexion()

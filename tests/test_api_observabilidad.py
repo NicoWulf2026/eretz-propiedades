@@ -67,3 +67,20 @@ def test_una_excepcion_responde_500_limpio_y_queda_en_el_log(cliente, capsys, mo
     (evento,) = _eventos(capsys)
     assert evento["outcome"] == "server_error" and evento["errorName"] == "RuntimeError"
     assert "secreta" not in json.dumps(evento)
+
+
+@pytest.mark.parametrize("ruta,params", [
+    ("/v2/propiedades", {"barrio": "a" * 121}), ("/v2/propiedades", {"area": "a" * 121}),
+    ("/v2/propiedades", {"localidad": "a" * 121}), ("/v2/propiedades", {"agencia": "a" * 201}),
+    ("/v2/areas", {"q": "a" * 121}), ("/v2/barrios", {"q": "a" * 121}),
+    ("/v2/sugerencias", {"q": "a" * 121}),
+])
+def test_los_textos_tienen_tope_de_largo(cliente, ruta, params):
+    """Sin tope, 20.000 caracteres entraban a un LIKE '%...%' sobre toda la tabla."""
+    assert cliente.get(ruta, params=params).status_code == 422
+
+
+@pytest.mark.parametrize("q", ['"', "casa NEAR( x", "* OR -", "^", "%_%"])
+def test_sintaxis_de_busqueda_hostil_no_rompe(cliente, q):
+    assert cliente.get("/v2/buscar", params={"q": q}).status_code == 200
+    assert cliente.get("/v2/sugerencias", params={"q": q + "xx"}).status_code == 200
