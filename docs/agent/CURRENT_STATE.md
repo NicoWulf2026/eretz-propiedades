@@ -127,6 +127,13 @@ Nada toca la huella. Integración y verificación en LOCAL: `HANDOFF.md` § PARA
   noindex en la API (`e8986ff`); topes de largo en textos (`692be33`); workflow manual de QA de
   navegador (`ed525a6`); `/api/health` del frontend (`5e3a651`). martelliti: la línea junto al
   ícono sería la dirección de la OFICINA → verificar antes de arreglar B (HANDOFF).
+- **CLOUD 30-09 (2)** — red todavía cerrada (IGN, GeoRef, agencias, incluso example.com):
+  accesibilidad axe-core en 8 páginas de escritorio: 0 violaciones serias/críticas; corregido el
+  `<main>` anidado del explorador y el detalle; e2e `test_accesibilidad.py` (`b246765`).
+  Línea base de rendimiento, build de producción + snapshot sintética, loopback (sin red real,
+  mediana de 3): LCP 130–225 ms, CLS 0, TTFB 7–29 ms, JS comprimido 139–169 KB por página
+  (`/`, `/propiedades`, detalle, `/calculadoras`). Es referencia para comparar, no el rendimiento
+  en Vercel.
 - Pendientes con fixture de LOCAL: martelliti (dirección junto al ícono), fenix, paladino, Wix.
 - Red del entorno CLOUD: sin salida a webs de agencias ni a IGN/GeoRef (política del entorno);
   sí PyPI, npm y Docker Hub. Lo que necesita red de fuentes queda para LOCAL.
