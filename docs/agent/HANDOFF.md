@@ -631,9 +631,14 @@ Nada de esto toca la huella: integrarlo NO reinicia la recertificación.
       `connectors/geometria/provincias_ign.json` (no cambia la huella hasta aplicar el parche);
       2) medir radio con `docs/agent/lotes/LOTE_P10_PROVINCIA_POR_POLIGONO_2026-09-29.patch` en eretz-dev
       (README del lote); 3) decidir aplicación según P4.
-- [ ] **B (martelliti, dirección junto al ícono de mapa)**: CLOUD no puede bajar la ficha. Dejar en
-      `tests/fixtures/` una ficha reducida de `adriana martelliti` (el bloque del ícono `fa-map-marker`
-      con su dirección) para prepararlo; la regla actual excluye íconos a propósito (`_direccion_de`).
+- [ ] **B (martelliti, dirección junto al ícono de mapa) — VERIFICAR ANTES DE ARREGLAR**: una búsqueda
+      web (30-09, CLOUD) muestra «Laprida 1835, B7602FKK Mar del Plata, Provincia de Buenos Aires» como
+      la dirección de la OFICINA de Adriana Martelliti Propiedades (adrianamartellitipropiedades.ar). Si
+      la línea junto al ícono es la misma en todas las fichas, es la dirección de la agencia y NO debe
+      leerse como ubicación del inmueble (la regla actual que excluye íconos, `_direccion_de`, estaría
+      bien). Comprobar en el HTML cacheado: ¿el texto junto al `fa-map-marker` es idéntico en las 44
+      fichas? Si sí → cerrar B sin cambio. Si varía por ficha → dejar una ficha reducida en
+      `tests/fixtures/`. CLOUD no puede bajar el sitio (política de red del entorno, también WebFetch).
 - [ ] **Cola sin GeoRef no arranca** (`run_agency_certification_queue.py`, fuera de la huella): si
       `ERETZ_GEO` no carga, el worker sale con código 3 y «sin catalogo geografico» en su log, en vez de
       certificar fichas sin ciudad (caso `criscenti`). El relanzador lo reintenta solo. Verificar tras
