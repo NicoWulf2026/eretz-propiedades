@@ -91,6 +91,14 @@ conserva las 3 más recientes (nunca borra la activa ni la anterior).
 - **Todo**: `fly scale count 0 --app eretz-api-beta` apaga la API; el Preview muestra el
   estado «no disponible» del frontend (no inventa datos).
 
+## Observabilidad
+
+Una línea JSON por pedido en stdout (`fly logs`), mismo formato `http_request` que el frontend:
+`requestId`, `route` (la plantilla, no el id), `status`, `outcome`, `durationMs` y solo las CLAVES de
+los parámetros (nunca lo buscado). Cada respuesta lleva `x-request-id` para cruzar un error del
+navegador con su línea. Latencia por ruta: filtrar `event=http_request` y agrupar por `route`.
+Una excepción no atrapada responde 500 con el `requestId` y sin detalle interno.
+
 ## Seguridad y límites
 
 - Solo lectura: la API abre SQLite con `mode=ro`; `database_writes: 0` en `/readyz`.
@@ -99,4 +107,5 @@ conserva las 3 más recientes (nunca borra la activa ni la anterior).
 - `/readyz` rechaza la snapshot SINTÉTICA salvo `ERETZ_ALLOW_SYNTHETIC_SNAPSHOT=1`: nunca
   definir esa variable en la app beta.
 - CORS restringido al origen del Preview (`ERETZ_CORS_ORIGINS`).
+- Encabezados en toda respuesta: `x-robots-tag: noindex, nofollow`, `nosniff`, `no-referrer`.
 - Beta cerrada y `noindex` las pone el frontend (P14, P23); la API no se anuncia.

@@ -32,6 +32,13 @@ app.add_middleware(
     allow_credentials=False,
 )
 
+# Un evento JSON por pedido, x-request-id y encabezados de seguridad. Va
+# despues de CORS en el codigo, asi que corre ANTES (Starlette apila al reves)
+# y tambien registra las respuestas de preflight. Ver `api/observabilidad.py`.
+from api.observabilidad import registrar_pedido  # noqa: E402
+
+app.middleware("http")(registrar_pedido)
+
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY")
 SUPABASE_TABLE = os.environ.get("SUPABASE_TABLE", "propiedades")
