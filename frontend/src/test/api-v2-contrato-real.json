@@ -1,0 +1,3282 @@
+{
+ "agencia": {
+  "metodo": "GET",
+  "params": {},
+  "parser": "agency",
+  "respuesta": {
+   "contrato": "eretz_api_property_v1",
+   "data": {
+    "agency_id": "sintetica:alfa",
+    "contact": {
+     "email": null,
+     "phone": null,
+     "status": "UNAVAILABLE",
+     "whatsapp": null
+    },
+    "logo": null,
+    "name": "alfa",
+    "website": null
+   }
+  },
+  "ruta": "/v2/agencias/sintetica:alfa"
+ },
+ "areas": {
+  "metodo": "GET",
+  "params": {
+   "q": "Córdoba"
+  },
+  "parser": "areas",
+  "respuesta": {
+   "contrato": "eretz_api_property_v1",
+   "data": [
+    {
+     "nivel": "LOCALIDAD",
+     "nombre": "Córdoba",
+     "propiedades": 12
+    },
+    {
+     "nivel": "MUNICIPIO",
+     "nombre": "Córdoba",
+     "propiedades": 1
+    },
+    {
+     "nivel": "PROVINCIA",
+     "nombre": "Córdoba",
+     "propiedades": 1
+    }
+   ]
+  },
+  "ruta": "/v2/areas"
+ },
+ "barrios": {
+  "metodo": "GET",
+  "params": {},
+  "parser": "neighborhoods",
+  "respuesta": {
+   "canonizado": false,
+   "contrato": "eretz_api_property_v1",
+   "data": [
+    {
+     "nombre": "Centro",
+     "propiedades": 21
+    },
+    {
+     "nombre": "Nueva Córdoba",
+     "propiedades": 14
+    },
+    {
+     "nombre": "Palermo",
+     "propiedades": 11
+    },
+    {
+     "nombre": "La Perla",
+     "propiedades": 8
+    },
+    {
+     "nombre": "Chacra del Norte",
+     "propiedades": 6
+    }
+   ]
+  },
+  "ruta": "/v2/barrios"
+ },
+ "buscar_area": {
+  "metodo": "GET",
+  "params": {
+   "area": "Rosario",
+   "limit": 5,
+   "nivel": "LOCALIDAD"
+  },
+  "parser": "search_page",
+  "respuesta": {
+   "consulta": null,
+   "contrato": "eretz_api_property_v1",
+   "data": [
+    {
+     "agency_id": "sintetica:gamma",
+     "alcances": [
+      "AREA_BUSQUEDA",
+      "FICHA",
+      "FILTRO_LOCALIDAD",
+      "FILTRO_OPERACION",
+      "FILTRO_PRECIO",
+      "FILTRO_TIPO",
+      "LISTADO",
+      "MAPA"
+     ],
+     "ambientes": 2,
+     "banos": 1,
+     "descripcion": "Ficha SINTETICA 26 para QA. departamento en Centro, no es una propiedad real.",
+     "dormitorios": 2,
+     "geo": {
+      "area_busqueda": {
+       "id": "sint-rosario",
+       "nivel": "LOCALIDAD",
+       "nombre": "Rosario",
+       "origen": "localidad"
+      },
+      "barrio": {
+       "nombre": "Centro"
+      },
+      "departamento": {
+       "nombre": "Rosario",
+       "procedencia": "SINTETICA"
+      },
+      "estado": null,
+      "localidad": {
+       "id": "sint-rosario",
+       "nombre": "Rosario",
+       "procedencia": "CANONICAL_NORMALIZED"
+      },
+      "municipio": {
+       "nombre": "Rosario",
+       "procedencia": "SINTETICA"
+      },
+      "provincia": {
+       "nombre": "Santa Fe"
+      }
+     },
+     "id": "12288a1dcd3a7416f8fc2f3ae6e61c4c",
+     "imagenes": [],
+     "latitud": -32.9468,
+     "longitud": -60.6473,
+     "moneda": "USD",
+     "operacion": "venta",
+     "precio": 255000.0,
+     "ranking": {
+      "partes": {
+       "coincidencia": 0.0,
+       "completitud": 15.0,
+       "imagenes": 0.0,
+       "ubicacion": 20.0
+      },
+      "ranking_version": "eretz_ranking_tecnico_v1",
+      "total": 35.0
+     },
+     "source_url": "https://gamma.sintetica.invalid/propiedad/26",
+     "superficie_cubierta": 264.0,
+     "superficie_total": 378.0,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en Rosario"
+    },
+    {
+     "agency_id": "sintetica:delta",
+     "alcances": [
+      "AREA_BUSQUEDA",
+      "FICHA",
+      "FILTRO_LOCALIDAD",
+      "FILTRO_OPERACION",
+      "FILTRO_PRECIO",
+      "FILTRO_TIPO",
+      "LISTADO",
+      "MAPA"
+     ],
+     "ambientes": 5,
+     "banos": 2,
+     "descripcion": "Ficha SINTETICA 19 para QA. ph en Centro, no es una propiedad real.",
+     "dormitorios": 3,
+     "geo": {
+      "area_busqueda": {
+       "id": "sint-rosario",
+       "nivel": "LOCALIDAD",
+       "nombre": "Rosario",
+       "origen": "localidad"
+      },
+      "barrio": {
+       "nombre": "Centro"
+      },
+      "departamento": {
+       "nombre": "Rosario",
+       "procedencia": "SINTETICA"
+      },
+      "estado": null,
+      "localidad": {
+       "id": "sint-rosario",
+       "nombre": "Rosario",
+       "procedencia": "CANONICAL_NORMALIZED"
+      },
+      "municipio": {
+       "nombre": "Rosario",
+       "procedencia": "SINTETICA"
+      },
+      "provincia": {
+       "nombre": "Santa Fe"
+      }
+     },
+     "id": "30e95efcc769b317f87cf35d6ba8a305",
+     "imagenes": [],
+     "latitud": -32.9268,
+     "longitud": -60.6353,
+     "moneda": "ARS",
+     "operacion": "alquiler_temporario",
+     "precio": 535000.0,
+     "ranking": {
+      "partes": {
+       "coincidencia": 0.0,
+       "completitud": 15.0,
+       "imagenes": 0.0,
+       "ubicacion": 20.0
+      },
+      "ranking_version": "eretz_ranking_tecnico_v1",
+      "total": 35.0
+     },
+     "source_url": "https://delta.sintetica.invalid/propiedad/19",
+     "superficie_cubierta": 201.0,
+     "superficie_total": 287.0,
+     "tipo_propiedad": "ph",
+     "titulo": "Ph de prueba en Rosario"
+    },
+    {
+     "agency_id": "sintetica:beta",
+     "alcances": [
+      "AREA_BUSQUEDA",
+      "FICHA",
+      "FILTRO_LOCALIDAD",
+      "FILTRO_OPERACION",
+      "FILTRO_PRECIO",
+      "FILTRO_TIPO",
+      "LISTADO",
+      "MAPA"
+     ],
+     "ambientes": 2,
+     "banos": 2,
+     "descripcion": "Ficha SINTETICA 21 para QA. departamento en Centro, no es una propiedad real.",
+     "dormitorios": 1,
+     "geo": {
+      "area_busqueda": {
+       "id": "sint-rosario",
+       "nivel": "LOCALIDAD",
+       "nombre": "Rosario",
+       "origen": "localidad"
+      },
+      "barrio": {
+       "nombre": "Centro"
+      },
+      "departamento": {
+       "nombre": "Rosario",
+       "procedencia": "SINTETICA"
+      },
+      "estado": null,
+      "localidad": {
+       "id": "sint-rosario",
+       "nombre": "Rosario",
+       "procedencia": "CANONICAL_NORMALIZED"
+      },
+      "municipio": {
+       "nombre": "Rosario",
+       "procedencia": "SINTETICA"
+      },
+      "provincia": {
+       "nombre": "Santa Fe"
+      }
+     },
+     "id": "406e43825231dfe9ee3fc6c4a93eeeaa",
+     "imagenes": [],
+     "latitud": -32.9388,
+     "longitud": -60.6513,
+     "moneda": "ARS",
+     "operacion": "alquiler",
+     "precio": 565000.0,
+     "ranking": {
+      "partes": {
+       "coincidencia": 0.0,
+       "completitud": 15.0,
+       "imagenes": 0.0,
+       "ubicacion": 20.0
+      },
+      "ranking_version": "eretz_ranking_tecnico_v1",
+      "total": 35.0
+     },
+     "source_url": "https://beta.sintetica.invalid/propiedad/21",
+     "superficie_cubierta": 219.0,
+     "superficie_total": 313.0,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en Rosario"
+    },
+    {
+     "agency_id": "sintetica:beta",
+     "alcances": [
+      "AREA_BUSQUEDA",
+      "FICHA",
+      "FILTRO_LOCALIDAD",
+      "FILTRO_OPERACION",
+      "FILTRO_PRECIO",
+      "FILTRO_TIPO",
+      "LISTADO",
+      "MAPA"
+     ],
+     "ambientes": 1,
+     "banos": 2,
+     "descripcion": "Ficha SINTETICA 25 para QA. departamento en Centro, no es una propiedad real.",
+     "dormitorios": 1,
+     "geo": {
+      "area_busqueda": {
+       "id": "sint-rosario",
+       "nivel": "LOCALIDAD",
+       "nombre": "Rosario",
+       "origen": "localidad"
+      },
+      "barrio": {
+       "nombre": "Centro"
+      },
+      "departamento": {
+       "nombre": "Rosario",
+       "procedencia": "SINTETICA"
+      },
+      "estado": null,
+      "localidad": {
+       "id": "sint-rosario",
+       "nombre": "Rosario",
+       "procedencia": "CANONICAL_NORMALIZED"
+      },
+      "municipio": {
+       "nombre": "Rosario",
+       "procedencia": "SINTETICA"
+      },
+      "provincia": {
+       "nombre": "Santa Fe"
+      }
+     },
+     "id": "ddbd4efa8fbcb6f93880dc3fba9c97a2",
+     "imagenes": [],
+     "latitud": -32.9628,
+     "longitud": -60.6393,
+     "moneda": "ARS",
+     "operacion": "alquiler",
+     "precio": 625000.0,
+     "ranking": {
+      "partes": {
+       "coincidencia": 0.0,
+       "completitud": 15.0,
+       "imagenes": 0.0,
+       "ubicacion": 20.0
+      },
+      "ranking_version": "eretz_ranking_tecnico_v1",
+      "total": 35.0
+     },
+     "source_url": "https://beta.sintetica.invalid/propiedad/25",
+     "superficie_cubierta": 255.0,
+     "superficie_total": 365.0,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en Rosario"
+    },
+    {
+     "agency_id": "sintetica:delta",
+     "alcances": [
+      "AREA_BUSQUEDA",
+      "FICHA",
+      "FILTRO_LOCALIDAD",
+      "FILTRO_OPERACION",
+      "FILTRO_PRECIO",
+      "FILTRO_TIPO",
+      "LISTADO",
+      "MAPA"
+     ],
+     "ambientes": 4,
+     "banos": 2,
+     "descripcion": "Ficha SINTETICA 23 para QA. casa en Centro, no es una propiedad real.",
+     "dormitorios": 3,
+     "geo": {
+      "area_busqueda": {
+       "id": "sint-rosario",
+       "nivel": "LOCALIDAD",
+       "nombre": "Rosario",
+       "origen": "localidad"
+      },
+      "barrio": {
+       "nombre": "Centro"
+      },
+      "departamento": {
+       "nombre": "Rosario",
+       "procedencia": "SINTETICA"
+      },
+      "estado": null,
+      "localidad": {
+       "id": "sint-rosario",
+       "nombre": "Rosario",
+       "procedencia": "CANONICAL_NORMALIZED"
+      },
+      "municipio": {
+       "nombre": "Rosario",
+       "procedencia": "SINTETICA"
+      },
+      "provincia": {
+       "nombre": "Santa Fe"
+      }
+     },
+     "id": "ea3109c2cad70051eecb7ae076b16ff3",
+     "imagenes": [],
+     "latitud": -32.9508,
+     "longitud": -60.6233,
+     "moneda": "ARS",
+     "operacion": "alquiler_temporario",
+     "precio": 595000.0,
+     "ranking": {
+      "partes": {
+       "coincidencia": 0.0,
+       "completitud": 15.0,
+       "imagenes": 0.0,
+       "ubicacion": 20.0
+      },
+      "ranking_version": "eretz_ranking_tecnico_v1",
+      "total": 35.0
+     },
+     "source_url": "https://delta.sintetica.invalid/propiedad/23",
+     "superficie_cubierta": 237.0,
+     "superficie_total": 339.0,
+     "tipo_propiedad": "casa",
+     "titulo": "Casa de prueba en Rosario"
+    }
+   ],
+   "limit": 5,
+   "offset": 0,
+   "ranking": "eretz_ranking_tecnico_v1",
+   "sort": "relevance",
+   "total": 11
+  },
+  "ruta": "/v2/buscar"
+ },
+ "buscar_combinado": {
+  "metodo": "GET",
+  "params": {
+   "dormitorios": 1,
+   "limit": 5,
+   "moneda": "USD",
+   "operacion": "venta",
+   "precio_min": 1,
+   "q": "casa",
+   "tipo": "casa"
+  },
+  "parser": "search_page",
+  "respuesta": {
+   "consulta": "casa",
+   "contrato": "eretz_api_property_v1",
+   "data": [
+    {
+     "agency_id": "sintetica:alfa",
+     "alcances": [
+      "AREA_BUSQUEDA",
+      "FICHA",
+      "FILTRO_LOCALIDAD",
+      "FILTRO_OPERACION",
+      "FILTRO_PRECIO",
+      "FILTRO_TIPO",
+      "LISTADO",
+      "MAPA"
+     ],
+     "ambientes": 5,
+     "banos": 2,
+     "descripcion": "Ficha SINTETICA 1 para QA. departamento en Nueva Córdoba, no es una propiedad real.",
+     "dormitorios": 3,
+     "geo": {
+      "area_busqueda": {
+       "id": "sint-cordoba",
+       "nivel": "LOCALIDAD",
+       "nombre": "Córdoba",
+       "origen": "localidad"
+      },
+      "barrio": {
+       "nombre": "Nueva Córdoba"
+      },
+      "departamento": {
+       "nombre": "Capital",
+       "procedencia": "SINTETICA"
+      },
+      "estado": null,
+      "localidad": {
+       "id": "sint-cordoba",
+       "nombre": "Córdoba",
+       "procedencia": "CANONICAL_NORMALIZED"
+      },
+      "municipio": {
+       "nombre": "Córdoba",
+       "procedencia": "SINTETICA"
+      },
+      "provincia": {
+       "nombre": "Córdoba"
+      }
+     },
+     "id": "4190c341cdc453a3f66f79b7b14d8e1b",
+     "imagenes": [],
+     "latitud": -31.4201,
+     "longitud": -64.1888,
+     "moneda": "USD",
+     "operacion": "venta",
+     "precio": 145000.0,
+     "ranking": {
+      "partes": {
+       "coincidencia": 30.0,
+       "completitud": 15.0,
+       "imagenes": 0.0,
+       "ubicacion": 20.0
+      },
+      "ranking_version": "eretz_ranking_tecnico_v1",
+      "total": 65.0
+     },
+     "source_url": "https://alfa.sintetica.invalid/caso/9010",
+     "superficie_cubierta": 39.0,
+     "superficie_total": 53.0,
+     "tipo_propiedad": "casa",
+     "titulo": "Casa de prueba con jardín en Córdoba"
+    }
+   ],
+   "limit": 5,
+   "offset": 0,
+   "ranking": "eretz_ranking_tecnico_v1",
+   "sort": "relevance",
+   "total": 1
+  },
+  "ruta": "/v2/buscar"
+ },
+ "buscar_precio_asc": {
+  "metodo": "GET",
+  "params": {
+   "limit": 5,
+   "moneda": "USD",
+   "sort": "price_asc"
+  },
+  "parser": "search_page",
+  "respuesta": {
+   "consulta": null,
+   "contrato": "eretz_api_property_v1",
+   "data": [
+    {
+     "agency_id": "sintetica:gamma",
+     "alcances": [
+      "AREA_BUSQUEDA",
+      "FICHA",
+      "FILTRO_LOCALIDAD",
+      "FILTRO_OPERACION",
+      "FILTRO_PRECIO",
+      "FILTRO_TIPO",
+      "LISTADO",
+      "MAPA"
+     ],
+     "ambientes": null,
+     "banos": null,
+     "descripcion": "Ficha SINTETICA 2 para QA. terreno en Nueva Córdoba, no es una propiedad real.",
+     "dormitorios": null,
+     "geo": {
+      "area_busqueda": {
+       "id": "sint-cordoba",
+       "nivel": "LOCALIDAD",
+       "nombre": "Córdoba",
+       "origen": "localidad"
+      },
+      "barrio": {
+       "nombre": "Nueva Córdoba"
+      },
+      "departamento": {
+       "nombre": "Capital",
+       "procedencia": "SINTETICA"
+      },
+      "estado": null,
+      "localidad": {
+       "id": "sint-cordoba",
+       "nombre": "Córdoba",
+       "procedencia": "CANONICAL_NORMALIZED"
+      },
+      "municipio": {
+       "nombre": "Córdoba",
+       "procedencia": "SINTETICA"
+      },
+      "provincia": {
+       "nombre": "Córdoba"
+      }
+     },
+     "id": "033f55e84bcfa038a18fba4e5bd38eab",
+     "imagenes": [],
+     "latitud": -31.4081,
+     "longitud": -64.1808,
+     "moneda": "USD",
+     "operacion": "venta",
+     "precio": 75000.0,
+     "ranking": null,
+     "source_url": "https://gamma.sintetica.invalid/propiedad/2",
+     "superficie_cubierta": null,
+     "superficie_total": 66.0,
+     "tipo_propiedad": "terreno",
+     "titulo": "Terreno de prueba en Córdoba"
+    },
+    {
+     "agency_id": "sintetica:alfa",
+     "alcances": [
+      "AREA_BUSQUEDA",
+      "FICHA",
+      "FILTRO_LOCALIDAD",
+      "FILTRO_OPERACION",
+      "FILTRO_PRECIO",
+      "FILTRO_TIPO",
+      "LISTADO",
+      "MAPA"
+     ],
+     "ambientes": 5,
+     "banos": 1,
+     "descripcion": "Ficha SINTETICA 4 para QA. oficina en Nueva Córdoba, no es una propiedad real.",
+     "dormitorios": 0,
+     "geo": {
+      "area_busqueda": {
+       "id": "sint-cordoba",
+       "nivel": "LOCALIDAD",
+       "nombre": "Córdoba",
+       "origen": "localidad"
+      },
+      "barrio": {
+       "nombre": "Nueva Córdoba"
+      },
+      "departamento": {
+       "nombre": "Capital",
+       "procedencia": "SINTETICA"
+      },
+      "estado": null,
+      "localidad": {
+       "id": "sint-cordoba",
+       "nombre": "Córdoba",
+       "procedencia": "CANONICAL_NORMALIZED"
+      },
+      "municipio": {
+       "nombre": "Córdoba",
+       "procedencia": "SINTETICA"
+      },
+      "provincia": {
+       "nombre": "Córdoba"
+      }
+     },
+     "id": "a9cb01a3ef5d7cb6b7c4f265deac5ec2",
+     "imagenes": [],
+     "latitud": -31.4201,
+     "longitud": -64.1968,
+     "moneda": "USD",
+     "operacion": "venta",
+     "precio": 90000.0,
+     "ranking": null,
+     "source_url": "https://alfa.sintetica.invalid/propiedad/4",
+     "superficie_cubierta": 66.0,
+     "superficie_total": 92.0,
+     "tipo_propiedad": "oficina",
+     "titulo": "Oficina de prueba en Córdoba"
+    },
+    {
+     "agency_id": "sintetica:gamma",
+     "alcances": [
+      "AREA_BUSQUEDA",
+      "FICHA",
+      "FILTRO_LOCALIDAD",
+      "FILTRO_OPERACION",
+      "FILTRO_PRECIO",
+      "FILTRO_TIPO",
+      "LISTADO",
+      "MAPA"
+     ],
+     "ambientes": 2,
+     "banos": 1,
+     "descripcion": "Ficha SINTETICA 6 para QA. departamento en Nueva Córdoba, no es una propiedad real.",
+     "dormitorios": 2,
+     "geo": {
+      "area_busqueda": {
+       "id": "sint-cordoba",
+       "nivel": "LOCALIDAD",
+       "nombre": "Córdoba",
+       "origen": "localidad"
+      },
+      "barrio": {
+       "nombre": "Nueva Córdoba"
+      },
+      "departamento": {
+       "nombre": "Capital",
+       "procedencia": "SINTETICA"
+      },
+      "estado": null,
+      "localidad": {
+       "id": "sint-cordoba",
+       "nombre": "Córdoba",
+       "procedencia": "CANONICAL_NORMALIZED"
+      },
+      "municipio": {
+       "nombre": "Córdoba",
+       "procedencia": "SINTETICA"
+      },
+      "provincia": {
+       "nombre": "Córdoba"
+      }
+     },
+     "id": "29018905db1bbf9c72cb2d905ae9cc02",
+     "imagenes": [],
+     "latitud": -31.4321,
+     "longitud": -64.1688,
+     "moneda": "USD",
+     "operacion": "venta",
+     "precio": 105000.0,
+     "ranking": null,
+     "source_url": "https://gamma.sintetica.invalid/propiedad/6",
+     "superficie_cubierta": 84.0,
+     "superficie_total": 118.0,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en Córdoba"
+    },
+    {
+     "agency_id": "sintetica:alfa",
+     "alcances": [
+      "AREA_BUSQUEDA",
+      "FICHA",
+      "FILTRO_LOCALIDAD",
+      "FILTRO_OPERACION",
+      "FILTRO_PRECIO",
+      "FILTRO_TIPO",
+      "LISTADO",
+      "MAPA"
+     ],
+     "ambientes": 4,
+     "banos": 1,
+     "descripcion": "Ficha SINTETICA 8 para QA. local en Nueva Córdoba, no es una propiedad real.",
+     "dormitorios": null,
+     "geo": {
+      "area_busqueda": {
+       "id": "sint-cordoba",
+       "nivel": "LOCALIDAD",
+       "nombre": "Córdoba",
+       "origen": "localidad"
+      },
+      "barrio": {
+       "nombre": "Nueva Córdoba"
+      },
+      "departamento": {
+       "nombre": "Capital",
+       "procedencia": "SINTETICA"
+      },
+      "estado": null,
+      "localidad": {
+       "id": "sint-cordoba",
+       "nombre": "Córdoba",
+       "procedencia": "CANONICAL_NORMALIZED"
+      },
+      "municipio": {
+       "nombre": "Córdoba",
+       "procedencia": "SINTETICA"
+      },
+      "provincia": {
+       "nombre": "Córdoba"
+      }
+     },
+     "id": "105958f527fd37bdf759e909c6d71d79",
+     "imagenes": [],
+     "latitud": -31.4001,
+     "longitud": -64.1848,
+     "moneda": "USD",
+     "operacion": "venta",
+     "precio": 120000.0,
+     "ranking": null,
+     "source_url": "https://alfa.sintetica.invalid/propiedad/8",
+     "superficie_cubierta": 102.0,
+     "superficie_total": 144.0,
+     "tipo_propiedad": "local",
+     "titulo": "Local de prueba en Córdoba"
+    },
+    {
+     "agency_id": "sintetica:gamma",
+     "alcances": [
+      "AREA_BUSQUEDA",
+      "FICHA",
+      "FILTRO_LOCALIDAD",
+      "FILTRO_OPERACION",
+      "FILTRO_PRECIO",
+      "FILTRO_TIPO",
+      "LISTADO",
+      "MAPA"
+     ],
+     "ambientes": 1,
+     "banos": 1,
+     "descripcion": "Ficha SINTETICA 10 para QA. departamento en Nueva Córdoba, no es una propiedad real.",
+     "dormitorios": 2,
+     "geo": {
+      "area_busqueda": {
+       "id": "sint-cordoba",
+       "nivel": "LOCALIDAD",
+       "nombre": "Córdoba",
+       "origen": "localidad"
+      },
+      "barrio": {
+       "nombre": "Nueva Córdoba"
+      },
+      "departamento": {
+       "nombre": "Capital",
+       "procedencia": "SINTETICA"
+      },
+      "estado": null,
+      "localidad": {
+       "id": "sint-cordoba",
+       "nombre": "Córdoba",
+       "procedencia": "CANONICAL_NORMALIZED"
+      },
+      "municipio": {
+       "nombre": "Córdoba",
+       "procedencia": "SINTETICA"
+      },
+      "provincia": {
+       "nombre": "Córdoba"
+      }
+     },
+     "id": "a3c80b105aeed8f5e73919601bdf59d6",
+     "imagenes": [],
+     "latitud": -31.4121,
+     "longitud": -64.2008,
+     "moneda": "USD",
+     "operacion": "venta",
+     "precio": 135000.0,
+     "ranking": null,
+     "source_url": "https://gamma.sintetica.invalid/propiedad/10",
+     "superficie_cubierta": 120.0,
+     "superficie_total": 170.0,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en Córdoba"
+    }
+   ],
+   "limit": 5,
+   "offset": 0,
+   "ranking": null,
+   "sort": "price_asc",
+   "total": 37
+  },
+  "ruta": "/v2/buscar"
+ },
+ "buscar_texto": {
+  "metodo": "GET",
+  "params": {
+   "limit": 5,
+   "q": "casa"
+  },
+  "parser": "search_page",
+  "respuesta": {
+   "consulta": "casa",
+   "contrato": "eretz_api_property_v1",
+   "data": [
+    {
+     "agency_id": "sintetica:delta",
+     "alcances": [
+      "AREA_BUSQUEDA",
+      "FICHA",
+      "FILTRO_LOCALIDAD",
+      "FILTRO_OPERACION",
+      "FILTRO_PRECIO",
+      "FILTRO_TIPO",
+      "LISTADO",
+      "MAPA"
+     ],
+     "ambientes": 4,
+     "banos": 2,
+     "descripcion": "Ficha SINTETICA 3 para QA. casa en Nueva Córdoba, no es una propiedad real.",
+     "dormitorios": 3,
+     "geo": {
+      "area_busqueda": {
+       "id": "sint-cordoba",
+       "nivel": "LOCALIDAD",
+       "nombre": "Córdoba",
+       "origen": "localidad"
+      },
+      "barrio": {
+       "nombre": "Nueva Córdoba"
+      },
+      "departamento": {
+       "nombre": "Capital",
+       "procedencia": "SINTETICA"
+      },
+      "estado": null,
+      "localidad": {
+       "id": "sint-cordoba",
+       "nombre": "Córdoba",
+       "procedencia": "CANONICAL_NORMALIZED"
+      },
+      "municipio": {
+       "nombre": "Córdoba",
+       "procedencia": "SINTETICA"
+      },
+      "provincia": {
+       "nombre": "Córdoba"
+      }
+     },
+     "id": "3b82925b10316e70616d946a3eed3ed2",
+     "imagenes": [],
+     "latitud": -31.4361,
+     "longitud": -64.1888,
+     "moneda": "ARS",
+     "operacion": "alquiler_temporario",
+     "precio": 295000.0,
+     "ranking": {
+      "partes": {
+       "coincidencia": 36.0,
+       "completitud": 15.0,
+       "imagenes": 0.0,
+       "ubicacion": 20.0
+      },
+      "ranking_version": "eretz_ranking_tecnico_v1",
+      "total": 71.0
+     },
+     "source_url": "https://delta.sintetica.invalid/propiedad/3",
+     "superficie_cubierta": 57.0,
+     "superficie_total": 79.0,
+     "tipo_propiedad": "casa",
+     "titulo": "Casa de prueba en Córdoba"
+    },
+    {
+     "agency_id": "sintetica:beta",
+     "alcances": [
+      "AREA_BUSQUEDA",
+      "FICHA",
+      "FILTRO_LOCALIDAD",
+      "FILTRO_OPERACION",
+      "FILTRO_PRECIO",
+      "FILTRO_TIPO",
+      "LISTADO",
+      "MAPA"
+     ],
+     "ambientes": 4,
+     "banos": 2,
+     "descripcion": "Ficha SINTETICA 33 para QA. casa en Palermo, no es una propiedad real.",
+     "dormitorios": 1,
+     "geo": {
+      "area_busqueda": {
+       "id": "sint-palermo",
+       "nivel": "LOCALIDAD",
+       "nombre": "Ciudad Autónoma de Buenos Aires",
+       "origen": "localidad"
+      },
+      "barrio": {
+       "nombre": "Palermo"
+      },
+      "departamento": {
+       "nombre": "Comuna 14",
+       "procedencia": "SINTETICA"
+      },
+      "estado": null,
+      "localidad": {
+       "id": "sint-palermo",
+       "nombre": "Ciudad Autónoma de Buenos Aires",
+       "procedencia": "CANONICAL_NORMALIZED"
+      },
+      "municipio": {
+       "nombre": null,
+       "procedencia": "UNKNOWN"
+      },
+      "provincia": {
+       "nombre": "Ciudad Autónoma de Buenos Aires"
+      }
+     },
+     "id": "515ae6c2043219deef6a9a3a37bbe67b",
+     "imagenes": [],
+     "latitud": -34.6089,
+     "longitud": -58.4506,
+     "moneda": "ARS",
+     "operacion": "alquiler",
+     "precio": 745000.0,
+     "ranking": {
+      "partes": {
+       "coincidencia": 36.0,
+       "completitud": 15.0,
+       "imagenes": 0.0,
+       "ubicacion": 20.0
+      },
+      "ranking_version": "eretz_ranking_tecnico_v1",
+      "total": 71.0
+     },
+     "source_url": "https://beta.sintetica.invalid/propiedad/33",
+     "superficie_cubierta": 327.0,
+     "superficie_total": 469.0,
+     "tipo_propiedad": "casa",
+     "titulo": "Casa de prueba en Ciudad Autónoma de Buenos Aires"
+    },
+    {
+     "agency_id": "sintetica:delta",
+     "alcances": [
+      "AREA_BUSQUEDA",
+      "FICHA",
+      "FILTRO_LOCALIDAD",
+      "FILTRO_OPERACION",
+      "FILTRO_PRECIO",
+      "FILTRO_TIPO",
+      "LISTADO",
+      "MAPA"
+     ],
+     "ambientes": 4,
+     "banos": 2,
+     "descripcion": "Ficha SINTETICA 63 para QA. casa en Mendoza, no es una propiedad real.",
+     "dormitorios": 3,
+     "geo": {
+      "area_busqueda": {
+       "id": "sint-mendoza",
+       "nivel": "LOCALIDAD",
+       "nombre": "Mendoza",
+       "origen": "localidad"
+      },
+      "barrio": {
+       "nombre": null
+      },
+      "departamento": {
+       "nombre": "Capital",
+       "procedencia": "SINTETICA"
+      },
+      "estado": null,
+      "localidad": {
+       "id": "sint-mendoza",
+       "nombre": "Mendoza",
+       "procedencia": "CANONICAL_NORMALIZED"
+      },
+      "municipio": {
+       "nombre": "Mendoza",
+       "procedencia": "SINTETICA"
+      },
+      "provincia": {
+       "nombre": "Mendoza"
+      }
+     },
+     "id": "77daeeec3b19391dd2cac45e52321d30",
+     "imagenes": [],
+     "latitud": -32.8695,
+     "longitud": -68.8418,
+     "moneda": "ARS",
+     "operacion": "alquiler_temporario",
+     "precio": 1195000.0,
+     "ranking": {
+      "partes": {
+       "coincidencia": 36.0,
+       "completitud": 15.0,
+       "imagenes": 0.0,
+       "ubicacion": 20.0
+      },
+      "ranking_version": "eretz_ranking_tecnico_v1",
+      "total": 71.0
+     },
+     "source_url": "https://delta.sintetica.invalid/propiedad/63",
+     "superficie_cubierta": 597.0,
+     "superficie_total": 859.0,
+     "tipo_propiedad": "casa",
+     "titulo": "Casa de prueba en Mendoza"
+    },
+    {
+     "agency_id": "sintetica:delta",
+     "alcances": [
+      "AREA_BUSQUEDA",
+      "FICHA",
+      "FILTRO_LOCALIDAD",
+      "FILTRO_OPERACION",
+      "FILTRO_PRECIO",
+      "FILTRO_TIPO",
+      "LISTADO",
+      "MAPA"
+     ],
+     "ambientes": 4,
+     "banos": 2,
+     "descripcion": "Ficha SINTETICA 43 para QA. casa en La Perla, no es una propiedad real.",
+     "dormitorios": 3,
+     "geo": {
+      "area_busqueda": {
+       "id": "sint-mar_del_plata",
+       "nivel": "LOCALIDAD",
+       "nombre": "Mar del Plata",
+       "origen": "localidad"
+      },
+      "barrio": {
+       "nombre": "La Perla"
+      },
+      "departamento": {
+       "nombre": "General Pueyrredón",
+       "procedencia": "SINTETICA"
+      },
+      "estado": null,
+      "localidad": {
+       "id": "sint-mar_del_plata",
+       "nombre": "Mar del Plata",
+       "procedencia": "CANONICAL_NORMALIZED"
+      },
+      "municipio": {
+       "nombre": "General Pueyrredón",
+       "procedencia": "SINTETICA"
+      },
+      "provincia": {
+       "nombre": "Buenos Aires"
+      }
+     },
+     "id": "92f6693e514977c528d319cdacbfcd40",
+     "imagenes": [],
+     "latitud": -37.9975,
+     "longitud": -57.5546,
+     "moneda": "ARS",
+     "operacion": "alquiler_temporario",
+     "precio": 895000.0,
+     "ranking": {
+      "partes": {
+       "coincidencia": 36.0,
+       "completitud": 15.0,
+       "imagenes": 0.0,
+       "ubicacion": 20.0
+      },
+      "ranking_version": "eretz_ranking_tecnico_v1",
+      "total": 71.0
+     },
+     "source_url": "https://delta.sintetica.invalid/propiedad/43",
+     "superficie_cubierta": 417.0,
+     "superficie_total": 599.0,
+     "tipo_propiedad": "casa",
+     "titulo": "Casa de prueba en Mar del Plata"
+    },
+    {
+     "agency_id": "sintetica:beta",
+     "alcances": [
+      "AREA_BUSQUEDA",
+      "FICHA",
+      "FILTRO_LOCALIDAD",
+      "FILTRO_OPERACION",
+      "FILTRO_PRECIO",
+      "FILTRO_TIPO",
+      "LISTADO",
+      "MAPA"
+     ],
+     "ambientes": 4,
+     "banos": 2,
+     "descripcion": "Ficha SINTETICA 53 para QA. casa en San Luis, no es una propiedad real.",
+     "dormitorios": 1,
+     "geo": {
+      "area_busqueda": {
+       "id": "sint-san_luis",
+       "nivel": "LOCALIDAD",
+       "nombre": "San Luis",
+       "origen": "localidad"
+      },
+      "barrio": {
+       "nombre": null
+      },
+      "departamento": {
+       "nombre": "Juan Martín de Pueyrredón",
+       "procedencia": "SINTETICA"
+      },
+      "estado": null,
+      "localidad": {
+       "id": "sint-san_luis",
+       "nombre": "San Luis",
+       "procedencia": "CANONICAL_NORMALIZED"
+      },
+      "municipio": {
+       "nombre": "San Luis",
+       "procedencia": "SINTETICA"
+      },
+      "provincia": {
+       "nombre": "San Luis"
+      }
+     },
+     "id": "ca01f96bafa902cbe0d36eb6a909022b",
+     "imagenes": [],
+     "latitud": -33.3097,
+     "longitud": -66.3418,
+     "moneda": "ARS",
+     "operacion": "alquiler",
+     "precio": 1045000.0,
+     "ranking": {
+      "partes": {
+       "coincidencia": 36.0,
+       "completitud": 15.0,
+       "imagenes": 0.0,
+       "ubicacion": 20.0
+      },
+      "ranking_version": "eretz_ranking_tecnico_v1",
+      "total": 71.0
+     },
+     "source_url": "https://beta.sintetica.invalid/propiedad/53",
+     "superficie_cubierta": 507.0,
+     "superficie_total": 729.0,
+     "tipo_propiedad": "casa",
+     "titulo": "Casa de prueba en San Luis"
+    }
+   ],
+   "limit": 5,
+   "offset": 0,
+   "ranking": "eretz_ranking_tecnico_v1",
+   "sort": "relevance",
+   "total": 9
+  },
+  "ruta": "/v2/buscar"
+ },
+ "buscar_vacio": {
+  "metodo": "GET",
+  "params": {
+   "q": "zzznadacoincide"
+  },
+  "parser": "search_page",
+  "respuesta": {
+   "consulta": "zzznadacoincide",
+   "contrato": "eretz_api_property_v1",
+   "data": [],
+   "limit": 24,
+   "offset": 0,
+   "ranking": "eretz_ranking_tecnico_v1",
+   "sort": "relevance",
+   "total": 0
+  },
+  "ruta": "/v2/buscar"
+ },
+ "detalle_combinado": {
+  "metodo": "GET",
+  "params": {},
+  "parser": "property",
+  "respuesta": {
+   "agency_id": "sintetica:alfa",
+   "alcances": [
+    "AREA_BUSQUEDA",
+    "FICHA",
+    "FILTRO_LOCALIDAD",
+    "FILTRO_OPERACION",
+    "FILTRO_PRECIO",
+    "FILTRO_TIPO",
+    "LISTADO",
+    "MAPA"
+   ],
+   "ambientes": 5,
+   "banos": 2,
+   "descripcion": "Ficha SINTETICA 1 para QA. departamento en Nueva Córdoba, no es una propiedad real.",
+   "dormitorios": 3,
+   "geo": {
+    "area_busqueda": {
+     "id": "sint-cordoba",
+     "nivel": "LOCALIDAD",
+     "nombre": "Córdoba",
+     "origen": "localidad"
+    },
+    "barrio": {
+     "nombre": "Nueva Córdoba"
+    },
+    "departamento": {
+     "nombre": "Capital",
+     "procedencia": "SINTETICA"
+    },
+    "estado": null,
+    "localidad": {
+     "id": "sint-cordoba",
+     "nombre": "Córdoba",
+     "procedencia": "CANONICAL_NORMALIZED"
+    },
+    "municipio": {
+     "nombre": "Córdoba",
+     "procedencia": "SINTETICA"
+    },
+    "provincia": {
+     "nombre": "Córdoba"
+    }
+   },
+   "id": "4190c341cdc453a3f66f79b7b14d8e1b",
+   "imagenes": [],
+   "latitud": -31.4201,
+   "longitud": -64.1888,
+   "moneda": "USD",
+   "operacion": "venta",
+   "precio": 145000.0,
+   "source_url": "https://alfa.sintetica.invalid/caso/9010",
+   "superficie_cubierta": 39.0,
+   "superficie_total": 53.0,
+   "tipo_propiedad": "casa",
+   "titulo": "Casa de prueba con jardín en Córdoba"
+  },
+  "ruta": "/v2/propiedades/4190c341cdc453a3f66f79b7b14d8e1b"
+ },
+ "detalle_conflicto": {
+  "metodo": "GET",
+  "params": {},
+  "parser": "property",
+  "respuesta": {
+   "agency_id": "sintetica:alfa",
+   "alcances": [
+    "FICHA",
+    "FILTRO_OPERACION",
+    "FILTRO_PRECIO",
+    "FILTRO_TIPO",
+    "LISTADO"
+   ],
+   "ambientes": 2,
+   "banos": 2,
+   "descripcion": "Ficha SINTETICA 1 para QA. departamento en Nueva Córdoba, no es una propiedad real.",
+   "dormitorios": 1,
+   "geo": {
+    "area_busqueda": {
+     "id": null,
+     "nivel": "SIN_AREA",
+     "nombre": null,
+     "origen": "sin_area"
+    },
+    "barrio": {
+     "nombre": null
+    },
+    "departamento": {
+     "id": null,
+     "nombre": null,
+     "procedencia": "UNKNOWN",
+     "rechazo": "GEO_CONFLICT"
+    },
+    "estado": "GEO_CONFLICT",
+    "localidad": {
+     "id": null,
+     "nombre": null,
+     "procedencia": "UNKNOWN",
+     "rechazo": "GEO_CONFLICT"
+    },
+    "municipio": {
+     "id": null,
+     "nombre": null,
+     "procedencia": "UNKNOWN",
+     "rechazo": "GEO_CONFLICT"
+    },
+    "provincia": {
+     "id": null,
+     "nombre": null,
+     "procedencia": "UNKNOWN",
+     "rechazo": "GEO_CONFLICT"
+    }
+   },
+   "id": "8e82e570d7ab2397c24c6738bae5f4c9",
+   "imagenes": [],
+   "latitud": null,
+   "longitud": null,
+   "moneda": "ARS",
+   "operacion": "alquiler",
+   "precio": 265000.0,
+   "source_url": "https://alfa.sintetica.invalid/caso/9006",
+   "superficie_cubierta": 39.0,
+   "superficie_total": 53.0,
+   "tipo_propiedad": "departamento",
+   "titulo": "Departamento de prueba en Córdoba"
+  },
+  "ruta": "/v2/propiedades/8e82e570d7ab2397c24c6738bae5f4c9"
+ },
+ "detalle_municipio": {
+  "metodo": "GET",
+  "params": {},
+  "parser": "property",
+  "respuesta": {
+   "agency_id": "sintetica:alfa",
+   "alcances": [
+    "AREA_BUSQUEDA",
+    "FICHA",
+    "FILTRO_OPERACION",
+    "FILTRO_PRECIO",
+    "FILTRO_TIPO",
+    "LISTADO",
+    "MAPA"
+   ],
+   "ambientes": 2,
+   "banos": 2,
+   "descripcion": "Ficha SINTETICA 1 para QA. departamento en Nueva Córdoba, no es una propiedad real.",
+   "dormitorios": 1,
+   "geo": {
+    "area_busqueda": {
+     "id": null,
+     "nivel": "MUNICIPIO",
+     "nombre": "Córdoba",
+     "origen": "municipio"
+    },
+    "barrio": {
+     "nombre": "Nueva Córdoba"
+    },
+    "departamento": {
+     "nombre": "Capital",
+     "procedencia": "SINTETICA"
+    },
+    "estado": null,
+    "localidad": {
+     "id": null,
+     "nombre": null,
+     "procedencia": "UNKNOWN"
+    },
+    "municipio": {
+     "nombre": "Córdoba",
+     "procedencia": "SINTETICA"
+    },
+    "provincia": {
+     "nombre": "Córdoba"
+    }
+   },
+   "id": "db51482af60bfc73b9955624a2cbffb3",
+   "imagenes": [],
+   "latitud": -31.4201,
+   "longitud": -64.1888,
+   "moneda": "ARS",
+   "operacion": "alquiler",
+   "precio": 265000.0,
+   "source_url": "https://alfa.sintetica.invalid/caso/9011",
+   "superficie_cubierta": 39.0,
+   "superficie_total": 53.0,
+   "tipo_propiedad": "departamento",
+   "titulo": "Departamento de prueba en Córdoba"
+  },
+  "ruta": "/v2/propiedades/db51482af60bfc73b9955624a2cbffb3"
+ },
+ "detalle_sin_coordenadas": {
+  "metodo": "GET",
+  "params": {},
+  "parser": "property",
+  "respuesta": {
+   "agency_id": "sintetica:alfa",
+   "alcances": [
+    "AREA_BUSQUEDA",
+    "FICHA",
+    "FILTRO_LOCALIDAD",
+    "FILTRO_OPERACION",
+    "FILTRO_PRECIO",
+    "FILTRO_TIPO",
+    "LISTADO"
+   ],
+   "ambientes": 2,
+   "banos": 2,
+   "descripcion": "Ficha SINTETICA 1 para QA. departamento en Nueva Córdoba, no es una propiedad real.",
+   "dormitorios": 1,
+   "geo": {
+    "area_busqueda": {
+     "id": "sint-palermo",
+     "nivel": "LOCALIDAD",
+     "nombre": "Ciudad Autónoma de Buenos Aires",
+     "origen": "localidad"
+    },
+    "barrio": {
+     "nombre": "Palermo"
+    },
+    "departamento": {
+     "nombre": "Comuna 14",
+     "procedencia": "SINTETICA"
+    },
+    "estado": null,
+    "localidad": {
+     "id": "sint-palermo",
+     "nombre": "Ciudad Autónoma de Buenos Aires",
+     "procedencia": "CANONICAL_NORMALIZED"
+    },
+    "municipio": {
+     "nombre": null,
+     "procedencia": "UNKNOWN"
+    },
+    "provincia": {
+     "nombre": "Ciudad Autónoma de Buenos Aires"
+    }
+   },
+   "id": "33fe16eb2134f8c142f15166de45e3b5",
+   "imagenes": [],
+   "latitud": null,
+   "longitud": null,
+   "moneda": "ARS",
+   "operacion": "alquiler",
+   "precio": 265000.0,
+   "source_url": "https://alfa.sintetica.invalid/caso/9005",
+   "superficie_cubierta": 39.0,
+   "superficie_total": 53.0,
+   "tipo_propiedad": "casa",
+   "titulo": "Casa amplia en alquiler sin mapa"
+  },
+  "ruta": "/v2/propiedades/33fe16eb2134f8c142f15166de45e3b5"
+ },
+ "detalle_sin_moneda": {
+  "metodo": "GET",
+  "params": {},
+  "parser": "property",
+  "respuesta": {
+   "agency_id": "sintetica:alfa",
+   "alcances": [
+    "AREA_BUSQUEDA",
+    "FICHA",
+    "FILTRO_LOCALIDAD",
+    "FILTRO_OPERACION",
+    "FILTRO_TIPO",
+    "LISTADO",
+    "MAPA"
+   ],
+   "ambientes": 2,
+   "banos": 2,
+   "descripcion": "Ficha SINTETICA 1 para QA. departamento en Nueva Córdoba, no es una propiedad real.",
+   "dormitorios": 1,
+   "geo": {
+    "area_busqueda": {
+     "id": "sint-san_isidro",
+     "nivel": "LOCALIDAD",
+     "nombre": "San Isidro",
+     "origen": "localidad"
+    },
+    "barrio": {
+     "nombre": "Centro"
+    },
+    "departamento": {
+     "nombre": "San Isidro",
+     "procedencia": "SINTETICA"
+    },
+    "estado": null,
+    "localidad": {
+     "id": "sint-san_isidro",
+     "nombre": "San Isidro",
+     "procedencia": "CANONICAL_NORMALIZED"
+    },
+    "municipio": {
+     "nombre": "San Isidro",
+     "procedencia": "SINTETICA"
+    },
+    "provincia": {
+     "nombre": "Buenos Aires"
+    }
+   },
+   "id": "1e23cde10582531bda996061d72f551c",
+   "imagenes": [],
+   "latitud": -34.4708,
+   "longitud": -58.5286,
+   "moneda": null,
+   "operacion": "alquiler",
+   "precio": 180000.0,
+   "source_url": "https://alfa.sintetica.invalid/caso/9004",
+   "superficie_cubierta": 39.0,
+   "superficie_total": 53.0,
+   "tipo_propiedad": "departamento",
+   "titulo": "Departamento de prueba en Córdoba"
+  },
+  "ruta": "/v2/propiedades/1e23cde10582531bda996061d72f551c"
+ },
+ "detalle_sin_precio": {
+  "metodo": "GET",
+  "params": {},
+  "parser": "property",
+  "respuesta": {
+   "agency_id": "sintetica:alfa",
+   "alcances": [
+    "AREA_BUSQUEDA",
+    "FICHA",
+    "FILTRO_LOCALIDAD",
+    "FILTRO_OPERACION",
+    "FILTRO_TIPO",
+    "LISTADO",
+    "MAPA"
+   ],
+   "ambientes": 2,
+   "banos": 2,
+   "descripcion": "Ficha SINTETICA 1 para QA. departamento en Nueva Córdoba, no es una propiedad real.",
+   "dormitorios": 1,
+   "geo": {
+    "area_busqueda": {
+     "id": "sint-mar_del_plata",
+     "nivel": "LOCALIDAD",
+     "nombre": "Mar del Plata",
+     "origen": "localidad"
+    },
+    "barrio": {
+     "nombre": "La Perla"
+    },
+    "departamento": {
+     "nombre": "General Pueyrredón",
+     "procedencia": "SINTETICA"
+    },
+    "estado": null,
+    "localidad": {
+     "id": "sint-mar_del_plata",
+     "nombre": "Mar del Plata",
+     "procedencia": "CANONICAL_NORMALIZED"
+    },
+    "municipio": {
+     "nombre": "General Pueyrredón",
+     "procedencia": "SINTETICA"
+    },
+    "provincia": {
+     "nombre": "Buenos Aires"
+    }
+   },
+   "id": "84b54279ebb154c59cd81ac339ac994f",
+   "imagenes": [],
+   "latitud": -38.0055,
+   "longitud": -57.5426,
+   "moneda": null,
+   "operacion": "alquiler",
+   "precio": null,
+   "source_url": "https://alfa.sintetica.invalid/caso/9003",
+   "superficie_cubierta": 39.0,
+   "superficie_total": 53.0,
+   "tipo_propiedad": "departamento",
+   "titulo": "Departamento de prueba en Córdoba"
+  },
+  "ruta": "/v2/propiedades/84b54279ebb154c59cd81ac339ac994f"
+ },
+ "detalle_sin_titulo": {
+  "metodo": "GET",
+  "params": {},
+  "parser": "property",
+  "respuesta": {
+   "agency_id": "sintetica:alfa",
+   "alcances": [
+    "AREA_BUSQUEDA",
+    "FICHA",
+    "FILTRO_LOCALIDAD",
+    "FILTRO_OPERACION",
+    "FILTRO_PRECIO",
+    "FILTRO_TIPO",
+    "LISTADO",
+    "MAPA"
+   ],
+   "ambientes": 2,
+   "banos": 2,
+   "descripcion": "Ficha SINTETICA sin titulo publicado: tipo, operacion y localidad reales.",
+   "dormitorios": 1,
+   "geo": {
+    "area_busqueda": {
+     "id": "sint-rosario",
+     "nivel": "LOCALIDAD",
+     "nombre": "Rosario",
+     "origen": "localidad"
+    },
+    "barrio": {
+     "nombre": "Centro"
+    },
+    "departamento": {
+     "nombre": "Rosario",
+     "procedencia": "SINTETICA"
+    },
+    "estado": null,
+    "localidad": {
+     "id": "sint-rosario",
+     "nombre": "Rosario",
+     "procedencia": "CANONICAL_NORMALIZED"
+    },
+    "municipio": {
+     "nombre": "Rosario",
+     "procedencia": "SINTETICA"
+    },
+    "provincia": {
+     "nombre": "Santa Fe"
+    }
+   },
+   "id": "d3af0c2faada03f177c0acc8cdefd853",
+   "imagenes": [],
+   "latitud": -32.9468,
+   "longitud": -60.6393,
+   "moneda": "ARS",
+   "operacion": "venta",
+   "precio": 265000.0,
+   "source_url": "https://alfa.sintetica.invalid/caso/9001",
+   "superficie_cubierta": 39.0,
+   "superficie_total": 53.0,
+   "tipo_propiedad": "casa",
+   "titulo": null
+  },
+  "ruta": "/v2/propiedades/d3af0c2faada03f177c0acc8cdefd853"
+ },
+ "detalle_sin_titulo_ni_datos": {
+  "metodo": "GET",
+  "params": {},
+  "parser": "property",
+  "respuesta": {
+   "agency_id": "sintetica:alfa",
+   "alcances": [
+    "AREA_BUSQUEDA",
+    "FICHA",
+    "FILTRO_LOCALIDAD",
+    "FILTRO_PRECIO",
+    "LISTADO",
+    "MAPA"
+   ],
+   "ambientes": 2,
+   "banos": 2,
+   "descripcion": "Ficha SINTETICA sin titulo, tipo ni operacion.",
+   "dormitorios": 1,
+   "geo": {
+    "area_busqueda": {
+     "id": "sint-cordoba",
+     "nivel": "LOCALIDAD",
+     "nombre": "Córdoba",
+     "origen": "localidad"
+    },
+    "barrio": {
+     "nombre": "Nueva Córdoba"
+    },
+    "departamento": {
+     "nombre": "Capital",
+     "procedencia": "SINTETICA"
+    },
+    "estado": null,
+    "localidad": {
+     "id": "sint-cordoba",
+     "nombre": "Córdoba",
+     "procedencia": "CANONICAL_NORMALIZED"
+    },
+    "municipio": {
+     "nombre": "Córdoba",
+     "procedencia": "SINTETICA"
+    },
+    "provincia": {
+     "nombre": "Córdoba"
+    }
+   },
+   "id": "152157504428d2c1636ab046a68bf3c8",
+   "imagenes": [],
+   "latitud": -31.4201,
+   "longitud": -64.1888,
+   "moneda": "ARS",
+   "operacion": null,
+   "precio": 265000.0,
+   "source_url": "https://alfa.sintetica.invalid/caso/9002",
+   "superficie_cubierta": 39.0,
+   "superficie_total": 53.0,
+   "tipo_propiedad": null,
+   "titulo": null
+  },
+  "ruta": "/v2/propiedades/152157504428d2c1636ab046a68bf3c8"
+ },
+ "detalle_solo_provincia": {
+  "metodo": "GET",
+  "params": {},
+  "parser": "property",
+  "respuesta": {
+   "agency_id": "sintetica:alfa",
+   "alcances": [
+    "AREA_BUSQUEDA",
+    "FICHA",
+    "FILTRO_OPERACION",
+    "FILTRO_PRECIO",
+    "FILTRO_TIPO",
+    "LISTADO",
+    "MAPA"
+   ],
+   "ambientes": 2,
+   "banos": 2,
+   "descripcion": "Ficha SINTETICA 1 para QA. departamento en Nueva Córdoba, no es una propiedad real.",
+   "dormitorios": 1,
+   "geo": {
+    "area_busqueda": {
+     "id": null,
+     "nivel": "PROVINCIA",
+     "nombre": "Córdoba",
+     "origen": "provincia"
+    },
+    "barrio": {
+     "nombre": "Nueva Córdoba"
+    },
+    "departamento": {
+     "nombre": null,
+     "procedencia": "UNKNOWN"
+    },
+    "estado": null,
+    "localidad": {
+     "id": null,
+     "nombre": null,
+     "procedencia": "UNKNOWN"
+    },
+    "municipio": {
+     "nombre": null,
+     "procedencia": "UNKNOWN"
+    },
+    "provincia": {
+     "nombre": "Córdoba"
+    }
+   },
+   "id": "370a5e727035d29dc99eddb31f05201d",
+   "imagenes": [],
+   "latitud": -31.4201,
+   "longitud": -64.1888,
+   "moneda": "ARS",
+   "operacion": "alquiler",
+   "precio": 265000.0,
+   "source_url": "https://alfa.sintetica.invalid/caso/9007",
+   "superficie_cubierta": 39.0,
+   "superficie_total": 53.0,
+   "tipo_propiedad": "departamento",
+   "titulo": "Departamento de prueba en Córdoba"
+  },
+  "ruta": "/v2/propiedades/370a5e727035d29dc99eddb31f05201d"
+ },
+ "filtros": {
+  "metodo": "GET",
+  "params": {},
+  "parser": "filters",
+  "respuesta": {
+   "contrato": "eretz_api_property_v1",
+   "filtros": {
+    "area_nivel": [
+     {
+      "propiedades": 73,
+      "valor": "LOCALIDAD"
+     },
+     {
+      "propiedades": 9,
+      "valor": "MUNICIPIO"
+     },
+     {
+      "propiedades": 3,
+      "valor": "PROVINCIA"
+     },
+     {
+      "propiedades": 1,
+      "valor": "SIN_AREA"
+     }
+    ],
+    "moneda": [
+     {
+      "propiedades": 47,
+      "valor": "ARS"
+     },
+     {
+      "propiedades": 37,
+      "valor": "USD"
+     }
+    ],
+    "operacion": [
+     {
+      "propiedades": 38,
+      "valor": "venta"
+     },
+     {
+      "propiedades": 28,
+      "valor": "alquiler"
+     },
+     {
+      "propiedades": 19,
+      "valor": "alquiler_temporario"
+     }
+    ],
+    "tipo_propiedad": [
+     {
+      "propiedades": 39,
+      "valor": "departamento"
+     },
+     {
+      "propiedades": 10,
+      "valor": "casa"
+     },
+     {
+      "propiedades": 8,
+      "valor": "terreno"
+     },
+     {
+      "propiedades": 7,
+      "valor": "cochera"
+     },
+     {
+      "propiedades": 7,
+      "valor": "local"
+     },
+     {
+      "propiedades": 7,
+      "valor": "oficina"
+     },
+     {
+      "propiedades": 7,
+      "valor": "ph"
+     }
+    ]
+   },
+   "rango_de_precio": [
+    {
+     "maximo": 1315000.0,
+     "minimo": 90000.0,
+     "moneda": "ARS"
+    },
+    {
+     "maximo": 600000.0,
+     "minimo": 75000.0,
+     "moneda": "USD"
+    }
+   ],
+   "sin_dato": {
+    "latitud": 2,
+    "localidad": 13,
+    "operacion": 1,
+    "precio": 1,
+    "tipo_propiedad": 1
+   }
+  },
+  "ruta": "/v2/filtros"
+ },
+ "lote": {
+  "metodo": "POST",
+  "params": {},
+  "parser": "batch",
+  "respuesta": {
+   "contrato": "eretz_api_property_v1",
+   "items": [
+    {
+     "agency_id": "sintetica:alfa",
+     "alcances": [
+      "AREA_BUSQUEDA",
+      "FICHA",
+      "FILTRO_LOCALIDAD",
+      "FILTRO_OPERACION",
+      "FILTRO_PRECIO",
+      "FILTRO_TIPO",
+      "LISTADO",
+      "MAPA"
+     ],
+     "ambientes": 2,
+     "banos": 2,
+     "descripcion": "Ficha SINTETICA sin titulo publicado: tipo, operacion y localidad reales.",
+     "dormitorios": 1,
+     "geo": {
+      "area_busqueda": {
+       "id": "sint-rosario",
+       "nivel": "LOCALIDAD",
+       "nombre": "Rosario",
+       "origen": "localidad"
+      },
+      "barrio": {
+       "nombre": "Centro"
+      },
+      "departamento": {
+       "nombre": "Rosario",
+       "procedencia": "SINTETICA"
+      },
+      "estado": null,
+      "localidad": {
+       "id": "sint-rosario",
+       "nombre": "Rosario",
+       "procedencia": "CANONICAL_NORMALIZED"
+      },
+      "municipio": {
+       "nombre": "Rosario",
+       "procedencia": "SINTETICA"
+      },
+      "provincia": {
+       "nombre": "Santa Fe"
+      }
+     },
+     "id": "d3af0c2faada03f177c0acc8cdefd853",
+     "imagenes": [],
+     "latitud": -32.9468,
+     "longitud": -60.6393,
+     "moneda": "ARS",
+     "operacion": "venta",
+     "precio": 265000.0,
+     "ranking": null,
+     "source_url": "https://alfa.sintetica.invalid/caso/9001",
+     "superficie_cubierta": 39.0,
+     "superficie_total": 53.0,
+     "tipo_propiedad": "casa",
+     "titulo": null
+    },
+    {
+     "agency_id": "sintetica:alfa",
+     "alcances": [
+      "AREA_BUSQUEDA",
+      "FICHA",
+      "FILTRO_LOCALIDAD",
+      "FILTRO_PRECIO",
+      "LISTADO",
+      "MAPA"
+     ],
+     "ambientes": 2,
+     "banos": 2,
+     "descripcion": "Ficha SINTETICA sin titulo, tipo ni operacion.",
+     "dormitorios": 1,
+     "geo": {
+      "area_busqueda": {
+       "id": "sint-cordoba",
+       "nivel": "LOCALIDAD",
+       "nombre": "Córdoba",
+       "origen": "localidad"
+      },
+      "barrio": {
+       "nombre": "Nueva Córdoba"
+      },
+      "departamento": {
+       "nombre": "Capital",
+       "procedencia": "SINTETICA"
+      },
+      "estado": null,
+      "localidad": {
+       "id": "sint-cordoba",
+       "nombre": "Córdoba",
+       "procedencia": "CANONICAL_NORMALIZED"
+      },
+      "municipio": {
+       "nombre": "Córdoba",
+       "procedencia": "SINTETICA"
+      },
+      "provincia": {
+       "nombre": "Córdoba"
+      }
+     },
+     "id": "152157504428d2c1636ab046a68bf3c8",
+     "imagenes": [],
+     "latitud": -31.4201,
+     "longitud": -64.1888,
+     "moneda": "ARS",
+     "operacion": null,
+     "precio": 265000.0,
+     "ranking": null,
+     "source_url": "https://alfa.sintetica.invalid/caso/9002",
+     "superficie_cubierta": 39.0,
+     "superficie_total": 53.0,
+     "tipo_propiedad": null,
+     "titulo": null
+    },
+    {
+     "agency_id": "sintetica:alfa",
+     "alcances": [
+      "AREA_BUSQUEDA",
+      "FICHA",
+      "FILTRO_LOCALIDAD",
+      "FILTRO_OPERACION",
+      "FILTRO_TIPO",
+      "LISTADO",
+      "MAPA"
+     ],
+     "ambientes": 2,
+     "banos": 2,
+     "descripcion": "Ficha SINTETICA 1 para QA. departamento en Nueva Córdoba, no es una propiedad real.",
+     "dormitorios": 1,
+     "geo": {
+      "area_busqueda": {
+       "id": "sint-mar_del_plata",
+       "nivel": "LOCALIDAD",
+       "nombre": "Mar del Plata",
+       "origen": "localidad"
+      },
+      "barrio": {
+       "nombre": "La Perla"
+      },
+      "departamento": {
+       "nombre": "General Pueyrredón",
+       "procedencia": "SINTETICA"
+      },
+      "estado": null,
+      "localidad": {
+       "id": "sint-mar_del_plata",
+       "nombre": "Mar del Plata",
+       "procedencia": "CANONICAL_NORMALIZED"
+      },
+      "municipio": {
+       "nombre": "General Pueyrredón",
+       "procedencia": "SINTETICA"
+      },
+      "provincia": {
+       "nombre": "Buenos Aires"
+      }
+     },
+     "id": "84b54279ebb154c59cd81ac339ac994f",
+     "imagenes": [],
+     "latitud": -38.0055,
+     "longitud": -57.5426,
+     "moneda": null,
+     "operacion": "alquiler",
+     "precio": null,
+     "ranking": null,
+     "source_url": "https://alfa.sintetica.invalid/caso/9003",
+     "superficie_cubierta": 39.0,
+     "superficie_total": 53.0,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en Córdoba"
+    },
+    {
+     "agency_id": "sintetica:alfa",
+     "alcances": [
+      "AREA_BUSQUEDA",
+      "FICHA",
+      "FILTRO_LOCALIDAD",
+      "FILTRO_OPERACION",
+      "FILTRO_TIPO",
+      "LISTADO",
+      "MAPA"
+     ],
+     "ambientes": 2,
+     "banos": 2,
+     "descripcion": "Ficha SINTETICA 1 para QA. departamento en Nueva Córdoba, no es una propiedad real.",
+     "dormitorios": 1,
+     "geo": {
+      "area_busqueda": {
+       "id": "sint-san_isidro",
+       "nivel": "LOCALIDAD",
+       "nombre": "San Isidro",
+       "origen": "localidad"
+      },
+      "barrio": {
+       "nombre": "Centro"
+      },
+      "departamento": {
+       "nombre": "San Isidro",
+       "procedencia": "SINTETICA"
+      },
+      "estado": null,
+      "localidad": {
+       "id": "sint-san_isidro",
+       "nombre": "San Isidro",
+       "procedencia": "CANONICAL_NORMALIZED"
+      },
+      "municipio": {
+       "nombre": "San Isidro",
+       "procedencia": "SINTETICA"
+      },
+      "provincia": {
+       "nombre": "Buenos Aires"
+      }
+     },
+     "id": "1e23cde10582531bda996061d72f551c",
+     "imagenes": [],
+     "latitud": -34.4708,
+     "longitud": -58.5286,
+     "moneda": null,
+     "operacion": "alquiler",
+     "precio": 180000.0,
+     "ranking": null,
+     "source_url": "https://alfa.sintetica.invalid/caso/9004",
+     "superficie_cubierta": 39.0,
+     "superficie_total": 53.0,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en Córdoba"
+    },
+    {
+     "agency_id": "sintetica:alfa",
+     "alcances": [
+      "AREA_BUSQUEDA",
+      "FICHA",
+      "FILTRO_LOCALIDAD",
+      "FILTRO_OPERACION",
+      "FILTRO_PRECIO",
+      "FILTRO_TIPO",
+      "LISTADO"
+     ],
+     "ambientes": 2,
+     "banos": 2,
+     "descripcion": "Ficha SINTETICA 1 para QA. departamento en Nueva Córdoba, no es una propiedad real.",
+     "dormitorios": 1,
+     "geo": {
+      "area_busqueda": {
+       "id": "sint-palermo",
+       "nivel": "LOCALIDAD",
+       "nombre": "Ciudad Autónoma de Buenos Aires",
+       "origen": "localidad"
+      },
+      "barrio": {
+       "nombre": "Palermo"
+      },
+      "departamento": {
+       "nombre": "Comuna 14",
+       "procedencia": "SINTETICA"
+      },
+      "estado": null,
+      "localidad": {
+       "id": "sint-palermo",
+       "nombre": "Ciudad Autónoma de Buenos Aires",
+       "procedencia": "CANONICAL_NORMALIZED"
+      },
+      "municipio": {
+       "nombre": null,
+       "procedencia": "UNKNOWN"
+      },
+      "provincia": {
+       "nombre": "Ciudad Autónoma de Buenos Aires"
+      }
+     },
+     "id": "33fe16eb2134f8c142f15166de45e3b5",
+     "imagenes": [],
+     "latitud": null,
+     "longitud": null,
+     "moneda": "ARS",
+     "operacion": "alquiler",
+     "precio": 265000.0,
+     "ranking": null,
+     "source_url": "https://alfa.sintetica.invalid/caso/9005",
+     "superficie_cubierta": 39.0,
+     "superficie_total": 53.0,
+     "tipo_propiedad": "casa",
+     "titulo": "Casa amplia en alquiler sin mapa"
+    },
+    {
+     "agency_id": "sintetica:alfa",
+     "alcances": [
+      "FICHA",
+      "FILTRO_OPERACION",
+      "FILTRO_PRECIO",
+      "FILTRO_TIPO",
+      "LISTADO"
+     ],
+     "ambientes": 2,
+     "banos": 2,
+     "descripcion": "Ficha SINTETICA 1 para QA. departamento en Nueva Córdoba, no es una propiedad real.",
+     "dormitorios": 1,
+     "geo": {
+      "area_busqueda": {
+       "id": null,
+       "nivel": "SIN_AREA",
+       "nombre": null,
+       "origen": "sin_area"
+      },
+      "barrio": {
+       "nombre": null
+      },
+      "departamento": {
+       "id": null,
+       "nombre": null,
+       "procedencia": "UNKNOWN",
+       "rechazo": "GEO_CONFLICT"
+      },
+      "estado": "GEO_CONFLICT",
+      "localidad": {
+       "id": null,
+       "nombre": null,
+       "procedencia": "UNKNOWN",
+       "rechazo": "GEO_CONFLICT"
+      },
+      "municipio": {
+       "id": null,
+       "nombre": null,
+       "procedencia": "UNKNOWN",
+       "rechazo": "GEO_CONFLICT"
+      },
+      "provincia": {
+       "id": null,
+       "nombre": null,
+       "procedencia": "UNKNOWN",
+       "rechazo": "GEO_CONFLICT"
+      }
+     },
+     "id": "8e82e570d7ab2397c24c6738bae5f4c9",
+     "imagenes": [],
+     "latitud": null,
+     "longitud": null,
+     "moneda": "ARS",
+     "operacion": "alquiler",
+     "precio": 265000.0,
+     "ranking": null,
+     "source_url": "https://alfa.sintetica.invalid/caso/9006",
+     "superficie_cubierta": 39.0,
+     "superficie_total": 53.0,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en Córdoba"
+    },
+    {
+     "agency_id": "sintetica:alfa",
+     "alcances": [
+      "AREA_BUSQUEDA",
+      "FICHA",
+      "FILTRO_OPERACION",
+      "FILTRO_PRECIO",
+      "FILTRO_TIPO",
+      "LISTADO",
+      "MAPA"
+     ],
+     "ambientes": 2,
+     "banos": 2,
+     "descripcion": "Ficha SINTETICA 1 para QA. departamento en Nueva Córdoba, no es una propiedad real.",
+     "dormitorios": 1,
+     "geo": {
+      "area_busqueda": {
+       "id": null,
+       "nivel": "PROVINCIA",
+       "nombre": "Córdoba",
+       "origen": "provincia"
+      },
+      "barrio": {
+       "nombre": "Nueva Córdoba"
+      },
+      "departamento": {
+       "nombre": null,
+       "procedencia": "UNKNOWN"
+      },
+      "estado": null,
+      "localidad": {
+       "id": null,
+       "nombre": null,
+       "procedencia": "UNKNOWN"
+      },
+      "municipio": {
+       "nombre": null,
+       "procedencia": "UNKNOWN"
+      },
+      "provincia": {
+       "nombre": "Córdoba"
+      }
+     },
+     "id": "370a5e727035d29dc99eddb31f05201d",
+     "imagenes": [],
+     "latitud": -31.4201,
+     "longitud": -64.1888,
+     "moneda": "ARS",
+     "operacion": "alquiler",
+     "precio": 265000.0,
+     "ranking": null,
+     "source_url": "https://alfa.sintetica.invalid/caso/9007",
+     "superficie_cubierta": 39.0,
+     "superficie_total": 53.0,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en Córdoba"
+    },
+    {
+     "agency_id": "sintetica:alfa",
+     "alcances": [
+      "AREA_BUSQUEDA",
+      "FICHA",
+      "FILTRO_OPERACION",
+      "FILTRO_PRECIO",
+      "FILTRO_TIPO",
+      "LISTADO",
+      "MAPA"
+     ],
+     "ambientes": 2,
+     "banos": 2,
+     "descripcion": "Ficha SINTETICA 1 para QA. departamento en Nueva Córdoba, no es una propiedad real.",
+     "dormitorios": 1,
+     "geo": {
+      "area_busqueda": {
+       "id": null,
+       "nivel": "MUNICIPIO",
+       "nombre": "Córdoba",
+       "origen": "municipio"
+      },
+      "barrio": {
+       "nombre": "Nueva Córdoba"
+      },
+      "departamento": {
+       "nombre": "Capital",
+       "procedencia": "SINTETICA"
+      },
+      "estado": null,
+      "localidad": {
+       "id": null,
+       "nombre": null,
+       "procedencia": "UNKNOWN"
+      },
+      "municipio": {
+       "nombre": "Córdoba",
+       "procedencia": "SINTETICA"
+      },
+      "provincia": {
+       "nombre": "Córdoba"
+      }
+     },
+     "id": "db51482af60bfc73b9955624a2cbffb3",
+     "imagenes": [],
+     "latitud": -31.4201,
+     "longitud": -64.1888,
+     "moneda": "ARS",
+     "operacion": "alquiler",
+     "precio": 265000.0,
+     "ranking": null,
+     "source_url": "https://alfa.sintetica.invalid/caso/9011",
+     "superficie_cubierta": 39.0,
+     "superficie_total": 53.0,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en Córdoba"
+    },
+    {
+     "agency_id": "sintetica:alfa",
+     "alcances": [
+      "AREA_BUSQUEDA",
+      "FICHA",
+      "FILTRO_LOCALIDAD",
+      "FILTRO_OPERACION",
+      "FILTRO_PRECIO",
+      "FILTRO_TIPO",
+      "LISTADO",
+      "MAPA"
+     ],
+     "ambientes": 5,
+     "banos": 2,
+     "descripcion": "Ficha SINTETICA 1 para QA. departamento en Nueva Córdoba, no es una propiedad real.",
+     "dormitorios": 3,
+     "geo": {
+      "area_busqueda": {
+       "id": "sint-cordoba",
+       "nivel": "LOCALIDAD",
+       "nombre": "Córdoba",
+       "origen": "localidad"
+      },
+      "barrio": {
+       "nombre": "Nueva Córdoba"
+      },
+      "departamento": {
+       "nombre": "Capital",
+       "procedencia": "SINTETICA"
+      },
+      "estado": null,
+      "localidad": {
+       "id": "sint-cordoba",
+       "nombre": "Córdoba",
+       "procedencia": "CANONICAL_NORMALIZED"
+      },
+      "municipio": {
+       "nombre": "Córdoba",
+       "procedencia": "SINTETICA"
+      },
+      "provincia": {
+       "nombre": "Córdoba"
+      }
+     },
+     "id": "4190c341cdc453a3f66f79b7b14d8e1b",
+     "imagenes": [],
+     "latitud": -31.4201,
+     "longitud": -64.1888,
+     "moneda": "USD",
+     "operacion": "venta",
+     "precio": 145000.0,
+     "ranking": null,
+     "source_url": "https://alfa.sintetica.invalid/caso/9010",
+     "superficie_cubierta": 39.0,
+     "superficie_total": 53.0,
+     "tipo_propiedad": "casa",
+     "titulo": "Casa de prueba con jardín en Córdoba"
+    }
+   ],
+   "missing_ids": [
+    "no-existe"
+   ],
+   "requested_ids": [
+    "d3af0c2faada03f177c0acc8cdefd853",
+    "152157504428d2c1636ab046a68bf3c8",
+    "84b54279ebb154c59cd81ac339ac994f",
+    "1e23cde10582531bda996061d72f551c",
+    "33fe16eb2134f8c142f15166de45e3b5",
+    "8e82e570d7ab2397c24c6738bae5f4c9",
+    "370a5e727035d29dc99eddb31f05201d",
+    "db51482af60bfc73b9955624a2cbffb3",
+    "4190c341cdc453a3f66f79b7b14d8e1b",
+    "no-existe"
+   ]
+  },
+  "ruta": "/v2/propiedades/batch"
+ },
+ "mapa": {
+  "metodo": "GET",
+  "params": {
+   "east": -55,
+   "limit": 50,
+   "north": -30,
+   "south": -40,
+   "west": -70
+  },
+  "parser": "map",
+  "respuesta": {
+   "contrato": "eretz_api_property_v1",
+   "data": [
+    {
+     "id": "033f55e84bcfa038a18fba4e5bd38eab",
+     "latitud": -31.4081,
+     "longitud": -64.1808,
+     "moneda": "USD",
+     "operacion": "venta",
+     "precio": 75000.0,
+     "tipo_propiedad": "terreno",
+     "titulo": "Terreno de prueba en Córdoba"
+    },
+    {
+     "id": "05d5566556d93b2786691689371834e9",
+     "latitud": -31.4161,
+     "longitud": -64.1768,
+     "moneda": "ARS",
+     "operacion": "alquiler_temporario",
+     "precio": 355000.0,
+     "tipo_propiedad": "cochera",
+     "titulo": "Cochera de prueba en Córdoba"
+    },
+    {
+     "id": "0670e3cfd6f3cfbfa9ba145b879c0f68",
+     "latitud": -34.5689,
+     "longitud": -58.4266,
+     "moneda": "USD",
+     "operacion": "venta",
+     "precio": 285000.0,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en Ciudad Autónoma de Buenos Aires"
+    },
+    {
+     "id": "07b5b3cf843e280a0671af7e69afcd14",
+     "latitud": -33.2817,
+     "longitud": -66.3338,
+     "moneda": "USD",
+     "operacion": "venta",
+     "precio": 450000.0,
+     "tipo_propiedad": "terreno",
+     "titulo": "Terreno de prueba en San Luis"
+    },
+    {
+     "id": "083d1edc280dcdaaa66f0d6e4d827309",
+     "latitud": -34.4788,
+     "longitud": -58.5326,
+     "moneda": "USD",
+     "operacion": "venta",
+     "precio": 375000.0,
+     "tipo_propiedad": "terreno",
+     "titulo": "Terreno de prueba en San Isidro"
+    },
+    {
+     "id": "090e4e21f95db1fe752a9a64e77bc885",
+     "latitud": -33.3017,
+     "longitud": -66.3378,
+     "moneda": "ARS",
+     "operacion": "alquiler",
+     "precio": 265000.0,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en Córdoba"
+    },
+    {
+     "id": "105958f527fd37bdf759e909c6d71d79",
+     "latitud": -31.4001,
+     "longitud": -64.1848,
+     "moneda": "USD",
+     "operacion": "venta",
+     "precio": 120000.0,
+     "tipo_propiedad": "local",
+     "titulo": "Local de prueba en Córdoba"
+    },
+    {
+     "id": "12288a1dcd3a7416f8fc2f3ae6e61c4c",
+     "latitud": -32.9468,
+     "longitud": -60.6473,
+     "moneda": "USD",
+     "operacion": "venta",
+     "precio": 255000.0,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en Rosario"
+    },
+    {
+     "id": "12e7216685a86e28a82f6e339e259513",
+     "latitud": -34.4828,
+     "longitud": -58.5086,
+     "moneda": "ARS",
+     "operacion": "alquiler_temporario",
+     "precio": 835000.0,
+     "tipo_propiedad": "ph",
+     "titulo": "Ph de prueba en San Isidro"
+    },
+    {
+     "id": "13e06f9a56af8608695b2716d763edb0",
+     "latitud": -34.5809,
+     "longitud": -58.4426,
+     "moneda": "USD",
+     "operacion": "venta",
+     "precio": 300000.0,
+     "tipo_propiedad": "terreno",
+     "titulo": "Terreno de prueba en Ciudad Autónoma de Buenos Aires"
+    },
+    {
+     "id": "152157504428d2c1636ab046a68bf3c8",
+     "latitud": -31.4201,
+     "longitud": -64.1888,
+     "moneda": "ARS",
+     "operacion": null,
+     "precio": 265000.0,
+     "tipo_propiedad": null,
+     "titulo": null
+    },
+    {
+     "id": "19f82e1c716b2c1af28cbf50d3102375",
+     "latitud": -34.4668,
+     "longitud": -58.5166,
+     "moneda": "USD",
+     "operacion": "venta",
+     "precio": 360000.0,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en San Isidro"
+    },
+    {
+     "id": "1b3dca79fecf58f36f0c611266e1ae5e",
+     "latitud": -38.9356,
+     "longitud": -68.0751,
+     "moneda": "USD",
+     "operacion": "venta",
+     "precio": 510000.0,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en Neuquén"
+    },
+    {
+     "id": "1e23cde10582531bda996061d72f551c",
+     "latitud": -34.4708,
+     "longitud": -58.5286,
+     "moneda": null,
+     "operacion": "alquiler",
+     "precio": 180000.0,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en Córdoba"
+    },
+    {
+     "id": "27423f0bbc1ba6e862b891feddc6ad90",
+     "latitud": -38.9396,
+     "longitud": -68.0511,
+     "moneda": "ARS",
+     "operacion": "alquiler",
+     "precio": 1105000.0,
+     "tipo_propiedad": "cochera",
+     "titulo": "Cochera de prueba en Neuquén"
+    },
+    {
+     "id": "281bc1afcc710ebbaeddc53f2715fea9",
+     "latitud": -38.0215,
+     "longitud": -57.5426,
+     "moneda": "ARS",
+     "operacion": "alquiler_temporario",
+     "precio": 955000.0,
+     "tipo_propiedad": "cochera",
+     "titulo": "Cochera de prueba en Mar del Plata"
+    },
+    {
+     "id": "29018905db1bbf9c72cb2d905ae9cc02",
+     "latitud": -31.4321,
+     "longitud": -64.1688,
+     "moneda": "USD",
+     "operacion": "venta",
+     "precio": 105000.0,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en Córdoba"
+    },
+    {
+     "id": "29c807c89e6ca3ff8b1b71072ea56163",
+     "latitud": -37.9935,
+     "longitud": -57.5346,
+     "moneda": "USD",
+     "operacion": "venta",
+     "precio": 405000.0,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en Mar del Plata"
+    },
+    {
+     "id": "30e95efcc769b317f87cf35d6ba8a305",
+     "latitud": -32.9268,
+     "longitud": -60.6353,
+     "moneda": "ARS",
+     "operacion": "alquiler_temporario",
+     "precio": 535000.0,
+     "tipo_propiedad": "ph",
+     "titulo": "Ph de prueba en Rosario"
+    },
+    {
+     "id": "370a5e727035d29dc99eddb31f05201d",
+     "latitud": -31.4201,
+     "longitud": -64.1888,
+     "moneda": "ARS",
+     "operacion": "alquiler",
+     "precio": 265000.0,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en Córdoba"
+    },
+    {
+     "id": "3b82925b10316e70616d946a3eed3ed2",
+     "latitud": -31.4361,
+     "longitud": -64.1888,
+     "moneda": "ARS",
+     "operacion": "alquiler_temporario",
+     "precio": 295000.0,
+     "tipo_propiedad": "casa",
+     "titulo": "Casa de prueba en Córdoba"
+    },
+    {
+     "id": "3f653e627d6c0e3e0427813112c0e2b1",
+     "latitud": -34.5769,
+     "longitud": -58.4226,
+     "moneda": "ARS",
+     "operacion": "alquiler_temporario",
+     "precio": 775000.0,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en Ciudad Autónoma de Buenos Aires"
+    },
+    {
+     "id": "406e43825231dfe9ee3fc6c4a93eeeaa",
+     "latitud": -32.9388,
+     "longitud": -60.6513,
+     "moneda": "ARS",
+     "operacion": "alquiler",
+     "precio": 565000.0,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en Rosario"
+    },
+    {
+     "id": "4190c341cdc453a3f66f79b7b14d8e1b",
+     "latitud": -31.4201,
+     "longitud": -64.1888,
+     "moneda": "USD",
+     "operacion": "venta",
+     "precio": 145000.0,
+     "tipo_propiedad": "casa",
+     "titulo": "Casa de prueba con jardín en Córdoba"
+    },
+    {
+     "id": "42947d212d58611c3b98d597334b90cc",
+     "latitud": -31.3279,
+     "longitud": -64.3513,
+     "moneda": "USD",
+     "operacion": "venta",
+     "precio": 180000.0,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en La Calera"
+    },
+    {
+     "id": "4847937ad019994f6277919c82a3d826",
+     "latitud": -34.4708,
+     "longitud": -58.5286,
+     "moneda": "ARS",
+     "operacion": "alquiler",
+     "precio": 265000.0,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en Córdoba"
+    },
+    {
+     "id": "4d628881d824141fbf5b9d82775fa351",
+     "latitud": -31.4241,
+     "longitud": -64.1728,
+     "moneda": "ARS",
+     "operacion": "alquiler",
+     "precio": 265000.0,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en Córdoba"
+    },
+    {
+     "id": "515ae6c2043219deef6a9a3a37bbe67b",
+     "latitud": -34.6089,
+     "longitud": -58.4506,
+     "moneda": "ARS",
+     "operacion": "alquiler",
+     "precio": 745000.0,
+     "tipo_propiedad": "casa",
+     "titulo": "Casa de prueba en Ciudad Autónoma de Buenos Aires"
+    },
+    {
+     "id": "544ceff20a42d704c26c7542c41e6058",
+     "latitud": -32.9015,
+     "longitud": -68.8258,
+     "moneda": "ARS",
+     "operacion": "alquiler",
+     "precio": 1165000.0,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en Mendoza"
+    },
+    {
+     "id": "56c4a32b3f0e9af7b140ad45a88d046f",
+     "latitud": -34.4548,
+     "longitud": -58.5446,
+     "moneda": "USD",
+     "operacion": "venta",
+     "precio": 345000.0,
+     "tipo_propiedad": "local",
+     "titulo": "Local de prueba en San Isidro"
+    },
+    {
+     "id": "57e6ac543c59d63eeaa64e37b1d99b11",
+     "latitud": -38.9556,
+     "longitud": -68.0431,
+     "moneda": "USD",
+     "operacion": "venta",
+     "precio": 480000.0,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en Neuquén"
+    },
+    {
+     "id": "58465db91a366c6dedc06921cda134ca",
+     "latitud": -32.8975,
+     "longitud": -68.8498,
+     "moneda": "USD",
+     "operacion": "venta",
+     "precio": 540000.0,
+     "tipo_propiedad": "oficina",
+     "titulo": "Oficina de prueba en Mendoza"
+    },
+    {
+     "id": "5adf0177eecdfc7de9964ae25d2c86d2",
+     "latitud": -31.3479,
+     "longitud": -64.3193,
+     "moneda": "USD",
+     "operacion": "venta",
+     "precio": 150000.0,
+     "tipo_propiedad": "terreno",
+     "titulo": "Terreno de prueba en La Calera"
+    },
+    {
+     "id": "5d59ddd4256f005c25b1b22714c3b795",
+     "latitud": -33.2977,
+     "longitud": -66.3258,
+     "moneda": "ARS",
+     "operacion": "alquiler_temporario",
+     "precio": 1015000.0,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en San Luis"
+    },
+    {
+     "id": "5ebdbc33b0c2a910ff516ab8967369b6",
+     "latitud": -31.4041,
+     "longitud": -64.2048,
+     "moneda": "ARS",
+     "operacion": "alquiler",
+     "precio": 325000.0,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en Córdoba"
+    },
+    {
+     "id": "5f93336a5263b05ef34be730bc3bdbe2",
+     "latitud": -32.9428,
+     "longitud": -60.6273,
+     "moneda": "USD",
+     "operacion": "venta",
+     "precio": 195000.0,
+     "tipo_propiedad": "local",
+     "titulo": "Local de prueba en Rosario"
+    },
+    {
+     "id": "603fd6f6f15e3130f26457ffa01fb05c",
+     "latitud": -34.5929,
+     "longitud": -58.4146,
+     "moneda": "USD",
+     "operacion": "venta",
+     "precio": 315000.0,
+     "tipo_propiedad": "oficina",
+     "titulo": "Oficina de prueba en Ciudad Autónoma de Buenos Aires"
+    },
+    {
+     "id": "623d5864dd5d4e8582c605d0711648c6",
+     "latitud": -32.9095,
+     "longitud": -68.8658,
+     "moneda": "USD",
+     "operacion": "venta",
+     "precio": 555000.0,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en Mendoza"
+    },
+    {
+     "id": "6534345c537cd8188924eba31d5dbd7b",
+     "latitud": -34.4708,
+     "longitud": -58.5286,
+     "moneda": "ARS",
+     "operacion": "alquiler",
+     "precio": 265000.0,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en Córdoba"
+    },
+    {
+     "id": "6afc35ec415910a4ae84b3c3ad8767c2",
+     "latitud": -34.5969,
+     "longitud": -58.4346,
+     "moneda": "ARS",
+     "operacion": "alquiler_temporario",
+     "precio": 715000.0,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en Ciudad Autónoma de Buenos Aires"
+    },
+    {
+     "id": "6f436461756830b204da925f58d20158",
+     "latitud": -32.9548,
+     "longitud": -60.6433,
+     "moneda": "USD",
+     "operacion": "venta",
+     "precio": 210000.0,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en Rosario"
+    },
+    {
+     "id": "6fb098444a8892ce414af0377238a33d",
+     "latitud": -34.4508,
+     "longitud": -58.5246,
+     "moneda": "ARS",
+     "operacion": "alquiler",
+     "precio": 865000.0,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en San Isidro"
+    },
+    {
+     "id": "76cebf48e3c7b34bb10c1da95225ddc2",
+     "latitud": -31.3439,
+     "longitud": -64.3433,
+     "moneda": "ARS",
+     "operacion": "alquiler_temporario",
+     "precio": 475000.0,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en La Calera"
+    },
+    {
+     "id": "76db55171904e7d864af5ffb12b5cc12",
+     "latitud": -31.3599,
+     "longitud": -64.3353,
+     "moneda": "USD",
+     "operacion": "venta",
+     "precio": 165000.0,
+     "tipo_propiedad": "oficina",
+     "titulo": "Oficina de prueba en La Calera"
+    },
+    {
+     "id": "772277687d831af5bdb971b6c0aba6b1",
+     "latitud": -38.9716,
+     "longitud": -68.0791,
+     "moneda": "ARS",
+     "operacion": "alquiler_temporario",
+     "precio": 1075000.0,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en Neuquén"
+    },
+    {
+     "id": "77daeeec3b19391dd2cac45e52321d30",
+     "latitud": -32.8695,
+     "longitud": -68.8418,
+     "moneda": "ARS",
+     "operacion": "alquiler_temporario",
+     "precio": 1195000.0,
+     "tipo_propiedad": "casa",
+     "titulo": "Casa de prueba en Mendoza"
+    },
+    {
+     "id": "793039b571e5fc44e0f1720405b27cbc",
+     "latitud": -33.2937,
+     "longitud": -66.3498,
+     "moneda": "USD",
+     "operacion": "venta",
+     "precio": 465000.0,
+     "tipo_propiedad": "oficina",
+     "titulo": "Oficina de prueba en San Luis"
+    },
+    {
+     "id": "7c3fe77c472feb9b3b1e8a5ab56dc485",
+     "latitud": -32.9348,
+     "longitud": -60.6313,
+     "moneda": "USD",
+     "operacion": "venta",
+     "precio": 240000.0,
+     "tipo_propiedad": "oficina",
+     "titulo": "Oficina de prueba en Rosario"
+    },
+    {
+     "id": "84b54279ebb154c59cd81ac339ac994f",
+     "latitud": -38.0055,
+     "longitud": -57.5426,
+     "moneda": null,
+     "operacion": "alquiler",
+     "precio": null,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en Córdoba"
+    },
+    {
+     "id": "85439f535060cd2ff91534dd2188937e",
+     "latitud": -32.8855,
+     "longitud": -68.8338,
+     "moneda": "USD",
+     "operacion": "venta",
+     "precio": 525000.0,
+     "tipo_propiedad": "terreno",
+     "titulo": "Terreno de prueba en Mendoza"
+    }
+   ],
+   "limit": 50,
+   "returned_points": 50,
+   "total_matches": 86,
+   "truncated": true,
+   "viewport_matches": 78
+  },
+  "ruta": "/v2/propiedades/mapa"
+ },
+ "propiedades_pagina": {
+  "metodo": "GET",
+  "params": {
+   "limit": 5
+  },
+  "parser": "page",
+  "respuesta": {
+   "contrato": "eretz_api_property_v1",
+   "data": [
+    {
+     "agency_id": "sintetica:delta",
+     "alcances": [
+      "AREA_BUSQUEDA",
+      "FICHA",
+      "FILTRO_LOCALIDAD",
+      "FILTRO_OPERACION",
+      "FILTRO_PRECIO",
+      "FILTRO_TIPO",
+      "LISTADO",
+      "MAPA"
+     ],
+     "ambientes": 2,
+     "banos": 2,
+     "descripcion": "Ficha SINTETICA 71 para QA. departamento en Salta, no es una propiedad real.",
+     "dormitorios": 3,
+     "geo": {
+      "area_busqueda": {
+       "id": "sint-salta",
+       "nivel": "LOCALIDAD",
+       "nombre": "Salta",
+       "origen": "localidad"
+      },
+      "barrio": {
+       "nombre": null
+      },
+      "departamento": {
+       "nombre": "Capital",
+       "procedencia": "SINTETICA"
+      },
+      "estado": null,
+      "localidad": {
+       "id": "sint-salta",
+       "nombre": "Salta",
+       "procedencia": "CANONICAL_NORMALIZED"
+      },
+      "municipio": {
+       "nombre": "Salta",
+       "procedencia": "SINTETICA"
+      },
+      "provincia": {
+       "nombre": "Salta"
+      }
+     },
+     "id": "f344a05d689d6eab3b046553a3d17558",
+     "imagenes": [],
+     "latitud": -24.7661,
+     "longitud": -65.4392,
+     "moneda": "ARS",
+     "operacion": "alquiler_temporario",
+     "precio": 1315000.0,
+     "source_url": "https://delta.sintetica.invalid/propiedad/71",
+     "superficie_cubierta": 669.0,
+     "superficie_total": 963.0,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en Salta"
+    },
+    {
+     "agency_id": "sintetica:beta",
+     "alcances": [
+      "AREA_BUSQUEDA",
+      "FICHA",
+      "FILTRO_LOCALIDAD",
+      "FILTRO_OPERACION",
+      "FILTRO_PRECIO",
+      "FILTRO_TIPO",
+      "LISTADO",
+      "MAPA"
+     ],
+     "ambientes": 5,
+     "banos": 2,
+     "descripcion": "Ficha SINTETICA 69 para QA. ph en Salta, no es una propiedad real.",
+     "dormitorios": 1,
+     "geo": {
+      "area_busqueda": {
+       "id": "sint-salta",
+       "nivel": "LOCALIDAD",
+       "nombre": "Salta",
+       "origen": "localidad"
+      },
+      "barrio": {
+       "nombre": null
+      },
+      "departamento": {
+       "nombre": "Capital",
+       "procedencia": "SINTETICA"
+      },
+      "estado": null,
+      "localidad": {
+       "id": "sint-salta",
+       "nombre": "Salta",
+       "procedencia": "CANONICAL_NORMALIZED"
+      },
+      "municipio": {
+       "nombre": "Salta",
+       "procedencia": "SINTETICA"
+      },
+      "provincia": {
+       "nombre": "Salta"
+      }
+     },
+     "id": "4ff9c389ba1b09f6e78097460e2801d0",
+     "imagenes": [],
+     "latitud": -24.7981,
+     "longitud": -65.4232,
+     "moneda": "ARS",
+     "operacion": "alquiler",
+     "precio": 1285000.0,
+     "source_url": "https://beta.sintetica.invalid/propiedad/69",
+     "superficie_cubierta": 651.0,
+     "superficie_total": 937.0,
+     "tipo_propiedad": "ph",
+     "titulo": "Ph de prueba en Salta"
+    },
+    {
+     "agency_id": "sintetica:delta",
+     "alcances": [
+      "AREA_BUSQUEDA",
+      "FICHA",
+      "FILTRO_LOCALIDAD",
+      "FILTRO_OPERACION",
+      "FILTRO_PRECIO",
+      "FILTRO_TIPO",
+      "LISTADO",
+      "MAPA"
+     ],
+     "ambientes": null,
+     "banos": null,
+     "descripcion": "Ficha SINTETICA 67 para QA. cochera en Salta, no es una propiedad real.",
+     "dormitorios": null,
+     "geo": {
+      "area_busqueda": {
+       "id": "sint-salta",
+       "nivel": "LOCALIDAD",
+       "nombre": "Salta",
+       "origen": "localidad"
+      },
+      "barrio": {
+       "nombre": null
+      },
+      "departamento": {
+       "nombre": "Capital",
+       "procedencia": "SINTETICA"
+      },
+      "estado": null,
+      "localidad": {
+       "id": "sint-salta",
+       "nombre": "Salta",
+       "procedencia": "CANONICAL_NORMALIZED"
+      },
+      "municipio": {
+       "nombre": "Salta",
+       "procedencia": "SINTETICA"
+      },
+      "provincia": {
+       "nombre": "Salta"
+      }
+     },
+     "id": "f8d9563a631acbe867c42015da85992b",
+     "imagenes": [],
+     "latitud": -24.7861,
+     "longitud": -65.4072,
+     "moneda": "ARS",
+     "operacion": "alquiler_temporario",
+     "precio": 1255000.0,
+     "source_url": "https://delta.sintetica.invalid/propiedad/67",
+     "superficie_cubierta": 633.0,
+     "superficie_total": 911.0,
+     "tipo_propiedad": "cochera",
+     "titulo": "Cochera de prueba en Salta"
+    },
+    {
+     "agency_id": "sintetica:beta",
+     "alcances": [
+      "AREA_BUSQUEDA",
+      "FICHA",
+      "FILTRO_LOCALIDAD",
+      "FILTRO_OPERACION",
+      "FILTRO_PRECIO",
+      "FILTRO_TIPO",
+      "LISTADO",
+      "MAPA"
+     ],
+     "ambientes": 1,
+     "banos": 2,
+     "descripcion": "Ficha SINTETICA 65 para QA. departamento en Mendoza, no es una propiedad real.",
+     "dormitorios": 1,
+     "geo": {
+      "area_busqueda": {
+       "id": "sint-mendoza",
+       "nivel": "LOCALIDAD",
+       "nombre": "Mendoza",
+       "origen": "localidad"
+      },
+      "barrio": {
+       "nombre": null
+      },
+      "departamento": {
+       "nombre": "Capital",
+       "procedencia": "SINTETICA"
+      },
+      "estado": null,
+      "localidad": {
+       "id": "sint-mendoza",
+       "nombre": "Mendoza",
+       "procedencia": "CANONICAL_NORMALIZED"
+      },
+      "municipio": {
+       "nombre": "Mendoza",
+       "procedencia": "SINTETICA"
+      },
+      "provincia": {
+       "nombre": "Mendoza"
+      }
+     },
+     "id": "b560612dd6310331d4ab298a8f8e52d5",
+     "imagenes": [],
+     "latitud": -32.8815,
+     "longitud": -68.8578,
+     "moneda": "ARS",
+     "operacion": "alquiler",
+     "precio": 1225000.0,
+     "source_url": "https://beta.sintetica.invalid/propiedad/65",
+     "superficie_cubierta": 615.0,
+     "superficie_total": 885.0,
+     "tipo_propiedad": "departamento",
+     "titulo": "Departamento de prueba en Mendoza"
+    },
+    {
+     "agency_id": "sintetica:delta",
+     "alcances": [
+      "AREA_BUSQUEDA",
+      "FICHA",
+      "FILTRO_LOCALIDAD",
+      "FILTRO_OPERACION",
+      "FILTRO_PRECIO",
+      "FILTRO_TIPO",
+      "LISTADO",
+      "MAPA"
+     ],
+     "ambientes": 4,
+     "banos": 2,
+     "descripcion": "Ficha SINTETICA 63 para QA. casa en Mendoza, no es una propiedad real.",
+     "dormitorios": 3,
+     "geo": {
+      "area_busqueda": {
+       "id": "sint-mendoza",
+       "nivel": "LOCALIDAD",
+       "nombre": "Mendoza",
+       "origen": "localidad"
+      },
+      "barrio": {
+       "nombre": null
+      },
+      "departamento": {
+       "nombre": "Capital",
+       "procedencia": "SINTETICA"
+      },
+      "estado": null,
+      "localidad": {
+       "id": "sint-mendoza",
+       "nombre": "Mendoza",
+       "procedencia": "CANONICAL_NORMALIZED"
+      },
+      "municipio": {
+       "nombre": "Mendoza",
+       "procedencia": "SINTETICA"
+      },
+      "provincia": {
+       "nombre": "Mendoza"
+      }
+     },
+     "id": "77daeeec3b19391dd2cac45e52321d30",
+     "imagenes": [],
+     "latitud": -32.8695,
+     "longitud": -68.8418,
+     "moneda": "ARS",
+     "operacion": "alquiler_temporario",
+     "precio": 1195000.0,
+     "source_url": "https://delta.sintetica.invalid/propiedad/63",
+     "superficie_cubierta": 597.0,
+     "superficie_total": 859.0,
+     "tipo_propiedad": "casa",
+     "titulo": "Casa de prueba en Mendoza"
+    }
+   ],
+   "limit": 5,
+   "offset": 0,
+   "total": 86
+  },
+  "ruta": "/v2/propiedades"
+ },
+ "sugerencias": {
+  "metodo": "GET",
+  "params": {
+   "q": "cor"
+  },
+  "parser": "suggestions",
+  "respuesta": {
+   "contrato": "eretz_api_property_v1",
+   "data": [
+    {
+     "nivel": "LOCALIDAD",
+     "nombre": "Córdoba",
+     "propiedades": 12,
+     "tipo": "area"
+    },
+    {
+     "nivel": "MUNICIPIO",
+     "nombre": "Córdoba",
+     "propiedades": 1,
+     "tipo": "area"
+    },
+    {
+     "nivel": "PROVINCIA",
+     "nombre": "Córdoba",
+     "propiedades": 1,
+     "tipo": "area"
+    }
+   ]
+  },
+  "ruta": "/v2/sugerencias"
+ }
+}
