@@ -481,6 +481,18 @@ def _decision_certificadas(origen, args, ajenas):
                    conocidas_de(origen), ajenas)
 
 
+def _listadas_en_paquetes(paquetes: Path) -> set[str]:
+    """Los `hash_dedup` que algun paquete actual (de cualquier estado) sigue listando."""
+    vistos: set[str] = set()
+    for archivo in Path(paquetes).glob("*/properties_run2.jsonl"):
+        for linea in archivo.read_text(encoding="utf-8").splitlines():
+            if linea.strip():
+                h = json.loads(linea).get("hash_dedup")
+                if h:
+                    vistos.add(h)
+    return vistos
+
+
 def _servidas_a_conservar(origen, ruta_servida, nuevas, retirar) -> list[dict]:
     """Filas SERVIDAS que la candidata perderia sin un motivo de politica.
 
@@ -547,11 +559,20 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
                if decision is not None and getattr(args, 'retirar_ausentes', False) else set())
     retiros_evidencia: dict[str, dict] = {}
     if decision is not None and getattr(args, 'retiros_verificados', None):
+        listadas_hoy = _listadas_en_paquetes(Path(args.paquetes))
         for linea in Path(args.retiros_verificados).read_text(encoding='utf-8').splitlines():
             if not linea.strip():
                 continue
             fila = json.loads(linea)
-            if fila.get('veredicto') == 'REMOVED' and fila.get('hash_dedup') in decision.retirables:
+            # Muerte verificada (P1). Antes solo se aplicaba si la agencia
+            # tenia cierre COMPLETO vigente: cuando `pennacchio` retrocedio a
+            # NEEDS_FIX, 6 fichas con soft-404 verificado el 29-09 (redirigen a
+            # la portada) volvian a servirse. Ahora tambien se retira si la
+            # ficha NO figura en el paquete actual de nadie: si volvio a
+            # listarse, la evidencia vieja no alcanza.
+            if fila.get('veredicto') == 'REMOVED' and (
+                    fila.get('hash_dedup') in decision.retirables
+                    or fila.get('hash_dedup') not in listadas_hoy):
                 retiros_evidencia[fila['hash_dedup']] = fila
         retirar = set(retirar) | set(retiros_evidencia)
     alias_refrescados = 0

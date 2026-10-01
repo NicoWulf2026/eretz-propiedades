@@ -41,3 +41,15 @@ def test_sin_servida_no_conserva_nada(tmp_path):
     origen = _origen(tmp_path, [])
     assert _servidas_a_conservar(origen, None, [], set()) == []
     assert _servidas_a_conservar(origen, tmp_path / "no.sqlite3", [], set()) == []
+
+
+def test_listadas_en_paquetes_lee_todos_los_estados(tmp_path):
+    """Un REMOVED verificado se aplica si la ficha no figura en NINGUN paquete actual
+    (pennacchio, 2026-10-01: 6 soft-404 verificados volvian a servirse)."""
+    import json
+    from scripts.api_snapshot import _listadas_en_paquetes
+    for carpeta, hashes in (("a", ["h1", "h2"]), ("b", ["h3"])):
+        (tmp_path / carpeta).mkdir()
+        (tmp_path / carpeta / "properties_run2.jsonl").write_text(
+            "\n".join(json.dumps({"hash_dedup": h}) for h in hashes), encoding="utf-8")
+    assert _listadas_en_paquetes(tmp_path) == {"h1", "h2", "h3"}
