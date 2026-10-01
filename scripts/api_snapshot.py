@@ -279,6 +279,9 @@ def main() -> int:
     # dice REMOVED y ademas sigue ausente del inventario completo al construir.
     ap.add_argument('--retiros-verificados', type=Path, default=None,
                     help='JSONL de verificar_retiros.py: se retiran solo las REMOVED')
+    ap.add_argument('--servida', type=Path, default=None,
+                    help='snapshot SERVIDA: sus filas que la candidata perderia sin motivo de '
+                         'politica se conservan tal cual (P1/P8; ver _servidas_a_conservar)')
     ap.add_argument('--ledger', type=Path, default=None,
                     help='ledger de certificacion (por defecto, junto a --paquetes)')
     ap.add_argument("--cache-geometrica",
@@ -478,7 +481,36 @@ def _decision_certificadas(origen, args, ajenas):
                    conocidas_de(origen), ajenas)
 
 
-def _filas_en_orden(origen, frescas, nuevas, retirar):
+def _servidas_a_conservar(origen, ruta_servida, nuevas, retirar) -> list[dict]:
+    """Filas SERVIDAS que la candidata perderia sin un motivo de politica.
+
+    El constructor solo suma paquetes cuyo cierre VIGENTE es certificado. Una
+    agencia que retrocede a NEEDS_FIX -`casamia` por un slug editado, `d amato`
+    por tres fichas vacias, `pennacchio` por una ficha cambiada- dejaba caer
+    filas que ya se servian, sin evidencia de muerte: 100 el 2026-10-01 (57
+    seguian vivas en su paquete actual). P1 retira solo con muerte demostrada o
+    tres ausencias, y P8 dice que la propiedad real sobrevive. La compuerta P2
+    lo freno; esto lo evita: la fila se conserva TAL CUAL se servia. Lo que se
+    retira por una politica (retiro verificado, web ajena, exterior...) sigue
+    retirandose: eso pasa en el recorrido normal, que aca no se toca.
+    """
+    if not ruta_servida or not Path(ruta_servida).is_file():
+        return []
+    presentes = {h for (h,) in origen.execute(
+        "select hash_dedup from rows where status = 'CANDIDATE'")} - set(retirar)
+    presentes |= {f.get("hash_dedup") for f in nuevas}
+    servida = sqlite3.connect(f"file:{Path(ruta_servida).as_posix()}?mode=ro", uri=True)
+    try:
+        cursor = servida.execute("select * from propiedades order by id")
+        columnas = [c[0] for c in cursor.description]
+        conservar = [dict(zip(columnas, fila)) for fila in cursor
+                     if fila[0] not in presentes and fila[0] not in retirar]
+    finally:
+        servida.close()
+    return conservar
+
+
+def _filas_en_orden(origen, frescas, nuevas, retirar, servidas=()):
     """(fila base, fresca, es_nueva) en orden de `hash_dedup`, sin las retiradas.
 
     Las filas nuevas no tienen version vieja: son su propia lectura fresca, y
@@ -498,8 +530,12 @@ def _filas_en_orden(origen, frescas, nuevas, retirar):
         for fila in sorted(nuevas, key=lambda f: f["hash_dedup"]):
             yield fila["hash_dedup"], fila, fila, True
 
+    def de_la_servida():
+        for fila in servidas:
+            yield fila["id"], {"__servida__": fila}, None, False
+
     for _clave, fila, fresca, es_nueva in heapq.merge(
-            de_la_preingestion(), de_los_paquetes(), key=lambda x: x[0]):
+            de_la_preingestion(), de_los_paquetes(), de_la_servida(), key=lambda x: x[0]):
         yield fila, fresca, es_nueva
 
 
@@ -625,7 +661,33 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
     # de los 330 de la consulta. Insertando en orden de id, el `rowid` del
     # indice de texto YA es ese orden y la API lo usa gratis: 9 ms, la misma
     # muestra. Ver `orden_de_filas` en `snapshot_meta`.
-    for base, fresca, es_nueva in _filas_en_orden(origen, frescas, nuevas, retirar):
+    servidas = (_servidas_a_conservar(origen, getattr(args, 'servida', None), nuevas, retirar)
+                if decision is not None else [])
+    conservadas = 0
+    for base, fresca, es_nueva in _filas_en_orden(origen, frescas, nuevas, retirar, servidas):
+        if "__servida__" in base:
+            # La fila servida, tal cual: sin recalcular nada (ver
+            # `_servidas_a_conservar`). Solo la web ajena se sigue aplicando.
+            servida_fila = base["__servida__"]
+            if servida_fila["agency_id"] in ajenas:
+                ajenas_omitidas += 1
+                cambios[servida_fila["id"]] = "WEB_AJENA"
+                continue
+            if servida_fila["id"] == anterior[0] and anterior[1] is not None:
+                continue
+            propiedad = api.execute(
+                f"insert or replace into propiedades values ({','.join('?' * len(servida_fila))})",
+                tuple(servida_fila.values()))
+            api.execute(
+                "insert into busqueda (rowid, id, titulo, descripcion, barrio, area_nombre) "
+                "values (?,?,?,?,?,?)",
+                (propiedad.lastrowid, servida_fila["id"], servida_fila.get("titulo") or "",
+                 servida_fila.get("descripcion") or "", servida_fila.get("barrio") or "",
+                 servida_fila.get("area_nombre") or ""))
+            anterior = (servida_fila["id"], propiedad.lastrowid)
+            filas += 1
+            conservadas += 1
+            continue
         if fresca is not None and "_campos_confiables" in fresca:
             filas_con_frescura_parcial += 1
         cruda = base if es_nueva else fusionar(base, fresca, CAMPOS_FUSIONABLES)
@@ -809,6 +871,7 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
         "geo_conflictos_de_la_extraccion_fresca": correcciones_geo["conflicto_fresco"],
         "caba_confirmada_por_poligono": correcciones_geo["caba_por_poligono"],
         "provincia_normalizada_por_poligono_p10": correcciones_geo["provincia_por_poligono"],
+        "servidas_conservadas_sin_muerte_verificada": conservadas,
         "geo_conflictos_viejos_que_ya_no_lo_son": correcciones_geo["conflicto_obsoleto"],
         "imagenes_compartidas_descartadas": imagenes_compartidas,
         "descripciones_del_sitio_descartadas": descripciones_del_sitio,
