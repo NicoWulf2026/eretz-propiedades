@@ -85,3 +85,16 @@ def test_cuartos_de_bano_realhomes():
     marcado = ('<div class="meta-inner-wrapper"><span class="meta-item-label">Cuartos de baño</span> '
                '<span class="meta-item-value">3</span></div>')
     assert G._cuenta_de_ficha(marcado, "Cuartos de baño 3", BANOS, None) == 3
+
+
+def test_categoria_titulada_con_la_operacion_sola_es_contenedora():
+    # `ana de napoli` (Next.js): /alquiler-temporario con <h1>Alquiler Temporario</h1>
+    # y 5 tarjetas; se guardaba como ficha con el precio de la primera.
+    tarjetas = "".join(f'<a href="/propiedades/{7534900 + i}">Depto {i}</a>' for i in range(5))
+    html = f"<main><h1>Alquiler Temporario</h1>{tarjetas}</main>"
+    assert G._es_pagina_contenedora(html, "https://anadenapoli.com.ar/alquiler-temporario")
+    # Una ficha real con la operacion como h1 lleva su id en la ruta: no se toca.
+    assert not G._es_pagina_contenedora(html, "https://anadenapoli.com.ar/propiedades/7534908")
+    # Con menos de 5 fichas enlazadas tampoco (`/alquiler` tiene 1).
+    html1 = '<main><h1>Alquiler</h1><a href="/propiedades/10341826">x</a></main>'
+    assert not G._es_pagina_contenedora(html1, "https://anadenapoli.com.ar/alquiler")

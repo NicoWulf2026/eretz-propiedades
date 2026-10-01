@@ -4875,6 +4875,15 @@ class GenericoConnector(Connector):
                    r"salon(?:es)?|depositos?")
         if re.fullmatch(sueltos, plano):
             return len(GenericoConnector._fichas_en(html, url)) >= 5 if url else False
+        # Y la categoria titulada con la OPERACION sola: `ana de napoli`
+        # (Next.js) tiene /venta, /alquiler y /alquiler-temporario con <h1>
+        # «Alquiler Temporario» y las tarjetas debajo; la de temporario se
+        # guardaba como ficha con el precio y el tipo de su primera tarjeta
+        # (2026-10-01). Mismo umbral: sin id en la ruta y 5 o mas fichas.
+        operaciones = (r"(?:en\s+)?(?:ventas?|alquiler(?:es)?(?:\s+(?:temporari[oa]s?|temporal(?:es)?|"
+                       r"anual(?:es)?|comercial(?:es)?))?|temporari[oa]s?)")
+        if re.fullmatch(operaciones, plano):
+            return len(GenericoConnector._fichas_en(html, url)) >= 5 if url else False
         tipos = (r"casas|departamentos|deptos|duplex|oficinas|locales|terrenos|lotes|"
                  r"galpones|cocheras|campos|quintas|chacras|fincas|salones|naves|depositos")
         if not re.fullmatch(
