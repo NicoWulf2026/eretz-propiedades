@@ -296,6 +296,16 @@ RE_FICHA_RAIZ = re.compile(
     r"lote|ph|local|oficina|galpon|campo|cochera|quinta|duplex|chalet)"
     r"[a-z0-9-]*/?$", re.I)
 
+# La plantilla «<tipo>-<operacion>-<lugar>_<id>_propiedad-inmobiliaria.html»
+# (`bartolini`: 295 fichas en la raiz). Sin forma global entraban por forma, y
+# el guardian exige tres fotos a una candidata por forma: 30 fichas reales con
+# precio, operacion y 0 a 2 fotos se perdian como detalles fallidos y paraban
+# la agencia. El id entre guiones bajos + el sufijo fijo es la forma de una
+# ficha; las categorias del mismo sitio (/departamento-en-venta.html) no lo
+# tienen.
+RE_FICHA_ID_PROPIEDAD_INMOBILIARIA = re.compile(
+    r"^/[^/?#]+_\d{4,}_propiedad-inmobiliaria\.html?$", re.I)
+
 # Rutas de orden del LISTADO que por tener varios guiones parecen slugs de
 # ficha. En BuscadorProp eran dos propiedades fantasma por inmobiliaria.
 #
@@ -2562,6 +2572,7 @@ class GenericoConnector(Connector):
             or RE_FICHA_DETALLE.search(ruta)
             or (ficha_amaira_en_query(u) is not None and "ficha=" in ficha_amaira_en_query(u))
             or RE_FICHA_RAIZ.search(ruta)
+            or RE_FICHA_ID_PROPIEDAD_INMOBILIARIA.search(ruta)
             or RE_FICHA_OPERACION.search(ruta)
             or (propia is not None and propia.match(ruta)))
 
@@ -3774,6 +3785,22 @@ class GenericoConnector(Connector):
                 ciudad_par, provincia_par = tramos[1], tramos[-1]
                 if barrio_par.casefold() == ciudad_par.casefold():
                     barrio_par = None
+        # Estatik (plugin de WordPress) nombra cada campo en la clase: <li
+        # class="es-property-field--es_neighborhood"><span …label>Barrios<span
+        # …sep>:</span></span><span …value><a rel="tag">Liniers</a></span></li>
+        # (`bauer`: barrio en 0 de 9 fichas que lo publican). El rotulo en
+        # plural y con el separador anidado no lo lee `_par_rotulado`; la clase
+        # dice que campo es sin depender del idioma del rotulo.
+        barrio_par = barrio_par or self._campo_estatik(principal, "es_neighborhood")
+        ciudad_par = ciudad_par or self._campo_estatik(principal, "es_city|city")
+        provincia_par = provincia_par or self._campo_estatik(
+            principal, "es_state|es_province|province|state")
+        # Houzez nombra la fila en la clase: <li class="detail-state"><strong>
+        # Provincia/País</strong> <span>Buenos Aires</span></li> (`balsa`: 8 de
+        # 58 fichas sin provincia). El rotulo compuesto «Provincia/País» no lo
+        # lee `_par_rotulado`; la clase dice que campo es.
+        ciudad_par = ciudad_par or self._campo_houzez(principal, "city")
+        provincia_par = provincia_par or self._campo_houzez(principal, "state")
         # Ciudad y provincia en su propio rotulo: «City/Town | Rosario»,
         # «Province/State | Santa Fe» (`ingar`, 21 de 26 sin barrio y 5 sin
         # ciudad). La geografia compartida los valida despues.
@@ -3802,6 +3829,14 @@ class GenericoConnector(Connector):
             while tramos_l and re.fullmatch(r"(?i)rep(?:u|ú)blica\s+argentina|argentina", tramos_l[-1]):
                 tramos_l.pop()
             tramos_l = [re.sub(r"^[A-Z]\d{4}[A-Z]{3}\s+|^\(?\d{4}\)?\s+", "", t) for t in tramos_l]
+            # Houzez geocodifica «Pampa y Cabildo, La Pampa, Belgrano, Buenos
+            # Aires, Comuna 13, Ciudad Autónoma de Buenos Aires, C1428CPD,
+            # Argentina» (`de giorgio`): el codigo postal y la comuna sueltos no
+            # son tramos de lugar, y con ellos al final la provincia no se veia.
+            tramos_l = [t for t in tramos_l
+                        if not re.fullmatch(r"(?i)[A-Z]\d{4}[A-Z]{3}|\(?\d{4}\)?|CP\s*\d{4}|comuna\s+\d{1,2}", t)]
+            while tramos_l and re.fullmatch(r"(?i)rep(?:u|ú)blica\s+argentina|argentina", tramos_l[-1]):
+                tramos_l.pop()
             if not direccion and tramos_l and re.search(r"\d", tramos_l[0]) and len(tramos_l[0]) <= 80:
                 direccion = tramos_l[0]
             if len(tramos_l) >= 2 and _es_provincia(tramos_l[-1]):
@@ -3816,6 +3851,18 @@ class GenericoConnector(Connector):
                 # geografia compartida la valida; un barrio que no es localidad
                 # no se afirma como ciudad.
                 ciudad_par = ciudad_par or tramos_l[1]
+        # El CRM TIV Tecnogestion (`caian` 44, `benitez ullo` 13…: 75 fichas
+        # sin ciudad) no escribe la ubicacion en el cuerpo: la da su og:title
+        # «Departamento en Venta. Almagro, Capital Federal, Buenos Aires» y la
+        # calle su og:description «… ubicado sobre la calle Billinghurst 200
+        # en Almagro, …». Solo con la firma del CRM y la forma exacta.
+        if not (ciudad_par and provincia_par):
+            tiv = self._ubicacion_tiv(html)
+            if tiv:
+                barrio_par = barrio_par or tiv[0]
+                ciudad_par = ciudad_par or tiv[1]
+                provincia_par = provincia_par or tiv[2]
+                direccion = direccion or tiv[3]
         if direccion and not (ciudad_par and provincia_par):
             tramos = [x.strip(" .") for x in re.split(r",|\.\s", direccion) if x.strip(" .")]
             if (len(tramos) >= 3 and _es_provincia(tramos[-1])
@@ -4751,7 +4798,7 @@ class GenericoConnector(Connector):
         for basura in sopa(["script", "style", "noscript", "header", "nav", "footer"]):
             basura.decompose()
         icono = re.compile(r"(?:^|[\s_-])(?:fa-map-marker(?:-alt)?|fa-location-dot|fa-map-marked(?:-alt)?|"
-                           r"flaticon-pin|location-icon|icon-location|lucide-map-pin|map-pin)(?:$|[\s_-])", re.I)
+                           r"flaticon-pin|location-icon|icon-location|lucide-map-pin|map-pin|icon-pin)(?:$|[\s_-])", re.I)
         ajeno = re.compile(r"card|related|similar|relacionad|contact|agent|asesor|footer|header|"
                            r"navbar|menu|sucursal|oficina|office|widget|sidebar", re.I)
         plano_pie = re.sub(r"\s+", " ", unescape(re.sub(r"<[^>]+>", " ", pie)))
@@ -4790,7 +4837,11 @@ class GenericoConnector(Connector):
         valor. `bardi` publica asi direccion y barrio en sus 90 fichas.
         """
         m = re.search(
-            rf"<(p|span|dt|th|td|div|label|strong|h[1-6])\b[^>]*>\s*(?:{etiqueta})\s*:?\s*"
+            # El rotulo en negrita DENTRO de su celda: Synapsis publica
+            # <p><strong>Localidad:</strong></p><p>Don Torcuato</p> (`aranoa`:
+            # localidad y provincia en 0 de 34 fichas).
+            rf"<(p|span|dt|th|td|div|label|strong|h[1-6])\b[^>]*>\s*(?:<(?:strong|b)\b[^>]*>\s*)?(?:{etiqueta})\s*:?\s*"
+            rf"(?:</(?:strong|b)>\s*)?"
             # El valor puede ser el enlace a su taxonomia: <span><a rel="tag">
             # Centro</a></span> (tema ERE de WordPress, `ingar`).
             # Con el mismo cierre intermedio que tolera `_cuenta_de_ficha`
@@ -4799,6 +4850,53 @@ class GenericoConnector(Connector):
             rf"([^<>]{{2,150}}?)\s*(?:</a>\s*)?</\2>",
             html or "", re.I)
         return limpiar(unescape(m.group(3))) if m else None
+
+    @staticmethod
+    def _ubicacion_tiv(html: str) -> tuple[str | None, str | None, str | None, str | None] | None:
+        """(barrio, ciudad, provincia, calle) del og:title de una ficha de TIV Tecnogestion."""
+        if not re.search(r"cdn\.tecnogestion\.com\.ar|CRM Inmobiliario TIV", html or "", re.I):
+            return None
+        m = re.search(r'<meta[^>]+property="og:title"[^>]+content="[^".]{3,60} en '
+                      r'(?:venta|alquiler|alquiler temporario)\.\s*([^".]{3,120})"', html or "", re.I)
+        if not m:
+            return None
+        tramos = [t.strip() for t in unescape(m.group(1)).split(",") if t.strip()]
+        if len(tramos) != 3 or not _es_provincia(tramos[2]) or any(re.search(r"\d", t) for t in tramos):
+            return None
+        calle = re.search(r'<meta[^>]+property="og:description"[^>]+content="[^"]*?'
+                          r'ubicado sobre la calle ([^",]{3,80}?\d{1,5}) en ', html or "", re.I)
+        barrio = None if tramos[0].casefold() == tramos[1].casefold() else tramos[0]
+        return (barrio, tramos[1], tramos[2], limpiar(unescape(calle.group(1))) if calle else None)
+
+    @staticmethod
+    def _campo_houzez(html: str, campo: str) -> str | None:
+        """El valor de una fila de detalle de Houzez: <li class="detail-<campo>">.
+
+        Rotulo en <strong>, valor solo en el <span> siguiente, dentro del mismo
+        <li> y sin marcado adentro.
+        """
+        m = re.search(
+            rf"<li\b[^>]*class=[\"'](?:[^\"']*\s)?detail-(?:{campo})[\s\"'][^>]*>\s*"
+            rf"<strong\b[^>]*>[^<]{{1,40}}</strong>\s*<span\b[^>]*>\s*([^<>]{{2,60}}?)\s*</span>\s*</li>",
+            html or "", re.I)
+        return limpiar(unescape(m.group(1))) if m else None
+
+    @staticmethod
+    def _campo_estatik(html: str, campo: str) -> str | None:
+        """El valor visible de un campo de Estatik: <li class="es-property-field--<campo>">.
+
+        Solo dentro del mismo <li> y con tope de largo: un valor largo no es un
+        barrio ni una ciudad. La geografia compartida lo valida despues.
+        """
+        m = re.search(
+            rf"<li\b[^>]*class=[\"'][^\"']*\bes-property-field--(?:{campo})[\s\"'][^>]*>"
+            rf"(?:(?!</li>).){{0,400}}?"
+            rf"<span\b[^>]*class=[\"'][^\"']*\bes-property-field__value\b[^\"']*[\"'][^>]*>"
+            rf"((?:(?!</li>).){{0,300}}?)</span>\s*</li>", html or "", re.I | re.S)
+        if not m:
+            return None
+        visible = limpiar(unescape(re.sub(r"<[^>]+>", " ", m.group(1))))
+        return visible if visible and len(visible) <= 60 else None
 
     @staticmethod
     def _rotulo_en_linea(html: str, etiqueta: str) -> str | None:
@@ -5259,7 +5357,17 @@ class GenericoConnector(Connector):
                 # second property and must not compete with their parent.
                 prioridad = 0 if tipo in concretos else (2 if tipo == 'Offer' else 1)
                 # A Place with the office address is not property evidence.
-                if tipo == "Place" and not nodo.get("offers"):
+                # Salvo que el Place SEA esta ficha: Houzez publica la ficha
+                # como {"@type": "Place", "url": <esta pagina>, "geo": …,
+                # "address": …} (`de giorgio`: coordenadas y localidad en
+                # todas sus fichas, ninguna leida). La url propia es lo que
+                # lo distingue del Place de la oficina.
+                if tipo == "Place" and not nodo.get("offers") and not (
+                        url and any(
+                            isinstance(nodo.get(k), str)
+                            and urllib.parse.urldefrag(urllib.parse.urljoin(url, nodo[k]))[0].rstrip("/")
+                            == urllib.parse.urldefrag(url)[0].rstrip("/")
+                            for k in ("url", "@id"))):
                     continue
                 candidatos.append((prioridad, tipo, nodo))
         if not candidatos:
@@ -5622,6 +5730,13 @@ class GenericoConnector(Connector):
         if tipado is not None and 1 <= tipado <= 99:
             return tipado
         marcado = normalizar_texto_campos(unescape(html or ""))
+        # Un icono VACIO dentro de la celda del rotulo no es parte del rotulo:
+        # `bellomo` publica <dt><i class="bi bi-columns-gap"></i> Ambientes
+        # </dt><dd>3</dd>, ninguna pareja de abajo la reconocia y el texto
+        # plano «Ambientes 3 Baños 2» le daba banos=3 a una ficha con 2 (y
+        # perdia los ambientes). Solo se quitan elementos sin texto: un icono
+        # no puede ser rotulo ni valor.
+        marcado = re.sub(r"<i\b[^>]*>\s*</i>", "", marcado, flags=re.I)
         rotulo = re.search(
             rf'<div[^>]+class=["\'][^"\']*desc[^"\']*["\'][^>]*>\s*'
             rf'(?:{etiqueta})\s*</div>\s*'
