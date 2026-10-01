@@ -92,8 +92,12 @@ def _sha(ruta: Path) -> str:
 
 def _commit() -> dict:
     """El SHA y si el arbol tenia cambios: con cambios, el SHA solo no es lo probado."""
-    r = subprocess.run(["git", "rev-parse", "HEAD"], cwd=RAIZ, capture_output=True, text=True)
-    s = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=RAIZ,
+    # En la PC el disco no registra duenio y git rechaza el repo ("dubious
+    # ownership"): sin esto el informe salia con sha null. Mismo criterio que
+    # `extraction_failures.py`: se habilita solo esta raiz, solo en esta llamada.
+    git = ["git", "-c", f"safe.directory={RAIZ.as_posix()}"]
+    r = subprocess.run([*git, "rev-parse", "HEAD"], cwd=RAIZ, capture_output=True, text=True)
+    s = subprocess.run([*git, "status", "--porcelain", "--untracked-files=no"], cwd=RAIZ,
                        capture_output=True, text=True)
     return {"sha": r.stdout.strip() or None, "arbol_con_cambios": bool(s.stdout.strip())}
 

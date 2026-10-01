@@ -97,6 +97,9 @@ def test_map_first_real_server_flow_and_no_supabase_browser_requests(page: Page)
 
 def test_search_filter_map_area_detail_and_restoration(page: Page) -> None:
     page.goto(BASE_URL, wait_until="domcontentloaded")
+    # Los botones llegan renderizados por el servidor antes de hidratar: un
+    # clic temprano se pierde (en Windows con la PC cargada, 2026-10-01).
+    page.wait_for_load_state("networkidle")
     search = page.get_by_role("combobox", name=re.compile(r"Buscá por barrio, ciudad, dirección"))
     search.fill("Palermo")
     page.get_by_role("button", name="Buscar", exact=True).click()
@@ -132,6 +135,7 @@ def test_mobile_map_results_and_missing_property(page: Page) -> None:
     page.set_viewport_size({"width": 390, "height": 844})
     page.goto(BASE_URL, wait_until="domcontentloaded")
     expect(page.get_by_role("button", name="Solo mapa", exact=True)).to_be_visible()
+    page.wait_for_load_state("networkidle")  # mismo motivo: hidratacion
     results_button = page.get_by_role("button", name="Solo propiedades", exact=True)
     results_button.click()
     expect(results_button).to_have_attribute("aria-pressed", "true")
