@@ -1,0 +1,14 @@
+{
+ "url": "https://www.adrianamartellitipropiedades.ar/ad/casa-de-2-ambientes-en-ph-con-parque-divino-rostro-apto-credito",
+ "robots": "NO_APLICA (cache local)",
+ "capturado": "2026-10-01T13:08:48+00:00",
+ "sha256_original": "d44ad3920136311b2ad4afb353f6312b69c0753dc15ae62cb21c49ed3e85de73",
+ "bytes_original": 108399,
+ "bytes_fixture": 1078,
+ "modo": "html",
+ "scripts_conservados": [],
+ "selector_texto": "Laprida 1835",
+ "redaccion": "emails y telefonos reemplazados por [EMAIL]/[TELEFONO]",
+ "nota": "linea junto a fa-map-marker = ubicacion de ESTA propiedad (39 distintas en 44 fichas, 2026-10-01); la oficina va en el pie",
+ "herramienta": "scripts/cloud_bridge/capturar_fixture.py"
+}

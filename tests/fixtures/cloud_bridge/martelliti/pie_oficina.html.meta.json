@@ -1,0 +1,14 @@
+{
+ "url": "https://www.adrianamartellitipropiedades.ar/ad/casa-de-2-ambientes-en-ph-con-parque-divino-rostro-apto-credito",
+ "robots": "NO_APLICA (cache local)",
+ "capturado": "2026-10-01T13:09:12+00:00",
+ "sha256_original": "d44ad3920136311b2ad4afb353f6312b69c0753dc15ae62cb21c49ed3e85de73",
+ "bytes_original": 108399,
+ "bytes_fixture": 2156,
+ "modo": "html",
+ "scripts_conservados": [],
+ "selector_texto": "Juan Jose Paso",
+ "redaccion": "emails y telefonos reemplazados por [EMAIL]/[TELEFONO]",
+ "nota": "direccion de la OFICINA: en el pie, identica en las 44 fichas; distinta de la linea del icono",
+ "herramienta": "scripts/cloud_bridge/capturar_fixture.py"
+}

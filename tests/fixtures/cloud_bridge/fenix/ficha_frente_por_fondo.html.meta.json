@@ -1,0 +1,14 @@
+{
+ "url": "https://www.fenixxweb.com/propiedades/4741529/",
+ "robots": "NO_APLICA (cache local)",
+ "capturado": "2026-10-01T13:09:16+00:00",
+ "sha256_original": "e70c97b6e6b679cac2214ec1e8be2630764bcdf91ddee98f87e072c429a9b611",
+ "bytes_original": 179044,
+ "bytes_fixture": 7889,
+ "modo": "html",
+ "scripts_conservados": [],
+ "selector_texto": "Medidas del terreno",
+ "redaccion": "emails y telefonos reemplazados por [EMAIL]/[TELEFONO]",
+ "nota": "'Medidas del terreno: 22m frente x 65m fondo' se extrae HOY como superficie_total=22 (medida lineal, no area). Resumen: 1430 M2 'Superficie'",
+ "herramienta": "scripts/cloud_bridge/capturar_fixture.py"
+}
