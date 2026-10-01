@@ -40,6 +40,22 @@ Rama canónica `integration/eretz`; worktree de B `D:\INMO CAPITAL\eretz-b` (ven
   con la única credencial disponible (`SUPABASE_DATABASE_URL` del `.env` legado) fue denegada por el
   control de permisos del agente. Acción del usuario: definir la variable RO o autorizar la lectura.
 - **IGN**: `connectors/geometria/provincias_ign.json` generado y validado (`1f7cb84`).
+- **Lote compartido 5 APLICADO** (`759babb`, 13:59): F1–F9 + Lote 4 v2 + P10 endurecido (detalle y
+  mediciones en `lotes/README.md`). Nodo operativo en `759babb` → huellas nuevas (generico html
+  `54ba5907da3c`, sitemap `590af5151782`, tokko `9029f5cc624f`, wordpress `c3540dd9e207`, wasi
+  `1178964c9e0a`): recertificación completa en curso.
+- **Prueba de 3 workers (P5) en curso desde 14:00** (`ERETZ_WORKERS.json`, respaldo `.bak_*`): todo
+  Tokko sigue en el worker 0; línea base = la medición limpia de 2 workers del 28–29/09 (8,0 agencias
+  por hora activa, bloqueo 0,075, paros 0,14). El relanzador la evalúa solo (`regimen_de_workers.evaluar`)
+  a las 6 h / 30 agencias y vuelve a 2 si empeora.
+- **Cola**: presupuesto adaptativo por corrida para catálogos lentos (`969070e`); paros del día
+  firmados (13 diferidas, todas con diagnóstico contra la fuente); Regression Gate 678 agencias,
+  0 pendientes (10 revisadas: 4 CORRECCION, 6 CAMBIO_EN_LA_FUENTE).
+- **Snapshot**: la candidata del día (66.211) fue ABORTADA por la compuerta P2 (100 bajas sin motivo:
+  filas servidas de agencias que retrocedieron a NEEDS_FIX). Arreglado el constructor (`--servida`,
+  `0058f7c`). La candidata v4m (lote 5 + P10 + conservación) se construye en
+  `D:\INMO CAPITAL\_b_scratch\medicion\snap_v4m`; **su despliegue requiere autorización del usuario**:
+  el control de permisos del agente lo trató como despliegue y lo denegó (READY #7).
 - **Evidencia para CLOUD** (fixtures en `tests/fixtures/cloud_bridge/`): martelliti =
   PROPERTY_LOCATION (39 direcciones distintas en 44 fichas; la oficina va en el pie), fenix = OTRA
   (la página solo dice «Superficie»), paladino = Strapi v3 sin clave, Wix (liprandi) = páginas de

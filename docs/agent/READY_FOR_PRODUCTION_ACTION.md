@@ -14,7 +14,7 @@ Actualizado: 2026-10-01 (LOCAL, cuenta B).
 | 4 | Promoción staging → main (agencias) | dry-run del 14-09, a refrescar | autorización; exige 1 |
 | 5 | Corregir `url_normalizada` colapsada en producción | medido, sin tocar | autorización de write; exige 1 y 3 |
 | 6 | Encender bajas del ciclo de vida | diseñado, **apagado** | decisión de producto |
-| 7 | Servir la snapshot v4 en la API local | **HECHO: v4l-c servida 29-09 16:52** por despliegue automático P2 (v4l-a/b/v4k superadas) | — (próximos reemplazos: autorización propia) |
+| 7 | Servir la snapshot v4 en la API local | v4l-c servida desde 29-09 16:52. **Candidata v4m lista 01-10** (lote 5 + P10 + filas servidas conservadas; `_b_scratch/medicion/snap_v4m`, QA en `API_BENCHMARK.json`). La cuenta B intentó el despliegue automático P2 y el control de permisos del agente lo denegó (lo trata como despliegue) | el usuario corre: `python scripts\desplegar_snapshot.py --candidata "D:\INMO CAPITAL\_b_scratch\medicion\snap_v4m" --etiqueta-respaldo v4l-c_2026-09-29 --automatico` (aborta solo si falla una compuerta, con rollback) o autoriza al agente |
 | 8 | Descubrimiento pago de webs (140 `IDENTITY_PENDING`) | no corrido | aprobar gasto (~USD 1,35) |
 | 9 | Merge a `main` / deploy | no corresponde todavía | después de 1–4 |
 | 10 | API v2 beta remota (P21) | **contenedor + runbook LISTOS** (29-09, CLOUD; docker verificado con snapshot sintética); sin desplegar. Tamaño medido 01-10: servida v4l-c **558 MB** (candidata de hoy 571 MB) → volumen ≥ 2 GB (3× con historial y rollback) | `EXTERNAL_ACCOUNT_REQUIRED` (cuenta/pago de hosting); `deploy/api-beta/RUNBOOK.md` |
