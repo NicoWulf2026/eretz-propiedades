@@ -69,6 +69,12 @@ ETIQUETAS_DE_CONTEO = {
     "ambientes": r"\bambientes?\b",
 }
 
+# Conteos escritos con letras en la prosa: «casa de cuatro dormitorios y un
+# baño» (`pozzobon`, `ente`). Hasta diez: mas alla nadie lo escribe asi.
+NUMEROS_EN_LETRAS = {"un": 1, "una": 1, "uno": 1, "dos": 2, "tres": 3,
+                     "cuatro": 4, "cinco": 5, "seis": 6, "siete": 7,
+                     "ocho": 8, "nueve": 9, "diez": 10}
+
 # Rutas donde un frontend propio suele exponer el catalogo Tokko.
 RUTAS_TOKKO_PROXY = ("/api/tokko/properties", "/api/properties",
                      "/api/tokko/property")
@@ -5205,10 +5211,63 @@ class GenericoConnector(Connector):
             # como si fuera la cantidad de ambientes.
             hallazgo = re.search(
                 rf"(?<!\+)\b([1-9]\d?)\s*(?:{etiqueta})", texto, re.I)
+            if not hallazgo:
+                return GenericoConnector._cuenta_en_letras(texto, etiqueta)
         if not hallazgo:
             return None
         valor = int(hallazgo.group(1))
         return valor if 1 <= valor <= 99 else None
+
+    @staticmethod
+    def _cuenta_en_letras(texto: str, etiqueta: str) -> int | None:
+        """«cuatro dormitorios», «un baño»: la cantidad escrita con letras.
+
+        Solo en prosa (la tabla de atributos no se escribe asi) y solo si NO
+        hay ambiguedad, porque un conteo mal leido parece un dato real:
+        - una UNICA mencion con letras de ese rotulo: «un baño en suite y un
+          baño de servicio» son dos baños y no se afirma ninguno;
+        - concordancia: «un» con el rotulo en singular, «dos» en plural. «Un
+          ambientes» no es una cantidad;
+        - sin cotas ni rangos delante: «mas de dos», «hasta tres», «dos y tres
+          dormitorios» (un emprendimiento) no son la cantidad de ESTA ficha.
+        """
+        palabras = "|".join(NUMEROS_EN_LETRAS)
+        texto = texto or ""
+        # El rotulo tiene que aparecer UNA sola vez en toda la ficha. Medido
+        # sobre el corpus (2026-10-01, 45 casos revisados a mano): «Dormitorio
+        # principal en suite ... Dos dormitorios», «dos habitaciones
+        # secundarias» o «P.B: dormitorio con baño ... P.A: dos dormitorios»
+        # nombran una PARTE de los dormitorios, y la cuenta en letras quedaba
+        # corta. Si el rotulo aparece en otro lado, no se afirma.
+        if len(re.findall(rf"(?:{etiqueta})", texto, re.I)) != 1:
+            return None
+        validas = []
+        for m in re.finditer(rf"(?<![\w+])({palabras})\s+((?:{etiqueta}))",
+                             texto, re.I):
+            valor = NUMEROS_EN_LETRAS[m.group(1).lower()]
+            plural = m.group(2).lower().endswith("s")
+            if (valor == 1) == plural:
+                continue
+            # «un ambiente acogedor», «generando un ambiente moderno»: en
+            # singular «ambiente» es el clima del lugar, no un conteo (10 de 45
+            # en la muestra). Un ambiente se publica como «monoambiente».
+            if valor == 1 and re.match(r"ambiente", m.group(2), re.I):
+                continue
+            antes = texto[max(0, m.start() - 40):m.start()]
+            despues = texto[m.end():m.end() + 30]
+            if (re.search(r"(?:\bm[aá]s\s+de|\bhasta|\bentre|\bdesde)\s*$", antes, re.I)
+                    or re.search(rf"(?:\b(?:{palabras})|\d)\s*(?:y|o|a|-|/)\s*(?:de\s+)?$", antes, re.I)
+                    # Un piso o una unidad: «P.A: dos dormitorios», «semipisos de
+                    # un dormitorio», «casitas de dos dormitorios cada una».
+                    or re.search(r"(?:planta\s+(?:alta|baja)|\bp\.?\s?[ab]\b\.?|\bpiso\b|"
+                                 r"semipisos?|unidades|departamentos|casitas|caba[nñ]as|"
+                                 r"locales|monoambientes)[^.]{0,30}$", antes, re.I)
+                    or re.search(r"^[^.]{0,20}\bcada\s+un[oa]\b", despues, re.I)
+                    # «dos habitaciones secundarias»: hay otra (la principal).
+                    or re.search(r"^\s*(?:secundari|adicional|extra|m[aá]s\b)", despues, re.I)):
+                return None
+            validas.append(valor)
+        return validas[0] if len(validas) == 1 else None
 
     @staticmethod
     def _ambientes_del_titulo(titulo: str | None) -> int | None:
@@ -5626,7 +5685,12 @@ class GenericoConnector(Connector):
         otros = "|".join(raiz for raiz, muestra in SUPERFICIES_VECINAS
                          if not re.search(etiqueta, muestra, re.I))
         m = re.search(rf"(?:{etiqueta})[^\d]{{0,18}}([\d.,]{{2,9}})\s*m"
-                      rf"(?!\s*[x×]\s*\d)"
+                      # «22m frente x 65m fondo», «14,36 mts de frente por
+                      # 58,40»: tambien es una MEDIDA. Medido 2026-10-01: 11
+                      # fichas de 10 agencias guardaban el frente (o el fondo)
+                      # como superficie (`fenix` 4741529: 22 m² en un lote de
+                      # 1.430).
+                      rf"(?![a-z]*\.?\s*(?:de\s+)?(?:frente|fte|ancho)?\.?\s*(?:[x×]|por)\s*\d)"
                       # «95 m2 total: 200» o «45 m² Cubierta 40 m²» no: si el
                       # rotulo que sigue tiene SU numero, abre su propio par y
                       # el primero sigue siendo de quien lo precede.
