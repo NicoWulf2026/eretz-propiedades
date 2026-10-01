@@ -158,3 +158,13 @@ Canarios reales con el código del lote (certificador completo, dos corridas, sa
   `LIMITE_DE_DESCARGA` (3 MB). `dib kai` (Tokko, portada de 1,85 MB) también lo necesitaba.
 Huella: cambian `generico.py`, `base.py`, `run_rollout.py`, `agency_certifier.py`, `geografia.py`,
 `poligono_provincia.py` (+ geometría) → recertificación completa por cambio de huella.
+
+### Backlog del LOTE 6 (paros del 01-10 con el lote 5 aplicado; sin implementar, P4)
+- aranoa (Synapsis, ficha.php?prop=N): par <p><strong>Rotulo:</strong></p><p>valor</p> en _par_rotulado (provincia/localidad 0/34). 2026-10-01 16:32.
+- og:title/og:description como cadena de ubicacion («… Chivilcoy, Resto de la Provincia, Buenos Aires»): 75 fichas (caian 44, benitez ullo 13…).
+- ambrosio / corporacion inmobiliaria (detalle.php?id=pN-iN): ubicacion sin rotulo.
+- plataforma /content/empresas/<cod>/ (barrio uno, ana barbeito, a campos): '0 inmuebles encontrados. Fin de los resultados' = cero declarado -> NO_INVENTORY_CONFIRMED.
+- Houzez <address><i class='houzez-icon icon-pin'>…, CABA, C1428CPD, Argentina</address> (de giorgio): agregar icon-pin a F3 SOLO descartando tramos de codigo postal y validando la ciudad (no 'La Pampa' calle).
+- ashardjian (topinmobiliario, *.php por tipo -> detalle.php?ID=N&t=1, 60 fichas): una pagina rechazada como contenedora debe recorrerse como catalogo.
+- balsa (Houzez icon-pin 'Machado 740 - San Bernardo'): 8/58 sin provincia. 2do caso Houzez icon-pin -> prioridad.
+- bartolini: categorias /<tipo>-en-<operacion>.html rechazadas como contenedoras cuentan como detalle fallido (30); extender el criterio del lote 3.
