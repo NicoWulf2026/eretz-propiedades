@@ -1,0 +1,16 @@
+{
+ "url": "https://www.lucasliprandiinmobiliaria.com.ar/properties/casa-en-venta-en-ascochinga-%E2%80%93-loteo-buen-aire",
+ "robots": "NO_APLICA (cache local)",
+ "capturado": "2026-10-01T13:42:53+00:00",
+ "sha256_original": "c320f50ebb05e403b4b7e91f1a780c285eab6b834d13634b72abb00d8c4fa4b6",
+ "bytes_original": 931178,
+ "bytes_fixture": 62457,
+ "modo": "html",
+ "scripts_conservados": [
+  "wix-warmup-data"
+ ],
+ "selector_texto": null,
+ "redaccion": "emails y telefonos reemplazados por [EMAIL]/[TELEFONO]",
+ "nota": "Wix dinamica (CMS Properties). Pagina original 931 KB (> tope viejo 800 KB: las 71 fichas fallaban). wix-warmup-data: schema de la coleccion + ssrPropsUpdates con los valores renderizados por componente; la ubicacion es la direccion formateada 'Ascochinga, Cordoba, Argentina'.",
+ "herramienta": "scripts/cloud_bridge/capturar_fixture.py"
+}

@@ -3722,7 +3722,7 @@ class GenericoConnector(Connector):
         # la valida despues; lo que no resuelve no se afirma.
         linea = None
         if not (ciudad_par and provincia_par) and not (datos.get("ciudad") or mapaprop.get("ciudad")):
-            linea = self._linea_de_ubicacion(principal)
+            linea = self._linea_de_ubicacion(principal) or self._ubicacion_wix(html)
         if linea:
             # Fuera «Argentina» al final y el codigo postal delante de la
             # ciudad («B7602FKK Mar del Plata»): la cadena geocodificada de
@@ -4593,6 +4593,40 @@ class GenericoConnector(Connector):
             if texto and len(texto) >= 4:
                 return texto
         return None
+
+    @staticmethod
+    def _ubicacion_wix(html: str) -> str | None:
+        """La direccion formateada que una pagina dinamica de Wix renderiza.
+
+        Wix (CMS «Properties», `lucas liprandi`) no publica la ubicacion con
+        rotulo ni icono: el campo `address` de la coleccion se renderiza como
+        texto suelto, «Ascochinga, Córdoba, Argentina», en uno de los
+        componentes de `wix-warmup-data` (ssrPropsUpdates). Se acepta solo esa
+        forma -tramos sin cifras que terminan en «<provincia>, Argentina»- y
+        solo si todos los componentes que la tienen dicen LO MISMO (la
+        etiqueta del mapa repite la del encabezado). Dos ubicaciones distintas
+        en la pagina: no se afirma ninguna.
+        """
+        m = re.search(r'<script[^>]*id="wix-warmup-data"[^>]*>(.*?)</script>', html or "", re.S)
+        if not m:
+            return None
+        try:
+            datos = json.loads(m.group(1))
+        except ValueError:
+            return None
+        vistas = set()
+        for tanda in ((datos.get("platform") or {}).get("ssrPropsUpdates") or []):
+            for comp in (tanda or {}).values():
+                bruto = (comp or {}).get("html") if isinstance(comp, dict) else None
+                if not isinstance(bruto, str):
+                    continue
+                texto = limpiar(re.sub(r"\s+", " ", unescape(re.sub(r"<[^>]+>", " ", bruto))))
+                tramos = [t.strip() for t in (texto or "").split(",")]
+                if (2 <= len(tramos) <= 4 and tramos[-1].casefold() == "argentina"
+                        and _es_provincia(tramos[-2])
+                        and not any(re.search(r"\d", t) for t in tramos)):
+                    vistas.add(texto)
+        return vistas.pop() if len(vistas) == 1 else None
 
     @staticmethod
     def _linea_de_ubicacion(html: str) -> str | None:
