@@ -863,6 +863,41 @@ def _es_cola_larga(resultado: dict[str, Any]) -> bool:
     return len(inaccesibles) == len(corridas) and bool(corridas)
 
 
+# Una corrida que agota el presupuesto no certifica NUNCA: la cola la manda al
+# final y la vuelve a cortar a los 5.400 s. Medido 2026-10-01: 6 agencias y
+# 8.291 propiedades en NEEDS_FIX solo por eso (`gianini` 1.033 a 6,6 s por
+# ficha, `lopez baena` 1.373, `carames` 207, `flavio franchini` 249...). A esas
+# se les da el tiempo que su propia corrida anterior dice que necesitan, con
+# margen, hasta un tope: si ni con el tope alcanzaria (`benjamin ferreyra`
+# 4.000 fichas, `federico negro` a 23 s por ficha) no se retiene un worker
+# horas para volver a cortar.
+PRESUPUESTO_MAXIMO = 4 * 3600.0
+MARGEN_DE_PRESUPUESTO = 1.3
+
+
+def presupuesto_para(resultado_previo: dict[str, Any] | None, base: float) -> float:
+    """El presupuesto por corrida para esta agencia (ver `PRESUPUESTO_MAXIMO`)."""
+    corridas = [c or {} for c in ((resultado_previo or {}).get("run1"),
+                                  (resultado_previo or {}).get("run2"))
+                if isinstance(c, dict) or c is None]
+    if not any(c.get("presupuesto_agotado") or c.get("estado") == "PRESUPUESTO_AGOTADO"
+               for c in corridas):
+        return base
+    estimaciones = []
+    for c in corridas:
+        enumeradas = int(c.get("enumeradas") or 0)
+        obtenidas = int(c.get("detalles_obtenidos") or 0)
+        segundos = float(c.get("segundos") or 0)
+        if enumeradas and obtenidas >= 20 and segundos > 0:
+            estimaciones.append(enumeradas * segundos / obtenidas * MARGEN_DE_PRESUPUESTO)
+    if not estimaciones:
+        return base
+    pedido = max(estimaciones)
+    if pedido > PRESUPUESTO_MAXIMO:
+        return base
+    return max(base, pedido)
+
+
 def ordenar_para_correr(cola: list[str],
                         resultados: dict[str, dict[str, Any]]) -> list[str]:
     """Canarios, bulk, long tail. El universo NO cambia: cambia el orden.
@@ -1234,9 +1269,14 @@ def main() -> int:
             current_agency=canonical_id, current_phase="CERTIFY"))
         try:
             with Latido(cerrojo, canonical_id):
+                presupuesto = presupuesto_para(existing.get(canonical_id), args.budget)
+                if presupuesto > args.budget:
+                    print(json.dumps({"presupuesto_extendido": canonical_id,
+                                      "segundos_por_corrida": round(presupuesto)},
+                                     ensure_ascii=False), flush=True)
                 result = certify(canonical_id, catalog, output,
                                  Path(args.preingestion_db), args.interval,
-                                 args.max_listings, args.budget)
+                                 args.max_listings, presupuesto)
         except KeyboardInterrupt:
             raise
         except Exception as error:  # noqa: BLE001 - una fuente no tumba la cola
