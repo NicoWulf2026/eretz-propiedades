@@ -65,7 +65,9 @@ ETIQUETAS_ATRIBUTO = (r"ambientes?|dormitorios?|habitaciones?|ba[nñ]os?"
 # "Ambientes": son el tipo de propiedad.
 ETIQUETAS_DE_CONTEO = {
     "dormitorios": r"\b(?:dormitorios?|habitaciones?)\b",
-    "banos": r"\b(?:ba[nñ]os?|toilettes?)\b",
+    # «Cuartos de baño»: el tema RealHomes en castellano (`inversiones
+    # inmobiliarias`, Puerto Madryn: 3 de 6 fichas sin baños).
+    "banos": r"\b(?:(?:cuartos?\s+de\s+)?ba[nñ]os?|toilettes?)\b",
     "ambientes": r"\bambientes?\b",
 }
 
@@ -3718,6 +3720,31 @@ class GenericoConnector(Connector):
         # 12 fichas sin ciudad): si el ULTIMO tramo es una provincia, el
         # anterior es la ciudad que la ficha escribe. La geografia compartida
         # la valida despues; lo que no resuelve no se afirma.
+        linea = None
+        if not (ciudad_par and provincia_par) and not (datos.get("ciudad") or mapaprop.get("ciudad")):
+            linea = self._linea_de_ubicacion(principal)
+        if linea:
+            # Fuera «Argentina» al final y el codigo postal delante de la
+            # ciudad («B7602FKK Mar del Plata»): la cadena geocodificada de
+            # Google repite «…, Mar Del Plata, Buenos Aires, Argentina.».
+            tramos_l = [x.strip(" .") for x in re.split(r",|\s[-|]\s", linea) if x.strip(" .")]
+            while tramos_l and re.fullmatch(r"(?i)rep(?:u|ú)blica\s+argentina|argentina", tramos_l[-1]):
+                tramos_l.pop()
+            tramos_l = [re.sub(r"^[A-Z]\d{4}[A-Z]{3}\s+|^\(?\d{4}\)?\s+", "", t) for t in tramos_l]
+            if not direccion and tramos_l and re.search(r"\d", tramos_l[0]) and len(tramos_l[0]) <= 80:
+                direccion = tramos_l[0]
+            if len(tramos_l) >= 2 and _es_provincia(tramos_l[-1]):
+                previo = tramos_l[-2]
+                if not re.search(r"\d", previo) and len(previo) <= 40:
+                    ciudad_par = ciudad_par or previo
+                    provincia_par = provincia_par or tramos_l[-1]
+            elif (len(tramos_l) >= 2 and re.search(r"\d", tramos_l[0])
+                  and not re.search(r"\d", tramos_l[1]) and len(tramos_l[1]) <= 40):
+                # «Santa Marina 538 - Monte Grande», «Av Int Zobboli 1604,
+                # Rafaela - Luis Fasoli»: calle y altura, despues la ciudad. La
+                # geografia compartida la valida; un barrio que no es localidad
+                # no se afirma como ciudad.
+                ciudad_par = ciudad_par or tramos_l[1]
         if direccion and not (ciudad_par and provincia_par):
             tramos = [x.strip(" .") for x in re.split(r",|\.\s", direccion) if x.strip(" .")]
             if (len(tramos) >= 3 and _es_provincia(tramos[-1])
@@ -4565,6 +4592,65 @@ class GenericoConnector(Connector):
             texto = limpiar(_texto(bloque))
             if texto and len(texto) >= 4:
                 return texto
+        return None
+
+    @staticmethod
+    def _linea_de_ubicacion(html: str) -> str | None:
+        """La ubicacion que la ficha escribe junto a un icono de mapa.
+
+        Medido 2026-10-01 (LOCAL): 1.112 fichas de 48 agencias sin ciudad, y
+        en muchas la ubicacion esta publicada asi: `martelliti` (Pixel
+        Inmobiliario) <p><i class="fa fa-map-marker"></i> Laprida 1835,
+        B7602FKK Mar del Plata, Provincia de Buenos Aires, Argentina, ...</p>,
+        `alfa`/`franco` <span class="ficha__location-icon">, `abate`
+        flaticon-pin, `b b` fa-map-marker-alt, `azara`, `zamorano`.
+
+        La trampa es la OFICINA, que usa el mismo icono: en el pie
+        (`martelliti`), en la cabecera (`agostina saracena`), en el bloque de
+        contacto (`b b`: «Lavalle 388, Rafaela, Santa Fe»), o como «Sucursal
+        Tigre» (`a campos`). Por eso: solo el cuerpo de la ficha, nada dentro
+        de header/nav/footer, tarjetas de otras fichas, contacto o agente;
+        nunca una linea que tambien este en el pie, ni una que diga sucursal u
+        oficina. Se toma la PRIMERA que queda.
+        """
+        try:
+            from bs4 import BeautifulSoup
+        except ImportError:  # pragma: no cover
+            return None
+        cuerpo = html or ""
+        pie = cuerpo[len(cuerpo_principal(cuerpo)):]
+        sopa = BeautifulSoup(cuerpo_principal(cuerpo), "html.parser")
+        for basura in sopa(["script", "style", "noscript", "header", "nav", "footer"]):
+            basura.decompose()
+        icono = re.compile(r"(?:^|[\s_-])(?:fa-map-marker(?:-alt)?|fa-location-dot|fa-map-marked(?:-alt)?|"
+                           r"flaticon-pin|location-icon|icon-location|lucide-map-pin|map-pin)(?:$|[\s_-])", re.I)
+        ajeno = re.compile(r"card|related|similar|relacionad|contact|agent|asesor|footer|header|"
+                           r"navbar|menu|sucursal|oficina|office|widget|sidebar", re.I)
+        plano_pie = re.sub(r"\s+", " ", unescape(re.sub(r"<[^>]+>", " ", pie)))
+        for nodo in sopa.find_all(True, class_=icono):
+            if any(ajeno.search(" ".join(a.get("class") or []) + " " + (a.get("id") or ""))
+                   for a in nodo.parents if getattr(a, "attrs", None) is not None):
+                continue
+            # La oficina suele ser un ENLACE (a Google Maps, tel:, wa.me): en
+            # `agostina saracena` la barra superior es <a href="maps.app.goo.gl/…">
+            # con el mismo icono, y su plantilla no usa <header>. La ubicacion
+            # de una ficha no se enlaza.
+            if nodo.find_parent("a", href=True) is not None:
+                continue
+            contenedor = nodo.parent
+            texto = re.sub(r"\s+", " ", contenedor.get_text(" ", strip=True) if contenedor else "")
+            if len(texto) < 6 and contenedor is not None and contenedor.parent is not None:
+                contenedor = contenedor.parent
+                texto = re.sub(r"\s+", " ", contenedor.get_text(" ", strip=True))
+            texto = texto.strip(" .|-")
+            if not (4 <= len(texto) <= 160):
+                continue
+            if re.search(r"\b(?:sucursal|oficina|casa\s+central|ver\s+mapa|ubicaci[oó]n\s+aproximada)\b",
+                         texto, re.I):
+                continue
+            if texto in plano_pie:
+                continue
+            return limpiar(texto)
         return None
 
     @staticmethod
@@ -5467,6 +5553,27 @@ class GenericoConnector(Connector):
             rf"<{celda}[^>]*>\s*(\d{{1,2}})\s*</{celda}>", marcado, re.I)
         if rotulo and 1 <= int(rotulo.group(1)) <= 99:
             return int(rotulo.group(1))
+        # La pareja al reves: el NUMERO en su celda y el rotulo en la
+        # siguiente, a veces con un <br> en el medio (fila de iconos):
+        # <span class="p"> 1</span><br><span>Baños</span>. `b b administracion`
+        # (Rafaela) la usa en sus 83 fichas y publica «Ambientes» como par
+        # rotulo->valor, asi que la regla de abajo devolvia None y se perdian
+        # 57 de 74 baños. Solo cuenta si el numero NO es el valor de un rotulo
+        # anterior («<span>Ambientes</span><span>3</span><span>Baños</span>»
+        # no dice 3 baños) y si todas las apariciones dicen lo mismo.
+        inversos = set()
+        for pareja in re.finditer(
+                rf"<{celda}[^>]*>\s*(\d{{1,2}})\s*</{celda}>\s*(?:<br\s*/?>\s*)?"
+                rf"<{celda}[^>]*>\s*(?:{etiqueta})\s*</{celda}>", marcado, re.I):
+            previo = marcado[max(0, pareja.start() - 120):pareja.start()]
+            if re.search(rf"<{celda}[^>]*>\s*(?:{ETIQUETAS_ATRIBUTO_COMPUESTO})\s*:?\s*</{celda}>\s*$",
+                         previo, re.I):
+                continue
+            inversos.add(int(pareja.group(1)))
+        if len(inversos) == 1:
+            valor = inversos.pop()
+            if 1 <= valor <= 99:
+                return valor
         if GenericoConnector._es_tabla_estructurada(marcado):
             # La ficha presenta sus atributos como pares rotulo/valor: lo
             # demostro al menos uno que si se leyo de la estructura. En ese
