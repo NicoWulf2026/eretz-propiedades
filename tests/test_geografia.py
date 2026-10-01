@@ -132,11 +132,14 @@ def test_explicit_locality_province_conflict_preserves_evidence_not_assertions()
     un conflicto entre dos campos de texto.
     """
     from connectors.base import Connector, Fuente
+    # Desde P10 (2026-10-01) la coordenada DENTRO de La Plata resuelve el caso
+    # (ver test_MUERDE_el_caso_analia_requena). Aca la coordenada esta en Buenos
+    # Aires pero a ~30 km de La Plata: P10 no la acepta y el conflicto sigue.
     prop = _resolver(_propiedad(titulo='Casa real', ciudad='La Plata',
                                 provincia='Ciudad Autónoma de Buenos Aires',
-                                latitud=-34.92, longitud=-57.95))
+                                latitud=-34.76, longitud=-58.21))
     assert prop.ciudad is None and prop.provincia is None
-    assert prop.latitud == -34.92 and prop.longitud == -57.95
+    assert prop.latitud == -34.76 and prop.longitud == -58.21
     assert prop.geo['estado_geografico'] == 'GEO_CONFLICT'
     assert prop.geo['area_busqueda']['nivel'] == 'SIN_AREA'
     assert prop.extra['geo_conflicto']['publicado']['localidad'] == 'La Plata'
@@ -478,16 +481,23 @@ def test_MUERDE_el_caso_analia_requena():
     tienen un conflicto registrado y 163 tenian coordenadas que se borraban,
     en 7 agencias.
     """
+    # Desde P10 (2026-10-01, geometria IGN real): la localidad es unica, la
+    # coordenada cae en el poligono de Buenos Aires lejos de otra provincia y a
+    # <= 25 km de la localidad -> se normaliza, conservando lo que dijo la fuente.
     prop = _resolver(_propiedad(ciudad='Santa Clara del Mar',
                                 provincia='Ciudad Autónoma de Buenos Aires',
                                 latitud=-37.8326665, longitud=-57.4969484))
-    assert prop.extra.get('geo_conflicto'), "el conflicto tiene que seguir viendose"
-    assert prop.latitud == -37.8326665
-    assert prop.longitud == -57.4969484
-    # Y la evidencia de lo publicado sigue guardada, como antes.
-    publicado = prop.extra['geo_conflicto']['publicado']
-    assert publicado['localidad'] == 'Santa Clara del Mar'
-    assert publicado['provincia'] == 'Ciudad Autónoma de Buenos Aires'
+    assert (prop.ciudad, prop.provincia) == ('Santa Clara del Mar', 'Buenos Aires')
+    assert prop.latitud == -37.8326665 and prop.longitud == -57.4969484
+    assert prop.extra['provincia_publicada'] == 'Ciudad Autónoma de Buenos Aires'
+    evidencia = prop.extra['provincia_por_poligono']
+    assert evidencia['politica'] == 'P10' and evidencia['provincia'] == 'Buenos Aires'
+    assert evidencia['evidencia']['localidad'] == 'Santa Clara del Mar'
+    # Sin coordenada no hay P10: el conflicto se sigue viendo, como antes.
+    sin = _resolver(_propiedad(ciudad='Santa Clara del Mar',
+                               provincia='Ciudad Autónoma de Buenos Aires'))
+    assert sin.extra.get('geo_conflicto'), "el conflicto tiene que seguir viendose"
+    assert sin.extra['geo_conflicto']['publicado']['provincia'] == 'Ciudad Autónoma de Buenos Aires'
 
 
 def test_MUERDE_el_conflicto_sigue_sin_afirmar_un_area():
@@ -495,7 +505,7 @@ def test_MUERDE_el_conflicto_sigue_sin_afirmar_un_area():
     propiedad en conflicto no entra en ninguna faceta de busqueda."""
     prop = _resolver(_propiedad(ciudad='La Plata',
                                 provincia='Ciudad Autónoma de Buenos Aires',
-                                latitud=-34.92, longitud=-57.95))
+                                latitud=-34.76, longitud=-58.21))   # ~30 km: P10 no actua
     assert prop.geo['estado_geografico'] == 'GEO_CONFLICT'
     assert prop.geo['area_busqueda']['nivel'] == 'SIN_AREA'
     assert prop.ciudad is None and prop.provincia is None

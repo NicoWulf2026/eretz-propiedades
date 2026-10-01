@@ -73,10 +73,22 @@ def test_contencion_por_codigo_y_por_nombre(geometria):
 
 
 def test_cerca_del_limite_no_afirma(geometria):
-    # 1 km adentro del borde oeste (-70): el margen es 2 km.
-    lon = -70 + 1.0 / (111.32 * 0.77)
+    # «02» limita al este con «06» (lon -69). A 1 km de ese limite: FRONTERA.
+    lon = -69 - 1.0 / (111.32 * 0.77)
     assert P.contencion("02", -39.5, lon, ruta=geometria) == P.FRONTERA
-    assert P.contencion("02", -39.5, -69.9, ruta=geometria) == P.DENTRO   # ~8,6 km
+    assert P.contencion("02", -39.5, -69.1, ruta=geometria) == P.DENTRO   # ~8,6 km
+
+
+def test_el_borde_exterior_no_es_frontera(geometria):
+    """La costa o el limite con otro pais no hacen dudar entre provincias.
+
+    Medido 2026-10-01: con el margen contra cualquier borde, 151 de 152 fichas
+    con coordenada de `analia requena` (Santa Clara del Mar, a 0,7 km del mar)
+    quedaban en FRONTERA y P10 no actuaba en el caso que lo motivo.
+    """
+    # «02» no tiene vecina al oeste (lon -70): 1 km adentro sigue siendo DENTRO.
+    lon = -70 + 1.0 / (111.32 * 0.77)
+    assert P.contencion("02", -39.5, lon, ruta=geometria) == P.DENTRO
 
 
 def test_sin_evidencia_no_hay_veredicto(geometria, tmp_path):

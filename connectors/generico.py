@@ -65,9 +65,17 @@ ETIQUETAS_ATRIBUTO = (r"ambientes?|dormitorios?|habitaciones?|ba[nñ]os?"
 # "Ambientes": son el tipo de propiedad.
 ETIQUETAS_DE_CONTEO = {
     "dormitorios": r"\b(?:dormitorios?|habitaciones?)\b",
-    "banos": r"\b(?:ba[nñ]os?|toilettes?)\b",
+    # «Cuartos de baño»: el tema RealHomes en castellano (`inversiones
+    # inmobiliarias`, Puerto Madryn: 3 de 6 fichas sin baños).
+    "banos": r"\b(?:(?:cuartos?\s+de\s+)?ba[nñ]os?|toilettes?)\b",
     "ambientes": r"\bambientes?\b",
 }
+
+# Conteos escritos con letras en la prosa: «casa de cuatro dormitorios y un
+# baño» (`pozzobon`, `ente`). Hasta diez: mas alla nadie lo escribe asi.
+NUMEROS_EN_LETRAS = {"un": 1, "una": 1, "uno": 1, "dos": 2, "tres": 3,
+                     "cuatro": 4, "cinco": 5, "seis": 6, "siete": 7,
+                     "ocho": 8, "nueve": 9, "diez": 10}
 
 # Rutas donde un frontend propio suele exponer el catalogo Tokko.
 RUTAS_TOKKO_PROXY = ("/api/tokko/properties", "/api/properties",
@@ -78,6 +86,11 @@ RUTAS_TOKKO_PROXY = ("/api/tokko/properties", "/api/properties",
 # publica el JavaScript del propio sitio; se reconoce por la forma de Strapi.
 RE_API_STRAPI = re.compile(
     r"[\"'`](https://[a-z0-9.\-]+/api/(propiedades|inmuebles|properties))\?", re.I)
+# Strapi v3 propio en el subdominio `api.` (sin el prefijo /api de v4):
+# `paladino` llama a https://api.paladinopropiedades.com.ar/inmuebles desde su
+# JavaScript y arma cada ficha /inmueble/<slug> en el navegador.
+RE_API_STRAPI_V3 = re.compile(
+    r"[\"'`](https://api\.[a-z0-9.\-]+)/(inmuebles|propiedades|properties)[\"'`?]", re.I)
 # Paginas chicas: con 25 por pagina el Strapi de `diego martin` (Render) corta
 # la respuesta de la segunda; con 10, las seis salen enteras.
 PAGINA_STRAPI = 10
@@ -2031,6 +2044,56 @@ class GenericoConnector(Connector):
                 return {"api": api, "ruta": ruta, "total": total}
         return None
 
+    def _strapi_v3_por_slug(self, html: str, url: str) -> tuple[dict, str] | None:
+        """El objeto Strapi v3 de una ficha que el sitio arma en el navegador.
+
+        `paladino` (Next.js): las 43 fichas del sitemap (/inmueble/<slug>) son
+        cascarones -«ficha sin contenido» 43 de 43- y el sitio las llena con
+        `GET https://api.<host>/inmuebles` (Strapi v3, sin clave; robots.txt
+        sin Disallow, 2026-10-01). Se exige la url de la API en el JavaScript
+        PROPIO del sitio, que `/count` responda un numero y que el filtro por
+        slug devuelva UN solo objeto con ese mismo slug. Se pide solo ese
+        objeto (~26 KB), no el catalogo entero (1,2 MB).
+        """
+        partes = urllib.parse.urlparse(url)
+        host = partes.netloc.lower()
+        cache = self.__dict__.setdefault("_strapi_v3_por_host", {})
+        if host not in cache:
+            cache[host] = None
+            base = f"{partes.scheme}://{partes.netloc}"
+            chunks = list(dict.fromkeys(re.findall(
+                r"src=[\"'](/_next/static/chunks/[^\"']+\.js)[\"']", html or "")))[:12]
+            for chunk in chunks:
+                try:
+                    js = self.descargador.bajar(base + chunk)
+                except (ErrorTransitorio, ErrorPermanente, Bloqueado):
+                    continue
+                m = RE_API_STRAPI_V3.search(js or "")
+                if not m:
+                    continue
+                api = f"{m.group(1)}/{m.group(2)}"
+                try:
+                    if int(str(self.descargador.bajar(f"{api}/count")).strip()) > 0:
+                        cache[host] = api
+                except (ErrorTransitorio, ErrorPermanente, Bloqueado, ValueError):
+                    pass
+                break
+        api = cache[host]
+        slug = urllib.parse.unquote(partes.path.rstrip("/").rsplit("/", 1)[-1])
+        if not api or not slug:
+            return None
+        try:
+            lista = json.loads(self.descargador.bajar(
+                f"{api}?slug={urllib.parse.quote(slug)}&_limit=2"))
+        except (ErrorTransitorio, ErrorPermanente, Bloqueado, ValueError, TypeError):
+            return None
+        if not isinstance(lista, list) or len(lista) != 1:
+            return None
+        objeto = lista[0]
+        if not isinstance(objeto, dict) or objeto.get("slug") != slug:
+            return None
+        return objeto, api.rsplit("/", 1)[0]
+
     def _plan_desde_la_raiz(self, fuente: Fuente, base: str, p: Any,
                             _desde_la_raiz: bool) -> dict[str, Any] | None:
         """El catalogo de la raiz, cuando la url declarada es una subpagina.
@@ -3288,6 +3351,22 @@ class GenericoConnector(Connector):
                                   ErrorPermanente("ficha inexistente"))
             return None
         html = con_cierres_normales(html)
+        if ("/_next/static/" in html
+                and re.search(r"/(?:inmueble|inmuebles|propiedad|propiedades)/[^/?#]+/?$",
+                              urllib.parse.urlparse(url).path, re.I)
+                and not re.search(r"application/ld\+json", html, re.I)
+                # Solo un CASCARON: poco texto visible y ningun precio. Una
+                # ficha Next.js con contenido (`fenix`) no paga la busqueda de
+                # la API (hasta 12 chunks por host).
+                and len(_texto(html)) < 2500
+                and not re.search(r"(?:U\$S|USD|US\$|\$)\s*\d", _texto(html))):
+            v3 = self._strapi_v3_por_slug(html, url)
+            if v3 is not None:
+                objeto, api_base = v3
+                propiedad_v3 = self._normalizar_strapi(
+                    {**crudo, "strapi_objeto": objeto, "strapi_v3_base": api_base}, fuente)
+                if propiedad_v3 is not None:
+                    return propiedad_v3
         # Y dicha en el ENCABEZADO de una pagina completa: `los cerros` (Next.js)
         # responde a veces con 200 y <h1>Propiedad no encontrada</h1> dentro de
         # la plantilla del sitio, y se guardaba una «propiedad» con ese titulo,
@@ -3712,6 +3791,31 @@ class GenericoConnector(Connector):
         # 12 fichas sin ciudad): si el ULTIMO tramo es una provincia, el
         # anterior es la ciudad que la ficha escribe. La geografia compartida
         # la valida despues; lo que no resuelve no se afirma.
+        linea = None
+        if not (ciudad_par and provincia_par) and not (datos.get("ciudad") or mapaprop.get("ciudad")):
+            linea = self._linea_de_ubicacion(principal) or self._ubicacion_wix(html)
+        if linea:
+            # Fuera «Argentina» al final y el codigo postal delante de la
+            # ciudad («B7602FKK Mar del Plata»): la cadena geocodificada de
+            # Google repite «…, Mar Del Plata, Buenos Aires, Argentina.».
+            tramos_l = [x.strip(" .") for x in re.split(r",|\s[-|]\s", linea) if x.strip(" .")]
+            while tramos_l and re.fullmatch(r"(?i)rep(?:u|ú)blica\s+argentina|argentina", tramos_l[-1]):
+                tramos_l.pop()
+            tramos_l = [re.sub(r"^[A-Z]\d{4}[A-Z]{3}\s+|^\(?\d{4}\)?\s+", "", t) for t in tramos_l]
+            if not direccion and tramos_l and re.search(r"\d", tramos_l[0]) and len(tramos_l[0]) <= 80:
+                direccion = tramos_l[0]
+            if len(tramos_l) >= 2 and _es_provincia(tramos_l[-1]):
+                previo = tramos_l[-2]
+                if not re.search(r"\d", previo) and len(previo) <= 40:
+                    ciudad_par = ciudad_par or previo
+                    provincia_par = provincia_par or tramos_l[-1]
+            elif (len(tramos_l) >= 2 and re.search(r"\d", tramos_l[0])
+                  and not re.search(r"\d", tramos_l[1]) and len(tramos_l[1]) <= 40):
+                # «Santa Marina 538 - Monte Grande», «Av Int Zobboli 1604,
+                # Rafaela - Luis Fasoli»: calle y altura, despues la ciudad. La
+                # geografia compartida la valida; un barrio que no es localidad
+                # no se afirma como ciudad.
+                ciudad_par = ciudad_par or tramos_l[1]
         if direccion and not (ciudad_par and provincia_par):
             tramos = [x.strip(" .") for x in re.split(r",|\.\s", direccion) if x.strip(" .")]
             if (len(tramos) >= 3 and _es_provincia(tramos[-1])
@@ -4230,15 +4334,23 @@ class GenericoConnector(Connector):
 
         precio = moneda = None
         dolares, pesos = valor("valor_dolares", "precio_dolares"), valor("valor_pesos", "precio_pesos")
+        ref = valor("precio_ref")
         if dolares not in (None, ""):
             precio, moneda = a_numero(str(dolares)), "USD"
         elif pesos not in (None, ""):
             precio, moneda = a_numero(str(pesos)), "ARS"
+        elif isinstance(ref, dict) and ref.get("mostrar") and ref.get("valor") not in (None, ""):
+            # Strapi v3 (`paladino`): {valor, moneda: {nombre: "USD" | "ARS Pesos"},
+            # mostrar}. Con `mostrar` falso el sitio no publica el precio.
+            divisa = ref.get("moneda") if isinstance(ref.get("moneda"), dict) else {}
+            nombre = str(divisa.get("nombre") or "").upper()
+            moneda = "USD" if ("USD" in nombre or "U$S" in nombre) else ("ARS" if "ARS" in nombre else None)
+            precio = a_numero(str(ref.get("valor"))) if moneda else None
         if not precio:
             precio = moneda = None
 
-        lat = lon = None
-        mapa = re.search(r"!2d(-?\d+\.\d+)!3d(-?\d+\.\d+)", str(valor("coordenadas", "mapa") or ""))
+        lat, lon = _coordenada(valor("latitud")), _coordenada(valor("longitud"))
+        mapa = None if (lat is not None and lon is not None) else re.search(r"!2d(-?\d+\.\d+)!3d(-?\d+\.\d+)", str(valor("coordenadas", "mapa") or ""))
         if mapa:
             lon, lat = _coordenada(mapa.group(1)), _coordenada(mapa.group(2))
 
@@ -4248,6 +4360,17 @@ class GenericoConnector(Connector):
             url = ((foto or {}).get("attributes") or {}).get("url")
             if isinstance(url, str) and url.startswith("http"):
                 imagenes.append(url)
+        # v3: `imagen` y `galeria` con url relativa al host de la API.
+        base_v3 = crudo.get("strapi_v3_base")
+        if base_v3:
+            portada = valor("imagen")
+            for foto in ([portada] if isinstance(portada, dict) else []) + list(valor("galeria") or []):
+                ruta = foto.get("url") if isinstance(foto, dict) else None
+                if isinstance(ruta, str) and ruta:
+                    completa = ruta if ruta.startswith("http") else base_v3 + ruta
+                    if completa not in imagenes:
+                        imagenes.append(completa)
+        zona, estado = valor("catalogo_de_zona"), valor("estado")
 
         return PropiedadNormalizada(
             canonical_agency_id=fuente.canonical_agency_id,
@@ -4255,23 +4378,27 @@ class GenericoConnector(Connector):
             source_url=crudo["source_url"],
             connector="generico",
             inmobiliaria_id=fuente.inmobiliaria_id,
-            titulo=texto("Titulo", "title"),
+            titulo=texto("Titulo", "title", "nombre"),
             descripcion=texto("descripcion", "description"),
             operacion=detectar_operacion(texto("Tipo_de_operacion", "operacion") or ""),
-            tipo_propiedad=detectar_tipo(texto("tipo_de_inmueble", "tipo") or ""),
+            tipo_propiedad=detectar_tipo(texto("tipo_de_inmueble", "tipo", "tipo_inmueble", "tipos") or ""),
             precio=precio,
             moneda=moneda,
             direccion=texto("Direccion", "direccion"),
             ciudad=texto("Localidades", "localidad", "ciudad"),
+            barrio=(limpiar(str(zona["nombre"])) or None) if isinstance(zona, dict) and zona.get("nombre") else None,
             latitud=lat,
             longitud=lon,
             ambientes=conteo("Ambientes"),
-            dormitorios=conteo("Dormitorios"),
+            dormitorios=conteo("Dormitorios", "habitaciones"),
             banos=conteo("Banos", "baños"),
             superficie_total=_decimal(valor("metros_totales2", "metros_totales", "superficie_total")),
             superficie_cubierta=_decimal(valor("m2_cubiertos", "superficie_cubierta")),
             imagenes=imagenes,
-            extra={"strapi": True, **({"coordenada_de": "mapa embebido de la ficha"} if mapa else {})},
+            extra={"strapi": True, **({"coordenada_de": "mapa embebido de la ficha"} if mapa else {}),
+                   **({"strapi_version": 3} if base_v3 else {}),
+                   **({"estado_fuente": str(estado["nombre"]).strip().lower()}
+                      if isinstance(estado, dict) and estado.get("nombre") else {})},
         )
 
     def _ficha_xintel_embebida(self, html: str) -> str:
@@ -4562,6 +4689,99 @@ class GenericoConnector(Connector):
         return None
 
     @staticmethod
+    def _ubicacion_wix(html: str) -> str | None:
+        """La direccion formateada que una pagina dinamica de Wix renderiza.
+
+        Wix (CMS «Properties», `lucas liprandi`) no publica la ubicacion con
+        rotulo ni icono: el campo `address` de la coleccion se renderiza como
+        texto suelto, «Ascochinga, Córdoba, Argentina», en uno de los
+        componentes de `wix-warmup-data` (ssrPropsUpdates). Se acepta solo esa
+        forma -tramos sin cifras que terminan en «<provincia>, Argentina»- y
+        solo si todos los componentes que la tienen dicen LO MISMO (la
+        etiqueta del mapa repite la del encabezado). Dos ubicaciones distintas
+        en la pagina: no se afirma ninguna.
+        """
+        m = re.search(r'<script[^>]*id="wix-warmup-data"[^>]*>(.*?)</script>', html or "", re.S)
+        if not m:
+            return None
+        try:
+            datos = json.loads(m.group(1))
+        except ValueError:
+            return None
+        vistas = set()
+        for tanda in ((datos.get("platform") or {}).get("ssrPropsUpdates") or []):
+            for comp in (tanda or {}).values():
+                bruto = (comp or {}).get("html") if isinstance(comp, dict) else None
+                if not isinstance(bruto, str):
+                    continue
+                texto = limpiar(re.sub(r"\s+", " ", unescape(re.sub(r"<[^>]+>", " ", bruto))))
+                tramos = [t.strip() for t in (texto or "").split(",")]
+                if (2 <= len(tramos) <= 4 and tramos[-1].casefold() == "argentina"
+                        and _es_provincia(tramos[-2])
+                        and not any(re.search(r"\d", t) for t in tramos)):
+                    vistas.add(texto)
+        return vistas.pop() if len(vistas) == 1 else None
+
+    @staticmethod
+    def _linea_de_ubicacion(html: str) -> str | None:
+        """La ubicacion que la ficha escribe junto a un icono de mapa.
+
+        Medido 2026-10-01 (LOCAL): 1.112 fichas de 48 agencias sin ciudad, y
+        en muchas la ubicacion esta publicada asi: `martelliti` (Pixel
+        Inmobiliario) <p><i class="fa fa-map-marker"></i> Laprida 1835,
+        B7602FKK Mar del Plata, Provincia de Buenos Aires, Argentina, ...</p>,
+        `alfa`/`franco` <span class="ficha__location-icon">, `abate`
+        flaticon-pin, `b b` fa-map-marker-alt, `azara`, `zamorano`.
+
+        La trampa es la OFICINA, que usa el mismo icono: en el pie
+        (`martelliti`), en la cabecera (`agostina saracena`), en el bloque de
+        contacto (`b b`: «Lavalle 388, Rafaela, Santa Fe»), o como «Sucursal
+        Tigre» (`a campos`). Por eso: solo el cuerpo de la ficha, nada dentro
+        de header/nav/footer, tarjetas de otras fichas, contacto o agente;
+        nunca una linea que tambien este en el pie, ni una que diga sucursal u
+        oficina. Se toma la PRIMERA que queda.
+        """
+        try:
+            from bs4 import BeautifulSoup
+        except ImportError:  # pragma: no cover
+            return None
+        cuerpo = html or ""
+        pie = cuerpo[len(cuerpo_principal(cuerpo)):]
+        sopa = BeautifulSoup(cuerpo_principal(cuerpo), "html.parser")
+        for basura in sopa(["script", "style", "noscript", "header", "nav", "footer"]):
+            basura.decompose()
+        icono = re.compile(r"(?:^|[\s_-])(?:fa-map-marker(?:-alt)?|fa-location-dot|fa-map-marked(?:-alt)?|"
+                           r"flaticon-pin|location-icon|icon-location|lucide-map-pin|map-pin)(?:$|[\s_-])", re.I)
+        ajeno = re.compile(r"card|related|similar|relacionad|contact|agent|asesor|footer|header|"
+                           r"navbar|menu|sucursal|oficina|office|widget|sidebar", re.I)
+        plano_pie = re.sub(r"\s+", " ", unescape(re.sub(r"<[^>]+>", " ", pie)))
+        for nodo in sopa.find_all(True, class_=icono):
+            if any(ajeno.search(" ".join(a.get("class") or []) + " " + (a.get("id") or ""))
+                   for a in nodo.parents if getattr(a, "attrs", None) is not None):
+                continue
+            # La oficina suele ser un ENLACE (a Google Maps, tel:, wa.me): en
+            # `agostina saracena` la barra superior es <a href="maps.app.goo.gl/…">
+            # con el mismo icono, y su plantilla no usa <header>. La ubicacion
+            # de una ficha no se enlaza.
+            if nodo.find_parent("a", href=True) is not None:
+                continue
+            contenedor = nodo.parent
+            texto = re.sub(r"\s+", " ", contenedor.get_text(" ", strip=True) if contenedor else "")
+            if len(texto) < 6 and contenedor is not None and contenedor.parent is not None:
+                contenedor = contenedor.parent
+                texto = re.sub(r"\s+", " ", contenedor.get_text(" ", strip=True))
+            texto = texto.strip(" .|-")
+            if not (4 <= len(texto) <= 160):
+                continue
+            if re.search(r"\b(?:sucursal|oficina|casa\s+central|ver\s+mapa|ubicaci[oó]n\s+aproximada)\b",
+                         texto, re.I):
+                continue
+            if texto in plano_pie:
+                continue
+            return limpiar(texto)
+        return None
+
+    @staticmethod
     def _par_rotulado(html: str, etiqueta: str) -> str | None:
         """El valor de un par rotulo/valor: <p>Dirección</p><p>Av. Rosales 515</p>.
 
@@ -4748,6 +4968,15 @@ class GenericoConnector(Connector):
                    r"lotes?|galpon(?:es)?|cocheras?|campos?|quintas?|chacras?|fincas?|"
                    r"salon(?:es)?|depositos?")
         if re.fullmatch(sueltos, plano):
+            return len(GenericoConnector._fichas_en(html, url)) >= 5 if url else False
+        # Y la categoria titulada con la OPERACION sola: `ana de napoli`
+        # (Next.js) tiene /venta, /alquiler y /alquiler-temporario con <h1>
+        # «Alquiler Temporario» y las tarjetas debajo; la de temporario se
+        # guardaba como ficha con el precio y el tipo de su primera tarjeta
+        # (2026-10-01). Mismo umbral: sin id en la ruta y 5 o mas fichas.
+        operaciones = (r"(?:en\s+)?(?:ventas?|alquiler(?:es)?(?:\s+(?:temporari[oa]s?|temporal(?:es)?|"
+                       r"anual(?:es)?|comercial(?:es)?))?|temporari[oa]s?)")
+        if re.fullmatch(operaciones, plano):
             return len(GenericoConnector._fichas_en(html, url)) >= 5 if url else False
         tipos = (r"casas|departamentos|deptos|duplex|oficinas|locales|terrenos|lotes|"
                  r"galpones|cocheras|campos|quintas|chacras|fincas|salones|naves|depositos")
@@ -5205,10 +5434,63 @@ class GenericoConnector(Connector):
             # como si fuera la cantidad de ambientes.
             hallazgo = re.search(
                 rf"(?<!\+)\b([1-9]\d?)\s*(?:{etiqueta})", texto, re.I)
+            if not hallazgo:
+                return GenericoConnector._cuenta_en_letras(texto, etiqueta)
         if not hallazgo:
             return None
         valor = int(hallazgo.group(1))
         return valor if 1 <= valor <= 99 else None
+
+    @staticmethod
+    def _cuenta_en_letras(texto: str, etiqueta: str) -> int | None:
+        """«cuatro dormitorios», «un baño»: la cantidad escrita con letras.
+
+        Solo en prosa (la tabla de atributos no se escribe asi) y solo si NO
+        hay ambiguedad, porque un conteo mal leido parece un dato real:
+        - una UNICA mencion con letras de ese rotulo: «un baño en suite y un
+          baño de servicio» son dos baños y no se afirma ninguno;
+        - concordancia: «un» con el rotulo en singular, «dos» en plural. «Un
+          ambientes» no es una cantidad;
+        - sin cotas ni rangos delante: «mas de dos», «hasta tres», «dos y tres
+          dormitorios» (un emprendimiento) no son la cantidad de ESTA ficha.
+        """
+        palabras = "|".join(NUMEROS_EN_LETRAS)
+        texto = texto or ""
+        # El rotulo tiene que aparecer UNA sola vez en toda la ficha. Medido
+        # sobre el corpus (2026-10-01, 45 casos revisados a mano): «Dormitorio
+        # principal en suite ... Dos dormitorios», «dos habitaciones
+        # secundarias» o «P.B: dormitorio con baño ... P.A: dos dormitorios»
+        # nombran una PARTE de los dormitorios, y la cuenta en letras quedaba
+        # corta. Si el rotulo aparece en otro lado, no se afirma.
+        if len(re.findall(rf"(?:{etiqueta})", texto, re.I)) != 1:
+            return None
+        validas = []
+        for m in re.finditer(rf"(?<![\w+])({palabras})\s+((?:{etiqueta}))",
+                             texto, re.I):
+            valor = NUMEROS_EN_LETRAS[m.group(1).lower()]
+            plural = m.group(2).lower().endswith("s")
+            if (valor == 1) == plural:
+                continue
+            # «un ambiente acogedor», «generando un ambiente moderno»: en
+            # singular «ambiente» es el clima del lugar, no un conteo (10 de 45
+            # en la muestra). Un ambiente se publica como «monoambiente».
+            if valor == 1 and re.match(r"ambiente", m.group(2), re.I):
+                continue
+            antes = texto[max(0, m.start() - 40):m.start()]
+            despues = texto[m.end():m.end() + 30]
+            if (re.search(r"(?:\bm[aá]s\s+de|\bhasta|\bentre|\bdesde)\s*$", antes, re.I)
+                    or re.search(rf"(?:\b(?:{palabras})|\d)\s*(?:y|o|a|-|/)\s*(?:de\s+)?$", antes, re.I)
+                    # Un piso o una unidad: «P.A: dos dormitorios», «semipisos de
+                    # un dormitorio», «casitas de dos dormitorios cada una».
+                    or re.search(r"(?:planta\s+(?:alta|baja)|\bp\.?\s?[ab]\b\.?|\bpiso\b|"
+                                 r"semipisos?|unidades|departamentos|casitas|caba[nñ]as|"
+                                 r"locales|monoambientes)[^.]{0,30}$", antes, re.I)
+                    or re.search(r"^[^.]{0,20}\bcada\s+un[oa]\b", despues, re.I)
+                    # «dos habitaciones secundarias»: hay otra (la principal).
+                    or re.search(r"^\s*(?:secundari|adicional|extra|m[aá]s\b)", despues, re.I)):
+                return None
+            validas.append(valor)
+        return validas[0] if len(validas) == 1 else None
 
     @staticmethod
     def _ambientes_del_titulo(titulo: str | None) -> int | None:
@@ -5408,6 +5690,27 @@ class GenericoConnector(Connector):
             rf"<{celda}[^>]*>\s*(\d{{1,2}})\s*</{celda}>", marcado, re.I)
         if rotulo and 1 <= int(rotulo.group(1)) <= 99:
             return int(rotulo.group(1))
+        # La pareja al reves: el NUMERO en su celda y el rotulo en la
+        # siguiente, a veces con un <br> en el medio (fila de iconos):
+        # <span class="p"> 1</span><br><span>Baños</span>. `b b administracion`
+        # (Rafaela) la usa en sus 83 fichas y publica «Ambientes» como par
+        # rotulo->valor, asi que la regla de abajo devolvia None y se perdian
+        # 57 de 74 baños. Solo cuenta si el numero NO es el valor de un rotulo
+        # anterior («<span>Ambientes</span><span>3</span><span>Baños</span>»
+        # no dice 3 baños) y si todas las apariciones dicen lo mismo.
+        inversos = set()
+        for pareja in re.finditer(
+                rf"<{celda}[^>]*>\s*(\d{{1,2}})\s*</{celda}>\s*(?:<br\s*/?>\s*)?"
+                rf"<{celda}[^>]*>\s*(?:{etiqueta})\s*</{celda}>", marcado, re.I):
+            previo = marcado[max(0, pareja.start() - 120):pareja.start()]
+            if re.search(rf"<{celda}[^>]*>\s*(?:{ETIQUETAS_ATRIBUTO_COMPUESTO})\s*:?\s*</{celda}>\s*$",
+                         previo, re.I):
+                continue
+            inversos.add(int(pareja.group(1)))
+        if len(inversos) == 1:
+            valor = inversos.pop()
+            if 1 <= valor <= 99:
+                return valor
         if GenericoConnector._es_tabla_estructurada(marcado):
             # La ficha presenta sus atributos como pares rotulo/valor: lo
             # demostro al menos uno que si se leyo de la estructura. En ese
@@ -5626,7 +5929,12 @@ class GenericoConnector(Connector):
         otros = "|".join(raiz for raiz, muestra in SUPERFICIES_VECINAS
                          if not re.search(etiqueta, muestra, re.I))
         m = re.search(rf"(?:{etiqueta})[^\d]{{0,18}}([\d.,]{{2,9}})\s*m"
-                      rf"(?!\s*[x×]\s*\d)"
+                      # «22m frente x 65m fondo», «14,36 mts de frente por
+                      # 58,40»: tambien es una MEDIDA. Medido 2026-10-01: 11
+                      # fichas de 10 agencias guardaban el frente (o el fondo)
+                      # como superficie (`fenix` 4741529: 22 m² en un lote de
+                      # 1.430).
+                      rf"(?![a-z]*\.?\s*(?:de\s+)?(?:frente|fte|ancho)?\.?\s*(?:[x×]|por)\s*\d)"
                       # «95 m2 total: 200» o «45 m² Cubierta 40 m²» no: si el
                       # rotulo que sigue tiene SU numero, abre su propio par y
                       # el primero sigue siendo de quien lo precede.

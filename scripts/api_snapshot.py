@@ -75,7 +75,8 @@ from connectors.exterior import (POLITICA_PUBLICA, evidencia_de_exterior,  # noq
                                  publicable)
 from connectors import poligono_caba  # noqa: E402
 from connectors.coherencia import _es_simbolico  # noqa: E402
-from connectors.geografia import (CABA_POR_POLIGONO_REASON,  # noqa: E402
+from connectors.geografia import (PROVINCIA_POR_POLIGONO_REASON,  # noqa: E402
+                                  CABA_POR_POLIGONO_REASON,  # noqa: E402
                                   PROVINCE_CONFLICT_REASON)
 from scripts.geo_coverage_audit import (cargar_cache,  # noqa: E402
                                         catalogo_de_localidades,
@@ -368,21 +369,51 @@ def _cobertura_de_la_fila_servida(cobertura: dict[str, Any] | None, base: dict[s
     return recalculada, "recalculada"
 
 
+def _resolucion_vigente(conflicto: dict[str, Any]):
+    """Lo que da HOY el resolvedor para lo que la ficha publico, o None."""
+    publicado = conflicto.get("publicado") or {}
+    if not publicado.get("localidad"):
+        return None
+    try:
+        return geografia().resolver_localidad(
+            publicado.get("localidad"), provincia=publicado.get("provincia"),
+            lat=publicado.get("latitud"), lon=publicado.get("longitud"))
+    except (OSError, ValueError):
+        return None
+
+
 def _conflicto_vigente(conflicto: dict[str, Any]) -> str:
     """El motivo que da HOY el resolvedor para lo que la ficha publico.
 
     Sin catalogo se respeta el conflicto registrado (fail-closed).
     """
+    resolucion = _resolucion_vigente(conflicto)
+    return resolucion.motivo if resolucion is not None else PROVINCE_CONFLICT_REASON
+
+
+def _geo_p10(g: dict[str, Any] | None, conflicto: dict[str, Any]) -> dict[str, Any] | None:
+    """Las dimensiones de la localidad que P10 confirmo, con la evidencia a la vista.
+
+    La localidad, el departamento y el municipio salen del catalogo de la
+    localidad NOMBRADA por la fuente; la provincia, de la geometria (P10). La
+    provincia publicada queda en `provincia_publicada_en_conflicto`.
+    """
+    resolucion = _resolucion_vigente(conflicto)
+    if resolucion is None or resolucion.motivo != PROVINCIA_POR_POLIGONO_REASON:
+        return None
+    e = resolucion.entidad
     publicado = conflicto.get("publicado") or {}
-    try:
-        resolucion = geografia().resolver_localidad(
-            publicado.get("localidad"), provincia=publicado.get("provincia"),
-            lat=publicado.get("latitud"), lon=publicado.get("longitud"))
-    except (OSError, ValueError):
-        return PROVINCE_CONFLICT_REASON
-    if not publicado.get("localidad"):
-        return PROVINCE_CONFLICT_REASON
-    return resolucion.motivo
+    return dict(
+        g or {}, localidad_canonica=e.official_name, localidad_id=e.official_id,
+        departamento_canonico=e.departamento, municipio_canonico=e.municipio,
+        provincia_canonica=e.provincia,
+        procedencia_de_dimensiones={"provincia": "GEO_GEOMETRY",
+                                    "departamento": "SOURCE_LOCALITY",
+                                    "municipio": "SOURCE_LOCALITY"},
+        area_busqueda={"nivel": "LOCALIDAD", "nombre": e.official_name,
+                       "id": e.official_id, "origen": "localidad"},
+        provincia_publicada_en_conflicto=publicado.get("provincia"),
+        estado_geografico=None, conflicto=None)
 
 
 def _geo_de_la_extraccion(g: dict[str, Any] | None, fresca: dict[str, Any] | None
@@ -409,6 +440,11 @@ def _geo_de_la_extraccion(g: dict[str, Any] | None, fresca: dict[str, Any] | Non
         vigente = _conflicto_vigente(conflicto)
         if vigente == CABA_POR_POLIGONO_REASON:
             poligono = {"provincia": CABA, "geometria": poligono_caba.procedencia() or {}}
+        elif vigente == PROVINCIA_POR_POLIGONO_REASON:
+            confirmada = _geo_p10(g, conflicto)
+            if confirmada is not None:
+                return confirmada, "provincia_por_poligono"
+            return dict(g or {}, estado_geografico="GEO_CONFLICT", conflicto=conflicto), "conflicto_fresco"
         elif vigente != PROVINCE_CONFLICT_REASON:
             return g, "conflicto_obsoleto"
         elif (g or {}).get("estado_geografico") == "GEO_CONFLICT":
@@ -693,7 +729,8 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
         g, correccion_geo = _geo_de_la_extraccion(cobertura, fresca)
         if correccion_geo:
             correcciones_geo[correccion_geo] += 1
-        if (correccion_geo in ("conflicto_obsoleto", "caba_por_poligono")
+        if (correccion_geo in ("conflicto_obsoleto", "caba_por_poligono",
+                               "provincia_por_poligono")
                 and isinstance(cruda.get("extra"), dict)
                 and "geo_conflicto" in cruda["extra"]):
             # `fila_de_api` vuelve a imponer el conflicto que lleve la fila.
@@ -771,6 +808,7 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
         "politica_publica": POLITICA_PUBLICA,
         "geo_conflictos_de_la_extraccion_fresca": correcciones_geo["conflicto_fresco"],
         "caba_confirmada_por_poligono": correcciones_geo["caba_por_poligono"],
+        "provincia_normalizada_por_poligono_p10": correcciones_geo["provincia_por_poligono"],
         "geo_conflictos_viejos_que_ya_no_lo_son": correcciones_geo["conflicto_obsoleto"],
         "imagenes_compartidas_descartadas": imagenes_compartidas,
         "descripciones_del_sitio_descartadas": descripciones_del_sitio,

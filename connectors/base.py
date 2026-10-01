@@ -35,7 +35,7 @@ import urllib.request
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Iterator
-from scraper.network_security import secure_urlopen, read_bounded_response
+from scraper.network_security import OutboundResponseError, secure_urlopen, read_bounded_response
 from scraper.models import (
     _compute_hash_dedup as calcular_hash_dedup,
     ALLOWED_PROPERTY_TYPES, ALLOWED_MONEDAS, ALLOWED_OPERACIONES,
@@ -471,7 +471,7 @@ class Descargador:
     UA = "Mozilla/5.0 (compatible; ERETZ-PropertyBot/1.0; +contacto@eretz)"
 
     def __init__(self, limitador: LimitadorDeRitmo | None = None,
-                 timeout: int = 25, reintentos: int = 3, limite_bytes: int = 800_000):
+                 timeout: int = 25, reintentos: int = 3, limite_bytes: int = 3_000_000):
         self.limitador = limitador or LimitadorDeRitmo()
         # Hosts de los que se pudo leer aunque sea una respuesta. Sirve para
         # distinguir "el sitio dice que no tiene nada" de "no se pudo hablar
@@ -583,6 +583,15 @@ class Descargador:
                 if e.code in (404, 410):
                     raise ErrorPermanente(f"http {e.code}") from None
                 ultimo = ErrorTransitorio(f"http {e.code}")
+            except OutboundResponseError as e:
+                # Una respuesta que excede el tope lo va a exceder siempre:
+                # reintentarla solo repite la descarga. `lucas liprandi` (Wix,
+                # 931 KB por ficha con el tope viejo de 800 KB) bajaba cada
+                # ficha tres veces y las 71 terminaban igual de fallidas. Un
+                # gzip truncado, en cambio, si puede ser un corte de red.
+                if "size limit" in str(e):
+                    raise ErrorTransitorio(f"respuesta fuera del tope: {e}") from None
+                ultimo = ErrorTransitorio(type(e).__name__)
             except Exception as e:
                 ultimo = ErrorTransitorio(type(e).__name__)
             if intento < self.reintentos:
@@ -1036,7 +1045,8 @@ class Connector:
                                                 else "ciudad")
 
         from connectors.geografia import (CABA_POR_POLIGONO_REASON,
-                                          PROVINCE_CONFLICT_REASON)
+                                          PROVINCE_CONFLICT_REASON,
+                                          PROVINCIA_POR_POLIGONO_REASON)
         if (resolucion.motivo == PROVINCE_CONFLICT_REASON
                 and prop.extra.get("provincia_origen") == "padron_inmobiliaria"):
             # La provincia que veta esta localidad no la publico la fuente: la
@@ -1182,6 +1192,23 @@ class Connector:
                     "geometria": {k: (poligono_caba.procedencia() or {}).get(k)
                                   for k in ("fuente", "vertices",
                                             "sha256_coordenadas")},
+                }
+                prop.provincia = entidad.provincia
+            elif resolucion.motivo == PROVINCIA_POR_POLIGONO_REASON:
+                from connectors import poligono_provincia
+                # P10: «la fuente dijo X, ERETZ normalizo Y, por evidencia Z».
+                # La provincia publicada NO se pierde: queda como evidencia.
+                prop.extra["provincia_publicada"] = prop.provincia
+                prop.extra["provincia_por_poligono"] = {
+                    "provincia": entidad.provincia,
+                    "politica": "P10",
+                    "evidencia": {
+                        "localidad": entidad.official_name,
+                        "localidad_id": entidad.official_id,
+                        "latitud": prop.latitud, "longitud": prop.longitud,
+                    },
+                    "geometria": {k: (poligono_provincia.procedencia() or {}).get(k)
+                                  for k in ("fuente", "vertices", "sha256_origen")},
                 }
                 prop.provincia = entidad.provincia
             return

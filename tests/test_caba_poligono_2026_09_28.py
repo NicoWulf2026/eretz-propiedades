@@ -90,17 +90,28 @@ def test_caba_con_buenos_aires_sin_contencion_sigue_contradicha(geo, punto) -> N
 
 @requiere_georef
 def test_caba_sobre_la_frontera_sigue_contradicha(geo) -> None:
+    # Un vertice del limite TERRESTRE con Buenos Aires (General Paz /
+    # Riachuelo), no de la costa: desde P10 (2026-10-01) la costa no hace dudar
+    # entre provincias, el limite con otra provincia si.
+    from connectors import poligono_provincia as P
     anillos, _ = poligono_caba._cargar()
-    lon, lat = anillos[0][100]
+    pc, _, _ = P._cargar(str(P.GEOMETRIA))
+    terrestre = next((x, y) for x, y in anillos[0]
+                     if P._distancia_al_borde_km(pc["06"]["anillos"], x, y) < 0.5)
+    lon, lat = terrestre
     r = geo.resolver_localidad("CABA", provincia="Buenos Aires", lat=lat, lon=lon)
     assert r.certeza == CONTRADICHA
 
 
 @requiere_georef
 def test_otra_provincia_no_se_desempata_aunque_la_coordenada_este_en_caba(geo) -> None:
-    r = geo.resolver_localidad("CABA", provincia="Santa Fe",
-                               lat=OBELISCO[0], lon=OBELISCO[1])
+    # Lejos del Obelisco (Rosario): ni la regla CABA ni P10 afirman CABA.
+    r = geo.resolver_localidad("CABA", provincia="Santa Fe", lat=-32.9442, lon=-60.6505)
     assert r.entidad is None and r.certeza == CONTRADICHA
+    # En el Obelisco, P10 (localidad unica + coordenada en su poligono, lejos de
+    # otra provincia) prevalece sobre la provincia publicada (2026-10-01).
+    r = geo.resolver_localidad("CABA", provincia="Santa Fe", lat=OBELISCO[0], lon=OBELISCO[1])
+    assert r.entidad is not None and r.entidad.official_id == "02"
 
 
 def _propiedad(**campos):

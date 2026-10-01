@@ -69,6 +69,9 @@ APOYADA_EN_COORDENADA = "COORDINATE_SUPPORTED"
 DESCONOCIDA = "UNKNOWN"
 PROVINCE_CONFLICT_REASON = "la provincia declarada contradice al catalogo"
 DEPARTAMENTO_REASON = "nombra un departamento de la provincia declarada, no una localidad"
+PROVINCIA_POR_POLIGONO_REASON = (
+    "provincia publicada contradictoria (P10): la localidad es unica en el pais y "
+    "la coordenada cae en el poligono oficial (IGN) de su provincia")
 CABA_POR_POLIGONO_REASON = ("provincia declarada 'Buenos Aires' desempatada: la "
                             "coordenada cae dentro del poligono oficial de CABA (IGN)")
 
@@ -121,6 +124,15 @@ MARGEN_DE_DESEMPATE = 10.0
 # inmobiliaria, no la propiedad; sin este chequeo esas casas de Bariloche
 # quedaban afirmadas como porteñas.
 CONTRADICE_A_KM = 100.0
+
+# P10 no usa ese radio: afirma la LOCALIDAD, y a 100 km la coordenada puede ser
+# de otra. Medido 2026-10-01: `agostinelli` publica «Hotel en Venta en Cordoba-
+# Cruz del Eje» (la provincia), la coordenada es de Cruz del Eje, a ~95 km de la
+# ciudad de Córdoba, y P10 con 100 km la afirmaba como Córdoba capital. Las 103
+# fichas de `analia requena` estan a menos de 3 km de su localidad. Con nombre
+# de provincia («Córdoba», «Mendoza», «Santa Fe»...) la duda es mayor: 10 km.
+P10_CERCA_KM = 25.0
+P10_CERCA_KM_NOMBRE_DE_PROVINCIA = 10.0
 
 
 def normalizar(valor: Any) -> str:
@@ -574,6 +586,43 @@ class Geografia:
         from connectors.poligono_caba import DENTRO, contencion
         return contencion(lat, lon) == DENTRO
 
+    @staticmethod
+    def _provincia_confirmada_por_poligono(entidad: Entidad | None, lat: Any,
+                                           lon: Any) -> bool:
+        """P10: la coordenada prueba la provincia de una localidad UNICA.
+
+        La fuente declara una provincia y nombra una localidad que solo existe
+        en OTRA (`analia requena`: «Santa Clara del Mar» con provincia «Ciudad
+        Autonoma de Buenos Aires» de plantilla, coordenadas correctas). Se
+        acepta la localidad -y su provincia- solo si:
+          - quien llama ya establecio que es la unica con ese nombre en el pais
+            (nunca se infiere una provincia de un nombre ambiguo);
+          - la coordenada cae DENTRO del poligono oficial de la provincia de la
+            localidad, lejos del limite (`poligono_provincia`, IGN);
+          - y la coordenada esta cerca de la localidad (`CONTRADICE_A_KM`).
+        Sin coordenada, sin geometria o en la frontera: sigue el conflicto.
+        """
+        if entidad is None or entidad.lat is None or entidad.lon is None:
+            return False
+        try:
+            lat, lon = float(lat), float(lon)
+        except (TypeError, ValueError):
+            return False
+        if not _en_argentina(lat, lon):
+            return False
+        from connectors.poligono_provincia import DENTRO, contencion
+        if contencion(entidad.provincia_id or entidad.provincia, lat, lon) != DENTRO:
+            return False
+        tope = P10_CERCA_KM
+        if normalizar(entidad.official_name) in {normalizar(x) for x in (
+                "Buenos Aires", "Catamarca", "Chaco", "Chubut", "Córdoba", "Corrientes",
+                "Entre Ríos", "Formosa", "Jujuy", "La Pampa", "La Rioja", "Mendoza",
+                "Misiones", "Neuquén", "Río Negro", "Salta", "San Juan", "San Luis",
+                "Santa Cruz", "Santa Fe", "Santiago del Estero", "Tierra del Fuego",
+                "Tucumán")}:
+            tope = P10_CERCA_KM_NOMBRE_DE_PROVINCIA
+        return _distancia(lat, lon, entidad.lat, entidad.lon) <= tope
+
     def resolver_localidad(self, texto: Any, *, provincia: str | None = None,
                            departamento: str | None = None,
                            lat: float | None = None,
@@ -602,6 +651,11 @@ class Geografia:
                                       APOYADA_EN_COORDENADA,
                                       resolucion.candidatas,
                                       CABA_POR_POLIGONO_REASON)
+                if (resolucion.candidatas == 1
+                        and self._provincia_confirmada_por_poligono(entidad, lat, lon)):
+                    return Resolucion(entidad, POR_COORDENADA,
+                                      APOYADA_EN_COORDENADA, 1,
+                                      PROVINCIA_POR_POLIGONO_REASON)
                 return Resolucion(None, CONTRADICHA, DESCONOCIDA,
                                   resolucion.candidatas,
                                   PROVINCE_CONFLICT_REASON)
@@ -676,6 +730,13 @@ class Geografia:
                 # la localidad no se afirma. 51 de 288 conflictos medidos el 28-09.
                 return Resolucion(None, AMBIGUA, DESCONOCIDA, total,
                                   DEPARTAMENTO_REASON)
+            # P10: la provincia declarada no tiene esa localidad, pero es UNICA
+            # en el pais y la coordenada cae en el poligono de su provincia.
+            if total == 1 and self._provincia_confirmada_por_poligono(
+                    candidatas[0], lat, lon):
+                return Resolucion(candidatas[0], POR_COORDENADA,
+                                  APOYADA_EN_COORDENADA, 1,
+                                  PROVINCIA_POR_POLIGONO_REASON)
             return Resolucion(None, AMBIGUA, DESCONOCIDA, total,
                               PROVINCE_CONFLICT_REASON)
         if len(filtradas) == 1:

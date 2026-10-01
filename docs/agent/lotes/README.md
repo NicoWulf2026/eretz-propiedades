@@ -127,9 +127,34 @@ variante: ver la próxima entrada (snapshot en construcción).
 | F6 | tope de descarga 800 KB → 3 MB y sin reintentar una respuesta que lo excede; ubicación Wix desde `wix-warmup-data` (única dirección «Localidad, Provincia, Argentina») | base, generico | liprandi: 71 fichas que fallaban todas |
 | F7 | Strapi v3 propio (`api.<host>/inmuebles`): la ficha cascarón Next.js se arma con el objeto por slug | generico | paladino: 43 de 43 eran «sin contenido»; verificado en vivo |
 | L4v2 | conteos en letras endurecidos | generico | ~260 propiedades |
-| P10b | P10 con margen solo contra otra provincia | geografia, base, fingerprints, poligono_provincia | pendiente |
+| P10b | P10 con margen solo contra otra provincia, radio 25/10 km | geografia, base, fingerprints, poligono_provincia, api_snapshot | 103 propiedades, 0 falsos positivos |
+| F8 | soft-404 demostrado por control (un id inventado por host; minoría de vacías) | run_rollout | 6 agencias / 788 propiedades bloqueadas por fichas vacías |
+| F9 | desempate por tercera corrida ante 1–2 fichas editadas por la fuente | agency_certifier | pennacchio 280, cocucci 275, mirasur 135, criscenti 112, fiorio 106… |
 
-Pendiente de diseño (anotado, no implementado): F8 soft-404 demostrado por control (pedir una vez por
+Implementado después (F8): soft-404 demostrado por control (pedir una vez por
 host la misma forma de URL con un id inventado; si responde igual, la ficha vacía es una baja, P1):
 6 agencias / 788 propiedades en NEEDS_FIX solo por fichas vacías (mooswalder 478, mechi cogorno 91,
 salerno 54, d amato…).
+
+### Lote compartido 5 — APLICADO el 2026-10-01 (cuenta B, LOCAL; P4: beneficio medido >> 300 propiedades y > 24 h desde el lote 3)
+Contenido: F1–F9 + Lote 4 v2 + P10 endurecido (tabla de arriba). Suite LOCAL estricta con el lote:
+3.883 passed, 0 failed, 5 skipped (symlinks en Windows y el fail-closed sin geometría).
+Canarios reales con el código del lote (certificador completo, dos corridas, salida en scratch):
+- verdes (CERTIFIED_COMPLETE el 29-09+, una por estrategia): berraz, de leo, amabile, cocciolo, coelho,
+  cristina, baus → siguen COMPLETE (cristina y cocciolo +2 fichas: altas reales). 0 regresiones.
+- objetivo: martelliti NEEDS_FIX→COMPLETE (ciudad/provincia 0→100 %), analia dulsan →COMPLETE,
+  paladino 0→43 fichas COMPLETE (Strapi v3), lucas liprandi 0→73 COMPLETE (tope 3 MB + ubicación Wix),
+  inversiones →BEST_AVAILABLE (inventario chico); b b 83→203 fichas, baños resueltos, provincia
+  156/203 (1 falla residual); agostina saracena provincia 0→15/24 (2 fallas residuales); d amato:
+  3 fichas vacías > cupo 2 → cupo de F8 subido a máx(3, 3 %); ana de napoli: 6 fichas que expiran
+  siempre + techo fantasma 7.777 del directorio (sigue NEEDS_FIX).
+- A/B sobre HTML real en dos muestras independientes (95 fichas fallidas + 89 fichas de 74 agencias):
+  +49 y +31 campos, 1 valor cambiado (ingrone: baños 1→2, correcto: «2 Cuartos de baño»), 0 regresiones.
+- P10 endurecido (margen solo contra otra provincia, ≤ 25 km de la localidad, 10 km si se llama como
+  una provincia): snapshot candidata 636 → 531 GEO_CONFLICT; 103 propiedades normalizadas (analia
+  requena: Santa Clara del Mar, Mar del Plata, Mar Chiquita → Buenos Aires), 0 falsos positivos
+  (agostinelli «Córdoba - Cruz del Eje» queda en conflicto: era la provincia, no la ciudad).
+- Hallazgo del certificador: creaba su descargador con 800 KB fijo en dos lugares; ahora usa
+  `LIMITE_DE_DESCARGA` (3 MB). `dib kai` (Tokko, portada de 1,85 MB) también lo necesitaba.
+Huella: cambian `generico.py`, `base.py`, `run_rollout.py`, `agency_certifier.py`, `geografia.py`,
+`poligono_provincia.py` (+ geometría) → recertificación completa por cambio de huella.

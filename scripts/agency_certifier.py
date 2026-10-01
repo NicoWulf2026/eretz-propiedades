@@ -566,6 +566,23 @@ def compare_runs(run1: dict[str, Any], run2: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def cambio_puntual_en_la_fuente(comparison: dict[str, Any]) -> bool:
+    """Mismo inventario y solo 1 o 2 fichas cambiadas entre las dos corridas.
+
+    Medido 2026-10-01: `pennacchio` (280), `cocucci` (275), `mirasur` (135),
+    `criscenti` (112), `fiorio` (106)... quedaban NEEDS_FIX por una o dos
+    fichas MODIFICADAS con el mismo conjunto de urls: la fuente edito un precio
+    o una expensa entre corridas (`cocucci`: $63.733 -> $64.000, 27-09). Se
+    reciclaban enteras en la cola cada vez. No aplica si cambio el inventario.
+    """
+    cambios = comparison.get("run2_changes") or {}
+    modificadas = int(cambios.get("MODIFICADA") or 0)
+    tope = max(2, int(0.01 * int(comparison.get("run2_identities") or 0)))
+    return (bool(comparison.get("same_url_set"))
+            and not comparison.get("missing_in_run2") and not comparison.get("new_in_run2")
+            and not cambios.get("NUEVA") and 1 <= modificadas <= tope)
+
+
 def load_catalog(v2: Path, data_dir: Path, platform_directory: Path) -> dict[str, dict[str, Any]]:
     resolution = {r["canonical_agency_id"]: r
                   for r in read_jsonl(v2 / "AGENCY_ID_RESOLUTION_FINAL.jsonl")}
@@ -994,7 +1011,7 @@ def conector_por_la_portada(connector_name: str, source: Fuente,
     if connector_name != "generico":
         return connector_name
     downloader = AuditDownloader(LimitadorDeRitmo(interval), timeout=25,
-                                 reintentos=2, limite_bytes=800_000)
+                                 reintentos=2, limite_bytes=LIMITE_DE_DESCARGA)
     try:
         html = downloader.bajar(source.official_url)
     except Exception:
@@ -1023,11 +1040,18 @@ def descartes_sin_senal(run: dict[str, Any]) -> int:
     return descartadas
 
 
+# El tope de descarga del certificador. Era 800 KB fijo aca, ademas del default
+# del Descargador: subir uno sin el otro no cambiaba nada. Las fichas Wix
+# (`lucas liprandi`, 931 KB) y portadas Tokko pesadas (`dib kai`, 1,85 MB)
+# fallaban enteras (lote 5, 2026-10-01).
+LIMITE_DE_DESCARGA = 3_000_000
+
+
 def run_once(connector_name: str, source: Fuente, checkpoint: Checkpoint,
              interval: float, max_listings: int, budget: float,
              baseline: int | None = None) -> tuple[dict[str, Any], AuditDownloader]:
     downloader = AuditDownloader(LimitadorDeRitmo(interval), timeout=25,
-                                 reintentos=3, limite_bytes=800_000)
+                                 reintentos=3, limite_bytes=LIMITE_DE_DESCARGA)
     connector = CONNECTORS[connector_name](downloader, checkpoint)
     result = _procesar_con(connector, source, max_listings, True, budget)
     if debe_reintentar_con_generico(connector_name, result):
@@ -1268,6 +1292,25 @@ def certify(canonical_id: str, catalog: dict[str, dict[str, Any]], output: Path,
 
     pages = {**download1.pages, **download2.pages}
     comparison = compare_runs(run1, run2)
+    if cambio_puntual_en_la_fuente(comparison):
+        # Desempate: una tercera corrida. Si repite EXACTAMENTE a la segunda,
+        # el cambio fue de la fuente entre la 1 y la 2, y se certifica con la 2
+        # y la 3. Si vuelve a cambiar, la extraccion no es estable y sigue
+        # NEEDS_FIX como siempre.
+        try:
+            run3, download3 = run_once(connector_name, source, checkpoint, interval,
+                                       max_listings, budget, baseline)
+        except Exception:  # noqa: BLE001 - sin desempate queda lo que habia
+            run3 = None
+        if run3 is not None:
+            comparison3 = compare_runs(run2, run3)
+            base_result["desempate_tercera_corrida"] = {
+                "modificadas_1_a_2": int((comparison.get("run2_changes") or {}).get("MODIFICADA") or 0),
+                "idempotente_2_a_3": bool(comparison3.get("idempotent")),
+            }
+            if comparison3.get("idempotent"):
+                run1, run2, comparison = run2, run3, comparison3
+                pages = {**pages, **download3.pages}
     enumeration = diagnose_enumeration(run2, baseline, pages)
     fields = field_audit(run2.get("_props", []), pages)
     status, reasons = certification_status(run1, run2, comparison, enumeration, fields)

@@ -281,6 +281,7 @@ def archivos_de_la_huella() -> list[Path]:
         ROOT / "connectors" / "geometria" / "caba_ign.geojson",
         ROOT / "connectors" / "pais.py",
         ROOT / "connectors" / "geometria" / "argentina_ign.json",
+        ROOT / "connectors" / "poligono_provincia.py",
         ROOT / "connectors" / "formularios.py",
         ROOT / "connectors" / "generico.py",
         ROOT / "connectors" / "tokko.py",
@@ -383,6 +384,17 @@ def fingerprint_components(connector: str, strategy: str) -> dict[str, bytes]:
         "shared/pais": _semantic_file(ROOT / "connectors" / "pais.py"),
         "shared/geometria_pais": hashlib.sha256(
             (ROOT / "connectors" / "geometria" / "argentina_ign.json").read_bytes()
+        ).hexdigest().encode(),
+        # P10: la provincia contradictoria se normaliza por contencion en el
+        # poligono oficial de la provincia de la localidad.
+        "shared/poligono_provincia": _semantic_file(
+            ROOT / "connectors" / "poligono_provincia.py"),
+        # Sin el archivo el modulo no afirma nada (P10 apagado): es un estado
+        # propio de la huella, no un error.
+        "shared/geometria_provincias": hashlib.sha256(
+            (ROOT / "connectors" / "geometria" / "provincias_ign.json").read_bytes()
+            if (ROOT / "connectors" / "geometria" / "provincias_ign.json").exists()
+            else b"AUSENTE"
         ).hexdigest().encode(),
     }
     if connector != "generico":

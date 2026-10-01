@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import threading
 import time
@@ -394,6 +395,66 @@ def ceder_ritmo_del_host(con, fuente: Fuente, a: dict) -> float | None:
     return limitador.ceder_ritmo(anfitrion, FACTOR_DE_CORTESIA)
 
 
+def _url_de_control(url: str) -> str | None:
+    """La misma forma de URL que la ficha, con un id que no existe.
+
+    El ultimo numero de 4 o mas cifras de la ruta (o de la query, si la ruta
+    no tiene) se reemplaza por 999999999; sin numero, el ultimo tramo de la
+    ruta pasa a ser un slug inventado.
+    """
+    partes = urllib.parse.urlparse(url)
+    numeros = list(re.finditer(r"\d{4,}", partes.path))
+    if numeros:
+        m = numeros[-1]
+        return urllib.parse.urlunparse(partes._replace(
+            path=partes.path[:m.start()] + "999999999" + partes.path[m.end():]))
+    numeros = list(re.finditer(r"\d{4,}", partes.query))
+    if numeros:
+        m = numeros[-1]
+        return urllib.parse.urlunparse(partes._replace(
+            query=partes.query[:m.start()] + "999999999" + partes.query[m.end():]))
+    tramos = partes.path.rstrip("/").rsplit("/", 1)
+    if len(tramos) < 2 or not tramos[1]:
+        return None
+    return urllib.parse.urlunparse(partes._replace(path=tramos[0] + "/eretz-control-inexistente"))
+
+
+def _firma_de_titulo(html: str) -> str:
+    m = re.search(r"<title\b[^>]*>(.*?)</title>", html or "", re.I | re.S)
+    if not m:
+        return ""
+    return re.sub(r"\s+", " ", re.sub(r"\d", "", m.group(1))).strip().lower()
+
+
+def _baja_demostrada_por_control(con, url: str, controles: dict) -> bool:
+    """La ficha vacia es indistinguible de la respuesta a un id que no existe.
+
+    Es el «soft-404 demostrado» de P1: `cristian mooswalder` (Tokko) lista
+    /p/163683-… y /p/4242852-…, y las dos redirigen a la portada igual que
+    /p/9999999-x; `d amato` sirve la misma plantilla vacia «Propiedad | D'Amato»
+    para sus dos fichas huerfanas del sitemap y para un id inventado
+    (2026-10-01). El control se pide UNA vez por host. Sin titulo, con el
+    control en 404/error, o con titulos distintos: no se afirma nada.
+    """
+    control = _url_de_control(url)
+    if not control:
+        return False
+    host = urllib.parse.urlparse(url).netloc.lower()
+    try:
+        ficha = con.descargador.bajar(url)
+    except (ErrorTransitorio, ErrorPermanente, Bloqueado):
+        return False
+    if host not in controles:
+        try:
+            controles[host] = con.descargador.bajar(control)
+        except (ErrorTransitorio, ErrorPermanente, Bloqueado):
+            controles[host] = None
+    if not controles[host]:
+        return False
+    firma = _firma_de_titulo(ficha)
+    return bool(firma) and firma == _firma_de_titulo(controles[host])
+
+
 def _anotar_ficha_vacia(con, fuente: Fuente, prop) -> None:
     """Rastro de una ficha que no trajo nada, ni siquiera al reintentarla."""
     if not hasattr(con, "descartes"):
@@ -607,6 +668,7 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
         objetos.append(p)
 
     fichas_vacias = 0
+    vacias_pendientes: list = []
     for a in reintentos_diferidos:
         if limite and time.time() > limite:
             fallidos += 1
@@ -629,17 +691,33 @@ def _procesar_con(con, fuente: Fuente, max_fichas: int, observacion: bool,
                 desaparecidas += 1
             continue
         if ficha_sin_contenido(p):
-            # Segunda lectura y sigue sin traer nada. Cuenta como detalle
-            # fallido -la url si era una ficha, lo que fallo fue leerla- con su
-            # rastro: sin el, una url descartada es indistinguible de una que
-            # nunca existio y nadie podria notar si el guardian se equivoca.
-            fallidos += 1
-            fichas_vacias += 1
-            _anotar_ficha_vacia(con, fuente, p)
+            # Segunda lectura y sigue sin traer nada. Se decide despues del
+            # lote, cuando se sabe cuantas son: ver `vacias_pendientes`.
+            vacias_pendientes.append(p)
             continue
         con.completar_ubicacion(p, fuente)
         objetos.append(p)
         recuperados_diferidos += 1
+
+    # Una ficha vacia cuenta como detalle fallido -la url si era una ficha, lo
+    # que fallo fue leerla- con su rastro: sin el, una url descartada es
+    # indistinguible de una que nunca existio. SALVO que sea minoria y se
+    # demuestre la baja contra un control (`_baja_demostrada_por_control`):
+    # entonces es una desaparecida, como un 404. Si son muchas (un sitio que
+    # arma todo en el navegador), ninguna se da de baja.
+    cupo_de_bajas = max(3, int(0.03 * len(avisos)))  # d amato: 3 de 101
+    controles: dict = {}
+    bajas_por_control = 0
+    for p in vacias_pendientes:
+        fallidos += 1
+        if (len(vacias_pendientes) <= cupo_de_bajas
+                and _baja_demostrada_por_control(con, p.source_url, controles)):
+            desaparecidas += 1
+            bajas_por_control += 1
+            continue
+        fichas_vacias += 1
+        _anotar_ficha_vacia(con, fuente, p)
+    r["bajas_demostradas_por_control"] = bajas_por_control
 
     # El filtro va ANTES de registrar: la huella tiene que calcularse sobre lo
     # que efectivamente se guarda, o el checkpoint quedaria comparando contra

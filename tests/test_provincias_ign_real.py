@@ -64,10 +64,10 @@ def test_lo_de_afuera_no_es_de_ninguna(lat, lon):
     assert P.provincia_que_contiene(lat, lon, margen_km=0.1) is None
 
 
-def test_con_el_margen_de_p10_la_costa_cuenta_como_borde():
-    """Medido 2026-10-01: el margen de 2 km se mide contra TODO borde, costa incluida.
+def test_la_costa_no_es_frontera_pero_el_limite_con_otra_provincia_si():
+    """Mar del Plata esta a 0,76 km del mar en la geometria simplificada: DENTRO.
 
-    Mar del Plata (0,76 km de la costa en la geometria simplificada) queda en
-    FRONTERA y P10 no afirma. Es fail-closed; ver el radio de P10 en el README de lotes.
+    El limite CABA / Buenos Aires (General Paz) si es frontera entre provincias.
     """
-    assert P.contencion("06", -38.0055, -57.5426) == P.FRONTERA
+    assert P.contencion("06", -38.0055, -57.5426) == P.DENTRO
+    assert P.contencion("06", -34.6195, -58.5290) == P.FRONTERA

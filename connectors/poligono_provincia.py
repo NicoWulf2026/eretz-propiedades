@@ -131,9 +131,21 @@ def contencion(provincia: Any, lat: Any, lon: Any, *, ruta: Path | None = None,
     holgura = margen_km / _KM_POR_GRADO * 2
     if not (x0 - holgura <= lon <= x1 + holgura and y0 - holgura <= lat <= y1 + holgura):
         return FUERA
-    if _distancia_al_borde_km(prov["anillos"], lon, lat) < margen_km:
-        return FRONTERA
-    return DENTRO if _dentro(prov["anillos"], lon, lat) else FUERA
+    if not _dentro(prov["anillos"], lon, lat):
+        return FRONTERA if _distancia_al_borde_km(prov["anillos"], lon, lat) < margen_km else FUERA
+    # Adentro: la duda es OTRA provincia cerca, no la costa ni el pais vecino.
+    # Medido 2026-10-01: con el margen contra cualquier borde, 151 de 152
+    # fichas con coordenada de `analia requena` (Santa Clara del Mar, a 0,7 km
+    # del mar) quedaban en FRONTERA y P10 no actuaba en el caso que lo motivo.
+    for codigo_otra, otra in por_codigo.items():
+        if codigo_otra == codigo:
+            continue
+        x0, y0, x1, y1 = otra["caja"]
+        if not (x0 - holgura <= lon <= x1 + holgura and y0 - holgura <= lat <= y1 + holgura):
+            continue
+        if _dentro(otra["anillos"], lon, lat) or _distancia_al_borde_km(otra["anillos"], lon, lat) < margen_km:
+            return FRONTERA
+    return DENTRO
 
 
 def provincia_que_contiene(lat: Any, lon: Any, *, ruta: Path | None = None,
