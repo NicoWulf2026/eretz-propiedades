@@ -86,6 +86,11 @@ RUTAS_TOKKO_PROXY = ("/api/tokko/properties", "/api/properties",
 # publica el JavaScript del propio sitio; se reconoce por la forma de Strapi.
 RE_API_STRAPI = re.compile(
     r"[\"'`](https://[a-z0-9.\-]+/api/(propiedades|inmuebles|properties))\?", re.I)
+# Strapi v3 propio en el subdominio `api.` (sin el prefijo /api de v4):
+# `paladino` llama a https://api.paladinopropiedades.com.ar/inmuebles desde su
+# JavaScript y arma cada ficha /inmueble/<slug> en el navegador.
+RE_API_STRAPI_V3 = re.compile(
+    r"[\"'`](https://api\.[a-z0-9.\-]+)/(inmuebles|propiedades|properties)[\"'`?]", re.I)
 # Paginas chicas: con 25 por pagina el Strapi de `diego martin` (Render) corta
 # la respuesta de la segunda; con 10, las seis salen enteras.
 PAGINA_STRAPI = 10
@@ -2039,6 +2044,56 @@ class GenericoConnector(Connector):
                 return {"api": api, "ruta": ruta, "total": total}
         return None
 
+    def _strapi_v3_por_slug(self, html: str, url: str) -> tuple[dict, str] | None:
+        """El objeto Strapi v3 de una ficha que el sitio arma en el navegador.
+
+        `paladino` (Next.js): las 43 fichas del sitemap (/inmueble/<slug>) son
+        cascarones -«ficha sin contenido» 43 de 43- y el sitio las llena con
+        `GET https://api.<host>/inmuebles` (Strapi v3, sin clave; robots.txt
+        sin Disallow, 2026-10-01). Se exige la url de la API en el JavaScript
+        PROPIO del sitio, que `/count` responda un numero y que el filtro por
+        slug devuelva UN solo objeto con ese mismo slug. Se pide solo ese
+        objeto (~26 KB), no el catalogo entero (1,2 MB).
+        """
+        partes = urllib.parse.urlparse(url)
+        host = partes.netloc.lower()
+        cache = self.__dict__.setdefault("_strapi_v3_por_host", {})
+        if host not in cache:
+            cache[host] = None
+            base = f"{partes.scheme}://{partes.netloc}"
+            chunks = list(dict.fromkeys(re.findall(
+                r"src=[\"'](/_next/static/chunks/[^\"']+\.js)[\"']", html or "")))[:12]
+            for chunk in chunks:
+                try:
+                    js = self.descargador.bajar(base + chunk)
+                except (ErrorTransitorio, ErrorPermanente, Bloqueado):
+                    continue
+                m = RE_API_STRAPI_V3.search(js or "")
+                if not m:
+                    continue
+                api = f"{m.group(1)}/{m.group(2)}"
+                try:
+                    if int(str(self.descargador.bajar(f"{api}/count")).strip()) > 0:
+                        cache[host] = api
+                except (ErrorTransitorio, ErrorPermanente, Bloqueado, ValueError):
+                    pass
+                break
+        api = cache[host]
+        slug = urllib.parse.unquote(partes.path.rstrip("/").rsplit("/", 1)[-1])
+        if not api or not slug:
+            return None
+        try:
+            lista = json.loads(self.descargador.bajar(
+                f"{api}?slug={urllib.parse.quote(slug)}&_limit=2"))
+        except (ErrorTransitorio, ErrorPermanente, Bloqueado, ValueError, TypeError):
+            return None
+        if not isinstance(lista, list) or len(lista) != 1:
+            return None
+        objeto = lista[0]
+        if not isinstance(objeto, dict) or objeto.get("slug") != slug:
+            return None
+        return objeto, api.rsplit("/", 1)[0]
+
     def _plan_desde_la_raiz(self, fuente: Fuente, base: str, p: Any,
                             _desde_la_raiz: bool) -> dict[str, Any] | None:
         """El catalogo de la raiz, cuando la url declarada es una subpagina.
@@ -3296,6 +3351,17 @@ class GenericoConnector(Connector):
                                   ErrorPermanente("ficha inexistente"))
             return None
         html = con_cierres_normales(html)
+        if ("/_next/static/" in html
+                and re.search(r"/(?:inmueble|inmuebles|propiedad|propiedades)/[^/?#]+/?$",
+                              urllib.parse.urlparse(url).path, re.I)
+                and not re.search(r"application/ld\+json", html, re.I)):
+            v3 = self._strapi_v3_por_slug(html, url)
+            if v3 is not None:
+                objeto, api_base = v3
+                propiedad_v3 = self._normalizar_strapi(
+                    {**crudo, "strapi_objeto": objeto, "strapi_v3_base": api_base}, fuente)
+                if propiedad_v3 is not None:
+                    return propiedad_v3
         # Y dicha en el ENCABEZADO de una pagina completa: `los cerros` (Next.js)
         # responde a veces con 200 y <h1>Propiedad no encontrada</h1> dentro de
         # la plantilla del sitio, y se guardaba una «propiedad» con ese titulo,
@@ -4263,15 +4329,23 @@ class GenericoConnector(Connector):
 
         precio = moneda = None
         dolares, pesos = valor("valor_dolares", "precio_dolares"), valor("valor_pesos", "precio_pesos")
+        ref = valor("precio_ref")
         if dolares not in (None, ""):
             precio, moneda = a_numero(str(dolares)), "USD"
         elif pesos not in (None, ""):
             precio, moneda = a_numero(str(pesos)), "ARS"
+        elif isinstance(ref, dict) and ref.get("mostrar") and ref.get("valor") not in (None, ""):
+            # Strapi v3 (`paladino`): {valor, moneda: {nombre: "USD" | "ARS Pesos"},
+            # mostrar}. Con `mostrar` falso el sitio no publica el precio.
+            divisa = ref.get("moneda") if isinstance(ref.get("moneda"), dict) else {}
+            nombre = str(divisa.get("nombre") or "").upper()
+            moneda = "USD" if ("USD" in nombre or "U$S" in nombre) else ("ARS" if "ARS" in nombre else None)
+            precio = a_numero(str(ref.get("valor"))) if moneda else None
         if not precio:
             precio = moneda = None
 
-        lat = lon = None
-        mapa = re.search(r"!2d(-?\d+\.\d+)!3d(-?\d+\.\d+)", str(valor("coordenadas", "mapa") or ""))
+        lat, lon = _coordenada(valor("latitud")), _coordenada(valor("longitud"))
+        mapa = None if (lat is not None and lon is not None) else re.search(r"!2d(-?\d+\.\d+)!3d(-?\d+\.\d+)", str(valor("coordenadas", "mapa") or ""))
         if mapa:
             lon, lat = _coordenada(mapa.group(1)), _coordenada(mapa.group(2))
 
@@ -4281,6 +4355,17 @@ class GenericoConnector(Connector):
             url = ((foto or {}).get("attributes") or {}).get("url")
             if isinstance(url, str) and url.startswith("http"):
                 imagenes.append(url)
+        # v3: `imagen` y `galeria` con url relativa al host de la API.
+        base_v3 = crudo.get("strapi_v3_base")
+        if base_v3:
+            portada = valor("imagen")
+            for foto in ([portada] if isinstance(portada, dict) else []) + list(valor("galeria") or []):
+                ruta = foto.get("url") if isinstance(foto, dict) else None
+                if isinstance(ruta, str) and ruta:
+                    completa = ruta if ruta.startswith("http") else base_v3 + ruta
+                    if completa not in imagenes:
+                        imagenes.append(completa)
+        zona, estado = valor("catalogo_de_zona"), valor("estado")
 
         return PropiedadNormalizada(
             canonical_agency_id=fuente.canonical_agency_id,
@@ -4288,23 +4373,27 @@ class GenericoConnector(Connector):
             source_url=crudo["source_url"],
             connector="generico",
             inmobiliaria_id=fuente.inmobiliaria_id,
-            titulo=texto("Titulo", "title"),
+            titulo=texto("Titulo", "title", "nombre"),
             descripcion=texto("descripcion", "description"),
             operacion=detectar_operacion(texto("Tipo_de_operacion", "operacion") or ""),
-            tipo_propiedad=detectar_tipo(texto("tipo_de_inmueble", "tipo") or ""),
+            tipo_propiedad=detectar_tipo(texto("tipo_de_inmueble", "tipo", "tipo_inmueble", "tipos") or ""),
             precio=precio,
             moneda=moneda,
             direccion=texto("Direccion", "direccion"),
             ciudad=texto("Localidades", "localidad", "ciudad"),
+            barrio=(limpiar(str(zona["nombre"])) or None) if isinstance(zona, dict) and zona.get("nombre") else None,
             latitud=lat,
             longitud=lon,
             ambientes=conteo("Ambientes"),
-            dormitorios=conteo("Dormitorios"),
+            dormitorios=conteo("Dormitorios", "habitaciones"),
             banos=conteo("Banos", "baños"),
             superficie_total=_decimal(valor("metros_totales2", "metros_totales", "superficie_total")),
             superficie_cubierta=_decimal(valor("m2_cubiertos", "superficie_cubierta")),
             imagenes=imagenes,
-            extra={"strapi": True, **({"coordenada_de": "mapa embebido de la ficha"} if mapa else {})},
+            extra={"strapi": True, **({"coordenada_de": "mapa embebido de la ficha"} if mapa else {}),
+                   **({"strapi_version": 3} if base_v3 else {}),
+                   **({"estado_fuente": str(estado["nombre"]).strip().lower()}
+                      if isinstance(estado, dict) and estado.get("nombre") else {})},
         )
 
     def _ficha_xintel_embebida(self, html: str) -> str:
