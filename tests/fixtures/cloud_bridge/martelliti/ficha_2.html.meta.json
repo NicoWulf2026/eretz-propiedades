@@ -1,0 +1,14 @@
+{
+ "url": "https://www.adrianamartellitipropiedades.ar/ad/cabanas-con-laguna-de-truchas-el-bolson-patagonia",
+ "robots": "NO_APLICA (cache local)",
+ "capturado": "2026-10-01T13:08:49+00:00",
+ "sha256_original": "485786b376627a1c04eda36303e3b43fb06b1852378c25615bbe4f1919edeb0b",
+ "bytes_original": 108043,
+ "bytes_fixture": 1042,
+ "modo": "html",
+ "scripts_conservados": [],
+ "selector_texto": "RN40",
+ "redaccion": "emails y telefonos reemplazados por [EMAIL]/[TELEFONO]",
+ "nota": "linea junto a fa-map-marker = ubicacion de ESTA propiedad (39 distintas en 44 fichas, 2026-10-01); la oficina va en el pie",
+ "herramienta": "scripts/cloud_bridge/capturar_fixture.py"
+}

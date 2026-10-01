@@ -1,0 +1,14 @@
+{
+ "url": "https://www.fenixxweb.com/propiedades/4684370/",
+ "robots": "NO_APLICA (cache local)",
+ "capturado": "2026-10-01T13:09:14+00:00",
+ "sha256_original": "9be976e4e79a0629864044ddc14a37afb48f254bda2f1428d91bdab7ba58e3f8",
+ "bytes_original": 192964,
+ "bytes_fixture": 16339,
+ "modo": "html",
+ "scripts_conservados": [],
+ "selector_texto": "Resumen",
+ "redaccion": "emails y telefonos reemplazados por [EMAIL]/[TELEFONO]",
+ "nota": "la pagina rotula el valor solo como 'Superficie' (40 de 40 fichas, 2026-10-01): ni total ni cubierta. La descripcion dice 'MEDIDAS: 110m2 aprox.'",
+ "herramienta": "scripts/cloud_bridge/capturar_fixture.py"
+}

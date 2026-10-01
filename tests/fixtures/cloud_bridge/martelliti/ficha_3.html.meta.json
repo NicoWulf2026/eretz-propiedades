@@ -1,0 +1,14 @@
+{
+ "url": "https://www.adrianamartellitipropiedades.ar/ad/dos-edificios-en-block-sobre-avenida-constitucion",
+ "robots": "NO_APLICA (cache local)",
+ "capturado": "2026-10-01T13:08:50+00:00",
+ "sha256_original": "210289f3dc06f4e1356e02924aba5df921741e8fe4dd50e704f66bc8baf8a954",
+ "bytes_original": 119396,
+ "bytes_fixture": 1076,
+ "modo": "html",
+ "scripts_conservados": [],
+ "selector_texto": "Av. Constituci",
+ "redaccion": "emails y telefonos reemplazados por [EMAIL]/[TELEFONO]",
+ "nota": "linea junto a fa-map-marker = ubicacion de ESTA propiedad (39 distintas en 44 fichas, 2026-10-01); la oficina va en el pie",
+ "herramienta": "scripts/cloud_bridge/capturar_fixture.py"
+}

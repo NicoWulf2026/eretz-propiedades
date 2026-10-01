@@ -1,0 +1,13 @@
+{
+ "url": "https://api.paladinopropiedades.com.ar/inmuebles?_start=0&_limit=3&_sort=id:ASC",
+ "robots": "NO_APLICA (cache local)",
+ "capturado": "2026-10-01T13:09:17+00:00",
+ "sha256_original": "c258d61c2799d2a3f01a56d84447e2c406421eacde570df187f1cba746a6dc33",
+ "bytes_original": 1204330,
+ "bytes_fixture": 22539,
+ "modo": "json",
+ "max_items": 2,
+ "redaccion": "emails y telefonos reemplazados por [EMAIL]/[TELEFONO]",
+ "nota": "Strapi v3 propio, sin token. GET /inmuebles = lista plana (44, 1.2 MB, sin paginar); /inmuebles/count = 44; _start/_limit/_sort paginan. Detalle: el sitio busca el id en la lista. robots.txt de ambos hosts sin Disallow (2026-10-01). Estados: Disponible 29, Oportunidad 10, Vendido 1, Alquilado 1, A Refaccionar 1, Reformado 1, sin estado 1. El bundle trae datos MOCK de respaldo: no son inventario.",
+ "herramienta": "scripts/cloud_bridge/capturar_fixture.py"
+}

@@ -99,10 +99,16 @@ def reducir_html(html: str, *, scripts_ids: tuple[str, ...] = (), con_json_ld: b
     for nodo in sopa.find_all(["style", "noscript", "iframe"]):
         nodo.decompose()
     for link in sopa.find_all("link"):
+        # html.parser anida los <link> que no se cierran: al borrar el de afuera
+        # los de adentro quedan sin atributos (`martelliti`, Pixel Inmobiliario).
+        if link.decomposed:
+            continue
         if set(link.get("rel") or []) & {"stylesheet", "preload", "prefetch", "preconnect",
                                           "dns-prefetch", "modulepreload", "icon"}:
             link.decompose()
     for script in sopa.find_all("script"):
+        if script.decomposed:
+            continue
         tipo = (script.get("type") or "").lower()
         if script.get("id") in scripts_ids or (con_json_ld and tipo == "application/ld+json"):
             conservados.append(script.get("id") or tipo)

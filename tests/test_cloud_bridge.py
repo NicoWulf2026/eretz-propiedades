@@ -127,3 +127,13 @@ def test_telefonos_y_precios_en_el_texto_visible():
         assert C.redactar(precio) == precio, precio
     assert C.redactar("Laprida 1835, B7602FKK Mar del Plata") == "Laprida 1835, B7602FKK Mar del Plata"
     assert C.redactar("Superficie 50 M² 50 M²") == "Superficie 50 M² 50 M²"
+
+
+def test_reducir_html_tolera_link_anidado_ya_borrado():
+    """html.parser anida <link> sin cerrar; borrar el de afuera no rompe el de adentro."""
+    from scripts.cloud_bridge.capturar_fixture import reducir_html
+    html = ('<html><head><link rel="stylesheet" href="a.css"><link rel="preload" href="b.js">'
+            '<script src="x.js"></script></head><body><p><i class="fa fa-map-marker"></i> '
+            'Calle 123, Mar del Plata</p></body></html>')
+    reducido, _ = reducir_html(html, selector_texto="Calle 123")
+    assert "Calle 123" in reducido and "a.css" not in reducido
