@@ -168,3 +168,5 @@ Huella: cambian `generico.py`, `base.py`, `run_rollout.py`, `agency_certifier.py
 - ashardjian (topinmobiliario, *.php por tipo -> detalle.php?ID=N&t=1, 60 fichas): una pagina rechazada como contenedora debe recorrerse como catalogo.
 - balsa (Houzez icon-pin 'Machado 740 - San Bernardo'): 8/58 sin provincia. 2do caso Houzez icon-pin -> prioridad.
 - bartolini: categorias /<tipo>-en-<operacion>.html rechazadas como contenedoras cuentan como detalle fallido (30); extender el criterio del lote 3.
+- bauer (Estatik): li.es-property-field--es_neighborhood / --city / --province con label anidado; lector estructural por clase es-property-field--<campo>.
+- bellomo (dl.detail-facts): <dt><i class="bi ..."></i> Ambientes</dt><dd>3</dd>; el icono vacio en la celda del rotulo rompe las parejas estructurales de _cuenta_de_ficha y el texto plano corre los valores (banos=3 cuando la ficha dice 2). Tolerar un icono vacio al comienzo de la celda del rotulo.

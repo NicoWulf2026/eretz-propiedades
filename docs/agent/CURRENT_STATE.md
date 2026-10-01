@@ -44,10 +44,11 @@ Rama canónica `integration/eretz`; worktree de B `D:\INMO CAPITAL\eretz-b` (ven
   mediciones en `lotes/README.md`). Nodo operativo en `759babb` → huellas nuevas (generico html
   `54ba5907da3c`, sitemap `590af5151782`, tokko `9029f5cc624f`, wordpress `c3540dd9e207`, wasi
   `1178964c9e0a`): recertificación completa en curso.
-- **Prueba de 3 workers (P5) en curso desde 14:00** (`ERETZ_WORKERS.json`, respaldo `.bak_*`): todo
-  Tokko sigue en el worker 0; línea base = la medición limpia de 2 workers del 28–29/09 (8,0 agencias
-  por hora activa, bloqueo 0,075, paros 0,14). El relanzador la evalúa solo (`regimen_de_workers.evaluar`)
-  a las 6 h / 30 agencias y vuelve a 2 si empeora.
+- **Prueba de 3 workers (P5) APROBADA** por el relanzador a las 20:02 (`regimen_de_workers.evaluar`,
+  `ERETZ_WORKERS.json` + `ERETZ_WORKERS_REGIMEN.jsonl`): 14:00–20:02, 78 agencias, **13,0 por hora
+  activa** contra 8,0 de la línea base de 2 workers (28–29/09), bloqueo 0,0 (base 0,075), paros por
+  agencia 0,154 (base 0,14; todos de extracción, ninguno de carga). Régimen vigente: 3 workers, todo
+  Tokko en el worker 0. Tope duro: 3.
 - **Cola**: presupuesto adaptativo por corrida para catálogos lentos (`969070e`); paros del día
   firmados (13 diferidas, todas con diagnóstico contra la fuente); Regression Gate 678 agencias,
   0 pendientes (10 revisadas: 4 CORRECCION, 6 CAMBIO_EN_LA_FUENTE).
