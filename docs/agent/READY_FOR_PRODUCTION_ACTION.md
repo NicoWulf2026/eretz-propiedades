@@ -4,7 +4,7 @@ Lista única de lo que **no** se ejecuta sin el usuario: escrituras, migraciones
 permisos, deploy, DNS, restore, merge a `main`, o gasto de dinero. Todo lo
 demás se hace solo. `database_writes: 0` en todo lo preparado.
 
-Actualizado: 2026-09-29.
+Actualizado: 2026-10-01 (LOCAL, cuenta B).
 
 | # | acción | estado | qué la destraba |
 |---|---|---|---|
@@ -17,7 +17,9 @@ Actualizado: 2026-09-29.
 | 7 | Servir la snapshot v4 en la API local | **HECHO: v4l-c servida 29-09 16:52** por despliegue automático P2 (v4l-a/b/v4k superadas) | — (próximos reemplazos: autorización propia) |
 | 8 | Descubrimiento pago de webs (140 `IDENTITY_PENDING`) | no corrido | aprobar gasto (~USD 1,35) |
 | 9 | Merge a `main` / deploy | no corresponde todavía | después de 1–4 |
-| 10 | API v2 beta remota (P21) | **contenedor + runbook LISTOS** (29-09, CLOUD; docker verificado con snapshot sintética); sin desplegar | `EXTERNAL_ACCOUNT_REQUIRED` (cuenta/pago de hosting) + medir tamaño de la snapshot en LOCAL; `deploy/api-beta/RUNBOOK.md` |
+| 10 | API v2 beta remota (P21) | **contenedor + runbook LISTOS** (29-09, CLOUD; docker verificado con snapshot sintética); sin desplegar. Tamaño medido 01-10: servida v4l-c **558 MB** (candidata de hoy 571 MB) → volumen ≥ 2 GB (3× con historial y rollback) | `EXTERNAL_ACCOUNT_REQUIRED` (cuenta/pago de hosting); `deploy/api-beta/RUNBOOK.md` |
+| 11 | P18: ¿`eretz_preview_ro` es miembro de `eretz_direct_property_writer`? (solo lectura) | **UNABLE_TO_VERIFY** 01-10: `ERETZ_PREVIEW_RO_URL` no está definida en la PC; la lectura con la credencial legada fue denegada por el control de permisos del agente | el usuario define `ERETZ_PREVIEW_RO_URL` (credencial de solo lectura) o autoriza la consulta READ ONLY con la credencial existente: `python scripts/cloud_bridge/p18_chequeo_lectura.py`. Si da YES: priorizar 2 (requiere 1) |
+| 12 | Redeploy del frontend (Preview en Vercel) con next 16.3.8 | parche de seguridad commiteado (`3d9fb63`, GHSA-vcvr-r3jv-pc5j, RCE en next/og; el sitio usa opengraph-image) | `BLOCKED_EXTERNAL_VERCEL_ACCESS` (P22): redeploy del SHA de `integration/eretz` por quien tenga acceso |
 
 ## Detalle
 

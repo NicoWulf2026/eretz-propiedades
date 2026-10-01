@@ -17,6 +17,8 @@ texto: un archivo no puede contener el sha del commit que lo crea.
 
 ## LAST UPDATE
 2026-10-01 (UTC), relevo A → B preparado desde la sesión CLOUD de la cuenta A.
+2026-10-01 ~11:00 (-03): B tomó la posta en LOCAL (worktree `D:\INMO CAPITAL\eretz-b`). Estado REAL
+verificado y lo hecho por B: `docs/agent/CURRENT_STATE.md` § «LOCAL — cuenta B, 2026-10-01».
 
 ## REPOSITORY
 https://github.com/NicoWulf2026/eretz-propiedades.git

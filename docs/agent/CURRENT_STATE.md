@@ -6,6 +6,45 @@ archivo: `git show 6ee927bb80:docs/agent/CURRENT_STATE.md`). `database_writes: 0
 **Actualizado:** 2026-09-28 21:1x · **Rama:** `handoff/codex-unificacion-2026-09-18` (push solo acá)
 **Fase:** certificación/recertificación continua + calidad de lo servido + preparación productiva.
 
+## LOCAL — cuenta B, 2026-10-01 (estado REAL verificado en la PC)
+Rama canónica `integration/eretz`; worktree de B `D:\INMO CAPITAL\eretz-b` (venv propio `.venv` con
+`requirements.lock`: el Python global de los workers no se tocó). Worktrees auxiliares de B:
+`eretz-b-dev` (rama local `b/lote5-dev`, lote 5 en desarrollo) y `eretz-b-medicion` (detached, medición P10).
+
+- **Cola parada ~11 h al tomar la posta**: 10 paros FAMILIA sin firmar (8 generico, wordpress, wasi,
+  tokko) excluían 1.819 de 1.819 agencias desde el 30-09 22:17 (el más viejo, 38 h). Diagnosticados
+  y firmados 12 (09:10–10:57): fuente (bajas que el listado sigue enlazando: mooswalder, d amato,
+  amaya; slug cambiado: casamia; altas durante la corrida: coldwell; techo fantasma 7.777 del
+  directorio: ana de napoli), resuelto por la realidad (andereggen certificó por tokko) y defectos
+  reales de plantilla que van al lote 5 (b b, azara, inversiones, agostina saracena, analia dulsan).
+  Cola corriendo de nuevo desde 09:12.
+- **Nodo operativo integrado**: `eretz-unified` fast-forward a `aae873d` (integration/eretz) a las
+  10:3x; huellas por estrategia idénticas (generico html `d17bf285429f`, sitemap `9ec0a67a055d`, tokko
+  `019a4005b09b`, wordpress `55a1ea72a700`, wasi `5161d6f75fa5`): sin reinicio de recertificación.
+- **Ledger** (última fila por agencia, 10:58): 846 agencias — 403 CERTIFIED_COMPLETE, 46
+  BEST_AVAILABLE, 225 NEEDS_FIX, 117 IDENTITY_PENDING, 53 BLOCKED_EXTERNAL, 2 NO_INVENTORY.
+- **Workers**: 2 (régimen `ERETZ_WORKERS.json`, prueba de 3 rechazada el 29-09); cola `--ready` 1.819.
+- **Snapshot servida**: v4l-c (65.028 propiedades, 603 agencias, 558 MB). Candidata de medición
+  construida hoy con el código de integration/eretz: 66.211 propiedades (+1.183 por certificaciones
+  nuevas), sin desplegar.
+- **Suite LOCAL estricta** (`ERETZ_REQUIRE_LOCAL_DATA=1`, Windows, Python 3.14.4): 3.775 passed,
+  4 failed (symlinks de la activación beta: WinError 1314; arreglado, se saltean donde el SO no los
+  permite), 1 skipped. 0 salteos por falta de GeoRef/datos.
+- **Frontend (Windows)**: typecheck, lint, vitest 1.270 passed / 9 skipped, build OK. `npm audit`
+  marcó 1 CRÍTICA nueva (GHSA-vcvr-r3jv-pc5j, RCE en next/og; el sitio usa opengraph-image) →
+  next 16.3.8 (`3d9fb63`), audit 0.
+- **QA de navegador sintética (Windows)** sobre `b1f182cb`, árbol limpio: 82 → 75 ok, 0 fallos,
+  7 salteados (flag del asistente). Antes: 1–2 fallos intermitentes por clic antes de la hidratación
+  (arreglado con espera de `networkidle`); el informe ahora registra el SHA.
+- **P18 READ-ONLY: UNABLE_TO_VERIFY** — `ERETZ_PREVIEW_RO_URL` no está definida en la PC y la lectura
+  con la única credencial disponible (`SUPABASE_DATABASE_URL` del `.env` legado) fue denegada por el
+  control de permisos del agente. Acción del usuario: definir la variable RO o autorizar la lectura.
+- **IGN**: `connectors/geometria/provincias_ign.json` generado y validado (`1f7cb84`).
+- **Evidencia para CLOUD** (fixtures en `tests/fixtures/cloud_bridge/`): martelliti =
+  PROPERTY_LOCATION (39 direcciones distintas en 44 fichas; la oficina va en el pie), fenix = OTRA
+  (la página solo dice «Superficie»), paladino = Strapi v3 sin clave, Wix (liprandi) = páginas de
+  931 KB > tope 800 KB.
+
 ## Automatización (ERETZ AUTOMATION)
 Encender/apagar TODO: `ERETZ_AUTOMATION_ON.cmd` / `ERETZ_AUTOMATION_OFF.cmd` en la raíz del repo.
 Detalle, estado y cómo apagar a mano: `docs/agent/ERETZ_AUTOMATION.md`.

@@ -89,3 +89,47 @@ Radio: REQUIRES_LOCAL — con la geometría generada y el parche aplicado en `er
 una snapshot candidata y leer `provincia_normalizada_por_poligono_p10` del resumen; revisar a mano
 una muestra. Decidir según P4 (es compartido: juntarlo con el lote 4 si conviene).
 
+## Mediciones LOCAL (cuenta B, 2026-10-01)
+
+### Lote 4 original — NO APLICAR
+Sobre el corpus real (título + descripción de 32.156 propiedades generico/wordpress): 1.474 campos
+nuevos en 1.358 propiedades de 138 agencias, pero en una muestra aleatoria revisada a mano **20 de 45
+eran falsos** (44 %): «un ambiente acogedor/moderno» (clima, no conteo: 10), conteos parciales
+(«Dormitorio principal… Dos dormitorios», «dos habitaciones secundarias», «P.A: dos dormitorios»),
+por unidad («dos casitas de dos dormitorios cada una», «semipisos de un dormitorio») y rangos
+«de uno y de dos». El auditor no exige conteos en letras: esos falsos se certificarían.
+
+### Lote 4 v2 (endurecido, en `b/lote5-dev`)
+Rótulo único en toda la ficha, sin «un ambiente», sin piso/planta/unidad delante, sin «cada uno» ni
+«secundarias» detrás, rangos con «de». Corpus: 826 campos / 750 propiedades / 110 agencias; muestra de
+50: ~47 correctos, 2–3 dudosos (complejos), 0 falsos claros. **A/B sobre HTML real** (89 fichas de
+74 agencias): se gana el 35 % de lo estimado (las fichas con tabla de atributos no leen letras, por
+diseño) → **~290 campos en ~260 propiedades**, 0 valores existentes alterados. P4: < 300 y sin falso
+CERTIFIED → se agrupa.
+
+### P10 (parche de CLOUD) — radio casi nulo tal como está
+Snapshot candidata con el parche vs sin él (mismos insumos): **2 propiedades** normalizadas por
+polígono (636 GEO_CONFLICT en la base; ninguno conserva coordenada en la snapshot). Causa: el margen de
+2 km se mide contra TODO borde, costa incluida: 151 de 152 fichas con coordenada de `analia requena`
+(Santa Clara del Mar, a 0,7 km del mar) quedan en FRONTERA. Variante medida en `eretz-b-medicion`:
+FRONTERA = a menos de 2 km de OTRA provincia (la costa y el límite internacional no hacen dudar entre
+provincias). Tests actualizados (incluye General Paz = FRONTERA, Mar del Plata = DENTRO). Radio de la
+variante: ver la próxima entrada (snapshot en construcción).
+
+### Lote 5 (en `b/lote5-dev`, sin aplicar; todo con tests y fixtures reales)
+| id | cambio | archivo | medido |
+|---|---|---|---|
+| F1 | número ANTES del rótulo en celdas propias (`<span>1</span><br><span>Baños</span>`), solo si no es el valor de un rótulo anterior y todas las apariciones coinciden | generico | b b: 57 baños |
+| F2 | «Cuartos de baño» es el rótulo de baños (RealHomes en castellano) | generico | inversiones |
+| F3 | ubicación junto al ícono de mapa en el cuerpo de la ficha; fuera header/nav/pie, tarjetas, contacto, enlaces (oficina en Google Maps), «sucursal/oficina»; cadena «…, Ciudad, Provincia[, Argentina]» | generico | muestra de 95 fichas fallidas: +15 ciudad, +4 provincia; martelliti, analia dulsan, saracena, alfa, franco, b b, masar |
+| F4 | «22m frente x 65m fondo» / «14,36 mts de frente por 58» no es superficie | generico | 11 fichas de 10 agencias con un valor INCORRECTO hoy |
+| F5 | categoría titulada con la operación sola («Alquiler Temporario») + ≥5 fichas + sin id = contenedora | generico | ana de napoli; 0 falsos positivos en 268 fichas reales |
+| F6 | tope de descarga 800 KB → 3 MB y sin reintentar una respuesta que lo excede; ubicación Wix desde `wix-warmup-data` (única dirección «Localidad, Provincia, Argentina») | base, generico | liprandi: 71 fichas que fallaban todas |
+| F7 | Strapi v3 propio (`api.<host>/inmuebles`): la ficha cascarón Next.js se arma con el objeto por slug | generico | paladino: 43 de 43 eran «sin contenido»; verificado en vivo |
+| L4v2 | conteos en letras endurecidos | generico | ~260 propiedades |
+| P10b | P10 con margen solo contra otra provincia | geografia, base, fingerprints, poligono_provincia | pendiente |
+
+Pendiente de diseño (anotado, no implementado): F8 soft-404 demostrado por control (pedir una vez por
+host la misma forma de URL con un id inventado; si responde igual, la ficha vacía es una baja, P1):
+6 agencias / 788 propiedades en NEEDS_FIX solo por fichas vacías (mooswalder 478, mechi cogorno 91,
+salerno 54, d amato…).
