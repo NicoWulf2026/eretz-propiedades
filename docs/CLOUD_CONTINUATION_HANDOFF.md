@@ -1,5 +1,13 @@
 # ERETZ PROPIEDADES — CLOUD CONTINUATION HANDOFF
 
+> **ACTUALIZACIÓN 2026-10-01 — CLOUD YA NO ES EL ENTORNO PRINCIPAL.**
+> La arquitectura principal pasa a ser: LOCAL ACCOUNT A + LOCAL ACCOUNT B + GITHUB + LOCAL
+> OPERATIONAL DATA (`ERETZ_DATA_ROOT`). Rama canónica: `integration/eretz`. Punto de entrada:
+> `docs/ACCOUNT_HANDOFF.md` y `docs/ACCOUNT_RELAY_PROTOCOL.md`. Claude Code Cloud queda como
+> opción secundaria (sin red a IGN/GeoRef/agencias ni datos locales; ver «EVIDENCE READY FOR
+> CLOUD» en `docs/agent/HANDOFF.md` si se lo vuelve a usar). Lo que sigue es el checkpoint
+> histórico del 29-09, válido como contexto.
+
 Checkpoint: **2026-09-29 17:15 (-03)**. Documento canónico para continuar sin la conversación
 que lo produjo. Si algo acá contradice a `docs/agent/*`, manda el más nuevo por fecha; este es
 el más nuevo a la fecha del checkpoint.
