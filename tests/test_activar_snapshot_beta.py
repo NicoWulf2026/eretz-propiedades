@@ -4,7 +4,9 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 import sqlite3
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -19,6 +21,27 @@ spec.loader.exec_module(A)
 
 def _sha(ruta: Path) -> str:
     return hashlib.sha256(ruta.read_bytes()).hexdigest()
+
+
+def _hay_enlaces_simbolicos() -> bool:
+    """El volumen de la API beta es Linux (contenedor P21) y ahi el enlace existe.
+
+    En Windows sin modo desarrollador `os.symlink` falla con WinError 1314: eso
+    es el sistema de la PC de desarrollo, no un defecto de la activacion. Los
+    tests que NO crean el enlace siguen corriendo en todos lados.
+    """
+    with tempfile.TemporaryDirectory() as carpeta:
+        try:
+            os.symlink("destino", os.path.join(carpeta, "enlace"))
+        except (OSError, NotImplementedError):
+            return False
+    return True
+
+
+requiere_enlaces = pytest.mark.skipif(
+    not _hay_enlaces_simbolicos(),
+    reason="sin permiso para crear enlaces simbolicos (Windows sin modo desarrollador); "
+           "la activacion corre en el volumen Linux de la API beta")
 
 
 @pytest.fixture()
@@ -62,6 +85,7 @@ def test_una_base_que_no_es_snapshot_se_rechaza(volumen):
         A.activar(volumen, ruta, _sha(ruta))
 
 
+@requiere_enlaces
 def test_activar_apunta_el_enlace_y_registra(volumen):
     ruta, sha = _subir(volumen, "a")
     evento = A.activar(volumen, ruta, sha)
@@ -73,6 +97,7 @@ def test_activar_apunta_el_enlace_y_registra(volumen):
     assert historial[-1]["sha256"] == sha
 
 
+@requiere_enlaces
 def test_rollback_vuelve_a_la_anterior_y_otro_rollback_a_la_previa(volumen):
     shas = []
     for nombre in ("a", "b", "c"):
@@ -86,6 +111,7 @@ def test_rollback_vuelve_a_la_anterior_y_otro_rollback_a_la_previa(volumen):
         A.rollback(volumen)
 
 
+@requiere_enlaces
 def test_la_misma_snapshot_dos_veces_se_rechaza(volumen):
     ruta, sha = _subir(volumen, "a")
     A.activar(volumen, ruta, sha)
@@ -95,6 +121,7 @@ def test_la_misma_snapshot_dos_veces_se_rechaza(volumen):
         A.activar(volumen, ruta2, sha2)
 
 
+@requiere_enlaces
 def test_poda_conserva_la_activa_y_la_anterior(volumen):
     shas = []
     for nombre in ("a", "b", "c", "d", "e"):
