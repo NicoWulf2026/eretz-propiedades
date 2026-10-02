@@ -4969,7 +4969,7 @@ class GenericoConnector(Connector):
         if not re.search(r"cdn\.tecnogestion\.com\.ar|CRM Inmobiliario TIV", html or "", re.I):
             return None
         m = re.search(r'<meta[^>]+property="og:title"[^>]+content="[^".]{3,60} en '
-                      r'(?:venta|alquiler|alquiler temporario)\.\s*([^".]{3,120})"', html or "", re.I)
+                      r'(?:venta|alquiler|alquiler temporario|alq\.\s*temporario)\.\s*([^".]{3,120})"', html or "", re.I)
         if not m:
             return None
         tramos = [t.strip() for t in unescape(m.group(1)).split(",") if t.strip()]

@@ -108,3 +108,10 @@ def test_tiv_el_mapa_de_zonas_sale_del_selector_del_buscador():
             return cuerpo
     _, plan, _ = _enumerar(ConSelector())
     assert plan["tiv_zonas"] == {"resto de la provincia": "Buenos Aires"}
+
+
+def test_tiv_alquiler_temporario_abreviado():
+    html = ("<meta name='description' content='CRM Inmobiliario TIV Tecnogestion' />"
+            '<meta property="og:title" content="Casa Chalet en Alq. Temporario. '
+            'Alejandro Petion, Cañuelas, Resto de la Provincia" />')
+    assert G._ubicacion_tiv(html, ZONAS) == ("Alejandro Petion", "Cañuelas", "Buenos Aires", None)
