@@ -27,6 +27,7 @@ if str(RAIZ) not in sys.path:
     sys.path.insert(0, str(RAIZ))
 
 from scripts.regression_gate import compare  # noqa: E402
+from scripts.comparar_con_linea_base import aplicar_revisiones, leer_jsonl, CERT  # noqa: E402
 
 COLUMNAS = {"titulo": "titulo", "descripcion": "descripcion", "operacion": "operacion",
             "tipo_propiedad": "tipo_propiedad", "precio": "precio", "moneda": "moneda",
@@ -75,11 +76,22 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--servida", type=Path, required=True)
     ap.add_argument("--candidata", type=Path, required=True)
     ap.add_argument("--salida", type=Path, default=None)
+    ap.add_argument("--revisadas", type=Path, default=CERT / "_regresion" / "REVISADAS.jsonl",
+                    help="perdidas ya revisadas contra la fuente (mismo formato que el gate de la cola)")
     args = ap.parse_args(argv)
     resultado = compare(filas(args.servida), filas(args.candidata))
     r = resumen(resultado)
+    revisadas = list(leer_jsonl(args.revisadas)) if args.revisadas and args.revisadas.exists() else []
+    revision = aplicar_revisiones(resultado["changes"], revisadas)
+    r["pendientes_de_revision"] = revision["pendientes_de_revision"]
+    r["revisadas"] = revision["revisadas"]
+    pend: dict[str, int] = defaultdict(int)
+    for c in revision["pendientes"]:
+        pend[c["agency"]] += 1
+    r["pendientes_por_agencia"] = dict(sorted(pend.items(), key=lambda kv: -kv[1])[:20])
     if args.salida:
-        args.salida.write_text(json.dumps({"resumen": r, "detalle": resultado}, ensure_ascii=False),
+        args.salida.write_text(json.dumps({"resumen": r, "detalle": resultado,
+                                           "pendientes": revision["pendientes"]}, ensure_ascii=False),
                                encoding="utf-8")
     print(json.dumps(r, ensure_ascii=False, indent=1))
     return 0
