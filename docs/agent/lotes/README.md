@@ -170,3 +170,33 @@ Huella: cambian `generico.py`, `base.py`, `run_rollout.py`, `agency_certifier.py
 - bartolini: categorias /<tipo>-en-<operacion>.html rechazadas como contenedoras cuentan como detalle fallido (30); extender el criterio del lote 3.
 - bauer (Estatik): li.es-property-field--es_neighborhood / --city / --province con label anidado; lector estructural por clase es-property-field--<campo>.
 - bellomo (dl.detail-facts): <dt><i class="bi ..."></i> Ambientes</dt><dd>3</dd>; el icono vacio en la celda del rotulo rompe las parejas estructurales de _cuenta_de_ficha y el texto plano corre los valores (banos=3 cuando la ficha dice 2). Tolerar un icono vacio al comienzo de la celda del rotulo.
+### LOTE 6 — estado 2026-10-01 21:20 (cuenta B; rama `b/lote6-dev`, sin aplicar)
+
+Implementado (8 arreglos, 15 tests nuevos, suite 3903 passed / 5 skipped):
+
+| # | Familia | Caso | Arreglo |
+|---|---|---|---|
+| L6-1 | icono vacio en la celda del rotulo | bellomo (`dl.detail-facts`) | `_cuenta_de_ficha` quita `<i …></i>` vacios antes de leer parejas; antes banos=3 (era el de ambientes) |
+| L6-2 | Estatik | bauer | `_campo_estatik`: lector por clase `es-property-field--<campo>` (barrio/ciudad/provincia) |
+| L6-3 | Houzez `detail-*` | balsa | `_campo_houzez` (`detail-city`, `detail-state`); «Estado» solo si ES provincia (leal carga «Guaymallen») |
+| L6-4 | Houzez `icon-pin` + cadena geocodificada | de giorgio, balsa | `icon-pin` en F3; tramos de codigo postal y «Comuna N» fuera de la cadena |
+| L6-5 | Place de schema.org que ES la ficha | de giorgio | Place con url propia cuenta SOLO si no hay nodo concreto (en BuscadorProp va dentro del breadcrumb: cocciolo cambiaba de USD 350.000 a 1.800) |
+| L6-6 | Synapsis rotulo en `<strong>` | aranoa | `_par_rotulado` tolera la negrita dentro de la celda |
+| L6-7 | CRM TIV Tecnogestion | caian, benitez ullo (75 fichas) | `_ubicacion_tiv`: og:title «Tipo en Op. Barrio, Ciudad, Provincia» + calle de og:description; exige la firma del CRM |
+| L6-8 | forma `_<id>_propiedad-inmobiliaria.html` | bartolini | ficha por forma global: sus 30 «fallidas» eran FICHAS reales con 0-2 fotos (no categorias: las 25 categorias ya se descartaban bien) |
+
+Medicion antes de aplicar:
+
+- A/B sobre 368 fichas de 190 agencias certificadas (corpus `l6`): **0 campos perdidos, 0 valores cambiados**, 8 ganados (2 regresiones encontradas en la primera pasada y corregidas: L6-3 y L6-5).
+- RADIO: todas las estrategias `generico` -> **358 agencias** (151 certificadas, 181 NEEDS_FIX).
+- COSTO: la cola YA esta recertificando `generico` por la huella del lote 5; solo **50** agencias ya pasaron con esa huella. Aplicar ahora cuesta 50 recertificaciones extra (~4 h de reloj a 12,6/h); esperar cuesta otra pasada completa de 358 (~28 h) y crece ~12 agencias por hora de espera. P4 -> aplicar en cuanto los canarios den verde.
+- Canarios: 8 objetivo + 9 verdes con el codigo de la rama, salida aislada (`_b_scratch/canarios6`).
+
+Quedan en el backlog (no entran en el lote 6):
+
+- TIV `/content/empresas/` (barrio uno, ana barbeito, a campos): el «0 inmuebles encontrados» es el marcador ANTES de que el JS cargue la grilla (`#FinResultados` oculto, `#CargarMasListado`). Tomarlo como cero declarado seria un FALSO CERO: idea descartada. La grilla viene de `POST /Buscar/CargaMasInmueblesParam`; requiere diseño aparte.
+- ashardjian: las categorias `venta<tipo>.php` listan ~50 fichas, pero sus fichas salen con el nombre de la agencia como titulo y sin tipo/ciudad, y la portada enlaza ids muertos. Necesita lector propio, no solo seguir categorias.
+- url oficial profunda (bener `/tasaciones/villa-real`: la credencial Xintel esta en la portada; leba, castro bienes raices): buscar plataforma/credencial tambien en la raiz del mismo host. o keefe e inmobiliaria integral: url de OTRO dominio = DATA_FIX de directorio.
+- ambrosio / corporacion inmobiliaria: ubicacion sin rotulo (sin evidencia suficiente para una regla).
+
+El backlog vivo por familia, ordenado por impacto, ya no se escribe a mano: `python scripts/backlog_de_lote.py` (ver arriba de esta seccion).
