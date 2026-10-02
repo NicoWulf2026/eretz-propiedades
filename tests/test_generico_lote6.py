@@ -189,3 +189,26 @@ def test_ficha_con_id_y_sufijo_propiedad_inmobiliaria():
     # Las categorias del mismo sitio no tienen id.
     assert not G._es_ficha_url("https://bartolini.example/departamento-en-venta.html")
     assert not G._es_ficha_url("https://bartolini.example/propiedad-en-alquiler-por-temporada.html")
+
+
+# --- regresiones medidas en el corpus de agencias certificadas -----------------
+
+def test_place_propio_dentro_del_breadcrumb_no_pisa_al_listing():
+    # BuscadorProp (`cocciolo`): RealEstateListing de venta + un Place con la url
+    # propia dentro del BreadcrumbList. El Place no suma nada.
+    url = "https://cocciolo.example/propiedad/614113"
+    ld = ('<script type="application/ld+json">{"@context": "https://schema.org/", "@type": "RealEstateListing",'
+          ' "name": "Lote en venta", "offers": {"@type": "Offer", "priceCurrency": "USD", "price": "350000"}}</script>'
+          '<script type="application/ld+json">{"@context": "http://schema.org", "@type": "BreadcrumbList",'
+          ' "itemListElement": [{"@type": "ListItem", "position": 2, "item": {"@type": "Place",'
+          ' "@id": "' + url + '", "url": "' + url + '", "address": {"@type": "PostalAddress",'
+          ' "streetAddress": "Av Mitre 96, Avellaneda"}, "geo": {"@type": "GeoCoordinates",'
+          ' "latitude": -34.66, "longitude": -58.36}}}]}</script>')
+    assert G._de_json_ld(ld, url).get("latitud") is None
+
+
+def test_estado_de_houzez_que_no_es_provincia_no_se_toma():
+    fila = ('<ul><li class="detail-city"><strong>Ciudad</strong> <span>Mendoza</span></li>'
+            '<li class="detail-state"><strong>Estado</strong> <span>Guaymallen</span></li></ul>')
+    p = _normalizar(_ficha(fila), "https://leal.example/propiedad/lote-en-corralitos/")
+    assert p is not None and p.provincia != "Guaymallen"

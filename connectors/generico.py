@@ -3800,7 +3800,12 @@ class GenericoConnector(Connector):
         # 58 fichas sin provincia). El rotulo compuesto «Provincia/País» no lo
         # lee `_par_rotulado`; la clase dice que campo es.
         ciudad_par = ciudad_par or self._campo_houzez(principal, "city")
-        provincia_par = provincia_par or self._campo_houzez(principal, "state")
+        # «Estado» en Houzez es lo que la agencia cargo en ese campo, y
+        # `inmobiliaria leal` carga ahi el departamento («Guaymallen»): solo
+        # cuenta si ES una provincia.
+        estado_houzez = self._campo_houzez(principal, "state")
+        if estado_houzez and _es_provincia(estado_houzez):
+            provincia_par = provincia_par or estado_houzez
         # Ciudad y provincia en su propio rotulo: «City/Town | Rosario»,
         # «Province/State | Santa Fe» (`ingar`, 21 de 26 sin barrio y 5 sin
         # ciudad). La geografia compartida los valida despues.
@@ -5329,6 +5334,7 @@ class GenericoConnector(Connector):
         """
         out: dict[str, Any] = {}
         candidatos: list[tuple[int, str, dict]] = []
+        places_propios: list[tuple[int, str, dict]] = []
         for bloque in RE_LD.findall(html):
             dato = json_ld_tolerante(bloque)
             if dato is None:
@@ -5362,14 +5368,24 @@ class GenericoConnector(Connector):
                 # "address": …} (`de giorgio`: coordenadas y localidad en
                 # todas sus fichas, ninguna leida). La url propia es lo que
                 # lo distingue del Place de la oficina.
-                if tipo == "Place" and not nodo.get("offers") and not (
-                        url and any(
+                #
+                # Y solo si la pagina no trae un nodo de inmueble concreto: la
+                # plantilla de BuscadorProp (`cocciolo`, `partarrieu`) pone un
+                # Place con la url propia DENTRO de su BreadcrumbList, al lado del
+                # RealEstateListing de verdad, y sumarlo le cambiaba a una venta
+                # de USD 350.000 el precio por el del alquiler (USD 1.800).
+                if tipo == "Place" and not nodo.get("offers"):
+                    if not (url and any(
                             isinstance(nodo.get(k), str)
                             and urllib.parse.urldefrag(urllib.parse.urljoin(url, nodo[k]))[0].rstrip("/")
                             == urllib.parse.urldefrag(url)[0].rstrip("/")
                             for k in ("url", "@id"))):
+                        continue
+                    places_propios.append((prioridad, tipo, nodo))
                     continue
                 candidatos.append((prioridad, tipo, nodo))
+        if places_propios and not any(c[0] == 0 for c in candidatos):
+            candidatos.extend(places_propios)
         if not candidatos:
             return out
         if url:
