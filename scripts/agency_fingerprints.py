@@ -33,6 +33,8 @@ PUBLICATION_STRATEGIES = {
     "BITRIX_LANDING_CARDS": "generic/bitrix_landing",
     "TOKKO_PROXY_JSON": "generic/tokko_proxy",
     "CATEGORY_HTML_CATALOG": "generic/category_html",
+    # CRM TIV Tecnogestion: total declarado del buscador + POST de scroll infinito.
+    "TIV_BUSQUEDA": "generic/tiv_busqueda",
 }
 
 # `generic/common` es SEMANTICO POR DEFECTO: todo metodo de la clase que no
@@ -87,6 +89,7 @@ GENERIC_STRATEGY_METHODS = {
         "_rutas_de_categoria", "_catalogo_por_categorias",
         "_catalogo_de_selector",
     },
+    "generic/tiv_busqueda": {"_catalogo_tiv"},
 }
 
 FUNCIONES_OPERATIVAS = frozenset()
