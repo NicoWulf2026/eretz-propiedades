@@ -68,7 +68,11 @@ ETIQUETAS_DE_CONTEO = {
     # «Cuartos de baño»: el tema RealHomes en castellano (`inversiones
     # inmobiliarias`, Puerto Madryn: 3 de 6 fichas sin baños).
     "banos": r"\b(?:(?:cuartos?\s+de\s+)?ba[nñ]os?|toilettes?)\b",
-    "ambientes": r"\bambientes?\b",
+    # «1 amb. | 1 baños | 0 cochera» (`bras neves`, WordPress: 10 de 15 fichas
+    # sin ambientes). Es la misma forma que el auditor ya reconoce como senal
+    # de la fuente (`agency_certifier`, «amb.» con punto): sin el punto, «amb»
+    # tambien abrevia «ambiente» suelto en prosa y no se acepta.
+    "ambientes": r"\b(?:ambientes?\b|amb\.)",
 }
 
 # Conteos escritos con letras en la prosa: «casa de cuatro dormitorios y un
@@ -3736,6 +3740,9 @@ class GenericoConnector(Connector):
         # La aritmetica de inmuebles vive en un modulo aparte: la comparten el
         # connector y la correccion de lo ya extraido, y asi no pueden divergir.
         fuera = revisar(campos)
+        if (datos.get("geo_fuera_de_argentina") and campos.get("latitud") is None
+                and "coordenada_fuera_de_argentina" not in fuera):
+            fuera.append("coordenada_fuera_de_argentina")
         # Un rotulo que funde dos atributos no se pudo asignar a ninguno. Eso
         # es la validacion funcionando, no un fallo de extraccion: la
         # certificacion los trata distinto y uno de los dos bloquea.
@@ -5515,6 +5522,11 @@ class GenericoConnector(Connector):
             v = out.get(k)
             if v is not None and not (-74 <= v <= -21):
                 out[k] = None
+                # Se anota: Houzez trae por defecto 25.68, -80.43 (Miami) en
+                # las fichas sin mapa (`de giorgio`: 1 de 20), y sin rastro el
+                # auditor lo contaba como coordenada no extraida en vez de
+                # rechazada por la validacion.
+                out["geo_fuera_de_argentina"] = True
         return out
 
     @staticmethod
@@ -5555,9 +5567,10 @@ class GenericoConnector(Connector):
             # catalogo ya fueron excluidos del auditor.
             #
             # El limite de palabra evita leer el "2" de "196 m2 Ambientes"
-            # como si fuera la cantidad de ambientes.
+            # como si fuera la cantidad de ambientes. Y la barra el «2» de
+            # «1 1/2 AMB.» (`peirano`): el denominador no es una cantidad.
             hallazgo = re.search(
-                rf"(?<!\+)\b([1-9]\d?)\s*(?:{etiqueta})", texto, re.I)
+                rf"(?<![+/])\b([1-9]\d?)\s*(?:{etiqueta})", texto, re.I)
             if not hallazgo:
                 return GenericoConnector._cuenta_en_letras(texto, etiqueta)
         if not hallazgo:

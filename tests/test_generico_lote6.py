@@ -212,3 +212,32 @@ def test_estado_de_houzez_que_no_es_provincia_no_se_toma():
             '<li class="detail-state"><strong>Estado</strong> <span>Guaymallen</span></li></ul>')
     p = _normalizar(_ficha(fila), "https://leal.example/propiedad/lote-en-corralitos/")
     assert p is not None and p.provincia != "Guaymallen"
+
+
+# --- bras neves: «1 amb. | 1 baños» ---------------------------------------------
+
+def test_amb_con_punto_es_ambientes():
+    html = ("<html><head><title>Monoambiente a estrenar</title></head><body>"
+            "<h1>Monoambiente a estrenar en venta</h1><p>Precio: USD 119.000</p><p>Departamento en venta en torre con amenities, balcon con vista al rio.</p>"
+            "<p>1 amb. | 1 baños | 0 cochera | 36 m2 totales</p>"
+            + "".join(f'<img src="/fotos/{i}.jpg" alt="foto">' for i in range(4)) + "</body></html>")
+    p = _normalizar(html, "https://brasneves.example/propiedades/acassuso-1481-2/")
+    assert p is not None and p.ambientes == 1
+
+
+def test_el_denominador_de_una_fraccion_no_es_una_cantidad():
+    # `peirano`: «1 1/2 AMB.» no son 2 ambientes.
+    assert G._cuenta("Departamento 1 1/2 AMB. Guemes y Bustamante",
+                     r"\b(?:ambientes?\b|amb\.)", None) != 2
+
+
+# --- de giorgio: coordenada por defecto de Houzez (Miami) -------------------------
+
+def test_coordenada_fuera_de_argentina_queda_anotada_como_rechazo():
+    url = "https://giorgio.example/property/cazadores-y-mendoza/"
+    ld = ('<script type="application/ld+json">{"@context": "https://schema.org", "@type": "Place",'
+          ' "url": "' + url + '", "geo": {"@type": "GeoCoordinates", "latitude": 25.68654,'
+          ' "longitude": -80.431345}}</script>')
+    p = _normalizar(_ficha("<p>Semipiso 3 amb.</p>", ld), url)
+    assert p is not None and p.latitud is None
+    assert "coordenada_fuera_de_argentina" in (p.extra.get("atributos_descartados") or "")
