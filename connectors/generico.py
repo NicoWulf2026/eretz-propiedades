@@ -140,6 +140,9 @@ TOPE_PAGINAS_DECLARADAS = 200
 # cambiaban entre corridas. Y 16 agencias TIV estaban CERTIFIED_COMPLETE con
 # la portada sola (`bts` 26 de 893, `coseglia` 21 de 340): falso completo.
 RE_TIV = re.compile(r"cdn\.tecnogestion\.com\.ar|CRM Inmobiliario TIV", re.I)
+# Zonas propias de TIV dentro de la cadena de ubicacion (no son ciudad ni provincia).
+RE_TIV_ZONA = re.compile(r"(?i)resto\s+de\s+la\s+provincia|g\.?\s*b\.?\s*a\.?(?:\s+zona)?\s+(?:norte|sur|oeste)"
+                         r"|zona\s+(?:norte|sur|oeste)|costa\s+atl[aá]ntica")
 RE_TIV_TOTAL = re.compile(r"(\d[\d.]{0,7})\s+inmuebles?\s+encontrados?", re.I)
 RE_TIV_FICHA = re.compile(r"""href=["'](/inmueble/[^"'#?\s]+-lp\d+)["']""", re.I)
 TIV_POR_PAGINA = 10
@@ -2005,7 +2008,22 @@ class GenericoConnector(Connector):
             return None
         fichas = list(dict.fromkeys(
             urllib.parse.urljoin(base + "/", h) for h in RE_TIV_FICHA.findall(html or "")))
-        return {"total": int(total.group(1).replace(".", "")), "fichas": fichas}
+        # El arbol de ubicaciones que el propio sitio declara en el selector:
+        # «Cañuelas, Resto de la Provincia, Buenos Aires, Argentina». Una zona
+        # que aparece bajo mas de una provincia no se usa.
+        zonas: dict[str, str] = {}
+        dudosas: set[str] = set()
+        for opcion in re.findall(r"<option[^>]*value=[\"']\d+[\"'][^>]*>([^<]{5,120})</option>", html or ""):
+            tramos = [t.strip() for t in unescape(opcion).split(",") if t.strip()]
+            if (len(tramos) == 4 and tramos[-1].casefold() == "argentina"
+                    and RE_TIV_ZONA.fullmatch(tramos[1]) and _es_provincia(tramos[2])):
+                clave = tramos[1].casefold()
+                if zonas.get(clave, tramos[2]) != tramos[2]:
+                    dudosas.add(clave)
+                zonas[clave] = tramos[2]
+        for clave in dudosas:
+            zonas.pop(clave, None)
+        return {"total": int(total.group(1).replace(".", "")), "fichas": fichas, "zonas": zonas}
 
     def _credencial_xintel_publica(self, html: str, portada: str,
                                    base: str) -> dict[str, Any] | None:
@@ -2290,6 +2308,7 @@ class GenericoConnector(Connector):
             if tiv is not None:
                 plan.update({"variante": "TIV_BUSQUEDA", "soportada": True,
                              "tiv_base": base, "tiv_primeras": tiv["fichas"],
+                             "tiv_zonas": tiv["zonas"],
                              "total_declarado": tiv["total"],
                              "catalogo_runtime_verificado": True})
                 return plan
@@ -2988,7 +3007,8 @@ class GenericoConnector(Connector):
                 for url in nuevas:
                     vistas_tiv.add(url)
                     yield {"source_listing_id": self._id_de(url), "source_url": url,
-                           "pagina": pagina, "catalogo_runtime_verificado": True}
+                           "pagina": pagina, "catalogo_runtime_verificado": True,
+                           "tiv_zonas": plan.get("tiv_zonas") or {}}
                 pagina += 1
                 if pagina > min(tope, 300):
                     break
@@ -3940,7 +3960,7 @@ class GenericoConnector(Connector):
         # calle su og:description «… ubicado sobre la calle Billinghurst 200
         # en Almagro, …». Solo con la firma del CRM y la forma exacta.
         if not (ciudad_par and provincia_par):
-            tiv = self._ubicacion_tiv(html)
+            tiv = self._ubicacion_tiv(html, crudo.get("tiv_zonas"))
             if tiv:
                 barrio_par = barrio_par or tiv[0]
                 ciudad_par = ciudad_par or tiv[1]
@@ -4935,8 +4955,17 @@ class GenericoConnector(Connector):
         return limpiar(unescape(m.group(3))) if m else None
 
     @staticmethod
-    def _ubicacion_tiv(html: str) -> tuple[str | None, str | None, str | None, str | None] | None:
-        """(barrio, ciudad, provincia, calle) del og:title de una ficha de TIV Tecnogestion."""
+    def _ubicacion_tiv(html: str, zonas: dict[str, str] | None = None
+                       ) -> tuple[str | None, str | None, str | None, str | None] | None:
+        """(barrio, ciudad, provincia, calle) del og:title de una ficha de TIV Tecnogestion.
+
+        TIV mete ZONAS propias en la cadena: «La Martona, Cañuelas, Resto de la
+        Provincia» (`cattaneo`: 26 de 27 sin provincia), «Ezeiza, G.B.A. Zona
+        Sur». Una zona no es ciudad ni provincia: se saca de la cadena. La
+        provincia de una zona solo sale del mapa que el MISMO sitio declara en su
+        buscador («Cañuelas, Resto de la Provincia, Buenos Aires, Argentina»);
+        sin ese mapa queda vacia y la valida la geografia compartida.
+        """
         if not re.search(r"cdn\.tecnogestion\.com\.ar|CRM Inmobiliario TIV", html or "", re.I):
             return None
         m = re.search(r'<meta[^>]+property="og:title"[^>]+content="[^".]{3,60} en '
@@ -4944,12 +4973,23 @@ class GenericoConnector(Connector):
         if not m:
             return None
         tramos = [t.strip() for t in unescape(m.group(1)).split(",") if t.strip()]
-        if len(tramos) != 3 or not _es_provincia(tramos[2]) or any(re.search(r"\d", t) for t in tramos):
+        if not 2 <= len(tramos) <= 4 or any(re.search(r"\d", t) for t in tramos):
             return None
+        provincia = tramos.pop() if _es_provincia(tramos[-1]) else None
+        zona = None
+        if tramos and RE_TIV_ZONA.fullmatch(tramos[-1]):
+            zona = tramos.pop()
+        if provincia is None:
+            if zona is None:
+                return None
+            provincia = (zonas or {}).get(zona.casefold())
+        if not tramos or len(tramos) > 2 or any(RE_TIV_ZONA.fullmatch(t) for t in tramos):
+            return None
+        ciudad = tramos[-1]
+        barrio = tramos[0] if len(tramos) == 2 and tramos[0].casefold() != ciudad.casefold() else None
         calle = re.search(r'<meta[^>]+property="og:description"[^>]+content="[^"]*?'
                           r'ubicado sobre la calle ([^",]{3,80}?\d{1,5}) en ', html or "", re.I)
-        barrio = None if tramos[0].casefold() == tramos[1].casefold() else tramos[0]
-        return (barrio, tramos[1], tramos[2], limpiar(unescape(calle.group(1))) if calle else None)
+        return (barrio, ciudad, provincia, limpiar(unescape(calle.group(1))) if calle else None)
 
     @staticmethod
     def _campo_houzez(html: str, campo: str) -> str | None:

@@ -69,3 +69,42 @@ def test_sin_marca_tiv_no_se_usa_el_buscador():
             return super().bajar(url).replace("CRM Inmobiliario TIV Tecnogestion", "otra cosa")
     _, plan, _ = _enumerar(Otro())
     assert plan.get("variante") != "TIV_BUSQUEDA"
+
+
+def _og(cadena):
+    return ("<meta name='description' content='CRM Inmobiliario TIV Tecnogestion' />"
+            f'<meta property="og:title" content="Terreno Lote en Venta. {cadena}" />')
+
+
+ZONAS = {"resto de la provincia": "Buenos Aires", "g.b.a. zona sur": "Buenos Aires"}
+
+
+def test_tiv_zona_sale_de_la_cadena_y_la_provincia_del_mapa_del_sitio():
+    # `cattaneo`: «La Martona, Cañuelas, Resto de la Provincia».
+    assert G._ubicacion_tiv(_og("La Martona, Cañuelas, Resto de la Provincia"), ZONAS) == (
+        "La Martona", "Cañuelas", "Buenos Aires", None)
+
+
+def test_tiv_sin_mapa_del_sitio_la_provincia_queda_vacia():
+    assert G._ubicacion_tiv(_og("La Martona, Cañuelas, Resto de la Provincia")) == (
+        "La Martona", "Cañuelas", None, None)
+
+
+def test_tiv_la_zona_no_es_ciudad():
+    assert G._ubicacion_tiv(_og("Cañuelas, Resto de la Provincia, Buenos Aires")) == (
+        None, "Cañuelas", "Buenos Aires", None)
+    assert G._ubicacion_tiv(_og("Almagro, Capital Federal, Buenos Aires")) == (
+        "Almagro", "Capital Federal", "Buenos Aires", None)
+
+
+def test_tiv_el_mapa_de_zonas_sale_del_selector_del_buscador():
+    class ConSelector(Sitio):
+        def bajar(self, url, *a, **k):
+            cuerpo = super().bajar(url)
+            if url.rstrip("/").endswith("/buscar/inmuebles"):
+                cuerpo += ("<select><option value=''>UBICACION</option>"
+                           "<option value='501'>Ca&#241;uelas, Resto de la Provincia, Buenos Aires, Argentina</option>"
+                           "<option value='76'>Ezeiza, G.B.A. Zona Sur, Argentina</option></select>")
+            return cuerpo
+    _, plan, _ = _enumerar(ConSelector())
+    assert plan["tiv_zonas"] == {"resto de la provincia": "Buenos Aires"}
