@@ -209,3 +209,23 @@ def test_quedarse_sin_fotos_no_borra_la_propiedad(tmp_path, monkeypatch):
     for doc in docs.values():
         assert doc["imagenes"] == []
         assert doc["id"] and doc["source_url"]
+
+
+@pytest.mark.georef
+def test_una_foto_llamada_inmobiliaria_algo_no_es_un_logo(tmp_path, monkeypatch):
+    """`cip` nombra sus fotos `inmobiliaria-cip-...-01.jpg`: el nombre solo no
+    alcanza para descartarlas; repetida en el catalogo, si."""
+    propia = 'https://cip.test/wp-content/uploads/inmobiliaria-cip-lote-{}.jpg'
+    repetida = 'https://cip.test/wp-content/uploads/inmobiliaria-cip.png'
+    filas = [('roomix:cip', [propia.format(i), repetida]) for i in range(FICHAS_PARA_SER_COMPARTIDA)]
+    resumen, docs = _correr(tmp_path, filas, monkeypatch)
+    for doc in docs.values():
+        assert repetida not in doc['imagenes']
+        assert len(doc['imagenes']) == 1 and 'inmobiliaria-cip-lote-' in doc['imagenes'][0]
+
+
+def test_un_logo_con_nombre_de_inmobiliaria_sigue_cayendo_aunque_no_se_repita():
+    from scripts.api_snapshot import _es_recurso_de_pagina
+    assert _es_recurso_de_pagina('https://x.test/uploads/inmobiliaria-logo.png', 1)
+    assert not _es_recurso_de_pagina('https://x.test/uploads/inmobiliaria-x-casa-01.jpg', 1)
+    assert not _es_recurso_de_pagina('https://x.test/uploads/casa-01.jpg', 99)

@@ -156,6 +156,24 @@ SNAPSHOT_VERSION = "api_snapshot_v4"
 # Exclusion requires an independent page-asset signal, never frequency alone.
 FICHAS_PARA_SER_COMPARTIDA = 5
 
+# «inmobiliaria-» es un patron de NOMBRE de archivo, no de recurso: `cip` y
+# `next inmobiliaria` suben sus fotos como `inmobiliaria-cip-lotes-...-01.jpg`.
+# Aplicado solo, dejaba 128 fichas sin ninguna foto (medido 02-10 sobre los
+# paquetes: next 108, cip 20; 3.481 fotos). El runner ya exigia repeticion
+# para descartar (`descartar_imagenes_compartidas`); aca se exige lo mismo
+# cuando ese nombre es la UNICA senal. Un logo sigue cayendo por `logo`.
+PATRON_SOLO_DE_NOMBRE = "inmobiliaria-"
+
+
+def _es_recurso_de_pagina(url: Any, veces: int) -> bool:
+    if not is_known_page_asset(url):
+        return False
+    texto = str(url).lower()
+    if PATRON_SOLO_DE_NOMBRE in texto and not is_known_page_asset(
+            texto.replace(PATRON_SOLO_DE_NOMBRE, "")):
+        return veces >= FICHAS_PARA_SER_COMPARTIDA
+    return True
+
 ESQUEMA = """
 create table if not exists propiedades (
     id text primary key,
@@ -826,7 +844,7 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
                 cruda = dict(cruda, **{campo: limpio})
                 textos_limpiados += 1
         propias = [u for u in (cruda.get("imagenes") or [])
-                   if not is_known_page_asset(u)]
+                   if not _es_recurso_de_pagina(u, apariciones[canonical][u])]
         imagenes_repetidas_sin_evidencia += sum(
             apariciones[canonical][u] >= FICHAS_PARA_SER_COMPARTIDA for u in propias)
         imagenes_compartidas += len(cruda.get("imagenes") or []) - len(propias)
