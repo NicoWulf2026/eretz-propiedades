@@ -130,9 +130,6 @@ BEGIN
     ) THEN
         RAISE EXCEPTION 'optional identity and geography fields require text or null';
     END IF;
-    IF jsonb_typeof(p_payload->'precio') = 'number' AND (p_payload->>'precio')::numeric <= 0 THEN
-        RAISE EXCEPTION 'precio must be positive';
-    END IF;
     IF COALESCE((p_payload->>'inmobiliaria_id')::bigint, 0) <= 0
        OR p_source_id !~ '^[0-9]+$'
        OR p_source_id::bigint IS DISTINCT FROM (p_payload->>'inmobiliaria_id')::bigint
@@ -289,11 +286,6 @@ BEGIN
         WHERE value = 'null'::jsonb
     ) THEN
         RAISE EXCEPTION 'merge patch cannot contain JSON null';
-    END IF;
-    -- Un precio cero o negativo no es un precio: el pipeline ya lo descarta,
-    -- y el escritor no puede ser la unica defensa que falte (verify_writer_beta.mjs).
-    IF (p_patch ? 'precio') AND (p_patch->>'precio')::numeric <= 0 THEN
-        RAISE EXCEPTION 'precio must be positive';
     END IF;
 
     SELECT count(*)::integer

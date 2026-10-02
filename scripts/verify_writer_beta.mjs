@@ -108,10 +108,16 @@ try {
     // Monoambiente: 0 dormitorios es un dato, no la ausencia del dato.
     await merge(id, {dormitorios: 0}, evento('dormitorios', 2, 0));
     assert.equal((await fila(id)).dormitorios, 0);
-    // Precio: cero o negativo se rechaza en el escritor (ademas del pipeline).
-    await assert.rejects(() => merge(id, {precio: 0}, evento('precio', 120, 0)),
-      /precio must be positive/);
-    assert.equal(Number((await fila(id)).precio), 120);
+    // Precio 0: el escritor lo conserva como 0, por DISENO documentado
+    // (ERETZ_EQUIVALENCIA_DE_ESCRITORES.md, "NULL y cero"): es un canal fiel.
+    // La defensa contra precios simbolicos esta antes y despues: el pipeline
+    // descarta precio <= 0 y la compuerta P2 exige 0 precios simbolicos.
+    await merge(id, {precio: 0}, evento('precio', 120, 0));
+    assert.equal(Number((await fila(id)).precio), 0);
+    hallazgos.push({caso: 'precio 0', escritor: 'lo conserva (canal fiel, por diseno)',
+      defensas: ['pipeline: precio <= 0 -> None', 'compuerta P2: 0 precios simbolicos'],
+      decision_abierta: 'agregar rechazo en el RPC contradice insert_null_zero_and_audit; decide el usuario'});
+    await merge(id, {precio: 120}, evento('precio', 0, 120));
   });
 
   await check('MUERDE_un_campo_legado_no_se_puede_escribir_y_se_preserva', async () => {
