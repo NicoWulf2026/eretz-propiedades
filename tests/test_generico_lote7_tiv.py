@@ -115,3 +115,14 @@ def test_tiv_alquiler_temporario_abreviado():
             '<meta property="og:title" content="Casa Chalet en Alq. Temporario. '
             'Alejandro Petion, Cañuelas, Resto de la Provincia" />')
     assert G._ubicacion_tiv(html, ZONAS) == ("Alejandro Petion", "Cañuelas", "Buenos Aires", None)
+
+
+def test_ubicacion_tiv_del_gba_con_puntos_en_la_zona():
+    """og:title real de `coseglia` (02-10): «G.B.A.» trae puntos y la ficha quedaba sin ciudad."""
+    from connectors.generico import GenericoConnector
+    html = ('<meta property="og:title" content="Departamento en Venta. Concord Pilar, Pilar, G.B.A. Zona Norte" />'
+            '<script src="https://cdn.tecnogestion.com.ar/x.js"></script>')
+    barrio, ciudad, provincia, _ = GenericoConnector._ubicacion_tiv(html, {'g.b.a. zona norte': 'Buenos Aires'})
+    assert (barrio, ciudad, provincia) == ('Concord Pilar', 'Pilar', 'Buenos Aires')
+    sin_mapa = GenericoConnector._ubicacion_tiv(html, {})
+    assert sin_mapa is None or (sin_mapa[1] == 'Pilar' and sin_mapa[2] is None)

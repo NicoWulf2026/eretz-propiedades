@@ -4969,9 +4969,11 @@ class GenericoConnector(Connector):
         if not re.search(r"cdn\.tecnogestion\.com\.ar|CRM Inmobiliario TIV", html or "", re.I):
             return None
         m = re.search(r'<meta[^>]+property="og:title"[^>]+content="[^".]{3,60} en '
-                      r'(?:venta|alquiler|alquiler temporario|alq\.\s*temporario)\.\s*([^".]{3,120})"', html or "", re.I)
+                      r'(?:venta|alquiler|alquiler temporario|alq\.\s*temporario)\.\s*([^"]{3,120})"', html or "", re.I)
         if not m:
             return None
+        # La ubicacion PUEDE tener puntos: «Pilar, G.B.A. Zona Norte». Excluirlos
+        # dejaba sin ciudad a toda ficha del GBA (coseglia: ciudad en 4 de 340).
         tramos = [t.strip() for t in unescape(m.group(1)).split(",") if t.strip()]
         if not 2 <= len(tramos) <= 4 or any(re.search(r"\d", t) for t in tramos):
             return None
