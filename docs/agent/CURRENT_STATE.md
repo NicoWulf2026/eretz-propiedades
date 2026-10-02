@@ -44,6 +44,13 @@ Rama canónica `integration/eretz`; worktree de B `D:\INMO CAPITAL\eretz-b` (ven
   mediciones en `lotes/README.md`). Nodo operativo en `759babb` → huellas nuevas (generico html
   `54ba5907da3c`, sitemap `590af5151782`, tokko `9029f5cc624f`, wordpress `c3540dd9e207`, wasi
   `1178964c9e0a`): recertificación completa en curso.
+- **FALSO CERTIFIED (clase 1) DETECTADO 2026-10-02 03:50: familia TIV Tecnogestion.** 16 agencias TIV estan
+  CERTIFIED_COMPLETE con la enumeracion de la portada, que es un subconjunto ROTATIVO: su propio buscador
+  (`/buscar/inmuebles/`) declara mucho mas (`bts` 26 de 893, `coseglia` 21 de 340, `miguelez` 24 de 225,
+  `centro obligado` 22 de 193...; ~390 enumeradas contra ~2.540 declaradas). Lo publicado de ellas es real,
+  pero «COMPLETE» es falso. Arreglo en `b/lote7-dev` (variante `TIV_BUSQUEDA`: total declarado + POST
+  `/Buscar/CargaMasInmueblesParam`; campal 147/147). Al aplicarse cambia la huella de todo `generico` y las 16
+  se recertifican con el catalogo completo. Lista: `_b_scratch/tiv_declarado.json`.
 - **LOTE 6 APLICADO 2026-10-02 01:22** (`0335f2a`, squash de `b/lote6-dev`; nodo operativo `eretz-unified`
   adelantado). Huellas nuevas: generic/html_catalog `4cf19a45cfa5`, generic/sitemap `c7e9a9f2b30a`,
   wordpress `cdc4fefef209`; tokko `9029f5cc624f` y wasi `1178964c9e0a` SIN cambio. Radio 446 agencias
