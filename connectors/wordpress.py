@@ -762,8 +762,20 @@ class WordPressConnector(Connector):
                 # pagina corre la numeracion de `page`. Las agencias que nunca
                 # llegan al limite siguen pidiendo exactamente lo mismo que
                 # antes.
+                #
+                # Dos formas mas de lo mismo. Desde el lote 5 el descargador ya no
+                # reintenta lo que excede el tope y lo informa como «respuesta
+                # fuera del tope: …», no como «OutboundResponseError»: sin
+                # reconocer el texto nuevo, este achique quedo muerto. Y el 5xx
+                # de una pagina GRANDE: `benitez propiedades` (RealHomes, 128
+                # avisos) responde HTTP 500 a per_page=100 y 200 a per_page=25.
+                # Achicar no es ir mas fuerte: son menos avisos por pedido, al
+                # mismo ritmo por host.
+                texto_error = str(error)
                 if (isinstance(error, ErrorTransitorio)
-                        and str(error) == "OutboundResponseError"
+                        and (texto_error == "OutboundResponseError"
+                             or texto_error.startswith("respuesta fuera del tope")
+                             or texto_error in ("http 500", "http 502", "http 503", "http 504"))
                         and por_pagina > 1):
                     if desde is None:
                         desde = (pagina - 1) * por_pagina
@@ -1017,12 +1029,20 @@ class WordPressConnector(Connector):
         if mp and moneda is None:
             moneda = _moneda_con_posfijo(mp, texto)
         if item is not None and html and (precio is None or moneda is None):
+            # Solo el cuerpo de la ficha, sin similares ni widgets: RealHomes
+            # (`benitez propiedades`) pone al costado «Propiedades destacadas»
+            # elegidas al azar en cada carga, y el primer precio de la pagina
+            # era el de otra propiedad -113.500, 345.000 o 128.000 dolares segun
+            # la carga- en una ficha que no publica el suyo: 72 de 128 no
+            # idempotentes. Sin precio propio, queda sin precio.
+            from .generico import cuerpo_principal
+            texto_de_la_ficha = _texto(cuerpo_principal(html))[:6000]
             mp_html = re.search(r"(USD|U\$[SD]|U\$\$?|US\$|\$|ARS)\s*([\d][\d.,]{2,15})",
-                                _texto(html)[:6000], re.I)
+                                texto_de_la_ficha, re.I)
             if mp_html and precio is None:
                 precio = a_numero(mp_html.group(2))
             if mp_html and moneda is None:
-                moneda = _moneda_con_posfijo(mp_html, _texto(html)[:6000])
+                moneda = _moneda_con_posfijo(mp_html, texto_de_la_ficha)
         if precio is not None and precio <= 0:
             precio = None
 

@@ -4844,3 +4844,63 @@ def test_wordpress_blog_con_categoria_venta_sin_tipos_no_es_inventario():
         "https://wp.com.ar/": '<a href="/noticias/mercado-inmobiliario">Nota</a>',
     })
     assert c.discover(wp_fuente())["soportada"] is False
+
+
+class _RestPesadoConMensaje(_RestPesado):
+    """El mismo WordPress pesado, fallando con el mensaje que de verdad llega."""
+
+    def __init__(self, total: int, mensaje: str, maximo: int = 12):
+        super().__init__(total, maximo)
+        self.mensaje = mensaje
+
+    def bajar(self, url: str) -> str:
+        import urllib.parse as up
+        q = dict(up.parse_qsl(up.urlparse(url).query))
+        if int(q["per_page"]) > self.maximo:
+            self.pedidos_urls.append(url)
+            raise B.ErrorTransitorio(self.mensaje)
+        return super().bajar(url)
+
+
+@pytest.mark.parametrize("mensaje", [
+    # Lo que informa el descargador desde el lote 5 (no reintenta el tope).
+    "respuesta fuera del tope: response exceeds size limit",
+    # `benitez propiedades` (RealHomes): HTTP 500 a per_page=100, 200 a 25.
+    "http 500",
+])
+def test_MUERDE_el_achique_reconoce_el_mensaje_real(mensaje):
+    c = WordPressConnector(descargador=_RestPesadoConMensaje(total=128, mensaje=mensaje))
+    c.paginacion_interrumpida = False
+    filas = list(c._rest({"base": "https://wp.test", "rest_base": "properties"}))
+    assert len({f["source_listing_id"] for f in filas}) == 128
+    assert c.paginacion_interrumpida is False
+
+
+def test_un_404_o_un_403_no_achican_la_pagina():
+    c = WordPressConnector(descargador=_RestPesadoConMensaje(total=128, mensaje="http 403"))
+    c.paginacion_interrumpida = False
+    assert list(c._rest({"base": "https://wp.test", "rest_base": "properties"})) == []
+    assert c.paginacion_interrumpida is True
+
+
+def test_MUERDE_el_precio_del_widget_de_destacadas_no_es_de_la_ficha():
+    """`benitez propiedades` (RealHomes): la ficha no publica precio y el costado
+    muestra «Propiedades destacadas» al azar. El primer precio de la pagina era el
+    de otra propiedad y cambiaba en cada carga: 72 de 128 no idempotentes."""
+    url = "https://wp.com.ar/property/campo-en-venta/"
+    def ficha(precio_del_widget: str) -> str:
+        return ("<html><body><div class='rh_page__property'><h1>Campo en Venta</h1>"
+                "<p>Campo de 40 hectareas con casa.</p></div>"
+                "<section class='rh_property__similar_properties'><p>USD 128,000</p></section>"
+                "<aside class='rh_sidebar'><section class='widget Featured_Properties_Widget'>"
+                f"<p>{precio_del_widget}</p></section></aside></body></html>")
+    item = {"id": 10, "type": "property", "title": {"rendered": "Campo en Venta"},
+            "content": {"rendered": "<p>Campo de 40 hectareas con casa.</p>"},
+            "property_meta": {"REAL_HOMES_property_size": ["40"]}}
+    precios = set()
+    for widget in ("USD 345,000", "USD 113,500"):
+        c = wp_conector({url: ficha(widget)})
+        p = c.normalize({"source_listing_id": "10", "source_url": url, "pagina": 1,
+                         "taxonomy_terms": {}, "rest": item}, wp_fuente())
+        precios.add(None if p is None else p.precio)
+    assert precios == {None}
