@@ -55,7 +55,8 @@ def avance(desde: datetime, workers: int, prioridad: list[str], cert: Path = CER
             except Exception:  # noqa: BLE001 - estrategia desconocida: no cuenta
                 huellas[clave] = None
         return huellas[clave]
-    por_conector = Counter(); hechas = Counter()
+    por_conector: Counter = Counter()
+    hechas: Counter = Counter()
     for r in ult.values():
         c = r.get("connector") or "?"
         por_conector[c] += 1
