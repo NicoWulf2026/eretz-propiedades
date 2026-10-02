@@ -230,7 +230,8 @@ con 7b por la prioridad de cola.
 contra lo servido, mueve la huella de todo generico y dejaria obsoleta la corrida de `bts` en curso. Para el lote 8, en `_ubicacion_tiv`:
 (1) «Pilar, G.B.A. Zona Norte, Argentina» — sacar el «Argentina» final (90/340); (2) «De Vicenzo Grande, Del Viso, Pilar» — barrio,
 localidad, partido SIN provincia ni zona (45/340; decidir con la geografia compartida, no inventar provincia); (3) barrio con
-digitos «46 Plaza» (8/340); (4) «Las Gaviotas» NOT_FOUND en el catalogo (5/340). Estimado sobre TIV: ~25-40 % de fichas sin ciudad.
+digitos «46 Plaza» (8/340); (4) «Las Gaviotas» NOT_FOUND en el catalogo (5/340). (5) zona «G.B.A. Zona Norte» en un sitio cuyo buscador NO publica el mapa zona->provincia (`ana barbeito`, 30/120;
+paro FAMILIA 20:11 diferido con este diagnostico): G.B.A. es Buenos Aires por definicion, decidir si se acepta como hecho geografico. Estimado sobre TIV: ~25-40 % de fichas sin ciudad.
 
 ### Backlog del LOTE 7 (paros del 01/02-10 con el lote 6; sin implementar, P4)
 
