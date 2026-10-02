@@ -225,16 +225,29 @@ def test_map_v2_confidence_price_fallback_and_cluster_keyboard(page: Page) -> No
     page.set_viewport_size({"width": 1366, "height": 768})
     page.goto(app_url("/propiedades?operacion=venta"), wait_until="domcontentloaded")
     activate_interactive_map(page)
-    marker = page.locator('[data-map-point-kind="property"]').first
-    expect(marker).to_be_visible(timeout=60_000)
-    expect(marker.locator(".eretz-price-marker")).not_to_have_text("")
-    expect(marker).to_have_attribute("aria-label", re.compile(r"ubicación", re.IGNORECASE))
+    # Con datos reales, a zoom nacional puede no haber NINGUN punto suelto: todo
+    # queda agrupado segun que fichas devuelva el viewport (QA sobre la snapshot
+    # candidata, 2026-10-02). El cluster se prueba primero, y abrirlo con el
+    # teclado -que es parte de lo que se prueba- acerca el mapa hasta los puntos.
     cluster = page.locator('[data-map-point-kind="cluster"]').first
     expect(cluster).to_be_visible(timeout=60_000)
     expect(cluster).to_have_attribute("aria-label", re.compile(r"\d+ propiedades agrupadas"))
     cluster.focus()
     cluster.press("Enter")
     expect(page.get_by_role("button", name="Buscar en esta zona")).to_be_visible()
+    marker = page.locator('[data-map-point-kind="property"]').first
+    for _ in range(4):
+        if marker.count():
+            break
+        siguiente = page.locator('[data-map-point-kind="cluster"]').first
+        if not siguiente.count():
+            break
+        siguiente.focus()
+        siguiente.press("Enter")
+        page.wait_for_timeout(1500)
+    expect(marker).to_be_visible(timeout=60_000)
+    expect(marker.locator(".eretz-price-marker")).not_to_have_text("")
+    expect(marker).to_have_attribute("aria-label", re.compile(r"ubicación", re.IGNORECASE))
 
 
 def test_map_v2_results_without_coordinates_have_an_explicit_alternative(page: Page) -> None:
