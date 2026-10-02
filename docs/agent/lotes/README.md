@@ -208,6 +208,13 @@ Quedan en el backlog (no entran en el lote 6):
 
 El backlog vivo por familia, ordenado por impacto, ya no se escribe a mano: `python scripts/backlog_de_lote.py` (ver arriba de esta seccion).
 
+### LOTE 7 — APLICADO 2026-10-02 05:53 (`bb03c09`): item 1 (TIV) + zonas TIV. Abierto antes de tiempo por la regla de
+clase 1 (16 falsos CERTIFIED_COMPLETE en TIV). Lo que sigue de esta lista queda para el LOTE 8.
+
+Agregados al backlog despues: senal de provincia del auditor con «Banco Provincia» (campal 62/147, alfa, carapezza:
+va con bigsur en el lote que toque `agency_certifier.py`); castex (frontend propio sobre Tokko, ficha por JS);
+celada (catalogo que se achica en vivo: mismo arreglo que campara).
+
 ### Backlog del LOTE 7 (paros del 01/02-10 con el lote 6; sin implementar, P4)
 
 Ordenado por impacto (clase del `backlog_de_lote.py`: falso cero > perdida masiva > muchas agencias):

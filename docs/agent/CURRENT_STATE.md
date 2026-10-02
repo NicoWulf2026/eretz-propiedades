@@ -44,6 +44,10 @@ Rama canónica `integration/eretz`; worktree de B `D:\INMO CAPITAL\eretz-b` (ven
   mediciones en `lotes/README.md`). Nodo operativo en `759babb` → huellas nuevas (generico html
   `54ba5907da3c`, sitemap `590af5151782`, tokko `9029f5cc624f`, wordpress `c3540dd9e207`, wasi
   `1178964c9e0a`): recertificación completa en curso.
+- **LOTE 7 APLICADO 2026-10-02 05:53** (`bb03c09`): TIV Tecnogestion por su buscador (variante `TIV_BUSQUEDA`) +
+  zonas TIV. Corrige los 16 falsos CERTIFIED_COMPLETE de abajo al recertificarse. Huellas: generic/html_catalog
+  `d3b6f3b11b3b`, generic/sitemap `0143b30a5714`, generic/tiv_busqueda `3e54b1dffdc1`; wordpress `cdc4fefef209` y
+  tokko `9029f5cc624f` sin cambio. Canarios: campal 147/147, coseglia 340/340, de leo 88/88, cattaneo 111/111.
 - **FALSO CERTIFIED (clase 1) DETECTADO 2026-10-02 03:50: familia TIV Tecnogestion.** 16 agencias TIV estan
   CERTIFIED_COMPLETE con la enumeracion de la portada, que es un subconjunto ROTATIVO: su propio buscador
   (`/buscar/inmuebles/`) declara mucho mas (`bts` 26 de 893, `coseglia` 21 de 340, `miguelez` 24 de 225,
