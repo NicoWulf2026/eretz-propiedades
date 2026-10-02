@@ -68,3 +68,18 @@ def test_una_prueba_rechazada_no_se_repite_enseguida():
     assert decidir(vigente, AHORA, _midiendo(), SANOS) is None
     vigente["rechazada_en"] = (AHORA - timedelta(days=8)).strftime(FORMATO)
     assert decidir(vigente, AHORA, _midiendo(), SANOS)["workers"] == 3
+
+
+def test_el_tope_del_usuario_manda_sobre_la_medicion():
+    """2026-10-02: el usuario pidio no pasar de 2 workers aunque 3 estaba aprobado."""
+    from datetime import datetime
+    from scripts.regimen_de_workers import decidir
+    medir = lambda d, h: {"agencias": 500, "por_hora_activa": 99.0, "bloqueo": 0.0,  # noqa: E731
+                          "paros_por_agencia": 0.0}
+    ahora = datetime(2026, 10, 9, 12, 0, 0)
+    # Con 2 y tope 2 no se propone la prueba de 3, aunque haya linea base de sobra.
+    assert decidir({"workers": 2, "tope_usuario": 2}, ahora, medir, {"memoria": 10.0}) is None
+    # Con 3 vigentes y tope 2, se baja a 2.
+    nuevo = decidir({"workers": 3, "tope_usuario": 2, "prueba": "aprobada"}, ahora, medir,
+                    {"memoria": 10.0})
+    assert nuevo["workers"] == 2 and nuevo["prueba"] == "suspendida_por_usuario"

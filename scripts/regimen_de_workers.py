@@ -133,6 +133,16 @@ def decidir(vigente: dict[str, Any], ahora: datetime,
     if recursos_ahora.get("memoria", 0.0) > MEMORIA_MAXIMA and workers > 2:
         return {"workers": 2, "motivo": f"memoria {recursos_ahora['memoria']:.0f} % > {MEMORIA_MAXIMA:.0f} %",
                 "prueba": "rechazada"}
+    # El tope que fija el USUARIO manda sobre cualquier medicion: el 2026-10-02
+    # pidio no pasar de 2 workers todavia, aunque la prueba de 3 habia salido
+    # aprobada. Sin esto, al vencer `rechazada_en` la evaluacion volvia a
+    # proponer 3 sola.
+    tope = int(vigente.get("tope_usuario") or 0)
+    if tope and workers > tope:
+        return {"workers": tope, "motivo": f"tope del usuario: {tope}",
+                "prueba": "suspendida_por_usuario"}
+    if tope and workers >= tope:
+        return None
     if workers <= 2:
         rechazada = _fecha(vigente.get("rechazada_en"))
         if rechazada is not None and ahora - rechazada < timedelta(days=REINTENTO_DIAS):
@@ -176,7 +186,10 @@ def evaluar(salida: Path = SALIDA, aplicar: bool = False,
                     lambda d, h: medir(salida, d, h, paquetes), recursos())
     if nuevo is None or not aplicar:
         return nuevo
-    nuevo["workers"] = max(1, min(MAXIMO, int(nuevo["workers"])))
+    nuevo["workers"] = max(1, min(MAXIMO, int(vigente.get("tope_usuario") or MAXIMO),
+                                  int(nuevo["workers"])))
+    if vigente.get("tope_usuario"):
+        nuevo["tope_usuario"] = vigente["tope_usuario"]
     if int(nuevo["workers"]) != int(vigente.get("workers") or 2) or nuevo.get("prueba") != vigente.get("prueba"):
         nuevo["desde"] = (ahora.strftime(FORMATO)
                           if int(nuevo["workers"]) != int(vigente.get("workers") or 2)
