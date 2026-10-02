@@ -53,3 +53,18 @@ def test_listadas_en_paquetes_lee_todos_los_estados(tmp_path):
         (tmp_path / carpeta / "properties_run2.jsonl").write_text(
             "\n".join(json.dumps({"hash_dedup": h}) for h in hashes), encoding="utf-8")
     assert _listadas_en_paquetes(tmp_path) == {"h1", "h2", "h3"}
+
+
+def test_sin_paquete_fresco_se_sirve_lo_servido_y_no_la_base_vieja(tmp_path):
+    """2026-10-02, Regression Gate de snapshots: `pennacchio` (ultimo cierre NEEDS_FIX
+    no-de-campo) se rearmaba desde la preingestion y perdia superficie en 101 fichas."""
+    from scripts.api_snapshot import _servidas_sin_frescura
+    origen = _origen(tmp_path, ["a", "b", "c", "d"])
+    servida = _servida(tmp_path, ["a", "b", "c"])
+    frescas = {"a": {"hash_dedup": "a"}}     # con paquete fresco: manda el paquete
+    retirar = {"c"}                          # retirada por politica: se retira
+    sin_frescura = _servidas_sin_frescura(origen, servida, frescas, retirar)
+    # Solo `b`: tiene fila servida y ningun paquete fresco. `d` no esta en la servida.
+    assert set(sin_frescura) == {"b"}
+    assert sin_frescura["b"]["agency_id"] == "roomix:x"
+    assert _servidas_sin_frescura(origen, None, frescas, retirar) == {}

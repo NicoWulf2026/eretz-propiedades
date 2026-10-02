@@ -522,6 +522,37 @@ def _servidas_a_conservar(origen, ruta_servida, nuevas, retirar) -> list[dict]:
     return conservar
 
 
+def _servidas_sin_frescura(origen, ruta_servida, frescas, retirar) -> dict[str, dict]:
+    """Filas servidas de propiedades que HOY no tienen paquete fresco confiable.
+
+    Sin paquete fresco, la fila se rearmaba desde la base de preingestion, que
+    es MAS VIEJA que lo servido: `pennacchio` (ultimo cierre NEEDS_FIX por «second
+    run is not idempotent») perdia superficie_total en 101 fichas y barrio en 34
+    que la servida si tenia de su ultima certificacion (Regression Gate de
+    snapshots, 2026-10-02). Lo servido salio de un paquete certificado o de esa
+    misma base, asi que nunca es mas viejo: se sirve tal cual, como
+    `_servidas_a_conservar`. Lo que una politica retira se sigue retirando.
+    """
+    if not ruta_servida or not Path(ruta_servida).is_file():
+        return {}
+    faltan = [h for (h,) in origen.execute(
+        "select hash_dedup from rows where status = 'CANDIDATE'")
+        if h and h not in frescas and h not in retirar]
+    salida: dict[str, dict] = {}
+    servida = sqlite3.connect(f"file:{Path(ruta_servida).as_posix()}?mode=ro", uri=True)
+    try:
+        for i in range(0, len(faltan), 500):
+            tramo = faltan[i:i + 500]
+            cursor = servida.execute(
+                f"select * from propiedades where id in ({','.join('?' * len(tramo))})", tramo)
+            columnas = [c[0] for c in cursor.description]
+            for fila in cursor:
+                salida[fila[0]] = dict(zip(columnas, fila))
+    finally:
+        servida.close()
+    return salida
+
+
 def _filas_en_orden(origen, frescas, nuevas, retirar, servidas=()):
     """(fila base, fresca, es_nueva) en orden de `hash_dedup`, sin las retiradas.
 
@@ -685,7 +716,14 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
     servidas = (_servidas_a_conservar(origen, getattr(args, 'servida', None), nuevas, retirar)
                 if decision is not None else [])
     conservadas = 0
+    sin_frescura = (_servidas_sin_frescura(origen, getattr(args, 'servida', None), frescas, retirar)
+                    if decision is not None else {})
+    servidas_sin_paquete_fresco = 0
     for base, fresca, es_nueva in _filas_en_orden(origen, frescas, nuevas, retirar, servidas):
+        if (fresca is None and not es_nueva and "__servida__" not in base
+                and base.get("hash_dedup") in sin_frescura):
+            base = {"__servida__": sin_frescura[base["hash_dedup"]]}
+            servidas_sin_paquete_fresco += 1
         if "__servida__" in base:
             # La fila servida, tal cual: sin recalcular nada (ver
             # `_servidas_a_conservar`). Solo la web ajena se sigue aplicando.
@@ -893,6 +931,7 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
         "caba_confirmada_por_poligono": correcciones_geo["caba_por_poligono"],
         "provincia_normalizada_por_poligono_p10": correcciones_geo["provincia_por_poligono"],
         "servidas_conservadas_sin_muerte_verificada": conservadas,
+        "servidas_sin_paquete_fresco": servidas_sin_paquete_fresco,
         "geo_conflictos_viejos_que_ya_no_lo_son": correcciones_geo["conflicto_obsoleto"],
         "imagenes_compartidas_descartadas": imagenes_compartidas,
         "descripciones_del_sitio_descartadas": descripciones_del_sitio,
