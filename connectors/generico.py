@@ -5373,7 +5373,7 @@ class GenericoConnector(Connector):
                 # plantilla de BuscadorProp (`cocciolo`, `partarrieu`) pone un
                 # Place con la url propia DENTRO de su BreadcrumbList, al lado del
                 # RealEstateListing de verdad, y sumarlo le cambiaba a una venta
-                # de USD 350.000 el precio por el del alquiler (USD 1.800).
+                # de USD 350.000 el precio por el del alquiler, 1.800 dolares.
                 if tipo == "Place" and not nodo.get("offers"):
                     if not (url and any(
                             isinstance(nodo.get(k), str)
