@@ -975,6 +975,40 @@ def ordenar_para_correr(cola: list[str],
     return intercalado + larga
 
 
+# Una lista EXPLICITA de agencias que se adelantan, con motivo y vencimiento.
+# Existe por los falsos CERTIFIED_COMPLETE: el 2026-10-02 16 agencias TIV
+# estaban certificadas con la portada sola (`bts` 26 de 893). El lote 7 las
+# arregla, pero en el orden normal su recertificacion llegaba en uno o dos dias
+# entre 386 agencias del radio. El universo no cambia y nada se saltea: solo
+# se adelantan, y el archivo vence solo para que no quede una prioridad vieja.
+PRIORIDAD_DE_COLA = "ERETZ_PRIORIDAD_DE_COLA.json"
+
+
+def con_prioridad(cola: list[str], output: Path,
+                  ahora: str | None = None) -> list[str]:
+    """Las agencias del archivo de prioridad primero, en su orden; el resto igual.
+
+    Sin archivo, ilegible, vencido o sin `motivo`: la cola no se toca.
+    """
+    ruta = output / PRIORIDAD_DE_COLA
+    try:
+        datos = json.loads(ruta.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return cola
+    if not isinstance(datos, dict) or not str(datos.get("motivo") or "").strip():
+        return cola
+    ahora = ahora or time.strftime("%Y-%m-%dT%H:%M:%S")
+    if str(datos.get("hasta") or "") <= ahora:
+        return cola
+    en_cola = set(cola)
+    primero = [a for a in dict.fromkeys(datos.get("agencias") or [])
+               if isinstance(a, str) and a in en_cola]
+    if not primero:
+        return cola
+    adelante = set(primero)
+    return primero + [a for a in cola if a not in adelante]
+
+
 def latest_results(output: Path) -> dict[str, dict[str, Any]]:
     """El resultado VIGENTE de cada agencia, no su ultimo append.
 
@@ -1166,6 +1200,7 @@ def main() -> int:
     if not args.pilot:
         # El universo no cambia; cambia el orden. Ver `ordenar_para_correr`.
         queue = ordenar_para_correr(queue, existing)
+        queue = con_prioridad(queue, output)
     # La cola COMPLETA se conserva para el checkpoint y el resumen: repartir no
     # puede cambiar de que universo se esta hablando.
     cola_completa = queue
