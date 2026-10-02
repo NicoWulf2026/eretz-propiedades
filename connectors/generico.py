@@ -132,6 +132,25 @@ TOPE_PAGINAS_DECLARADAS = 200
 # Terravirtual (`blangiforti`, `g calvo`): la ficha es /ficha/<md5>. Sus
 # catalogos enlazan /propiedades/ficha/<md5>, que el sitio responde con el
 # LISTADO (23 tarjetas, sin bloque de ficha), y la portada //ficha/<md5>.
+# CRM TIV Tecnogestion: el buscador declara «N inmuebles encontrados» y sirve
+# las fichas de a 10; la portada muestra un subconjunto que ROTA en cada carga.
+# El resto lo pide el propio sitio con `POST /Buscar/CargaMasInmueblesParam`
+# (scroll infinito) y los filtros vacios del formulario. Medido el 2026-10-02:
+# `campal` 147 declaradas y 147 enumeradas en 16 pedidos; antes 37-38 que
+# cambiaban entre corridas. Y 16 agencias TIV estaban CERTIFIED_COMPLETE con
+# la portada sola (`bts` 26 de 893, `coseglia` 21 de 340): falso completo.
+RE_TIV = re.compile(r"cdn\.tecnogestion\.com\.ar|CRM Inmobiliario TIV", re.I)
+RE_TIV_TOTAL = re.compile(r"(\d[\d.]{0,7})\s+inmuebles?\s+encontrados?", re.I)
+RE_TIV_FICHA = re.compile(r"""href=["'](/inmueble/[^"'#?\s]+-lp\d+)["']""", re.I)
+TIV_POR_PAGINA = 10
+TIV_FORMULARIO = {
+    "Orden": "8", "SucursalID": "", "Operacion": "", "Producto": "", "Ubicacion": "",
+    "PrecioDesde": "", "PrecioHasta": "", "IncluirEmprendimientos": "1", "Dormitorios": "",
+    "Antiguedad": "", "DescripcionBusqueda": "", "ConCochera": "0", "AptoProfesional": "0",
+    "ConBalcon": "0", "ConBalconTerraza": "0", "ConDependencia": "0", "Amoblado": "0",
+    "ConVigilancia": "0", "Mapa": "False", "Geolocalizacion": "", "AptoCreditoHipotecario": "false",
+}
+
 RE_FICHA_TERRAVIRTUAL = re.compile(r"^/+(?:propiedades/)?ficha/([0-9a-f]{32})/?$", re.I)
 
 # La pagina entera dice que la ficha ya no existe.
@@ -1975,6 +1994,19 @@ class GenericoConnector(Connector):
             return {"ruta": ruta, "total": total}
         return None
 
+    def _catalogo_tiv(self, base: str) -> dict[str, Any] | None:
+        """Total declarado y primeras fichas del buscador de TIV, o None."""
+        try:
+            html = self.descargador.bajar(f"{base}/buscar/inmuebles/")
+        except (ErrorTransitorio, ErrorPermanente, Bloqueado):
+            return None
+        total = RE_TIV_TOTAL.search(html or "")
+        if not total:
+            return None
+        fichas = list(dict.fromkeys(
+            urllib.parse.urljoin(base + "/", h) for h in RE_TIV_FICHA.findall(html or "")))
+        return {"total": int(total.group(1).replace(".", "")), "fichas": fichas}
+
     def _credencial_xintel_publica(self, html: str, portada: str,
                                    base: str) -> dict[str, Any] | None:
         """Credencial de CLIENTE de Xintel que el sitio oficial publica al navegador.
@@ -2250,6 +2282,17 @@ class GenericoConnector(Connector):
             # Que la raiz tampoco se pueda leer confirma que el problema es
             # llegar al sitio. Se propaga para que el runner lo diga.
             raise
+        # TIV Tecnogestion: el catalogo entero esta detras del buscador (ver
+        # RE_TIV). Solo si el buscador DECLARA su total: sin total no hay contra
+        # que verificar la paginacion, y se sigue por el camino de siempre.
+        if RE_TIV.search(html or ""):
+            tiv = self._catalogo_tiv(base)
+            if tiv is not None:
+                plan.update({"variante": "TIV_BUSQUEDA", "soportada": True,
+                             "tiv_base": base, "tiv_primeras": tiv["fichas"],
+                             "total_declarado": tiv["total"],
+                             "catalogo_runtime_verificado": True})
+                return plan
         # Xintel/Amaira deja el catalogo HTML vacio y lo hidrata desde su API
         # publica. Las credenciales que siguen son identificadores publicados
         # por el propio JavaScript del sitio; nunca se persisten en resultados.
@@ -2931,6 +2974,34 @@ class GenericoConnector(Connector):
                                "por_forma": True,
                                "catalogo_runtime_verificado": True}
             self.duplicados_origen = duplicados
+            return
+        if plan["variante"] == "TIV_BUSQUEDA":
+            # La primera tanda viene en el HTML del buscador; las siguientes,
+            # de a 10, por el mismo POST que hace el scroll infinito. Termina
+            # cuando una pagina no trae nada nuevo; un error corta y se dice.
+            self.paginacion_interrumpida = False
+            vistas_tiv: set[str] = set()
+            nuevas = list(plan["tiv_primeras"])
+            pagina = 1
+            tope = (int(plan.get("total_declarado") or 0) // TIV_POR_PAGINA) + 3
+            while nuevas:
+                for url in nuevas:
+                    vistas_tiv.add(url)
+                    yield {"source_listing_id": self._id_de(url), "source_url": url,
+                           "pagina": pagina, "catalogo_runtime_verificado": True}
+                pagina += 1
+                if pagina > min(tope, 300):
+                    break
+                try:
+                    cuerpo = bajar_formulario(
+                        self.descargador, f"{plan['tiv_base']}/Buscar/CargaMasInmueblesParam",
+                        {**TIV_FORMULARIO, "Pagina": str(pagina)})
+                except (ErrorTransitorio, ErrorPermanente, Bloqueado):
+                    self.paginacion_interrumpida = True
+                    return
+                nuevas = [u for u in dict.fromkeys(
+                    urllib.parse.urljoin(plan["tiv_base"] + "/", h)
+                    for h in RE_TIV_FICHA.findall(cuerpo or "")) if u not in vistas_tiv]
             return
         if plan["variante"] == "XINTEL_API":
             # La credencial publica de cliente de ESTA fuente, para el detalle
