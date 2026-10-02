@@ -207,3 +207,16 @@ Quedan en el backlog (no entran en el lote 6):
 - ambrosio / corporacion inmobiliaria: ubicacion sin rotulo (sin evidencia suficiente para una regla).
 
 El backlog vivo por familia, ordenado por impacto, ya no se escribe a mano: `python scripts/backlog_de_lote.py` (ver arriba de esta seccion).
+
+### Backlog del LOTE 7 (paros del 01/02-10 con el lote 6; sin implementar, P4)
+
+Ordenado por impacto (clase del `backlog_de_lote.py`: falso cero > perdida masiva > muchas agencias):
+
+1. **TIV Tecnogestion: enumeracion completa** (PRIORIDAD, toda la familia): la portada y los resultados muestran un subconjunto que ROTA en cada carga (`campal`: inventario inestable entre corridas; `barrio uno`, `ana barbeito`, `a campos`: «0 inmuebles encontrados» es el marcador previo al JS, NO un cero declarado). El catalogo completo lo da `POST /Buscar/CargaMasInmueblesParam` paginado. Sin esto ninguna agencia TIV puede probar inventario completo (y es correcto que no certifique).
+2. **Amaira v2 por proxy** (`grosso`): el sitio paso a render en cliente; `api_v2_proxy.php?operacion=V|A` devuelve JSON (total 48 en venta). Lector del proxy con paginacion.
+3. **Baja demostrada por control sobre la LINEA BASE** (`campara`: 163 de preingestion contra 139 declaradas hoy): las 27 faltantes redirigen al listado igual que la url de control. Extender la F8 del lote 5 a urls de la linea base ausentes de la enumeracion.
+4. **Oficinas RE/MAX con sitio propio** (`buro 2`): enlazan `remax.com.ar/listings?officeid=...`; reconocerlo como delegacion a portal (estado terminal BLOCKED_EXTERNAL) en vez de enumerar el blog.
+5. **WPResidence `listing_detail`** (`blazquez`): «Provincia: Zona Oeste» (no es provincia) sin anotar el rechazo; «Ciudad:» con el valor en `<a rel=tag>`; descripcion en `#longDescription`.
+6. **TFW con directorio WORDPRESS** (`bigsur`): `conector_por_la_portada` solo mira TFW desde generico. `agency_certifier.py` lleva el radio de 446 a 763: va con el primer lote que ya toque ese archivo.
+7. **ashardjian**: categorias `venta<tipo>.php` + fichas con el nombre de la agencia como titulo + ids muertos en la portada.
+8. **url oficial profunda** (`bener` Xintel en la portada, `leba`, `castro bienes raices`); `o keefe` e `inmobiliaria integral` = DATA_FIX de directorio.
