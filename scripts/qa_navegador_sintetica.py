@@ -124,19 +124,31 @@ def main() -> int:
     ap.add_argument("--salida", type=Path, required=True, help="carpeta para snapshot, logs e informe")
     ap.add_argument("--puerto-api", type=int, default=8765)
     ap.add_argument("--puerto-web", type=int, default=3100)
+    ap.add_argument("--snapshot", type=Path, default=None,
+                    help="snapshot REAL ya construida (se abre de solo lectura); sin esto, la sintetica")
     ap.add_argument("--e2e", nargs="*", default=["e2e"],
                     help="rutas de pytest relativas a frontend/ (por defecto toda la e2e)")
     args = ap.parse_args()
 
     salida = args.salida.resolve()
     salida.mkdir(parents=True, exist_ok=True)
-    snapshot = salida / "ERETZ_API_SNAPSHOT.sqlite3"
-    resumen = construir(snapshot)
+    # Con --snapshot se prueba una candidata REAL tal cual: la API la abre con
+    # mode=ro, no se arma nada, no se habilita la sintetica y no hay casos borde
+    # conocidos (el modulo `test_sintetica.py` se saltea solo). Es la QA que pide
+    # la beta sobre los datos que se van a servir.
+    if args.snapshot:
+        snapshot = args.snapshot.resolve()
+        resumen = {"real": True, "ruta": str(snapshot)}
+    else:
+        snapshot = salida / "ERETZ_API_SNAPSHOT.sqlite3"
+        resumen = construir(snapshot)
 
     base_api = f"http://127.0.0.1:{args.puerto_api}"
     base_web = f"http://127.0.0.1:{args.puerto_web}"
     env = {**os.environ, "PYTHON_DOTENV_DISABLED": "1", "NEXT_TELEMETRY_DISABLED": "1"}
-    env_api = {**env, "ERETZ_API_SNAPSHOT": str(snapshot), "ERETZ_ALLOW_SYNTHETIC_SNAPSHOT": "1"}
+    env_api = {**env, "ERETZ_API_SNAPSHOT": str(snapshot)}
+    if not args.snapshot:
+        env_api["ERETZ_ALLOW_SYNTHETIC_SNAPSHOT"] = "1"
     env_web = {**env, "ERETZ_API_V2_BASE_URL": base_api}
     npx = shutil.which("npx") or "npx"
 
@@ -146,7 +158,9 @@ def main() -> int:
         "commit": _commit(),
         "snapshot": {**resumen, "sha256": _sha(snapshot)},
         "api": base_api, "web": base_web, "e2e": args.e2e,
-        "alcance": "QA de navegador sobre la snapshot SINTETICA: prueba el codigo, no los datos.",
+        "alcance": ("QA de navegador sobre una snapshot REAL (solo lectura): prueba codigo y datos."
+                    if args.snapshot else
+                    "QA de navegador sobre la snapshot SINTETICA: prueba el codigo, no los datos."),
     }
     codigo = 1
     try:
@@ -157,10 +171,11 @@ def main() -> int:
                       cwd=FRONTEND, env=env_web, log=salida / "web.log")
         _esperar(f"{base_web}/propiedades", segundos=600)
         junit = salida / "e2e_junit.xml"
-        env_e2e = {**env, "ERETZ_E2E_BASE_URL": base_web,
-                   "ERETZ_E2E_SIN_COORDENADAS_ID": CASOS["sin_coordenadas"],
-                   "ERETZ_E2E_SIN_COORDENADAS_Q": CONSULTA_SIN_COORDENADAS,
-                   "ERETZ_E2E_SINTETICA_CASOS": json.dumps(CASOS)}
+        env_e2e = {**env, "ERETZ_E2E_BASE_URL": base_web}
+        if not args.snapshot:
+            env_e2e.update({"ERETZ_E2E_SIN_COORDENADAS_ID": CASOS["sin_coordenadas"],
+                            "ERETZ_E2E_SIN_COORDENADAS_Q": CONSULTA_SIN_COORDENADAS,
+                            "ERETZ_E2E_SINTETICA_CASOS": json.dumps(CASOS)})
         corrida = subprocess.run(
             [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
              f"--junitxml={junit}", *args.e2e],
@@ -175,7 +190,7 @@ def main() -> int:
         _bajar(web)
         _bajar(api)
         informe["fin"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        (salida / "QA_NAVEGADOR_SINTETICA.json").write_text(
+        (salida / ("QA_NAVEGADOR_SNAPSHOT.json" if args.snapshot else "QA_NAVEGADOR_SINTETICA.json")).write_text(
             json.dumps(informe, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps({k: informe.get(k) for k in ("commit", "resultado", "error")}, ensure_ascii=False))
     return codigo
