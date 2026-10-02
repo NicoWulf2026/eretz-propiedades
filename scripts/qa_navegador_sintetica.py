@@ -86,6 +86,46 @@ def _bajar(proceso: subprocess.Popen | None) -> None:
         proceso.wait(timeout=10)
 
 
+def _puerto_libre() -> int:
+    """Un puerto TCP libre en 127.0.0.1 elegido por el sistema."""
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def _quien_escucha(puerto: int) -> set[int]:
+    """Los PID que escuchan en ese puerto (cualquier direccion)."""
+    import psutil
+    pids = set()
+    for c in psutil.net_connections(kind="inet"):
+        if c.status == psutil.CONN_LISTEN and c.laddr and c.laddr.port == puerto and c.pid:
+            pids.add(c.pid)
+    return pids
+
+
+def _arbol(proceso: subprocess.Popen) -> set[int]:
+    import psutil
+    try:
+        raiz = psutil.Process(proceso.pid)
+        return {raiz.pid} | {h.pid for h in raiz.children(recursive=True)}
+    except psutil.NoSuchProcess:
+        return set()
+
+
+def _aislamiento(puerto: int, proceso: subprocess.Popen) -> dict:
+    """Demuestra que quien atiende el puerto es el proceso que lanzo ESTA corrida.
+
+    2026-10-02: una QA sobre v4m3 dio 44/24 porque el frontend hablo con una API
+    que no era la de la corrida (el puerto en Windows se puede compartir); sus
+    fallas no eran del producto. Sin esta prueba la corrida es INVALID_QA_RUN.
+    """
+    escuchan = _quien_escucha(puerto)
+    propios = _arbol(proceso)
+    return {"puerto": puerto, "escuchan": sorted(escuchan), "de_la_corrida": sorted(propios & escuchan),
+            "ajenos": sorted(escuchan - propios), "ok": bool(escuchan) and escuchan <= propios}
+
+
 def _sha(ruta: Path) -> str:
     return hashlib.sha256(ruta.read_bytes()).hexdigest()
 
@@ -141,8 +181,9 @@ def sin_coordenadas_de(snapshot: Path) -> tuple[str, str] | None:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--salida", type=Path, required=True, help="carpeta para snapshot, logs e informe")
-    ap.add_argument("--puerto-api", type=int, default=8765)
-    ap.add_argument("--puerto-web", type=int, default=3100)
+    # Sin puerto explicito, uno libre por corrida: dos QA no pueden pisarse.
+    ap.add_argument("--puerto-api", type=int, default=None)
+    ap.add_argument("--puerto-web", type=int, default=None)
     ap.add_argument("--snapshot", type=Path, default=None,
                     help="snapshot REAL ya construida (se abre de solo lectura); sin esto, la sintetica")
     ap.add_argument("--e2e", nargs="*", default=["e2e"],
@@ -162,6 +203,14 @@ def main() -> int:
         snapshot = salida / "ERETZ_API_SNAPSHOT.sqlite3"
         resumen = construir(snapshot)
 
+    args.puerto_api = args.puerto_api or _puerto_libre()
+    args.puerto_web = args.puerto_web or _puerto_libre()
+    ocupados = {p: sorted(_quien_escucha(p)) for p in (args.puerto_api, args.puerto_web) if _quien_escucha(p)}
+    if ocupados:
+        # No se mata nada ajeno: se informa quien ocupa y no se corre.
+        print(json.dumps({"estado": "INVALID_QA_RUN", "motivo": "puertos ocupados antes de empezar",
+                          "ocupados": ocupados}, ensure_ascii=False))
+        return 2
     base_api = f"http://127.0.0.1:{args.puerto_api}"
     base_web = f"http://127.0.0.1:{args.puerto_web}"
     env = {**os.environ, "PYTHON_DOTENV_DISABLED": "1", "NEXT_TELEMETRY_DISABLED": "1"}
@@ -186,9 +235,14 @@ def main() -> int:
         api = _lanzar([sys.executable, "-m", "uvicorn", "api.main:app", "--host", "127.0.0.1",
                        "--port", str(args.puerto_api)], cwd=RAIZ, env=env_api, log=salida / "api.log")
         _esperar(f"{base_api}/readyz", segundos=60)
+        informe["aislamiento_api"] = _aislamiento(args.puerto_api, api)
         web = _lanzar([npx, "next", "dev", "-p", str(args.puerto_web), "-H", "127.0.0.1"],
                       cwd=FRONTEND, env=env_web, log=salida / "web.log")
         _esperar(f"{base_web}/propiedades", segundos=600)
+        informe["aislamiento_web"] = _aislamiento(args.puerto_web, web)
+        if not (informe["aislamiento_api"]["ok"] and informe["aislamiento_web"]["ok"]):
+            informe["estado"] = "INVALID_QA_RUN"
+            raise RuntimeError("frontend o API no demostrados como de esta corrida")
         junit = salida / "e2e_junit.xml"
         env_e2e = {**env, "ERETZ_E2E_BASE_URL": base_web}
         caso = sin_coordenadas_de(snapshot) if args.snapshot else None
@@ -206,6 +260,7 @@ def main() -> int:
             cwd=FRONTEND, env=env_e2e, capture_output=True, text=True)
         (salida / "e2e.log").write_text(corrida.stdout + corrida.stderr, encoding="utf-8")
         informe["resultado"] = _resultados(junit)
+        informe["estado"] = "VALID_QA_RUN"
         informe["pytest_exit"] = corrida.returncode
         codigo = 0 if corrida.returncode == 0 else 1
     except Exception as exc:  # el informe tiene que decir por que no corrio
@@ -216,7 +271,7 @@ def main() -> int:
         informe["fin"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
         (salida / ("QA_NAVEGADOR_SNAPSHOT.json" if args.snapshot else "QA_NAVEGADOR_SINTETICA.json")).write_text(
             json.dumps(informe, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(json.dumps({k: informe.get(k) for k in ("commit", "resultado", "error")}, ensure_ascii=False))
+    print(json.dumps({k: informe.get(k) for k in ("estado", "commit", "resultado", "error", "aislamiento_api", "aislamiento_web")}, ensure_ascii=False))
     return codigo
 
 
