@@ -215,6 +215,17 @@ Agregados al backlog despues: senal de provincia del auditor con «Banco Provinc
 va con bigsur en el lote que toque `agency_certifier.py`); castex (frontend propio sobre Tokko, ficha por JS);
 celada (catalogo que se achica en vivo: mismo arreglo que campara).
 
+### LOTE 7b — APLICADO 2026-10-02 13:03 (`8c45a67`): la ubicacion TIV del og:title puede tener puntos
+Regresion propia del lote 7: el tramo de ubicacion excluia `.` y toda ficha «..., G.B.A. Zona Norte/Sur/Oeste» quedaba sin
+ciudad (coseglia COMPLETE 340/340 con ciudad en 4 de 340). Verificado en vivo (lp843787 -> Concord Pilar / Pilar / Buenos
+Aires); test con el og:title real; 664 tests de conectores verdes. Radio de huella: toda la familia generico (el metodo vive
+en `normalize`); radio semantico: solo paginas con marcador TIV Tecnogestion. Huellas nuevas: generic/tiv_busqueda
+`6a6eb486722f`, generic/html_catalog `fb8a49f0b814`, generic/sitemap `2a2881520418` (el resto de generic/* tambien cambia;
+tokko, wordpress y wasi SIN cambio). Nodo operativo `eretz-unified` adelantado por fast-forward.
+Medicion: coseglia ciudad 1,2 % -> 55,9 % (13:42), miguelez 76,8 % (14:32). `bts` corrio con el codigo viejo hasta 14:32
+(NEEDS_FIX 895, ciudad 0,2 %; cortarlo fue bloqueado por el entorno y el usuario pidio dejarlo terminar) y se recertifica
+con 7b por la prioridad de cola.
+
 ### Backlog del LOTE 7 (paros del 01/02-10 con el lote 6; sin implementar, P4)
 
 Ordenado por impacto (clase del `backlog_de_lote.py`: falso cero > perdida masiva > muchas agencias):

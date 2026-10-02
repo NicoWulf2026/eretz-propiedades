@@ -44,6 +44,9 @@ Rama canónica `integration/eretz`; worktree de B `D:\INMO CAPITAL\eretz-b` (ven
   mediciones en `lotes/README.md`). Nodo operativo en `759babb` → huellas nuevas (generico html
   `54ba5907da3c`, sitemap `590af5151782`, tokko `9029f5cc624f`, wordpress `c3540dd9e207`, wasi
   `1178964c9e0a`): recertificación completa en curso.
+- **LOTE 7b APLICADO 2026-10-02 13:03** (`8c45a67`): ciudad de fichas TIV del GBA (el og:title trae «G.B.A.» con
+  puntos). Cambia la huella de todo generico. Snapshot: `c363949` (foto llamada «inmobiliaria-...» ya no se descarta sin
+  repeticion: 128 fichas sin foto). Regression Gate v4m3 116 -> 73 clasificados; chacra/finca -> terreno = KNOWN_DEBT beta.
 - **LOTE 7 APLICADO 2026-10-02 05:53** (`bb03c09`): TIV Tecnogestion por su buscador (variante `TIV_BUSQUEDA`) +
   zonas TIV. Corrige los 16 falsos CERTIFIED_COMPLETE de abajo al recertificarse. Huellas: generic/html_catalog
   `d3b6f3b11b3b`, generic/sitemap `0143b30a5714`, generic/tiv_busqueda `3e54b1dffdc1`; wordpress `cdc4fefef209` y
