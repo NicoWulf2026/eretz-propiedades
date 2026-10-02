@@ -44,6 +44,19 @@ Rama canónica `integration/eretz`; worktree de B `D:\INMO CAPITAL\eretz-b` (ven
   mediciones en `lotes/README.md`). Nodo operativo en `759babb` → huellas nuevas (generico html
   `54ba5907da3c`, sitemap `590af5151782`, tokko `9029f5cc624f`, wordpress `c3540dd9e207`, wasi
   `1178964c9e0a`): recertificación completa en curso.
+- **LOTE 6 APLICADO 2026-10-02 01:22** (`0335f2a`, squash de `b/lote6-dev`; nodo operativo `eretz-unified`
+  adelantado). Huellas nuevas: generic/html_catalog `4cf19a45cfa5`, generic/sitemap `c7e9a9f2b30a`,
+  wordpress `cdc4fefef209`; tokko `9029f5cc624f` y wasi `1178964c9e0a` SIN cambio. Radio 446 agencias
+  (solo ~60 ya recertificadas con la huella del lote 5). Medicion, canarios y backlog en `lotes/README.md`.
+- **Aceleracion (pedido del usuario 01-10)**: KPI por hora de reloj `scripts/kpi_de_la_cola.py`
+  (14:00-23:42: 11,6 resoluciones/h de reloj, 0 h sin resultados, paro->liberacion mediana 2 min);
+  backlog por familia y deuda de diagnostico `scripts/backlog_de_lote.py` (133 familias vivas, 51 paros
+  sin diagnostico propio); mapa de tracks A/B `docs/agent/TRACKS_A_B.md`.
+- **Hallazgo sobre la diferida por precedente**: la firma exacta (`defect_triage.firma`) es GRUESA; dentro
+  de una misma firma los diagnosticos humanos nombran causas distintas. La diferida automatica no certifica
+  nada, pero su texto copiado no es la causa de la agencia nueva: por eso `backlog_de_lote` cuenta las
+  agencias sin diagnostico propio. Corregido ademas: 19 diferidas de B con `radio` AGENCIA en paros FAMILIA
+  (no servian de precedente); el firmador de B ahora toma el radio del paro.
 - **Prueba de 3 workers (P5) APROBADA** por el relanzador a las 20:02 (`regimen_de_workers.evaluar`,
   `ERETZ_WORKERS.json` + `ERETZ_WORKERS_REGIMEN.jsonl`): 14:00–20:02, 78 agencias, **13,0 por hora
   activa** contra 8,0 de la línea base de 2 workers (28–29/09), bloqueo 0,0 (base 0,075), paros por

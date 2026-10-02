@@ -170,7 +170,14 @@ Huella: cambian `generico.py`, `base.py`, `run_rollout.py`, `agency_certifier.py
 - bartolini: categorias /<tipo>-en-<operacion>.html rechazadas como contenedoras cuentan como detalle fallido (30); extender el criterio del lote 3.
 - bauer (Estatik): li.es-property-field--es_neighborhood / --city / --province con label anidado; lector estructural por clase es-property-field--<campo>.
 - bellomo (dl.detail-facts): <dt><i class="bi ..."></i> Ambientes</dt><dd>3</dd>; el icono vacio en la celda del rotulo rompe las parejas estructurales de _cuenta_de_ficha y el texto plano corre los valores (banos=3 cuando la ficha dice 2). Tolerar un icono vacio al comienzo de la celda del rotulo.
-### LOTE 6 — estado 2026-10-01 21:20 (cuenta B; rama `b/lote6-dev`, sin aplicar)
+### LOTE 6 — APLICADO 2026-10-02 01:22 (`0335f2a`). Primera medicion: 2026-10-01 21:20
+
+Agregados despues de la primera medicion (paros de la noche): wordpress achica la pagina ante el tope con el mensaje del lote 5 y ante 5xx (benitez: 0 -> 128 COMPLETE; el achique estaba MUERTO desde el lote 5), precio de respaldo de wordpress solo del cuerpo de la ficha (RealHomes destacadas al azar: 72/128 no idempotentes; 0 cambios en 64 fichas de 32 agencias wordpress certificadas), «N amb.» como ambientes (bras neves) con la fraccion «1 1/2 AMB.» excluida, coordenada por defecto de Houzez (Miami) anotada como rechazo.
+
+Canarios finales: objetivo bauer, balsa, aranoa, benitez ullo, bartolini (294), benitez (128) COMPLETE; bellomo y de giorgio a 1 ficha (banos sin total en la fuente; coordenada por defecto, ya anotada); caian inventario inestable entre corridas (previo). Verdes 9/9 sin regresion (amabile BLOCKED_EXTERNAL y acosta 67/81: identico con el codigo base = cambio de la fuente). Suite 3912 passed, 5 skipped.
+
+Para el LOTE 7: bigsur (TFW con directorio WORDPRESS: agency_certifier.py lleva el radio a 763, esperar un lote que toque ese archivo), blazquez (WPResidence listing_detail: «Provincia: Zona Oeste» sin anotar el rechazo, ciudad en <a>, descripcion en #longDescription), y lo listado abajo.
+
 
 Implementado (8 arreglos, 15 tests nuevos, suite 3903 passed / 5 skipped):
 
