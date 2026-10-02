@@ -180,7 +180,8 @@ def backlog(cert: Path = CERT) -> list[dict[str, Any]]:
             "firma": clave[0], "plataforma": plat, "componentes": set(), "radio": set(),
             "estrategias": set(), "agencias": [], "campos": set(), "propiedades": 0,
             "primera": cuando, "ultima": cuando, "diferidas_automaticas": 0,
-            "diferidas_humanas": 0, "sin_diferida": 0, "diagnostico": None})
+            "diferidas_humanas": 0, "sin_diferida": 0, "sin_diagnostico_propio": [],
+            "diagnostico": None})
         f["componentes"].add(componente)
         f["radio"].add(paro.get("radio_estimado") or "AGENCIA")
         f["estrategias"].add(paro.get("connector_strategy") or "")
@@ -192,6 +193,13 @@ def backlog(cert: Path = CERT) -> list[dict[str, Any]]:
         f["diferidas_automaticas"] += sum(1 for d in filas if d.get("diferida_por_precedente"))
         f["diferidas_humanas"] += len(humanas)
         f["sin_diferida"] += 0 if filas else 1
+        # Diferida solo por precedente = nadie miro ESTA agencia. Medido el
+        # 2026-10-01: dentro de una misma firma exacta los diagnosticos humanos
+        # nombran causas distintas (a8580800972a: categorias, area de clientes,
+        # formulario ajeno, portal como fuente, etiqueta rota...), asi que el
+        # texto copiado no es la causa de esta. Es deuda de diagnostico.
+        if not humanas:
+            f["sin_diagnostico_propio"].append(agencia)
         f["diagnostico"] = f["diagnostico"] or (humanas[-1][:300] if humanas else None)
     salida = []
     for f in familias.values():
@@ -201,7 +209,9 @@ def backlog(cert: Path = CERT) -> list[dict[str, Any]]:
                        "impacto": round(f["propiedades"] * n / costo, 1),
                        "componentes": sorted(f["componentes"]), "radio": sorted(f["radio"]),
                        "estrategias": sorted(f["estrategias"]), "campos": sorted(f["campos"]),
-                       "agencias": sorted(f["agencias"]), "n_agencias": n})
+                       "agencias": sorted(f["agencias"]), "n_agencias": n,
+                       "sin_diagnostico_propio": sorted(f["sin_diagnostico_propio"]),
+                       "causas_humanas": f["diferidas_humanas"]})
     salida.sort(key=lambda f: (f["clase"], -f["impacto"], -f["n_agencias"]))
     return salida
 
@@ -212,7 +222,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--top", type=int, default=25)
     args = ap.parse_args(argv)
     filas = backlog()
-    print(f"familias vivas: {len(filas)}  paros vivos: {sum(f['n_agencias'] for f in filas)}")
+    print(f"familias vivas: {len(filas)}  paros vivos: {sum(f['n_agencias'] for f in filas)}  "
+          f"sin diagnostico propio: {sum(len(f['sin_diagnostico_propio']) for f in filas)}")
     print(f"{'cl':>2} {'impacto':>9} {'ag':>3} {'props':>6} {'radio':<11} {'plataforma':<16} componente / campos")
     for f in filas[:args.top]:
         print(f"{f['clase']:>2} {f['impacto']:>9} {f['n_agencias']:>3} {f['propiedades']:>6} "

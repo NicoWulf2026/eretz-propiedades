@@ -78,3 +78,13 @@ def test_diferidas_automaticas_y_humanas_quedan_contadas(tmp_path):
     (f,) = b.backlog(_armar(tmp_path, paros, diferidas=diferidas))
     assert (f["diferidas_humanas"], f["diferidas_automaticas"], f["sin_diferida"]) == (1, 1, 1)
     assert f["diagnostico"] == "visto"
+
+
+def test_la_diferida_solo_por_precedente_es_deuda_de_diagnostico(tmp_path):
+    c = "extraccion_transversal_de_atributos"
+    paros = [_paro("roomix:x", "f1"), _paro("roomix:y", "f1")]
+    diferidas = [{"canonical_agency_id": "roomix:x", "componente": c, "diagnostico": "visto"},
+                 {"canonical_agency_id": "roomix:y", "componente": c, "diagnostico": "copia",
+                  "diferida_por_precedente": True}]
+    (f,) = b.backlog(_armar(tmp_path, paros, diferidas=diferidas))
+    assert f["sin_diagnostico_propio"] == ["roomix:y"]
