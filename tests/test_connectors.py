@@ -4881,3 +4881,26 @@ def test_un_404_o_un_403_no_achican_la_pagina():
     c.paginacion_interrumpida = False
     assert list(c._rest({"base": "https://wp.test", "rest_base": "properties"})) == []
     assert c.paginacion_interrumpida is True
+
+
+def test_MUERDE_el_precio_del_widget_de_destacadas_no_es_de_la_ficha():
+    """`benitez propiedades` (RealHomes): la ficha no publica precio y el costado
+    muestra «Propiedades destacadas» al azar. El primer precio de la pagina era el
+    de otra propiedad y cambiaba en cada carga: 72 de 128 no idempotentes."""
+    url = "https://wp.com.ar/property/campo-en-venta/"
+    def ficha(precio_del_widget: str) -> str:
+        return ("<html><body><div class='rh_page__property'><h1>Campo en Venta</h1>"
+                "<p>Campo de 40 hectareas con casa.</p></div>"
+                "<section class='rh_property__similar_properties'><p>USD 128,000</p></section>"
+                "<aside class='rh_sidebar'><section class='widget Featured_Properties_Widget'>"
+                f"<p>{precio_del_widget}</p></section></aside></body></html>")
+    item = {"id": 10, "type": "property", "title": {"rendered": "Campo en Venta"},
+            "content": {"rendered": "<p>Campo de 40 hectareas con casa.</p>"},
+            "property_meta": {"REAL_HOMES_property_size": ["40"]}}
+    precios = set()
+    for widget in ("USD 345,000", "USD 113,500"):
+        c = wp_conector({url: ficha(widget)})
+        p = c.normalize({"source_listing_id": "10", "source_url": url, "pagina": 1,
+                         "taxonomy_terms": {}, "rest": item}, wp_fuente())
+        precios.add(None if p is None else p.precio)
+    assert precios == {None}

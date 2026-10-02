@@ -1029,12 +1029,20 @@ class WordPressConnector(Connector):
         if mp and moneda is None:
             moneda = _moneda_con_posfijo(mp, texto)
         if item is not None and html and (precio is None or moneda is None):
+            # Solo el cuerpo de la ficha, sin similares ni widgets: RealHomes
+            # (`benitez propiedades`) pone al costado «Propiedades destacadas»
+            # elegidas al azar en cada carga, y el primer precio de la pagina
+            # era el de otra propiedad -113.500, 345.000 o 128.000 dolares segun
+            # la carga- en una ficha que no publica el suyo: 72 de 128 no
+            # idempotentes. Sin precio propio, queda sin precio.
+            from .generico import cuerpo_principal
+            texto_de_la_ficha = _texto(cuerpo_principal(html))[:6000]
             mp_html = re.search(r"(USD|U\$[SD]|U\$\$?|US\$|\$|ARS)\s*([\d][\d.,]{2,15})",
-                                _texto(html)[:6000], re.I)
+                                texto_de_la_ficha, re.I)
             if mp_html and precio is None:
                 precio = a_numero(mp_html.group(2))
             if mp_html and moneda is None:
-                moneda = _moneda_con_posfijo(mp_html, _texto(html)[:6000])
+                moneda = _moneda_con_posfijo(mp_html, texto_de_la_ficha)
         if precio is not None and precio <= 0:
             precio = None
 
