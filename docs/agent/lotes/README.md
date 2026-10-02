@@ -226,6 +226,12 @@ Medicion: coseglia ciudad 1,2 % -> 55,9 % (13:42), miguelez 76,8 % (14:32). `bts
 (NEEDS_FIX 895, ciudad 0,2 %; cortarlo fue bloqueado por el entorno y el usuario pidio dejarlo terminar) y se recertifica
 con 7b por la prioridad de cola.
 
+**Deuda conocida de 7b (medida 02-10 15:30 en coseglia con 7b: ciudad 190/340)** — NO se abre antes de la beta: no es regresion
+contra lo servido, mueve la huella de todo generico y dejaria obsoleta la corrida de `bts` en curso. Para el lote 8, en `_ubicacion_tiv`:
+(1) «Pilar, G.B.A. Zona Norte, Argentina» — sacar el «Argentina» final (90/340); (2) «De Vicenzo Grande, Del Viso, Pilar» — barrio,
+localidad, partido SIN provincia ni zona (45/340; decidir con la geografia compartida, no inventar provincia); (3) barrio con
+digitos «46 Plaza» (8/340); (4) «Las Gaviotas» NOT_FOUND en el catalogo (5/340). Estimado sobre TIV: ~25-40 % de fichas sin ciudad.
+
 ### Backlog del LOTE 7 (paros del 01/02-10 con el lote 6; sin implementar, P4)
 
 Ordenado por impacto (clase del `backlog_de_lote.py`: falso cero > perdida masiva > muchas agencias):
