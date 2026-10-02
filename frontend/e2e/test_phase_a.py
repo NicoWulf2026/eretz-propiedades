@@ -234,9 +234,17 @@ def test_map_v2_confidence_price_fallback_and_cluster_keyboard(page: Page) -> No
     expect(cluster).to_have_attribute("aria-label", re.compile(r"\d+ propiedades agrupadas"))
     cluster.focus()
     cluster.press("Enter")
-    expect(page.get_by_role("button", name="Buscar en esta zona")).to_be_visible()
+    buscar_aca = page.get_by_role("button", name="Buscar en esta zona")
+    expect(buscar_aca).to_be_visible()
     marker = page.locator('[data-map-point-kind="property"]').first
+    # Los puntos de la zona nueva se piden con «Buscar en esta zona»; se acerca
+    # hasta que aparezca uno suelto (a lo sumo cuatro clusters).
     for _ in range(4):
+        if marker.count():
+            break
+        if buscar_aca.count() and buscar_aca.is_visible():
+            buscar_aca.click()
+            page.wait_for_load_state("networkidle")
         if marker.count():
             break
         siguiente = page.locator('[data-map-point-kind="cluster"]').first

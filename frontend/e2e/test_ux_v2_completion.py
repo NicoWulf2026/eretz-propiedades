@@ -38,6 +38,9 @@ def test_mi_eretz_is_local_unified_and_keyboard_navigable(page: Page) -> None:
     expect(page.get_by_text("Todo está guardado en este dispositivo.")).to_be_visible()
     guardadas = page.get_by_role("tab", name="Guardadas")
     expect(guardadas).to_have_attribute("aria-selected", "true")
+    # La tecla antes de la hidratacion no hace nada: con la PC cargada fallaba
+    # 2 de 3 corridas sin que la pagina dependa de datos (QA 2026-10-02).
+    page.wait_for_load_state("networkidle")
     guardadas.press("ArrowRight")
     expect(page.get_by_role("tab", name="Colecciones")).to_have_attribute("aria-selected", "true")
     expect(page).to_have_url(f"{BASE_URL}/mi-eretz?seccion=colecciones")
