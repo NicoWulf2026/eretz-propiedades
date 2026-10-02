@@ -119,6 +119,25 @@ def _resultados(junit: Path) -> dict:
             "fallidos": fallidos, "salteados": salteados}
 
 
+def sin_coordenadas_de(snapshot: Path) -> tuple[str, str] | None:
+    """Una ficha REAL sin coordenadas y con titulo unico, para la e2e del mapa.
+
+    La e2e traia fijo un id de una servida vieja que ya no existe en ninguna
+    snapshot (2026-10-02): contra datos reales fallaba siempre, por los datos y
+    no por el codigo.
+    """
+    import sqlite3
+    con = sqlite3.connect(f"file:{snapshot.as_posix()}?mode=ro", uri=True)
+    try:
+        fila = con.execute(
+            "select id, titulo from propiedades p where latitud is null and length(titulo) >= 20 "
+            "and titulo in (select titulo from propiedades group by titulo having count(*) = 1) "
+            "order by id limit 1").fetchone()
+    finally:
+        con.close()
+    return (fila[0], fila[1]) if fila else None
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--salida", type=Path, required=True, help="carpeta para snapshot, logs e informe")
@@ -172,6 +191,11 @@ def main() -> int:
         _esperar(f"{base_web}/propiedades", segundos=600)
         junit = salida / "e2e_junit.xml"
         env_e2e = {**env, "ERETZ_E2E_BASE_URL": base_web}
+        caso = sin_coordenadas_de(snapshot) if args.snapshot else None
+        if caso:
+            env_e2e.update({"ERETZ_E2E_SIN_COORDENADAS_ID": caso[0],
+                            "ERETZ_E2E_SIN_COORDENADAS_Q": caso[1]})
+            informe["caso_sin_coordenadas"] = caso[0]
         if not args.snapshot:
             env_e2e.update({"ERETZ_E2E_SIN_COORDENADAS_ID": CASOS["sin_coordenadas"],
                             "ERETZ_E2E_SIN_COORDENADAS_Q": CONSULTA_SIN_COORDENADAS,

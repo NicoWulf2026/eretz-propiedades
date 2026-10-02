@@ -307,11 +307,13 @@ def test_filter_panel_keyboard_focus_and_axe(page: Page) -> None:
     page.set_viewport_size({"width": 1366, "height": 768})
     page.goto(BASE_URL, wait_until="domcontentloaded")
     toggle = page.get_by_role("button", name="Más filtros", exact=False)
-    # DOM content can precede client hydration on a cold protected preview.
-    page.wait_for_timeout(500)
+    # DOM content can precede client hydration on a cold protected preview, and
+    # a fixed 500 ms was not enough on a loaded machine (QA on real data,
+    # 2026-10-02): wait for the network to settle before using the toggle.
+    page.wait_for_load_state("networkidle")
     toggle.click()
     panel = page.get_by_role("dialog", name="Más filtros de propiedades")
-    expect(panel).to_be_visible()
+    expect(panel).to_be_visible(timeout=15_000)
     expect(page.get_by_role("textbox", name="Provincia")).to_be_focused()
     page.add_script_tag(path=str(AXE_PATH))
     result = page.evaluate("async () => await axe.run(document, { resultTypes: ['violations'] })")
