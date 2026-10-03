@@ -101,3 +101,32 @@ def test_validated_agency_fk_change_invalidates_unchanged_source_and_code():
     data = record()
     data['resolution']['eretz_id'] = 8
     assert not queue.is_current_catalog_result(previous('CERTIFIED_COMPLETE'), data, 'fixture:agency')
+
+
+def _p6(monkeypatch, base_hoy='CANONICAL_VERIFIED_WEB', id_hoy=None):
+    monkeypatch.setattr(queue, 'resolve_identity', lambda rec, cid: {
+        'identity_status': 'READY', 'eretz_id': id_hoy, 'official_url': 'https://official.example.test',
+        'identity_evidence': {'identity_basis': base_hoy}})
+    old = previous('CERTIFIED_COMPLETE')
+    old['eretz_id'] = None
+    old['identity_evidence'] = {'identity_basis': 'CANONICAL_VERIFIED_WEB'}
+    return old
+
+
+def test_p6_sin_main_de_los_dos_lados_sigue_vigente(monkeypatch):
+    """Certificada por identidad canonica (P6), misma web, mismo codigo: no se rehace en cada reinicio."""
+    assert queue.is_current_catalog_result(_p6(monkeypatch), record(), 'fixture:agency')
+
+
+def test_p6_que_ahora_tiene_main_se_rehace(monkeypatch):
+    assert not queue.is_current_catalog_result(_p6(monkeypatch, id_hoy=7), record(), 'fixture:agency')
+
+
+def test_sin_main_pero_con_otra_base_de_identidad_no_se_reusa(monkeypatch):
+    assert not queue.is_current_catalog_result(_p6(monkeypatch, base_hoy='PREINGESTION_MAIN'), record(), 'fixture:agency')
+
+
+def test_p6_con_otro_codigo_se_rehace(monkeypatch):
+    old = _p6(monkeypatch)
+    old['strategy_fingerprint'] = 'vieja'
+    assert not queue.is_current_catalog_result(old, record(), 'fixture:agency')

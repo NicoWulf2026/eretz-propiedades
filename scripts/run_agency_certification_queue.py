@@ -725,6 +725,11 @@ def inventory(record: dict[str, dict[str, Any]]) -> int:
     return max([int(x) for x in values if isinstance(x, (int, float))] or [0])
 
 
+def _base_de_identidad(datos: dict[str, Any]) -> Any:
+    evidencia = datos.get('identity_evidence')
+    return evidencia.get('identity_basis') if isinstance(evidencia, dict) else None
+
+
 def is_current_catalog_result(previous: dict[str, Any],
                               record: dict[str, dict[str, Any]],
                               canonical_id: str,
@@ -758,8 +763,19 @@ def is_current_catalog_result(previous: dict[str, Any],
                 if not isinstance(url, str) or not url.strip():
                     return False
             old_id, current_id = previous.get('eretz_id'), identity.get('eretz_id')
-            if (type(old_id) is not int or old_id <= 0 or type(current_id) is not int
-                    or current_id <= 0 or old_id != current_id):
+            # P6 (29-09) certifica sin `main`: la identidad canonica verificada no
+            # tiene `eretz_id` de ningun lado. Esta regla es del 21-09 y no lo
+            # preveia: las 225 agencias asi quedaban vencidas para siempre y se
+            # rehacian en cada reinicio (desde el 30-09, 19 corridas y 15,3 h de
+            # worker en 7 agencias; `bts` 5 veces). Solo se acepta el par None/None
+            # cuando AMBOS lados son la misma base P6; un id que aparece, cambia o
+            # falta de un solo lado sigue invalidando.
+            sin_main = (old_id is None and current_id is None
+                        and _base_de_identidad(previous) == _base_de_identidad(identity)
+                        == "CANONICAL_VERIFIED_WEB")
+            if not sin_main and (type(old_id) is not int or old_id <= 0
+                                 or type(current_id) is not int
+                                 or current_id <= 0 or old_id != current_id):
                 return False
         return is_current_result(previous, record, postergadas, identity.get('official_url'))
     except Exception:
