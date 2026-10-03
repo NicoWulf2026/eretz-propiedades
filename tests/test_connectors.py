@@ -4913,3 +4913,11 @@ def test_wordpress_taxonomia_publicada_como_texto():
     assert W._texto_taxonomia({}, item, "property_type") == "Local Comercial"
     assert W._nombre_taxonomia({}, item, "property_city") == "Villa Crespo"
     assert W._texto_taxonomia({}, {"property_type": "12,13"}, "property_type") == ""
+
+
+def test_banco_provincia_no_es_una_provincia_publicada():
+    from scripts.agency_certifier import source_signals
+    base = "<html><body><main><h1>Casa en venta</h1><p>{}</p></main></body></html>"
+    assert not source_signals(base.format("Apto credito Banco Provincia. Resto de la Provincia."))["provincia"]
+    assert source_signals(base.format("Provincia: Cordoba"))["provincia"]
+    assert source_signals(base.format("Apto Banco Provincia. Provincia: Mendoza"))["provincia"]

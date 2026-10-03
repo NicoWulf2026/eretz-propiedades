@@ -222,6 +222,10 @@ def sin_ficha_de_la_agencia(body: str) -> str:
     return RE_JSON_LD.sub(decidir, body or "")
 
 
+RE_PROVINCIA_QUE_NO_ES_DATO = re.compile(
+    r"(?i)\bbanco\s+(?:de\s+la\s+)?provincia\b|\bresto\s+de\s+la\s+provincia\b")
+
+
 def source_signals(body: str, url: str = "") -> dict[str, bool]:
     # Lo que viene despues de relacionadas, footer o scripts de filtros no
     # describe la ficha principal y no puede probar que un campo fue provisto.
@@ -237,6 +241,11 @@ def source_signals(body: str, url: str = "") -> dict[str, bool]:
     main = sin_filtros_catalogo(main)
     signals = {field: bool(pattern.search(main))
                for field, pattern in SOURCE_SIGNALS.items()}
+    # «Banco Provincia» (credito hipotecario: `campal` 61 fichas) y «Resto de
+    # la Provincia» (zona del CRM TIV) nombran la palabra sin publicar una
+    # provincia. 24 agencias quedaban en NEEDS_FIX solo por esta senal (03-10).
+    signals["provincia"] = bool(SOURCE_SIGNALS["provincia"].search(
+        RE_PROVINCIA_QUE_NO_ES_DATO.sub(" ", main)))
     # Un icono con alt="direccion" no es una direccion. Debe haber texto real
     # dentro del bloque de la ficha.
     address_blocks = re.findall(
