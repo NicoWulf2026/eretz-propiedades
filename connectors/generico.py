@@ -1010,6 +1010,12 @@ def cuerpo_principal(html: str) -> str:
         r"<(?!(?:path|g|line|rect|circle|ellipse|polygon|polyline|use|symbol|svg)\b)"
         r"[a-z][a-z0-9]*\b[^>]*\bid=[\"'](?:relacionadas|bottom)[\"']|<footer\b|"
         r"class=[\"'][^\"']*rh_property__similar_properties|"
+        # KiteProp (`atencio`, `fdc` y 19 agencias mas): «Ultimas Propiedades»
+        # en <div class="sidebar-widget recent-properties">, al azar en cada
+        # carga. «Tango Victoria 13 E - 2 dormitorios» de una tarjeta le daba 2
+        # dormitorios a un LOCAL comercial (canario de la ventana, 03-10). Se
+        # corta solo con las DOS clases juntas para no tocar otras plantillas.
+        r"class=[\"']sidebar-widget\s+recent-properties\b|"
         # Y la plantilla de `berrueta` (Template3): el tooltip «Cochera» de una
         # tarjeta relacionada era el unico tipo que veia la ficha, y 24
         # departamentos quedaban guardados como cocheras.

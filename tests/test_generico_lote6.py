@@ -251,3 +251,15 @@ def test_fuera_de_la_ruta_tiv_no_se_lee_el_og_title_tiv():
     p = _normalizar(_ficha('<p>Departamento en venta</p>', TIV),
                     'https://caian.example/inmueble/departamento-venta-2-ambientes-almagro-lp816957')
     assert p is not None and p.barrio != 'Almagro'
+
+
+def test_kiteprop_ultimas_propiedades_no_son_la_ficha():
+    """atencio (03-10): el widget lateral daba 2 dormitorios a un local."""
+    from connectors.generico import cuerpo_principal
+    html = ('<main><h1>Local centrico</h1><p>Ambientes: 2</p></main>'
+            '<div class="sidebar-widget recent-properties"><h2>Ultimas Propiedades</h2>'
+            '<a title="Tango Victoria 13 E - 2 dormitorios">x</a></div>')
+    assert "dormitorios" not in cuerpo_principal(html)
+    assert "Ambientes: 2" in cuerpo_principal(html)
+    # Una sola de las dos clases no corta: otras plantillas usan nombres parecidos.
+    assert "dormitorios" in cuerpo_principal(html.replace("sidebar-widget recent-properties", "recent-properties"))
