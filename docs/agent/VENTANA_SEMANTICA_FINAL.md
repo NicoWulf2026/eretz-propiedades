@@ -208,3 +208,37 @@ KiteProp (P0) verificado por recertificacion v4 (atencio + aguilar bugeau, 3/21 
 Criterios: canarios estables bajo una huella (si); P0/P1 conocidos resueltos (si); dependencias de huella correctas (`6d04163`); prioridad recertificando con huella final desde 13:08 (si); suite completa 3969 passed / 5 skipped (si); ningun cambio semantico conocido pendiente (si: «Provincia Net» y Hotel/Edificio son deuda post-beta documentada).
 
 Siguiente: FREEZE HEAD (solo docs/operativo hasta beta) -> la candidata se construye cuando la prioridad (78) termine de recertificar con v4: construirla antes metería paquetes previos a los arreglos (p. ej. KiteProp con dormitorios ajenos) -> DEPLOY GATES -> REGRESSION GATE -> BROWSER QA AISLADO -> PERFORMANCE -> FULL SUITE FINAL -> BETA CANDIDATE.
+
+## VENTANA REABIERTA 14:11 -> P0 corregido 14:23 (`b69d2563`)
+
+La verificacion KiteProp sobre la prioridad (no los canarios) encontro dato falso: `eckert` publica una oficina «Ambientes: 2 Dormitorios: - Baños: 4» y la extraccion guardaba 2 dormitorios. Causa: en `_cuenta`, el rotulo con dos puntos no encuentra numero («-»), y la busqueda en prosa lee «2 Dormitorios» tomando el numero de AMBIENTES. Misma familia que el P0 de las 12:16 (valor de un campo vecino), plantilla KiteProp distinta (las vecinas van en `div.widget.widget_recent_property`, tampoco cortado).
+
+Radio medido antes de arreglar: replay del codigo viejo sobre 116 fichas reales de 41 agencias con la firma dorm==amb: afecta SOLO a la plantilla KiteProp con guiones (fdc 2/3; ninguna otra plantilla). Cota: 78 de 1.802 fichas KiteProp (fdc 32, crm 11, atencio 10, ...), sobre todo monoambientes con «1 dormitorio» y locales/oficinas con dormitorios. Clase DATA_CORRUPTION, P0.
+
+Arreglo: «Rotulo: -» es vacio declarado (NULL), nunca relleno por adyacencia; y se corta `widget_recent_property`. Suite 3973 passed / 5 skipped. Tests: `tests/test_generico_vacio_declarado.py`.
+
+Costo: cambian las huellas de generico/wordpress/century21 (v5); tokko y wasi NO cambian (aiba sigue final). Se repiten bajo v5: benitez ullo, cadahia, dolgiej, atencio, campal, y las ~20 de la prioridad ya hechas con v4.
+
+### Huellas FINALES v5
+
+| estrategia | huella |
+|---|---|
+| century21 | `fdcde95bcba5` |
+| generic/bitrix_landing | `c2bced7ffa3b` |
+| generic/buscadorprop_json | `70c9ff6d7de7` |
+| generic/category_html | `b9a125895771` |
+| generic/empty_catalog | `c16dd05629a8` |
+| generic/html_catalog | `0fb5151ce8f8` |
+| generic/mapaprop | `d28e4f998994` |
+| generic/no_inventory | `1eca6fb68052` |
+| generic/php_ajax_search | `f52764b1e662` |
+| generic/php_query_catalog | `5f816157e1b3` |
+| generic/portal_offset | `e733fad043ce` |
+| generic/sitemap | `795f88bcc17a` |
+| generic/tiv_busqueda | `7f304a7bbacc` |
+| generic/tokko_proxy | `74db0059de27` |
+| generic/wordpress_category | `4b9d6e902016` |
+| generic/xintel | `aae2612f083d` |
+| tokko | `ea47cf60748b` |
+| wasi | `cfbaa6471ffd` |
+| wordpress | `94d5c076421f` |
