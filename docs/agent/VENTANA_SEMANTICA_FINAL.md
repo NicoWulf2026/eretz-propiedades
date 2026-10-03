@@ -188,3 +188,23 @@ Los canarios con resultado bajo v3 (benitez ullo, cadahia, atencio, dolgiej) NO 
 
 - atencio (KiteProp, 12:57, COMPLETE): local 0/4 con dormitorios, galpon 0/2, terreno 0/113; casa 123/142, departamento 37/39. Los altos son propios (hoteles con 34 y 58 habitaciones publicadas, complejo de 11 cabanas); la oficina con 3 es «tres locales (oficina o consultorio)» de su propia ficha. P0 corregido.
 - dolgiej (WordPress REST): las 2 sin tipo son «Hotel ... 34 habitaciones en suite» (pizarro-5369) y «Edificio comercial ... con local, oficinas, terraza y 8 cocheras» (araoz-631). La taxonomia ERETZ no tiene tipo canonico Hotel/Edificio: NULL honesto, no se fuerza. La senal del certificador en araoz dispara por «local/oficinas/cocheras», que describen lo que el edificio CONTIENE. Estado honesto NEEDS_FIX (1 extraction_failed), clase COBERTURA/TAXONOMIA, deuda post-beta: tipos canonicos hotel/edificio o un tipo «otro» con evidencia.
+- campal (13:11, en vuelo con codigo previo al deploy, no cuenta): NEEDS_FIX prov=0.197. 118/147 sin ciudad/provincia = deuda TIV de ubicacion (barrio/localidad/partido sin mapa de zonas). 2 extraction_failed: lp824340 declara «Francisco Alvarez, Provincia de Buenos Aires» solo en la descripcion (deuda TIV, NULL honesto); lp656891 la senal dispara por «Provincia Net» (servicio del Banco Provincia): falso positivo NUEVO de la senal del certificador. No es P0/P1 (no hay dato falso, 1 ficha, agencia NEEDS_FIX igual) y arreglarlo mueve TODAS las huellas: KNOWN_DEBT post-beta (agregar «Provincia Net» a RE_PROVINCIA_QUE_NO_ES_DATO).
+
+## SEMANTIC_WINDOW_CLOSED — 2026-10-03 13:56 (HEAD semantico congelado: `6d04163`)
+
+Canarios finales, todos bajo la MISMA huella v4 (ninguno invalidado por codigo cambiado en vuelo):
+
+| canario | estrategia | resultado v4 | igual a la evidencia v3 |
+|---|---|---|---|
+| benitez ullo | generic/tiv_busqueda | CERTIFIED_COMPLETE, enum 15, prov 1.0 | si |
+| cadahia | generic/tiv_busqueda | CERTIFIED_COMPLETE, enum 28, prov 0.857 | si |
+| dolgiej | wordpress | NEEDS_FIX honesto (Hotel/Edificio sin tipo canonico), triaje CONTINUE | si |
+| atencio | generic/sitemap (KiteProp) | CERTIFIED_COMPLETE, enum 320, run1 = run2 | si |
+| aiba | tokko | CERTIFIED_COMPLETE, enum 44 | si |
+| campal | generic/tiv_busqueda | NEEDS_FIX honesto (deuda TIV + falso positivo «Provincia Net»), triaje CONTINUE | si |
+
+KiteProp (P0) verificado por recertificacion v4 (atencio + aguilar bugeau, 3/21 hasta ahora): local, oficina, galpon, cochera (0/3), terreno sin dormitorios heredados; casa 129/148 y departamento 101/107 conservan los propios. Las 3 no residenciales con dormitorios de aguilar bugeau (2 locales, 1 oficina) los PUBLICAN en su propia ficha («Ambientes 3 Dormitorios 2», sin widget lateral en la pagina): dato de la fuente, no herencia. La oficina de atencio idem («tres locales»). Seguimiento: `_b_scratch/kiteprop_dorm_v4.py` sobre las 18 restantes a medida que recertifican; una herencia nueva reabre la ventana como P0.
+
+Criterios: canarios estables bajo una huella (si); P0/P1 conocidos resueltos (si); dependencias de huella correctas (`6d04163`); prioridad recertificando con huella final desde 13:08 (si); suite completa 3969 passed / 5 skipped (si); ningun cambio semantico conocido pendiente (si: «Provincia Net» y Hotel/Edificio son deuda post-beta documentada).
+
+Siguiente: FREEZE HEAD (solo docs/operativo hasta beta) -> la candidata se construye cuando la prioridad (78) termine de recertificar con v4: construirla antes metería paquetes previos a los arreglos (p. ej. KiteProp con dormitorios ajenos) -> DEPLOY GATES -> REGRESSION GATE -> BROWSER QA AISLADO -> PERFORMANCE -> FULL SUITE FINAL -> BETA CANDIDATE.
