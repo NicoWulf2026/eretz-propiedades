@@ -289,3 +289,10 @@ Canarios a repetir bajo v6: benitez ullo, cadahia, dolgiej, atencio, campal. El 
 | tokko | `ea47cf60748b` |
 | wasi | `cfbaa6471ffd` |
 | wordpress | `06596110b8b7` |
+
+### Canarios bajo v6 (en curso) y hallazgo de dolgiej
+
+- benitez ullo 15:56 y cadahia 16:02: CERTIFIED_COMPLETE, identicos a v3/v4/v5.
+- dolgiej 16:09: NEEDS_FIX por «run inventories differ». La corrida 1 eligio WORDPRESS_HTML (la sonda REST `/wp-json/wp/v2/types` fallo de forma transitoria y `discover` cae en silencio a sitemap/HTML) y enumero 10 en una sola pagina declarando la enumeracion completa; la corrida 2 uso REST: 29, con cobertura identica a v5 (tipo 0.931, dormitorios 0.3448). El comportamiento del codigo es estable; la inestabilidad es de la fuente.
+- Riesgo medido (FALSE_COMPLETE_RISK teorico): 6 de 101 agencias WordPress tuvieron alguna corrida degradada de REST a otra variante; las 6 terminaron NEEDS_FIX (doble corrida + revision de inventario bajo), ninguna certifico inventario parcial. Para certificar parcial harian falta las dos corridas degradadas igual: 0 casos. KNOWN_DEBT post-beta, con diseno: un fallo TRANSITORIO de la sonda REST tiene que abortar el descubrimiento (reintentable), no degradar la estrategia. No se hace ahora: mueve la huella de wordpress por un riesgo con 0 ocurrencias.
+- campal 16:26 NEEDS_FIX (deuda TIV, igual a v4/v5) y atencio 16:33 CERTIFIED_COMPLETE (enum 320, igual a v3-v5). aiba final por huella tokko sin cambio. 6/6 canarios bajo v6. El cierre se declara cuando `eckert` y `fdc` (donde vive el P0) pasen bajo v6: los dos cierres anteriores se retiraron por declarar antes de verlas.
