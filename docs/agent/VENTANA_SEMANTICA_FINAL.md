@@ -76,3 +76,31 @@ Recertificacion dirigida: `ERETZ_PRIORIDAD_DE_COLA.json` con 58 agencias hasta 0
 | tokko | `9029f5cc624f` | `1b146d5ab242` |
 | wordpress | `cdc4fefef209` | `9a45f9fe2636` |
 | wasi | `1178964c9e0a` | `c43c85ad620a` |
+
+## Correcciones de canario dentro de la ventana (03-10)
+
+- 11:49 dolgiej: sin `property_meta` el REST nunca se consultaba -> `d6a4cb2` (la taxonomia REST completa tipo/operacion que el HTML no dio). Solo cambio la huella wordpress; un unico resultado afectado.
+- 11:59 campal: la senal de provincia veia «banco-provincia» en slugs (la exclusion solo aceptaba espacios) -> `f50e2d8`. Cambia todas las huellas (certificador); invalido solo 2 resultados de la ventana (benitez ullo, cadahia).
+
+### Huellas FINALES (nodo operativo `f50e2d8`)
+
+| estrategia | huella |
+|---|---|
+| generic/bitrix_landing | `62e0f87712c0` |
+| generic/buscadorprop_json | `fd1bb0d0f03b` |
+| generic/category_html | `61d75058ee68` |
+| generic/empty_catalog | `5a5946538ca5` |
+| generic/html_catalog | `52ca8a32d49a` |
+| generic/mapaprop | `4888663a78a5` |
+| generic/no_inventory | `4e45e13432ee` |
+| generic/php_ajax_search | `fea4e9b1e9bf` |
+| generic/php_query_catalog | `d2da6495fbb3` |
+| generic/portal_offset | `85f690a12305` |
+| generic/sitemap | `cea28e2bda33` |
+| generic/tiv_busqueda | `d8ab75d2dc86` |
+| generic/tokko_proxy | `6ad1f1c266ac` |
+| generic/wordpress_category | `8bd0be501c4b` |
+| generic/xintel | `06750cb9b4c8` |
+| tokko | `9f0d2b04bfda` |
+| wordpress | `cfce50223822` |
+| wasi | `8bb65891750b` |
