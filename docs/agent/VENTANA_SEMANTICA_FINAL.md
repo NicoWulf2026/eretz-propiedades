@@ -45,3 +45,34 @@ recertifican despues. El radio que importa para la beta es el de las agencias cu
 3. 04-05/10: UNA recertificacion dirigida (~19 h de worker, ~10-12 h de reloj con 2 workers). En paralelo, sin carga pesada: 6-8 en el builder, 9 en el frontend.
 4. 05-06/10: candidata final -> P2 -> Regression Gate -> QA navegador aislada -> performance -> suite -> rollback.
 5. 07/10: freeze semantico (llega con margen).
+
+## APLICADA 2026-10-03 11:17 (`5d71f1a`, fast-forward del nodo operativo)
+
+Commits: `8e549bd` (ubicacion TIV + radio propio de tiv_busqueda + constantes de modulo en la huella), `4b300c9` (chacra/finca con dormitorios; wordpress taxonomia como texto), `ba48d16` (snapshot: provincia declarada por poligono, CABA ante provincia inferida; danisa reclasificada portal), `5d71f1a` (certificador: Banco/Resto de la Provincia no son provincia). Suite completa 3957/5.
+
+Validacion previa: replay de 60 fichas TIV reales (35 ganan provincia correcta, 0 otros campos cambian; la regla barrio/localidad/partido se descarto porque sus localidades no estan en el catalogo), REST real de dolgiej (tipo 27/29, antes 7), tests de cada caso. Canarios = primeras 6 agencias de la prioridad (no se corre un tercer proceso de scraping: tope de 2 workers).
+
+Fuera de la ventana (medido, con motivo): imperia (SVG inline junto al rotulo; arreglarlo cambia la lectura de cantidades de todo generico sin poder medir el radio), barrio/localidad/partido TIV (427 fichas: necesita alias en el catalogo), carrera de interfaz (hipotesis: el mapa toma el foco; radio 0, sesion de frontend aparte).
+
+Recertificacion dirigida: `ERETZ_PRIORIDAD_DE_COLA.json` con 58 agencias hasta 06-10 12:00 (7.676 fichas, ~19,8 h de worker, ~10-12 h de reloj). Grandes con 1-8 filas rurales y sin evidencia (beba paez vilaro, crestale, farina, darquier) quedan para la cola normal.
+
+| huella | antes | despues |
+|---|---|---|
+| generic/bitrix_landing | `73bd2da9e12d` | `de68d0b211b8` |
+| generic/buscadorprop_json | `81de48712df2` | `92341cda40ce` |
+| generic/category_html | `00b14ecee7dc` | `533812552dd6` |
+| generic/empty_catalog | `850446ef8cc9` | `e7cd069ce24a` |
+| generic/html_catalog | `fb8a49f0b814` | `fdfa64d4816a` |
+| generic/mapaprop | `caaf5a295102` | `e9f6eef12f0e` |
+| generic/no_inventory | `07e0b7d0e4c9` | `ce1b3cdf6f3b` |
+| generic/php_ajax_search | `5a1e3569bdac` | `1dbbb6b90e83` |
+| generic/php_query_catalog | `dfa8745ff62c` | `2f5672a7130a` |
+| generic/portal_offset | `be01c868af8d` | `a0924c05ef8c` |
+| generic/sitemap | `2a2881520418` | `cb6ba2de48a5` |
+| generic/tiv_busqueda | `6a6eb486722f` | `c18bfaa1fa62` |
+| generic/tokko_proxy | `facaa0e132cb` | `3a9e57b02357` |
+| generic/wordpress_category | `acfc65763136` | `88afb51e87e1` |
+| generic/xintel | `7132ab52147e` | `31fb707c2420` |
+| tokko | `9029f5cc624f` | `1b146d5ab242` |
+| wordpress | `cdc4fefef209` | `9a45f9fe2636` |
+| wasi | `1178964c9e0a` | `c43c85ad620a` |
