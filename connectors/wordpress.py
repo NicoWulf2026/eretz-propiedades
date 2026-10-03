@@ -367,8 +367,25 @@ def _descripcion_estable(valor: Any) -> str | None:
     return limpiar(texto)
 
 
+def _termino_como_texto(item: dict[str, Any], taxonomia: str) -> str | None:
+    """Un tema propio publica la taxonomia como TEXTO y no como lista de ids.
+
+    `dolgiej` (03-10): el REST trae ``"property_type": "Local Comercial"``.
+    Recorrerlo como lista daba letras sueltas y 22 de 29 fichas quedaban sin
+    tipo. Es la misma fuente estructurada con otra forma. Un texto que solo son
+    ids («12,13») no es un nombre y no se usa.
+    """
+    valor = item.get(taxonomia)
+    if isinstance(valor, str) and valor.strip() and not re.fullmatch(r"[0-9,\s]+", valor):
+        return valor.strip()
+    return None
+
+
 def _nombre_taxonomia(crudo: dict[str, Any], item: dict[str, Any],
                       taxonomia: str) -> str | None:
+    texto = _termino_como_texto(item, taxonomia)
+    if texto is not None:
+        return texto
     mapa = (crudo.get("taxonomy_terms") or {}).get(taxonomia) or {}
     nombres = []
     for term_id in item.get(taxonomia) or []:
@@ -427,6 +444,9 @@ def _texto_taxonomia(crudo: dict[str, Any], item: dict[str, Any],
     limpio ``galpon``. El slug sirve para mapear al vocabulario canonico; el
     nombre sigue siendo el valor que se conserva para ciudad/provincia/barrio.
     """
+    texto = _termino_como_texto(item, taxonomia)
+    if texto is not None:
+        return texto
     mapa = (crudo.get("taxonomy_terms") or {}).get(taxonomia) or {}
     partes: list[str] = []
     for term_id in item.get(taxonomia) or []:

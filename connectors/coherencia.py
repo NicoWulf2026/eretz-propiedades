@@ -98,6 +98,7 @@ def _es_simbolico(precio: float, moneda: Any, operacion: Any) -> bool:
     return moneda == "USD" and str(operacion or "") == "venta" and precio < VENTA_MINIMA_USD
 
 
+RE_TIERRA_RURAL = re.compile(r"\b(?:chacras?|fincas?|campos?|estancias?)\b", re.I)
 RE_COCHERA = re.compile(r"\b(?:cocheras?|garages?|estacionamientos?)\b")
 # Cualquier mencion de ambientes o dormitorios -en cifras o en letras:
 # «TRES AMBIENTE CON COCHERA»-, «con cochera», o un tipo edificado.
@@ -173,7 +174,19 @@ def revisar(p: dict) -> list[str]:
             p["tipo_propiedad"] = None
             fuera.append("tipo_propiedad_cochera_con_dormitorios")
 
-    if p.get("tipo_propiedad") == "terreno":
+    # Un campo, una chacra o una finca son TIERRA y muchas veces con casa: «Chacra
+    # de tres dormitorios, con gran jardin, quincho y piletas» (`atencio`),
+    # «Chacra en Venta en Vista Alegre Sur» con 5 ambientes, 2 dormitorios y 1
+    # bano cargados en la ficha. Desde que «chacra» y «finca» se mapean a
+    # `terreno` (29-09) esos datos se borraban: regresion medida el 03-10 (17
+    # fichas servidas con dormitorios reales). Con al menos un dormitorio la
+    # vivienda esta demostrada por la propia ficha; sin dormitorios, lo que
+    # trae (un «1 ambiente» por defecto del backoffice) se sigue descartando.
+    rural_con_vivienda = (
+        p.get("tipo_propiedad") == "terreno"
+        and RE_TIERRA_RURAL.search(_sin_tildes(str(p.get("titulo") or "")))
+        and (_num(p.get("dormitorios")) or 0) >= 1)
+    if p.get("tipo_propiedad") == "terreno" and not rural_con_vivienda:
         for campo in ATRIBUTOS_DE_VIVIENDA:
             if p.get(campo):
                 p[campo] = None

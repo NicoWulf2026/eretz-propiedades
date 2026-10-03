@@ -162,3 +162,25 @@ def test_sin_tipo_no_se_descarta_ninguna_superficie():
     p = {"tipo_propiedad": None, "superficie_total": 4_000_000.0}
     assert revisar(p) == []
     assert p["superficie_total"] == 4_000_000.0
+
+
+def test_chacra_con_dormitorios_conserva_la_vivienda():
+    """Regresion 29-09 medida el 03-10: «chacra» -> terreno borraba la casa."""
+    from connectors.coherencia import revisar
+    p = {"tipo_propiedad": "terreno", "titulo": "Chacra de tres dormitorios, con quincho y piletas",
+         "dormitorios": 3, "banos": 2, "ambientes": 5, "superficie_cubierta": 170}
+    assert revisar(p) == []
+    assert (p["dormitorios"], p["banos"], p["ambientes"], p["superficie_cubierta"]) == (3, 2, 5, 170)
+
+
+def test_campo_sin_dormitorios_sigue_descartando_el_default_del_backoffice():
+    from connectors.coherencia import revisar
+    p = {"tipo_propiedad": "terreno", "titulo": "Campo de 50 ha en Lobos", "ambientes": 1}
+    assert "ambientes_en_un_terreno" in revisar(p)
+    assert p["ambientes"] is None
+
+
+def test_terreno_urbano_con_dormitorios_no_cambia():
+    from connectors.coherencia import revisar
+    p = {"tipo_propiedad": "terreno", "titulo": "Lote en Quilmes centro", "dormitorios": 2}
+    assert "dormitorios_en_un_terreno" in revisar(p)

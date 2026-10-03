@@ -4904,3 +4904,12 @@ def test_MUERDE_el_precio_del_widget_de_destacadas_no_es_de_la_ficha():
                          "taxonomy_terms": {}, "rest": item}, wp_fuente())
         precios.add(None if p is None else p.precio)
     assert precios == {None}
+
+
+def test_wordpress_taxonomia_publicada_como_texto():
+    """`dolgiej` (03-10): el REST trae "property_type": "Local Comercial", no ids."""
+    import connectors.wordpress as W
+    item = {"property_type": "Local Comercial", "property_city": "Villa Crespo"}
+    assert W._texto_taxonomia({}, item, "property_type") == "Local Comercial"
+    assert W._nombre_taxonomia({}, item, "property_city") == "Villa Crespo"
+    assert W._texto_taxonomia({}, {"property_type": "12,13"}, "property_type") == ""
