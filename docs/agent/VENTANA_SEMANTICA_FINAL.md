@@ -104,3 +104,29 @@ Recertificacion dirigida: `ERETZ_PRIORIDAD_DE_COLA.json` con 58 agencias hasta 0
 | tokko | `9f0d2b04bfda` |
 | wordpress | `cfce50223822` |
 | wasi | `8bb65891750b` |
+
+- 12:16 atencio (P0, DATO FALSO): el widget lateral KiteProp «Ultimas Propiedades» aportaba dormitorios ajenos (un local con 2 dormitorios); se vio porque rota y rompio la idempotencia. `d1f9fdf`: `cuerpo_principal` corta `div.sidebar-widget.recent-properties` (exige las dos clases). 21 agencias KiteProp (1.819 fichas, 46 filas sospechosas en v4n, fdc 14) agregadas a la prioridad: 78 agencias. Solo cambian las huellas de generico.
+- Hueco de huella detectado (post-beta, herramienta): wordpress delega en el extractor de generico (`_normalizar_con_generico`) pero su huella solo hashea `wordpress.py`; un cambio en generico que afecte esas fichas no invalida wordpress.
+
+### Huellas FINALES v3 (nodo operativo `d1f9fdf`)
+
+| estrategia | huella |
+|---|---|
+| generic/bitrix_landing | `4149f6d25512` |
+| generic/buscadorprop_json | `02bee503d718` |
+| generic/category_html | `663149d847e9` |
+| generic/empty_catalog | `17c1a22cf906` |
+| generic/html_catalog | `b630810f1c31` |
+| generic/mapaprop | `313ebc58e08c` |
+| generic/no_inventory | `1489703318a6` |
+| generic/php_ajax_search | `11050855db48` |
+| generic/php_query_catalog | `45e270429216` |
+| generic/portal_offset | `0f13c4febf7c` |
+| generic/sitemap | `ed6d2c2a3a35` |
+| generic/tiv_busqueda | `9d2230bbf336` |
+| generic/tokko_proxy | `75ff16048459` |
+| generic/wordpress_category | `152b5e707755` |
+| generic/xintel | `a273a9c64007` |
+| tokko | `9f0d2b04bfda` |
+| wordpress | `cfce50223822` |
+| wasi | `8bb65891750b` |
