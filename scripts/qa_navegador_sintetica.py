@@ -243,6 +243,15 @@ def main() -> int:
         if not (informe["aislamiento_api"]["ok"] and informe["aislamiento_web"]["ok"]):
             informe["estado"] = "INVALID_QA_RUN"
             raise RuntimeError("frontend o API no demostrados como de esta corrida")
+        # Los puertos de la corrida no alcanzan: el 02-10 (v4n) el `next dev` sirvio
+        # /propiedades pero devolvio 404 en TODAS las rutas /api sin llegar a la API,
+        # y 16 de 17 fallas eran de ese entorno. La cadena frontend -> API se prueba
+        # antes de la e2e; si no responde, la corrida no es evidencia de nada.
+        try:
+            _esperar(f"{base_web}/api/properties/search", segundos=300)
+        except TimeoutError as e:
+            informe["estado"] = "INVALID_QA_RUN"
+            raise RuntimeError(f"la cadena frontend -> API no responde: {e}") from e
         junit = salida / "e2e_junit.xml"
         env_e2e = {**env, "ERETZ_E2E_BASE_URL": base_web}
         caso = sin_coordenadas_de(snapshot) if args.snapshot else None
