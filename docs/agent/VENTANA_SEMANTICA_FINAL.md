@@ -242,3 +242,18 @@ Costo: cambian las huellas de generico/wordpress/century21 (v5); tokko y wasi NO
 | tokko | `ea47cf60748b` |
 | wasi | `cfbaa6471ffd` |
 | wordpress | `94d5c076421f` |
+
+## SEMANTIC_WINDOW_CLOSED (definitivo) — 2026-10-03 15:12, HEAD semantico `b69d2563`, huellas v5
+
+| canario | resultado v5 | igual a v3/v4 |
+|---|---|---|
+| benitez ullo | CERTIFIED_COMPLETE (14:36) | si |
+| cadahia | CERTIFIED_COMPLETE (14:41) | si |
+| dolgiej | NEEDS_FIX honesto, Hotel/Edificio (14:46) | si |
+| campal | NEEDS_FIX honesto, deuda TIV (15:06) | si |
+| atencio | CERTIFIED_COMPLETE, enum 320 (15:10) | si |
+| aiba | CERTIFIED_COMPLETE (tokko: huella v4 = v5, 13:54) | si |
+
+atencio bajo v5: las 10 filas con dormitorios = ambientes son de la fuente («Ambientes: 1 Dormitorios: 1» en dos monoambientes; «Ambientes: 2 Dormitorios: 2» en un depto titulado «1 dormitorio»: contradiccion de la propia fuente, no del parser). El P0 de rotulo vacio se verifica en fdc/eckert/crm a medida que recertifican (`_b_scratch/kiteprop_dorm_v5.py`).
+
+Siguiente: la prioridad (78) recertifica con v5; al terminar -> BUILD FINAL CANDIDATE -> DEPLOY GATES -> REGRESSION GATE -> BROWSER QA AISLADO -> PERFORMANCE -> FULL SUITE FINAL -> BETA CANDIDATE.
