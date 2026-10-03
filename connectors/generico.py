@@ -143,6 +143,11 @@ RE_TIV = re.compile(r"cdn\.tecnogestion\.com\.ar|CRM Inmobiliario TIV", re.I)
 # Zonas propias de TIV dentro de la cadena de ubicacion (no son ciudad ni provincia).
 RE_TIV_ZONA = re.compile(r"(?i)resto\s+de\s+la\s+provincia|g\.?\s*b\.?\s*a\.?(?:\s+zona)?\s+(?:norte|sur|oeste)"
                          r"|zona\s+(?:norte|sur|oeste)|costa\s+atl[aá]ntica")
+RE_ZONA_GBA = re.compile(r"(?i)g\.?\s*b\.?\s*a\.?(?:\s+zona)?\s+(?:norte|sur|oeste)")
+CABA_OFICIAL = "Ciudad Autónoma de Buenos Aires"
+# Un tercer tramo que no es un lugar: «Almagro, Capital Federal, Oferta».
+RE_TRAMO_NO_LUGAR = re.compile(r"(?i)\b(?:oferta|oportunidad|venta|alquiler|vendid[oa]|reservad[oa]|"
+                               r"precio|nuevo|apto|credito|financiacion|consultar|dueno)\b")
 RE_TIV_TOTAL = re.compile(r"(\d[\d.]{0,7})\s+inmuebles?\s+encontrados?", re.I)
 RE_TIV_FICHA = re.compile(r"""href=["'](/inmueble/[^"'#?\s]+-lp\d+)["']""", re.I)
 TIV_POR_PAGINA = 10
@@ -181,6 +186,31 @@ PROVINCIAS_AR = {
     "santa cruz", "santa fe", "santiago del estero", "tierra del fuego",
     "tucuman", "caba", "capital federal", "ciudad autonoma de buenos aires",
 }
+
+
+def _calle_tiv(html: str) -> str | None:
+    """La calle de la og:description de TIV, solo si es una calle con altura real.
+
+    «OPORTUNIDAD AL LAGO - Vistas Casa 600» o «Polonia 0» salen de la misma
+    frase del CRM y no son una direccion (replay del 03-10).
+    """
+    m = re.search(r'<meta[^>]+property="og:description"[^>]+content="[^"]*?'
+                  r'ubicado sobre la calle ([^",]{3,80}?\d{1,5}) en ', html or "", re.I)
+    if not m:
+        return None
+    calle = limpiar(unescape(m.group(1)))
+    altura = re.search(r"(\d+)$", calle or "")
+    if (not calle or " - " in calle or RE_TRAMO_NO_LUGAR.search(calle)
+            or not altura or int(altura.group(1)) == 0):
+        return None
+    return calle
+
+
+def _es_caba(texto: str) -> bool:
+    plano = "".join(c for c in unicodedata.normalize("NFKD", (texto or "").lower())
+                    if not unicodedata.combining(c)).strip(" .")
+    return plano in {"capital federal", "caba", "c.a.b.a", "ciudad autonoma de buenos aires",
+                     "ciudad de buenos aires"}
 
 
 def _es_provincia(texto: str) -> bool:
@@ -3959,7 +3989,11 @@ class GenericoConnector(Connector):
         # «Departamento en Venta. Almagro, Capital Federal, Buenos Aires» y la
         # calle su og:description «… ubicado sobre la calle Billinghurst 200
         # en Almagro, …». Solo con la firma del CRM y la forma exacta.
-        if not (ciudad_par and provincia_par):
+        # Solo la ruta TIV: `tiv_zonas` lo pone UNICAMENTE el fetch_listing de
+        # TIV. Asi el metodo es propio de `generic/tiv_busqueda` tambien en la
+        # huella y un cambio de ubicacion TIV no invalida a las otras 400
+        # agencias de generico (ventana semantica final, 03-10).
+        if not (ciudad_par and provincia_par) and "tiv_zonas" in crudo:
             tiv = self._ubicacion_tiv(html, crudo.get("tiv_zonas"))
             if tiv:
                 barrio_par = barrio_par or tiv[0]
@@ -4975,23 +5009,49 @@ class GenericoConnector(Connector):
         # La ubicacion PUEDE tener puntos: «Pilar, G.B.A. Zona Norte». Excluirlos
         # dejaba sin ciudad a toda ficha del GBA (coseglia: ciudad en 4 de 340).
         tramos = [t.strip() for t in unescape(m.group(1)).split(",") if t.strip()]
-        if not 2 <= len(tramos) <= 4 or any(re.search(r"\d", t) for t in tramos):
+        # «Pilar, G.B.A. Zona Norte, Argentina»: el pais al final no es un tramo
+        # de ubicacion (402 de 3.244 fichas TIV quedaban sin ciudad por eso).
+        while tramos and tramos[-1].casefold() == "argentina":
+            tramos.pop()
+        # Digitos solo se admiten en el barrio («46 Plaza, Pilar, G.B.A. Zona
+        # Norte»): en la ciudad o la provincia siguen siendo senal de otra cosa.
+        if not 2 <= len(tramos) <= 4 or any(re.search(r"\d", t) for t in tramos[1:]):
             return None
         provincia = tramos.pop() if _es_provincia(tramos[-1]) else None
+        # «Barracas, Capital Federal, Buenos Aires»: en TIV «Capital Federal» es
+        # la CIUDAD AUTONOMA y el «Buenos Aires» final es el area metropolitana,
+        # no la provincia. Leerlo al reves servia 1.043 fichas porteñas como
+        # provincia de Buenos Aires. El barrio es el tramo anterior.
+        if tramos and _es_caba(tramos[-1]):
+            tramos.pop()
+            barrio = tramos[-1] if tramos else None
+            return (barrio, None, CABA_OFICIAL, _calle_tiv(html))
+        if provincia is not None and _es_caba(provincia):
+            provincia = CABA_OFICIAL
         zona = None
         if tramos and RE_TIV_ZONA.fullmatch(tramos[-1]):
             zona = tramos.pop()
         if provincia is None:
-            if zona is None:
+            if zona is not None:
+                provincia = (zonas or {}).get(zona.casefold())
+                # «G.B.A.» ES el Gran Buenos Aires, todo dentro de la provincia
+                # de Buenos Aires: no es una inferencia sino el nombre mismo de
+                # la zona. Solo G.B.A.; «Costa Atlantica» o «Resto de la
+                # Provincia» siguen necesitando el mapa del propio sitio.
+                if provincia is None and RE_ZONA_GBA.fullmatch(zona):
+                    provincia = "Buenos Aires"
+            else:
+                # «Villa la Nata, Dique Lujan, Tigre» (barrio, localidad, partido
+                # sin provincia ni zona) NO se lee: medido el 03-10, casi ninguna
+                # de esas localidades existe en el catalogo («Del Viso»,
+                # «Nordelta», «Derqui») y una era «Punta del Este», Uruguay.
+                # Necesita alias en el catalogo, no adivinar (post-beta).
                 return None
-            provincia = (zonas or {}).get(zona.casefold())
         if not tramos or len(tramos) > 2 or any(RE_TIV_ZONA.fullmatch(t) for t in tramos):
             return None
         ciudad = tramos[-1]
         barrio = tramos[0] if len(tramos) == 2 and tramos[0].casefold() != ciudad.casefold() else None
-        calle = re.search(r'<meta[^>]+property="og:description"[^>]+content="[^"]*?'
-                          r'ubicado sobre la calle ([^",]{3,80}?\d{1,5}) en ', html or "", re.I)
-        return (barrio, ciudad, provincia, limpiar(unescape(calle.group(1))) if calle else None)
+        return (barrio, ciudad, provincia, _calle_tiv(html))
 
     @staticmethod
     def _campo_houzez(html: str, campo: str) -> str | None:

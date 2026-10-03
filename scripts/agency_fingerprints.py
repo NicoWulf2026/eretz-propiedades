@@ -89,7 +89,10 @@ GENERIC_STRATEGY_METHODS = {
         "_rutas_de_categoria", "_catalogo_por_categorias",
         "_catalogo_de_selector",
     },
-    "generic/tiv_busqueda": {"_catalogo_tiv"},
+    # `_ubicacion_tiv` solo corre en la ruta TIV (normalize lo condiciona a
+    # `tiv_zonas`, que pone unicamente el fetch_listing de TIV): es propio de
+    # esta estrategia y no invalida al resto de generico.
+    "generic/tiv_busqueda": {"_catalogo_tiv", "_ubicacion_tiv"},
 }
 
 FUNCIONES_OPERATIVAS = frozenset()
@@ -97,6 +100,8 @@ GENERIC_STRATEGY_FUNCTIONS = {
     "generic/wordpress_category": {
         "_sin_variantes_wordpress", "_imagenes_galeria_wordpress"},
     "generic/tokko_proxy": {"_entero", "_decimal", "_coordenada"},
+    # Solo las usa `_ubicacion_tiv`, que solo corre en la ruta TIV.
+    "generic/tiv_busqueda": {"_calle_tiv", "_es_caba"},
 }
 
 
@@ -205,12 +210,21 @@ def _archivo_sin_operativas(fuente: str, excluidas: frozenset[str]) -> bytes:
 
 
 def _selected_nodes(path: Path, class_name: str,
-                    methods: Iterable[str], functions: Iterable[str]) -> bytes:
+                    methods: Iterable[str], functions: Iterable[str],
+                    module_assigns: bool = False) -> bytes:
     tree = ast.parse(path.read_text(encoding="utf-8"))
     wanted_methods = set(methods)
     wanted_functions = set(functions)
     nodes: list[ast.AST] = []
     for node in tree.body:
+        # Las constantes de MODULO (regex, mapas de rotulos, tablas) deciden lo
+        # que se extrae igual que los metodos que las usan. No entraban en
+        # ninguna huella: cambiar `RE_TIV_ZONA` o un mapa sin tocar un metodo
+        # dejaba vigentes certificaciones que hoy no se reproducirian. Van en
+        # el componente comun (ventana semantica final, 03-10).
+        if module_assigns and isinstance(node, (ast.Assign, ast.AnnAssign)):
+            nodes.append(node)
+            continue
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             if node.name in wanted_functions:
                 nodes.append(node)
@@ -412,7 +426,7 @@ def fingerprint_components(connector: str, strategy: str) -> dict[str, bytes]:
     comunes_m, comunes_f = _comunes()
     components["generic/common"] = _selected_nodes(
         ROOT / "connectors" / "generico.py", "GenericoConnector",
-        comunes_m, comunes_f)
+        comunes_m, comunes_f, module_assigns=True)
     components[f"strategy/{strategy}"] = _selected_nodes(
         ROOT / "connectors" / "generico.py", "GenericoConnector",
         GENERIC_STRATEGY_METHODS.get(strategy, set()),

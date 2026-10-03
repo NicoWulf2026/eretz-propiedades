@@ -19,10 +19,13 @@ class Sitio:
         return lambda *a, **k: None
 
 
-def _normalizar(html, url, agencia="prueba", por_forma=False):
+def _normalizar(html, url, agencia="prueba", por_forma=False, tiv=False):
     base = url.split("/")[0] + "//" + url.split("/")[2]
+    crudo = {"source_url": url, "source_listing_id": "x", "por_forma": por_forma}
+    if tiv:
+        crudo["tiv_zonas"] = {}   # solo la ruta TIV trae este dato
     return G(descargador=Sitio(html)).normalize(
-        {"source_url": url, "source_listing_id": "x", "por_forma": por_forma},
+        crudo,
         Fuente(canonical_agency_id="roomix:" + agencia, agency_name=agencia, official_url=base + "/"))
 
 
@@ -165,9 +168,10 @@ TIV = ("<meta name='description' content='Caian Negocios Inmobiliarios CRM Inmob
 
 def test_tiv_ubicacion_del_og_title():
     p = _normalizar(_ficha("<p>Departamento en venta</p>", TIV),
-                    "https://caian.example/inmueble/departamento-venta-2-ambientes-almagro-lp816957")
+                    "https://caian.example/inmueble/departamento-venta-2-ambientes-almagro-lp816957", tiv=True)
     assert p is not None
-    assert (p.barrio, p.ciudad, p.provincia) == ("Almagro", "Capital Federal", "Buenos Aires")
+    # «Capital Federal» es CABA (03-10); antes salia provincia de Buenos Aires.
+    assert (p.barrio, p.provincia) == ("Almagro", "Ciudad Autónoma de Buenos Aires")
     assert p.direccion == "Billinghurst 200"
 
 
@@ -241,3 +245,9 @@ def test_coordenada_fuera_de_argentina_queda_anotada_como_rechazo():
     p = _normalizar(_ficha("<p>Semipiso 3 amb.</p>", ld), url)
     assert p is not None and p.latitud is None
     assert "coordenada_fuera_de_argentina" in (p.extra.get("atributos_descartados") or "")
+
+
+def test_fuera_de_la_ruta_tiv_no_se_lee_el_og_title_tiv():
+    p = _normalizar(_ficha('<p>Departamento en venta</p>', TIV),
+                    'https://caian.example/inmueble/departamento-venta-2-ambientes-almagro-lp816957')
+    assert p is not None and p.barrio != 'Almagro'
