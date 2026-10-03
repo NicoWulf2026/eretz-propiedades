@@ -223,7 +223,9 @@ def sin_ficha_de_la_agencia(body: str) -> str:
 
 
 RE_PROVINCIA_QUE_NO_ES_DATO = re.compile(
-    r"(?i)\bbanco\s+(?:de\s+la\s+)?provincia\b|\bresto\s+de\s+la\s+provincia\b")
+    # Tambien con guiones: el slug «...-banco-provincia-francisco-alvarez...»
+    # aparece en hrefs y og:url (canario campal de la ventana, 03-10).
+    r"(?i)\bbanco[\s\-_]+(?:de[\s\-_]+la[\s\-_]+)?provincia\b|\bresto[\s\-_]+de[\s\-_]+la[\s\-_]+provincia\b")
 
 
 def source_signals(body: str, url: str = "") -> dict[str, bool]:

@@ -4935,3 +4935,11 @@ def test_wordpress_rest_sin_meta_completa_el_tipo_de_la_ficha_html_con_la_taxono
     crudo = {"source_url": "https://x.test/property/a/", "rest": {"id": 1, "property_type": "Local Comercial"}}
     p = c.normalize(crudo, Fuente(canonical_agency_id="roomix:x", agency_name="x", official_url="https://x.test/"))
     assert p.tipo_propiedad == "local" and p.operacion == "venta"
+
+
+def test_banco_provincia_en_un_slug_tampoco_es_provincia():
+    """Canario campal (03-10): la palabra estaba en hrefs con guiones."""
+    from scripts.agency_certifier import source_signals
+    html = ('<html><body><main><h1>Casa</h1><a href="/inmueble/casa-venta-4-ambientes-banco-provincia-'
+            'francisco-alvarez-moreno-lp210359">Casa</a></main></body></html>')
+    assert not source_signals(html)["provincia"]
