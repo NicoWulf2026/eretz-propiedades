@@ -32,7 +32,7 @@ def _cubiertos_por_contenido() -> set[str]:
     """Los módulos de `connectors/` cuyo contenido entra en alguna huella.
 
     Se comparan PAYLOADS, no nombres: `formularios.py` viaja como
-    `strategy/php_form_transport`, y buscarlo por nombre lo daría por huérfano
+    `generic/form_transport`, y buscarlo por nombre lo daría por huérfano
     cuando en realidad está correctamente acotado a la única estrategia que lo
     usa.
     """

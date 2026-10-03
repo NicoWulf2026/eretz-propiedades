@@ -124,7 +124,7 @@ def test_una_estrategia_no_arrastra_a_las_demas():
 def test_el_metodo_de_una_estrategia_solo_vive_en_su_componente():
     propios = {
         "generic/mapaprop": "_catalogo_mapaprop",
-        "generic/xintel": "_normalizar_xintel",
+        "generic/tiv_busqueda": "_catalogo_tiv",
         "generic/bitrix_landing": "_catalogo_bitrix_landing",
         "generic/wordpress_category": "_catalogo_wordpress_por_categoria",
     }
@@ -145,8 +145,9 @@ def test_un_connector_propio_no_entra_en_la_huella_de_otro():
         for otra in familias:
             if otra != familia:
                 assert f"connector/{otra}" not in componentes
-        # Un connector propio tampoco arrastra los componentes de generico.
-        assert "generic/common" not in componentes
+        # Un connector propio no arrastra los componentes de generico, salvo
+        # WordPress, que EJECUTA `GenericoConnector.normalize` (ventana 03-10).
+        assert ("generic/common" in componentes) == (familia == "wordpress")
 
 
 def test_las_familias_tienen_huellas_distintas_entre_si():
@@ -228,12 +229,13 @@ def test_las_estrategias_nuevas_no_arrastran_a_las_viejas():
 
 
 def test_las_familias_propias_no_se_invalidan_por_generico():
-    """Tokko, Wasi, WordPress y Century21 tienen su propio archivo: el camino
-    no-generico retorna antes de mirar `generico.py`."""
+    """Tokko, Wasi y Century21 tienen su propio archivo y no ejecutan el codigo
+    comun de `generico.py`. WordPress SI: le pasa fichas a
+    `GenericoConnector.normalize`, y por eso lo lleva (ventana, 03-10)."""
     from scripts.agency_fingerprints import fingerprint_components
     for connector in ("tokko", "wasi", "wordpress", "century21"):
         componentes = fingerprint_components(connector, connector)
-        assert "generic/common" not in componentes
+        assert ("generic/common" in componentes) == (connector == "wordpress")
         assert f"connector/{connector}" in componentes
 
 

@@ -856,6 +856,9 @@ def field_audit(properties: list[dict[str, Any]], pages: dict[str, dict[str, Any
                 if field == "imagenes" and not content_present(prop.get(field)):
                     signal = False
             else:
+                # Quien no figura aca se audita con `source_signals`, hecha con
+                # funciones de `generico.py`: por eso su huella las lleva
+                # (`CONECTORES_CON_SENALES_PROPIAS` en agency_fingerprints).
                 signal_key = ({"tokko": "source_signals_tokko",
                                "wasi": "source_signals_wasi"}
                               .get(prop.get("connector"), "source_signals"))

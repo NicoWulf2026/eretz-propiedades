@@ -106,7 +106,7 @@ Recertificacion dirigida: `ERETZ_PRIORIDAD_DE_COLA.json` con 58 agencias hasta 0
 | wasi | `8bb65891750b` |
 
 - 12:16 atencio (P0, DATO FALSO): el widget lateral KiteProp «Ultimas Propiedades» aportaba dormitorios ajenos (un local con 2 dormitorios); se vio porque rota y rompio la idempotencia. `d1f9fdf`: `cuerpo_principal` corta `div.sidebar-widget.recent-properties` (exige las dos clases). 21 agencias KiteProp (1.819 fichas, 46 filas sospechosas en v4n, fdc 14) agregadas a la prioridad: 78 agencias. Solo cambian las huellas de generico.
-- Hueco de huella detectado (post-beta, herramienta): wordpress delega en el extractor de generico (`_normalizar_con_generico`) pero su huella solo hashea `wordpress.py`; un cambio en generico que afecte esas fichas no invalida wordpress.
+- Hueco de huella detectado (RESUELTO antes de beta, ver «Dependencias de huella»): wordpress delega en el extractor de generico (`_normalizar_con_generico`) pero su huella solo hashea `wordpress.py`; un cambio en generico que afecte esas fichas no invalida wordpress.
 
 ### Huellas FINALES v3 (nodo operativo `d1f9fdf`)
 
@@ -130,3 +130,61 @@ Recertificacion dirigida: `ERETZ_PRIORIDAD_DE_COLA.json` con 58 agencias hasta 0
 | tokko | `9f0d2b04bfda` |
 | wordpress | `cfce50223822` |
 | wasi | `8bb65891750b` |
+
+## Dependencias de huella (cierre de la ventana, 03-10 ~13:00)
+
+Pedido: medir y resolver WordPress -> generico antes de declarar la ventana cerrada. La auditoria (AST: alcance real desde `normalize`, imports relativos y a mitad de funcion, y lo que el certificador y el runner ejecutan de otros modulos) encontro CINCO huecos, no uno:
+
+| # | hueco | quien ejecuta | que no estaba en su huella | arreglo |
+|---|---|---|---|---|
+| 1 | WordPress -> generico | `wordpress.normalize` pasa fichas a `GenericoConnector.normalize` (WORDPRESS_HTML 13, WORDPRESS_SITEMAP 5, y las REST sin meta de 58 WORDPRESS_REST) y lee precio con `cuerpo_principal` | todo `generic/common` | wordpress lleva `generic/common` (mismo payload que generico) |
+| 2 | Certificador -> generico | `source_signals` (veredicto `source_provided`) audita WordPress y Century21 con `cuerpo_principal`, `_es_tabla_estructurada`, `_cuenta_de_ficha`, ETIQUETAS... | esas funciones en century21 | componente `certifier/generic_signals` = cierre AST de lo que el certificador usa de generico (no el archivo entero); tokko/wasi no lo llevan (senales propias) |
+| 3 | Wasi -> generico | `wasi.discover` usa `fuera_de_servicio` | la funcion y sus 3 constantes | `generic/importado` = solo ese cierre |
+| 4 | normalize comun -> estrategia | `normalize` llama sin condicion a `_fichas_en` (6 estrategias), `_normalizar_xintel` (elegida tambien por contenido) y `_normalizar_strapi` -> `_entero/_decimal/_coordenada` (tokko_proxy) | en TIV, categoria, query, MAPAPROP, xintel, WordPress... | pasan a `generic/common`; lo condicionado por clave de crudo queda de su estrategia en `LLAMADAS_CONDICIONADAS` y un test exige el `if` con la clave |
+| 5 | transporte de formularios | `_fetch_listing`, `_catalogo_gvamax`, `_catalogo_por_tipo` (comunes) usan `formularios.bajar_formulario` | formularios.py fuera de 14 estrategias | `generic/form_transport` en todo generico |
+| + | runner -> defect_triage | `descartes_sospechosos` usa `descarte_parecia_una_propiedad` | nada | `shared/descarte_con_senal` (cierre de esa funcion) |
+| + | guarda en vuelo | worker con la definicion vieja de huella en memoria | `agency_fingerprints.py` no lo vigilaba | la guarda lo vigila |
+
+Por que el test no lo vio: `test_huella_importados` miraba solo imports absolutos; `from .generico import` (relativo y dentro de una funcion) pasaba. Corregido, y `tests/test_huella_dependencias_cruzadas.py` (10 tests) fija cada caso.
+
+### Radio
+
+- Medido antes de tocar: certificaciones vigentes con huella v3 = **3** (benitez ullo, cadahia, dolgiej). Todo lo demas ya estaba vencido por la ventana (coherencia/wordpress/generico cambiaron a las 11:17). Arreglarlo ahora cuesta 3 agencias; arreglarlo despues de la pasada habria costado la pasada entera.
+- WordPress: 99 agencias (51 COMPLETE, todas ya vencidas por la ventana) -> costo incremental 0 + dolgiej. Wasi: 13, ninguna con la huella v3 (ya vencidas por la ventana) -> costo incremental 0. Century21: ninguna agencia certificada. El snapshot usa estado, no vigencia de huella: nada sale de la candidata por esto.
+- Radio minimo correcto: wordpress depende de verdad de todo `normalize` (no hay rama que no pase por el comun); wasi y century21 solo de cierres chicos. No se invalido nada que no ejecute el codigo.
+- Futuro: un cambio en `generic/common` ahora tambien reabre WordPress (99). Es el radio correcto: WordPress ejecuta ese codigo.
+
+### Acoplamiento que queda (documentado, no se arregla en la ventana)
+
+`discover`/`fetch_listing` (comunes) prueban los detectores de cada estrategia (`_catalogo_tiv`, `_catalogo_mapaprop`, ... 18 metodos). Cambiar un detector puede hacer que una agencia de OTRA estrategia pase a esta, sin cambiar la huella de la suya. Hoy no afecta a nada vigente (toda certificacion vigente es posterior a v4). Diseno propuesto post-beta: separar cada `_catalogo_X` en `_es_X(html)` (detector, comun) y la enumeracion (de la estrategia); cambiar un detector reabre todo generico, cambiar una enumeracion solo su estrategia.
+
+### Huellas FINALES v4 (dependencias corregidas)
+
+| estrategia | huella |
+|---|---|
+| century21 | `3f99fac81057` |
+| generic/bitrix_landing | `875076ab8271` |
+| generic/buscadorprop_json | `8cdede1b3c8f` |
+| generic/category_html | `c5c001614089` |
+| generic/empty_catalog | `3bd404663ee7` |
+| generic/html_catalog | `a8c240272c8f` |
+| generic/mapaprop | `042c29f65ce9` |
+| generic/no_inventory | `ff5915b00338` |
+| generic/php_ajax_search | `2206b9bbbb1a` |
+| generic/php_query_catalog | `d131b1fc2103` |
+| generic/portal_offset | `ac674429a97c` |
+| generic/sitemap | `d3f2f0800bd8` |
+| generic/tiv_busqueda | `8a9e2de5674d` |
+| generic/tokko_proxy | `1c704856f014` |
+| generic/wordpress_category | `99460ce53acf` |
+| generic/xintel | `7af32a88b59b` |
+| tokko | `ea47cf60748b` |
+| wasi | `cfbaa6471ffd` |
+| wordpress | `f0b21abaef35` |
+
+Los canarios con resultado bajo v3 (benitez ullo, cadahia, atencio, dolgiej) NO cuentan: se repiten bajo v4.
+
+### Canarios: evidencia de comportamiento (codigo de extraccion identico en v3 y v4)
+
+- atencio (KiteProp, 12:57, COMPLETE): local 0/4 con dormitorios, galpon 0/2, terreno 0/113; casa 123/142, departamento 37/39. Los altos son propios (hoteles con 34 y 58 habitaciones publicadas, complejo de 11 cabanas); la oficina con 3 es «tres locales (oficina o consultorio)» de su propia ficha. P0 corregido.
+- dolgiej (WordPress REST): las 2 sin tipo son «Hotel ... 34 habitaciones en suite» (pizarro-5369) y «Edificio comercial ... con local, oficinas, terraza y 8 cocheras» (araoz-631). La taxonomia ERETZ no tiene tipo canonico Hotel/Edificio: NULL honesto, no se fuerza. La senal del certificador en araoz dispara por «local/oficinas/cocheras», que describen lo que el edificio CONTIENE. Estado honesto NEEDS_FIX (1 extraction_failed), clase COBERTURA/TAXONOMIA, deuda post-beta: tipos canonicos hotel/edificio o un tipo «otro» con evidencia.

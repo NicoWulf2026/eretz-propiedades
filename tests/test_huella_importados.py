@@ -31,6 +31,13 @@ def _importados_del_repo(archivo: Path) -> set[Path]:
             ruta = RAIZ / (nodo.module.replace(".", "/") + ".py")
             if ruta.exists():
                 salida.add(ruta.resolve())
+        # Tambien los relativos (`from .generico import ...`): por mirar solo los
+        # absolutos, `wasi -> generico` y `wordpress -> generico` pasaban sin
+        # huella (ventana final, 03-10).
+        elif isinstance(nodo, ast.ImportFrom) and nodo.level == 1 and nodo.module:
+            ruta = archivo.parent / (nodo.module.replace(".", "/") + ".py")
+            if ruta.exists():
+                salida.add(ruta.resolve())
     return salida
 
 
