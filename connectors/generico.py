@@ -1016,6 +1016,10 @@ def cuerpo_principal(html: str) -> str:
         # dormitorios a un LOCAL comercial (canario de la ventana, 03-10). Se
         # corta solo con las DOS clases juntas para no tocar otras plantillas.
         r"class=[\"']sidebar-widget\s+recent-properties\b|"
+        # La otra plantilla de KiteProp pone las mismas «Ultimas Propiedades»
+        # en <div class="widget widget_recent_property ...">, con precio y
+        # ambientes de cada vecina (`eckert`, 03-10).
+        r"class=[\"']widget\s+widget_recent_property\b|"
         # Y la plantilla de `berrueta` (Template3): el tooltip «Cochera» de una
         # tarjeta relacionada era el unico tipo que veia la ficha, y 24
         # departamentos quedaban guardados como cocheras.
@@ -5729,6 +5733,14 @@ class GenericoConnector(Connector):
                 rf"(?:{etiqueta})\s*:\s*(\d{{1,2}})\b(?!\s*\+)", texto, re.I):
             if 1 <= int(rotulo.group(1)) <= 99:
                 return int(rotulo.group(1))
+        # Y un rotulo con dos puntos y un GUION es la fuente diciendo que no
+        # hay dato. KiteProp publica «Ambientes: 2 Dormitorios: - Baños: 4»
+        # en una oficina: sin esto, la busqueda en prosa de abajo leia «2
+        # Dormitorios» y le ponia los ambientes como dormitorios (`eckert`,
+        # canario de la ventana 03-10; un monoambiente «Ambientes: 1
+        # Dormitorios: -» salia con 1 dormitorio). Vacio declarado es NULL.
+        if re.search(rf"(?:{etiqueta})\s*:\s*[-\u2013\u2014](?!\s*\d)", texto, re.I):
+            return None
         # Sin dos puntos la adyacencia es ambigua y hay que resolverla mirando
         # la ficha entera: "Ambientes 3 Dormitorios 2" es una tabla y el numero
         # va DESPUES del rotulo; "3 dormitorios 2 baños" es prosa y va ANTES.
