@@ -46,3 +46,15 @@ def test_el_widget_de_la_otra_plantilla_kiteprop_no_es_la_ficha():
     principal = cuerpo_principal(html)
     assert "Montevideo 2749" not in principal
     assert "Ambientes: 2" in principal
+
+
+def test_MUERDE_el_auditor_no_ve_dormitorios_publicados_en_un_rotulo_vacio():
+    """Arreglado solo el extractor, el auditor seguia leyendo «2 Dormitorios» y
+    daba la ficha por mal extraida: `eckert` paro la cola (03-10 15:30)."""
+    from scripts.agency_certifier import source_signals
+    html = ('<html><body><main><h1>Oficina a estrenar</h1>'
+            '<p>USD 340.000 En venta Ambientes: 2 Dormitorios: - Baños: 4</p>'
+            '</main></body></html>')
+    senales = source_signals(html, "https://ejemplo.com/site/properties/1/oficina")
+    assert senales["dormitorios"] is False
+    assert senales["ambientes"] is True and senales["banos"] is True

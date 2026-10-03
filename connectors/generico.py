@@ -1100,8 +1100,23 @@ def normalizar_texto_campos(texto: str) -> str:
 
     La misma normalizacion se comparte con el auditor para que una senal de
     fuente y su extraccion nunca usen alfabetos distintos.
+
+    Y por eso aca, y no en un solo lado, se quita el conteo VACIO declarado:
+    «Ambientes: 2 Dormitorios: - Baños: 4» (KiteProp) es una oficina sin
+    dormitorios. Leido como texto plano, «2 Dormitorios» parecia un conteo:
+    el extractor le ponia los ambientes como dormitorios, y una vez arreglado
+    el extractor, el auditor seguia viendo «2 dormitorios» publicados y daba la
+    ficha por mal extraida (`eckert`, 03-10). Sin el rotulo vacio, los dos ven
+    lo mismo: ambientes 2, baños 4, dormitorios sin publicar.
     """
-    return normalizar_campos(texto)
+    return RE_CONTEO_VACIO.sub(" ", normalizar_campos(texto))
+
+
+# Un rotulo de conteo seguido de dos puntos y un guion: la fuente dice que no
+# hay dato. Ver `normalizar_texto_campos`.
+RE_CONTEO_VACIO = re.compile(
+    r"(?:" + "|".join(ETIQUETAS_DE_CONTEO.values()) + r")\s*:\s*[-\u2013\u2014](?!\s*\d)",
+    re.I)
 
 
 
