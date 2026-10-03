@@ -953,6 +953,19 @@ class WordPressConnector(Connector):
             alternativa = self._normalizar_con_generico(
                 {k: v for k, v in crudo.items() if k != "rest"}, fuente)
             if alternativa is not None:
+                # La ficha HTML manda, pero lo que NO trajo puede venir de la
+                # taxonomia REST del mismo sitio, que es dato estructurado de
+                # la fuente: `dolgiej` publica "property_type": "Local
+                # Comercial" en el REST y nada legible en el HTML (canario de la
+                # ventana, 03-10: tipo en 7 de 29).
+                tipo_rest = detectar_tipo(_texto_taxonomia(crudo, item, "property_type"))
+                operacion_rest = detectar_operacion(_texto_taxonomia(crudo, item, "property_status"))
+                if (alternativa.tipo_propiedad is None and tipo_rest) or (
+                        alternativa.operacion is None and operacion_rest):
+                    alternativa = dataclasses.replace(
+                        alternativa,
+                        tipo_propiedad=alternativa.tipo_propiedad or tipo_rest,
+                        operacion=alternativa.operacion or operacion_rest)
                 return alternativa
             # Pero si el HTML NO SE PUDO BAJAR (timeout, 429), el REST pobre
             # -sin descripcion ni atributos- no reemplaza a la ficha: `fiorio`

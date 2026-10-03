@@ -4921,3 +4921,17 @@ def test_banco_provincia_no_es_una_provincia_publicada():
     assert not source_signals(base.format("Apto credito Banco Provincia. Resto de la Provincia."))["provincia"]
     assert source_signals(base.format("Provincia: Cordoba"))["provincia"]
     assert source_signals(base.format("Apto Banco Provincia. Provincia: Mendoza"))["provincia"]
+
+
+def test_wordpress_rest_sin_meta_completa_el_tipo_de_la_ficha_html_con_la_taxonomia(monkeypatch):
+    """Canario de la ventana (dolgiej, 03-10): el HTML manda y el REST completa lo que falta."""
+    import connectors.wordpress as W
+    from connectors.base import Fuente, PropiedadNormalizada
+    c = W.WordPressConnector(descargador=None)
+    base = PropiedadNormalizada(canonical_agency_id="roomix:x", source_listing_id="1",
+                                source_url="https://x.test/property/a/", connector="wordpress",
+                                titulo="Avenida Siempreviva 742", operacion="venta")
+    monkeypatch.setattr(c, "_normalizar_con_generico", lambda crudo, fuente: base)
+    crudo = {"source_url": "https://x.test/property/a/", "rest": {"id": 1, "property_type": "Local Comercial"}}
+    p = c.normalize(crudo, Fuente(canonical_agency_id="roomix:x", agency_name="x", official_url="https://x.test/"))
+    assert p.tipo_propiedad == "local" and p.operacion == "venta"
