@@ -74,6 +74,7 @@ from connectors.base import RE_TIPO_ACCESORIO, detectar_tipo, geografia  # noqa:
 from connectors.exterior import (POLITICA_PUBLICA, evidencia_de_exterior,  # noqa: E402
                                  publicable)
 from connectors import poligono_caba  # noqa: E402
+from connectors import poligono_provincia  # noqa: E402
 from connectors.coherencia import _es_simbolico  # noqa: E402
 from connectors.geografia import (PROVINCIA_POR_POLIGONO_REASON,  # noqa: E402
                                   CABA_POR_POLIGONO_REASON,  # noqa: E402
@@ -437,6 +438,51 @@ def _geo_p10(g: dict[str, Any] | None, conflicto: dict[str, Any]) -> dict[str, A
         estado_geografico=None, conflicto=None)
 
 
+def _provincia_declarada_por_poligono(g: dict[str, Any] | None, conflicto: dict[str, Any],
+                                      fresca: dict[str, Any] | None) -> dict[str, Any] | None:
+    """La provincia que la ficha PUBLICO, confirmada porque su coordenada cae adentro.
+
+    El conflicto «la provincia declarada contradice al catalogo» es entre la
+    provincia y el NOMBRE de la localidad («Merlo» de San Luis contra «Merlo»
+    de Buenos Aires). Si la coordenada de la propia ficha esta DENTRO del
+    poligono oficial de la provincia declarada, la provincia queda demostrada
+    por dos evidencias independientes; lo dudoso es solo la localidad, que no
+    se afirma. Ocultar tambien provincia y coordenada perdia 102 puntos de mapa
+    validos (medido 03-10).
+    """
+    publicado = conflicto.get("publicado") or {}
+    provincia = publicado.get("provincia")
+    lat = publicado.get("latitud", (fresca or {}).get("latitud"))
+    lon = publicado.get("longitud", (fresca or {}).get("longitud"))
+    if not provincia or lat is None or lon is None:
+        return None
+    # «Buenos Aires» + localidad «CABA» con la coordenada en Quilmes: ahi el
+    # «Buenos Aires» puede ser la ciudad y la contradiccion es real; se respeta.
+    localidad = "".join(c for c in unicodedata.normalize("NFKD", str(publicado.get("localidad") or "").lower())
+                        if not unicodedata.combining(c)).strip(" .")
+    if localidad in {"caba", "c.a.b.a", "capital federal", "ciudad autonoma de buenos aires",
+                     "ciudad de buenos aires", "buenos aires"}:
+        return None
+    if poligono_provincia.contencion(provincia, lat, lon) != poligono_provincia.DENTRO:
+        return None
+    try:
+        por_codigo, por_nombre, _ = poligono_provincia._cargar(str(poligono_provincia.GEOMETRIA))
+        codigo = poligono_provincia._codigo(provincia, por_nombre, por_codigo)
+        nombre = (por_codigo.get(codigo) or {}).get("nombre")
+    except (OSError, ValueError, KeyError):
+        return None
+    if not nombre:
+        return None
+    return dict(
+        g or {}, localidad_canonica=None, localidad_id=None,
+        departamento_canonico=None, municipio_canonico=None,
+        provincia_canonica=nombre,
+        procedencia_de_dimensiones={"provincia": "SOURCE_PROVINCE+GEO_GEOMETRY"},
+        area_busqueda={"nivel": "PROVINCIA", "nombre": nombre, "id": None,
+                       "origen": "provincia"},
+        estado_geografico=None, conflicto=None)
+
+
 def _geo_de_la_extraccion(g: dict[str, Any] | None, fresca: dict[str, Any] | None
                           ) -> tuple[dict[str, Any] | None, str | None]:
     """La cobertura geo (21-09) corregida por lo que decidio la extraccion fresca.
@@ -468,10 +514,25 @@ def _geo_de_la_extraccion(g: dict[str, Any] | None, fresca: dict[str, Any] | Non
             return dict(g or {}, estado_geografico="GEO_CONFLICT", conflicto=conflicto), "conflicto_fresco"
         elif vigente != PROVINCE_CONFLICT_REASON:
             return g, "conflicto_obsoleto"
+        elif (declarada := _provincia_declarada_por_poligono(g, conflicto, fresca)) is not None:
+            return declarada, "provincia_declarada_por_poligono"
         elif (g or {}).get("estado_geografico") == "GEO_CONFLICT":
             return g, None
         else:
             return dict(g or {}, estado_geografico="GEO_CONFLICT", conflicto=conflicto), "conflicto_fresco"
+    # La provincia que la extraccion fresca SOLO INFIRIO del padron (no la
+    # publico la ficha) no puede contradecir a la coordenada: `d amato`
+    # publica Villa del Parque con la coordenada en CABA y el padron supone
+    # «Buenos Aires». Al fusionar con la preingestion esa suposicion volvia
+    # como si fuera publicada y la fila salia GEO_CONFLICT, sin provincia ni
+    # coordenada (regresion medida 03-10). CABA por el poligono oficial.
+    if (not isinstance(poligono, dict) and fresca
+            and (extra.get("provincia_confianza") == "inferida"
+                 or extra.get("provincia_supuesta_descartada"))
+            and ((g or {}).get("estado_geografico") == "GEO_CONFLICT"
+                 or not (g or {}).get("provincia_canonica"))
+            and poligono_caba.contencion(fresca.get("latitud"), fresca.get("longitud")) == "DENTRO"):
+        poligono = {"provincia": CABA, "geometria": poligono_caba.procedencia() or {}}
     if isinstance(poligono, dict) and poligono.get("provincia") == CABA:
         if ((g or {}).get("provincia_canonica") == CABA
                 and (g or {}).get("estado_geografico") != "GEO_CONFLICT"):
@@ -869,7 +930,7 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
         if correccion_geo:
             correcciones_geo[correccion_geo] += 1
         if (correccion_geo in ("conflicto_obsoleto", "caba_por_poligono",
-                               "provincia_por_poligono")
+                               "provincia_por_poligono", "provincia_declarada_por_poligono")
                 and isinstance(cruda.get("extra"), dict)
                 and "geo_conflicto" in cruda["extra"]):
             # `fila_de_api` vuelve a imponer el conflicto que lleve la fila.

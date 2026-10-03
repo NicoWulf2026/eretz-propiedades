@@ -130,3 +130,29 @@ def test_un_conflicto_viejo_de_caba_en_quilmes_sigue() -> None:
                                "latitud": -34.7206, "longitud": -58.2546}}
     g, motivo = _geo_de_la_extraccion(COBERTURA_BA, {"extra": {"geo_conflicto": conflicto}})
     assert motivo == "conflicto_fresco" and g["estado_geografico"] == "GEO_CONFLICT"
+
+
+def test_provincia_declarada_confirmada_por_su_coordenada_publica_provincia_y_punto() -> None:
+    """cip (03-10): «Merlo» + San Luis, coordenada dentro de San Luis."""
+    conflicto = {"publicado": {"provincia": "San Luis", "localidad": "Merlo",
+                               "latitud": -32.3431, "longitud": -65.0136}}
+    g, motivo = _geo_de_la_extraccion(COBERTURA_BA, {"extra": {"geo_conflicto": conflicto}})
+    assert motivo == "provincia_declarada_por_poligono"
+    assert g["provincia_canonica"] == "San Luis" and g["estado_geografico"] is None
+    assert g["localidad_canonica"] is None
+
+
+def test_provincia_inferida_del_padron_no_contradice_una_coordenada_en_caba() -> None:
+    """d amato (03-10): Villa del Parque, padron «Buenos Aires», punto en CABA."""
+    conflicto_viejo = dict(COBERTURA_BA, estado_geografico="GEO_CONFLICT")
+    fresca = {"latitud": -34.6077, "longitud": -58.5004,
+              "extra": {"provincia_confianza": "inferida", "provincia_supuesta_descartada": "Buenos Aires"}}
+    g, motivo = _geo_de_la_extraccion(conflicto_viejo, fresca)
+    assert motivo == "caba_por_poligono"
+    assert g["provincia_canonica"] == CABA and g["estado_geografico"] is None
+
+
+def test_provincia_publicada_no_se_toca_aunque_el_punto_este_en_caba() -> None:
+    fresca = {"latitud": -34.6077, "longitud": -58.5004, "extra": {"provincia_confianza": "publicada"}}
+    g, motivo = _geo_de_la_extraccion(dict(COBERTURA_BA, estado_geografico="GEO_CONFLICT"), fresca)
+    assert motivo != "caba_por_poligono"
