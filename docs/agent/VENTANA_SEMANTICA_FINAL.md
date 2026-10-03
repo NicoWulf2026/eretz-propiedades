@@ -257,3 +257,35 @@ Costo: cambian las huellas de generico/wordpress/century21 (v5); tokko y wasi NO
 atencio bajo v5: las 10 filas con dormitorios = ambientes son de la fuente («Ambientes: 1 Dormitorios: 1» en dos monoambientes; «Ambientes: 2 Dormitorios: 2» en un depto titulado «1 dormitorio»: contradiccion de la propia fuente, no del parser). El P0 de rotulo vacio se verifica en fdc/eckert/crm a medida que recertifican (`_b_scratch/kiteprop_dorm_v5.py`).
 
 Siguiente: la prioridad (78) recertifica con v5; al terminar -> BUILD FINAL CANDIDATE -> DEPLOY GATES -> REGRESSION GATE -> BROWSER QA AISLADO -> PERFORMANCE -> FULL SUITE FINAL -> BETA CANDIDATE.
+
+## Cierre de 15:12 retirado: paro de eckert 15:30 -> `02995d43` (huellas v6)
+
+Bajo v5, `eckert` (la agencia donde se encontro el P0) paro la cola: 5 monoambientes «Ambientes: 1 Dormitorios: -» quedaron correctamente sin dormitorios, pero la senal del auditor (`SOURCE_SIGNALS["dormitorios"]`, en prosa) seguia leyendo «1 Dormitorios» con el numero de ambientes y los contaba como extraccion fallida. Sin corregirlo, toda agencia KiteProp con rotulos vacios quedaba NEEDS_FIX y fuera del snapshot (fdc: 204 fichas).
+
+Arreglo de radio minimo: el conteo vacio declarado se quita en `normalizar_texto_campos`, que el extractor y `source_signals` ya comparten (su docstring lo pide: la senal y la extraccion no pueden usar alfabetos distintos). Cambiar `agency_certifier.py` habria movido TODAS las huellas; asi tokko y wasi quedan iguales (aiba sigue final). Suite 3974 passed / 5 skipped. Paro diagnosticado en AGENCY_DEFECTS_DIFERIDOS (15:40).
+
+Canarios a repetir bajo v6: benitez ullo, cadahia, dolgiej, atencio, campal. El cierre se declara de nuevo cuando esten.
+
+### Huellas v6
+
+| estrategia | huella |
+|---|---|
+| century21 | `28fa68848e70` |
+| generic/bitrix_landing | `19d9e783cef7` |
+| generic/buscadorprop_json | `652d2680ae78` |
+| generic/category_html | `e4a8042a4e4b` |
+| generic/empty_catalog | `523ee422c3d1` |
+| generic/html_catalog | `7f9a1e799b5c` |
+| generic/mapaprop | `2f2052e970bc` |
+| generic/no_inventory | `4326363596ef` |
+| generic/php_ajax_search | `26b8a10abc73` |
+| generic/php_query_catalog | `c0ab488346dd` |
+| generic/portal_offset | `25fbb6033bdf` |
+| generic/sitemap | `e4b3f7ea2a8c` |
+| generic/tiv_busqueda | `18436008d412` |
+| generic/tokko_proxy | `398e49f296b6` |
+| generic/wordpress_category | `55577a5fe420` |
+| generic/xintel | `63518297cc41` |
+| tokko | `ea47cf60748b` |
+| wasi | `cfbaa6471ffd` |
+| wordpress | `06596110b8b7` |
