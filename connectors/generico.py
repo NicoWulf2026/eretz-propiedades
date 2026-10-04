@@ -5008,7 +5008,11 @@ class GenericoConnector(Connector):
             # Centro</a></span> (tema ERE de WordPress, `ingar`).
             # Con el mismo cierre intermedio que tolera `_cuenta_de_ficha`
             # (`daniel`: <strong>Dirección</strong></span><span …value>).
-            rf"</\1>\s*(?:</(?:span|div)>\s*)?<(p|span|dd|td|div)\b[^>]*>\s*(?:<a\b[^>]*>\s*)?"
+            # GVAMAX pone el rotulo en una FILA y el valor en la siguiente:
+            # <tr><td><strong>Localidad</strong></td></tr><tr><td>Malagueno</td>
+            # (`flavia caceres` y la familia GVAMAX: 10 agencias, 571 fichas sin
+            # ciudad, 04-10). El salto de fila es estructura, no texto.
+            rf"</\1>\s*(?:</(?:span|div)>\s*)?(?:</tr>\s*<tr\b[^>]*>\s*)?<(p|span|dd|td|div)\b[^>]*>\s*(?:<a\b[^>]*>\s*)?"
             rf"([^<>]{{2,150}}?)\s*(?:</a>\s*)?</\2>",
             html or "", re.I)
         return limpiar(unescape(m.group(3))) if m else None
