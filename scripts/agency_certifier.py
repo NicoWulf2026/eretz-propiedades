@@ -115,7 +115,11 @@ SOURCE_SIGNALS = {
         # Con VALOR: `echesortu` publica "addressLocality":"" en 10 fichas y la
         # clave vacia contaba como ciudad provista.
         r"[\"'](?:ciudad|localidad|addressLocality)[\"']\s*:\s*(?![\"']{2})[^,}\s])", re.I),
-    "provincia": re.compile(r"\bprovincia\s*:?", re.I),
+    # La palabra entera: «provincial(es)» no es la provincia de la ficha.
+    # «Ruta Provincial 36» (`brick`) y «leyes provinciales vigentes» en el aviso
+    # legal (`bigsur`, 22 de 22 fichas) contaban como provincia publicada y
+    # daban la ficha por mal extraida (prioridad v6, 04-10).
+    "provincia": re.compile(r"\bprovincia\b\s*:?", re.I),
     # "+4 Ambientes" es una cota, no una cantidad: el extractor no la afirma
     # y la senal tampoco puede exigirla (`dragone`, local comercial).
     #
@@ -225,7 +229,9 @@ def sin_ficha_de_la_agencia(body: str) -> str:
 RE_PROVINCIA_QUE_NO_ES_DATO = re.compile(
     # Tambien con guiones: el slug «...-banco-provincia-francisco-alvarez...»
     # aparece en hrefs y og:url (canario campal de la ventana, 03-10).
-    r"(?i)\bbanco[\s\-_]+(?:de[\s\-_]+la[\s\-_]+)?provincia\b|\bresto[\s\-_]+de[\s\-_]+la[\s\-_]+provincia\b")
+    # «Provincia NET» es el servicio de pagos del mismo banco (`campal`, 03-10).
+    r"(?i)\bbanco[\s\-_]+(?:de[\s\-_]+la[\s\-_]+)?provincia\b|\bresto[\s\-_]+de[\s\-_]+la[\s\-_]+provincia\b"
+    r"|\bprovincia[\s\-_]+net\b")
 
 
 def source_signals(body: str, url: str = "") -> dict[str, bool]:
