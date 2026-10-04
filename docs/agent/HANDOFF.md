@@ -1,6 +1,6 @@
 # ERETZ — handoff
 
-Para retomar desde una sesión nueva: arrancar Claude Code en `D:\INMO CAPITAL\eretz-unified`.
+Para retomar desde una sesión nueva: arrancar Claude Code en `E:\INMO CAPITAL\eretz-unified` (desde el 04-10 todo vive en E:; D: es historico).
 Reglas: `CLAUDE.md` + `.claude/rules/` (cargan solas). Estado: `docs/agent/CURRENT_STATE.md`.
 Historia: Git (`git log --since=2026-09-25`).
 
