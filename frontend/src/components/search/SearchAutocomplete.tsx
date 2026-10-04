@@ -58,10 +58,22 @@ function SuggestionLabel({ label, query }: { label: string; query: string }) {
   return <>{label.slice(0, index)}<mark>{label.slice(index, index + query.length)}</mark>{label.slice(index + query.length)}</>;
 }
 
+/** La consulta normalizada a la que pertenece una lista; "" para las recientes. */
+function suggestionKey(value: string): string {
+  const clean = value.trim();
+  return clean.length < 2 ? "" : clean.toLocaleLowerCase("es-AR");
+}
+
 export function SearchAutocomplete({ defaultValue }: { defaultValue: string }) {
   const listId = useId();
   const [value, setValue] = useState(defaultValue);
   const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([]);
+  // La consulta a la que pertenece `suggestions`. Mientras llega la respuesta de
+  // una consulta nueva, la lista anterior NO se muestra ni se puede elegir con el
+  // teclado: «ros» con la lista de «bue» todavia en pantalla dejaba elegir
+  // «Buenos Aires» con Enter, y al llegar la respuesta el resaltado volvia a -1
+  // y Enter no elegia nada (QA de navegador v4n, 02-10).
+  const [suggestionsFor, setSuggestionsFor] = useState("");
   const [open, setOpen] = useState(false);
   // The blur closes after a delay so an option's mousedown lands first. That
   // pending close must be cancelled when focus comes back, or it wins anyway.
@@ -77,6 +89,9 @@ export function SearchAutocomplete({ defaultValue }: { defaultValue: string }) {
   const [feedback, setFeedback] = useState<SuggestionFeedback>("idle");
   const interpretation = useMemo(() => interpretNaturalQuery(value), [value]);
   const visibleInterpretation = interpretation.interpreted.filter((chip) => !ignoredFields.includes(chip.field));
+  const currentKey = suggestionKey(value);
+  const visible = suggestionsFor === currentKey ? suggestions : [];
+  const pending = currentKey !== "" && suggestionsFor !== currentKey;
 
   useEffect(() => {
     const nl = new URLSearchParams(window.location.search).get("nl");
@@ -89,6 +104,7 @@ export function SearchAutocomplete({ defaultValue }: { defaultValue: string }) {
     if (clean.length < 2) {
       const frame = requestAnimationFrame(() => {
         setSuggestions(readRecent());
+        setSuggestionsFor("");
         setActive(-1);
       });
       return () => cancelAnimationFrame(frame);
@@ -98,6 +114,7 @@ export function SearchAutocomplete({ defaultValue }: { defaultValue: string }) {
       const cached = suggestionCache.get(clean.toLocaleLowerCase("es-AR"));
       if (cached) {
         setSuggestions(cached);
+        setSuggestionsFor(suggestionKey(clean));
         setFeedback(cached.length ? "idle" : "empty");
         setActive(-1);
         return;
@@ -109,11 +126,13 @@ export function SearchAutocomplete({ defaultValue }: { defaultValue: string }) {
         const payload = await response.json() as DiscoveryAutocompleteResponse;
         if (!response.ok || payload.status === "FAILURE" || !Array.isArray(payload.suggestions)) {
           setSuggestions([]);
+          setSuggestionsFor(suggestionKey(clean));
           setFeedback("error");
           return;
         }
         if (payload.status === "PARTIAL_DATA" && payload.suggestions.length === 0) {
           setSuggestions([]);
+          setSuggestionsFor(suggestionKey(clean));
           setFeedback("error");
           return;
         }
@@ -121,11 +140,13 @@ export function SearchAutocomplete({ defaultValue }: { defaultValue: string }) {
           suggestionCache.set(clean.toLocaleLowerCase("es-AR"), payload.suggestions);
         }
         setSuggestions(payload.suggestions);
+        setSuggestionsFor(suggestionKey(clean));
         setFeedback(payload.suggestions.length ? "idle" : "empty");
         setActive(-1);
       } catch (error) {
         if ((error as Error).name !== "AbortError") {
           setSuggestions([]);
+          setSuggestionsFor(suggestionKey(clean));
           setFeedback("error");
         }
       }
@@ -149,6 +170,7 @@ export function SearchAutocomplete({ defaultValue }: { defaultValue: string }) {
   function removeRecent(suggestion: SearchSuggestion) {
     forgetSearch(suggestion.query);
     setSuggestions(readRecent());
+    setSuggestionsFor("");
     setActive(-1);
   }
 
@@ -167,7 +189,7 @@ export function SearchAutocomplete({ defaultValue }: { defaultValue: string }) {
         role="combobox"
         aria-autocomplete="list"
         aria-controls={listId}
-        aria-expanded={open && suggestions.length > 0}
+        aria-expanded={open && visible.length > 0}
         aria-activedescendant={active >= 0 ? `${listId}-${active}` : undefined}
         onFocus={() => { cancelClose(); setOpen(true); }}
         onBlur={() => {
@@ -182,10 +204,10 @@ export function SearchAutocomplete({ defaultValue }: { defaultValue: string }) {
           setOpen(true);
         }}
         onKeyDown={(event) => {
-          if (event.key === "ArrowDown") { event.preventDefault(); setOpen(true); setActive((current) => Math.min(suggestions.length - 1, current + 1)); }
+          if (event.key === "ArrowDown") { event.preventDefault(); setOpen(true); setActive((current) => Math.min(visible.length - 1, current + 1)); }
           if (event.key === "ArrowUp") { event.preventDefault(); setActive((current) => Math.max(0, current - 1)); }
           if (event.key === "Escape") { event.preventDefault(); setOpen(false); setActive(-1); }
-          if (event.key === "Enter" && active >= 0 && suggestions[active]) { event.preventDefault(); choose(suggestions[active]); }
+          if (event.key === "Enter" && active >= 0 && visible[active]) { event.preventDefault(); choose(visible[active]); }
         }}
       />
       {ignoredFields.map((field) => <input key={field} type="hidden" name="__nl_skip" value={field} />)}
@@ -199,9 +221,9 @@ export function SearchAutocomplete({ defaultValue }: { defaultValue: string }) {
           {selectedSuggestion.geography.entityId ? <input type="hidden" name="__suggestion_id" value={selectedSuggestion.geography.entityId} /> : null}
         </> : null}
       </> : null}
-      {open && suggestions.length > 0 ? (
+      {open && visible.length > 0 ? (
         <ul id={listId} role="listbox" className="search-suggestions">
-          {suggestions.map((suggestion, index) => {
+          {visible.map((suggestion, index) => {
             const recent = suggestion.id.startsWith("recent:");
             return (
               <li
@@ -224,9 +246,9 @@ export function SearchAutocomplete({ defaultValue }: { defaultValue: string }) {
           })}
         </ul>
       ) : null}
-      {open && value.trim().length >= 2 && suggestions.length === 0 && feedback !== "idle" ? (
-        <p className={`search-suggestion-feedback is-${feedback}`} role="status">
-          {feedback === "loading" ? "Buscando sugerencias…"
+      {open && value.trim().length >= 2 && visible.length === 0 && (pending || feedback !== "idle") ? (
+        <p className={`search-suggestion-feedback is-${pending ? "loading" : feedback}`} role="status">
+          {pending || feedback === "loading" ? "Buscando sugerencias…"
             : feedback === "empty" ? "No encontramos sugerencias. Podés buscar igual."
               : "No pudimos cargar sugerencias. Podés buscar igual."}
         </p>

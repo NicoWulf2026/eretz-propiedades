@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SearchAutocomplete } from "@/components/search/SearchAutocomplete";
 
@@ -113,5 +113,35 @@ describe("SearchAutocomplete — puerta universal V2", () => {
     fireEvent.blur(input);
     await new Promise((resolve) => setTimeout(resolve, 250));
     expect(screen.queryByText("Palermo")).toBeNull();
+  });
+  it("con una consulta nueva en vuelo no deja elegir con el teclado la lista anterior", async () => {
+    const sugerencia = (id: string, label: string, level: string) => ({
+      id, label, category: level.toLowerCase(), query: label, count: 1,
+      geography: { kind: "area", entityId: null, level, canonical: null, province: null, department: null, municipality: null, locality: null },
+    });
+    let liberar: (respuesta: Response) => void = () => {};
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "SUCCESS", suggestions: [sugerencia("area:PROVINCIA:qa-bue", "Buenos Aires", "PROVINCIA")] }), { status: 200 }))
+      .mockImplementationOnce(() => new Promise<Response>((resolve) => { liberar = resolve; }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { container } = render(<SearchAutocomplete defaultValue="" />);
+    const input = screen.getByRole("combobox");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "qa-bue" } });
+    expect(await screen.findByRole("option", { name: /Buenos Aires/ })).toBeInTheDocument();
+
+    fireEvent.change(input, { target: { value: "qa-ros" } });
+    // La lista de «qa-bue» ya no es de esta consulta: ni se ve ni se elige con Enter.
+    expect(screen.queryByRole("option", { name: /Buenos Aires/ })).toBeNull();
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(container.querySelector('input[name="__suggestion_level"]')).toBeNull();
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    liberar(new Response(JSON.stringify({ status: "SUCCESS", suggestions: [sugerencia("area:LOCALIDAD:qa-ros", "Rosario", "LOCALIDAD")] }), { status: 200 }));
+    expect(await screen.findByRole("option", { name: /Rosario/ })).toBeInTheDocument();
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(container.querySelector('input[name="__suggestion_level"][value="LOCALIDAD"]')).toBeInTheDocument();
   });
 });
