@@ -1,7 +1,10 @@
 # ERETZ Propiedades — reglas universales
 
-Repo operativo: `D:\INMO CAPITAL\eretz-unified`, rama `handoff/codex-unificacion-2026-09-18`.
-`D:\INMO CAPITAL\Inmo-Capital-main` es LEGACY / solo referencia: no se usa como cwd ni se modifica.
+Repo operativo: `E:\INMO CAPITAL\eretz-unified`, rama `handoff/codex-unificacion-2026-09-18`.
+**Raiz operativa: `E:\INMO CAPITAL` desde el 2026-10-04 (migracion D: -> E:).** D: ya no es ubicacion
+operativa: no crear ni leer estado ahi. Las rutas `D:\...` en documentos viejos son historicas; el codigo
+resuelve la raiz desde la ubicacion del repo (`scripts/rutas_de_datos.py`).
+`E:\INMO CAPITAL\Inmo-Capital-main` es LEGACY / solo referencia: no se usa como cwd ni se modifica.
 Estado vigente: `docs/agent/CURRENT_STATE.md`. Cómo seguir: `docs/agent/HANDOFF.md`.
 Acciones productivas pendientes: `docs/agent/READY_FOR_PRODUCTION_ACTION.md`. Índice de docs: `docs/INDEX.md`.
 **Políticas permanentes del usuario (29-09, P1–P24): `docs/agent/POLITICAS_PERMANENTES.md`.** Un caso
@@ -18,7 +21,7 @@ cubierto por una política se resuelve con ella, sin preguntar.
 - INSERT/UPDATE/DELETE, migraciones, RLS/grants, restore o deploy en producción; DNS. Excepciones
   acotadas en POLITICAS_PERMANENTES: P19 (clases estructurales tras backup+restore probados) y P24
   (merge a `main` solo si no dispara nada productivo).
-- La snapshot servida `D:\INMO CAPITAL\ERETZ_API_CONTRACT\ERETZ_API_SNAPSHOT.sqlite3` se reemplaza
+- La snapshot servida `E:\INMO CAPITAL\ERETZ_API_CONTRACT\ERETZ_API_SNAPSHOT.sqlite3` se reemplaza
   solo con `scripts/desplegar_snapshot.py` y solo si pasan TODOS los chequeos de P2; si no, no.
 - Git: sin force push, sin `reset --hard`, sin `clean` destructivo, sin reescribir historia.
 - Credencial faltante → `BLOCKED_EXTERNAL_CREDENTIAL` y seguir. Nunca imprimir ni commitear secretos.
