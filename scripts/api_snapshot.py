@@ -63,14 +63,15 @@ def _snapshot_connections(source: Path, temporary: Path):
             finally:
                 if owned:
                     temporary.unlink(missing_ok=True)
-from scripts.property_contract import alcances  # noqa: E402
+from scripts.property_contract import FILTRO_OPERACION, alcances  # noqa: E402
 from scripts.image_quality import is_known_page_asset  # noqa: E402
 from scripts.plan_de_escritura import agencias_con_web_ajena  # noqa: E402
 from scripts.property_freshest import (CAMPOS_FUSIONABLES,  # noqa: E402
                                        fusionar, mas_frescas)
 from scripts.run_rollout import (FRACCION_COMPARTIDA,  # noqa: E402
                                  MINIMO_PARA_JUZGAR)
-from connectors.base import RE_TIPO_ACCESORIO, detectar_tipo, geografia  # noqa: E402
+from connectors.base import (RE_TIPO_ACCESORIO, detectar_operacion,  # noqa: E402
+                             detectar_tipo, geografia)
 from connectors.exterior import (POLITICA_PUBLICA, evidencia_de_exterior,  # noqa: E402
                                  publicable)
 from connectors import poligono_caba  # noqa: E402
@@ -142,6 +143,71 @@ def _sin_mojibake(valor: Any) -> Any:
         except (UnicodeEncodeError, UnicodeDecodeError):
             return m.group(0)
     return RE_MOJIBAKE.sub(tramo, valor)
+
+
+# Las claves de `detectar_operacion` hasta el 04-10, que se buscaban como
+# SUBCADENA: «rent» en «fRENTE», «sale» en «RoSALEs», «venta» en «VENTAnal».
+# Solo sirven para reconocer una operacion que salio de ahi.
+_OPERACION_POR_SUBCADENA = (("venta", "venta"), ("vender", "venta"), ("sale", "venta"),
+                            ("alquiler", "alquiler"), ("alquilar", "alquiler"),
+                            ("rent", "alquiler"))
+
+# Tipos que un conector viejo guardo en ingles (`alta`: 16 filas servidas en
+# la final_v6, de un cierre NEEDS_FIX que no se recertifica).
+TIPOS_EN_INGLES = {"land": "terreno", "condo": "departamento",
+                   "apartment": "departamento", "house": "casa"}
+
+
+def _operacion_por_subcadena(texto: str) -> str | None:
+    t = (texto or "").lower()
+    if "temporario" in t or "temporal" in t:
+        return "alquiler_temporario"
+    return next((val for clave, val in _OPERACION_POR_SUBCADENA if clave in t), None)
+
+
+def _operacion_sin_evidencia(fila: dict[str, Any]) -> bool:
+    """La operacion salio SOLO de una subcadena del titulo o la URL.
+
+    Asi la tiene una fila heredada -servida o de la base- que nunca paso por el
+    detector de palabra entera: 172 de las 516 filas falsas de la final_v6 (04-10)
+    eran de agencias sin cierre vigente, que la recertificacion no alcanza
+    (`pelay` «Dto 2 Amb Al Frente» USD 63.000 como ALQUILER, `ruiz` «Av Rosales»
+    ARS 450.000 como VENTA). Si la descripcion la nombra como palabra, hay
+    evidencia y se respeta.
+    """
+    op = fila.get("operacion")
+    if op not in ("venta", "alquiler"):
+        return False
+    texto = f"{fila.get('titulo') or ''} {fila.get('source_url') or ''}"
+    return (_operacion_por_subcadena(texto) == op and detectar_operacion(texto) != op
+            and detectar_operacion(fila.get("descripcion") or "") != op)
+
+
+def _corregir_heredada(fila: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """Una fila sin paquete fresco, sin la operacion por subcadena ni el tipo en ingles.
+
+    La operacion falsa queda vacia -nunca se deduce del precio: eso seria
+    inventarla- y la fila sale del filtro venta/alquiler. En una fila servida
+    tambien se corrigen el `documento` y los `alcances` que la API devuelve.
+    """
+    nueva, cambios = dict(fila), []
+    if _operacion_sin_evidencia(fila):
+        nueva["operacion"] = None
+        cambios.append("operacion")
+    tipo = TIPOS_EN_INGLES.get(str(fila.get("tipo_propiedad") or "").strip().lower())
+    if tipo:
+        nueva["tipo_propiedad"] = tipo
+        cambios.append("tipo")
+    if cambios and isinstance(fila.get("documento"), str):
+        documento = json.loads(fila["documento"])
+        documento["operacion"] = nueva["operacion"]
+        documento["tipo_propiedad"] = nueva["tipo_propiedad"]
+        if "operacion" in cambios:
+            documento["alcances"] = [a for a in documento.get("alcances") or []
+                                     if a != FILTRO_OPERACION]
+            nueva["alcances"] = json.dumps(documento["alcances"], ensure_ascii=False)
+        nueva["documento"] = json.dumps(documento, ensure_ascii=False)
+    return nueva, cambios
 
 
 from scripts.preingestion_manifest import (base_canonica,  # noqa: E402
@@ -767,6 +833,7 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
     descripciones_del_sitio = 0
     titulos_del_sitio = 0
     tipos_cochera_corregidos = 0
+    heredadas_corregidas: Counter = Counter()
     cocheras_incoherentes = 0
     textos_limpiados = 0
     ajenas_omitidas = 0
@@ -813,6 +880,8 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
                 continue
             if servida_fila["id"] == anterior[0] and anterior[1] is not None:
                 continue
+            servida_fila, corregidas = _corregir_heredada(servida_fila)
+            heredadas_corregidas.update(corregidas)
             propiedad = api.execute(
                 f"insert or replace into propiedades values ({','.join('?' * len(servida_fila))})",
                 tuple(servida_fila.values()))
@@ -860,6 +929,10 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
               and es_titulo_del_sitio(canonical, cruda.get("titulo"))):
             cruda = dict(cruda, titulo=None)
             titulos_del_sitio += 1
+        # Sin paquete fresco, la fila viene de la base: ver `_corregir_heredada`.
+        if fresca is None:
+            cruda, corregidas = _corregir_heredada(cruda)
+            heredadas_corregidas.update(corregidas)
         # «Dúplex … con cochera» no es una cochera: 272 filas de la v4 venian
         # de la regla vieja. Solo si el titulo tiene la forma accesoria, el
         # tipo se vuelve a derivar del titulo con la regla de hoy; sin otro
@@ -1016,6 +1089,8 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
         "descripciones_del_sitio_descartadas": descripciones_del_sitio,
         "titulos_del_sitio_descartados": titulos_del_sitio,
         "tipos_cochera_por_accesorio_corregidos": tipos_cochera_corregidos,
+        "heredadas_operacion_por_subcadena_anulada": heredadas_corregidas["operacion"],
+        "heredadas_tipo_en_ingles_traducido": heredadas_corregidas["tipo"],
         "cocheras_incoherentes_resueltas": cocheras_incoherentes,
         "precios_simbolicos_descartados": precios_simbolicos,
         "textos_con_entidades_limpiados": textos_limpiados,

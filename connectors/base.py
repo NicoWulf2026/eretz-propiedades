@@ -1355,6 +1355,17 @@ _OPERACIONES = {"venta": "venta", "vender": "venta", "sale": "venta",
                 "alquiler temporario": "alquiler_temporario",
                 "temporario": "alquiler_temporario", "temporal": "alquiler_temporario"}
 
+# La misma tabla como palabras enteras (ver `detectar_operacion`). «preventa»
+# es venta; «ventas»/«alquileres» en plural tambien.
+_OPERACIONES_PALABRA = [
+    (re.compile(r"\b(?:pre)?ventas?\b"), "venta"),
+    (re.compile(r"\bvender\b"), "venta"),
+    (re.compile(r"\b(?:for\s+)?sale\b"), "venta"),
+    (re.compile(r"\balquiler(?:es)?\b"), "alquiler"),
+    (re.compile(r"\balquilar\b"), "alquiler"),
+    (re.compile(r"\b(?:for\s+)?rent(?:al)?\b"), "alquiler"),
+]
+
 # El orden importa: gana la primera clave que aparece. «dúplex» va DESPUES de
 # departamento/PH -«Depto. tipo dúplex», «PH … dúplex» son departamentos- y
 # ANTES de lote y cochera, que en un titulo de dúplex suelen ser lo que trae.
@@ -1590,8 +1601,16 @@ def detectar_operacion(texto: Any) -> str | None:
     t = str(texto).lower()
     if "temporario" in t or "temporal" in t:
         return "alquiler_temporario"
-    for clave, val in _OPERACIONES.items():
-        if clave in t:
+    # PALABRA ENTERA, con el mismo orden de prioridad que `_OPERACIONES`. Por
+    # subcadena, «rent» encontraba «fRENTE» y «contrafRENTE»: 492 fichas de 110
+    # agencias en la candidata final_v6 eran ventas -USD 37.000 a 160.000, la
+    # ficha dice «venta»- guardadas como ALQUILER porque el titulo decia «3
+    # ambientes al frente» (04-10). «venta» encontraba «ventana» y «sale»,
+    # «Av. Rosales». El guion bajo separa palabras en las URL
+    # (`/casas_venta_9-de-abril`), pero para `\b` es una letra mas.
+    palabras = t.replace("_", " ")
+    for patron, val in _OPERACIONES_PALABRA:
+        if patron.search(palabras):
             return val
     # Formas verbales. Se consultan solo cuando nada de lo anterior dijo algo,
     # asi que no pueden cambiar ninguna deteccion que ya funcionaba. Van con
