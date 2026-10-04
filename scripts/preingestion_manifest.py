@@ -59,9 +59,9 @@ def _rebasar(ruta: str) -> Path:
     vieja: la parte bajo la raiz original se reubica en la actual. Una ruta fuera de
     esa raiz se respeta tal cual.
     """
-    from scripts.rutas_de_datos import RAIZ_POR_DEFECTO, raiz_de_datos
+    from scripts.rutas_de_datos import RAIZ_ORIGINAL, raiz_de_datos
     texto = str(ruta).replace("/", "\\")
-    prefijo = RAIZ_POR_DEFECTO.rstrip("\\") + "\\"
+    prefijo = RAIZ_ORIGINAL.rstrip("\\") + "\\"
     if texto.lower().startswith(prefijo.lower()):
         partes = [x for x in texto[len(prefijo):].split("\\") if x]
         return raiz_de_datos().joinpath(*partes)
@@ -88,16 +88,23 @@ def es_historica(ruta: str | Path) -> bool:
 
 
 def describir(ruta: str | Path) -> dict:
-    """Fecha, generacion y estado de la base que se esta por usar."""
-    objetivo = str(Path(ruta))
+    """Fecha, generacion y estado de la base que se esta por usar.
+
+    Las dos rutas se comparan REUBICADAS en la raiz vigente: el manifiesto guarda
+    `D:\\INMO CAPITAL\\...` y `base_canonica()` ya devuelve la ruta reubicada. Sin
+    esto, al mover el estado de D: a E: (2026-10-04) la base vigente salia
+    NO_DECLARADA -y el runner, que exige base declarada, se negaba a correr- y una
+    HISTORICA se podia abrir.
+    """
+    objetivo = _rebasar(str(ruta))
     for bloque in ("canonica",):
         dato = (_manifiesto().get("preingestion") or {}).get(bloque) or {}
-        if dato.get("ruta") and Path(dato["ruta"]) == Path(objetivo):
+        if dato.get("ruta") and _rebasar(dato["ruta"]) == objetivo:
             return dato
     for dato in (_manifiesto().get("preingestion") or {}).get("historicas") or []:
-        if Path(dato.get("ruta", "")) == Path(objetivo):
+        if dato.get("ruta") and _rebasar(dato["ruta"]) == objetivo:
             return dato
-    return {"ruta": objetivo, "estado": "NO_DECLARADA"}
+    return {"ruta": str(objetivo), "estado": "NO_DECLARADA"}
 
 
 class BaseVencida(RuntimeError):

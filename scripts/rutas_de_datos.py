@@ -15,7 +15,15 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-RAIZ_POR_DEFECTO = r"D:\INMO CAPITAL"
+# La raiz por defecto es la carpeta que CONTIENE al repo: el estado vive al lado de
+# los worktrees (`<raiz>/eretz-unified`, `<raiz>/ERETZ_AGENCY_CERTIFICATION_20260827`).
+# Era `D:\INMO CAPITAL` fijo, y el 2026-10-04 la maquina movio todo de D: a E:: una
+# ruta fija habria seguido leyendo y escribiendo el disco viejo sin avisar.
+RAIZ_POR_DEFECTO = str(Path(__file__).resolve().parents[2])
+
+# Donde se escribieron los manifiestos y paquetes viejos, que guardan rutas absolutas.
+# No es la raiz vigente: solo sirve para reubicar esas rutas en la actual.
+RAIZ_ORIGINAL = r"D:\INMO CAPITAL"
 
 
 def raiz_de_datos() -> Path:

@@ -27,6 +27,19 @@ def test_sin_variable_es_la_raiz_de_la_maquina_original(monkeypatch):
     assert raiz_de_datos() == Path(RAIZ_POR_DEFECTO)
 
 
+def test_MUERDE_sin_variable_la_raiz_es_la_carpeta_que_contiene_al_repo(monkeypatch):
+    """Migracion D: -> E: (2026-10-04): la raiz sigue al repo, no a un disco fijo."""
+    monkeypatch.delenv("ERETZ_DATA_ROOT", raising=False)
+    assert raiz_de_datos() == RAIZ_REPO.parent
+
+
+def test_las_rutas_del_disco_viejo_se_reubican_en_la_raiz_vigente(monkeypatch):
+    from scripts.preingestion_manifest import _rebasar
+    monkeypatch.delenv("ERETZ_DATA_ROOT", raising=False)
+    ruta = r"D:\INMO CAPITAL\ERETZ_GEO\MANIFEST.json"
+    assert _rebasar(ruta) == RAIZ_REPO.parent / "ERETZ_GEO" / "MANIFEST.json"
+
+
 def test_la_variable_mueve_todo_el_estado(monkeypatch, tmp_path):
     monkeypatch.setenv("ERETZ_DATA_ROOT", str(tmp_path))
     assert dato("ERETZ_GEO") == tmp_path / "ERETZ_GEO"
