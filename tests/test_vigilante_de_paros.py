@@ -34,6 +34,9 @@ def entorno(tmp_path, monkeypatch):
     # escribieron en el log de PRODUCCION el 2026-09-16, con nombres de
     # fixture -"alguna"- mezclados entre transiciones reales.
     monkeypatch.setattr(v, "BITACORA", tmp_path / "ERETZ_QUEUE_WATCH.log")
+    # Y la cola de defectos: sin desviarla, cada test leeria la REAL.
+    monkeypatch.setattr(v, "COLA_DE_DEFECTOS", tmp_path / "AGENCY_DEFECT_QUEUE.jsonl")
+    monkeypatch.setattr(v, "_huella_vigente", lambda c, e: "h-vigente")
     return tmp_path
 
 
@@ -284,3 +287,52 @@ def test_una_familia_detenida_alerta_y_se_deduplica_por_conjunto(entorno):
     hay, _ = v.decidir_alerta(otra, {"alert_key": v.clave_de_alerta(una),
                                      "last_alert_at": cuando(5)}, ahora, 60)
     assert hay is True
+
+# --- paros que el triaje anoto sin bandera (2026-10-04) -----------------
+
+def anotar_paro_en_la_cola(d, agencia="roomix:ana barbeito", minutos=20, **campos):
+    fila = {"canonical_agency_id": agencia, "decision": "STOP",
+            "componente_sospechoso": "extraccion_transversal_de_atributos",
+            "radio_estimado": "FAMILIA", "connector": "generico",
+            "connector_strategy": "generic/tiv_busqueda",
+            "strategy_fingerprint": "h-vigente", "cuando": cuando(minutos)}
+    fila.update(campos)
+    with (d / "AGENCY_DEFECT_QUEUE.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(fila, ensure_ascii=False) + chr(10))
+
+
+def test_MUERDE_un_paro_sin_bandera_no_puede_leerse_como_OK(entorno, capsys):
+    """`ana barbeito` paro bajo la bandera de APAGADO y nadie lo vio."""
+    poner_worker(entorno, 0, vivo=True)
+    anotar_paro_en_la_cola(entorno)
+    salida, estado = correr(capsys)
+    assert estado["stop_state"] == "PARO_SIN_BANDERA"
+    assert estado["agency"] == "roomix:ana barbeito"
+    assert "PARO_SIN_BANDERA" in (entorno / "ERETZ_QUEUE_WATCH.log").read_text(encoding="utf-8")
+
+
+def test_el_paro_sin_bandera_con_diferida_posterior_queda_atendido(entorno, capsys):
+    poner_worker(entorno, 0, vivo=True)
+    anotar_paro_en_la_cola(entorno, minutos=20)
+    (entorno / "AGENCY_DEFECTS_DIFERIDOS.jsonl").write_text(json.dumps(
+        {"canonical_agency_id": "roomix:ana barbeito", "cuando": cuando(5)}) + chr(10), encoding="utf-8")
+    salida, estado = correr(capsys)
+    assert estado["stop_state"] == "OK"
+
+
+def test_no_cuentan_el_paro_diferido_por_precedente_ni_el_de_codigo_viejo(entorno, capsys):
+    poner_worker(entorno, 0, vivo=True)
+    anotar_paro_en_la_cola(entorno, agencia="roomix:a", paro_diferido=True)
+    anotar_paro_en_la_cola(entorno, agencia="roomix:b", strategy_fingerprint="h-vieja")
+    anotar_paro_en_la_cola(entorno, agencia="roomix:c", strategy_fingerprint=None)
+    salida, estado = correr(capsys)
+    assert estado["stop_state"] == "OK"
+
+
+def test_cuenta_la_ultima_fila_de_la_agencia(entorno, capsys):
+    """Un paro viejo seguido de una corrida que siguio no es un paro."""
+    poner_worker(entorno, 0, vivo=True)
+    anotar_paro_en_la_cola(entorno, minutos=60)
+    anotar_paro_en_la_cola(entorno, minutos=5, decision="CONTINUE")
+    salida, estado = correr(capsys)
+    assert estado["stop_state"] == "OK"

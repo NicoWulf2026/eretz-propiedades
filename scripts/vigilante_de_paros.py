@@ -60,6 +60,12 @@ except ImportError:  # corrido como `python scripts/x.py`
 CERT = Path(str(dato('ERETZ_AGENCY_CERTIFICATION_20260827')))
 BANDERA = CERT / "AGENCY_CERTIFICATION_STOP.json"
 DIFERIDOS = CERT / "AGENCY_DEFECTS_DIFERIDOS.jsonl"
+# El triaje anota cada paro aca aunque no pueda escribir la bandera: si ya hay
+# una -la de APAGADO, la de un relanzamiento- no la pisa, y si la bandera vive
+# menos que una pasada del vigilante (cinco minutos) el arranque de un worker
+# la borra antes de que nadie la vea. Las dos cosas pasaron el 2026-10-03:
+# `ana barbeito` (20:18, bajo APAGADO) y `fdc` (15:52, menos de un minuto).
+COLA_DE_DEFECTOS = CERT / "AGENCY_DEFECT_QUEUE.jsonl"
 CERROJO = "AGENCY_CERTIFICATION_RUNNER.w{}.lock"
 # El unico archivo que este script escribe. Es local, no es la base, y su
 # contenido es lo que el propio script acaba de leer: si se borra, la siguiente
@@ -73,7 +79,7 @@ BITACORA = CERT / "ERETZ_QUEUE_WATCH.log"
 # no alerta a proposito: todavia esta dentro del umbral y puede resolverse
 # solo. `PARO_DIAGNOSTICADO` tampoco: ya tiene diferida escrita.
 ALERTAN = ("PARO_DESATENDIDO", "CERO_WORKERS_SIN_BANDERA",
-           "FAMILIA_DETENIDA", "COLA_SIN_AVANCE")
+           "FAMILIA_DETENIDA", "COLA_SIN_AVANCE", "PARO_SIN_BANDERA")
 # Cada cuanto se repite el aviso mientras el mismo paro siga sin resolver.
 RECORDATORIO_MINUTOS = 60
 
@@ -149,6 +155,57 @@ def diagnosticada_despues(agencia: str, desde: float | None) -> str | None:
     return (time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(mejor))
             if mejor else None)
 
+
+
+def _huella_vigente(conector: str | None, estrategia: str | None) -> str | None:
+    if not (conector and estrategia):
+        return None
+    try:
+        from agency_fingerprints import strategy_fingerprint
+        return strategy_fingerprint(conector, estrategia)
+    except Exception:  # noqa: BLE001 - sin huella no se afirma nada
+        return None
+
+
+def paros_sin_bandera() -> list[dict]:
+    """Paros del triaje que nadie vio: sin bandera, sin diferida, codigo vigente.
+
+    Se mira la ULTIMA fila de cada agencia en la cola de defectos. Cuenta si su
+    decision es STOP y:
+      - no la difirio el precedente (`paro_diferido`);
+      - no hay diferida escrita despues;
+      - su huella es la vigente. Si el codigo cambio, la agencia se vuelve a
+        probar con el nuevo y el triaje decide de cero; una fila sin huella es
+        de una corrida con codigo cambiado en vuelo, que tampoco vale.
+    Medido el 2026-10-04 sobre la cola real: 69 ultimas filas STOP, 1 sin
+    diferir ni diagnosticar con huella vigente (ana barbeito), 0 tras
+    diagnosticarla.
+    """
+    if not COLA_DE_DEFECTOS.exists():
+        return []
+    ultimo: dict[str, dict] = {}
+    for linea in COLA_DE_DEFECTOS.open(encoding="utf-8", errors="replace"):
+        linea = linea.strip()
+        if not linea:
+            continue
+        try:
+            fila = json.loads(linea)
+        except ValueError:
+            continue
+        if fila.get("canonical_agency_id"):
+            ultimo[fila["canonical_agency_id"]] = fila
+    pendientes = []
+    for agencia, fila in ultimo.items():
+        if fila.get("decision") != "STOP" or fila.get("paro_diferido"):
+            continue
+        huella = fila.get("strategy_fingerprint")
+        if not huella or _huella_vigente(fila.get("connector"),
+                                         fila.get("connector_strategy")) != huella:
+            continue
+        if diagnosticada_despues(agencia, epoch(fila.get("cuando") or fila.get("updated_at"))):
+            continue
+        pendientes.append(fila)
+    return sorted(pendientes, key=lambda f: str(f.get("cuando") or ""))
 
 
 # Una familia detenida no es tan urgente como la cola entera parada -el resto
@@ -331,6 +388,9 @@ def registrar_transicion(estado: dict, previo: dict) -> None:
         anotar(f"{antes} -> OK   la cola volvio a avanzar")
     elif ahora_e == "CERO_WORKERS_SIN_BANDERA":
         anotar("-> CERO_WORKERS   nadie certificando y ninguna bandera lo explica")
+    elif ahora_e == "PARO_SIN_BANDERA":
+        anotar(f"{antes or '(inicio)'} -> PARO_SIN_BANDERA   {agencia}  "
+               f"[{estado.get('stop_signature')}]  sin bandera ni diferida")
     elif ahora_e in ("PARO_RECIENTE", "PARO_OPERACIONAL"):
         anotar(f"{antes or '(inicio)'} -> {ahora_e}   {agencia}  "
                f"[{estado.get('stop_signature')}]")
@@ -509,6 +569,27 @@ def main() -> int:
             print("   toca hasta que su paro tenga diferida firmada.")
             cerrar(estado, previo, ahora, args)
             print("\ndatabase_writes: 0")
+            return 0
+        sin_bandera = paros_sin_bandera()
+        if sin_bandera:
+            f = sin_bandera[0]
+            desde = epoch(f.get("cuando") or f.get("updated_at"))
+            estado.update({
+                "stop_state": "PARO_SIN_BANDERA",
+                "stop_signature": f"{f.get('componente_sospechoso')} / {f.get('radio_estimado')}",
+                "paused_since": f.get("cuando"),
+                "minutes_paused": round((ahora - desde) / 60) if desde else None,
+                "agency": f.get("canonical_agency_id"),
+                "diagnosis_state": "SIN_DIAGNOSTICO",
+                "stops_without_flag": [x.get("canonical_agency_id") for x in sin_bandera]})
+            print()
+            print(f"ESTADO: PARO_SIN_BANDERA — {len(sin_bandera)} paro(s) del triaje sin bandera ni diferida:")
+            for x in sin_bandera:
+                print(f"   {x.get('cuando')}  {str(x.get('canonical_agency_id')).split(':')[-1][:32]}  "
+                      f"[{x.get('componente_sospechoso')}]")
+            cerrar(estado, previo, ahora, args)
+            print()
+            print("database_writes: 0")
             return 0
         motivo = sin_avance(vivos, ahora, args.umbral_sin_avance_horas)
         if vivos and motivo:
