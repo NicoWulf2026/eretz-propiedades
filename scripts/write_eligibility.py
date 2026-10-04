@@ -22,6 +22,10 @@ import sys
 import urllib.parse
 from collections import Counter, defaultdict
 from pathlib import Path
+try:  # raiz del estado operativo configurable (ERETZ_DATA_ROOT)
+    from scripts.rutas_de_datos import dato, raiz_de_datos  # noqa: E402
+except ImportError:  # corrido como `python scripts/x.py`
+    from rutas_de_datos import dato, raiz_de_datos  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from connectors.base import calcular_hash_dedup  # noqa: E402
@@ -161,10 +165,10 @@ def main() -> int:
     ap.add_argument("--entradas", nargs="*", default=None,
                     help="por defecto, el universo canonico de "
                          "scripts/input_universe.py")
-    ap.add_argument("--data-dir", default=r"D:\INMO CAPITAL\ERETZ_AGENCY_DATA")
-    ap.add_argument("--salida", default=r"D:\INMO CAPITAL\DB_WRITE_ELIGIBLE.jsonl")
+    ap.add_argument("--data-dir", default=str(dato("ERETZ_AGENCY_DATA")))
+    ap.add_argument("--salida", default=str(dato("DB_WRITE_ELIGIBLE.jsonl")))
     ap.add_argument("--directorio-plataformas",
-                    default=r"D:\INMO CAPITAL\agency_platform_directory.jsonl")
+                    default=str(dato("agency_platform_directory.jsonl")))
     ap.add_argument("--resolucion", default="",
                     help="CROSS_AGENCY_RESOLUTION.jsonl; sin el, ningun "
                          "conflicto cross-agency se libera")

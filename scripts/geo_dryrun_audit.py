@@ -35,6 +35,10 @@ import json
 import sys
 from collections import Counter
 from pathlib import Path
+try:  # raiz del estado operativo configurable (ERETZ_DATA_ROOT)
+    from scripts.rutas_de_datos import dato, raiz_de_datos  # noqa: E402
+except ImportError:  # corrido como `python scripts/x.py`
+    from rutas_de_datos import dato, raiz_de_datos  # noqa: E402
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -70,8 +74,8 @@ def clasificar(fila: dict[str, Any]) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--dryrun", default=r"D:\INMO CAPITAL\ERETZ_GEO\CIUDAD_DRYRUN.jsonl")
-    ap.add_argument("--salida", default=r"D:\INMO CAPITAL\ERETZ_GEO")
+    ap.add_argument("--dryrun", default=str(dato("ERETZ_GEO", "CIUDAD_DRYRUN.jsonl")))
+    ap.add_argument("--salida", default=str(dato("ERETZ_GEO")))
     args = ap.parse_args()
 
     origen = Path(args.dryrun)

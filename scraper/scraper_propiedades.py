@@ -3548,7 +3548,7 @@ def geocodificar_direccion(
             requests,
             "https://nominatim.openstreetmap.org/search",
             params={"q": query, "format": "json", "limit": 1, "countrycodes": "ar"},
-            headers={"User-Agent": "InmoCapital-Scraper/1.0"},
+            headers={"User-Agent": "ERETZPropiedades-Scraper/1.0"},
             timeout=(5, 10),
             max_response_bytes=512 * 1024,
             accepted_content_types=("application/json",),
@@ -17333,8 +17333,8 @@ def run_controlled_queue_parallel_processes(
         if allow_static_detail:
             cmd.append("--allow-static-detail")
         env = os.environ.copy()
-        env["INMOCAPITAL_QUEUE_WORKER_INDEX"] = str(idx)
-        env["INMOCAPITAL_QUEUE_WORKER_TOTAL"] = str(len(quotas))
+        env["ERETZ_PROPIEDADES_QUEUE_WORKER_INDEX"] = str(idx)
+        env["ERETZ_PROPIEDADES_QUEUE_WORKER_TOTAL"] = str(len(quotas))
         logger.info("Lanzando worker %d/%d | quota=%s", idx, len(quotas), quota if quota is not None else "-")
         processes.append((idx, subprocess.Popen(cmd, cwd=os.getcwd(), env=env)))
 

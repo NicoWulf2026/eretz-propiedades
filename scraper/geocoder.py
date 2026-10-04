@@ -36,7 +36,7 @@ NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 NOMINATIM_DELAY_SECONDS = 1.2
 USER_AGENT = os.getenv(
     "GEOCODER_USER_AGENT",
-    "InmocapitalGeocoder/1.0 (geocoding@inmocapital.local)",
+    "ERETZPropiedadesGeocoder/1.0 (geocoding@eretz-propiedades.local)",
 )
 
 CITY_BOUNDS = {

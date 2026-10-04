@@ -18,6 +18,10 @@ import sys
 import time
 from collections import Counter, defaultdict
 from pathlib import Path
+try:  # raiz del estado operativo configurable (ERETZ_DATA_ROOT)
+    from scripts.rutas_de_datos import dato, raiz_de_datos  # noqa: E402
+except ImportError:  # corrido como `python scripts/x.py`
+    from rutas_de_datos import dato, raiz_de_datos  # noqa: E402
 from typing import Any, Iterable
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -667,10 +671,10 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source-root", default=str(RAIZ))
     parser.add_argument("--output-dir", required=True)
-    parser.add_argument("--crosswalk", default=r"D:\INMO CAPITAL\ERETZ_AGENCY_DATA\crosswalk_final.jsonl")
-    parser.add_argument("--web-directory", default=r"D:\INMO CAPITAL\ERETZ_AGENCY_DATA\agency_web_directory.jsonl")
-    parser.add_argument("--platform-directory", default=r"D:\INMO CAPITAL\agency_platform_directory.jsonl")
-    parser.add_argument("--main-backup", default=r"D:\INMO CAPITAL\Inmo-Capital-main\backups supabase\2026-05-27_inmobiliarias_main.csv")
+    parser.add_argument("--crosswalk", default=str(dato("ERETZ_AGENCY_DATA", "crosswalk_final.jsonl")))
+    parser.add_argument("--web-directory", default=str(dato("ERETZ_AGENCY_DATA", "agency_web_directory.jsonl")))
+    parser.add_argument("--platform-directory", default=str(dato("agency_platform_directory.jsonl")))
+    parser.add_argument("--main-backup", default=str(dato("eretz-propiedades", "backups supabase", "2026-05-27_inmobiliarias_main.csv")))
     args = parser.parse_args()
     print(json.dumps(rebuild(args), ensure_ascii=False, indent=2, sort_keys=True))
     return 0

@@ -23,6 +23,10 @@ import time
 import urllib.parse
 from collections import Counter, defaultdict
 from pathlib import Path
+try:  # raiz del estado operativo configurable (ERETZ_DATA_ROOT)
+    from scripts.rutas_de_datos import dato, raiz_de_datos  # noqa: E402
+except ImportError:  # corrido como `python scripts/x.py`
+    from rutas_de_datos import dato, raiz_de_datos  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -181,8 +185,8 @@ def procesar_fuente(con: TokkoConnector, f: Fuente, max_fichas: int) -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data-dir", default=r"D:\INMO CAPITAL\ERETZ_AGENCY_DATA")
-    ap.add_argument("--salida", default=r"D:\INMO CAPITAL\TOKKO_CANARY")
+    ap.add_argument("--data-dir", default=str(dato("ERETZ_AGENCY_DATA")))
+    ap.add_argument("--salida", default=str(dato("TOKKO_CANARY")))
     ap.add_argument("--fuentes", type=int, default=16)
     ap.add_argument("--max-fichas", type=int, default=25)
     ap.add_argument("--intervalo", type=float, default=1.5)
