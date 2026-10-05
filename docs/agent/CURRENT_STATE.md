@@ -14,6 +14,14 @@ archivo: `git show 6ee927bb80:docs/agent/CURRENT_STATE.md`). `database_writes: 0
   palabra entera (`rent` en `frente`: 516 filas/110 agencias), rotulo con icono vacio (blanco), heredadas sin operacion
   por subcadena en el constructor-. Huellas v7: 18/18 cambiaron (`base.py` compartido). Prioridad: 110 agencias
   afectadas (hasta 08-10). Luego: reconstruir candidata y repetir gates (READY #7b EN ESPERA).
+  Medicion intermedia `snap_v7a` (05-10 15:36, 73.073 props): operacion solo por subcadena 487 -> 113 (las 113 son de
+  agencias aun sin recertificar), tipos en ingles 16 -> 0, heredadas anuladas 175. Regression Gate: 350 pendientes
+  clasificadas (253 correcciones, 96 KNOWN_DEBT, 1 falsa perdida, 0 sin explicar); las 38 perdidas nuevas frente a
+  final_v6 dan IGUAL con el codigo v6 sobre el HTML de hoy (replay): son cambios de las fuentes, no de v7
+  (`_b_scratch/clasif_v7a.py`, `gate_valores.py`). Deuda nueva: plataforma 'Template4' descarta conteos con la senal
+  'cocheras'; orden de listado no determinista (tokko gabilan, generico matias sosa). Cola: prioridad 63/93 (las otras 18
+  no tienen certificacion previa); el resto es del w1 por el reparto por host. Arreglos de cola: carrera al borrar la
+  bandera (`42e1150`), `recertificar` en el archivo de prioridad (`648c097`; pelay recertificada tras el corte de DNS).
 - **Ventana semantica final CERRADA** (huellas v6, HEAD semantico `02995d43`; `docs/agent/VENTANA_SEMANTICA_FINAL.md`).
   Prioridad 78/78 recertificada con v6 (04-10 15:58).
 - **BETA CANDIDATE `snap_final_v6`** (`E:\ERETZ Propiedades\_b_scratch\medicion\snap_final_v6`, 72.387 props): P2 0 fallas,
