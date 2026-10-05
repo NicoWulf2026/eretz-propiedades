@@ -4,6 +4,17 @@ Para retomar desde una sesión nueva: arrancar Claude Code en `E:\ERETZ Propieda
 Reglas: `CLAUDE.md` + `.claude/rules/` (cargan solas). Estado: `docs/agent/CURRENT_STATE.md`.
 Historia: Git (`git log --since=2026-09-25`).
 
+## TAREA EXACTA EN CURSO (04-10 23:30, cuenta B, LOCAL)
+1. v7 desplegado en el nodo (`5cd3e7b`; huellas 18/18 nuevas). Prioridad de cola: 111 agencias (110 con operacion
+   por subcadena + edifica) hasta 08-10. Primeros v7: analia requena y asg CERTIFIED_COMPLETE, alquiler->venta verificados
+   contra la ficha. edifica NEEDS_FIX diagnosticada (senal de provincia conocida; fila en DIFERIDOS 22:41:27).
+2. Cuando la prioridad termine (~12-14 h): reconstruir candidata (`_b_scratch/armar_candidata.sh final_v7`, incluye la
+   correccion de heredadas del constructor) y repetir P2, Regression Gate (clasificar), QA aislada, performance, suite,
+   rollback; actualizar READY #7b (hoy EN ESPERA).
+3. Deuda anotada: wordpress toma el tipo del titulo antes que el rotulo 'Tipo:' (asg 'terraza cochera' = departamento;
+   el constructor ya lo deja NULL); triage que para con una corrida `codigo_cambio_en_vuelo`.
+4. Usuario: READY #14 (Git en el PATH de maquina) para poder desconectar D:.
+
 ## Recién cerrado (25-09)
 - Snapshot: frescura desde NEEDS_FIX por campos, títulos/eslóganes del sitio; v4d verificada.
 - Portales/directorios como web oficial READY (8 dominios) — `62dbc899c4`, `eeabc94083`.
