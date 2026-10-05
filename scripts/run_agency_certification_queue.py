@@ -1046,6 +1046,31 @@ def con_prioridad(cola: list[str], output: Path,
     return primero + [a for a in cola if a not in adelante]
 
 
+def recertificacion_pedida(output: Path, ahora: str | None = None) -> dict[str, str]:
+    """Agencias que hay que volver a correr aunque su resultado cuente como vigente.
+
+    Un NEEDS_FIX que el triaje dejo seguir cuenta como vigente hasta que cambia la
+    huella. Si la causa fue del ENTORNO -el 2026-10-05 de 04:15 a 05:10 la PC se
+    quedo sin DNS: bilas, book, pelay- ese resultado no describe la agencia y la
+    cola no lo rehacia nunca. El archivo de prioridad puede pedirlo con
+    `recertificar: {desde, agencias}`: se corre una vez -la que tenga un resultado
+    anterior a `desde`- y despues vuelve a contar como vigente. Vence con el archivo.
+    """
+    try:
+        datos = json.loads((output / PRIORIDAD_DE_COLA).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(datos, dict) or not str(datos.get("motivo") or "").strip():
+        return {}
+    ahora = ahora or time.strftime("%Y-%m-%dT%H:%M:%S")
+    if str(datos.get("hasta") or "") <= ahora:
+        return {}
+    pedido = datos.get("recertificar")
+    if not isinstance(pedido, dict) or not str(pedido.get("desde") or "").strip():
+        return {}
+    return {a: str(pedido["desde"]) for a in pedido.get("agencias") or [] if isinstance(a, str)}
+
+
 def latest_results(output: Path) -> dict[str, dict[str, Any]]:
     """El resultado VIGENTE de cada agencia, no su ultimo append.
 
@@ -1250,8 +1275,12 @@ def main() -> int:
     # Las diferidas se leen ANTES de armar la cola, no despues: son parte de
     # decidir que entra, no solo de decidir si un paro detiene.
     diferidas_al_armar = diferidos(output)
+    pedidas = recertificacion_pedida(output)
 
     def current(key: str) -> bool:
+        desde = pedidas.get(key)
+        if desde and str((existing.get(key) or {}).get("checked_at") or "") < desde:
+            return False
         # La fuente de hoy se resuelve con la misma precedencia que usa el
         # certificador, llamando a `resolve_identity`: no se reimplementa acá,
         # porque dos copias de una precedencia terminan divergiendo.
