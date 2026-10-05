@@ -1000,6 +1000,27 @@ def ordenar_para_correr(cola: list[str],
 PRIORIDAD_DE_COLA = "ERETZ_PRIORIDAD_DE_COLA.json"
 
 
+def borrar_bandera_vieja(output: Path, intentos: int = 10) -> None:
+    """Borra la bandera de una corrida anterior, aunque otro worker la este borrando.
+
+    Al atender un paro el relanzador arranca los dos workers juntos y los dos la
+    borran. En Windows el segundo `unlink` sobre un archivo con borrado pendiente
+    da PermissionError: el 2026-10-05 a las 09:48 w0 murio asi y la cola quedo con
+    un worker hasta el relanzador siguiente. Si la bandera ya no esta, lo hizo el
+    otro; si sigue ahi despues de los reintentos, el error es real y se propaga.
+    """
+    ruta = output / BANDERA_DE_PARO
+    for _ in range(intentos):
+        try:
+            ruta.unlink(missing_ok=True)
+            return
+        except PermissionError:
+            if not ruta.exists():
+                return
+            time.sleep(0.5)
+    ruta.unlink(missing_ok=True)
+
+
 def con_prioridad(cola: list[str], output: Path,
                   ahora: str | None = None) -> list[str]:
     """Las agencias del archivo de prioridad primero, en su orden; el resto igual.
@@ -1280,7 +1301,7 @@ def main() -> int:
     arranque_del_proceso = time.strftime("%Y-%m-%dT%H:%M:%S")
     bandera_previa = hay_que_parar(output)
     if not (bandera_previa and bandera_previa.get("radio") == "OPERACION"):
-        (output / BANDERA_DE_PARO).unlink(missing_ok=True)
+        borrar_bandera_vieja(output)
     stopped_on: str | None = None
     defectos_pendientes: list[dict[str, Any]] = []
     # Que lotes ya provocaron un corte. Un corte es un pedido de atencion:
