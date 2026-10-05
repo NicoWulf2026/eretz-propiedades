@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from scripts.rutas_de_datos import dato  # la raiz vigente, no la del disco viejo
 
 import pytest
 
@@ -29,7 +30,7 @@ from scripts.audit_agency_duplicates import (DEBIL, FUERTE,  # noqa: E402
                                              GENERICOS_MAIL, NO_IDENTIFICAN,
                                              claves_de, evaluar, tel)
 
-CANDIDATOS = Path(r"D:\INMO CAPITAL\AGENCY_DUPLICATE_CANDIDATES.jsonl")
+CANDIDATOS = dato("AGENCY_DUPLICATE_CANDIDATES.jsonl")
 
 
 def ent(**kw):

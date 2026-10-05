@@ -169,7 +169,8 @@ def test_la_bitacora_de_deltas_queda_en_jsonl_valido(tmp_path):
 
 def test_el_lanzador_usa_rutas_absolutas():
     """El Programador no hereda el PATH interactivo ni el cwd."""
-    bat = Path(r"D:\INMO CAPITAL\ERETZ_AGENCY_DATA\run_delta_loop.bat")
+    from scripts.rutas_de_datos import dato
+    bat = dato("ERETZ_AGENCY_DATA", "run_delta_loop.bat")
     if not bat.exists():
         return
     txt = bat.read_text(encoding="utf-8", errors="ignore")

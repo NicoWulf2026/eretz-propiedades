@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from scripts.rutas_de_datos import dato  # la raiz vigente, no la del disco viejo
 
 import pytest
 
@@ -30,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.resolve_cross_agency import (CLARO, SAME_AGENCY,  # noqa: E402
                                           dueno_por_misatribucion, host)
 
-RESOLUCION = Path(r"D:\INMO CAPITAL\CROSS_AGENCY_RESOLUTION.jsonl")
+RESOLUCION = dato("CROSS_AGENCY_RESOLUTION.jsonl")
 DOMINIO = "bustamantepropiedades.com"
 
 
@@ -83,7 +84,7 @@ def test_las_3137_quedaron_del_lado_correcto():
     garantia es la misma y no depende de por donde pase.
     """
     import json as _json
-    ws = Path(r"D:\INMO CAPITAL\DB_WRITE_ELIGIBLE.jsonl")
+    ws = dato("DB_WRITE_ELIGIBLE.jsonl")
     if not ws.exists():
         pytest.skip("todavia no se genero el write set")
     por_id = {}
@@ -99,7 +100,7 @@ def test_las_3137_quedaron_del_lado_correcto():
 def test_a_la_desplazada_no_le_queda_ni_una():
     """651 no tiene que aparecer con ninguna propiedad de ese sitio, ni una."""
     import json as _json
-    ws = Path(r"D:\INMO CAPITAL\DB_WRITE_ELIGIBLE.jsonl")
+    ws = dato("DB_WRITE_ELIGIBLE.jsonl")
     if not ws.exists():
         pytest.skip("todavia no se genero el write set")
     with ws.open(encoding="utf-8", errors="replace") as fh:
@@ -112,7 +113,7 @@ def test_a_la_desplazada_no_le_queda_ni_una():
 def test_lo_rechazado_queda_documentado_con_su_motivo():
     """No se descarta en silencio: queda con estado propio y su agencia."""
     import json as _json
-    ruta = Path(r"D:\INMO CAPITAL\WEB_NO_PROPIA.jsonl")
+    ruta = dato("WEB_NO_PROPIA.jsonl")
     if not ruta.exists():
         pytest.skip("todavia no se genero el artefacto")
     n = 0

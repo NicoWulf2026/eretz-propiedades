@@ -84,3 +84,27 @@ def test_MUERDE_ninguna_cadena_activa_apunta_a_la_raiz_vieja_ni_usa_un_nombre_vi
             if RAIZ_VIEJA.match(valor) or (NOMBRE_VIEJO.search(valor) and "\n" not in valor):
                 culpables.append(f"{rel}:{tok.start[0]}")
     assert culpables == []
+
+
+def test_MUERDE_ningun_test_lee_datos_reales_de_la_raiz_vieja():
+    """Simulacion sin D: (04-10): 21 tests leian artefactos reales de `D:/INMO CAPITAL`.
+
+    Con D: presente leian datos VIEJOS; sin D:, se salteaban callados. Leen la raiz
+    vigente con `dato(...)`. Solo los tests de la reubicacion pueden nombrar la raiz vieja.
+    """
+    permitidos = {"test_rutas_de_datos_2026_09_29.py", "test_migracion_definitiva_sin_raiz_vieja.py"}
+    culpables = []
+    for ruta in sorted((RAIZ / "tests").rglob("*.py")):
+        if ruta.name in permitidos:
+            continue
+        texto = ruta.read_text(encoding="utf-8")
+        for tok in tokenize.generate_tokens(io.StringIO(texto).readline):
+            if tok.type != tokenize.STRING:
+                continue
+            try:
+                valor = ast.literal_eval(tok.string)
+            except Exception:
+                continue
+            if isinstance(valor, str) and RAIZ_VIEJA.match(valor):
+                culpables.append(f"{ruta.relative_to(RAIZ)}:{tok.start[0]}")
+    assert culpables == []

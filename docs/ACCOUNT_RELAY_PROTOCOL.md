@@ -30,18 +30,18 @@ privados bajo `ERETZ_DATA_ROOT`).
 7. Continuar la NEXT ACTION.
 
 ## Worktrees locales (recomendación, no obligatorio)
-- Cuenta A: `D:\INMO CAPITAL\eretz-a`
-- Cuenta B: `D:\INMO CAPITAL\eretz-b`
+- Cuenta A: `E:\ERETZ Propiedades\eretz-a`
+- Cuenta B: `E:\ERETZ Propiedades\eretz-b`
 
 Crearlos desde el repo existente, por ejemplo:
 
-    git -C "D:\INMO CAPITAL\eretz-unified" fetch origin
-    git -C "D:\INMO CAPITAL\eretz-unified" worktree add "D:\INMO CAPITAL\eretz-b" integration/eretz
+    git -C "E:\ERETZ Propiedades\eretz-unified" fetch origin
+    git -C "E:\ERETZ Propiedades\eretz-unified" worktree add "E:\ERETZ Propiedades\eretz-b" integration/eretz
 
 Git no deja tener la MISMA rama en dos worktrees a la vez: eso refuerza la regla principal. La
 cuenta que no tiene la posta deja su worktree en otra rama (o desmontado) hasta tomarla.
 
-Ambos pueden compartir `ERETZ_DATA_ROOT` (`D:\INMO CAPITAL`), pero:
+Ambos pueden compartir `ERETZ_DATA_ROOT` (`E:\ERETZ Propiedades`), pero:
 - nunca trabajar simultáneamente sobre la misma rama;
 - la cola y los workers son UNO solo en la PC (los lanza el relanzador): ninguna cuenta lanza
   workers propios desde su worktree;

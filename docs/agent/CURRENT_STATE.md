@@ -7,12 +7,12 @@ archivo: `git show 6ee927bb80:docs/agent/CURRENT_STATE.md`). `database_writes: 0
 **Fase:** certificación/recertificación continua + calidad de lo servido + preparación productiva.
 
 ## LOCAL — cuenta B, 2026-10-04 17:20 (estado REAL verificado en la PC)
-- **Raiz operativa: `E:\INMO CAPITAL`** desde el 04-10 (migracion D: -> E:, `docs/agent/MIGRACION_D_A_E_2026-10-04.md`).
-  Nodo operativo `E:\INMO CAPITAL\eretz-unified` (rama `handoff/codex-unificacion-2026-09-18`), desarrollo
-  `E:\INMO CAPITAL\eretz-b` (`integration/eretz`), HEAD `de3c92a`. D: es historico: no se usa.
+- **Raiz canonica: `E:\ERETZ Propiedades`** desde el 04-10 (migracion definitiva, `docs/agent/MIGRACION_DEFINITIVA_2026-10-04.md`).
+  Nodo operativo `E:\ERETZ Propiedades\eretz-unified` (rama `handoff/codex-unificacion-2026-09-18`), desarrollo
+  `E:\ERETZ Propiedades\eretz-b` (`integration/eretz`), HEAD `de3c92a`. D: es historico: no se usa.
 - **Ventana semantica final CERRADA** (huellas v6, HEAD semantico `02995d43`; `docs/agent/VENTANA_SEMANTICA_FINAL.md`).
   Prioridad 78/78 recertificada con v6 (04-10 15:58).
-- **BETA CANDIDATE `snap_final_v6`** (`E:\INMO CAPITAL\_b_scratch\medicion\snap_final_v6`, 72.387 props): P2 0 fallas,
+- **BETA CANDIDATE `snap_final_v6`** (`E:\ERETZ Propiedades\_b_scratch\medicion\snap_final_v6`, 72.387 props): P2 0 fallas,
   Regression Gate 0 sin explicar / 0 REAL_BETA_BLOCKER (152: 87 correcciones, 65 KNOWN_DEBT), QA aislada 71/71,
   performance sin regresion, suite 3980 + frontend 1271, rollback 6/6. Despliegue = READY #7b, decision del usuario.
 - **Cola**: 2 workers desde E:, tareas `ERETZ_relanzador`/`ERETZ_vigilante_paros` re-registradas desde E:. El
@@ -23,7 +23,7 @@ archivo: `git show 6ee927bb80:docs/agent/CURRENT_STATE.md`). `database_writes: 0
 - **Disco**: E: es un HDD USB; las mediciones de latencia locales son ~1,7x las de D: (sin efecto en la API beta).
 
 ## LOCAL — cuenta B, 2026-10-01 (estado REAL verificado en la PC)
-Rama canónica `integration/eretz`; worktree de B `D:\INMO CAPITAL\eretz-b` (venv propio `.venv` con
+Rama canónica `integration/eretz`; worktree de B `E:\ERETZ Propiedades\eretz-b` (venv propio `.venv` con
 `requirements.lock`: el Python global de los workers no se tocó). Worktrees auxiliares de B:
 `eretz-b-dev` (rama local `b/lote5-dev`, lote 5 en desarrollo) y `eretz-b-medicion` (detached, medición P10).
 

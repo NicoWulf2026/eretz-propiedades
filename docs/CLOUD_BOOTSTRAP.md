@@ -60,10 +60,10 @@ Todo el núcleo (API, geografía, cola, certificador, snapshot, despliegue, gate
 Restaurar y verificar: `docs/agent/ESTADO_DURABLE.md` y `python scripts/cloud/prueba_restore.py`
 (desde la raíz del repo, con la variable fijada): debe dar 0 archivos con problema y 0 accesos
 a la raíz original.
-Todo el estado operativo vive bajo `D:\INMO CAPITAL\` en la máquina original y los scripts tienen
+Todo el estado operativo vive bajo `E:\ERETZ Propiedades\` en la máquina original y los scripts tienen
 esas rutas por defecto (todas se pueden pasar por argumento). Ver `docs/agent/ESTADO_DURABLE.md`
 para qué es cada cosa, su SHA-256 y cómo restaurarla desde `ERETZ_STATE_2026-09-29.tar.gz`
-(se extrae con las rutas relativas a `D:\INMO CAPITAL\`). Sin ese archivo se puede trabajar en
+(se extrae con las rutas relativas a `E:\ERETZ Propiedades\`). Sin ese archivo se puede trabajar en
 código, tests y documentación, pero no en la cola ni en snapshots.
 
 Variables (solo nombres; valores en el gestor de secretos del usuario, nunca en el repo):
@@ -112,5 +112,5 @@ PID y cerrojos (`*.lock`) NO son estado durable: en una máquina nueva no existe
 ## 9. Dónde está cada cosa
 - Parches de lotes y su estado: `docs/agent/lotes/`.
 - Snapshots candidatas y logs de la sesión: `_scratch/unification/` (ignorado por git; local).
-- Registros de despliegue: `D:\INMO CAPITAL\ERETZ_API_CONTRACT\_despliegues\`.
-- Logs de la cola: `D:\INMO CAPITAL\ERETZ_AGENCY_CERTIFICATION_20260827\cola_w*.log`, `relanzador.log`.
+- Registros de despliegue: `E:\ERETZ Propiedades\ERETZ_API_CONTRACT\_despliegues\`.
+- Logs de la cola: `E:\ERETZ Propiedades\ERETZ_AGENCY_CERTIFICATION_20260827\cola_w*.log`, `relanzador.log`.
