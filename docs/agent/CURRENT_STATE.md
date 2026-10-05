@@ -3,13 +3,17 @@
 Estado VIGENTE, no bitácora. La historia está en Git (`git log`; la bitácora anterior de este
 archivo: `git show 6ee927bb80:docs/agent/CURRENT_STATE.md`). `database_writes: 0` en todo.
 
-**Actualizado:** 2026-10-04 17:20 (ver bloque LOCAL 04-10) · **Rama:** `handoff/codex-unificacion-2026-09-18` (push solo acá)
+**Actualizado:** 2026-10-04 22:20 (ver bloque LOCAL 04-10) · **Rama:** `handoff/codex-unificacion-2026-09-18` (push solo acá)
 **Fase:** certificación/recertificación continua + calidad de lo servido + preparación productiva.
 
-## LOCAL — cuenta B, 2026-10-04 17:20 (estado REAL verificado en la PC)
+## LOCAL — cuenta B, 2026-10-04 22:20 (estado REAL verificado en la PC)
 - **Raiz canonica: `E:\ERETZ Propiedades`** desde el 04-10 (migracion definitiva, `docs/agent/MIGRACION_DEFINITIVA_2026-10-04.md`).
   Nodo operativo `E:\ERETZ Propiedades\eretz-unified` (rama `handoff/codex-unificacion-2026-09-18`), desarrollo
-  `E:\ERETZ Propiedades\eretz-b` (`integration/eretz`), HEAD `de3c92a`. D: es historico: no se usa.
+  `E:\ERETZ Propiedades\eretz-b` (`integration/eretz`), HEAD `5cd3e7b` (= nodo). D: es historico: no se usa (pendiente del usuario: Git en el PATH, READY #14).
+- **v7 desplegado en el nodo (04-10 22:1x, `5cd3e7b`)**: P0 hallados despues de los gates de final_v6 -operacion por
+  palabra entera (`rent` en `frente`: 516 filas/110 agencias), rotulo con icono vacio (blanco), heredadas sin operacion
+  por subcadena en el constructor-. Huellas v7: 18/18 cambiaron (`base.py` compartido). Prioridad: 110 agencias
+  afectadas (hasta 08-10). Luego: reconstruir candidata y repetir gates (READY #7b EN ESPERA).
 - **Ventana semantica final CERRADA** (huellas v6, HEAD semantico `02995d43`; `docs/agent/VENTANA_SEMANTICA_FINAL.md`).
   Prioridad 78/78 recertificada con v6 (04-10 15:58).
 - **BETA CANDIDATE `snap_final_v6`** (`E:\ERETZ Propiedades\_b_scratch\medicion\snap_final_v6`, 72.387 props): P2 0 fallas,
