@@ -18,7 +18,11 @@ Historia: Git (`git log --since=2026-09-25`).
    BETA CANDIDATE vigente: `final_v7d` (reemplaza a v7c; READY #7b).
 4. Deuda post-beta: monoambientes con 1 dormitorio (354), rangos de dormitorios, plantillas no leidas (nizzi, medina, Template4),
    Xintel/Amaira iframe (~719 avisos), catalogo por sesion, WooCommerce, tokko frontend propio, orden de listado no determinista.
-5. Usuario: READY #14 (Git en el PATH de maquina) para poder desconectar D:.
+5. HECHO 06-10 14:3x: READY #14 aplicado y **D: desconectado fisicamente**. Validado sin D: con git/bash/python desde C:,
+   workers, relanzador y vigilante desde E:, API (healthz/readyz/v2) contra la snapshot servida y 342 tests en verde. Las rutas
+   `D:\...` que quedan estan en scripts de un solo uso (`--data-dir` y similares: pasar la ruta de E:) y en docs historicos.
+   `scraper/importar_excel.py` leia `D:\Inmobiliairas .xlsx`, que no esta en E:; el candidato es
+   `eretz-propiedades\data\Inmobiliairas  r.xlsx` (sin verificar que sea el mismo).
 
 ## Recién cerrado (25-09)
 - Snapshot: frescura desde NEEDS_FIX por campos, títulos/eslóganes del sitio; v4d verificada.

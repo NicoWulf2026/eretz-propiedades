@@ -15,7 +15,7 @@ archivo: `git show 6ee927bb80:docs/agent/CURRENT_STATE.md`). `database_writes: 0
   Constructor: `02a3133` (monoambiente), `8e68d88` (sin altas no certificadas). Tests del vigilante aislados (`2d50cdd`).
 - **Raiz canonica: `E:\ERETZ Propiedades`** desde el 04-10 (migracion definitiva, `docs/agent/MIGRACION_DEFINITIVA_2026-10-04.md`).
   Nodo operativo `E:\ERETZ Propiedades\eretz-unified` (rama `handoff/codex-unificacion-2026-09-18`), desarrollo
-  `E:\ERETZ Propiedades\eretz-b` (`integration/eretz`), HEAD `5cd3e7b` (= nodo). D: es historico: no se usa (pendiente del usuario: Git en el PATH, READY #14).
+  `E:\ERETZ Propiedades\eretz-b` (`integration/eretz`), HEAD `5cd3e7b` (= nodo). D: esta desconectado fisicamente desde el 06-10 (READY #14 hecho; validacion post-desconexion en HANDOFF punto 5).
 - **v7 desplegado en el nodo (04-10 22:1x, `5cd3e7b`)**: P0 hallados despues de los gates de final_v6 -operacion por
   palabra entera (`rent` en `frente`: 516 filas/110 agencias), rotulo con icono vacio (blanco), heredadas sin operacion
   por subcadena en el constructor-. Huellas v7: 18/18 cambiaron (`base.py` compartido). Prioridad: 110 agencias
