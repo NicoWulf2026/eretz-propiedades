@@ -1119,6 +1119,22 @@ def operational_metrics(canonical_id: str, connector: str, strategy: str,
     }
 
 
+# Las variantes que leen el catalogo de UNA pagina HTML. Si la pagina no dice
+# cuantas propiedades hay y no se siguio ninguna paginacion, que la enumeracion
+# termine ahi no prueba que el catalogo termine ahi: puede ser la portada con
+# los destacados. Medido el 06-10 contra la fuente: `cipollone` certificaba 12
+# de la portada y /catalogo/VENTA publica otras (ids 23-42); `constant` 24 de
+# una pagina con 7 fichas mas enlazadas en el sitio. Sin prueba de fin no hay
+# COMPLETE: queda BEST_AVAILABLE, con todo lo leido publicado igual.
+VARIANTES_DE_PAGINA_UNICA = frozenset({"LISTADO_HTML", "WORDPRESS_HTML"})
+
+
+def sin_prueba_de_fin_de_catalogo(run: dict[str, Any]) -> bool:
+    return (run.get("variante") in VARIANTES_DE_PAGINA_UNICA
+            and int(run.get("paginas") or 0) <= 1
+            and not run.get("total_declarado"))
+
+
 def certification_status(run1: dict[str, Any], run2: dict[str, Any],
                          comparison: dict[str, Any], enumeration: dict[str, Any],
                          fields: dict[str, Any]) -> tuple[str, list[str]]:
@@ -1234,6 +1250,10 @@ def certification_status(run1: dict[str, Any], run2: dict[str, Any],
         reasons.append("zero inventory was not exhaustively proven")
     if reasons:
         return "NEEDS_FIX", reasons
+    if any(sin_prueba_de_fin_de_catalogo(run) for run in (run1, run2)):
+        enumeration.setdefault("review_reasons", []).append(
+            "NO_POSITIVE_END_OF_CATALOG_EVIDENCE")
+        enumeration["exhaustive_review_required"] = True
     if enumeration.get("exhaustive_review_required"):
         return "CERTIFIED_BEST_AVAILABLE", enumeration["review_reasons"]
     return "CERTIFIED_COMPLETE", ["two complete idempotent runs passed"]
