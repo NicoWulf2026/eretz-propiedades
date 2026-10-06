@@ -83,3 +83,50 @@ def test_el_tope_del_usuario_manda_sobre_la_medicion():
     nuevo = decidir({"workers": 3, "tope_usuario": 2, "prueba": "aprobada"}, ahora, medir,
                     {"memoria": 10.0})
     assert nuevo["workers"] == 2 and nuevo["prueba"] == "suspendida_por_usuario"
+
+
+# 06-10: con el estado en un disco USB (E:, desde la migracion del 04-10) el plan del relanzador
+# paso de ~7 s a 16-26 s de media (maximo 282 s), y faulthandler lo agarraba leyendo los 1.150
+# `certification.json` uno por uno. La ventana solo necesita los paquetes de sus cierres.
+def _paquete(salida: Path, agencia: str, checked_at: str, bloqueado: bool) -> None:
+    import hashlib
+    import json
+    d = salida / "agencies" / hashlib.sha256(agencia.encode()).hexdigest()[:16]
+    d.mkdir(parents=True)
+    corrida = {"ritmo_cedido": bloqueado, "errores_por_etapa": {}}
+    (d / "certification.json").write_text(json.dumps(
+        {"canonical_agency_id": agencia, "checked_at": checked_at, "run1": corrida,
+         "run2": corrida}), encoding="utf-8")
+
+
+def test_MUERDE_medir_lee_solo_los_paquetes_de_la_ventana(tmp_path, monkeypatch):
+    import json
+    from regimen_de_workers import medir
+    dentro, fuera = "2026-09-30T10:00:00", "2026-09-20T10:00:00"
+    filas = [{"canonical_agency_id": "roomix:a", "checked_at": dentro},
+             {"canonical_agency_id": "roomix:b", "checked_at": dentro}]
+    (tmp_path / "AGENCY_CERTIFICATION_RESULTS.jsonl").write_text(
+        "".join(json.dumps(f) + "\n" for f in filas), encoding="utf-8")
+    _paquete(tmp_path, "roomix:a", dentro, bloqueado=True)
+    _paquete(tmp_path, "roomix:b", dentro, bloqueado=False)
+    for i in range(30):  # agencias cerradas fuera de la ventana: no se leen
+        _paquete(tmp_path, f"roomix:vieja{i}", fuera, bloqueado=True)
+    leidos = []
+    original = Path.read_text
+    monkeypatch.setattr(Path, "read_text", lambda self, *a, **k: (
+        leidos.append(self.name) if self.name == "certification.json" else None)
+        or original(self, *a, **k))
+    m = medir(tmp_path, AHORA - timedelta(hours=6), AHORA)
+    assert m["agencias"] == 2 and m["bloqueo"] == 0.5
+    assert len(leidos) == 2
+
+
+def test_un_paquete_de_otra_corrida_de_la_misma_agencia_no_cuenta(tmp_path):
+    import json
+    from regimen_de_workers import medir
+    filas = [{"canonical_agency_id": "roomix:a", "checked_at": "2026-09-30T10:00:00"}]
+    (tmp_path / "AGENCY_CERTIFICATION_RESULTS.jsonl").write_text(
+        "".join(json.dumps(f) + "\n" for f in filas), encoding="utf-8")
+    # El paquete en disco es de una certificacion posterior: no describe ese cierre.
+    _paquete(tmp_path, "roomix:a", "2026-09-30T11:30:00", bloqueado=True)
+    assert medir(tmp_path, AHORA - timedelta(hours=6), AHORA)["bloqueo"] == 0.0

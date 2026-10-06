@@ -21,6 +21,7 @@ que es el unico que lanza workers. Cada decision queda en
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import time
 from datetime import datetime, timedelta
@@ -105,15 +106,42 @@ def medir(salida: Path, desde: datetime, hasta: datetime,
             "paros_por_agencia": round(paros / n, 4) if n else 0.0}
 
 
-def _paquetes(salida: Path) -> dict[tuple[str, str], dict[str, Any]]:
-    fuera = {}
-    for archivo in (salida / "agencies").glob("*/certification.json"):
-        try:
-            cert = json.loads(archivo.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            continue
-        fuera[(cert.get("canonical_agency_id"), str(cert.get("checked_at"))[:19])] = cert
-    return fuera
+class _Paquetes(dict):
+    """Los paquetes por (agencia, checked_at), leidos solo cuando se piden.
+
+    Antes se leian los ~1.150 `certification.json` en cada pasada; en el disco USB (E:) eso
+    llevo el plan del relanzador de ~7 s a 282 s. Una ventana solo pide los de sus cierres:
+    el paquete vive en `agencies/<sha256(id)[:16]>` (`agency_certifier.py`) y guarda la
+    ultima certificacion, asi que solo cuenta si su `checked_at` es el del cierre.
+    """
+
+    def __init__(self, salida: Path):
+        super().__init__()
+        self._salida = salida
+        self._leidas: dict[str, dict[str, Any] | None] = {}
+
+    def get(self, clave, defecto=None):
+        agencia, cuando = clave
+        if not agencia:
+            return defecto
+        if agencia not in self._leidas:
+            archivo = (self._salida / "agencies"
+                       / hashlib.sha256(str(agencia).encode()).hexdigest()[:16]
+                       / "certification.json")
+            try:
+                cert = json.loads(archivo.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                cert = None
+            self._leidas[agencia] = cert if isinstance(cert, dict) else None
+        cert = self._leidas[agencia]
+        if cert and (cert.get("canonical_agency_id"),
+                     str(cert.get("checked_at"))[:19]) == (agencia, cuando):
+            return cert
+        return defecto
+
+
+def _paquetes(salida: Path) -> _Paquetes:
+    return _Paquetes(salida)
 
 
 def recursos() -> dict[str, float]:
