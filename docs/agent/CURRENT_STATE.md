@@ -6,7 +6,11 @@ archivo: `git show 6ee927bb80:docs/agent/CURRENT_STATE.md`). `database_writes: 0
 **Actualizado:** 2026-10-04 22:20 (ver bloque LOCAL 04-10) · **Rama:** `handoff/codex-unificacion-2026-09-18` (push solo acá)
 **Fase:** certificación/recertificación continua + calidad de lo servido + preparación productiva.
 
-## LOCAL — cuenta B, 2026-10-04 22:20 (estado REAL verificado en la PC)
+## LOCAL — cuenta B, 2026-10-06 03:30 (estado REAL verificado en la PC)
+- **BETA CANDIDATE `snap_final_v7c`** (73.790 props, sha256 `998bed36...`, READY #7b, despliegue = decision del usuario):
+  P2 0 fallas, Regression Gate 0 sin explicar / 0 bloqueantes, QA aislada 71/71, benchmark sin regresion, suite 4019, rollback 6/6.
+  P0 de final_v6 resueltos (operacion por subcadena 487 -> 24, monoambientes 2+ dorm 96 -> 0, tipos en ingles 0, blanco).
+  Constructor: `02a3133` (monoambiente), `8e68d88` (sin altas no certificadas). Tests del vigilante aislados (`2d50cdd`).
 - **Raiz canonica: `E:\ERETZ Propiedades`** desde el 04-10 (migracion definitiva, `docs/agent/MIGRACION_DEFINITIVA_2026-10-04.md`).
   Nodo operativo `E:\ERETZ Propiedades\eretz-unified` (rama `handoff/codex-unificacion-2026-09-18`), desarrollo
   `E:\ERETZ Propiedades\eretz-b` (`integration/eretz`), HEAD `5cd3e7b` (= nodo). D: es historico: no se usa (pendiente del usuario: Git en el PATH, READY #14).
