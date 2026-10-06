@@ -63,14 +63,15 @@ def _snapshot_connections(source: Path, temporary: Path):
             finally:
                 if owned:
                     temporary.unlink(missing_ok=True)
-from scripts.property_contract import alcances  # noqa: E402
+from scripts.property_contract import FILTRO_OPERACION, alcances  # noqa: E402
 from scripts.image_quality import is_known_page_asset  # noqa: E402
 from scripts.plan_de_escritura import agencias_con_web_ajena  # noqa: E402
 from scripts.property_freshest import (CAMPOS_FUSIONABLES,  # noqa: E402
                                        fusionar, mas_frescas)
 from scripts.run_rollout import (FRACCION_COMPARTIDA,  # noqa: E402
                                  MINIMO_PARA_JUZGAR)
-from connectors.base import RE_TIPO_ACCESORIO, detectar_tipo, geografia  # noqa: E402
+from connectors.base import (RE_TIPO_ACCESORIO, detectar_operacion,  # noqa: E402
+                             detectar_tipo, geografia)
 from connectors.exterior import (POLITICA_PUBLICA, evidencia_de_exterior,  # noqa: E402
                                  publicable)
 from connectors import poligono_caba  # noqa: E402
@@ -142,6 +143,113 @@ def _sin_mojibake(valor: Any) -> Any:
         except (UnicodeEncodeError, UnicodeDecodeError):
             return m.group(0)
     return RE_MOJIBAKE.sub(tramo, valor)
+
+
+# Las claves de `detectar_operacion` hasta el 04-10, que se buscaban como
+# SUBCADENA: «rent» en «fRENTE», «sale» en «RoSALEs», «venta» en «VENTAnal».
+# Solo sirven para reconocer una operacion que salio de ahi.
+_OPERACION_POR_SUBCADENA = (("venta", "venta"), ("vender", "venta"), ("sale", "venta"),
+                            ("alquiler", "alquiler"), ("alquilar", "alquiler"),
+                            ("rent", "alquiler"))
+
+# Tipos que un conector viejo guardo en ingles (`alta`: 16 filas servidas en
+# la final_v6, de un cierre NEEDS_FIX que no se recertifica).
+TIPOS_EN_INGLES = {"land": "terreno", "condo": "departamento",
+                   "apartment": "departamento", "house": "casa"}
+
+
+RE_MONOAMBIENTE = re.compile(r"\bmono\s?ambiente")
+RE_DORM_EN_TITULO = re.compile(r"\d\s*dorm")
+
+
+def _monoambiente_con_dormitorios(fila: dict[str, Any]) -> bool:
+    """El titulo dice monoambiente y la fila dice 2 o mas dormitorios: es falso.
+
+    P0 de final_v6 (04-10): `crestale` toma los dormitorios del menu del sitio (53 fichas)
+    y `metro` servia un monoambiente con 15 dormitorios. En final_v7: 96 filas. Con 1
+    dormitorio no se toca -'monoambiente dividido' es una convencion habitual-; si el
+    titulo nombra sus propios dormitorios ('2 dorm + monoambiente') tampoco.
+    """
+    titulo = _sin_tildes(fila.get("titulo") or "")
+    return ((fila.get("dormitorios") or 0) >= 2 and bool(RE_MONOAMBIENTE.search(titulo))
+            and not RE_DORM_EN_TITULO.search(titulo))
+
+
+TIPOS_NO_RESIDENCIALES = {"local", "oficina", "galpon"}
+RE_MENCION_RESIDENCIAL = re.compile(
+    r"\b(dorm|dormitorio|habitaci|vivienda|casa|departamento|depto|dpto|ph\b|monoambiente|suite|cuarto|"
+    r"ambientes?\b|amb\b|recamara|caba[nn]a)")
+
+
+def _no_residencial_con_dormitorios(fila: dict[str, Any]) -> bool:
+    """Local, oficina o galpon con dormitorios que su propio texto no menciona: el conteo es ajeno.
+
+    Mismo origen que el P0 de final_v6: el conteo sale del menu o de un widget de la pagina
+    (`crestale` 108, `veiga` lo rotaba entre cargas, 06-10). En final_v7c: 420 filas sin ninguna
+    mencion de vivienda, dormitorio o ambientes en titulo ni descripcion. Si la ficha menciona
+    vivienda ('galpon con casa', 'oficina 3 ambientes') no se toca.
+    """
+    if fila.get("tipo_propiedad") not in TIPOS_NO_RESIDENCIALES or (fila.get("dormitorios") or 0) < 1:
+        return False
+    texto = _sin_tildes(f"{fila.get('titulo') or ''} {fila.get('descripcion') or ''}")
+    return not RE_MENCION_RESIDENCIAL.search(texto)
+
+
+def _operacion_por_subcadena(texto: str) -> str | None:
+    t = (texto or "").lower()
+    if "temporario" in t or "temporal" in t:
+        return "alquiler_temporario"
+    return next((val for clave, val in _OPERACION_POR_SUBCADENA if clave in t), None)
+
+
+def _operacion_sin_evidencia(fila: dict[str, Any]) -> bool:
+    """La operacion salio SOLO de una subcadena del titulo o la URL.
+
+    Asi la tiene una fila heredada -servida o de la base- que nunca paso por el
+    detector de palabra entera: 172 de las 516 filas falsas de la final_v6 (04-10)
+    eran de agencias sin cierre vigente, que la recertificacion no alcanza
+    (`pelay` «Dto 2 Amb Al Frente» USD 63.000 como ALQUILER, `ruiz` «Av Rosales»
+    ARS 450.000 como VENTA). Si la descripcion la nombra como palabra, hay
+    evidencia y se respeta.
+    """
+    op = fila.get("operacion")
+    if op not in ("venta", "alquiler"):
+        return False
+    texto = f"{fila.get('titulo') or ''} {fila.get('source_url') or ''}"
+    return (_operacion_por_subcadena(texto) == op and detectar_operacion(texto) != op
+            and detectar_operacion(fila.get("descripcion") or "") != op)
+
+
+def _corregir_heredada(fila: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """Una fila sin paquete fresco, sin la operacion por subcadena ni el tipo en ingles.
+
+    La operacion falsa queda vacia -nunca se deduce del precio: eso seria
+    inventarla- y la fila sale del filtro venta/alquiler. En una fila servida
+    tambien se corrigen el `documento` y los `alcances` que la API devuelve.
+    """
+    nueva, cambios = dict(fila), []
+    if _operacion_sin_evidencia(fila):
+        nueva["operacion"] = None
+        cambios.append("operacion")
+    if _monoambiente_con_dormitorios(fila) or _no_residencial_con_dormitorios(fila):
+        nueva["dormitorios"] = None
+        cambios.append("dormitorios")
+    tipo = TIPOS_EN_INGLES.get(str(fila.get("tipo_propiedad") or "").strip().lower())
+    if tipo:
+        nueva["tipo_propiedad"] = tipo
+        cambios.append("tipo")
+    if cambios and isinstance(fila.get("documento"), str):
+        documento = json.loads(fila["documento"])
+        documento["operacion"] = nueva["operacion"]
+        documento["tipo_propiedad"] = nueva["tipo_propiedad"]
+        if "dormitorios" in cambios:
+            documento["dormitorios"] = None
+        if "operacion" in cambios:
+            documento["alcances"] = [a for a in documento.get("alcances") or []
+                                     if a != FILTRO_OPERACION]
+            nueva["alcances"] = json.dumps(documento["alcances"], ensure_ascii=False)
+        nueva["documento"] = json.dumps(documento, ensure_ascii=False)
+    return nueva, cambios
 
 
 from scripts.preingestion_manifest import (base_canonica,  # noqa: E402
@@ -601,6 +709,17 @@ def _servidas_a_conservar(origen, ruta_servida, nuevas, retirar) -> list[dict]:
     return conservar
 
 
+def _ids_servidos(ruta_servida) -> set[str] | None:
+    """Los ids de la snapshot servida; None si no hay servida con la que comparar."""
+    if not ruta_servida or not Path(ruta_servida).is_file():
+        return None
+    servida = sqlite3.connect(f"file:{Path(ruta_servida).as_posix()}?mode=ro", uri=True)
+    try:
+        return {i for (i,) in servida.execute("select id from propiedades")}
+    finally:
+        servida.close()
+
+
 def _servidas_sin_frescura(origen, ruta_servida, frescas, retirar) -> dict[str, dict]:
     """Filas servidas de propiedades que HOY no tienen paquete fresco confiable.
 
@@ -767,7 +886,10 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
     descripciones_del_sitio = 0
     titulos_del_sitio = 0
     tipos_cochera_corregidos = 0
+    heredadas_corregidas: Counter = Counter()
     cocheras_incoherentes = 0
+    monoambientes_corregidos = 0
+    no_residenciales_corregidos = 0
     textos_limpiados = 0
     ajenas_omitidas = 0
     exterior_no_publicadas = 0
@@ -798,6 +920,15 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
     sin_frescura = (_servidas_sin_frescura(origen, getattr(args, 'servida', None), frescas, retirar)
                     if decision is not None else {})
     servidas_sin_paquete_fresco = 0
+    # Una fila que NO se servia y no llega con un paquete certificado no es un alta:
+    # P2 solo aprueba altas SUMADA_CERTIFICADA. Sin esto, una fila excluida antes por un
+    # motivo que dependia del paquete reaparecia sin verificar: `o feely` (06-10) volvia
+    # a publicar dos emprendimientos de URUGUAY (Colonia, Punta del Este) con provincia
+    # 'Santa Fe' inferida del padron, porque su ultima corrida no llego a esas fichas y
+    # se perdio la marca de exterior del paquete anterior.
+    ids_servidos = (_ids_servidos(getattr(args, 'servida', None))
+                    if decision is not None else None)
+    altas_sin_certificar = 0
     for base, fresca, es_nueva in _filas_en_orden(origen, frescas, nuevas, retirar, servidas):
         if (fresca is None and not es_nueva and "__servida__" not in base
                 and base.get("hash_dedup") in sin_frescura):
@@ -813,6 +944,8 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
                 continue
             if servida_fila["id"] == anterior[0] and anterior[1] is not None:
                 continue
+            servida_fila, corregidas = _corregir_heredada(servida_fila)
+            heredadas_corregidas.update(corregidas)
             propiedad = api.execute(
                 f"insert or replace into propiedades values ({','.join('?' * len(servida_fila))})",
                 tuple(servida_fila.values()))
@@ -830,6 +963,11 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
             filas_con_frescura_parcial += 1
         cruda = base if es_nueva else fusionar(base, fresca, CAMPOS_FUSIONABLES)
         hash_dedup = cruda.get("hash_dedup")
+        if (ids_servidos is not None and fresca is None and not es_nueva
+                and hash_dedup not in ids_servidos):
+            altas_sin_certificar += 1
+            cambios[hash_dedup] = "ALTA_SIN_CERTIFICAR"
+            continue
         canonical = cruda.get("canonical_agency_id")
         if canonical in ajenas:
             ajenas_omitidas += 1
@@ -860,6 +998,10 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
               and es_titulo_del_sitio(canonical, cruda.get("titulo"))):
             cruda = dict(cruda, titulo=None)
             titulos_del_sitio += 1
+        # Sin paquete fresco, la fila viene de la base: ver `_corregir_heredada`.
+        if fresca is None:
+            cruda, corregidas = _corregir_heredada(cruda)
+            heredadas_corregidas.update(corregidas)
         # «Dúplex … con cochera» no es una cochera: 272 filas de la v4 venian
         # de la regla vieja. Solo si el titulo tiene la forma accesoria, el
         # tipo se vuelve a derivar del titulo con la regla de hoy; sin otro
@@ -887,6 +1029,12 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
             else:
                 cruda = dict(cruda, tipo_propiedad=None)
             cocheras_incoherentes += 1
+        if _monoambiente_con_dormitorios(cruda):
+            cruda = dict(cruda, dormitorios=None)
+            monoambientes_corregidos += 1
+        elif _no_residencial_con_dormitorios(cruda):
+            cruda = dict(cruda, dormitorios=None)
+            no_residenciales_corregidos += 1
         # La misma regla de `coherencia.revisar` para las filas que la cola
         # todavia no recertifico: 42 en la v4i servian «US$1» o ventas por USD
         # 460 (`next`, `oyharzabal`, `domus`, `must`...).
@@ -1011,12 +1159,18 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
         "provincia_normalizada_por_poligono_p10": correcciones_geo["provincia_por_poligono"],
         "servidas_conservadas_sin_muerte_verificada": conservadas,
         "servidas_sin_paquete_fresco": servidas_sin_paquete_fresco,
+        "altas_sin_certificar_omitidas": altas_sin_certificar,
         "geo_conflictos_viejos_que_ya_no_lo_son": correcciones_geo["conflicto_obsoleto"],
         "imagenes_compartidas_descartadas": imagenes_compartidas,
         "descripciones_del_sitio_descartadas": descripciones_del_sitio,
         "titulos_del_sitio_descartados": titulos_del_sitio,
         "tipos_cochera_por_accesorio_corregidos": tipos_cochera_corregidos,
+        "heredadas_operacion_por_subcadena_anulada": heredadas_corregidas["operacion"],
+        "heredadas_tipo_en_ingles_traducido": heredadas_corregidas["tipo"],
         "cocheras_incoherentes_resueltas": cocheras_incoherentes,
+        "monoambientes_con_dormitorios_anulados": monoambientes_corregidos,
+        "no_residenciales_con_dormitorios_anulados": no_residenciales_corregidos,
+        "heredadas_dormitorios_anulados": heredadas_corregidas["dormitorios"],
         "precios_simbolicos_descartados": precios_simbolicos,
         "textos_con_entidades_limpiados": textos_limpiados,
         "filas_con_frescura_parcial": filas_con_frescura_parcial,

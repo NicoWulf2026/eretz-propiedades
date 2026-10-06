@@ -59,12 +59,13 @@ def _rebasar(ruta: str) -> Path:
     vieja: la parte bajo la raiz original se reubica en la actual. Una ruta fuera de
     esa raiz se respeta tal cual.
     """
-    from scripts.rutas_de_datos import RAIZ_ORIGINAL, raiz_de_datos
+    from scripts.rutas_de_datos import RAICES_HISTORICAS, raiz_de_datos
     texto = str(ruta).replace("/", "\\")
-    prefijo = RAIZ_ORIGINAL.rstrip("\\") + "\\"
-    if texto.lower().startswith(prefijo.lower()):
-        partes = [x for x in texto[len(prefijo):].split("\\") if x]
-        return raiz_de_datos().joinpath(*partes)
+    for raiz in RAICES_HISTORICAS:
+        prefijo = raiz.rstrip("\\") + "\\"
+        if texto.lower().startswith(prefijo.lower()):
+            partes = [x for x in texto[len(prefijo):].split("\\") if x]
+            return raiz_de_datos().joinpath(*partes)
     return Path(ruta)
 
 

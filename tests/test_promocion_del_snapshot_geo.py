@@ -29,6 +29,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from scripts.rutas_de_datos import dato  # la raiz vigente, no la del disco viejo
 
 import pytest
 
@@ -154,7 +155,7 @@ def test_un_snapshot_sin_marca_no_se_reporta_interrumpido(tmp_path: Path):
 
 def test_el_snapshot_real_no_quedo_a_medias():
     """El de verdad, el que usa la resolución geográfica."""
-    real = Path(r"D:\INMO CAPITAL\ERETZ_GEO")
+    real = dato("ERETZ_GEO")
     if not real.exists():
         pytest.skip("el snapshot de GeoRef no esta en esta maquina")
     assert not promocion_interrumpida(real)

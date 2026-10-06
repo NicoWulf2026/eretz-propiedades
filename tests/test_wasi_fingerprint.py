@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from scripts.rutas_de_datos import dato  # la raiz vigente, no la del disco viejo
 
 import pytest
 
@@ -479,7 +480,7 @@ def test_la_capa_nueva_no_rompe_las_urls_de_tokko():
 
 # ------------------------------------------------------------------- artefacto
 def test_el_censo_de_wasi_conserva_la_evidencia_de_cada_fuente():
-    ruta = Path(r"D:\INMO CAPITAL\WASI_DISCOVERY.jsonl")
+    ruta = dato("WASI_DISCOVERY.jsonl")
     if not ruta.exists():
         pytest.skip("todavia no se genero")
     filas = [json.loads(l) for l in ruta.open(encoding="utf-8") if l.strip()]

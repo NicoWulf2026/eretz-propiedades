@@ -32,7 +32,7 @@ from scripts.defect_triage import senales_de_catalogo  # noqa: E402
 from scripts.ipv4_primero import preferir_ipv4  # noqa: E402
 from scripts.ledger_de_certificacion import (  # noqa: E402
     vigentes_por_agencia)
-from scripts.defect_triage import (STOP, anotar_corte,  # noqa: E402
+from scripts.defect_triage import (CONTINUE, STOP, anotar_corte,  # noqa: E402
                                    clasificar, debe_cortar_por_lote,
                                    defectos_ya_cortados)
 from scripts.agency_certifier import (
@@ -1000,6 +1000,27 @@ def ordenar_para_correr(cola: list[str],
 PRIORIDAD_DE_COLA = "ERETZ_PRIORIDAD_DE_COLA.json"
 
 
+def borrar_bandera_vieja(output: Path, intentos: int = 10) -> None:
+    """Borra la bandera de una corrida anterior, aunque otro worker la este borrando.
+
+    Al atender un paro el relanzador arranca los dos workers juntos y los dos la
+    borran. En Windows el segundo `unlink` sobre un archivo con borrado pendiente
+    da PermissionError: el 2026-10-05 a las 09:48 w0 murio asi y la cola quedo con
+    un worker hasta el relanzador siguiente. Si la bandera ya no esta, lo hizo el
+    otro; si sigue ahi despues de los reintentos, el error es real y se propaga.
+    """
+    ruta = output / BANDERA_DE_PARO
+    for _ in range(intentos):
+        try:
+            ruta.unlink(missing_ok=True)
+            return
+        except PermissionError:
+            if not ruta.exists():
+                return
+            time.sleep(0.5)
+    ruta.unlink(missing_ok=True)
+
+
 def con_prioridad(cola: list[str], output: Path,
                   ahora: str | None = None) -> list[str]:
     """Las agencias del archivo de prioridad primero, en su orden; el resto igual.
@@ -1023,6 +1044,49 @@ def con_prioridad(cola: list[str], output: Path,
         return cola
     adelante = set(primero)
     return primero + [a for a in cola if a not in adelante]
+
+
+CIERRES_CERTIFICADOS = {"CERTIFIED_COMPLETE", "CERTIFIED_BEST_AVAILABLE", "NO_INVENTORY_CONFIRMED"}
+
+
+def sin_nada_que_perder(result: dict[str, Any], previo: dict[str, Any] | None) -> bool:
+    """Una agencia sin filas en la base y nunca certificada: su paro no protege nada.
+
+    El paro de radio FAMILIA existe para que un extractor roto no siga certificando ni
+    pierda inventario servido. Una agencia que NUNCA se certifico y no tiene filas en la
+    base no tiene inventario que perder, y una regresion de familia se veria igual en las
+    agencias que si tienen datos. Del 05 al 06-10 frenaron la cola de noche asi geraci
+    (catalogo por sesion), gle (ficha en iframe Xintel/Amaira) y guzzi (catalogo por JS),
+    las tres primeras corridas con base 0. El defecto queda anotado igual (CONTINUE).
+    """
+    base = (result.get("baseline_inventory") or {}).get("preingestion_rows")
+    certificada_antes = bool(previo) and previo.get("status") in CIERRES_CERTIFICADOS
+    return base == 0 and not certificada_antes
+
+
+def recertificacion_pedida(output: Path, ahora: str | None = None) -> dict[str, str]:
+    """Agencias que hay que volver a correr aunque su resultado cuente como vigente.
+
+    Un NEEDS_FIX que el triaje dejo seguir cuenta como vigente hasta que cambia la
+    huella. Si la causa fue del ENTORNO -el 2026-10-05 de 04:15 a 05:10 la PC se
+    quedo sin DNS: bilas, book, pelay- ese resultado no describe la agencia y la
+    cola no lo rehacia nunca. El archivo de prioridad puede pedirlo con
+    `recertificar: {desde, agencias}`: se corre una vez -la que tenga un resultado
+    anterior a `desde`- y despues vuelve a contar como vigente. Vence con el archivo.
+    """
+    try:
+        datos = json.loads((output / PRIORIDAD_DE_COLA).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(datos, dict) or not str(datos.get("motivo") or "").strip():
+        return {}
+    ahora = ahora or time.strftime("%Y-%m-%dT%H:%M:%S")
+    if str(datos.get("hasta") or "") <= ahora:
+        return {}
+    pedido = datos.get("recertificar")
+    if not isinstance(pedido, dict) or not str(pedido.get("desde") or "").strip():
+        return {}
+    return {a: str(pedido["desde"]) for a in pedido.get("agencias") or [] if isinstance(a, str)}
 
 
 def latest_results(output: Path) -> dict[str, dict[str, Any]]:
@@ -1229,8 +1293,12 @@ def main() -> int:
     # Las diferidas se leen ANTES de armar la cola, no despues: son parte de
     # decidir que entra, no solo de decidir si un paro detiene.
     diferidas_al_armar = diferidos(output)
+    pedidas = recertificacion_pedida(output)
 
     def current(key: str) -> bool:
+        desde = pedidas.get(key)
+        if desde and str((existing.get(key) or {}).get("checked_at") or "") < desde:
+            return False
         # La fuente de hoy se resuelve con la misma precedencia que usa el
         # certificador, llamando a `resolve_identity`: no se reimplementa acá,
         # porque dos copias de una precedencia terminan divergiendo.
@@ -1280,7 +1348,7 @@ def main() -> int:
     arranque_del_proceso = time.strftime("%Y-%m-%dT%H:%M:%S")
     bandera_previa = hay_que_parar(output)
     if not (bandera_previa and bandera_previa.get("radio") == "OPERACION"):
-        (output / BANDERA_DE_PARO).unlink(missing_ok=True)
+        borrar_bandera_vieja(output)
     stopped_on: str | None = None
     defectos_pendientes: list[dict[str, Any]] = []
     # Que lotes ya provocaron un corte. Un corte es un pedido de atencion:
@@ -1383,6 +1451,12 @@ def main() -> int:
                 result["senales_de_catalogo"] = senales_en_la_portada(
                     result.get("official_url"))
             triage = clasificar(result)
+            if triage.get("decision") == STOP and sin_nada_que_perder(result, existing.get(canonical_id)):
+                triage.update({
+                    "decision": CONTINUE, "degradado_de": f"STOP/{triage.get('radio_estimado')}",
+                    "radio_estimado": "AGENCIA",
+                    "evidencia": (triage.get("evidencia") or "")
+                    + " | sin nada que perder: 0 filas en la base y nunca certificada"})
             triage.update({"position": index, "queue_size": len(queue),
                            "epoch": time.time()})
             # Un defecto que ya tuvo su tanda de diagnostico y se posterga a

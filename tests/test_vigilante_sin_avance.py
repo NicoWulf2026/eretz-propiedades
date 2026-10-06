@@ -19,6 +19,9 @@ def entorno(tmp_path, monkeypatch):
     monkeypatch.setattr(v, "DIFERIDOS", tmp_path / "AGENCY_DEFECTS_DIFERIDOS.jsonl")
     monkeypatch.setattr(v, "ESTADO", tmp_path / "ERETZ_QUEUE_WATCH_STATUS.json")
     monkeypatch.setattr(v, "BITACORA", tmp_path / "ERETZ_QUEUE_WATCH.log")
+    # La cola de defectos REAL no entra al test (06-10: un paro real de la huella v7
+    # -gabilan- aparecia aca como PARO_SIN_BANDERA porque las diferidas si estaban aisladas).
+    monkeypatch.setattr(v, "COLA_DE_DEFECTOS", tmp_path / "AGENCY_DEFECT_QUEUE.jsonl")
     return tmp_path
 
 

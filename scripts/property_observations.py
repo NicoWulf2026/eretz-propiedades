@@ -27,6 +27,10 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+try:  # raiz del estado operativo configurable (ERETZ_DATA_ROOT)
+    from scripts.rutas_de_datos import dato, raiz_de_datos  # noqa: E402
+except ImportError:  # corrido como `python scripts/x.py`
+    from rutas_de_datos import dato, raiz_de_datos  # noqa: E402
 from typing import Any, Iterable
 
 if __package__:
@@ -171,7 +175,7 @@ def transiciones(observaciones: Iterable[dict[str, Any]]) -> dict[str, Any]:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--registro",
-                    default=str(Path(r"D:\INMO CAPITAL\ERETZ_AGENCY_CERTIFICATION_20260827")
+                    default=str(dato("ERETZ_AGENCY_CERTIFICATION_20260827")
                                 / ARCHIVO))
     args = ap.parse_args()
 

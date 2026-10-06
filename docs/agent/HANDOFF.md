@@ -1,8 +1,24 @@
 # ERETZ — handoff
 
-Para retomar desde una sesión nueva: arrancar Claude Code en `D:\INMO CAPITAL\eretz-unified`.
+Para retomar desde una sesión nueva: arrancar Claude Code en `E:\ERETZ Propiedades\eretz-unified` (raiz canonica desde la migracion definitiva del 04-10; D: y `E:\INMO CAPITAL` son historicos).
 Reglas: `CLAUDE.md` + `.claude/rules/` (cargan solas). Estado: `docs/agent/CURRENT_STATE.md`.
 Historia: Git (`git log --since=2026-09-25`).
+
+## TAREA EXACTA EN CURSO (06-10 04:10, cuenta B, LOCAL)
+1. **BETA CANDIDATE `final_v7c` lista** (READY #7b; desplegar = decision del usuario). Todas las compuertas en verde: P2 0 fallas,
+   Regression Gate 0 sin explicar (`_regresion/CLASIFICACION_BETA_final_v7c.jsonl`; 519 correcciones en REVISADAS), QA aislada 71/71,
+   benchmark sin regresion, suite 4019, rollback 6/6. Herramientas: `_b_scratch/armar_candidata.sh`, `gate_valores.py`, `clasif_final_v7c.py`,
+   `p2_final_v7c.py`, `medir_subcadena_snap.py`, `medir_dorm_menu.py`. Worktree temporal `_b_scratch/codigo_v6` (detached en v6) para replays.
+2. Cola: nodo `0870f3c` (huellas v7). Paros de cada noche: diagnosticar con evidencia (fila en DIFERIDOS con el `cuando` del paro) y
+   disparar el relanzador; vigilar con `_b_scratch/esperar_paro.py`. Paros del 05/06-10: DNS (entorno), gabilan y matias sosa (orden
+   inestable), geraci (catalogo por sesion), gle (Xintel/Amaira en iframe), nizzi (plantilla no leida), portanko (bajas 404),
+   rodriguez bled (WooCommerce) y guimat (tokko frontend propio): ninguno regresion de v7.
+3. HECHO (`f065c5f`): una agencia con 0 filas en la base y nunca certificada ya no detiene a su familia (paro -> CONTINUE, radio
+   AGENCIA, anotado). Las que tienen filas servidas (rodriguez bled, guimat) siguen parando por diseno: hay propiedades reales sin leer.
+   BETA CANDIDATE vigente: `final_v7d` (reemplaza a v7c; READY #7b).
+4. Deuda post-beta: monoambientes con 1 dormitorio (354), rangos de dormitorios, plantillas no leidas (nizzi, medina, Template4),
+   Xintel/Amaira iframe (~719 avisos), catalogo por sesion, WooCommerce, tokko frontend propio, orden de listado no determinista.
+5. Usuario: READY #14 (Git en el PATH de maquina) para poder desconectar D:.
 
 ## Recién cerrado (25-09)
 - Snapshot: frescura desde NEEDS_FIX por campos, títulos/eslóganes del sitio; v4d verificada.

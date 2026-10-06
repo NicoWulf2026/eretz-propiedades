@@ -18,6 +18,7 @@ from __future__ import annotations
 import re
 import sys
 from pathlib import Path
+from scripts.rutas_de_datos import dato  # la raiz vigente, no la del disco viejo
 
 import pytest
 
@@ -28,7 +29,7 @@ from scripts.input_universe import ENTRADAS, OBLIGATORIAS, contar  # noqa: E402
 
 FUENTE = (Path(__file__).resolve().parents[1] / "scripts"
           / "mission_report.py").read_text(encoding="utf-8")
-INFORME = Path(r"D:\INMO CAPITAL\ERETZ_AGENCY_DATA\mission_report.log")
+INFORME = dato("ERETZ_AGENCY_DATA", "mission_report.log")
 
 # El write set de cuando faltaban dos rollouts. No puede volver a aparecer.
 CONTEO_VIEJO = "159,858"

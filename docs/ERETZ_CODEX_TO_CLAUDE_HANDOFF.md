@@ -406,3 +406,69 @@ continuar demás pendientes, no empezar de cero la auditoría.
 8. Al finalizar de verdad: comparación histórico/pre-local/unificado con límites,
    veredicto ejecutivo y plan actualizado separado backend beta/producción/nacional.
    No declarar misión completada por entregar este handoff.
+
+
+# HANDOFF URGENTE — 2026-10-06
+
+Fuente de verdad para continuar sin preguntar. Escrito 06-10 ~08:15 (cuenta B, PC LOCAL). Arranque rapido: `docs/CONTINUE_HERE.md`.
+
+## 1. Ubicacion, ramas, SHAs
+- **Raiz canonica: `E:/ERETZ Propiedades`** (disco USB Seagate 932 GB). Disco/ruta ORIGINAL: `D:/INMO CAPITAL` (tarjeta SD): solo respaldo, NO usar.
+- Repo canonico: `E:/ERETZ Propiedades/eretz-propiedades` (ex `Inmo-Capital-main`; su worktree principal esta en `release/eretz-private-preview`, LEGADO, no se usa como cwd).
+- **Desarrollo**: worktree `E:/ERETZ Propiedades/eretz-b`, rama **`integration/eretz`** (push aca). HEAD = el commit de este handoff (`git log -1`).
+- **Nodo operativo**: `E:/ERETZ Propiedades/eretz-unified`, rama `handoff/codex-unificacion-2026-09-18`; avanza SOLO con `git merge --ff-only integration/eretz`. Workers y tareas corren desde aca.
+- Post-beta: `E:/ERETZ Propiedades/eretz-b-dev`, rama `b/postbeta-lote8` (`2493473`, pusheada): senal de provincia (`aac53f6`) + GVAMAX fila partida. NO integrada.
+- Worktrees inactivos: `E:/ERETZ Propiedades/_worktrees_inactivos/*` (10). Temporal: `_b_scratch/codigo_v6` (detached en v6 `66a8c02`, para replays; quitar con `git worktree remove` cuando no haga falta).
+- Git: usar `%LOCALAPPDATA%/Programs/Git/cmd/git.exe` (copia en C:) con `-c safe.directory=*`. El `git` del PATH de maquina sigue en D: (READY #14).
+- Pusheado: `integration/eretz`, `handoff/codex-unificacion-2026-09-18`, `b/postbeta-lote8` (verificado con `git ls-remote`).
+- NO pusheado A PROPOSITO: `release/eretz-private-preview` (legado: 90 commits locales + 109 archivos sin commitear que ya estaban ANTES de esta sesion, identicos en D:; rama "release" que puede disparar despliegues). Respaldo local completo en `E:/ERETZ Propiedades/_respaldos/legado_release_eretz_private_preview_2026-10-06/` (bundle de la rama, patch de lo sin commitear, 110 untracked copiados, status). `main`: sin tocar.
+- Commits de 04-06/10 en `integration/eretz`: `git log --oneline 66a8c02..integration/eretz`. Clave: `2859a36` (v7: operacion por palabra entera, icono vacio, heredadas), `41402b5` y `5cd3e7b` (migracion: codigo y tests sin raiz vieja; idna 3.18), `42e1150` (carrera al borrar la bandera), `648c097` (recertificar pedido), `02a3133` (monoambiente 2+ dorm), `8e68d88` (sin altas no certificadas), `2d50cdd` (tests del vigilante aislados), `841a4b6` (no residenciales con dormitorios de widget), `f065c5f` (paro sin nada que perder), mas commits de docs.
+
+## 2. Migracion D: -> E: (definitiva)
+- **MIGRATION_COMPLETE: YES** para ERETZ (codigo, estado, Git, tareas, workers, venv, frontend). Validado sin D: el 04-10 (D:/INMO CAPITAL renombrada temporalmente y PATH sin D:): suite 4002/0, QA navegador, API 10/10, tareas y workers OK, 0 escrituras en D:.
+- **SAFE_TO_DISCONNECT_OLD_DRIVE: NO**. Unica dependencia: Git for Windows en `D:/InmoLink/Git/cmd`, en el PATH de MAQUINA (lo usan Claude Code/Bash y `git` a secas; ERETZ en runtime no llama a git). Accion del usuario (READY #14): reemplazar esa entrada por `C:/Users/Nicolas Wulfsohn/AppData/Local/Programs/Git/cmd` (copia identica verificada, git 2.54.0, bash ok) y reiniciar Claude Code. Abrir sesiones en `E:/ERETZ Propiedades/eretz-unified` (la sesion actual se abrio con D:/INMO CAPITAL como directorio adicional).
+- Copia verificada: manifiesto de 153.471 archivos (solo en D: 2 banderas consumidas a proposito; 0 archivos mas nuevos en D:); 54 refs Git (0 commits faltantes); 174 archivos sin commitear identicos por sha256. Cambios posteriores a la copia: NINGUNO (lo escrito en D: durante la pausa esta en E:). Lo de ERETZ fuera de la raiz (`D:/inmocapital-main`, `acvtmp`, `tmp`) copiado a `_respaldos/disco_D_fuera_de_la_raiz`. Falta copiar: NADA.
+- Reorganizacion: raiz `E:/INMO CAPITAL` -> `E:/ERETZ Propiedades`; repo `Inmo-Capital-main` -> `eretz-propiedades`; worktrees viejos -> `_worktrees_inactivos` (IDs internos `Inmo-Capital-*` renombrados); `_respaldos`, `_historico`, `_herramientas`. Todo lo que el codigo lee quedo en la raiz. Git/worktrees: `git worktree repair` hecho; 0 referencias a la raiz vieja en `.git`; fsck limpio.
+- Nombres: "URLink" literal = 0 apariciones; los nombres viejos reales eran InmoLink / Inmo Capital. Renombrados en codigo activo (User-Agents, variables propias). Alias de compatibilidad (NO renombrar): claves persistidas `inmocapital`, `_inmocapital`, `inmocapital_source`; funciones SQL `set_inmolink_password` / `check_inmolink_password`; `scripts/rutas_de_datos.py` `RAICES_HISTORICAS` (reubica rutas guardadas bajo D:/INMO CAPITAL y E:/INMO CAPITAL). Docs historicos con rutas viejas: sin cambios (evidencia). Guardian: `tests/test_migracion_definitiva_sin_raiz_vieja.py`.
+- Secrets/env: viajaron dentro de la copia verificada por manifiesto (ruta + tamano); nunca se imprimieron.
+- Detalle: `docs/agent/MIGRACION_DEFINITIVA_2026-10-04.md`.
+
+## 3. Operacion (cola)
+- Tareas: `ERETZ_relanzador` (cada 10 min) y `ERETZ_vigilante_paros` (cada 5 min): pythonw de C: con scripts en `E:/ERETZ Propiedades/eretz-unified`. Encender/apagar: `python scripts/eretz_automatizacion.py on|off` (off = pausa sin matar).
+- Workers: 2 (maximo 2), `run_agency_certification_queue.py --ready --workers 2`. Cerrojos `AGENCY_CERTIFICATION_RUNNER.w*.lock`; latidos en `ERETZ_QUEUE_WATCH_STATUS.json`.
+- Estado 06-10 08:00: 2 vivos, stop OK, ultimo resultado 07:52. Ledger (`ERETZ_AGENCY_CERTIFICATION_20260827/AGENCY_CERTIFICATION_RESULTS.jsonl`): 1131 agencias: 607 CERTIFIED_COMPLETE, 278 NEEDS_FIX, 116 IDENTITY_PENDING, 67 BLOCKED_EXTERNAL, 61 CERTIFIED_BEST_AVAILABLE, 2 NO_INVENTORY_CONFIRMED; 234 ya recertificadas con v7.
+- Huellas: **v7** (`_b_scratch/huellas_ventana_v7.json`; 18/18 cambiaron al desplegar `2859a36`). Todo lo posterior (constructor, cola, tests, docs) NO movio huellas: verificado tras cada ff del nodo.
+- Prioridad (`ERETZ_PRIORIDAD_DE_COLA.json`, vence 08-10): 111 agencias del P0 v7; 91 de 93 hechas (las otras 18 no tienen resultado previo y no estan en la cola). Pedido `recertificar` (bilas, book, pelay, berrueta, tras el corte de DNS): hecho, las 4 CERTIFIED_COMPLETE.
+- Paros: se ATIENDEN escribiendo una fila en `AGENCY_DEFECTS_DIFERIDOS.jsonl` con el MISMO `cuando` del paro y la evidencia (copiar el formato de las filas del 05-06/10) y disparando `Start-ScheduledTask ERETZ_relanzador`. Un paro FAMILIA sin diagnostico hace que el relanzador excluya esa familia y la cola siga con el resto. Vigilancia: `_b_scratch/esperar_paro.py` (ignora pedidos de relanzamiento OPERACION).
+- Paros del 05-06/10 (todos diagnosticados, ninguno regresion de v7): DNS de la PC (entorno), gabilan y matias sosa (orden de listado no determinista), geraci (catalogo por sesion), gle (ficha en iframe Xintel/Amaira), nizzi (plantilla no leida), portanko (bajas 404), rodriguez bled (WooCommerce), guimat (tokko con frontend propio), ruiz (techo propio inflado), vaccaro (banos en 1 ficha, deuda vieja), veiga (dormitorios de widget rotativo), manuel ponce (1 ficha de 121), guzzi (catalogo por JS), ep estudio (WP Residence: ubicacion por taxonomias).
+- Defect queue: `AGENCY_DEFECT_QUEUE.jsonl`; familias detenidas: `ERETZ_FAMILIAS_DETENIDAS.jsonl`.
+
+## 4. Snapshots y produccion
+- Servida hoy: v4l-c (desde 29-09). Candidatas NO desplegadas: v4m2, v4m3, v4n, final_v6 (descartada por P0), final_v7c (reemplazada), **final_v7d = BETA CANDIDATE vigente**. (v4k es historica, reemplazada por v4l-c.)
+- **final_v7d** (`_b_scratch/medicion/snap_final_v7d`; sha256 `4a2ed92343e1a69f6ab52fac30765f11620ff0b1e1f6a34475528e30eb638db9`; 74.080 props; codigo `841a4b6`): P2 0 fallas; Regression Gate 0 sin explicar y 0 REAL_BETA_BLOCKER (`_regresion/CLASIFICACION_BETA_final_v7d.jsonl`; correcciones en `REVISADAS.jsonl`); QA navegador aislada 71/71; benchmark sin regresion (mediana maxima 1.064 ms); suite 4027 passed / 0 failed; frontend 1271; rollback 6/6. Comando en READY #7b. **Desplegar = decision del usuario.**
+- Writer equivalence: demostrada en base desechable (10/10 + 8/8; ver `docs/agent/BETA_12_10.md`). Backup/restore productivo: **BLOCKED_EXTERNAL_CREDENTIAL** (READY #1). Ningun write productivo ejecutado (`database_writes: 0`).
+- READY pendientes: #1 restore (credencial), #2 a #6 escrituras y promocion (exigen #1), **#7b servir final_v7d**, #8 gasto ~USD 1,35, #10 API beta remota, #11 verificar rol (sin URL), #12 redeploy Vercel (sin acceso), **#14 Git en el PATH (usuario)**.
+
+## 5. Backlog y frentes
+- Lote 7 / TIV: cerrado antes de esta sesion (16 TIV falsos completos corregidos); estado en `docs/agent/CURRENT_STATE.md` y `docs/agent/VENTANA_SEMANTICA_FINAL.md`.
+- Tokko, WordPress, Xintel, genericos: deudas nuevas anotadas: WooCommerce; tokko con frontend propio; WP Residence (taxonomias de ubicacion); Xintel/Amaira en iframe (~719 avisos recuperables); catalogo por sesion o por JS; orden de listado no determinista; plantillas nizzi, medina y Template4; banos en 1 ficha; tipo 'cochera' por palabra accesoria al final del titulo; extractor que lee conteos de widgets (el constructor los anula; arreglo de fondo post-beta); monoambientes con 1 dormitorio (convencion); rangos de dormitorios en emprendimientos.
+- Wix, Cometto, Castex, Ballarre, Banco Provincia, Celeste Carrillo, aliases geograficos: SIN CAMBIOS en esta sesion; su estado vigente esta en `docs/agent/CURRENT_STATE.md`, `docs/agent/BETA_12_10.md` y `docs/agent/VENTANA_SEMANTICA_FINAL.md`.
+- Ultima suite completa valida: 4027 passed / 5 skipped / 0 failed sobre `841a4b6` (06-10). Despues: `f065c5f` (255 tests de cola en verde). Pendiente: suite completa sobre el HEAD actual.
+
+## 6. Decisiones tomadas (NO repetir)
+- El nodo avanza solo con ff-only; nunca force push, reset --hard ni clean destructivo; `main` intacto; no pushear `release/eretz-private-preview`.
+- v7 desplegado y recertificado por prioridad; no reabrir la ventana semantica por deudas de cobertura.
+- Reglas del constructor (sin huella) contra datos falsos: operacion por subcadena en heredadas, tipos en ingles, monoambiente con 2+ dormitorios, no residencial con dormitorios sin mencion de vivienda, sin altas no certificadas.
+- Paro de primera corrida con base 0 y nunca certificada -> CONTINUE con radio AGENCIA (`f065c5f`); las agencias con filas servidas siguen parando por diseno (hay propiedades reales sin leer).
+- No reemplazar IGN; no inventar geografia; no usar portales como inventario; maximo 2 workers; una tarea pesada auxiliar a la vez.
+
+## 7. Tareas en curso al llegar este mensaje
+- Cola corriendo (2 workers) con la prioridad v7 casi completa; la vigilancia de paros en segundo plano muere con esta sesion: re-armarla.
+- Nada a medio commitear.
+
+## 8. Proxima accion exacta y orden
+1. Re-armar la vigilancia de paros (`_b_scratch/esperar_paro.py`) y atender cada paro como en 3.
+2. Correr la suite completa sobre el HEAD actual.
+3. Esperar la decision del usuario sobre READY #7b (servir final_v7d) y #14 (Git en el PATH).
+4. Cuando la cola acumule recertificaciones v7 nuevas: reconstruir candidata (`bash _b_scratch/armar_candidata.sh <nombre>`) y repetir `p2_<nombre>.py`, `gate_valores.py` + clasificador (adaptar `clasif_final_v7d.py`) + `registrar_v7d.py`, QA (`scripts/qa_navegador_sintetica.py --snapshot ... --salida ...`), benchmark, suite y rollback; actualizar READY #7b.
+5. Post-beta: rama `b/postbeta-lote8` y la deuda de la seccion 5.

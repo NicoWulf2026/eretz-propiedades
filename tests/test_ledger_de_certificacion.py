@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from scripts.rutas_de_datos import dato  # la raiz vigente, no la del disco viejo
 
 import pytest
 
@@ -238,8 +239,7 @@ def test_el_ledger_real_de_hoy_no_tiene_ninguno_de_estos_problemas():
     Si algún día este test se pone en rojo, el riesgo dejó de ser teórico y
     NEXT-001 pasa de endurecimiento a reparación urgente.
     """
-    ruta = Path(r"D:\INMO CAPITAL\ERETZ_AGENCY_CERTIFICATION_20260827"
-                r"\AGENCY_CERTIFICATION_RESULTS.jsonl")
+    ruta = dato("ERETZ_AGENCY_CERTIFICATION_20260827", "AGENCY_CERTIFICATION_RESULTS.jsonl")
     if not ruta.exists():
         pytest.skip("el ledger real no esta en esta maquina")
     _, invalidas = leer_ledger(ruta, estricto=False)

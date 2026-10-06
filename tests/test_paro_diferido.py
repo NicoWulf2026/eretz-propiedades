@@ -135,7 +135,8 @@ def test_varias_firmas_no_aflojan_el_corte(tmp_path):
 def test_la_lista_real_difiere_bottega_y_solo_por_su_defecto():
     """Contra el archivo de la corrida, no contra uno inventado."""
     from pathlib import Path
-    salida = Path(r"D:\INMO CAPITAL\ERETZ_AGENCY_CERTIFICATION_20260827")
+    from scripts.rutas_de_datos import dato
+    salida = dato("ERETZ_AGENCY_CERTIFICATION_20260827")
     if not (salida / "AGENCY_DEFECTS_DIFERIDOS.jsonl").exists():
         return
     d = diferidos(salida)

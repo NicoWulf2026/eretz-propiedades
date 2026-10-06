@@ -23,8 +23,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+try:  # raiz del estado operativo configurable (ERETZ_DATA_ROOT)
+    from scripts.rutas_de_datos import dato, raiz_de_datos  # noqa: E402
+except ImportError:  # corrido como `python scripts/x.py`
+    from rutas_de_datos import dato, raiz_de_datos  # noqa: E402
 
-RAIZ = Path(r"D:\INMO CAPITAL")
+RAIZ = raiz_de_datos()
 
 # Version del universo. Subirla cuando la lista cambie a proposito, para que un
 # artefacto viejo no se confunda con uno nuevo.

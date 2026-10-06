@@ -15,6 +15,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from scripts.rutas_de_datos import dato  # la raiz vigente, no la del disco viejo
 
 import pytest
 
@@ -2686,7 +2687,7 @@ def test_ningun_claim_se_borra():
 
 
 def test_el_write_set_no_puede_tener_una_url_dos_veces():
-    ruta = Path(r"D:\INMO CAPITAL\DB_WRITE_ELIGIBLE.jsonl")
+    ruta = dato("DB_WRITE_ELIGIBLE.jsonl")
     if not ruta.exists():
         pytest.skip("todavia no se genero el write set")
     urls, hashes = [], []
@@ -2750,7 +2751,7 @@ def test_el_directorio_reconcilia_su_propio_universo():
     """Un resumen truncado no es un detalle de presentacion: las categorias
     dejaban de sumar el universo y parecia que faltaban 114 agencias cuando lo
     que faltaba eran 21 categorias chicas que el top no imprimia."""
-    ruta = Path(r"D:\INMO CAPITAL\agency_platform_directory.jsonl")
+    ruta = dato("agency_platform_directory.jsonl")
     if not ruta.exists():
         pytest.skip("todavia no se genero el directorio")
     filas = [json.loads(l) for l in ruta.open(encoding="utf-8") if l.strip()]
@@ -3189,7 +3190,7 @@ def test_regenerar_el_directorio_no_borra_la_reclasificacion():
 def test_la_reclasificacion_conserva_la_evidencia():
     """No se borran: son evidencia de que la inmobiliaria existe y opera, y
     sirven para buscar su sitio propio mas adelante."""
-    ruta = Path(r"D:\INMO CAPITAL\PORTAL_RECLASSIFICATION.jsonl")
+    ruta = dato("PORTAL_RECLASSIFICATION.jsonl")
     if not ruta.exists():
         pytest.skip("todavia no se genero")
     filas = [json.loads(l) for l in ruta.open(encoding="utf-8") if l.strip()]

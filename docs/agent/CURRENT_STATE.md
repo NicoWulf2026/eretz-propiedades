@@ -3,11 +3,45 @@
 Estado VIGENTE, no bitácora. La historia está en Git (`git log`; la bitácora anterior de este
 archivo: `git show 6ee927bb80:docs/agent/CURRENT_STATE.md`). `database_writes: 0` en todo.
 
-**Actualizado:** 2026-09-28 21:1x · **Rama:** `handoff/codex-unificacion-2026-09-18` (push solo acá)
+**Actualizado:** 2026-10-04 22:20 (ver bloque LOCAL 04-10) · **Rama:** `handoff/codex-unificacion-2026-09-18` (push solo acá)
 **Fase:** certificación/recertificación continua + calidad de lo servido + preparación productiva.
 
+## LOCAL — cuenta B, 2026-10-06 03:30 (estado REAL verificado en la PC)
+- **BETA CANDIDATE `snap_final_v7d`** (74.080 props, sha256 `4a2ed923...`, READY #7b; reemplaza a v7c por los dormitorios de
+  widget en locales/oficinas/galpones, regla `841a4b6`; suite 4027, QA 71/71, P2 0, gate 0 sin explicar). Antes:
+  **BETA CANDIDATE `snap_final_v7c`** (73.790 props, sha256 `998bed36...`, READY #7b, despliegue = decision del usuario):
+  P2 0 fallas, Regression Gate 0 sin explicar / 0 bloqueantes, QA aislada 71/71, benchmark sin regresion, suite 4019, rollback 6/6.
+  P0 de final_v6 resueltos (operacion por subcadena 487 -> 24, monoambientes 2+ dorm 96 -> 0, tipos en ingles 0, blanco).
+  Constructor: `02a3133` (monoambiente), `8e68d88` (sin altas no certificadas). Tests del vigilante aislados (`2d50cdd`).
+- **Raiz canonica: `E:\ERETZ Propiedades`** desde el 04-10 (migracion definitiva, `docs/agent/MIGRACION_DEFINITIVA_2026-10-04.md`).
+  Nodo operativo `E:\ERETZ Propiedades\eretz-unified` (rama `handoff/codex-unificacion-2026-09-18`), desarrollo
+  `E:\ERETZ Propiedades\eretz-b` (`integration/eretz`), HEAD `5cd3e7b` (= nodo). D: es historico: no se usa (pendiente del usuario: Git en el PATH, READY #14).
+- **v7 desplegado en el nodo (04-10 22:1x, `5cd3e7b`)**: P0 hallados despues de los gates de final_v6 -operacion por
+  palabra entera (`rent` en `frente`: 516 filas/110 agencias), rotulo con icono vacio (blanco), heredadas sin operacion
+  por subcadena en el constructor-. Huellas v7: 18/18 cambiaron (`base.py` compartido). Prioridad: 110 agencias
+  afectadas (hasta 08-10). Luego: reconstruir candidata y repetir gates (READY #7b EN ESPERA).
+  Medicion intermedia `snap_v7a` (05-10 15:36, 73.073 props): operacion solo por subcadena 487 -> 113 (las 113 son de
+  agencias aun sin recertificar), tipos en ingles 16 -> 0, heredadas anuladas 175. Regression Gate: 350 pendientes
+  clasificadas (253 correcciones, 96 KNOWN_DEBT, 1 falsa perdida, 0 sin explicar); las 38 perdidas nuevas frente a
+  final_v6 dan IGUAL con el codigo v6 sobre el HTML de hoy (replay): son cambios de las fuentes, no de v7
+  (`_b_scratch/clasif_v7a.py`, `gate_valores.py`). Deuda nueva: plataforma 'Template4' descarta conteos con la senal
+  'cocheras'; orden de listado no determinista (tokko gabilan, generico matias sosa). Cola: prioridad 63/93 (las otras 18
+  no tienen certificacion previa); el resto es del w1 por el reparto por host. Arreglos de cola: carrera al borrar la
+  bandera (`42e1150`), `recertificar` en el archivo de prioridad (`648c097`; pelay recertificada tras el corte de DNS).
+- **Ventana semantica final CERRADA** (huellas v6, HEAD semantico `02995d43`; `docs/agent/VENTANA_SEMANTICA_FINAL.md`).
+  Prioridad 78/78 recertificada con v6 (04-10 15:58).
+- **BETA CANDIDATE `snap_final_v6`** (`E:\ERETZ Propiedades\_b_scratch\medicion\snap_final_v6`, 72.387 props): P2 0 fallas,
+  Regression Gate 0 sin explicar / 0 REAL_BETA_BLOCKER (152: 87 correcciones, 65 KNOWN_DEBT), QA aislada 71/71,
+  performance sin regresion, suite 3980 + frontend 1271, rollback 6/6. Despliegue = READY #7b, decision del usuario.
+- **Cola**: 2 workers desde E:, tareas `ERETZ_relanzador`/`ERETZ_vigilante_paros` re-registradas desde E:. El
+  vigilante ahora ve paros sin bandera (`PARO_SIN_BANDERA`, `90c659f`). Ledger: 1038 agencias — 529 CERTIFIED_COMPLETE, 266 NEEDS_FIX, 116 IDENTITY_PENDING, 67 BLOCKED_EXTERNAL, 58 CERTIFIED_BEST_AVAILABLE, 2 NO_INVENTORY_CONFIRMED.
+- **Post-beta** en rama aparte `b/postbeta-lote8` (worktree `eretz-b-dev`, NO integrada): senal de provincia
+  (`aac53f6`). Deuda documentada en VENTANA_SEMANTICA_FINAL y BETA_12_10.
+- **Bloqueado externo**: restore (READY #1, sin credencial de lectura), validacion del writer hospedado.
+- **Disco**: E: es un HDD USB; las mediciones de latencia locales son ~1,7x las de D: (sin efecto en la API beta).
+
 ## LOCAL — cuenta B, 2026-10-01 (estado REAL verificado en la PC)
-Rama canónica `integration/eretz`; worktree de B `D:\INMO CAPITAL\eretz-b` (venv propio `.venv` con
+Rama canónica `integration/eretz`; worktree de B `E:\ERETZ Propiedades\eretz-b` (venv propio `.venv` con
 `requirements.lock`: el Python global de los workers no se tocó). Worktrees auxiliares de B:
 `eretz-b-dev` (rama local `b/lote5-dev`, lote 5 en desarrollo) y `eretz-b-medicion` (detached, medición P10).
 

@@ -7,7 +7,7 @@ híbrida, `OPERATIONAL_CLOUD_READY = NO` y no bloquea la continuidad (ver
 `docs/CLOUD_CONTINUATION_HANDOFF.md`). Están empaquetados y verificados por si algún día se mueven.
 
 ## El paquete
-- Carpeta: `D:\INMO CAPITAL\ERETZ_STATE_CHECKPOINT_2026-09-29\`
+- Carpeta: `E:\ERETZ Propiedades\_respaldos\ERETZ_STATE_CHECKPOINT_2026-09-29\`
 - `ERETZ_STATE_2026-09-29.tar.gz` — 510,244,182 bytes, SHA-256 `a63b35e966c83ed9eb86318244edd08b9a3b3d133d13191c3321bf956f88675c`
 - `MANIFEST.json` — SHA-256 de cada uno de los 6,533 archivos (3.34 GB sin comprimir)
 - `ERETZ_CLOUD_CHECKPOINT_2026-09-29.bundle` — git bundle de la rama y el tag del checkpoint
@@ -29,7 +29,7 @@ híbrida, `OPERATIONAL_CLOUD_READY = NO` y no bloquea la continuidad (ver
 ## Prueba de restore portable (29-09, APROBADA)
 Desde un clone limpio en `0ddbd12af4`, con el paquete extraído en OTRA raíz y
 `ERETZ_DATA_ROOT` apuntando ahí, `scripts/cloud/prueba_restore.py` (con audit hook que registra
-todo acceso a `D:\INMO CAPITAL`):
+todo acceso a `E:\ERETZ Propiedades`):
 6.533/6.533 archivos con SHA-256 correcto; catálogo 6.597, cola ready 1.819; ledger idéntico
 (338 COMPLETE, 204 NEEDS_FIX, 132 IDENTITY_PENDING, 51 BLOCKED_EXTERNAL, 40 BEST_AVAILABLE,
 1 NO_INVENTORY); 766 paquetes; 296 diferidas; base canónica reubicada por el manifiesto;
@@ -37,13 +37,13 @@ GeoRef 4.023 localidades; decisión de snapshot 9.943 nuevas / 2.675 retirables;
 0 pendientes; relanzador sobre la raíz nueva. **Accesos a la raíz original: 0.**
 
 ## Restaurar
-La raíz puede ser cualquier carpeta: `ERETZ_DATA_ROOT=<carpeta>` (sin la variable, `D:\INMO CAPITAL`).
+La raíz puede ser cualquier carpeta: `ERETZ_DATA_ROOT=<carpeta>` (sin la variable, `E:\ERETZ Propiedades`).
 ```bash
 # en la maquina nueva, crear la raiz que los scripts esperan (o pasar rutas por argumento)
-mkdir -p "/d/INMO CAPITAL" && cd "/d/INMO CAPITAL"
+mkdir -p "/e/ERETZ Propiedades" && cd "/e/ERETZ Propiedades"
 sha256sum ERETZ_STATE_2026-09-29.tar.gz     # debe dar a63b35e966c83ed9eb86318244edd08b9a3b3d133d13191c3321bf956f88675c
 tar -xzf ERETZ_STATE_2026-09-29.tar.gz
-cp ERETZ_DATA_MANIFEST.json "/d/INMO CAPITAL/"
+cp ERETZ_DATA_MANIFEST.json "/e/ERETZ Propiedades/"
 python - <<'PY'
 import json, hashlib
 m = json.load(open("MANIFEST.json", encoding="utf-8"))

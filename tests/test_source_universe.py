@@ -11,6 +11,7 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+from scripts.rutas_de_datos import dato  # la raiz vigente, no la del disco viejo
 
 import pytest
 
@@ -204,7 +205,7 @@ def test_una_rescatada_que_ya_estaba_no_se_agrega_dos_veces():
 
 
 def test_el_mapa_no_duplica_fuentes():
-    dd = Path(r"D:\INMO CAPITAL\ERETZ_AGENCY_DATA") / "scrape_source_technology_map.jsonl"
+    dd = dato("ERETZ_AGENCY_DATA") / "scrape_source_technology_map.jsonl"
     if not dd.exists():
         pytest.skip("el mapa todavia no se genero")
     ids = [json.loads(l)["canonical_agency_id"]

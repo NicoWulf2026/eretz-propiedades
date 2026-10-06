@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from scripts.rutas_de_datos import dato  # la raiz vigente, no la del disco viejo
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -22,7 +23,7 @@ from scripts.investigate_bustamante import (AMBIGUO, DISTINTAS,  # noqa: E402
                                             DUPLICADO, SUCURSALES, clasificar,
                                             zonas)
 
-RESOLUCION = Path(r"D:\INMO CAPITAL\BUSTAMANTE_RESOLUTION.json")
+RESOLUCION = dato("BUSTAMANTE_RESOLUTION.json")
 
 
 def ent(nombre, zs, ids):

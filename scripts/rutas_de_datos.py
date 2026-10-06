@@ -22,8 +22,11 @@ from pathlib import Path
 RAIZ_POR_DEFECTO = str(Path(__file__).resolve().parents[2])
 
 # Donde se escribieron los manifiestos y paquetes viejos, que guardan rutas absolutas.
-# No es la raiz vigente: solo sirve para reubicar esas rutas en la actual.
-RAIZ_ORIGINAL = r"D:\INMO CAPITAL"
+# No son la raiz vigente: solo sirven para reubicar esas rutas en la actual. Las dos
+# llevan el nombre historico del proyecto: `D:\INMO CAPITAL` hasta el 03-10 y
+# `E:\INMO CAPITAL` hasta la migracion definitiva del 04-10 a `E:\ERETZ Propiedades`.
+RAICES_HISTORICAS = (r"D:\INMO CAPITAL", r"E:\INMO CAPITAL")
+RAIZ_ORIGINAL = RAICES_HISTORICAS[0]  # alias de compatibilidad
 
 
 def raiz_de_datos() -> Path:

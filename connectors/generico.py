@@ -3830,6 +3830,13 @@ class GenericoConnector(Connector):
             "moneda": moneda,
             "operacion": (detectar_operacion(f"{titulo or ''} {url}")
                           or crudo.get("operacion_catalogo")
+                          # El rotulo explicito de la ficha manda sobre el
+                          # texto, que puede arrancar con el menu del sitio
+                          # («Venta Alquiler Alquiler Temporario»): `blanco`
+                          # publica <li><i …></i> Operación: Venta</li> y se
+                          # guardaba «alquiler» (04-10).
+                          or detectar_operacion(self._rotulo_en_linea(
+                              principal_campos, r"Operaci(?:\u00f3|o|&oacute;)n") or "")
                           or self._operacion_en_la_ficha(texto_campos, precio)
                           or self._operacion_de_la_etiqueta(principal_campos)
                           or self._operacion_desde_title(html)),
@@ -4998,6 +5005,9 @@ class GenericoConnector(Connector):
         y sin marcado adentro-: el texto aplanado no dice donde termina el
         valor. `bardi` publica asi direccion y barrio en sus 90 fichas.
         """
+        # El icono vacio delante del rotulo no es parte del par (ver
+        # `_rotulo_en_linea`, `blanco`).
+        html = re.sub(r"<i\b[^>]*>\s*</i>", "", html or "", flags=re.I)
         m = re.search(
             # El rotulo en negrita DENTRO de su celda: Synapsis publica
             # <p><strong>Localidad:</strong></p><p>Don Torcuato</p> (`aranoa`:
@@ -5123,6 +5133,13 @@ class GenericoConnector(Connector):
         # Tambien con el rotulo en negrita, como lo escribe Houzez:
         # <li class="prop_type"><strong>Tipo de propiedad:</strong> Departamento</li>
         # (`nexo`: 33 de 40 fichas sin tipo).
+        # Y con un icono VACIO delante del rotulo: `blanco` publica
+        # <li><i class="fa-light fa-house-turret"></i> Tipo de propiedad:
+        # DEPARTAMENTOS</li>; sin reconocerlo, el tipo salia del arranque del
+        # texto -el menu del sitio- y ~200 de sus 573 «terrenos» eran
+        # departamentos, oficinas o casas (04-10). Un icono sin texto no es
+        # rotulo ni valor: la misma regla que ya aplica `_cuenta_de_ficha`.
+        html = re.sub(r"<i\b[^>]*>\s*</i>", "", html or "", flags=re.I)
         m = re.search(
             rf"<(li|p|span|div|td|dd)\b[^>]*>\s*(?:<(strong|b)\b[^>]*>\s*)?(?:{etiqueta})\s*:\s*"
             rf"(?:</(?:strong|b)>\s*)?([^<>:]{{2,60}}?)\s*</\1>",

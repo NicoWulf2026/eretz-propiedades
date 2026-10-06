@@ -29,6 +29,10 @@ import sqlite3
 import sys
 from collections import Counter
 from pathlib import Path
+try:  # raiz del estado operativo configurable (ERETZ_DATA_ROOT)
+    from scripts.rutas_de_datos import dato, raiz_de_datos  # noqa: E402
+except ImportError:  # corrido como `python scripts/x.py`
+    from rutas_de_datos import dato, raiz_de_datos  # noqa: E402
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -181,8 +185,8 @@ def main() -> int:
     ap.add_argument("--gate",
                     default=str(base_canonica().parent / "PROPERTY_QUALITY_GATE.jsonl"))
     ap.add_argument("--cobertura",
-                    default=r"D:\INMO CAPITAL\ERETZ_GEO\GEO_COVERAGE_AUDIT.jsonl")
-    ap.add_argument("--salida", default=r"D:\INMO CAPITAL\ERETZ_API_CONTRACT")
+                    default=str(dato("ERETZ_GEO", "GEO_COVERAGE_AUDIT.jsonl")))
+    ap.add_argument("--salida", default=str(dato("ERETZ_API_CONTRACT")))
     ap.add_argument("--fixtures", type=int, default=60,
                     help="cuantas propiedades reales dejar como muestra")
     args = ap.parse_args()

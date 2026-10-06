@@ -49,7 +49,7 @@ def test_la_variable_mueve_todo_el_estado(monkeypatch, tmp_path):
 
 def test_MUERDE_el_nucleo_no_vuelve_a_escribir_la_ruta_de_la_maquina():
     r"""Una ruta completa a D:\INMO CAPITAL en un literal del nucleo no se restaura en otra maquina."""
-    prefijo = re.compile(r"^[Dd]:[\/]+INMO CAPITAL")
+    prefijo = re.compile(r"^[DdEe]:[\/]+INMO CAPITAL")
     culpables = []
     for rel in NUCLEO:
         texto = (RAIZ_REPO / rel).read_text(encoding="utf-8")
@@ -71,3 +71,11 @@ def test_MUERDE_las_rutas_absolutas_del_manifiesto_se_reubican_en_la_raiz_nueva(
     ruta = r"D:\INMO CAPITAL\ERETZ_PREINGESTION_REBUILD_20260903\PREINGESTION_REBUILD.sqlite3"
     assert _rebasar(ruta) == tmp_path / "ERETZ_PREINGESTION_REBUILD_20260903" / "PREINGESTION_REBUILD.sqlite3"
     assert _rebasar("C:/otro/lugar.sqlite3") == Path("C:/otro/lugar.sqlite3")
+
+
+def test_MUERDE_la_raiz_E_con_el_nombre_viejo_tambien_se_reubica(monkeypatch, tmp_path):
+    r"""Migracion definitiva (04-10): `E:\INMO CAPITAL` -> `E:\ERETZ Propiedades`."""
+    from scripts.preingestion_manifest import _rebasar
+    monkeypatch.setenv("ERETZ_DATA_ROOT", str(tmp_path))
+    assert _rebasar(r"E:\INMO CAPITAL\ERETZ_GEO\MANIFEST.json") == tmp_path / "ERETZ_GEO" / "MANIFEST.json"
+    assert _rebasar("e:/inmo capital/ERETZ_GEO/x.json") == tmp_path / "ERETZ_GEO" / "x.json"

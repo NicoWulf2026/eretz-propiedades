@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from scripts.rutas_de_datos import dato  # la raiz vigente, no la del disco viejo
 
 import pytest
 
@@ -30,7 +31,7 @@ from scripts.resolve_padron_duplicates import (AMBIGUO, DEMOSTRADO,  # noqa: E40
                                                MISMA, decidir, es_404_blando,
                                                extraer_contacto, senas_de)
 
-RESOLUCION = Path(r"D:\INMO CAPITAL\PADRON_DUPLICATE_RESOLUTION.json")
+RESOLUCION = dato("PADRON_DUPLICATE_RESOLUTION.json")
 
 
 def ent(nombre, zs, ids):
