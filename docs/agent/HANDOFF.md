@@ -23,6 +23,10 @@ Historia: Git (`git log --since=2026-09-25`).
    `D:\...` que quedan estan en scripts de un solo uso (`--data-dir` y similares: pasar la ruta de E:) y en docs historicos.
    `scraper/importar_excel.py` leia `D:\Inmobiliairas .xlsx`, que no esta en E:; el candidato es
    `eretz-propiedades\data\Inmobiliairas  r.xlsx` (sin verificar que sea el mismo).
+6. HECHO 06-10 tarde: `00aee9e51a` el plan del relanzador leia los 1.150 `certification.json` en cada pasada
+   (E: es un disco USB: media 7 s -> 16-26 s, maximo 282 s); ahora lee solo los de la ventana (14 s).
+   `06ce288fea` redinmobiliaria.ar es portal (P4, falso CERTIFIED): `fabiana bert` recorria la red entera
+   (1.648 fichas ajenas). Toca la huella compartida: la cola recertifica con la regla nueva.
 
 ## Recién cerrado (25-09)
 - Snapshot: frescura desde NEEDS_FIX por campos, títulos/eslóganes del sitio; v4d verificada.
