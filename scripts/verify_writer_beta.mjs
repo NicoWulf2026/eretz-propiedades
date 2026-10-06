@@ -143,6 +143,46 @@ try {
     assert.equal(r.status, 'unchanged');
   });
 
+  // Sprint 12/10: matriz por campo. Cada campo del contrato se cambia SOLO y el
+  // resto queda igual; un valor fuera del dominio no muta nada; un duplicado por
+  // hash_dedup no crea una segunda fila ni deja auditoria huerfana.
+  await check('matriz_por_campo_descripcion_moneda_operacion_tipo_imagenes', async () => {
+    const cambios = [
+      ['descripcion', 'Casa con patio'], ['moneda', 'ARS'], ['operacion', 'alquiler'],
+      ['tipo_propiedad', 'departamento'], ['imagenes', ['https://i.test/2.jpg', 'https://i.test/3.jpg']],
+      ['superficie_cubierta', 70], ['direccion', 'Calle 2'],
+    ];
+    for (const [campo, valor] of cambios) {
+      const antes = await fila(id);
+      const r = (await merge(id, {[campo]: valor}, evento(campo, antes[campo], valor))).rows[0].result;
+      assert.equal(r.status, 'updated', campo);
+      const despues = await fila(id);
+      const leido = typeof valor === 'number' ? Number(despues[campo]) : despues[campo];
+      assert.deepEqual(leido, valor, `${campo} no se escribio`);
+      for (const k of Object.keys(BASE).filter(k => k !== campo && !['url', 'url_normalizada'].includes(k)))
+        assert.deepEqual(despues[k], antes[k], `${campo} piso ${k}`);
+    }
+  });
+
+  await check('MUERDE_un_valor_fuera_del_dominio_no_muta_nada', async () => {
+    const antes = await fila(id);
+    const n = await auditorias();
+    await assert.rejects(() => merge(id, {moneda: 'BTC', precio: 999}, evento('moneda', antes.moneda, 'BTC')));
+    await assert.rejects(() => merge(id, {operacion: 'permuta'}, evento('operacion', antes.operacion, 'permuta')));
+    assert.deepEqual(await fila(id), antes);
+    assert.equal(await auditorias(), n);
+  });
+
+  await check('MUERDE_un_duplicado_por_hash_dedup_no_crea_otra_fila', async () => {
+    const n = await auditorias();
+    const filas = async () => Number((await db.query('SELECT count(*) AS n FROM public.propiedades')).rows[0].n);
+    const antes = await filas();
+    await assert.rejects(() => insertar({...BASE, url: 'https://agencia-siete.test/p/1-bis',
+      url_normalizada: 'agencia-siete.test/p/1-bis', precio: 1}), /duplicate key|unique/i);
+    assert.equal(await filas(), antes);
+    assert.equal(await auditorias(), n);
+  });
+
   await check('rollback_de_la_migracion_corta_el_acceso_y_conserva_la_evidencia', async () => {
     // El rollback es NO destructivo a proposito: revoca EXECUTE y deja las
     // funciones y la auditoria como evidencia inmutable. Lo que se verifica es
