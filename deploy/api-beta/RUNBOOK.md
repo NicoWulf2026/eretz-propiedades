@@ -44,7 +44,7 @@ volver a esta decisión (P21).
 
 La snapshot servida está en la PC LOCAL. Medir allí:
 
-    python -c "import os;p=r'D:\INMO CAPITAL\ERETZ_API_CONTRACT\ERETZ_API_SNAPSHOT.sqlite3';print(os.path.getsize(p))"
+    python -c "import os;p=r'E:\ERETZ Propiedades\ERETZ_API_CONTRACT\ERETZ_API_SNAPSHOT.sqlite3';print(os.path.getsize(p))"
 
 Volumen = 3 × ese tamaño (activa + anterior + la que se sube) redondeado hacia arriba al GB.
 

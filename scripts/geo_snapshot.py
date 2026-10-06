@@ -25,6 +25,10 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 from typing import Any
+try:  # raiz del estado operativo configurable (ERETZ_DATA_ROOT)
+    from scripts.rutas_de_datos import dato  # noqa: E402
+except ImportError:  # corrido como `python scripts/x.py`
+    from rutas_de_datos import dato  # noqa: E402
 
 if __package__:
     from .geo_reference import entity_ids
@@ -173,7 +177,7 @@ def promover(directorio: "Path", pendientes: "list[tuple[Path, Path]]") -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--destino", default=r"D:\INMO CAPITAL\ERETZ_GEO")
+    parser.add_argument("--destino", default=str(dato("ERETZ_GEO")))
     args = parser.parse_args()
 
     destino = Path(args.destino)
