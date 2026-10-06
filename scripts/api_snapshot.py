@@ -175,6 +175,26 @@ def _monoambiente_con_dormitorios(fila: dict[str, Any]) -> bool:
             and not RE_DORM_EN_TITULO.search(titulo))
 
 
+TIPOS_NO_RESIDENCIALES = {"local", "oficina", "galpon"}
+RE_MENCION_RESIDENCIAL = re.compile(
+    r"\b(dorm|dormitorio|habitaci|vivienda|casa|departamento|depto|dpto|ph\b|monoambiente|suite|cuarto|"
+    r"ambientes?\b|amb\b|recamara|caba[nn]a)")
+
+
+def _no_residencial_con_dormitorios(fila: dict[str, Any]) -> bool:
+    """Local, oficina o galpon con dormitorios que su propio texto no menciona: el conteo es ajeno.
+
+    Mismo origen que el P0 de final_v6: el conteo sale del menu o de un widget de la pagina
+    (`crestale` 108, `veiga` lo rotaba entre cargas, 06-10). En final_v7c: 420 filas sin ninguna
+    mencion de vivienda, dormitorio o ambientes en titulo ni descripcion. Si la ficha menciona
+    vivienda ('galpon con casa', 'oficina 3 ambientes') no se toca.
+    """
+    if fila.get("tipo_propiedad") not in TIPOS_NO_RESIDENCIALES or (fila.get("dormitorios") or 0) < 1:
+        return False
+    texto = _sin_tildes(f"{fila.get('titulo') or ''} {fila.get('descripcion') or ''}")
+    return not RE_MENCION_RESIDENCIAL.search(texto)
+
+
 def _operacion_por_subcadena(texto: str) -> str | None:
     t = (texto or "").lower()
     if "temporario" in t or "temporal" in t:
@@ -211,7 +231,7 @@ def _corregir_heredada(fila: dict[str, Any]) -> tuple[dict[str, Any], list[str]]
     if _operacion_sin_evidencia(fila):
         nueva["operacion"] = None
         cambios.append("operacion")
-    if _monoambiente_con_dormitorios(fila):
+    if _monoambiente_con_dormitorios(fila) or _no_residencial_con_dormitorios(fila):
         nueva["dormitorios"] = None
         cambios.append("dormitorios")
     tipo = TIPOS_EN_INGLES.get(str(fila.get("tipo_propiedad") or "").strip().lower())
@@ -869,6 +889,7 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
     heredadas_corregidas: Counter = Counter()
     cocheras_incoherentes = 0
     monoambientes_corregidos = 0
+    no_residenciales_corregidos = 0
     textos_limpiados = 0
     ajenas_omitidas = 0
     exterior_no_publicadas = 0
@@ -1011,6 +1032,9 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
         if _monoambiente_con_dormitorios(cruda):
             cruda = dict(cruda, dormitorios=None)
             monoambientes_corregidos += 1
+        elif _no_residencial_con_dormitorios(cruda):
+            cruda = dict(cruda, dormitorios=None)
+            no_residenciales_corregidos += 1
         # La misma regla de `coherencia.revisar` para las filas que la cola
         # todavia no recertifico: 42 en la v4i servian «US$1» o ventas por USD
         # 460 (`next`, `oyharzabal`, `domus`, `must`...).
@@ -1144,7 +1168,9 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
         "heredadas_operacion_por_subcadena_anulada": heredadas_corregidas["operacion"],
         "heredadas_tipo_en_ingles_traducido": heredadas_corregidas["tipo"],
         "cocheras_incoherentes_resueltas": cocheras_incoherentes,
-        "monoambientes_con_dormitorios_anulados": monoambientes_corregidos + heredadas_corregidas["dormitorios"],
+        "monoambientes_con_dormitorios_anulados": monoambientes_corregidos,
+        "no_residenciales_con_dormitorios_anulados": no_residenciales_corregidos,
+        "heredadas_dormitorios_anulados": heredadas_corregidas["dormitorios"],
         "precios_simbolicos_descartados": precios_simbolicos,
         "textos_con_entidades_limpiados": textos_limpiados,
         "filas_con_frescura_parcial": filas_con_frescura_parcial,
