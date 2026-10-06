@@ -1220,6 +1220,11 @@ class _DescargasDelDescubrimiento:
             setattr(self._descargador, nombre, valor)
 
 
+RE_FICHA_AMAIRA = re.compile(
+    r"<iframe\b[^>]*\bsrc=[\"'](https?://ficha\.amaira\.com\.ar/(?:[\w-]+/)?ficha\.php\?ficha=[^\"']+)[\"']",
+    re.I)
+
+
 class GenericoConnector(Connector):
     nombre = "generico"
     variantes_soportadas = (
@@ -3502,6 +3507,20 @@ class GenericoConnector(Connector):
         except (ErrorTransitorio, Bloqueado) as e:
             self.anotar_error(fuente, "detalle", e)
             return None
+        # Xintel/Amaira: la pagina del sitio es un ENVOLTORIO y la ficha vive en un
+        # iframe de ficha.amaira.com.ar (`gle`: 453 avisos rechazados por forma el
+        # 05-10; `duarte`: 266, su envoltorio ni siquiera ejecuta el PHP). Se lee la
+        # ficha del iframe; la fuente sigue siendo la URL del sitio de la agencia.
+        iframe = RE_FICHA_AMAIRA.search(html or "")
+        if iframe:
+            try:
+                html = self.descargador.bajar(unescape(iframe.group(1)))
+            except ErrorPermanente as e:
+                self.anotar_error(fuente, "detalle_permanente", e)
+                return None
+            except (ErrorTransitorio, Bloqueado) as e:
+                self.anotar_error(fuente, "detalle", e)
+                return None
         if not html or len(html) < 400:
             # «Propiedad inexistente.» con 200 (`d uva`: las 9 fichas de su
             # sitemap) es la baja de la ficha dicha por el sitio, no una
