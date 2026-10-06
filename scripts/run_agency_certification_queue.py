@@ -32,7 +32,7 @@ from scripts.defect_triage import senales_de_catalogo  # noqa: E402
 from scripts.ipv4_primero import preferir_ipv4  # noqa: E402
 from scripts.ledger_de_certificacion import (  # noqa: E402
     vigentes_por_agencia)
-from scripts.defect_triage import (STOP, anotar_corte,  # noqa: E402
+from scripts.defect_triage import (CONTINUE, STOP, anotar_corte,  # noqa: E402
                                    clasificar, debe_cortar_por_lote,
                                    defectos_ya_cortados)
 from scripts.agency_certifier import (
@@ -1046,6 +1046,24 @@ def con_prioridad(cola: list[str], output: Path,
     return primero + [a for a in cola if a not in adelante]
 
 
+CIERRES_CERTIFICADOS = {"CERTIFIED_COMPLETE", "CERTIFIED_BEST_AVAILABLE", "NO_INVENTORY_CONFIRMED"}
+
+
+def sin_nada_que_perder(result: dict[str, Any], previo: dict[str, Any] | None) -> bool:
+    """Una agencia sin filas en la base y nunca certificada: su paro no protege nada.
+
+    El paro de radio FAMILIA existe para que un extractor roto no siga certificando ni
+    pierda inventario servido. Una agencia que NUNCA se certifico y no tiene filas en la
+    base no tiene inventario que perder, y una regresion de familia se veria igual en las
+    agencias que si tienen datos. Del 05 al 06-10 frenaron la cola de noche asi geraci
+    (catalogo por sesion), gle (ficha en iframe Xintel/Amaira) y guzzi (catalogo por JS),
+    las tres primeras corridas con base 0. El defecto queda anotado igual (CONTINUE).
+    """
+    base = (result.get("baseline_inventory") or {}).get("preingestion_rows")
+    certificada_antes = bool(previo) and previo.get("status") in CIERRES_CERTIFICADOS
+    return base == 0 and not certificada_antes
+
+
 def recertificacion_pedida(output: Path, ahora: str | None = None) -> dict[str, str]:
     """Agencias que hay que volver a correr aunque su resultado cuente como vigente.
 
@@ -1433,6 +1451,12 @@ def main() -> int:
                 result["senales_de_catalogo"] = senales_en_la_portada(
                     result.get("official_url"))
             triage = clasificar(result)
+            if triage.get("decision") == STOP and sin_nada_que_perder(result, existing.get(canonical_id)):
+                triage.update({
+                    "decision": CONTINUE, "degradado_de": f"STOP/{triage.get('radio_estimado')}",
+                    "radio_estimado": "AGENCIA",
+                    "evidencia": (triage.get("evidencia") or "")
+                    + " | sin nada que perder: 0 filas en la base y nunca certificada"})
             triage.update({"position": index, "queue_size": len(queue),
                            "epoch": time.time()})
             # Un defecto que ya tuvo su tanda de diagnostico y se posterga a
