@@ -689,6 +689,17 @@ def _servidas_a_conservar(origen, ruta_servida, nuevas, retirar) -> list[dict]:
     return conservar
 
 
+def _ids_servidos(ruta_servida) -> set[str] | None:
+    """Los ids de la snapshot servida; None si no hay servida con la que comparar."""
+    if not ruta_servida or not Path(ruta_servida).is_file():
+        return None
+    servida = sqlite3.connect(f"file:{Path(ruta_servida).as_posix()}?mode=ro", uri=True)
+    try:
+        return {i for (i,) in servida.execute("select id from propiedades")}
+    finally:
+        servida.close()
+
+
 def _servidas_sin_frescura(origen, ruta_servida, frescas, retirar) -> dict[str, dict]:
     """Filas servidas de propiedades que HOY no tienen paquete fresco confiable.
 
@@ -888,6 +899,15 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
     sin_frescura = (_servidas_sin_frescura(origen, getattr(args, 'servida', None), frescas, retirar)
                     if decision is not None else {})
     servidas_sin_paquete_fresco = 0
+    # Una fila que NO se servia y no llega con un paquete certificado no es un alta:
+    # P2 solo aprueba altas SUMADA_CERTIFICADA. Sin esto, una fila excluida antes por un
+    # motivo que dependia del paquete reaparecia sin verificar: `o feely` (06-10) volvia
+    # a publicar dos emprendimientos de URUGUAY (Colonia, Punta del Este) con provincia
+    # 'Santa Fe' inferida del padron, porque su ultima corrida no llego a esas fichas y
+    # se perdio la marca de exterior del paquete anterior.
+    ids_servidos = (_ids_servidos(getattr(args, 'servida', None))
+                    if decision is not None else None)
+    altas_sin_certificar = 0
     for base, fresca, es_nueva in _filas_en_orden(origen, frescas, nuevas, retirar, servidas):
         if (fresca is None and not es_nueva and "__servida__" not in base
                 and base.get("hash_dedup") in sin_frescura):
@@ -922,6 +942,11 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
             filas_con_frescura_parcial += 1
         cruda = base if es_nueva else fusionar(base, fresca, CAMPOS_FUSIONABLES)
         hash_dedup = cruda.get("hash_dedup")
+        if (ids_servidos is not None and fresca is None and not es_nueva
+                and hash_dedup not in ids_servidos):
+            altas_sin_certificar += 1
+            cambios[hash_dedup] = "ALTA_SIN_CERTIFICAR"
+            continue
         canonical = cruda.get("canonical_agency_id")
         if canonical in ajenas:
             ajenas_omitidas += 1
@@ -1110,6 +1135,7 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
         "provincia_normalizada_por_poligono_p10": correcciones_geo["provincia_por_poligono"],
         "servidas_conservadas_sin_muerte_verificada": conservadas,
         "servidas_sin_paquete_fresco": servidas_sin_paquete_fresco,
+        "altas_sin_certificar_omitidas": altas_sin_certificar,
         "geo_conflictos_viejos_que_ya_no_lo_son": correcciones_geo["conflicto_obsoleto"],
         "imagenes_compartidas_descartadas": imagenes_compartidas,
         "descripciones_del_sitio_descartadas": descripciones_del_sitio,
