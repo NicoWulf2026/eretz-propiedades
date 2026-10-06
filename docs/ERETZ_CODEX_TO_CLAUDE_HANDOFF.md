@@ -472,3 +472,10 @@ Fuente de verdad para continuar sin preguntar. Escrito 06-10 ~08:15 (cuenta B, P
 3. Esperar la decision del usuario sobre READY #7b (servir final_v7d) y #14 (Git en el PATH).
 4. Cuando la cola acumule recertificaciones v7 nuevas: reconstruir candidata (`bash _b_scratch/armar_candidata.sh <nombre>`) y repetir `p2_<nombre>.py`, `gate_valores.py` + clasificador (adaptar `clasif_final_v7d.py`) + `registrar_v7d.py`, QA (`scripts/qa_navegador_sintetica.py --snapshot ... --salida ...`), benchmark, suite y rollback; actualizar READY #7b.
 5. Post-beta: rama `b/postbeta-lote8` y la deuda de la seccion 5.
+
+## Actualizacion 2026-10-06 ~13:00 (cuenta nueva, continua desde este handoff)
+- Verificado: `integration/eretz` = `handoff/codex-unificacion-2026-09-18` = `71f590b` (local y remoto) al retomar; worktrees limpios.
+- Suite completa sobre `71f590b`: 4030 passed / 5 skipped / 0 failed.
+- Paro escujuri (08:11:51): ya lo habia liberado la diferida POR PRECEDENTE (firma = balsa/Houzez), pero la causa NO coincide: escujuri no es Houzez; publica la direccion en texto libre ('7 y 520 Tolosa, La Plata, Provincia de Buenos Aires') y provincia falla 6/6. Fila corregida en `AGENCY_DEFECTS_DIFERIDOS.jsonl` (campo `corrige`). Hallazgo: la diferida por precedente acepta firmas iguales con causas distintas (la firma no incluye la plantilla de la ficha).
+- SAFE_TO_DISCONNECT_OLD_DRIVE sigue NO: cambiar el PATH de maquina es configuracion del sistema y no lo puede hacer el agente; el usuario tiene el comando (reemplazar `D:\InmoLink\Git\cmd` por la copia en C:). Despues: reiniciar Claude Code y verificar `where git`, Git en worktrees, workers, tareas, procesos.
+- Post-beta `b/postbeta-lote8` = `88a22cd`: merge de `integration/eretz` (v7) + generico sigue el iframe Xintel/Amaira (gle 453 y duarte 266 avisos; verificado en vivo). Mueve la huella de generico: NO desplegar antes de la decision de beta.
