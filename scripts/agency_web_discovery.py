@@ -172,6 +172,9 @@ PORTALES_POR_NOMBRE = {
     # Portal multi-agencia de San Nicolas (`kerlin`, identidad READY con
     # /inmobiliarias.php: decenas de inmobiliarias, 96 fichas ajenas enumeradas).
     "muchaspropiedades",
+    # Red Inmobiliaria (06-10): `fabiana bert` READY con una ficha de redinmobiliaria.ar;
+    # el catalogo es de la red (contactos de otras inmobiliarias) y la corrida vio 1.648.
+    "redinmobiliaria",
 }
 
 
