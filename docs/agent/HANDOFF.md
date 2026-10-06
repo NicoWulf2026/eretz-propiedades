@@ -4,6 +4,20 @@ Para retomar desde una sesión nueva: arrancar Claude Code en `E:\ERETZ Propieda
 Reglas: `CLAUDE.md` + `.claude/rules/` (cargan solas). Estado: `docs/agent/CURRENT_STATE.md`.
 Historia: Git (`git log --since=2026-09-25`).
 
+## SPRINT FINAL BETA 12/10 — TAREA EXACTA EN CURSO (06-10 17:15)
+Pedido del usuario (06-10): cerrar el sistema; BETA READY y, si se puede, PRODUCTION READY sin acciones productivas.
+Plan: freeze semantico 08/10 -> RC 09/10 (armar_candidata + P2 + Regression Gate + `scripts/qa_api_real.py` + QA navegador
++ rollback + suite) -> auditoria de produccion 10-11/10 -> informe final 12/10. Tablero: `docs/agent/BETA_12_10.md`.
+- Flujo de ramas: desarrollo en `eretz-b` (`integration/eretz`), el nodo `eretz-unified` avanza SOLO con `merge --ff-only`.
+- Ventana semantica REABIERTA 06-10 (huellas v8): `06ce288fea` portal redinmobiliaria, `ada7f18c1e` COMPLETE exige prueba
+  de fin de catalogo (17 -> BEST), `89cf50d9e8` post-beta (provincia, GVAMAX, iframe Amaira). Prioridad de cola: 61 agencias
+  del radio real (vence 08/10 12:00). Al terminar la prioridad: medir (17 BEST, gle/duarte, GVAMAX ciudad, 36 provincia) y
+  declarar SEMANTIC_FREEZE.
+- Verde en HEAD: suite 4056/5/0 (`89cf50d`), writer PGlite 11+10+14+17, QA API real 22/22 sobre final_v7d.
+- Bloqueos: backup/restore = BLOCKED_EXTERNAL_CREDENTIAL (READY #1) + sin binarios de PostgreSQL locales (pg_dump no
+  instalado: bajarlo requiere permiso del usuario). Deuda post-beta: `365litoralargentino.com` como web de `gama` (directorio),
+  ubicacion TIV (45 % sin ciudad, `zona_padron` es de la agencia y NO se usa como ciudad).
+
 ## TAREA EXACTA EN CURSO (06-10 04:10, cuenta B, LOCAL)
 1. **BETA CANDIDATE `final_v7c` lista** (READY #7b; desplegar = decision del usuario). Todas las compuertas en verde: P2 0 fallas,
    Regression Gate 0 sin explicar (`_regresion/CLASIFICACION_BETA_final_v7c.jsonl`; 519 correcciones en REVISADAS), QA aislada 71/71,
