@@ -4,16 +4,20 @@ Para retomar desde una sesión nueva: arrancar Claude Code en `E:\ERETZ Propieda
 Reglas: `CLAUDE.md` + `.claude/rules/` (cargan solas). Estado: `docs/agent/CURRENT_STATE.md`.
 Historia: Git (`git log --since=2026-09-25`).
 
-## TAREA EXACTA EN CURSO (04-10 23:30, cuenta B, LOCAL)
-1. v7 desplegado en el nodo (`5cd3e7b`; huellas 18/18 nuevas). Prioridad de cola: 111 agencias (110 con operacion
-   por subcadena + edifica) hasta 08-10. Primeros v7: analia requena y asg CERTIFIED_COMPLETE, alquiler->venta verificados
-   contra la ficha. edifica NEEDS_FIX diagnosticada (senal de provincia conocida; fila en DIFERIDOS 22:41:27).
-2. Cuando la prioridad termine (~12-14 h): reconstruir candidata (`_b_scratch/armar_candidata.sh final_v7`, incluye la
-   correccion de heredadas del constructor) y repetir P2, Regression Gate (clasificar), QA aislada, performance, suite,
-   rollback; actualizar READY #7b (hoy EN ESPERA).
-3. Deuda anotada: wordpress toma el tipo del titulo antes que el rotulo 'Tipo:' (asg 'terraza cochera' = departamento;
-   el constructor ya lo deja NULL); triage que para con una corrida `codigo_cambio_en_vuelo`.
-4. Usuario: READY #14 (Git en el PATH de maquina) para poder desconectar D:.
+## TAREA EXACTA EN CURSO (06-10 04:10, cuenta B, LOCAL)
+1. **BETA CANDIDATE `final_v7c` lista** (READY #7b; desplegar = decision del usuario). Todas las compuertas en verde: P2 0 fallas,
+   Regression Gate 0 sin explicar (`_regresion/CLASIFICACION_BETA_final_v7c.jsonl`; 519 correcciones en REVISADAS), QA aislada 71/71,
+   benchmark sin regresion, suite 4019, rollback 6/6. Herramientas: `_b_scratch/armar_candidata.sh`, `gate_valores.py`, `clasif_final_v7c.py`,
+   `p2_final_v7c.py`, `medir_subcadena_snap.py`, `medir_dorm_menu.py`. Worktree temporal `_b_scratch/codigo_v6` (detached en v6) para replays.
+2. Cola: nodo `0870f3c` (huellas v7). Paros de cada noche: diagnosticar con evidencia (fila en DIFERIDOS con el `cuando` del paro) y
+   disparar el relanzador; vigilar con `_b_scratch/esperar_paro.py`. Paros del 05/06-10: DNS (entorno), gabilan y matias sosa (orden
+   inestable), geraci (catalogo por sesion), gle (Xintel/Amaira en iframe), nizzi (plantilla no leida), portanko (bajas 404),
+   rodriguez bled (WooCommerce) y guimat (tokko frontend propio): ninguno regresion de v7.
+3. Propuesta abierta (decision de diseno): una variante NO soportada en la PRIMERA corrida de una agencia hoy para la familia de noche
+   (por diseno: hay propiedades reales sin leer). Alternativa: radio AGENCIA solo si nunca tuvo un resultado certificado.
+4. Deuda post-beta: monoambientes con 1 dormitorio (354), rangos de dormitorios, plantillas no leidas (nizzi, medina, Template4),
+   Xintel/Amaira iframe (~719 avisos), catalogo por sesion, WooCommerce, tokko frontend propio, orden de listado no determinista.
+5. Usuario: READY #14 (Git en el PATH de maquina) para poder desconectar D:.
 
 ## Recién cerrado (25-09)
 - Snapshot: frescura desde NEEDS_FIX por campos, títulos/eslóganes del sitio; v4d verificada.
