@@ -13,8 +13,9 @@ Historia: Git (`git log --since=2026-09-25`).
    disparar el relanzador; vigilar con `_b_scratch/esperar_paro.py`. Paros del 05/06-10: DNS (entorno), gabilan y matias sosa (orden
    inestable), geraci (catalogo por sesion), gle (Xintel/Amaira en iframe), nizzi (plantilla no leida), portanko (bajas 404),
    rodriguez bled (WooCommerce) y guimat (tokko frontend propio): ninguno regresion de v7.
-3. Propuesta abierta (decision de diseno): una variante NO soportada en la PRIMERA corrida de una agencia hoy para la familia de noche
-   (por diseno: hay propiedades reales sin leer). Alternativa: radio AGENCIA solo si nunca tuvo un resultado certificado.
+3. HECHO (`f065c5f`): una agencia con 0 filas en la base y nunca certificada ya no detiene a su familia (paro -> CONTINUE, radio
+   AGENCIA, anotado). Las que tienen filas servidas (rodriguez bled, guimat) siguen parando por diseno: hay propiedades reales sin leer.
+   BETA CANDIDATE vigente: `final_v7d` (reemplaza a v7c; READY #7b).
 4. Deuda post-beta: monoambientes con 1 dormitorio (354), rangos de dormitorios, plantillas no leidas (nizzi, medina, Template4),
    Xintel/Amaira iframe (~719 avisos), catalogo por sesion, WooCommerce, tokko frontend propio, orden de listado no determinista.
 5. Usuario: READY #14 (Git en el PATH de maquina) para poder desconectar D:.
