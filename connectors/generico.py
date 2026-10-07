@@ -129,6 +129,32 @@ SUPERFICIES_VECINAS = (("cub", "cubierta"), ("semicub", "semicubierta"),
 PARAMS_DE_PAGINA = ("start", "pagina", "page", "offset", "pg", "p")
 TOPE_PAGINAS_DECLARADAS = 200
 
+# Una web oficial que apunta a la pagina 2+ de un listado (`barbara estanga`:
+# `/?page=2`) hacia arrancar la enumeracion ahi: la paginacion se sigue hacia
+# adelante y la pagina 1 no se leia nunca. COMPLETE con 30 de 39 fichas, las 9
+# faltantes eran exactamente las de la pagina 1 (medido contra la fuente 07-10).
+# `p` queda afuera: en WordPress `?p=123` es un post, no una pagina.
+PARAMS_DE_PAGINA_DE_ENTRADA = ("start", "pagina", "page", "paged", "offset", "pg")
+
+
+def entrada_sin_pagina_posterior(url: str) -> str | None:
+    """La misma URL en su primera pagina, o None si ya lo es."""
+    p = urllib.parse.urlparse(url)
+    # Sobre la query CRUDA: decodificarla y volver a armarla cambia `%20` por espacios.
+    pares = [x for x in p.query.split("&") if x]
+
+    def es_pagina_posterior(par: str) -> bool:
+        k, _, v = par.partition("=")
+        k = urllib.parse.unquote(k).lower()
+        return (k in PARAMS_DE_PAGINA_DE_ENTRADA and v.strip().isdigit()
+                and int(v) > (0 if k in ("start", "offset") else 1))
+
+    quedan = [x for x in pares if not es_pagina_posterior(x)]
+    ruta = re.sub(r"/page/(?:[2-9]|\d{2,})/?$", "/", p.path, flags=re.I)
+    if len(quedan) == len(pares) and ruta == p.path:
+        return None
+    return urllib.parse.urlunparse(p._replace(path=ruta, query="&".join(quedan)))
+
 # Terravirtual (`blangiforti`, `g calvo`): la ficha es /ficha/<md5>. Sus
 # catalogos enlazan /propiedades/ficha/<md5>, que el sitio responde con el
 # LISTADO (23 tarjetas, sin bloque de ficha), y la portada //ficha/<md5>.
@@ -2261,6 +2287,12 @@ class GenericoConnector(Connector):
         fichas se leen de nuevo, y la segunda corrida de la certificacion no ve
         nada de la primera.
         """
+        primera = entrada_sin_pagina_posterior(fuente.official_url)
+        if primera:
+            plan = self.discover(dataclasses.replace(fuente, official_url=primera), _desde_la_raiz)
+            plan.setdefault("entrada_declarada", fuente.official_url)
+            plan.setdefault("entrada_corregida", primera)
+            return plan
         if isinstance(self.descargador, _DescargasDelDescubrimiento):
             return self._descubrir(fuente, _desde_la_raiz)
         original = self.descargador
