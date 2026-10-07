@@ -9,7 +9,7 @@ productivo sigue en `READY_FOR_PRODUCTION_ACTION.md` y lo decide el usuario.
 | criterio (pedido 06-10, §20) | estado | evidencia |
 |---|---|---|
 | Writer equivalence | **DEMOSTRADA en desechable** | PGlite en memoria, `production_connections: 0`, HEAD `9b43ee6e3c`+: `verify_writer_beta.mjs` 11/11 (insert, update, NULL, cero, legado, idempotencia, matriz por campo, valor fuera de dominio, duplicado por `hash_dedup`, rollback), `verify_writer_equivalence.mjs` 10/10, `verify_writer_role.mjs` 14/14, `verify_local_postgres.mjs` 17/17 |
-| Backup probado | **PROCEDIMIENTO PROBADO en local; dump productivo BLOCKED_EXTERNAL_CREDENTIAL** | 07-10: `scripts/ensayo_backup_restore.py` con PostgreSQL 16.15 oficial (pg_dump -Fc de 76.486 propiedades, 30,8 MB, sha256 y lista TOC verificadas); las dos credenciales productivas existentes fallan («password authentication failed»); produccion es PostgreSQL 17 -> hace falta `pg_dump` 17 |
+| Backup probado | **PROCEDIMIENTO PROBADO en local; dump productivo BLOCKED_EXTERNAL_CREDENTIAL** | 07-10: `scripts/ensayo_backup_restore.py` con PostgreSQL 16.15 oficial (pg_dump -Fc de 76.486 propiedades, 30,8 MB, sha256 y lista TOC verificadas); las dos credenciales productivas existentes fallan («password authentication failed»). PostgreSQL 17.11 instalado y **ensayo remoto probado contra el backup Neon (PG17, solo lectura)**: dump 65,9 MB, restore 0 errores, 9/9 tablas identicas, esquema/funciones/permisos identicos, recovery identico (`scripts/ensayo_backup_remoto.py`) |
 | Restore probado | **PROBADO en local** (sobre un dump local; falta el dump productivo) | restore en base nueva identico al origen (conteo + md5 por tabla, RPC y permisos intactos); recovery tras dano deliberado (10.926 filas borradas, precios alterados, auditoria vaciada) identico al origen |
 | Rollback / recovery | **PROBADO (snapshot)**, PROBADO en desechable (migraciones) | ensayo 07-10 sobre copia de la servida: despliegue de sprint_rc2 con QA posterior igual a la de la candidata y rollback verificado por hash (vuelve a `482de3ac…` = v4l-c); `test_desplegar_snapshot.py` 6/6; rollback no destructivo de `property_safe_merge_audit` y del rol escritor en PGlite |
 | Secrets seguros | **SÍ (repo)** | barrido 06-10: HEAD solo con marcadores y fixtures de tests; 13 commits de la historia nombran el ref real del proyecto y ninguno con credencial embebida; `.env` no versionado |
@@ -19,7 +19,7 @@ productivo sigue en `READY_FOR_PRODUCTION_ACTION.md` y lo decide el usuario.
 | Post-deploy checks | **DEFINIDOS** (abajo) | automatizados en `desplegar_snapshot.py` y `activar_snapshot.py` |
 | Rollback plan | **DEFINIDO** (abajo) | |
 
-**PRODUCTION_READY = NO** solo porque falta el dump REAL de produccion: credencial valida (READY #1) y `pg_dump` 17 (produccion es PostgreSQL 17). El procedimiento entero (dump, checksum, conteos, restore, validacion, recovery) ya esta probado en local con 76.486 filas reales.
+**PRODUCTION_READY = NO** solo porque falta el dump REAL de produccion: **el unico bloqueo es la credencial** (READY #1). PostgreSQL 17 ya esta instalado y el procedimiento remoto completo esta probado contra el backup Neon (PG17). El procedimiento entero (dump, checksum, conteos, restore, validacion, recovery) ya esta probado en local con 76.486 filas reales.
 Todo lo demás está listo o probado en desechable.
 
 ## Cutover plan (orden; cada paso lo autoriza el usuario)
