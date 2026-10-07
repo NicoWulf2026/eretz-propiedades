@@ -25,8 +25,10 @@ paths:
   conector invalida su familia. Agrupar cambios compartidos en un solo lote.
 - Los workers paran entre agencias si cambia un archivo de la huella en disco y el relanzador los
   levanta en ≤10 min: no dejar cambios de huella sin commitear.
-- Fuera de la huella: `run_agency_certification_queue.py`, `defect_triage.py`, `regression_gate.py`,
+- Fuera de la huella: `run_agency_certification_queue.py`, `regression_gate.py`,
   `comparar_con_linea_base.py`, `api_snapshot.py`, `property_freshest.py`, `api/v2.py`.
+  `defect_triage.py` SI esta en la huella (auditoria de dependencias 03-10): tocarlo mueve todas.
+  Ante la duda, preguntarle a `archivos_de_la_huella()`, no a esta lista.
 
 ## Paradas de la cola
 - Stop de familia/COMPARTIDO: diagnosticar la agencia, y si el defecto es de radio acotado firmar
