@@ -968,6 +968,18 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
             altas_sin_certificar += 1
             cambios[hash_dedup] = "ALTA_SIN_CERTIFICAR"
             continue
+        # Una fila de la preingestion que NO se servia y llega con el paquete CERTIFICADO
+        # entero es un alta certificada: `gonzalez e hijos`, `gualtieri`, `oyharzabal`,
+        # `morero` (CANDIDATE en la preingestion, ficha en las dos corridas COMPLETE). Sin
+        # marca, P2 la frenaba como 'alta sin motivo' (sprint_rc1, 07-10). Con frescura
+        # PARCIAL (`_campos_confiables`, de un NEEDS_FIX) no esta certificada: no se suma.
+        alta_certificada = False
+        if ids_servidos is not None and not es_nueva and hash_dedup not in ids_servidos:
+            if "_campos_confiables" in fresca:
+                altas_sin_certificar += 1
+                cambios[hash_dedup] = "ALTA_SIN_CERTIFICAR"
+                continue
+            alta_certificada = True
         canonical = cruda.get("canonical_agency_id")
         if canonical in ajenas:
             ajenas_omitidas += 1
@@ -1074,6 +1086,8 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
                 cobertura, base, cruda, hash_dedup, localidades, geometria)
             if recalculo:
                 geo_de_la_fila_fresca[recalculo] += 1
+        if alta_certificada:
+            cambios[hash_dedup] = "SUMADA_CERTIFICADA"
         g, correccion_geo = _geo_de_la_extraccion(cobertura, fresca)
         if correccion_geo:
             correcciones_geo[correccion_geo] += 1
