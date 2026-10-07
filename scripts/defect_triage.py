@@ -752,7 +752,13 @@ def clasificar(resultado: dict[str, Any]) -> dict[str, Any]:
     # Por eso lo menor NO devuelve CONTINUE aca: cae al resto de los chequeos,
     # y solo si ninguno encuentra nada termina en CONTINUE, al final.
     menor = _es_de_baja_magnitud(resultado, fallidos)
-    if fallidos and not menor:
+    # Solo la provincia: leerla mal deja NULL, nunca un valor falso ni una ficha
+    # menos. Del 07-10 03:06 al 20:50 hubo siete paros de familia por lo mismo
+    # (la fuente la nombra en prosa o dentro de la direccion completa; todos
+    # verificados contra la fuente). Igual que lo menor: no para aca, cae al
+    # resto de los chequeos y, si nada aparece, sigue con radio AGENCIA.
+    solo_provincia = bool(fallidos) and set(fallidos) == {"provincia"}
+    if fallidos and not menor and not solo_provincia:
         # La fuente publica el campo y no lo leimos. El que lee es el parser, y
         # el parser lo comparten todas las agencias de la familia.
         return _veredicto(
@@ -902,6 +908,12 @@ def clasificar(resultado: dict[str, Any]) -> dict[str, Any]:
             CONTINUE, resultado, COMPONENTE_MENOR, RADIO_AGENCIA,
             f"la extraccion fallo en poquisimas fichas y ningun otro chequeo "
             f"encontro nada: {_detalle_menor(resultado, fallidos)}")
+    if solo_provincia:
+        return _veredicto(
+            CONTINUE, resultado, "provincia_no_leida", RADIO_AGENCIA,
+            f"solo falta la provincia ({_detalle_menor(resultado, fallidos)}) y ningun otro "
+            f"chequeo encontro nada; leerla mal deja NULL, no un dato falso: la agencia "
+            f"sigue en NEEDS_FIX sin frenar a la familia")
 
     # ---------------- Sin evidencia para acotar: se para ------------------
     movido = _catalogo_que_cambio_la_fuente(resultado, comparacion)
