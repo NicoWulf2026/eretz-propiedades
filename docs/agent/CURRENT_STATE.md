@@ -6,6 +6,16 @@ archivo: `git show 6ee927bb80:docs/agent/CURRENT_STATE.md`). `database_writes: 0
 **Actualizado:** 2026-10-04 22:20 (ver bloque LOCAL 04-10) · **Rama:** `handoff/codex-unificacion-2026-09-18` (push solo acá)
 **Fase:** certificación/recertificación continua + calidad de lo servido + preparación productiva.
 
+## SPRINT BETA 12/10 — 2026-10-07 12:xx (estado REAL verificado en la PC)
+- **ERETZ_BACKEND_BETA_READY = YES** (07-10). **PRODUCTION_READY = NO**: backup/restore bloqueado por credencial
+  (READY #1) y sin binarios de PostgreSQL locales. Auditoria: `docs/agent/PRODUCTION_READINESS_2026-10-07.md`.
+- **SEMANTIC_FREEZE = ACTIVE** desde 07-10 10:5x (HEAD semantico `bdba3ddbf4`; huellas `_b_scratch/huellas_freeze_2026-10-07.json`).
+- **BETA CANDIDATE sprint_rc2** (READY #7c; reemplaza a final_v7d): 76.486 props, sha256 `6ebecc0e…278ab`; P2 0 fallas,
+  Regression Gate 317/317 (0 sin explicar), QA API real 22/22, QA navegador 71/71, suite 4.063/0, frontend 1.271/0 + tsc,
+  ensayo de despliegue + rollback verificado por hash. Servirla = decision del usuario.
+- Cola: 2 workers, relanzador y vigilante desde E:; prioridad reducida a `fabiana bert` (portal). Ledger ~1.190 agencias.
+- Flujo: desarrollo en `eretz-b` (`integration/eretz`), nodo `eretz-unified` solo por `merge --ff-only`.
+
 ## LOCAL — cuenta B, 2026-10-06 03:30 (estado REAL verificado en la PC)
 - **BETA CANDIDATE `snap_final_v7d`** (74.080 props, sha256 `4a2ed923...`, READY #7b; reemplaza a v7c por los dormitorios de
   widget en locales/oficinas/galpones, regla `841a4b6`; suite 4027, QA 71/71, P2 0, gate 0 sin explicar). Antes:

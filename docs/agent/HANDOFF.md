@@ -6,6 +6,7 @@ Historia: Git (`git log --since=2026-09-25`).
 
 ## SPRINT FINAL BETA 12/10 — TAREA EXACTA EN CURSO (06-10 17:15)
 Pedido del usuario (06-10): cerrar el sistema; BETA READY y, si se puede, PRODUCTION READY sin acciones productivas.
+ESTADO 07-10 12:xx: BETA READY = YES con sprint_rc2 (READY #7c); SEMANTIC_FREEZE activo; PRODUCTION_READY = NO (backup/restore: credencial READY #1). Proximo: cola normal bajo freeze (solo P0/P1), diagnosticar paros, re-armar RC si la cola suma recertificaciones relevantes, informe final 12/10.
 Plan: freeze semantico 08/10 -> RC 09/10 (armar_candidata + P2 + Regression Gate + `scripts/qa_api_real.py` + QA navegador
 + rollback + suite) -> auditoria de produccion 10-11/10 -> informe final 12/10. Tablero: `docs/agent/BETA_12_10.md`.
 - Flujo de ramas: desarrollo en `eretz-b` (`integration/eretz`), el nodo `eretz-unified` avanza SOLO con `merge --ff-only`.
