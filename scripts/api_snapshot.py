@@ -737,16 +737,21 @@ def _sin_avisos_ya_servidos(origen, ruta_servida, nuevas, retirar) -> tuple[list
         "select hash_dedup from rows where status = 'CANDIDATE'")}
     presentes |= {f.get("hash_dedup") for f in nuevas}
     huerfanos: dict[str, set[str]] = defaultdict(set)
+    servidos: set[str] = set()
     servida = sqlite3.connect(f"file:{Path(ruta_servida).as_posix()}?mode=ro", uri=True)
     try:
         for i, agencia, url in servida.execute(
                 "select id, agency_id, source_url from propiedades"):
+            servidos.add(i)
             if i not in presentes and i not in retirar:
                 huerfanos[agencia] |= _ids_de_aviso(url)
     finally:
         servida.close()
+    # Solo las ALTAS: una fila que ya se sirve con su hash se refresca aunque un
+    # duplicado viejo comparta su numero (sacarla dejaba la copia servida sin refrescar).
     quedan = [f for f in nuevas
-              if not (_ids_de_aviso(f.get("source_url"))
+              if f.get("hash_dedup") in servidos
+              or not (_ids_de_aviso(f.get("source_url"))
                       & huerfanos.get((f.get("_snapshot_certificadas") or {}).get("agencia"),
                                       set()))]
     return quedan, len(nuevas) - len(quedan)

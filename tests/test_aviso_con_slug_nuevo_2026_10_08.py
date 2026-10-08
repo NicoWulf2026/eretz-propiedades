@@ -55,6 +55,14 @@ def test_la_fila_servida_que_el_paquete_sigue_listando_se_refresca(tmp_path):
     assert quedan == nuevas and iguales == 0
 
 
+def test_lo_que_ya_se_sirve_se_refresca_aunque_un_duplicado_viejo_comparta_numero(tmp_path):
+    # sprint_rc4: 28 de las 42 omitidas ya se servian con su hash; otra fila servida
+    # huerfana (duplicado viejo por slug) compartia el numero. No son altas: se refrescan.
+    servida = _servida(tmp_path, [("viejo", AGENCIA, VIEJA), ("nuevo", AGENCIA, NUEVA)])
+    nuevas = [_nueva("nuevo", NUEVA)]
+    assert _sin_avisos_ya_servidos(_origen(tmp_path, []), servida, nuevas, set()) == (nuevas, 0)
+
+
 def test_otra_agencia_con_el_mismo_numero_no_bloquea(tmp_path):
     servida = _servida(tmp_path, [("viejo", "roomix:otra", VIEJA)])
     nuevas = [_nueva("nuevo", NUEVA)]
