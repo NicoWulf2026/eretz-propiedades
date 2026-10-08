@@ -106,6 +106,7 @@
      ],
      "ambientes": 2,
      "banos": 1,
+     "caracteristicas": {},
      "descripcion": "Ficha SINTETICA 26 para QA. departamento en Centro, no es una propiedad real.",
      "dormitorios": 2,
      "geo": {
@@ -173,6 +174,7 @@
      ],
      "ambientes": 5,
      "banos": 2,
+     "caracteristicas": {},
      "descripcion": "Ficha SINTETICA 19 para QA. ph en Centro, no es una propiedad real.",
      "dormitorios": 3,
      "geo": {
@@ -240,6 +242,7 @@
      ],
      "ambientes": 2,
      "banos": 2,
+     "caracteristicas": {},
      "descripcion": "Ficha SINTETICA 21 para QA. departamento en Centro, no es una propiedad real.",
      "dormitorios": 1,
      "geo": {
@@ -307,6 +310,7 @@
      ],
      "ambientes": 1,
      "banos": 2,
+     "caracteristicas": {},
      "descripcion": "Ficha SINTETICA 25 para QA. departamento en Centro, no es una propiedad real.",
      "dormitorios": 1,
      "geo": {
@@ -374,6 +378,7 @@
      ],
      "ambientes": 4,
      "banos": 2,
+     "caracteristicas": {},
      "descripcion": "Ficha SINTETICA 23 para QA. casa en Centro, no es una propiedad real.",
      "dormitorios": 3,
      "geo": {
@@ -466,6 +471,7 @@
      ],
      "ambientes": 5,
      "banos": 2,
+     "caracteristicas": {},
      "descripcion": "Ficha SINTETICA 1 para QA. departamento en Nueva Córdoba, no es una propiedad real.",
      "dormitorios": 3,
      "geo": {
@@ -554,6 +560,7 @@
      ],
      "ambientes": null,
      "banos": null,
+     "caracteristicas": {},
      "descripcion": "Ficha SINTETICA 2 para QA. terreno en Nueva Córdoba, no es una propiedad real.",
      "dormitorios": null,
      "geo": {
@@ -612,6 +619,7 @@
      ],
      "ambientes": 5,
      "banos": 1,
+     "caracteristicas": {},
      "descripcion": "Ficha SINTETICA 4 para QA. oficina en Nueva Córdoba, no es una propiedad real.",
      "dormitorios": 0,
      "geo": {
@@ -670,6 +678,7 @@
      ],
      "ambientes": 2,
      "banos": 1,
+     "caracteristicas": {},
      "descripcion": "Ficha SINTETICA 6 para QA. departamento en Nueva Córdoba, no es una propiedad real.",
      "dormitorios": 2,
      "geo": {
@@ -728,6 +737,7 @@
      ],
      "ambientes": 4,
      "banos": 1,
+     "caracteristicas": {},
      "descripcion": "Ficha SINTETICA 8 para QA. local en Nueva Córdoba, no es una propiedad real.",
      "dormitorios": null,
      "geo": {
@@ -786,6 +796,7 @@
      ],
      "ambientes": 1,
      "banos": 1,
+     "caracteristicas": {},
      "descripcion": "Ficha SINTETICA 10 para QA. departamento en Nueva Córdoba, no es una propiedad real.",
      "dormitorios": 2,
      "geo": {
@@ -864,6 +875,7 @@
      ],
      "ambientes": 4,
      "banos": 2,
+     "caracteristicas": {},
      "descripcion": "Ficha SINTETICA 3 para QA. casa en Nueva Córdoba, no es una propiedad real.",
      "dormitorios": 3,
      "geo": {
@@ -931,6 +943,7 @@
      ],
      "ambientes": 4,
      "banos": 2,
+     "caracteristicas": {},
      "descripcion": "Ficha SINTETICA 33 para QA. casa en Palermo, no es una propiedad real.",
      "dormitorios": 1,
      "geo": {
@@ -998,6 +1011,7 @@
      ],
      "ambientes": 4,
      "banos": 2,
+     "caracteristicas": {},
      "descripcion": "Ficha SINTETICA 63 para QA. casa en Mendoza, no es una propiedad real.",
      "dormitorios": 3,
      "geo": {
@@ -1065,6 +1079,7 @@
      ],
      "ambientes": 4,
      "banos": 2,
+     "caracteristicas": {},
      "descripcion": "Ficha SINTETICA 43 para QA. casa en La Perla, no es una propiedad real.",
      "dormitorios": 3,
      "geo": {
@@ -1132,6 +1147,7 @@
      ],
      "ambientes": 4,
      "banos": 2,
+     "caracteristicas": {},
      "descripcion": "Ficha SINTETICA 53 para QA. casa en San Luis, no es una propiedad real.",
      "dormitorios": 1,
      "geo": {
@@ -1230,6 +1246,7 @@
    ],
    "ambientes": 5,
    "banos": 2,
+   "caracteristicas": {},
    "descripcion": "Ficha SINTETICA 1 para QA. departamento en Nueva Córdoba, no es una propiedad real.",
    "dormitorios": 3,
    "geo": {
@@ -1290,6 +1307,7 @@
    ],
    "ambientes": 2,
    "banos": 2,
+   "caracteristicas": {},
    "descripcion": "Ficha SINTETICA 1 para QA. departamento en Nueva Córdoba, no es una propiedad real.",
    "dormitorios": 1,
    "geo": {
@@ -1360,6 +1378,7 @@
    ],
    "ambientes": 2,
    "banos": 2,
+   "caracteristicas": {},
    "descripcion": "Ficha SINTETICA 1 para QA. departamento en Nueva Córdoba, no es una propiedad real.",
    "dormitorios": 1,
    "geo": {
@@ -1422,6 +1441,7 @@
    ],
    "ambientes": 2,
    "banos": 2,
+   "caracteristicas": {},
    "descripcion": "Ficha SINTETICA 1 para QA. departamento en Nueva Córdoba, no es una propiedad real.",
    "dormitorios": 1,
    "geo": {
@@ -1484,6 +1504,7 @@
    ],
    "ambientes": 2,
    "banos": 2,
+   "caracteristicas": {},
    "descripcion": "Ficha SINTETICA 1 para QA. departamento en Nueva Córdoba, no es una propiedad real.",
    "dormitorios": 1,
    "geo": {
@@ -1546,6 +1567,7 @@
    ],
    "ambientes": 2,
    "banos": 2,
+   "caracteristicas": {},
    "descripcion": "Ficha SINTETICA 1 para QA. departamento en Nueva Córdoba, no es una propiedad real.",
    "dormitorios": 1,
    "geo": {
@@ -1609,6 +1631,7 @@
    ],
    "ambientes": 2,
    "banos": 2,
+   "caracteristicas": {},
    "descripcion": "Ficha SINTETICA sin titulo publicado: tipo, operacion y localidad reales.",
    "dormitorios": 1,
    "geo": {
@@ -1670,6 +1693,7 @@
    ],
    "ambientes": 2,
    "banos": 2,
+   "caracteristicas": {},
    "descripcion": "Ficha SINTETICA sin titulo, tipo ni operacion.",
    "dormitorios": 1,
    "geo": {
@@ -1732,6 +1756,7 @@
    ],
    "ambientes": 2,
    "banos": 2,
+   "caracteristicas": {},
    "descripcion": "Ficha SINTETICA 1 para QA. departamento en Nueva Córdoba, no es una propiedad real.",
    "dormitorios": 1,
    "geo": {
@@ -1900,6 +1925,7 @@
      ],
      "ambientes": 2,
      "banos": 2,
+     "caracteristicas": {},
      "descripcion": "Ficha SINTETICA sin titulo publicado: tipo, operacion y localidad reales.",
      "dormitorios": 1,
      "geo": {
@@ -1956,6 +1982,7 @@
      ],
      "ambientes": 2,
      "banos": 2,
+     "caracteristicas": {},
      "descripcion": "Ficha SINTETICA sin titulo, tipo ni operacion.",
      "dormitorios": 1,
      "geo": {
@@ -2013,6 +2040,7 @@
      ],
      "ambientes": 2,
      "banos": 2,
+     "caracteristicas": {},
      "descripcion": "Ficha SINTETICA 1 para QA. departamento en Nueva Córdoba, no es una propiedad real.",
      "dormitorios": 1,
      "geo": {
@@ -2070,6 +2098,7 @@
      ],
      "ambientes": 2,
      "banos": 2,
+     "caracteristicas": {},
      "descripcion": "Ficha SINTETICA 1 para QA. departamento en Nueva Córdoba, no es una propiedad real.",
      "dormitorios": 1,
      "geo": {
@@ -2127,6 +2156,7 @@
      ],
      "ambientes": 2,
      "banos": 2,
+     "caracteristicas": {},
      "descripcion": "Ficha SINTETICA 1 para QA. departamento en Nueva Córdoba, no es una propiedad real.",
      "dormitorios": 1,
      "geo": {
@@ -2182,6 +2212,7 @@
      ],
      "ambientes": 2,
      "banos": 2,
+     "caracteristicas": {},
      "descripcion": "Ficha SINTETICA 1 para QA. departamento en Nueva Córdoba, no es una propiedad real.",
      "dormitorios": 1,
      "geo": {
@@ -2247,6 +2278,7 @@
      ],
      "ambientes": 2,
      "banos": 2,
+     "caracteristicas": {},
      "descripcion": "Ficha SINTETICA 1 para QA. departamento en Nueva Córdoba, no es una propiedad real.",
      "dormitorios": 1,
      "geo": {
@@ -2304,6 +2336,7 @@
      ],
      "ambientes": 2,
      "banos": 2,
+     "caracteristicas": {},
      "descripcion": "Ficha SINTETICA 1 para QA. departamento en Nueva Córdoba, no es una propiedad real.",
      "dormitorios": 1,
      "geo": {
@@ -2362,6 +2395,7 @@
      ],
      "ambientes": 5,
      "banos": 2,
+     "caracteristicas": {},
      "descripcion": "Ficha SINTETICA 1 para QA. departamento en Nueva Córdoba, no es una propiedad real.",
      "dormitorios": 3,
      "geo": {
@@ -2970,6 +3004,7 @@
      ],
      "ambientes": 2,
      "banos": 2,
+     "caracteristicas": {},
      "descripcion": "Ficha SINTETICA 71 para QA. departamento en Salta, no es una propiedad real.",
      "dormitorios": 3,
      "geo": {
@@ -3027,6 +3062,7 @@
      ],
      "ambientes": 5,
      "banos": 2,
+     "caracteristicas": {},
      "descripcion": "Ficha SINTETICA 69 para QA. ph en Salta, no es una propiedad real.",
      "dormitorios": 1,
      "geo": {
@@ -3084,6 +3120,7 @@
      ],
      "ambientes": null,
      "banos": null,
+     "caracteristicas": {},
      "descripcion": "Ficha SINTETICA 67 para QA. cochera en Salta, no es una propiedad real.",
      "dormitorios": null,
      "geo": {
@@ -3141,6 +3178,7 @@
      ],
      "ambientes": 1,
      "banos": 2,
+     "caracteristicas": {},
      "descripcion": "Ficha SINTETICA 65 para QA. departamento en Mendoza, no es una propiedad real.",
      "dormitorios": 1,
      "geo": {
@@ -3198,6 +3236,7 @@
      ],
      "ambientes": 4,
      "banos": 2,
+     "caracteristicas": {},
      "descripcion": "Ficha SINTETICA 63 para QA. casa en Mendoza, no es una propiedad real.",
      "dormitorios": 3,
      "geo": {

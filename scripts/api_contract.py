@@ -38,6 +38,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from connectors.geografia import geografia_de_fila_publicable  # noqa: E402
+from scripts.caracteristicas import caracteristicas_de  # noqa: E402
 from scripts.preingestion_manifest import (base_canonica,  # noqa: E402
                                            exigir_base_vigente)
 
@@ -75,6 +76,11 @@ FORMA: dict[str, dict[str, Any]] = {
     "latitud": {"tipo": "number", "nulo": True},
     "longitud": {"tipo": "number", "nulo": True},
     "geo": {"tipo": "objeto", "nulo": False, "nota": "ver FORMA_GEO"},
+    "caracteristicas": {"tipo": "objeto", "nulo": False,
+                        "nota": "aditivo (08-10): cocheras, plantas, suites, antiguedad, expensas, orientacion, "
+                                "disposicion, condicion, situacion, estado_en_fuente, apto_credito, "
+                                "codigo_en_fuente, modificado_en_fuente, superficie_privada; puede venir vacio "
+                                "y cada clave falta si la fuente no la publico (ver scripts/caracteristicas.py)"},
     "alcances": {"tipo": "string[]", "nulo": False,
                  "nota": "donde puede aparecer; ver ALCANCES"},
 }
@@ -175,6 +181,9 @@ def fila_de_api(fila: dict[str, Any], geo: dict[str, Any] | None,
                                  "id": None, "origen": "sin_area"},
             "estado": (geo or {}).get("estado_geografico"),
         },
+        # Lo que el extractor ya leia y no llegaba (mision 08-10). Bloque aditivo: un consumidor que
+        # no lo conoce lo ignora (el validador del frontend no falla por claves nuevas).
+        "caracteristicas": caracteristicas_de(fila.get("extra")),
         "alcances": alcances,
     }
 
