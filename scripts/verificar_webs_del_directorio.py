@@ -98,6 +98,27 @@ def cohorte(catalogo) -> list[tuple[str, dict]]:
     return fuera
 
 
+def cohorte_sin_resolver(catalogo) -> list[tuple[str, dict]]:
+    """Las que tienen un registro AFIRMABLE viejo SIN `estado_del_resolver` y por eso no entran a la cola.
+
+    Mision 08-10: 294 registros de `verificar_candidatas_web` (14-09) quedaron sin el estado del resolver
+    que P6 exige, y algunos son malos (`posse propiedades` -> una pagina de infractores del colegio). No se
+    los asciende por decreto: se vuelven a abrir con el verificador vigente. La url a abrir es la del
+    registro viejo; si pasa, la fila nueva (completa) reemplaza a la vieja porque la ultima manda.
+    """
+    from scripts.agency_certifier import resolve_identity
+    ultimo = {f["canonical_agency_id"]: f for f in _jsonl(DESTINO)}
+    fuera = []
+    for cid, rec in sorted(catalogo.items()):
+        viejo = ultimo.get(cid)
+        if (viejo and not viejo.get("estado_del_resolver") and viejo.get("official_url")
+                and rec["resolution"].get("resolution_status") == "NOT_FOUND_IN_ERETZ"
+                and resolve_identity(rec, cid)["identity_status"] == "IDENTITY_PENDING"):
+            fuera.append((cid, dict(rec, platform=dict(rec.get("platform") or {},
+                                                       domain=viejo["official_url"]))))
+    return fuera
+
+
 def entidad(cid: str, rec: dict) -> dict:
     d, p = rec.get("directory") or {}, rec.get("platform") or {}
     zonas = [z for z in (d.get("city") or p.get("city"), d.get("province") or p.get("province")) if z]
@@ -113,9 +134,11 @@ def main() -> int:
                     help="sin esto solo registra; con esto agrega las establecidas al artefacto de la cola")
     ap.add_argument("--limite", type=int, default=0)
     ap.add_argument("--pausa", type=float, default=0.4)
+    ap.add_argument("--reverificar-sin-resolver", action="store_true",
+                    help="volver a abrir los AFIRMABLE viejos sin estado del resolver (ver cohorte_sin_resolver)")
     args = ap.parse_args()
     catalogo = load_catalog(V2, DATOS, PLATAFORMAS)
-    pendientes = cohorte(catalogo)
+    pendientes = cohorte_sin_resolver(catalogo) if args.reverificar_sin_resolver else cohorte(catalogo)
     if args.limite:
         pendientes = pendientes[:args.limite]
     hosts = reclamantes_por_host()
