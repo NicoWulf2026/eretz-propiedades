@@ -4,6 +4,28 @@ Para retomar desde una sesión nueva: arrancar Claude Code en `E:\ERETZ Propieda
 Reglas: `CLAUDE.md` + `.claude/rules/` (cargan solas). Estado: `docs/agent/CURRENT_STATE.md`.
 Historia: Git (`git log --since=2026-09-25`).
 
+## MISION PADRON COMPLETO — TAREA EXACTA EN CURSO (08-10 19:00)
+Objetivo del usuario (08-10): TODAS las inmobiliarias, TODAS sus propiedades publicas, TODOS los datos utiles, entrando
+solas a la base. Plan: `docs/agent/MISION_PADRON_COMPLETO.md` (fecha objetivo 30-11). Auditoria:
+`docs/agent/AUDITORIA_COBERTURA_NACIONAL_2026-10-08.md`. El sprint beta (informe 12/10) sigue vigente.
+Hecho hoy (todo con tests, pusheado): constructor ya no pierde 21.189 filas (`83a1989d5d`) -> `sprint_rc6` 99.178 LISTA,
+READY #7e (falta autorizacion del usuario para desplegar; el entorno bloquea el deploy sin ella); registro unificado
+`scripts/registro_unificado.py` -> `ERETZ_REGISTRO/` (12.483 entidades, invariante ok); `caracteristicas` en la API;
+almacen de paginas enganchado en el runner (`ERETZ_ALMACEN_PAGINAS/`); `dominio_propio` en el verificador de webs
+(una pagina que NOMBRA a la agencia no es su web) y re-verificacion aplicada (+171 -> 855 listas para scrapear);
+mapa: conteos en una pasada + columnas anchas al final; regimen de workers 2 -> 3 (mision delega el numero; prueba de 3
+aprobada 01-10: 13,0/h vs 8,0, bloqueo 0).
+Siguiente, en este orden:
+1. Desplegar rc6 cuando el usuario autorice READY #7e; nueva candidata con `caracteristicas` + orden de columnas.
+2. Replay desde el almacen (re-extraer sin red; validar extractores antes de aplicarlos) y certificacion v2 (una sola
+   descarga).
+3. Fusionar MAIN<->CANONICO por host (304 coincidencias de 517) con evidencia; identidades nuevas desde hosts de MAIN.
+4. Leer `inmobiliarias_main` (nombre/web/telefono) — depende de acceso del usuario (Supabase MCP o credencial ro).
+5. Familias NEEDS_FIX (300) con el replay; busqueda paga para el remanente sin web (pedir gasto).
+IDENTITY_PENDING a revisar: strada peirotti<-casamayor, arquitectura inmobiliaria<-urbanorosario, juana manso<-pabloroma,
+re max actitud<-remax-urbana. Deuda: medida de ambiente leida como conteo (post-freeze P1), plantilla iniciosvirtual,
+mapa Site Builder, generico lee el sitemap de la raiz en perfiles de plataforma.
+
 ## SPRINT FINAL BETA 12/10 — TAREA EXACTA EN CURSO (06-10 17:15)
 Pedido del usuario (06-10): cerrar el sistema; BETA READY y, si se puede, PRODUCTION READY sin acciones productivas.
 ESTADO 07-10 12:xx: BETA READY = YES con sprint_rc2 (READY #7c); SEMANTIC_FREEZE activo; PRODUCTION_READY = NO (backup/restore: credencial READY #1). Proximo: cola normal bajo freeze (solo P0/P1), diagnosticar paros, re-armar RC si la cola suma recertificaciones relevantes, informe final 12/10.
