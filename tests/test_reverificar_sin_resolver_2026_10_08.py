@@ -41,3 +41,15 @@ def test_la_ultima_fila_manda(tmp_path, monkeypatch):
     destino.write_text("\n".join(json.dumps(f) for f in filas), encoding="utf-8")
     monkeypatch.setattr(v, "DESTINO", destino)
     assert v.cohorte_sin_resolver({"roomix:x": _rec()}) == []
+
+
+def test_candidatas_sin_web_solo_las_de_dominio_propio_y_raiz_primero(monkeypatch):
+    rec = {"resolution": {"resolution_status": "NOT_FOUND_IN_ERETZ"}, "live": {}, "source": {},
+           "platform": {}, "verificada": {},
+           "directory": {"candidate_urls": ["https://www.zonaprop.com.ar/inmobiliarias/beber",
+                                            "https://www.beberinmobiliariaguemes.com.ar/venta/",
+                                            "https://empresite.eleconomista.es/BEBER.html",
+                                            "http://beberinmobiliaria.com.ar/"]}}
+    cohorte = v.cohorte_candidatas_sin_web({"roomix:beber negocios inmobiliarios": rec})
+    assert [r["platform"]["domain"] for _c, r in cohorte] == [
+        "http://beberinmobiliaria.com.ar/", "https://www.beberinmobiliariaguemes.com.ar/venta/"]

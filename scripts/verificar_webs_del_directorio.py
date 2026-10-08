@@ -209,6 +209,29 @@ def cohorte_sin_resolver(catalogo) -> list[tuple[str, dict]]:
     return fuera
 
 
+def cohorte_candidatas_sin_web(catalogo) -> list[tuple[str, dict]]:
+    """Las agencias SIN web, una entrada por cada candidata de dominio propio (las raices primero).
+
+    Mision 08-10: de 3.476 canonicas sin web, 271 tienen al menos una candidata de la busqueda ya pagada
+    (exa/serper/tavily) cuyo host lleva su nombre; nadie las abrio. Se prueban con la misma compuerta
+    (identidad + pais + un solo reclamante); el bucle principal corta en la primera que pasa.
+    """
+    from scripts.agency_certifier import resolve_identity
+    fuera = []
+    for cid, rec in sorted(catalogo.items()):
+        if resolve_identity(rec, cid)["official_url"]:
+            continue
+        candidatas = []
+        for c in (rec.get("directory") or {}).get("candidate_urls") or []:
+            url = c if isinstance(c, str) else (c.get("url") if isinstance(c, dict) else None)
+            if url and not wd.es_portal(url) and dominio_propio(cid, url)[0]:
+                candidatas.append(url)
+        candidatas.sort(key=lambda u: (urllib.parse.urlparse(u).path.strip("/").count("/"), len(u)))
+        for url in candidatas:
+            fuera.append((cid, dict(rec, platform=dict(rec.get("platform") or {}, domain=url))))
+    return fuera
+
+
 def entidad(cid: str, rec: dict) -> dict:
     d, p = rec.get("directory") or {}, rec.get("platform") or {}
     zonas = [z for z in (d.get("city") or p.get("city"), d.get("province") or p.get("province")) if z]
@@ -226,16 +249,31 @@ def main() -> int:
     ap.add_argument("--pausa", type=float, default=0.4)
     ap.add_argument("--reverificar-sin-resolver", action="store_true",
                     help="volver a abrir los AFIRMABLE viejos sin estado del resolver (ver cohorte_sin_resolver)")
+    ap.add_argument("--candidatas-sin-web", action="store_true",
+                    help="probar las candidatas de dominio propio de las agencias sin web (ver cohorte_candidatas_sin_web)")
     args = ap.parse_args()
     catalogo = load_catalog(V2, DATOS, PLATAFORMAS)
-    pendientes = cohorte_sin_resolver(catalogo) if args.reverificar_sin_resolver else cohorte(catalogo)
+    if args.reverificar_sin_resolver:
+        pendientes = cohorte_sin_resolver(catalogo)
+    elif args.candidatas_sin_web:
+        pendientes = cohorte_candidatas_sin_web(catalogo)
+    else:
+        pendientes = cohorte(catalogo)
     if args.limite:
         pendientes = pendientes[:args.limite]
     hosts = reclamantes_por_host()
+    if args.candidatas_sin_web:
+        # Las candidatas tambien reclaman su host: si dos agencias de la cohorte apuntan al mismo
+        # dominio, ninguna lo afirma (HOST_COMPARTIDO), en vez de quedarse con la primera que llega.
+        for cid, rec in pendientes:
+            hosts[host_de(rec["platform"]["domain"])].add(cid)
     print(f"### VERIFICAR WEBS DEL DIRECTORIO (P6 fase 2) ### {len(pendientes)} agencias", flush=True)
     estados: Counter = Counter()
+    afirmadas_en_la_corrida: set[str] = set()
     with REGISTRO.open("a", encoding="utf-8") as reg, DESTINO.open("a", encoding="utf-8") as dest:
         for i, (cid, rec) in enumerate(pendientes, 1):
+            if cid in afirmadas_en_la_corrida:
+                continue
             url = rec["platform"]["domain"]
             veredicto_id, pais, razon_pais = None, None, None
             propio, razon_propio = dominio_propio(cid, url)
@@ -276,6 +314,8 @@ def main() -> int:
                     "database_writes": 0}
             reg.write(json.dumps(fila, ensure_ascii=False) + "\n")
             reg.flush()
+            if afirmable:
+                afirmadas_en_la_corrida.add(cid)
             if afirmable and args.aplicar:
                 dest.write(json.dumps({
                     "canonical_agency_id": cid, "nombre": entidad(cid, rec)["nombre_original"],
