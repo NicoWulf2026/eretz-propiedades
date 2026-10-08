@@ -42,7 +42,7 @@ if str(RAIZ / "scripts") not in sys.path:
 
 from api.slugs import sin_acento  # noqa: E402
 from scripts.api_contract import fila_de_api  # noqa: E402
-from scripts.api_snapshot import ESQUEMA  # noqa: E402
+from scripts.api_snapshot import ESQUEMA, INSERTAR_FILA  # noqa: E402
 from scripts.property_contract import alcances  # noqa: E402
 
 DOMINIO = "sintetica.invalid"
@@ -199,8 +199,7 @@ def construir(destino: Path) -> dict[str, Any]:
             documento = fila_de_api(fila, geo, sorted(scopes))
             area = documento["geo"]["area_busqueda"] or {}
             cursor = con.execute(
-                "insert into propiedades values "
-                "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                INSERTAR_FILA,
                 (documento["id"], documento["agency_id"], documento["source_url"],
                  documento["titulo"], documento["descripcion"], documento["operacion"],
                  documento["tipo_propiedad"], documento["precio"], documento["moneda"],

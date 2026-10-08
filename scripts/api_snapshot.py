@@ -289,8 +289,6 @@ create table if not exists propiedades (
     id text primary key,
     agency_id text not null,
     source_url text not null,
-    titulo text,
-    descripcion text,
     operacion text,
     tipo_propiedad text,
     precio real,
@@ -319,6 +317,12 @@ create table if not exists propiedades (
     area_nombre_plano text,
     barrio_plano text,
     geo_estado text,
+    -- Las columnas anchas van al final (08-10): SQLite lee las columnas en orden y una descripcion
+    -- larga desborda a otras paginas; con ella al principio, leer `latitud` o `precio` obligaba a
+    -- recorrer ese desborde. Medido sobre sprint_rc6 (99.178): el mapa nacional con texto baja ~25 %.
+    -- Las inserciones nombran las columnas (`COLUMNAS_DE_FILA`), asi que el orden fisico es libre.
+    titulo text,
+    descripcion text,
     alcances text not null,
     documento text not null
 );
@@ -366,6 +370,16 @@ create virtual table if not exists busqueda using fts5(
 --   su fila en `propiedades`, y las dos se pueden unir por `rowid`.
 create table if not exists snapshot_meta (clave text primary key, valor text);
 """
+
+# El orden en que el constructor arma los valores de una fila. Las inserciones nombran estas columnas:
+# el orden fisico de la tabla (ver ESQUEMA) puede cambiar sin tocar a quien inserta.
+COLUMNAS_DE_FILA = (
+    "id", "agency_id", "source_url", "titulo", "descripcion", "operacion", "tipo_propiedad", "precio",
+    "moneda", "ambientes", "dormitorios", "banos", "superficie_total", "superficie_cubierta", "imagenes_n",
+    "latitud", "longitud", "localidad", "localidad_id", "municipio", "departamento", "provincia", "barrio",
+    "area_nivel", "area_nombre", "area_nombre_plano", "barrio_plano", "geo_estado", "alcances", "documento")
+INSERTAR_FILA = (f"insert or replace into propiedades ({', '.join(COLUMNAS_DE_FILA)}) "
+                 f"values ({', '.join('?' * len(COLUMNAS_DE_FILA))})")
 
 
 def _leer_jsonl(ruta: Path, clave: str = "hash_dedup") -> dict[str, dict[str, Any]]:
@@ -996,8 +1010,10 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
                 continue
             servida_fila, corregidas = _corregir_heredada(servida_fila)
             heredadas_corregidas.update(corregidas)
+            # Por NOMBRE: la servida puede tener otro orden fisico de columnas (ver ESQUEMA).
             propiedad = api.execute(
-                f"insert or replace into propiedades values ({','.join('?' * len(servida_fila))})",
+                f"insert or replace into propiedades ({', '.join(servida_fila)}) "
+                f"values ({','.join('?' * len(servida_fila))})",
                 tuple(servida_fila.values()))
             api.execute(
                 "insert into busqueda (rowid, id, titulo, descripcion, barrio, area_nombre) "
@@ -1156,8 +1172,7 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
         documento = fila_de_api(cruda, g, scopes)
         area = documento["geo"]["area_busqueda"] or {}
         propiedad = api.execute(
-            "insert or replace into propiedades values "
-            "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            INSERTAR_FILA,
             (documento["id"], documento["agency_id"], documento["source_url"],
              documento["titulo"], documento["descripcion"], documento["operacion"],
              documento["tipo_propiedad"], documento["precio"], documento["moneda"],
