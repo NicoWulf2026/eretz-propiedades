@@ -21,6 +21,7 @@ import os
 import sqlite3
 import sys
 import time
+import urllib.parse
 from collections import Counter, defaultdict
 from contextlib import contextmanager
 from pathlib import Path
@@ -709,6 +710,48 @@ def _servidas_a_conservar(origen, ruta_servida, nuevas, retirar) -> list[dict]:
     return conservar
 
 
+def _ids_de_aviso(url) -> set[str]:
+    """Los numeros de 5 cifras o mas de la ruta y la consulta: el id del aviso en casi
+    todas las plataformas (`/p/10500121-...`). El mismo criterio que la compuerta P2 de
+    duplicados probables; con 4 cifras entraria la altura de una calle."""
+    p = urllib.parse.urlparse(str(url or ""))
+    return set(re.findall(r"\d{5,}", p.path + "?" + p.query))
+
+
+def _sin_avisos_ya_servidos(origen, ruta_servida, nuevas, retirar) -> tuple[list[dict], int]:
+    """Las altas certificadas, sin los avisos que ya se sirven con otro slug.
+
+    08-10, `sprint_rc3`: P2 freno por 14 duplicados probables con altas. Eran el mismo
+    aviso dos veces: la fila servida con el slug viejo y la del paquete nuevo con el
+    slug editado por la fuente (`/p/10500121-...-627` -> `-621`). La servida habia
+    entrado por un paquete, no por la preingestion, asi que `decidir` no la conocia, y
+    `_servidas_a_conservar` la conservaba porque su hash no volvia. Se aplica a lo
+    servido HUERFANO (ni en la preingestion ni entre las altas, ni retirado por una
+    politica) la regla `numero_de_url_ya_visto` de la preingestion: el alta no entra y
+    la fila servida sigue tal cual. Lo servido que el paquete sigue listando con el
+    mismo hash no es huerfano y se refresca como siempre.
+    """
+    if not nuevas or not ruta_servida or not Path(ruta_servida).is_file():
+        return nuevas, 0
+    presentes = {h for (h,) in origen.execute(
+        "select hash_dedup from rows where status = 'CANDIDATE'")}
+    presentes |= {f.get("hash_dedup") for f in nuevas}
+    huerfanos: dict[str, set[str]] = defaultdict(set)
+    servida = sqlite3.connect(f"file:{Path(ruta_servida).as_posix()}?mode=ro", uri=True)
+    try:
+        for i, agencia, url in servida.execute(
+                "select id, agency_id, source_url from propiedades"):
+            if i not in presentes and i not in retirar:
+                huerfanos[agencia] |= _ids_de_aviso(url)
+    finally:
+        servida.close()
+    quedan = [f for f in nuevas
+              if not (_ids_de_aviso(f.get("source_url"))
+                      & huerfanos.get((f.get("_snapshot_certificadas") or {}).get("agencia"),
+                                      set()))]
+    return quedan, len(nuevas) - len(quedan)
+
+
 def _ids_servidos(ruta_servida) -> set[str] | None:
     """Los ids de la snapshot servida; None si no hay servida con la que comparar."""
     if not ruta_servida or not Path(ruta_servida).is_file():
@@ -914,6 +957,8 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
     # de los 330 de la consulta. Insertando en orden de id, el `rowid` del
     # indice de texto YA es ese orden y la API lo usa gratis: 9 ms, la misma
     # muestra. Ver `orden_de_filas` en `snapshot_meta`.
+    nuevas, avisos_ya_servidos = _sin_avisos_ya_servidos(
+        origen, getattr(args, 'servida', None), nuevas, retirar)
     servidas = (_servidas_a_conservar(origen, getattr(args, 'servida', None), nuevas, retirar)
                 if decision is not None else [])
     conservadas = 0
@@ -1197,6 +1242,7 @@ def _build_contents(origen, api, args, ajenas, geo, frescas, gate, destino):
             "sumadas_servidas": sumadas,
             "nuevas_elegibles": len(decision.nuevas) if sumar else 0,
             "avisos_con_url_nueva_refrescados": alias_refrescados,
+            "altas_omitidas_por_aviso_ya_servido": avisos_ya_servidos,
             "retiradas_ausentes_de_inventario_completo": len(retirar),
             "retiradas_con_muerte_verificada": len(retiros_evidencia),
             "retirables_detectadas": len(decision.retirables),
