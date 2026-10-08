@@ -466,13 +466,23 @@ def mapa(
                                  min(east, -53), max(west, -74)]
     con = conexion()
     try:
-        total_matches = con.execute(
-            f"select count(*) from {tabla}{total_matches_where}", valores
-        ).fetchone()[0]
-        viewport_matches = con.execute(
-            f"select count(*) from {tabla}{donde}{y}{viewport(solo_el_mapa)}",
-            viewport_values,
-        ).fetchone()[0]
+        if solo_el_mapa:
+            total_matches = con.execute(
+                f"select count(*) from {tabla}{total_matches_where}", valores
+            ).fetchone()[0]
+            viewport_matches = con.execute(
+                f"select count(*) from {tabla}{donde}{y}{viewport(solo_el_mapa)}",
+                viewport_values,
+            ).fetchone()[0]
+        else:
+            # Con filtros (o texto) los dos conteos recorren el MISMO conjunto: se cuentan en una sola
+            # pasada. Medido 08-10 sobre sprint_rc6 (99.178), pais entero + 'casa' + venta: dos
+            # consultas 550 + 800 ms -> una sola 560 ms. El indice de coordenadas no se usa aca (ver
+            # `viewport`), asi que no se pierde nada.
+            total_matches, viewport_matches = con.execute(
+                f"select count(*), coalesce(sum({viewport(False)}), 0) from {tabla}{total_matches_where}",
+                viewport_values[len(valores):] + valores,
+            ).fetchone()
         filas = con.execute(
             f"select propiedades.id, propiedades.latitud, propiedades.longitud, "
             f"propiedades.precio, propiedades.moneda, propiedades.operacion, "
