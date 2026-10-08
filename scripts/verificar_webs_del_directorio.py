@@ -52,6 +52,62 @@ ESTABLECIDAS = (wd.VERIFIED, wd.HIGH_CONFIDENCE)
 PAUSA_TOKKO = 4.0
 
 
+# --- El host tiene que ser DE la agencia (mision 08-10) -------------------------------------------
+# La re-verificacion de 294 registros viejos dio AFIRMABLE a paginas de terceros que solo NOMBRAN a la
+# agencia: respaldar.com.ar (garantias de alquiler) para `a zaccardi`, cucicba.org.ar/matriculados,
+# asia.villas (Tailandia), xing.com, vlex, kasafinder.io, diarios locales. `wd.verificar` confirma que
+# la pagina habla de la agencia, no que el sitio sea suyo. Se revirtio la escritura y se exige esto.
+GENERICAS = frozenset({
+    "propiedades", "propiedad", "inmobiliaria", "inmobiliarias", "negocios", "inmobiliarios", "bienes",
+    "raices", "real", "estate", "servicios", "estudio", "grupo", "broker", "brokers", "consultora",
+    "administracion", "asesores", "asociados", "group", "realty", "inversiones", "desarrollos",
+    "emprendimientos", "operaciones", "soluciones", "gestion", "home", "homes", "casas", "agencia",
+    "oficina", "sucursal", "argentina", "buenos", "aires", "rosario", "cordoba", "norte", "centro",
+    # siglas de colegios y adhesiones que aparecen DENTRO del nombre cargado
+    "cucicba", "cmcpsi", "cmcpdsn", "colegio", "matricula", "adherido", "sistema", "registro"})
+HOSTS_AJENOS = ("cucicba", "cmcpsi", "colegio", "century21", "remax", "coldwellbanker", "kellerwilliams",
+                "engelvoelkers", "sothebysrealty", "kasafinder", "xing.com", "vlex.com", "archivo.biz",
+                "evisos", "facebook", "instagram", "linkedin")
+RUTA_DE_CATALOGO = ("propiedad", "inmueble", "venta", "alquiler", "buscar", "busqueda", "listado",
+                    "catalogo", "site/", "/p/", "property", "properties", "ficha")
+
+
+def _plano(texto: str) -> str:
+    import unicodedata
+    return unicodedata.normalize("NFKD", texto or "").encode("ascii", "ignore").decode().lower()
+
+
+def dominio_propio(cid: str, url: str) -> tuple[bool, str]:
+    """El sitio es de la agencia: su dominio (o subdominio en un SaaS) lleva el nombre de la agencia.
+
+    Fail-closed: si no se puede afirmar, no es propio. Acepta una palabra distintiva del nombre (>= 4
+    letras, no generica) dentro del host, o la concatenacion de las dos primeras palabras (siglas:
+    `ieb real estate` -> iebrealestate, `grupo sur` -> gruposurneuquen). Rechaza hosts de colegios,
+    redes de franquicia y directorios, y entradas profundas que no son catalogo (una nota, un edicto).
+    """
+    import re
+    p = urllib.parse.urlparse(url or "")
+    host = p.netloc.lower().removeprefix("www.")
+    if not host:
+        return False, "sin host"
+    if any(a in host for a in HOSTS_AJENOS):
+        return False, "host de colegio, red o directorio"
+    ruta = (p.path or "/").strip("/")
+    if ruta.count("/") >= 2 and not any(k in (p.path + "?" + p.query).lower() for k in RUTA_DE_CATALOGO):
+        return False, "entrada profunda que no es catalogo"
+    plano_host = re.sub(r"[^a-z0-9]", "", host)
+    palabras = [w for w in re.split(r"[^a-z0-9]+", _plano(cid.split(":", 1)[-1])) if w]
+    distintivas = [w for w in palabras if len(w) >= 4 and w not in GENERICAS and not w.isdigit()]
+    if any(w in plano_host for w in distintivas):
+        return True, "palabra del nombre en el host"
+    if len(palabras) >= 2 and len(palabras[0] + palabras[1]) >= 4 and plano_host.startswith(palabras[0] + palabras[1]):
+        return True, "nombre concatenado al inicio del host"
+    if palabras and 2 <= len(palabras[0]) <= 4 and plano_host.startswith(palabras[0]) and any(
+            g in plano_host for g in ("propiedades", "inmobiliaria", "realestate", "bienesraices", "inmuebles")):
+        return True, "sigla del nombre + rubro en el host"
+    return False, "el host no lleva el nombre de la agencia"
+
+
 def host_de(url: str | None) -> str:
     return urllib.parse.urlparse(url or "").netloc.lower().removeprefix("www.")
 
@@ -148,8 +204,12 @@ def main() -> int:
         for i, (cid, rec) in enumerate(pendientes, 1):
             url = rec["platform"]["domain"]
             veredicto_id, pais, razon_pais = None, None, None
+            propio, razon_propio = dominio_propio(cid, url)
             if wd.es_portal(url):
                 estado = "PORTAL"
+            elif not propio:
+                estado = "HOST_NO_PROPIO"
+                razon_pais = razon_propio
             else:
                 candidata = bajar(url)
                 es_tokko = str(rec["platform"].get("platform") or rec["platform"].get("connector") or "").lower() == "tokko"
