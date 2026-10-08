@@ -1203,6 +1203,8 @@ def main() -> int:
                              "puede repetir. Sirve para que un paro de radio "
                              "FAMILIA deje trabajando al resto de la cola en "
                              "vez de detenerla entera.")
+    parser.add_argument("--sin-almacen", action="store_true",
+                        help="no guardar las paginas bajadas en ERETZ_ALMACEN_PAGINAS")
     parser.add_argument("--ignorar-apagado", action="store_true",
                         help="correr aunque ERETZ AUTOMATION este en OFF "
                              "(solo a mano y a sabiendas)")
@@ -1235,6 +1237,15 @@ def main() -> int:
     # `Descargador` porque `connectors/base.py` entra en la huella y esto no
     # cambia nada de lo que se extrae. Ver `scripts/ipv4_primero.py`.
     preferir_ipv4()
+    # Mismo criterio: guardar cada pagina bajada es un efecto lateral del transporte, no extraccion.
+    # Con las paginas guardadas, un cambio de extractor se aplica re-extrayendo (replay) en vez de
+    # volver a bajar catalogos enteros (mision 08-10; ver `scripts/almacen_de_paginas.py`).
+    almacen = None
+    if not args.sin_almacen:
+        from scripts.agency_certifier import AuditDownloader
+        from scripts.almacen_de_paginas import AlmacenDePaginas, enganchar
+        almacen = AlmacenDePaginas(dato('ERETZ_ALMACEN_PAGINAS'), worker=f"w{args.worker}")
+        enganchar(AuditDownloader, almacen)
 
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
@@ -1388,6 +1399,8 @@ def main() -> int:
             current_agency=canonical_id, current_phase="CERTIFY"))
         try:
             with Latido(cerrojo, canonical_id):
+                if almacen is not None:
+                    almacen.contexto = {"canonical_agency_id": canonical_id}
                 presupuesto = presupuesto_para(existing.get(canonical_id), args.budget)
                 if presupuesto > args.budget:
                     print(json.dumps({"presupuesto_extendido": canonical_id,
