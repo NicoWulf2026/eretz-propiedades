@@ -51,6 +51,9 @@ PORTALES = re.compile(
     r"realestate\.com\.au|construex|todoprops|inmobusqueda|miguiaargentina|"
     r"near-place|mapaprop|proppies|liderprop|inmoclick|choza\.ai|indice-inmobiliario|"
     r"mercadoprop|emis\.com|yably|aspenbienesraices|"
+    # Plataformas con un perfil por inmobiliaria bajo un path (08-10): su sitemap
+    # es el de TODA la plataforma y generico lo atribuia entero a una agencia.
+    r"patagonprop|waichatt|buscainmueble|"
     r"paginasamarillas|cylex|opendi|infoisinfo|guiaempresas|"
     r"facebook|instagram|linkedin|twitter|x\.com|youtube|linktr\.ee|"
     r"colegioinmobiliario|martilleros|cpicordoba|cir\.org)", re.I)
