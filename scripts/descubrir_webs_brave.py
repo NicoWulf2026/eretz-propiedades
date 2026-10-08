@@ -73,13 +73,42 @@ def cohorte(limite: int) -> list[dict]:
     return elegidas
 
 
+def aplicar_registradas(excluir: set[str]) -> int:
+    """Escribe en DESTINO las AFIRMABLE ya registradas (revisadas a mano), sin volver a pagar busquedas."""
+    ya = {f.get("canonical_agency_id") for f in _jsonl(DESTINO) if f.get("estado_del_resolver")}
+    padron = {f["stable_id"]: f for f in _jsonl(PADRON) if f.get("stable_id")}
+    n = 0
+    with DESTINO.open("a", encoding="utf-8") as dest:
+        for r in _jsonl(REGISTRO):
+            cid = r.get("canonical_agency_id")
+            if not r.get("afirmable") or cid in ya or cid in excluir:
+                continue
+            dest.write(json.dumps({
+                "canonical_agency_id": cid, "nombre": (padron.get(cid) or {}).get("nombre_original"),
+                "estado": "AFIRMABLE", "razon": r.get("razon"), "official_url": r["url"],
+                "origen_descubierto": r["url"], "url_descubierta": r["url"], "era_ruta_profunda": False,
+                "entidades_que_reclaman_el_host": 1, "estado_del_resolver": "OFFICIAL_WEB_VERIFIED",
+                "identity_score": r.get("confianza"), "verificacion": r.get("verificacion"),
+                "verificacion_razon": "es_argentina", "origen_del_dato": "descubrir_webs_brave",
+                "cuando": r.get("cuando"), "database_writes": 0}, ensure_ascii=False) + "\n")
+            ya.add(cid)
+            n += 1
+    print(json.dumps({"aplicadas": n, "excluidas_a_mano": sorted(excluir)}, ensure_ascii=False))
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--aplicar-registradas", action="store_true",
+                    help="aplicar las AFIRMABLE ya registradas (sin buscar ni pagar)")
+    ap.add_argument("--excluir", action="append", default=[], help="canonical_agency_id a no aplicar")
     ap.add_argument("--limite", type=int, default=100)
-    ap.add_argument("--tope-usd", type=float, required=True)
+    ap.add_argument("--tope-usd", type=float, default=0.0)
     ap.add_argument("--pausa", type=float, default=0.4)
     ap.add_argument("--aplicar", action="store_true")
     args = ap.parse_args()
+    if args.aplicar_registradas:
+        return aplicar_registradas(set(args.excluir))
     sp.cargar_env_local()
     buscador = sp.Brave()
     if not buscador.disponible():
