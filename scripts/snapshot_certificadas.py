@@ -92,6 +92,16 @@ class Conocidas:
     firmas: set[tuple] = field(default_factory=set)
     # Lo servible (CANDIDATE) por agencia, para decidir retiros.
     candidatas: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    # Lo que SOLO esta como AGENCY_ID_UNRESOLVED (de que agencias) y lo que bloquea por estar
+    # en cualquier otro estado. Ver `_solo_no_resuelta_de`.
+    no_resueltas_url: dict[str, set[str]] = field(default_factory=dict)
+    no_resueltos_hash: dict[str, set[str]] = field(default_factory=dict)
+    urls_bloqueantes: set[str] = field(default_factory=set)
+    hashes_bloqueantes: set[str] = field(default_factory=set)
+    numeros_bloqueantes: dict[str, set[str]] = field(default_factory=dict)
+
+
+NO_RESUELTA = "AGENCY_ID_UNRESOLVED"
 
 
 def conocidas_de(conexion: sqlite3.Connection) -> Conocidas:
@@ -99,15 +109,27 @@ def conocidas_de(conexion: sqlite3.Connection) -> Conocidas:
     for crudo, canonical, status, hash_dedup, url_normalizada in conexion.execute(
             "select row_json, canonical_id, status, hash_dedup, url_normalized from rows"):
         fila = json.loads(crudo)
+        no_resuelta = status == NO_RESUELTA
         if hash_dedup:
             c.hashes[hash_dedup] = status
+            if no_resuelta:
+                c.no_resueltos_hash.setdefault(hash_dedup, set()).add(canonical)
+            else:
+                c.hashes_bloqueantes.add(hash_dedup)
         if url_normalizada:
             c.urls.add(url_normalizada)
+            if no_resuelta:
+                c.no_resueltas_url.setdefault(url_normalizada, set()).add(canonical)
+            else:
+                c.urls_bloqueantes.add(url_normalizada)
         aviso = str(fila.get("source_listing_id") or "").strip()
         if canonical and aviso:
             c.avisos.setdefault((canonical, aviso), []).append((hash_dedup, status))
         if canonical:
-            c.numeros.setdefault(canonical, set()).update(numeros_de_url(fila.get("source_url")))
+            numeros = numeros_de_url(fila.get("source_url"))
+            c.numeros.setdefault(canonical, set()).update(numeros)
+            if not no_resuelta:
+                c.numeros_bloqueantes.setdefault(canonical, set()).update(numeros)
         if status == "CANDIDATE":
             f = firma(fila)
             if f is not None:
@@ -116,6 +138,19 @@ def conocidas_de(conexion: sqlite3.Connection) -> Conocidas:
                 {"hash_dedup": hash_dedup, "source_url": fila.get("source_url"),
                  "source_listing_id": aviso})
     return c
+
+
+def _solo_no_resuelta_de(clave: str | None, bloqueantes: set[str],
+                         no_resueltas: dict[str, set[str]], agencia: str) -> bool:
+    """La preingestion tiene esa clave SOLO como AGENCY_ID_UNRESOLVED y SOLO de esta agencia.
+
+    08-10: la preingestion del 03-09 guarda como `AGENCY_ID_UNRESOLVED` las fichas de las agencias que
+    entonces no estaban resueltas (127.595 filas). No se sirven. Darlas por "ya conocidas" descartaba la
+    fila certificada de esa misma agencia, hoy con identidad: 21.189 filas en 290 agencias nunca llegaban
+    (`brick` COMPLETE 551/551 -> 26 servidas). Si la clave aparece en cualquier otro estado, o como no
+    resuelta de OTRA agencia, sigue bloqueando: no se abre la puerta a inventario ajeno ni a lo rechazado.
+    """
+    return bool(clave) and clave not in bloqueantes and no_resueltas.get(clave) == {agencia}
 
 
 def paquetes_vigentes(paquetes: Path, ledger: Path
@@ -166,13 +201,19 @@ def decidir(vigentes: list[tuple[dict[str, Any], list[dict[str, Any]]]],
         for fila in filas:
             hash_dedup = fila.get("hash_dedup")
             aviso = str(fila.get("source_listing_id") or "").strip()
-            if hash_dedup in conocidas.hashes:
+            url_normalizada = normalizar_url(str(fila.get("source_url") or ""))
+            if hash_dedup in conocidas.hashes and not _solo_no_resuelta_de(
+                    hash_dedup, conocidas.hashes_bloqueantes, conocidas.no_resueltos_hash, agencia):
                 d.motivos["ya_en_preingestion"] += 1
                 continue
-            if normalizar_url(str(fila.get("source_url") or "")) in conocidas.urls:
+            if url_normalizada in conocidas.urls and not _solo_no_resuelta_de(
+                    url_normalizada, conocidas.urls_bloqueantes, conocidas.no_resueltas_url, agencia):
                 d.motivos["url_ya_en_preingestion"] += 1
                 continue
             previas = conocidas.avisos.get((agencia, aviso)) if aviso else None
+            if previas and all(status == NO_RESUELTA for _h, status in previas):
+                # Solo la version no resuelta de esta misma agencia: no hay fila servible que refrescar.
+                previas = None
             if previas:
                 servibles = [h for h, status in previas if status == "CANDIDATE"]
                 if len(servibles) == 1:
@@ -181,7 +222,7 @@ def decidir(vigentes: list[tuple[dict[str, Any], list[dict[str, Any]]]],
                 else:
                     d.motivos["mismo_aviso_sin_fila_servible_unica"] += 1
                 continue
-            if numeros_de_url(fila.get("source_url")) & conocidas.numeros.get(agencia, set()):
+            if numeros_de_url(fila.get("source_url")) & conocidas.numeros_bloqueantes.get(agencia, set()):
                 d.motivos["numero_de_url_ya_visto"] += 1
                 continue
             f = firma(fila)
