@@ -68,6 +68,18 @@ GENERICAS = frozenset({
 HOSTS_AJENOS = ("cucicba", "cmcpsi", "colegio", "century21", "remax", "coldwellbanker", "kellerwilliams",
                 "engelvoelkers", "sothebysrealty", "kasafinder", "xing.com", "vlex.com", "archivo.biz",
                 "evisos", "facebook", "instagram", "linkedin")
+# Nombres de pila frecuentes: solos no distinguen a una agencia de otra persona con el mismo nombre.
+NOMBRES_DE_PILA = frozenset({
+    "maria", "jose", "juan", "carlos", "jorge", "luis", "miguel", "pablo", "javier", "diego", "daniel",
+    "alejandro", "alejandra", "andrea", "natalia", "mariana", "mariano", "martin", "martina", "gustavo",
+    "fernando", "fernanda", "ricardo", "roberto", "claudia", "claudio", "silvia", "patricia", "laura",
+    "marcelo", "sergio", "eduardo", "gabriel", "gabriela", "sebastian", "nicolas", "pedro", "lucia",
+    "valeria", "veronica", "monica", "susana", "graciela", "liliana", "adriana", "cecilia", "carolina",
+    "florencia", "paula", "paola", "marisa", "marina", "silvina", "karina", "viviana", "hector", "oscar",
+    "raul", "ruben", "hugo", "mario", "jorgelina", "ezequiel", "facundo", "agustin", "esteban", "matias",
+    "santiago", "federico", "ignacio", "lorena", "romina", "vanesa", "cristina", "beatriz", "norma",
+    "gaby", "vicky", "nora", "miriam", "maribel", "sonia", "rosa", "lautaro", "mauricio", "renato",
+    "rodrigo", "lucas", "bruno", "abelardo", "graciela", "mateo", "atilio", "denis"})
 RUTA_DE_CATALOGO = ("propiedad", "inmueble", "venta", "alquiler", "buscar", "busqueda", "listado",
                     "catalogo", "site/", "/p/", "property", "properties", "ficha")
 
@@ -95,11 +107,33 @@ def dominio_propio(cid: str, url: str) -> tuple[bool, str]:
     ruta = (p.path or "/").strip("/")
     if ruta.count("/") >= 2 and not any(k in (p.path + "?" + p.query).lower() for k in RUTA_DE_CATALOGO):
         return False, "entrada profunda que no es catalogo"
+    # Solo la etiqueta propia (sin TLD): `nataliacura.com.ar` -> `nataliacura`; en un SaaS, el subdominio.
+    etiqueta = re.sub(r"[^a-z0-9]", "", host.split(".")[0])
     plano_host = re.sub(r"[^a-z0-9]", "", host)
     palabras = [w for w in re.split(r"[^a-z0-9]+", _plano(cid.split(":", 1)[-1])) if w]
     distintivas = [w for w in palabras if len(w) >= 4 and w not in GENERICAS and not w.isdigit()]
-    if any(w in plano_host for w in distintivas):
+    rubro = GENERICAS | {"inmuebles", "inmo", "prop", "props", "adm", "red", "mi", "the", "estudio", "bienes",
+                         "raices", "brokers", "bienesraices", "realestate", "negociosinmobiliarios",
+                         "propiedadesinmobiliaria", "operacionesinmobiliarias"}
+
+    def en_borde(w: str) -> bool:
+        """La palabra empieza la etiqueta o la precede un rubro, otra palabra del nombre o un nombre de pila.
+        `dirosapropiedades` no es `rosa propiedades`; `estudiocalle` si es `abelardo calle`."""
+        for m in re.finditer(re.escape(w), etiqueta):
+            antes = etiqueta[:m.start()]
+            if (not antes or any(antes.endswith(r) for r in rubro) or any(antes.endswith(p) for p in palabras)
+                    or any(antes.endswith(n) for n in NOMBRES_DE_PILA)):
+                return True
+        return False
+
+    propias = [w for w in distintivas if w not in NOMBRES_DE_PILA and en_borde(w)]
+    if propias:
         return True, "palabra del nombre en el host"
+    de_pila = [w for w in distintivas if w in NOMBRES_DE_PILA]
+    # Un nombre de pila solo identifica si la etiqueta es ESE nombre + rubro (`marianopropiedades`):
+    # `nataliacura` no es `natalia r cangiani`.
+    if any(etiqueta.startswith(w) and (etiqueta[len(w):] in rubro or not etiqueta[len(w):]) for w in de_pila):
+        return True, "nombre de pila + rubro como etiqueta"
     if len(palabras) >= 2 and len(palabras[0] + palabras[1]) >= 4 and plano_host.startswith(palabras[0] + palabras[1]):
         return True, "nombre concatenado al inicio del host"
     if palabras and 2 <= len(palabras[0]) <= 4 and plano_host.startswith(palabras[0]) and any(

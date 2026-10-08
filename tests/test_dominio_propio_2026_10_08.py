@@ -36,3 +36,18 @@ def test_la_web_propia_pasa_tambien_con_siglas_y_subdominios_saas():
             ("roomix:gv propiedades rosario", "https://gvpropiedades.tuinmobiliaria.com.ar/"),
             ("roomix:bustamante bienes raices", "https://www.bustamantebienesraices.net/")):
         assert dominio_propio(cid, url)[0] is True, url
+
+
+def test_MUERDE_nombre_de_pila_ajeno_y_palabra_en_medio_del_host():
+    assert dominio_propio("roomix:natalia r cangiani propiedaes", "https://www.nataliacura.com.ar/")[0] is False
+    assert dominio_propio("roomix:rosa propiedades", "https://www.dirosapropiedades.com.ar/dirosa-719")[0] is False
+
+
+def test_nombre_de_pila_mas_rubro_y_apellido_tras_otro_nombre_pasan():
+    for cid, url in (("roomix:mariano propiedades", "https://www.marianopropiedades.ar/"),
+                     ("roomix:denis bienes raices", "https://www.denisbienesraices.com.ar/"),
+                     ("roomix:renato propiedades", "https://www.renatoprop.com.ar/"),
+                     ("roomix:abelardo calle inmobiliaria", "https://estudiocalle.com.ar/"),
+                     ("roomix:inmobiliaria malbran", "https://www.eduardomalbran.com/p/7401165-Depto"),
+                     ("roomix:dorado fernando propiedades", "https://doradofernando.com.ar/")):
+        assert dominio_propio(cid, url)[0] is True, url
