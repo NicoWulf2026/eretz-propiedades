@@ -7,6 +7,7 @@ archivo: `git show 6ee927bb80:docs/agent/CURRENT_STATE.md`). `database_writes: 0
 **Fase:** certificación/recertificación continua + calidad de lo servido + preparación productiva.
 
 ## SPRINT BETA 12/10 — 2026-10-07 12:xx (estado REAL verificado en la PC)
+- **08-10 14:3x — P0 de identidad servido + sprint_rc5 lista (READY #7d, PENDIENTE de autorizacion)**. La servida rc2 tiene 12 filas de OTRAS inmobiliarias atribuidas a `estudio inmobiliario dos santos` (perfil en patagonprop.com; generico lee el sitemap de la RAIZ del host). Contenido por directorio (dos santos y hogarfe -> EXTERNAL_PORTAL_PROFILE, respaldo en `_respaldos/`). sprint_rc5 (`6f2f52a889`, 77.740) las saca y paso TODO: P2 0, Regression Gate 23/23, QA API 22/22, navegador 71/71, benchmark 14/14, ensayo deploy+rollback por hash, suite 4.073/5/0. El despliegue automatico por P2 lo bloqueo el control de permisos del entorno ('Production Deploy'): no se reintenta; espera autorizacion del usuario (comando en READY #7d). Cola: 2 workers, vigilante armado.
 - **ERETZ_BACKEND_BETA_READY = YES** (07-10). **PRODUCTION_READY = NO**: backup/restore bloqueado por credencial
   (READY #1) y sin binarios de PostgreSQL locales. Auditoria: `docs/agent/PRODUCTION_READINESS_2026-10-07.md`.
 - **SEMANTIC_FREEZE = ACTIVE** desde 07-10 10:5x (HEAD semantico `bdba3ddbf4`; huellas `_b_scratch/huellas_freeze_2026-10-07.json`).
